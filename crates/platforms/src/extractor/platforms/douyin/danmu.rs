@@ -22,6 +22,7 @@ use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
 use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::douyin::apis::LIVE_DOUYIN_URL;
 use crate::extractor::platforms::douyin::douyin_proto;
+use crate::extractor::platforms::douyin::generate_xbogus;
 use crate::extractor::platforms::douyin::utils::{DEFAULT_TTWID, get_common_params};
 use chrono::{TimeZone, Utc};
 
@@ -39,9 +40,6 @@ const DOUYIN_WS_URL_PATH: &str = "/webcast/im/push/v2/";
 
 /// Heartbeat interval in seconds
 const HEARTBEAT_INTERVAL_SECS: u64 = 15;
-
-/// The webmssdk.js file content for signature generation
-const WEBMSSDK_JS: &str = include_str!("../../../resources/douyin-webmssdk.js");
 
 /// Douyin Protocol Implementation
 #[derive(Clone, Default)]
@@ -63,43 +61,26 @@ impl DouyinDanmuProtocol {
         }
     }
 
-    /// Generates the ac_signature (X-Bogus) using the webmssdk.js
-    #[cfg(feature = "rquickjs")]
-    fn generate_signature(md5_hash: &str) -> Result<String> {
-        use crate::js_engine::JsEngineManager;
-
-        let manager = JsEngineManager::global();
-
-        manager
-            .execute_with_browser_env(|ctx| {
-                // Load the webmssdk.js library
-                ctx.load_script(WEBMSSDK_JS)?;
-                // Call get_sign with the MD5 hash
-                ctx.eval_string(&format!("get_sign(\"{}\")", md5_hash))
-            })
-            .map_err(|e| DanmakuError::protocol(format!("Signature generation failed: {}", e)))
-    }
-
-    #[cfg(not(feature = "rquickjs"))]
-    fn generate_signature(_md5_hash: &str) -> Result<String> {
-        Err(DanmakuError::protocol(
-            "Signature generation requires the `rquickjs` feature",
-        ))
-    }
-
-    /// Generates MD5 hash of the input string
-    fn md5_hash(input: &str) -> String {
+    /// Generates MD5 hash of the input string, returns 32-byte hex representation
+    fn md5_hash(input: &str) -> [u8; 32] {
         use md5::{Digest, Md5};
-        let mut hasher = Md5::new();
-        hasher.update(input.as_bytes());
-        format!("{:x}", hasher.finalize())
+        let hash = Md5::digest(input.as_bytes());
+        let mut result = [0u8; 32];
+        // Convert each byte to 2 hex chars
+        for (i, byte) in hash.iter().enumerate() {
+            let hi = byte >> 4;
+            let lo = byte & 0x0f;
+            result[i * 2] = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
+            result[i * 2 + 1] = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
+        }
+        result
     }
 
     /// Creates the WebSocket URL with all required parameters
     fn build_websocket_url(room_id: &str, user_id: &str) -> Result<String> {
-        let version_code = "180800";
-        let webcast_sdk_version = "1.0.15";
-        let update_version_code = "1.0.15";
+        const VERSION_CODE: &str = "180800";
+        const WEBCAST_SDK_VERSION: &str = "1.0.15";
+        const UPDATE_VERSION_CODE: &str = "1.0.15";
 
         // Build query params for signature
 
@@ -108,9 +89,9 @@ impl DouyinDanmuProtocol {
         query_params.extend(get_common_params());
 
         // websocket params
-        query_params.insert("version_code", version_code);
-        query_params.insert("webcast_sdk_version", webcast_sdk_version);
-        query_params.insert("update_version_code", update_version_code);
+        query_params.insert("version_code", VERSION_CODE);
+        query_params.insert("webcast_sdk_version", WEBCAST_SDK_VERSION);
+        query_params.insert("update_version_code", UPDATE_VERSION_CODE);
         query_params.insert("host", LIVE_DOUYIN_URL);
         query_params.insert("did_rule", "3");
         query_params.insert("identity", "audience");
@@ -129,11 +110,14 @@ impl DouyinDanmuProtocol {
 
         let signature_param = format!(
             "live_id=1,aid=6383,version_code={},webcast_sdk_version={},room_id={},sub_room_id=,sub_channel_id=,did_rule=3,user_unique_id={},device_platform=web,device_type=,ac=,identity=audience",
-            version_code, webcast_sdk_version, room_id, user_id
+            VERSION_CODE, WEBCAST_SDK_VERSION, room_id, user_id
         );
 
         let md5_hash = Self::md5_hash(&signature_param);
-        let signature = Self::generate_signature(&md5_hash)?;
+        // make counter always 1
+        let signature_bytes = generate_xbogus(&md5_hash, 1);
+        // SAFETY: result contains only ASCII from XBOGUS_ALPHABET
+        let signature = unsafe { std::str::from_utf8_unchecked(&signature_bytes) };
 
         use rand::seq::IndexedRandom;
         let mut rng = rand::rng();
@@ -369,18 +353,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_md5_hash() {
-        let hash = DouyinDanmuProtocol::md5_hash("test");
-        assert_eq!(hash, "098f6bcd4621d373cade4e832627b4f6");
-
-        let hash2 = DouyinDanmuProtocol::md5_hash("hello world");
-        assert_eq!(hash2, "5eb63bbbe01eeed093cb22bb8f5acdc3");
-
-        let hash3 = DouyinDanmuProtocol::md5_hash("");
-        assert_eq!(hash3, "d41d8cd98f00b204e9800998ecf8427e");
-    }
-
-    #[test]
     fn test_gzip_decompression() {
         use flate2::Compression;
         use flate2::write::GzEncoder;
@@ -430,17 +402,6 @@ mod tests {
         assert!(protocol.heartbeat_message().is_none());
     }
 
-    #[test]
-    #[ignore] // Ignore by default as it requires JS engine which is slow
-    fn test_signature_generation() {
-        let md5_hash = "e103106903fe7124df5b89decb376942";
-        let result = DouyinDanmuProtocol::generate_signature(md5_hash);
-        assert!(result.is_ok());
-        let signature = result.unwrap();
-        assert!(!signature.is_empty());
-        println!("Generated signature: {}", signature);
-    }
-
     #[tokio::test]
     #[ignore] // Ignore by default as it requires JS engine which is slow
     async fn test_websocket_url_generation() {
@@ -471,8 +432,7 @@ mod tests {
             .unwrap();
 
         let protocol = DouyinDanmuProtocol::default();
-        let room_id = "7585883110870092585";
-
+        let room_id = "7592278867031231283";
         // Generate WebSocket URL
         let ws_url = protocol
             .websocket_url(room_id)
