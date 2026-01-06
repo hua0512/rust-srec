@@ -98,7 +98,7 @@ openssl = { version = "0.10", features = ["vendored"] }
 rustls = { version = "0.23.35", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
 rustls-platform-verifier = "0.6.2"
 libsm = "0.6.0"
-rsa = { version = "0.9.9", features = ["sha2"] }
+rsa = { version = "0.9.10", features = ["sha2"] }
 rustc-hash = "2.1"
 memchr = "2.7.6"
 criterion = "0.8.1"
