@@ -166,6 +166,9 @@ pub async fn refresh_cookies(
         .map_err(|_| CookieRefreshError::Internal("System time error".to_string()))?
         .as_millis() as u64;
 
+    // wait some time
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
     let correspond_path = generate_correspond_path(timestamp_ms)?;
 
     // Step 2: Get refresh_csrf from HTML page
