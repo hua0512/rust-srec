@@ -38,7 +38,6 @@ import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { Link } from '@tanstack/react-router';
-// motion removed as it was unused
 
 interface EngineCardProps {
   engine: z.infer<typeof EngineConfigSchema>;
@@ -78,8 +77,8 @@ export function EngineCard({ engine }: EngineCardProps) {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteEngine({ data: id }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['engines'] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['engines'] });
       toast.success('Engine configuration deleted');
     },
     onError: (error: Error) => {

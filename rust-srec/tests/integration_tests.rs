@@ -100,7 +100,7 @@ mod config_repository_tests {
              max_concurrent_downloads, max_concurrent_uploads, streamer_check_delay_ms, proxy_config,
              offline_check_delay_ms, offline_check_count, default_download_engine, max_concurrent_cpu_jobs,
              max_concurrent_io_jobs, job_history_retention_days)
-             VALUES (?, '/app/output', '{streamer}-{title}', 'flv', 1048576, 0, 8589934592, FALSE,
+             VALUES (?, '/app/output', '{streamer}-%Y%m%d-%H%M%S-{title}', 'flv', 1048576, 0, 8589934592, FALSE,
              6, 3, 60000, ?, 20000, 3, 'ffmpeg', 0, 8, 30)"
         )
             .bind(&id)

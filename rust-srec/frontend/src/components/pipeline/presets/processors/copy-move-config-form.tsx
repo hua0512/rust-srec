@@ -23,7 +23,7 @@ import { motion } from 'motion/react';
 import { Copy, Settings2, Terminal } from 'lucide-react';
 import { ListInput } from '@/components/ui/list-input';
 import { useLingui } from '@lingui/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 
 type CopyMoveConfig = z.infer<typeof CopyMoveConfigSchema>;
 
@@ -214,7 +214,7 @@ export function CopyMoveConfigForm({
                   <ListInput
                     value={field.value || []}
                     onChange={field.onChange}
-                    placeholder={t(i18n)`Add exclude regex pattern`}
+                    placeholder={i18n._(msg`Add exclude regex pattern`)}
                   />
                 </FormControl>
                 <FormDescription className="text-[11px] ml-1">

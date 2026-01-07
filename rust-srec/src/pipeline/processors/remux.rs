@@ -42,6 +42,7 @@ pub enum VideoCodec {
     /// H.264/AVC codec.
     H264,
     /// H.265/HEVC codec.
+    #[serde(alias = "hevc")]
     H265,
     /// VP9 codec.
     Vp9,
@@ -386,8 +387,16 @@ impl RemuxProcessor {
             args.extend(["-f".to_string(), format.clone()]);
         }
 
-        // Fast start for MP4
-        if config.faststart {
+        // Fast start for MP4-family containers only (moves moov atom to beginning).
+        // Applying `-movflags +faststart` to non-MP4 outputs (e.g. MKV) can cause ffmpeg to fail
+        // with "Error opening output files: Invalid argument".
+        let output_ext = get_extension(output_path);
+        let output_format = config.format.as_deref().or(output_ext.as_deref());
+        let faststart_supported = matches!(
+            output_format.map(|s| s.to_ascii_lowercase()).as_deref(),
+            Some("mp4" | "mov" | "m4v")
+        );
+        if config.faststart && faststart_supported {
             args.extend(["-movflags".to_string(), "+faststart".to_string()]);
         }
 
@@ -838,6 +847,29 @@ mod tests {
         assert!(args.contains(&"/output.mp4".to_string()));
         assert!(args.contains(&"-c:v".to_string()));
         assert!(args.contains(&"copy".to_string()));
+    }
+
+    #[test]
+    fn test_build_args_faststart_only_applies_to_mp4_family_outputs() {
+        let processor = RemuxProcessor::new();
+
+        // MP4 should include faststart by default.
+        let mp4_config = RemuxConfig {
+            format: Some("mp4".to_string()),
+            ..Default::default()
+        };
+        let mp4_args = processor.build_args("/input.flv", &mp4_config, "/output.mp4");
+        assert!(mp4_args.contains(&"-movflags".to_string()));
+        assert!(mp4_args.contains(&"+faststart".to_string()));
+
+        // MKV must not include faststart (movflags is not applicable).
+        let mkv_config = RemuxConfig {
+            format: Some("mkv".to_string()),
+            ..Default::default()
+        };
+        let mkv_args = processor.build_args("/input.flv", &mkv_config, "/output.mkv");
+        assert!(!mkv_args.contains(&"-movflags".to_string()));
+        assert!(!mkv_args.contains(&"+faststart".to_string()));
     }
 
     #[test]

@@ -10,7 +10,14 @@ export const VideoCodecSchema = z.enum([
   'vp9',
   'av1',
 ]);
-export const AudioCodecSchema = z.enum(['copy', 'aac', 'mp3', 'opus', 'flac']);
+export const AudioCodecSchema = z.enum([
+  'copy',
+  'aac',
+  'mp3',
+  'opus',
+  'flac',
+  'none',
+]);
 export const PresetSchema = z.enum([
   'ultrafast',
   'superfast',

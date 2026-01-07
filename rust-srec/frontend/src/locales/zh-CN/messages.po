@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - 会话：{0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:742
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:762
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:806
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:826
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -166,6 +166,10 @@ msgstr "0 = 不限"
 msgid "0 for original quality."
 msgstr "0 为原画质量。"
 
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:859
+msgid "0:v:0"
+msgstr "0:v:0"
+
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:121
 msgid "1 (best) - 31 (worst)"
 msgstr "1（最佳）- 31（最差）"
@@ -174,7 +178,7 @@ msgstr "1（最佳）- 31（最差）"
 msgid "404"
 msgstr "404"
 
-#: src/components/config/engines/engine-editor.tsx:153
+#: src/components/config/engines/engine-editor.tsx:197
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
@@ -292,7 +296,7 @@ msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。
 msgid "Add module..."
 msgstr "添加模块..."
 
-#: src/components/config/engines/engine-card.tsx:271
+#: src/components/config/engines/engine-card.tsx:270
 msgid "Add New Engine"
 msgstr "添加新引擎"
 
@@ -334,6 +338,10 @@ msgstr "添加流"
 msgid "Add Streamer"
 msgstr "添加主播"
 
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:890
+msgid "Add Tag"
+msgstr "添加自定义标签"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:121
 msgid "Additional arguments appended to the command."
 msgstr "附加到命令的额外参数。"
@@ -348,7 +356,7 @@ msgstr "调整 UI 元素的圆角程度。"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:63
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:108
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:142
 #: src/components/streamers/edit/streamer-config-form.tsx:74
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:239
 msgid "Advanced"
@@ -411,7 +419,7 @@ msgstr "所有平台"
 msgid "All Time"
 msgstr "全部时间"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:559
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:561
 msgid "Allowed Extensions"
 msgstr "允许的扩展名"
 
@@ -435,7 +443,7 @@ msgstr "API 请求重试次数"
 msgid "Appearance & style"
 msgstr "外观与样式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:766
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:830
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
@@ -528,17 +536,17 @@ msgstr "尝试修复 FLV 流中的时间戳"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:39
 #: src/components/pipeline/presets/preset-card.tsx:89
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:99
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:133
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
 msgid "Audio"
 msgstr "音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:365
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:410
 msgid "Audio Bitrate"
 msgstr "音频比特率"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:82
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:215
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:251
 msgid "Audio Codec"
 msgstr "音频编码"
 
@@ -551,7 +559,7 @@ msgstr "提取音频"
 msgid "Audio Extraction"
 msgstr "音频提取"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:574
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:624
 msgid "Audio Processing"
 msgstr "音频处理"
 
@@ -559,7 +567,7 @@ msgstr "音频处理"
 msgid "Audio Properties"
 msgstr "音频属性"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:206
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:242
 msgid "Audio Settings"
 msgstr "音频设置"
 
@@ -576,7 +584,7 @@ msgstr "认证"
 msgid "Authentication & Setup"
 msgstr "身份验证与设置"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:209
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:211
 msgid "Auto (QR → Phone & Code → Desktop)"
 msgstr "自动 (二维码 → 手机号和验证码 → 桌面)"
 
@@ -682,7 +690,7 @@ msgstr "Basic Auth"
 msgid "Basic details for this configuration template."
 msgstr "此配置模板的基本信息。"
 
-#: src/components/config/engines/engine-editor.tsx:128
+#: src/components/config/engines/engine-editor.tsx:172
 msgid "Basic Information"
 msgstr "基本信息"
 
@@ -757,7 +765,7 @@ msgstr "字节"
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
-#: src/components/config/engines/engine-card.tsx:238
+#: src/components/config/engines/engine-card.tsx:237
 #: src/components/config/global/backup-restore-card.tsx:578
 #: src/components/config/templates/template-card.tsx:196
 #: src/components/filters/FilterDialog.tsx:245
@@ -901,7 +909,7 @@ msgstr "已触发检查"
 #~ msgid "Checked"
 #~ msgstr "已检查"
 
-#: src/components/config/engines/engine-card.tsx:145
+#: src/components/config/engines/engine-card.tsx:144
 msgid "Checking"
 msgstr "检查中"
 
@@ -975,7 +983,7 @@ msgid "Command"
 msgstr "命令"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:85
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:452
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:454
 msgid "Command Arguments"
 msgstr "命令参数"
 
@@ -1070,12 +1078,12 @@ msgstr "配置已成功导出"
 msgid "Configuration imported successfully"
 msgstr "配置已成功导入"
 
-#: src/components/config/engines/engine-card.tsx:210
+#: src/components/config/engines/engine-card.tsx:209
 #: src/components/pipeline/workflows/step-config-dialog.tsx:249
 msgid "Configure"
 msgstr "配置"
 
-#: src/components/config/engines/engine-card.tsx:274
+#: src/components/config/engines/engine-card.tsx:273
 msgid "Configure a new download tool."
 msgstr "配置新的录制工具。"
 
@@ -1087,11 +1095,11 @@ msgstr "配置一个新的主播以进行监控和录制。"
 msgid "Configure and launch a manual processing pipeline."
 msgstr "配置并启动手动处理管道。"
 
-#: src/components/config/engines/engine-editor.tsx:341
+#: src/components/config/engines/engine-editor.tsx:352
 msgid "Configure download engine parameters"
 msgstr "配置录制引擎参数"
 
-#: src/components/config/engines/engine-editor.tsx:247
+#: src/components/config/engines/engine-editor.tsx:99
 msgid "Configure granular options for the selected engine."
 msgstr "配置所选引擎的详细选项。"
 
@@ -1152,7 +1160,7 @@ msgstr "连接/活动超时"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:246
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:285
 msgid "Container"
 msgstr "容器"
 
@@ -1160,7 +1168,7 @@ msgstr "容器"
 msgid "Context"
 msgstr "上下文"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:535
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:537
 msgid "Continue on Error"
 msgstr "出错时继续"
 
@@ -1189,8 +1197,8 @@ msgstr "已复制！"
 msgid "Copy"
 msgstr "复制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:147
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:228
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:181
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:264
 msgid "Copy (Passthrough)"
 msgstr "复制（直通）"
 
@@ -1272,8 +1280,8 @@ msgstr "创建渠道"
 msgid "Create Directories"
 msgstr "创建目录"
 
-#: src/components/config/engines/engine-editor.tsx:288
-#: src/components/config/engines/engine-editor.tsx:337
+#: src/components/config/engines/engine-editor.tsx:299
+#: src/components/config/engines/engine-editor.tsx:348
 msgid "Create Engine"
 msgstr "创建引擎"
 
@@ -1340,7 +1348,7 @@ msgstr "已创建"
 msgid "Creating..."
 msgstr "创建中..."
 
-#: src/components/config/engines/engine-editor.tsx:358
+#: src/components/config/engines/engine-editor.tsx:369
 msgid "Creation Mode"
 msgstr "创建模式"
 
@@ -1360,7 +1368,7 @@ msgstr "凭据保存成功"
 msgid "CRF (0-51)"
 msgstr "CRF (0-51)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:294
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:334
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF（恒定码率因子）"
 
@@ -1415,7 +1423,7 @@ msgstr "自定义配置"
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:727
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:791
 msgid "Custom Flags"
 msgstr "自定义标志"
 
@@ -1507,7 +1515,7 @@ msgstr "数据库查询"
 msgid "Date"
 msgstr "日期"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:188
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:190
 msgid "Day (01-31)"
 msgstr "天 (01-31)"
 
@@ -1558,7 +1566,7 @@ msgstr "降级"
 msgid "Delays, proxy, and retention policies."
 msgstr "延迟、代理与保留策略。"
 
-#: src/components/config/engines/engine-card.tsx:244
+#: src/components/config/engines/engine-card.tsx:243
 #: src/components/config/templates/template-card.tsx:128
 #: src/components/config/templates/template-card.tsx:202
 #: src/components/filters/FilterCard.tsx:316
@@ -1582,7 +1590,7 @@ msgstr "删除"
 msgid "Delete Channel?"
 msgstr "删除渠道？"
 
-#: src/components/config/engines/engine-card.tsx:227
+#: src/components/config/engines/engine-card.tsx:226
 msgid "Delete Engine?"
 msgstr "删除引擎？"
 
@@ -1594,7 +1602,7 @@ msgstr "删除文件"
 msgid "Delete Job"
 msgstr "删除处理任务"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:705
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:769
 msgid "Delete original file after successful remux"
 msgstr "成功重封装后删除原始文件"
 
@@ -1707,7 +1715,7 @@ msgstr "内部服务与资源的详细健康检查。"
 msgid "Detailed processor settings"
 msgstr "处理器详细设置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:392
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:440
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
@@ -1715,7 +1723,7 @@ msgstr "尺寸与滤镜"
 msgid "Directory path copied"
 msgstr "目录路径已复制"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:269
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:271
 msgid "Directory to scan for new files after command execution"
 msgstr "命令执行后扫描新文件的目录"
 
@@ -1761,7 +1769,7 @@ msgstr "双击以编辑项目。"
 msgid "Double Screen Data"
 msgstr "双屏数据"
 
-#: src/components/config/engines/engine-card.tsx:149
+#: src/components/config/engines/engine-card.tsx:148
 msgid "Down"
 msgstr "不可用"
 
@@ -1810,7 +1818,7 @@ msgstr "丢弃重复序列头"
 msgid "Drop repeated A/V tags and detect replay loops (useful when streams go offline and replay tail)."
 msgstr "丢弃重复的音视频标签并检测回放循环（在流离线并回放尾部时很有用）。"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:678
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:680
 msgid "Dry Run"
 msgstr "演练模式"
 
@@ -1822,13 +1830,13 @@ msgstr "双格式输出"
 msgid "Duplicate media-tag filtering"
 msgstr "重复媒体标签过滤"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:514
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:563
 #: src/components/streamers/edit/active-download-card.tsx:69
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:583
 msgid "Duration"
 msgstr "时长"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:416
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:418
 msgid "e.g. --namespace my_account"
 msgstr "例如 --namespace my_account"
 
@@ -1836,19 +1844,23 @@ msgstr "例如 --namespace my_account"
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:350
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:352
 msgid "e.g. /data/tdl"
 msgstr "例如 /data/tdl"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:262
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:264
 msgid "e.g. /output/processed/"
 msgstr "例如 /output/processed/"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:863
+msgid "e.g. 0:v:0, 0:a:0"
+msgstr "列如: 0:v:0, 0:a:0"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:130
 msgid "e.g. 128k, 320k"
 msgstr "例如 128k、320k"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:382
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:385
 msgid "e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
 msgstr "例如 C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
 
@@ -1860,12 +1872,12 @@ msgstr "例如 echo {input} > {output}"
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
 
-#: src/components/config/engines/engine-editor.tsx:148
+#: src/components/config/engines/engine-editor.tsx:192
 msgid "e.g. High Quality Streamlink"
 msgstr "例如 高质量 Streamlink"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:288
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:565
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:290
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:567
 msgid "e.g. mp4"
 msgstr "例如 mp4"
 
@@ -1878,11 +1890,11 @@ msgstr "例如 我喜欢的主播"
 msgid "e.g. Remux to H.264"
 msgstr "例如：重封装为 H.264"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:594
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:596
 msgid "e.g. tmp"
 msgstr "例如 tmp"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:458
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:460
 msgid "e.g. up -c @channel -p {input}"
 msgstr "例如 up -c @channel -p {input}"
 
@@ -1921,7 +1933,7 @@ msgstr "编辑渠道"
 #~ msgid "Edit Custom Theme"
 #~ msgstr "编辑自定义主题"
 
-#: src/components/config/engines/engine-editor.tsx:337
+#: src/components/config/engines/engine-editor.tsx:348
 msgid "Edit Engine"
 msgstr "编辑引擎"
 
@@ -1939,7 +1951,7 @@ msgstr "编辑预设：{0}"
 msgid "Edit Workflow: {0}"
 msgstr "编辑工作流：{0}"
 
-#: src/components/config/engines/engine-editor.tsx:356
+#: src/components/config/engines/engine-editor.tsx:367
 msgid "Editing Mode"
 msgstr "编辑模式"
 
@@ -1992,7 +2004,7 @@ msgstr "启用"
 msgid "Encoder Preset"
 msgstr "编码器预设"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:167
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:202
 msgid "Encoding Preset"
 msgstr "编码预设"
 
@@ -2005,7 +2017,7 @@ msgid "End of History"
 msgstr "历史结束"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:104
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:544
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:593
 msgid "End Time"
 msgstr "结束时间"
 
@@ -2030,7 +2042,7 @@ msgstr "引擎"
 msgid "Engine created successfully"
 msgstr "引擎创建成功"
 
-#: src/components/config/engines/engine-editor.tsx:143
+#: src/components/config/engines/engine-editor.tsx:187
 msgid "Engine Name"
 msgstr "引擎名称"
 
@@ -2038,7 +2050,7 @@ msgstr "引擎名称"
 msgid "Engine Overrides"
 msgstr "引擎覆盖项"
 
-#: src/components/config/engines/engine-editor.tsx:168
+#: src/components/config/engines/engine-editor.tsx:212
 msgid "Engine Type"
 msgstr "引擎类型"
 
@@ -2084,11 +2096,11 @@ msgstr "输入你的凭据以登录账户"
 msgid "entries"
 msgstr "条"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:432
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:434
 msgid "Environment Variables"
 msgstr "环境变量"
 
-#: src/components/config/engines/engine-card.tsx:151
+#: src/components/config/engines/engine-card.tsx:150
 #: src/components/streamers/card/use-streamer-status.tsx:40
 #: src/routes/_authed/_dashboard/config/engines/$engineId.tsx:47
 #: src/routes/_authed/_dashboard/config/engines/index.tsx:34
@@ -2171,7 +2183,7 @@ msgstr "排除关键字"
 msgid "Exclude Patterns"
 msgstr "排除模式"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:588
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:590
 msgid "Excluded Extensions"
 msgstr "排除的扩展名"
 
@@ -2532,7 +2544,7 @@ msgstr "获取"
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:583
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:633
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
@@ -2540,7 +2552,7 @@ msgstr "FFmpeg 音频滤镜（-af）"
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:448
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:496
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
@@ -2548,7 +2560,7 @@ msgstr "FFmpeg 视频滤镜"
 msgid "File Configuration"
 msgstr "文件配置"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:284
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:286
 msgid "File Extension Filter"
 msgstr "文件扩展名过滤"
 
@@ -2611,7 +2623,7 @@ msgstr "过滤器类型"
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:498
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:500
 msgid "Filtering & Behavior"
 msgstr "过滤与行为"
 
@@ -2681,7 +2693,7 @@ msgstr "强制使用移动端 API"
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:683
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:747
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
@@ -2700,11 +2712,11 @@ msgstr "表单"
 #: src/components/config/global/file-config-card.tsx:103
 #: src/components/config/templates/template-card.tsx:150
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:88
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:81
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:115
 msgid "Format"
 msgstr "格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:423
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:471
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
@@ -2729,7 +2741,7 @@ msgstr "全流程处理"
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:54
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:72
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:106
 #: src/components/streamers/edit/streamer-config-form.tsx:67
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:232
 msgid "General"
@@ -2780,7 +2792,7 @@ msgstr "生成新二维码"
 msgid "Generating QR code..."
 msgstr "正在生成二维码..."
 
-#: src/components/config/engines/engine-card.tsx:284
+#: src/components/config/engines/engine-card.tsx:283
 msgid "Get Started"
 msgstr "开始使用"
 
@@ -2844,7 +2856,7 @@ msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 msgid "Handle discontinuities in HLS streams"
 msgstr "处理 HLS 流中的不连续段"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:620
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:671
 msgid "Hardware Acceleration"
 msgstr "硬件加速"
 
@@ -2926,7 +2938,7 @@ msgstr "主页"
 msgid "Hooks"
 msgstr "钩子"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:195
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:197
 msgid "Hour (00-23)"
 msgstr "小时 (00-23)"
 
@@ -2974,7 +2986,7 @@ msgstr "ID"
 msgid "ID is required"
 msgstr "必须填写 ID"
 
-#: src/components/config/engines/engine-editor.tsx:131
+#: src/components/config/engines/engine-editor.tsx:175
 msgid "Identity and type of the engine."
 msgstr "引擎的身份与类型。"
 
@@ -3002,7 +3014,7 @@ msgstr "启用后，将忽略匹配此模式的流。"
 msgid "If set, stream titles must contain at least one of these keywords."
 msgstr "如果设置，直播标题必须包含至少一个这些关键字。"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:240
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:242
 msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
 msgstr "如果你的账户启用了 Telegram 两步验证，请使用桌面登录（`-T desktop`）或在终端中本地运行 `tdl login`。"
 
@@ -3014,7 +3026,7 @@ msgstr "忽略高于此比特率的流。"
 msgid "Ignore streams below this bitrate."
 msgstr "忽略低于此比特率的流。"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:570
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:572
 msgid "Ignored when \"Upload All Files\" is enabled."
 msgstr "当“上传所有文件”启用时忽略。"
 
@@ -3048,7 +3060,7 @@ msgstr "进行中"
 msgid "Include"
 msgstr "包含"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:642
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:644
 msgid "Include Images"
 msgstr "包含图片"
 
@@ -3084,7 +3096,7 @@ msgstr "内联：{stepName}"
 msgid "Input Arguments"
 msgstr "输入参数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:736
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:800
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
@@ -3200,10 +3212,11 @@ msgstr "保留目录结构"
 msgid "Keep Running"
 msgstr "保持运行"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:538
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:540
 msgid "Keep uploading other files if one fails"
 msgstr "如果一个文件上传失败，继续上传其他文件"
 
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:903
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:93
 msgid "Key"
 msgstr "键"
@@ -3270,7 +3283,7 @@ msgstr "限制与校验"
 msgid "List"
 msgstr "列表"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:572
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:574
 msgid "List of allowed file extensions (without dot)."
 msgstr "允许的文件扩展名列表（不含点号）。"
 
@@ -3355,7 +3368,7 @@ msgstr "日志配置已更新"
 msgid "Logging paused"
 msgstr "日志已暂停"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:410
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:412
 msgid "Login Args"
 msgstr "登录参数"
 
@@ -3389,7 +3402,7 @@ msgstr "日志"
 msgid "Low"
 msgstr "低"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:321
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:361
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
@@ -3486,7 +3499,7 @@ msgstr "最高质量缩略图"
 #: src/components/config/shared/retry-policy-form.tsx:56
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:612
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:614
 msgid "Max Retries"
 msgstr "最大重试次数"
 
@@ -3556,7 +3569,11 @@ msgstr "元数据"
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:125
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:877
+msgid "Metadata Tags"
+msgstr "元数据标签"
+
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:127
 msgid "Metadata Variables"
 msgstr "元数据变量"
 
@@ -3590,7 +3607,7 @@ msgstr "保留的最小大小。"
 msgid "Minimum Priority"
 msgstr "最低优先级"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:202
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:204
 msgid "Minute (00-59)"
 msgstr "分 (00-59)"
 
@@ -3619,7 +3636,7 @@ msgstr "已停止监控"
 msgid "Month"
 msgstr "本月"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:181
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:183
 msgid "Month (01-12)"
 msgstr "月 (01-12)"
 
@@ -3676,7 +3693,7 @@ msgstr "必须填写名称"
 msgid "name@example.com"
 msgstr "name@example.com"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:256
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:258
 msgid "Namespace"
 msgstr "命名空间"
 
@@ -3777,7 +3794,7 @@ msgstr "未定义环境变量"
 msgid "No errors found. Max depth: {0}"
 msgstr "未发现错误。最大深度：{0}"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:660
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:662
 msgid "No Extension"
 msgstr "无扩展名"
 
@@ -3829,6 +3846,10 @@ msgstr "尚未生成媒体输出。"
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:285
 msgid "No media outputs yet"
 msgstr "暂无媒体文件"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:941
+msgid "No metadata tags added"
+msgstr "未添加元数据标签"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:315
 msgid "No modules configured"
@@ -3958,6 +3979,10 @@ msgstr "无"
 msgid "None (Default)"
 msgstr "无（默认）"
 
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:271
+msgid "None (Strip Audio)"
+msgstr "无（剥离音频）"
+
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:643
 #: src/components/streamers/config/streamer-general-settings.tsx:230
 #: src/components/streamers/edit/streamer-meta-form.tsx:202
@@ -3982,16 +4007,16 @@ msgstr "通知服务"
 msgid "Notifications"
 msgstr "通知"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:107
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:108
 msgid "Nth input: {input0}, {input1}..."
 msgstr "第 N 个输入：{input0}, {input1}..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:114
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:117
 msgid "Nth output: {output0}, {output1}..."
 msgstr "第 N 个输出：{output0}, {output1}..."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:251
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:627
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:629
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
 
@@ -4073,9 +4098,13 @@ msgstr "处理管道完成时"
 msgid "Ongoing"
 msgstr "进行中"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:295
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:297
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:722
+msgid "Only supported for MP4/MOV/M4V"
+msgstr "仅支持 MP4/MOV/M4V"
 
 #: src/components/config/platforms/platform-card.tsx:83
 #: src/components/config/templates/template-card.tsx:110
@@ -4102,7 +4131,7 @@ msgstr "操作类型"
 
 #: src/components/config/shared/proxy-settings-card.tsx:175
 #: src/components/config/shared/proxy-settings-card.tsx:194
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:240
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:242
 msgid "Optional"
 msgstr "可选"
 
@@ -4110,7 +4139,7 @@ msgstr "可选"
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:420
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:422
 msgid "Optional extra arguments appended to `tdl login`."
 msgstr "附加到 `tdl login` 的可选额外参数。"
 
@@ -4142,7 +4171,7 @@ msgstr "输出参数"
 msgid "Output Configuration"
 msgstr "输出配置"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:237
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:239
 msgid "Output Detection"
 msgstr "输出检测"
 
@@ -4152,11 +4181,11 @@ msgid "Output Folder"
 msgstr "输出文件夹"
 
 #: src/components/config/shared/output-settings-card.tsx:118
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:255
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:294
 msgid "Output Format"
 msgstr "输出格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:756
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:820
 msgid "Output Options"
 msgstr "输出选项"
 
@@ -4246,7 +4275,7 @@ msgid "Overwrite existing files"
 msgstr "覆盖现有文件"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:221
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:680
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:744
 msgid "Overwrite Files"
 msgstr "覆盖文件"
 
@@ -4333,7 +4362,7 @@ msgstr "受保护流的密码。"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变量或 PATH。"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:521
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:522
 msgid "Path to Telegram Desktop (contains tdata)"
 msgstr "Telegram Desktop 路径（包含 tdata）"
 
@@ -4385,13 +4414,13 @@ msgstr "逐段"
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:611
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:662
 #: src/components/sessions/overview-tab.tsx:196
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:576
 msgid "Performance"
 msgstr "性能"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:215
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:217
 msgid "Phone & Code (2FA optional)"
 msgstr "手机号和验证码（可选两步验证）"
 
@@ -4480,7 +4509,7 @@ msgstr "处理管道结构"
 msgid "pipelines"
 msgstr "处理管道"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:464
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:466
 msgid "Placeholders"
 msgstr "占位符"
 
@@ -4504,7 +4533,7 @@ msgstr "平台配置可用时将显示在此处。"
 msgid "Platform Detected: {detectedPlatform}"
 msgstr "检测到平台：{detectedPlatform}"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:159
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:161
 msgid "Platform name"
 msgstr "平台名称"
 
@@ -4572,7 +4601,7 @@ msgstr "请重启系统以确保所有配置更改已完全生效。"
 msgid "Please select a JSON file"
 msgstr "请选择一个 JSON 文件"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:534
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:535
 msgid "Please set Telegram Desktop Directory first"
 msgstr "请先设置 Telegram Desktop 目录"
 
@@ -4600,7 +4629,7 @@ msgstr "由 <0>Rust-srec</0> 提供支持。WebUI 版本：0.1.0"
 msgid "Prefer Manifest"
 msgstr "优先使用清单"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:223
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:225
 msgid "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
 msgstr "优先使用二维码登录；其次是手机号和验证码（可选两步验证）；最后是桌面登录。"
 
@@ -4786,7 +4815,7 @@ msgstr "代理策略"
 msgid "Proxy URL"
 msgstr "代理 URL"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:212
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:214
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:504
 msgid "QR Code"
 msgstr "二维码"
@@ -4808,7 +4837,7 @@ msgstr "质量"
 msgid "Quality (qscale)"
 msgstr "质量（qscale）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:283
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:323
 msgid "Quality Control"
 msgstr "质量控制"
 
@@ -4854,7 +4883,7 @@ msgstr "Rclone 可执行文件"
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
-#: src/components/config/engines/engine-card.tsx:147
+#: src/components/config/engines/engine-card.tsx:146
 msgid "Ready"
 msgstr "就绪"
 
@@ -4941,7 +4970,7 @@ msgstr "用于排除文件的正则模式。将针对完整路径和文件名进
 msgid "Remove"
 msgstr "移除"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:702
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:766
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
@@ -5028,7 +5057,7 @@ msgstr "需要启用“录制弹幕”。"
 msgid "Reset"
 msgstr "重置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:402
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:450
 msgid "Resolution (Scale)"
 msgstr "分辨率（缩放）"
 
@@ -5190,15 +5219,15 @@ msgstr "采样率（Hz）"
 msgid "Sampling Strategy"
 msgstr "采样策略"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:152
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:154
 msgid "Sanitized session title"
 msgstr "清理后的会话标题"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:145
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:147
 msgid "Sanitized streamer name"
 msgstr "清理后的主播名称"
 
-#: src/components/config/engines/engine-editor.tsx:288
+#: src/components/config/engines/engine-editor.tsx:299
 #: src/components/config/platforms/platform-editor.tsx:159
 #: src/components/config/templates/template-editor.tsx:213
 #: src/components/filters/FilterDialog.tsx:258
@@ -5229,11 +5258,11 @@ msgstr "保存工作流"
 msgid "Saving..."
 msgstr "保存中..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:245
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:247
 msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
 msgstr "扫描目录以查找命令创建的新文件。检测到的文件将传递到下一个管道步骤。"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:258
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:260
 msgid "Scan Directory"
 msgstr "扫描目录"
 
@@ -5314,7 +5343,7 @@ msgstr "搜索模板..."
 msgid "Search workflows..."
 msgstr "搜索工作流..."
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:209
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:211
 msgid "Second (00-59)"
 msgstr "秒 (00-59)"
 
@@ -5379,7 +5408,7 @@ msgstr "选择配置"
 msgid "Select File"
 msgstr "选择文件"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:204
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:205
 msgid "Select login type"
 msgstr "选择登录类型"
 
@@ -5413,7 +5442,7 @@ msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
-#: src/components/config/engines/engine-editor.tsx:194
+#: src/components/config/engines/engine-editor.tsx:238
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:161
 msgid "Select type"
 msgstr "选择类型"
@@ -5489,7 +5518,7 @@ msgstr "会话间隔"
 #~ msgid "Session Gap (seconds)"
 #~ msgstr "录制会话间隔（秒）"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:138
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:140
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:426
 msgid "Session ID"
 msgstr "录制会话 ID"
@@ -5536,11 +5565,11 @@ msgstr "将“TDL 二进制路径”设置为你的 `tdl` 可执行文件，或�
 msgid "Set constraints on downloads."
 msgstr "设置录制限制。"
 
-#: src/components/config/engines/engine-editor.tsx:343
+#: src/components/config/engines/engine-editor.tsx:354
 msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
-#: src/components/config/engines/engine-editor.tsx:244
+#: src/components/config/engines/engine-editor.tsx:96
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:104
 #: src/routes/_authed/_dashboard/config/route.tsx:106
@@ -5688,7 +5717,7 @@ msgid "Start QR Login"
 msgstr "开始二维码登录"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:81
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:484
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:533
 msgid "Start Time"
 msgstr "开始时间"
 
@@ -5745,7 +5774,7 @@ msgstr "步骤库"
 msgid "Steps List"
 msgstr "步骤列表"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:287
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:289
 msgid "Storage"
 msgstr "存储"
 
@@ -5756,6 +5785,10 @@ msgstr "直播归档"
 #: src/components/streamers/config/streamer-general-settings.tsx:51
 msgid "Stream Details"
 msgstr "流详情"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:853
+msgid "Stream Mapping (-map)"
+msgstr "流映射 (-map)"
 
 #: src/components/streamers/card/stream-avatar-info.tsx:120
 msgid "Stream monitoring encountered issues"
@@ -5800,7 +5833,7 @@ msgstr "主播已删除"
 msgid "Streamer Details"
 msgstr "主播详情"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:131
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:133
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:432
 msgid "Streamer ID"
 msgstr "主播 ID"
@@ -5846,6 +5879,10 @@ msgstr "流媒体服务"
 #: src/components/config/engines/forms/streamlink-form.tsx:42
 msgid "streamlink"
 msgstr "streamlink"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:843
+msgid "Streams & Metadata"
+msgstr "流与元数据"
 
 #: src/components/notifications/channel-card.tsx:157
 msgid "Subscriptions"
@@ -5908,7 +5945,7 @@ msgstr "系统"
 msgid "System Health"
 msgstr "系统健康"
 
-#: src/components/config/engines/engine-card.tsx:171
+#: src/components/config/engines/engine-card.tsx:170
 #: src/routes/_authed/_dashboard/dashboard.tsx:128
 msgid "System Status"
 msgstr "系统状态"
@@ -5917,7 +5954,7 @@ msgstr "系统状态"
 msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:334
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:376
 msgid "Target Bitrate"
 msgstr "目标比特率"
 
@@ -5933,7 +5970,7 @@ msgstr "每次采样目标弹幕数"
 msgid "Target number of messages to capture per sample period."
 msgstr "每个采样周期捕获的目标消息数量。"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:271
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:273
 msgid "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
 msgstr "TDL 账户命名空间 (`tdl --ns ...`)。使用它来管理多个 Telegram 账户。"
 
@@ -5941,7 +5978,7 @@ msgstr "TDL 账户命名空间 (`tdl --ns ...`)。使用它来管理多个 Teleg
 msgid "TDL binary not found"
 msgstr "未找到 TDL 二进制文件"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:320
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:322
 msgid "TDL Binary Path"
 msgstr "TDL 二进制路径"
 
@@ -5973,7 +6010,7 @@ msgstr "TDL 状态"
 msgid "TDL status unknown{version}"
 msgstr "TDL 状态未知{version}"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:237
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:239
 msgid "Telegram 2FA password is not supported"
 msgstr "不支持 Telegram 两步验证密码"
 
@@ -5981,7 +6018,7 @@ msgstr "不支持 Telegram 两步验证密码"
 msgid "Telegram 2FA via web is unsupported"
 msgstr "不支持通过 Web 进行 Telegram 两步验证"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:218
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:220
 msgid "Telegram Desktop"
 msgstr "Telegram 桌面版"
 
@@ -5989,7 +6026,7 @@ msgstr "Telegram 桌面版"
 msgid "Telegram Desktop data required"
 msgstr "需要 Telegram 桌面版数据"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:377
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:379
 msgid "Telegram Desktop Directory"
 msgstr "Telegram 桌面版目录"
 
@@ -6067,7 +6104,7 @@ msgstr "你要访问的页面不存在。"
 msgid "The stream title remained constant throughout the session."
 msgstr "本次会话期间直播标题始终未变化。"
 
-#: src/components/config/engines/engine-editor.tsx:219
+#: src/components/config/engines/engine-editor.tsx:263
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
@@ -6137,7 +6174,7 @@ msgid "This will permanently delete the workflow \"{0}\". Streamers using this w
 msgstr "这将永久删除工作流“{0}”。使用该工作流的主播需要更新。"
 
 #. placeholder {0}: engine.name
-#: src/components/config/engines/engine-card.tsx:230
+#: src/components/config/engines/engine-card.tsx:229
 msgid "This will permanently remove the \"{0}\" configuration. This action cannot be undone."
 msgstr "这将永久移除“{0}”配置。此操作无法撤销。"
 
@@ -6170,7 +6207,7 @@ msgstr "采样尝试之间的时间间隔。"
 msgid "Time offset to take screenshot from"
 msgstr "截图时间偏移"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:168
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:170
 msgid "Time Placeholders (Local Time)"
 msgstr "时间占位符（本地时间）"
 
@@ -6333,7 +6370,7 @@ msgstr "应用启动时触发。"
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:470
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:519
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
@@ -6399,7 +6436,7 @@ msgstr "类型"
 msgid "Type your answer here..."
 msgstr "在此输入你的回答..."
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:292
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:294
 msgid "type=bolt,path=/data/tdl"
 msgstr "type=bolt,path=/data/tdl"
 
@@ -6416,7 +6453,7 @@ msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 msgid "Unhealthy"
 msgstr "不健康"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:216
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:218
 msgid "Unix timestamp"
 msgstr "Unix 时间戳"
 
@@ -6471,7 +6508,7 @@ msgstr "上传"
 msgid "Upload (Rclone)"
 msgstr "上传 (Rclone)"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:511
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:513
 msgid "Upload All Files"
 msgstr "上传所有文件"
 
@@ -6479,11 +6516,11 @@ msgstr "上传所有文件"
 msgid "Upload and Delete"
 msgstr "上传并删除"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:442
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:444
 msgid "Upload Arguments"
 msgstr "上传参数"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:514
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:516
 msgid "Upload everything regardless of file type"
 msgstr "上传所有内容，无论文件类型如何"
 
@@ -6509,7 +6546,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "必须填写 URL"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:659
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:717
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
@@ -6565,7 +6602,7 @@ msgstr "使用 WUP 协议提取直播流。仅适用于数字房间号。"
 msgid "Use WUP V2"
 msgstr "使用 WUP V2"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:394
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:396
 msgid "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
 msgstr "用于桌面登录（备选）；指向包含 `tdata` 的 Telegram Desktop 文件夹。"
 
@@ -6600,6 +6637,7 @@ msgstr "校验失败"
 msgid "Validation service unavailable"
 msgstr "校验服务不可用"
 
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:914
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
 msgid "Value"
 msgstr "值"
@@ -6624,24 +6662,24 @@ msgstr "校验完整性"
 msgid "Verify Output"
 msgstr "验证输出"
 
-#: src/components/config/engines/engine-card.tsx:194
+#: src/components/config/engines/engine-card.tsx:193
 msgid "Version"
 msgstr "版本"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:90
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:124
 msgid "Video"
 msgstr "视频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:344
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:387
 msgid "Video Bitrate"
 msgstr "视频比特率"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:62
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:134
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:168
 msgid "Video Codec"
 msgstr "视频编码"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:124
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:158
 msgid "Video Settings"
 msgstr "视频设置"
 
@@ -6699,7 +6737,7 @@ msgstr "观看"
 #~ msgid "Watch Replay"
 #~ msgstr "观看回放"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:656
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:714
 msgid "Web Optimize"
 msgstr "网页优化"
 
@@ -6717,11 +6755,11 @@ msgstr "本周"
 msgid "Welcome back"
 msgstr "欢迎回来"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:360
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:362
 msgid "Where TDL stores its session and configuration."
 msgstr "TDL 存储其会话和配置的地方。"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:302
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:304
 msgid "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
 msgstr "TDL 存储会话数据的地方 (`tdl --storage ...`)。例如：`type=bolt,path=/data/tdl`。"
 
@@ -6776,11 +6814,11 @@ msgstr "工作流"
 msgid "Workflows"
 msgstr "工作流"
 
-#: src/components/pipeline/presets/processors/tdl-config-form.tsx:345
+#: src/components/pipeline/presets/processors/tdl-config-form.tsx:347
 msgid "Working Directory"
 msgstr "工作目录"
 
-#: src/components/pipeline/presets/processors/execute-config-form.tsx:174
+#: src/components/pipeline/presets/processors/execute-config-form.tsx:176
 msgid "Year (4 digits)"
 msgstr "年 (4 位数字)"
 

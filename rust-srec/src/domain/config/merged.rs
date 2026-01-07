@@ -551,7 +551,7 @@ impl MergedConfigBuilder {
             .unwrap_or_else(|| "/app/output".to_string());
         let output_filename_template = self
             .output_filename_template
-            .unwrap_or_else(|| "{streamer}-{title}-%Y%m%d-%H%M%S".to_string());
+            .unwrap_or_else(|| "{streamer}-%Y%m%d-%H%M%S-{title}".to_string());
         let output_file_format = self.output_file_format.unwrap_or_else(|| "flv".to_string());
         let download_engine = self
             .download_engine
@@ -609,7 +609,7 @@ mod tests {
         let config = MergedConfig::builder()
             .with_global(
                 "/app/output".to_string(),
-                "{streamer}-{title}".to_string(),
+                "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
                 "flv".to_string(),
                 1024,
                 0,

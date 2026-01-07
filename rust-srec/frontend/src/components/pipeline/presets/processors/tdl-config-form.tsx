@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { memo, useState } from 'react';
 import {
@@ -90,13 +90,13 @@ function EnvVarsFields({ basePath }: { basePath: string }) {
         {entries.map(([key, value], index) => (
           <div key={index} className="flex gap-2 items-center group">
             <Input
-              placeholder={t(i18n)`Key`}
+              placeholder={i18n._(msg`Key`)}
               defaultValue={key}
               onBlur={(e) => updateEntryKey(key, e.target.value, value)}
               className="w-1/3 bg-background/50 border-border/50 focus:bg-background h-9 text-xs font-mono"
             />
             <Input
-              placeholder={t(i18n)`Value`}
+              placeholder={i18n._(msg`Value`)}
               value={value}
               onChange={(e) => updateEntryValue(key, e.target.value)}
               className="flex-1 bg-background/50 border-border/50 focus:bg-background h-9 text-xs font-mono"
@@ -201,7 +201,9 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50">
-                        <SelectValue placeholder={t(i18n)`Select login type`} />
+                        <SelectValue
+                          placeholder={i18n._(msg`Select login type`)}
+                        />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -289,7 +291,7 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm transition-colors"
-                      placeholder={t(i18n)`type=bolt,path=/data/tdl`}
+                      placeholder={i18n._(msg`type=bolt,path=/data/tdl`)}
                       {...field}
                       value={field.value ?? ''}
                       onChange={(e) => {
@@ -347,7 +349,7 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm transition-colors"
-                      placeholder={t(i18n)`e.g. /data/tdl`}
+                      placeholder={i18n._(msg`e.g. /data/tdl`)}
                       {...field}
                       value={field.value ?? ''}
                       onChange={(e) => {
@@ -379,9 +381,9 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm transition-colors"
-                      placeholder={t(
-                        i18n,
-                      )`e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop`}
+                      placeholder={i18n._(
+                        msg`e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop`,
+                      )}
                       {...field}
                       value={field.value ?? ''}
                       onChange={(e) => {
@@ -413,7 +415,7 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                     <ListInput
                       value={field.value || []}
                       onChange={field.onChange}
-                      placeholder={t(i18n)`e.g. --namespace my_account`}
+                      placeholder={i18n._(msg`e.g. --namespace my_account`)}
                     />
                   </FormControl>
                   <FormDescription className="text-[10px] ml-1">
@@ -455,7 +457,7 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                   <ListInput
                     value={field.value || []}
                     onChange={field.onChange}
-                    placeholder={t(i18n)`e.g. up -c @channel -p {input}`}
+                    placeholder={i18n._(msg`e.g. up -c @channel -p {input}`)}
                   />
                 </FormControl>
                 <FormDescription className="mt-2 text-sm max-w-full">
@@ -562,7 +564,7 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                     <ListInput
                       value={field.value || []}
                       onChange={(v) => field.onChange(v.length ? v : undefined)}
-                      placeholder={t(i18n)`e.g. mp4`}
+                      placeholder={i18n._(msg`e.g. mp4`)}
                     />
                   </FormControl>
                   <FormDescription className="text-[10px] ml-1">
@@ -591,7 +593,7 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                     <ListInput
                       value={field.value || []}
                       onChange={field.onChange}
-                      placeholder={t(i18n)`e.g. tmp`}
+                      placeholder={i18n._(msg`e.g. tmp`)}
                     />
                   </FormControl>
                   <FormMessage />
