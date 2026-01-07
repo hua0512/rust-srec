@@ -139,10 +139,8 @@ export function StreamerGeneralSettings({
                 <Trans>Platform Configuration</Trans>
               </FormLabel>
               <Select
-                onValueChange={(val) =>
-                  field.onChange(val === 'none' ? undefined : val)
-                }
-                value={field.value ? String(field.value) : 'none'}
+                onValueChange={field.onChange}
+                value={field.value ? String(field.value) : undefined}
               >
                 <FormControl>
                   <SelectTrigger className="bg-background/50">
@@ -150,9 +148,6 @@ export function StreamerGeneralSettings({
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="none">
-                    <Trans>None (Default)</Trans>
-                  </SelectItem>
                   {platformConfigs?.map((platform) => (
                     <SelectItem key={platform.id} value={String(platform.id)}>
                       {platform.name}

@@ -157,8 +157,11 @@ export const StreamerSchema = z.object({
 
 export const CreateStreamerSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  url: z.url('Invalid URL'),
-  platform_config_id: z.string(),
+  url: z.preprocess(
+    (val) => (typeof val === 'string' ? val.trim() : val),
+    z.url('Invalid URL'),
+  ),
+  platform_config_id: z.string().min(1, 'Platform configuration is required'),
   template_id: z.string().nullable().optional(),
   priority: PrioritySchema.optional(),
   enabled: z.boolean().default(true),

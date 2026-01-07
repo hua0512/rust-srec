@@ -92,8 +92,9 @@ export function StreamerForm({
   });
 
   const handleAutofillName = async () => {
-    const url = form.getValues('url');
+    const url = form.getValues('url')?.trim();
     if (!url) return;
+    form.setValue('url', url);
 
     const urlValid = await form.trigger('url');
     if (!urlValid) return;
@@ -121,7 +122,9 @@ export function StreamerForm({
   };
 
   const handleNext = async () => {
-    const url = form.getValues('url');
+    const url = form.getValues('url')?.trim();
+    if (!url) return;
+    form.setValue('url', url);
 
     // Manual validation for Stage 1 fields
     const urlValid = await form.trigger('url');
@@ -134,6 +137,19 @@ export function StreamerForm({
       const metadata = await extractMetadata({ data: url });
       setDetectedPlatform(metadata.platform ?? null);
       setValidPlatformConfigs(metadata.valid_platform_configs);
+
+      // Check if we have any platforms to show in Stage 2
+      const configs =
+        metadata.valid_platform_configs.length > 0
+          ? metadata.valid_platform_configs
+          : allPlatforms || [];
+
+      if (configs.length === 0) {
+        toast.error(
+          t`No platform configurations found. Please create one first.`,
+        );
+        return;
+      }
 
       // If only one valid config and user hasn't selected one, select it
       if (
@@ -152,7 +168,14 @@ export function StreamerForm({
       // Even if extraction fails, let user proceed but show all platforms?
       // Or maybe just show an error toast.
       // For now, let's proceed with all platforms if extraction fails but show warning.
-      setValidPlatformConfigs(allPlatforms || []);
+      const configs = allPlatforms || [];
+      if (configs.length === 0) {
+        toast.error(
+          t`No platform configurations found. Please create one first.`,
+        );
+        return;
+      }
+      setValidPlatformConfigs(configs);
       setStage(2);
     } finally {
       setDetectingPlatform(false);
