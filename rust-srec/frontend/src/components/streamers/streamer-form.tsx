@@ -1,4 +1,4 @@
-import { useForm, SubmitHandler, Resolver } from 'react-hook-form';
+import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { PlatformConfigSchema } from '@/api/schemas';
 import { useQuery } from '@tanstack/react-query';
@@ -16,7 +16,7 @@ import { Form } from '@/components/ui/form';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
 import { Loader2, ArrowRight, ArrowLeft, Undo2 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { StreamerMetaForm } from './edit/streamer-meta-form';
 import { StreamerConfigForm } from './edit/streamer-config-form';
 import { StreamerSaveFab } from './edit/streamer-save-fab';
@@ -84,20 +84,24 @@ export function StreamerForm({
   };
 
   const form = useForm<StreamerFormValues>({
-    resolver: zodResolver(
-      StreamerFormSchema,
-    ) as unknown as Resolver<StreamerFormValues>,
+    resolver: zodResolver(StreamerFormSchema),
     defaultValues: defaults,
     mode: 'onChange', // Validate on change so we can disable Next button if needed
   });
 
-  const handleAutofillName = async () => {
+  // Helper to trim URL and validate - returns trimmed URL if valid, null otherwise
+  const trimAndValidateUrl = async (): Promise<string | null> => {
     const url = form.getValues('url')?.trim();
-    if (!url) return;
+    if (!url) return null;
     form.setValue('url', url);
 
     const urlValid = await form.trigger('url');
-    if (!urlValid) return;
+    return urlValid ? url : null;
+  };
+
+  const handleAutofillName = useCallback(async () => {
+    const url = await trimAndValidateUrl();
+    if (!url) return;
 
     setIsAutofilling(true);
     try {
@@ -119,18 +123,15 @@ export function StreamerForm({
     } finally {
       setIsAutofilling(false);
     }
-  };
+  }, [form]);
 
   const handleNext = async () => {
-    const url = form.getValues('url')?.trim();
+    const url = await trimAndValidateUrl();
     if (!url) return;
-    form.setValue('url', url);
 
-    // Manual validation for Stage 1 fields
-    const urlValid = await form.trigger('url');
+    // Also validate name for Stage 1
     const nameValid = await form.trigger('name');
-
-    if (!urlValid || !nameValid) return;
+    if (!nameValid) return;
 
     setDetectingPlatform(true);
     try {

@@ -175,7 +175,7 @@ msgid "Actions"
 msgstr "操作"
 
 #: src/components/notifications/forms/webhook-form.tsx:113
-#: src/components/streamers/edit/streamer-meta-form.tsx:221
+#: src/components/streamers/edit/streamer-meta-form.tsx:224
 #: src/routes/_authed/_dashboard/config/language.tsx:96
 msgid "Active"
 msgstr "启用"
@@ -407,7 +407,7 @@ msgstr "追加到输出文件名之前"
 msgid "Apply a blur effect to the background of cards and sidebars."
 msgstr "为卡片和侧边栏的背景应用模糊效果。"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:197
+#: src/components/streamers/config/streamer-general-settings.tsx:202
 msgid "Apply template settings."
 msgstr "应用模板设置。"
 
@@ -560,8 +560,8 @@ msgstr "已关闭自动滚动"
 msgid "Auto-scroll enabled"
 msgstr "已开启自动滚动"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:118
-#: src/components/streamers/edit/streamer-meta-form.tsx:168
+#: src/components/streamers/config/streamer-general-settings.tsx:123
+#: src/components/streamers/edit/streamer-meta-form.tsx:171
 msgid "Autofill name from URL"
 msgstr "从 URL 自动填充名称"
 
@@ -587,7 +587,7 @@ msgstr "平均时长"
 msgid "Back"
 msgstr "返回"
 
-#: src/components/streamers/streamer-form.tsx:261
+#: src/components/streamers/streamer-form.tsx:262
 msgid "Back to Details"
 msgstr "返回详情"
 
@@ -726,7 +726,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/pipeline/presets/preset-card.tsx:204
 #: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:196
-#: src/components/streamers/streamer-form.tsx:217
+#: src/components/streamers/streamer-form.tsx:218
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:266
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:158
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:500
@@ -849,7 +849,7 @@ msgstr "检查中"
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
 
-#: src/components/streamers/streamer-form.tsx:228
+#: src/components/streamers/streamer-form.tsx:229
 msgid "Checking..."
 msgstr "检查中..."
 
@@ -1777,8 +1777,8 @@ msgstr "例如 高质量 Streamlink"
 msgid "e.g. mp4"
 msgstr "例如 mp4"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:92
-#: src/components/streamers/edit/streamer-meta-form.tsx:139
+#: src/components/streamers/config/streamer-general-settings.tsx:97
+#: src/components/streamers/edit/streamer-meta-form.tsx:144
 msgid "e.g. My Favorite Streamer"
 msgstr "例如 我喜欢的主播"
 
@@ -1847,7 +1847,7 @@ msgstr "生效范围"
 msgid "Enable"
 msgstr "启用"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:250
+#: src/components/streamers/config/streamer-general-settings.tsx:255
 msgid "Enable Monitoring"
 msgstr "启用监控"
 
@@ -2143,7 +2143,7 @@ msgstr "失败"
 msgid "Failed steps retry initiated"
 msgstr "已开始重试失败的步骤"
 
-#: src/components/streamers/streamer-form.tsx:118
+#: src/components/streamers/streamer-form.tsx:122
 #: src/hooks/use-edit-streamer.ts:119
 msgid "Failed to autofill name"
 msgstr "自动填充名称失败"
@@ -2250,7 +2250,7 @@ msgstr "删除工作流失败：{0}"
 msgid "Failed to export configuration"
 msgstr "导出配置失败"
 
-#: src/components/streamers/streamer-form.tsx:114
+#: src/components/streamers/streamer-form.tsx:118
 #: src/hooks/use-edit-streamer.ts:115
 msgid "Failed to extract name from URL"
 msgstr "从 URL 提取名称失败"
@@ -2740,8 +2740,8 @@ msgstr "正常"
 msgid "Hide password"
 msgstr "隐藏密码"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:222
-#: src/components/streamers/edit/streamer-meta-form.tsx:199
+#: src/components/streamers/config/streamer-general-settings.tsx:227
+#: src/components/streamers/edit/streamer-meta-form.tsx:202
 msgid "High"
 msgstr "高"
 
@@ -3213,8 +3213,8 @@ msgstr "登录类型"
 msgid "Logs"
 msgstr "日志"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:228
-#: src/components/streamers/edit/streamer-meta-form.tsx:205
+#: src/components/streamers/config/streamer-general-settings.tsx:233
+#: src/components/streamers/edit/streamer-meta-form.tsx:208
 msgid "Low"
 msgstr "低"
 
@@ -3439,7 +3439,7 @@ msgstr "模块日志级别"
 msgid "Monitor and manage processing jobs"
 msgstr "监控并管理处理任务"
 
-#: src/components/streamers/edit/streamer-meta-form.tsx:224
+#: src/components/streamers/edit/streamer-meta-form.tsx:227
 msgid "Monitor this streamer"
 msgstr "监控此主播"
 
@@ -3491,12 +3491,12 @@ msgstr "我的归档工作流"
 #: src/components/notifications/channel-form.tsx:275
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
 #: src/components/pipeline/workflows/workflow-editor.tsx:305
-#: src/components/streamers/config/streamer-general-settings.tsx:85
-#: src/components/streamers/edit/streamer-meta-form.tsx:133
+#: src/components/streamers/config/streamer-general-settings.tsx:90
+#: src/components/streamers/edit/streamer-meta-form.tsx:138
 msgid "Name"
 msgstr "名称"
 
-#: src/components/streamers/streamer-form.tsx:110
+#: src/components/streamers/streamer-form.tsx:114
 #: src/hooks/use-edit-streamer.ts:111
 msgid "Name autofilled successfully"
 msgstr "名称自动填充成功"
@@ -3545,7 +3545,7 @@ msgstr "新预设名称"
 msgid "New Template Name"
 msgstr "新模板名称"
 
-#: src/components/streamers/streamer-form.tsx:232
+#: src/components/streamers/streamer-form.tsx:233
 msgid "Next"
 msgstr "下一步"
 
@@ -3691,8 +3691,8 @@ msgstr "未发现处理管道 DAG。"
 msgid "No pipeline jobs yet"
 msgstr "暂无处理任务"
 
-#: src/components/streamers/streamer-form.tsx:149
-#: src/components/streamers/streamer-form.tsx:174
+#: src/components/streamers/streamer-form.tsx:150
+#: src/components/streamers/streamer-form.tsx:175
 msgid "No platform configurations found. Please create one first."
 msgstr "未找到平台配置，请先创建。"
 
@@ -3775,7 +3775,7 @@ msgstr "暂无工作流"
 msgid "None"
 msgstr "无"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:187
+#: src/components/streamers/config/streamer-general-settings.tsx:192
 msgid "None (Default)"
 msgstr "无（默认）"
 
@@ -3784,8 +3784,8 @@ msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:643
-#: src/components/streamers/config/streamer-general-settings.tsx:225
-#: src/components/streamers/edit/streamer-meta-form.tsx:202
+#: src/components/streamers/config/streamer-general-settings.tsx:230
+#: src/components/streamers/edit/streamer-meta-form.tsx:205
 msgid "Normal"
 msgstr "正常"
 
@@ -4285,7 +4285,7 @@ msgstr "占位符"
 msgid "Platform"
 msgstr "平台"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:139
+#: src/components/streamers/config/streamer-general-settings.tsx:144
 msgid "Platform Configuration"
 msgstr "平台配置"
 
@@ -4507,8 +4507,8 @@ msgstr "优先选择特定画质（不区分大小写）。按 Enter 添加。"
 msgid "Prioritize specific streaming protocols. Press Enter to add."
 msgstr "优先选择特定流媒体协议。按 Enter 添加。"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:212
-#: src/components/streamers/edit/streamer-meta-form.tsx:189
+#: src/components/streamers/config/streamer-general-settings.tsx:217
+#: src/components/streamers/edit/streamer-meta-form.tsx:192
 msgid "Priority"
 msgstr "优先级"
 
@@ -5152,7 +5152,7 @@ msgstr "选择行为"
 msgid "Select category"
 msgstr "选择类别"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:147
+#: src/components/streamers/config/streamer-general-settings.tsx:152
 msgid "Select config"
 msgstr "选择配置"
 
@@ -5168,12 +5168,12 @@ msgstr "选择登录类型"
 msgid "Select operation"
 msgstr "选择操作"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:217
-#: src/components/streamers/edit/streamer-meta-form.tsx:194
+#: src/components/streamers/config/streamer-general-settings.tsx:222
+#: src/components/streamers/edit/streamer-meta-form.tsx:197
 msgid "Select priority"
 msgstr "选择优先级"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:182
+#: src/components/streamers/config/streamer-general-settings.tsx:187
 msgid "Select template"
 msgstr "选择模板"
 
@@ -5391,7 +5391,7 @@ msgstr "空间节省"
 msgid "Specific"
 msgstr "特定"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:159
+#: src/components/streamers/config/streamer-general-settings.tsx:164
 msgid "Specific settings for the platform."
 msgstr "平台的特定设置。"
 
@@ -5432,7 +5432,7 @@ msgstr "标准"
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:253
+#: src/components/streamers/config/streamer-general-settings.tsx:258
 msgid "Start checking this streamer immediately."
 msgstr "立即开始检查此主播。"
 
@@ -5502,7 +5502,7 @@ msgstr "存储"
 msgid "Stream Archive"
 msgstr "直播归档"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:51
+#: src/components/streamers/config/streamer-general-settings.tsx:56
 msgid "Stream Details"
 msgstr "流详情"
 
@@ -5545,7 +5545,7 @@ msgstr "主播创建成功"
 msgid "Streamer deleted"
 msgstr "主播已删除"
 
-#: src/components/streamers/edit/streamer-meta-form.tsx:88
+#: src/components/streamers/edit/streamer-meta-form.tsx:93
 msgid "Streamer Details"
 msgstr "主播详情"
 
@@ -5746,7 +5746,7 @@ msgstr "需要 Telegram 桌面版数据"
 msgid "Telegram Desktop Directory"
 msgstr "Telegram 桌面版目录"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:172
+#: src/components/streamers/config/streamer-general-settings.tsx:177
 msgid "Template"
 msgstr "模板"
 
@@ -5808,7 +5808,7 @@ msgstr "配置已成功处理。以下是更改摘要："
 msgid "The configuration matches existing data"
 msgstr "配置与现有数据一致"
 
-#: src/components/streamers/config/streamer-general-settings.tsx:72
+#: src/components/streamers/config/streamer-general-settings.tsx:77
 msgid "The direct link to the channel or stream."
 msgstr "频道或直播流的直接链接。"
 
@@ -6233,8 +6233,8 @@ msgid "Uptime"
 msgstr "运行时间"
 
 #: src/components/notifications/channel-card.tsx:104
-#: src/components/streamers/config/streamer-general-settings.tsx:59
-#: src/components/streamers/edit/streamer-meta-form.tsx:109
+#: src/components/streamers/config/streamer-general-settings.tsx:64
+#: src/components/streamers/edit/streamer-meta-form.tsx:114
 msgid "URL"
 msgstr "URL"
 

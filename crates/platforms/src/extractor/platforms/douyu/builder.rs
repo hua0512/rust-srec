@@ -159,23 +159,14 @@ impl Douyu {
     }
 
     pub(crate) async fn get_web_response(&self) -> Result<String, ExtractorError> {
-        let response = self
-            .extractor
-            .client
-            .get(&self.extractor.url)
-            .send()
-            .await?;
+        let response = self.extractor.get(&self.extractor.url).send().await?;
         let body = response.text().await.map_err(ExtractorError::from)?;
         Ok(body)
     }
 
     pub(crate) async fn get_room_info(&self, rid: u64) -> Result<String, ExtractorError> {
-        let response = self
-            .extractor
-            .client
-            .get(format!("https://open.douyucdn.cn/api/RoomApi/room/{rid}"))
-            .send()
-            .await?;
+        let url = format!("https://open.douyucdn.cn/api/RoomApi/room/{rid}");
+        let response = self.extractor.get(&url).send().await?;
         let body = response.text().await.map_err(ExtractorError::from)?;
         Ok(body)
     }

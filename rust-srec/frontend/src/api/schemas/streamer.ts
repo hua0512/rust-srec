@@ -23,7 +23,7 @@ export const StreamerStateSchema = z.enum([
   'DISABLED',
 ]);
 
-// Streamer config overrides
+// Streamer config overrides - with preprocessors for API parsing
 export const StreamerSpecificConfigSchema = z.object({
   // Use z.preprocess for all complex fields that might come as JSON strings
   stream_selection_config: z
@@ -136,10 +136,33 @@ export const StreamerSpecificConfigSchema = z.object({
     .optional(),
 });
 
+// Form-specific schema without preprocessors for proper type inference with react-hook-form
+export const StreamerSpecificConfigFormSchema = z.object({
+  stream_selection_config:
+    StreamSelectionConfigObjectSchema.nullable().optional(),
+  proxy_config: z.any().nullable().optional(),
+  download_retry_policy: DownloadRetryPolicyObjectSchema.nullable().optional(),
+  danmu_sampling_config: DanmuSamplingConfigObjectSchema.nullable().optional(),
+  event_hooks: EventHooksSchema.nullable().optional(),
+  pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  output_folder: z.string().nullable().optional(),
+  output_filename_template: z.string().nullable().optional(),
+  output_file_format: z.string().nullable().optional(),
+  min_segment_size_bytes: z.number().nullable().optional(),
+  max_download_duration_secs: z.number().nullable().optional(),
+  max_part_size_bytes: z.number().nullable().optional(),
+  record_danmu: z.boolean().nullable().optional(),
+  cookies: z.string().nullable().optional(),
+  download_engine: z.string().nullable().optional(),
+  engines_override: z.string().nullable().optional(),
+});
+
 export const StreamerSchema = z.object({
   id: z.string(),
   name: z.string(),
-  url: z.string(),
+  url: z.url(),
   avatar_url: z.string().nullable().optional(),
   platform_config_id: z.string(),
   template_id: z.string().nullable().optional(),
@@ -157,17 +180,26 @@ export const StreamerSchema = z.object({
 
 export const CreateStreamerSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  url: z.preprocess(
-    (val) => (typeof val === 'string' ? val.trim() : val),
-    z.url('Invalid URL'),
-  ),
+  url: z.url('Invalid URL'),
   platform_config_id: z.string().min(1, 'Platform configuration is required'),
   template_id: z.string().nullable().optional(),
   priority: PrioritySchema.optional(),
-  enabled: z.boolean().default(true),
+  enabled: z.boolean(),
   streamer_specific_config: StreamerSpecificConfigSchema.nullable().optional(),
 });
 
 export const UpdateStreamerSchema = CreateStreamerSchema.partial();
-export const StreamerFormSchema = CreateStreamerSchema;
+
+// Form schema without preprocessors for proper type inference with react-hook-form
+export const StreamerFormSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  url: z.url('Invalid URL'),
+  platform_config_id: z.string().min(1, 'Platform configuration is required'),
+  template_id: z.string().nullable().optional(),
+  priority: PrioritySchema.optional(),
+  enabled: z.boolean(),
+  streamer_specific_config:
+    StreamerSpecificConfigFormSchema.nullable().optional(),
+});
+
 export type StreamerFormValues = z.infer<typeof StreamerFormSchema>;

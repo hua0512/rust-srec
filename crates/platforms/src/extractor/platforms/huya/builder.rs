@@ -73,7 +73,7 @@ impl Huya {
         }
 
         let force_origin_quality =
-            parse_bool_from_extras(extras.as_ref(), "force_origin_quality", true);
+            parse_bool_from_extras(extras.as_ref(), "force_origin_quality", false);
         let use_wup = parse_bool_from_extras(extras.as_ref(), "use_wup", false);
         let use_wup_v2 = parse_bool_from_extras(extras.as_ref(), "use_wup_v2", true);
 
