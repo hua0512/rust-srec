@@ -4,6 +4,7 @@ pub mod factory;
 pub mod platform_configs;
 pub mod platform_extractor;
 pub mod platforms;
+pub mod streamlink_extractor;
 pub mod utils;
 
 pub use default::{

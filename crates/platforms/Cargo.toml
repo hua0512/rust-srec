@@ -15,6 +15,7 @@ tokio = { workspace = true, features = [
     "io-util",
     "macros",
     "fs",
+    "process",
 ] }
 reqwest = { workspace = true, features = [
     "json",

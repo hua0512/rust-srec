@@ -362,6 +362,9 @@ pub struct DouyuEncryptionData {
     pub rand_str: String,
     /// Number of MD5 iterations
     pub enc_time: u32,
+    /// Server-provided expiration timestamp (unix seconds). Some responses include this.
+    #[serde(default)]
+    pub expire_at: u64,
     /// Encryption key
     pub key: String,
     /// Whether this is a special key (affects salt generation)
@@ -400,7 +403,23 @@ impl CachedEncryptionKey {
 
     /// Creates a new cached key with 24-hour expiration.
     pub fn new(data: DouyuEncryptionData, user_agent: String) -> Self {
-        Self::new_with_ttl(data, user_agent, 86400)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Prefer server-provided expire_at when present/valid; otherwise fallback to 24h TTL.
+        let expire_at = if data.expire_at > now {
+            data.expire_at
+        } else {
+            now + 86400
+        };
+
+        Self {
+            data,
+            expire_at,
+            user_agent,
+        }
     }
 
     /// Checks if the key is still valid

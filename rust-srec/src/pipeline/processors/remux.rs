@@ -283,6 +283,18 @@ impl RemuxProcessor {
         }
     }
 
+    /// Map user-friendly format names to FFmpeg's internal format names.
+    fn normalize_format(format: &str) -> &str {
+        match format.to_ascii_lowercase().as_str() {
+            "mkv" => "matroska",
+            "ts" | "m2ts" | "mts" => "mpegts",
+            "mp4" | "m4v" => "mp4",
+            "ogg" | "ogv" => "ogg",
+            "wmv" | "asf" => "asf",
+            _ => format,
+        }
+    }
+
     /// Build FFmpeg command arguments from config.
     fn build_args(&self, input_path: &str, config: &RemuxConfig, output_path: &str) -> Vec<String> {
         let mut args = Vec::new();
@@ -384,7 +396,8 @@ impl RemuxProcessor {
 
         // Output format
         if let Some(ref format) = config.format {
-            args.extend(["-f".to_string(), format.clone()]);
+            let normalized = Self::normalize_format(format);
+            args.extend(["-f".to_string(), normalized.to_string()]);
         }
 
         // Fast start for MP4-family containers only (moves moov atom to beginning).

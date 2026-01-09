@@ -1690,7 +1690,23 @@ impl ServiceContainer {
                 let stream_format = best_stream.stream_format.as_str();
                 let media_format = best_stream.media_format.as_str();
 
-                let headers = media_headers.as_ref().cloned().unwrap_or_default();
+                let mut headers = media_headers.as_ref().cloned().unwrap_or_default();
+
+                // Merge per-stream headers (e.g., Douyu hs-h5 Host override).
+                if let Some(extras) = best_stream.extras.as_ref() {
+                    if let Some(extra_headers) = extras.get("headers").and_then(|v| v.as_object()) {
+                        for (k, v) in extra_headers {
+                            if let Some(v) = v.as_str() {
+                                headers.insert(k.clone(), v.to_string());
+                            }
+                        }
+                    }
+
+                    // Backward-compat: some extractors use a flat host_header field.
+                    if let Some(host_header) = extras.get("host_header").and_then(|v| v.as_str()) {
+                        headers.insert("Host".to_string(), host_header.to_string());
+                    }
+                }
 
                 if !headers.is_empty() {
                     debug!(
