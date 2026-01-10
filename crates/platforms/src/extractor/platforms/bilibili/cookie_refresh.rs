@@ -12,7 +12,6 @@ use rsa::rand_core::OsRng;
 use rsa::{Oaep, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 use super::cookie_utils::{
@@ -23,8 +22,8 @@ use super::cookie_utils::{
 const BILIBILI_PUBKEY_PEM: &str = r#"-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDLgd2OAkcGVtoE3ThUREbio0Eg
 Uc/prcajMKXvkCKFCWhJYJcLkcM2DKKcSeFpD/j6Boy538YXnR6VhcuUJOhH2x71
-nzPjfdTcqMz7djHKETVGvqCAWpBgFxc7SqG8TT64e/JNxB3CZOSeA3vPkKfHgGVz
-+p7qO3sTPIi8bzxFxQIDAQAB
+nzPjfdTcqMz7djHum0qSZA0AyCBDABUqCrfNgCiJ00Ra7GmRj+YCK1NJEuewlb40
+JNrRuoEUXpabUzGB8QIDAQAB
 -----END PUBLIC KEY-----
 "#;
 
@@ -160,14 +159,11 @@ pub async fn refresh_cookies(
     let bili_jct = extract_cookie_value(cookies, "bili_jct")
         .ok_or(CookieRefreshError::MissingCookie("bili_jct"))?;
 
-    // Step 1: Generate CorrespondPath
-    let timestamp_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+    // Step 1: Generate CorrespondPath using current timestamp
+    let timestamp_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| CookieRefreshError::Internal("System time error".to_string()))?
         .as_millis() as u64;
-
-    // wait some time
-    std::thread::sleep(std::time::Duration::from_millis(100));
 
     let correspond_path = generate_correspond_path(timestamp_ms)?;
 
@@ -181,13 +177,24 @@ pub async fn refresh_cookies(
         .send()
         .await?;
 
+    let status = correspond_response.status();
     let html = correspond_response
         .text()
         .await
         .map_err(|e| CookieRefreshError::Parse(e.to_string()))?;
 
-    let refresh_csrf = extract_refresh_csrf(&html)
-        .ok_or_else(|| CookieRefreshError::Parse("Failed to extract refresh_csrf".to_string()))?;
+    let refresh_csrf = extract_refresh_csrf(&html).ok_or_else(|| {
+        // Log more details to help diagnose the issue
+        let preview = if html.len() > 500 {
+            format!("{}...(truncated)", &html[..500])
+        } else {
+            html.clone()
+        };
+        CookieRefreshError::Parse(format!(
+            "Failed to extract refresh_csrf (HTTP status: {}, response preview: {})",
+            status, preview
+        ))
+    })?;
 
     // Step 3: Perform refresh
     let refresh_params = [
@@ -209,19 +216,13 @@ pub async fn refresh_cookies(
     // Extract new cookies from Set-Cookie headers
     let new_cookies_map = parse_set_cookies(refresh_response.headers());
 
-    let new_sessdata = new_cookies_map.get("SESSDATA").ok_or_else(|| {
-        CookieRefreshError::RefreshFailed("Missing SESSDATA in response".to_string())
-    })?;
-    let new_bili_jct = new_cookies_map.get("bili_jct").ok_or_else(|| {
-        CookieRefreshError::RefreshFailed("Missing bili_jct in response".to_string())
-    })?;
-
-    // Parse response body for new refresh_token
+    // Parse response body for API result
     let refresh_body: serde_json::Value = refresh_response
         .json()
         .await
         .map_err(|e| CookieRefreshError::Parse(e.to_string()))?;
 
+    // Check API response code first
     let code = refresh_body
         .get("code")
         .and_then(|c| c.as_i64())
@@ -236,6 +237,21 @@ pub async fn refresh_cookies(
             code, message
         )));
     }
+
+    // Extract new cookies
+    let new_sessdata = new_cookies_map.get("SESSDATA").ok_or_else(|| {
+        CookieRefreshError::RefreshFailed(format!(
+            "Missing SESSDATA in response (received cookies: {:?}, body: {})",
+            new_cookies_map.keys().collect::<Vec<_>>(),
+            refresh_body
+        ))
+    })?;
+    let new_bili_jct = new_cookies_map.get("bili_jct").ok_or_else(|| {
+        CookieRefreshError::RefreshFailed(format!(
+            "Missing bili_jct in response (received cookies: {:?})",
+            new_cookies_map.keys().collect::<Vec<_>>()
+        ))
+    })?;
 
     let new_refresh_token = refresh_body
         .get("data")
