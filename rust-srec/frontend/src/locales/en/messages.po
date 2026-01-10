@@ -14,7 +14,7 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. placeholder {0}: pipeline.session_id.substring(0, 8)
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:275
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:253
 msgid " - Session: {0}"
 msgstr " - Session: {0}"
 
@@ -52,7 +52,7 @@ msgid "(Preserve source)"
 msgstr "(Preserve source)"
 
 #. placeholder {0}: pipeline.completed_steps
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:294
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:272
 msgid "{0, plural, one {# done} other {# done}}"
 msgstr "{0, plural, one {# done} other {# done}}"
 
@@ -62,7 +62,7 @@ msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, one {# Error} other {# Errors}}"
 
 #. placeholder {0}: pipeline.failed_steps
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:305
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:283
 msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, one {# failed} other {# failed}}"
 
@@ -73,8 +73,8 @@ msgstr "{0, plural, one {# Line} other {# Lines}}"
 
 #. placeholder {0}: pipeline.total_steps
 #. placeholder {0}: steps.length
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:284
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:334
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:262
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:312
 #: src/components/pipeline/workflows/workflow-card.tsx:149
 msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, one {# step} other {# steps}}"
@@ -85,7 +85,7 @@ msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, one {# Warning} other {# Warnings}}"
 
 #. placeholder {0}: step.outputs.length
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:535
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:483
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, one {file} other {files}}"
 
@@ -188,7 +188,7 @@ msgstr "Active Days"
 msgid "Active Download"
 msgstr "Active Download"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:284
+#: src/routes/_authed/_dashboard/dashboard.tsx:292
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
@@ -358,7 +358,7 @@ msgid "Alerts when disk space is running low."
 msgstr "Alerts when disk space is running low."
 
 #: src/components/pipeline/workflows/step-library.tsx:291
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:68
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:198
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:277
 #: src/routes/_authed/_dashboard/sessions/index.tsx:186
@@ -577,7 +577,7 @@ msgstr "available"
 msgid "Avatar URL (Optional)"
 msgstr "Avatar URL (Optional)"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:294
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:408
 msgid "Avg. Duration"
 msgstr "Avg. Duration"
 
@@ -596,7 +596,7 @@ msgstr "Back to Details"
 msgid "Back to Jobs"
 msgstr "Back to Jobs"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:224
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:172
 msgid "Back to Pipeline Jobs"
 msgstr "Back to Pipeline Jobs"
 
@@ -720,9 +720,9 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/notifications/channel-card.tsx:186
 #: src/components/notifications/channel-form.tsx:358
 #: src/components/notifications/subscription-manager.tsx:436
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:193
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:216
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:253
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:171
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:194
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:231
 #: src/components/pipeline/presets/preset-card.tsx:204
 #: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:196
@@ -737,25 +737,23 @@ msgstr "Cancel"
 msgid "Cancel Execution"
 msgstr "Cancel Execution"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:303
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:251
 msgid "Cancel Pipeline"
 msgstr "Cancel Pipeline"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:199
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:177
 msgid "Cancel Pipeline?"
 msgstr "Cancel Pipeline?"
 
 #: src/components/pipeline/dag-graph-view.tsx:380
 #: src/components/streamers/card/use-streamer-status.tsx:36
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:276
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:515
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:73
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:463
 msgid "Cancelled"
 msgstr "Cancelled"
 
 #. placeholder {0}: result.cancelled_steps
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:142
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:158
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:90
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:243
 msgid "Cancelled {0} steps in pipeline"
 msgstr "Cancelled {0} steps in pipeline"
 
@@ -936,14 +934,14 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
 #: src/components/pipeline/dag-graph-view.tsx:376
-#: src/routes/_authed/_dashboard/dashboard.tsx:256
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:272
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:346
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:511
+#: src/routes/_authed/_dashboard/dashboard.tsx:260
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:220
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:294
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:459
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:327
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:640
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:71
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:280
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:106
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:394
 msgid "Completed"
 msgstr "Completed"
 
@@ -1171,7 +1169,7 @@ msgstr "CPU Usage"
 
 #: src/components/config/templates/template-editor.tsx:211
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:138
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:254
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:368
 msgid "Create"
 msgstr "Create"
 
@@ -1233,7 +1231,7 @@ msgstr "Create New Preset"
 msgid "Create New Workflow"
 msgstr "Create New Workflow"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:251
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:365
 msgid "Create Pipeline"
 msgstr "Create Pipeline"
 
@@ -1375,7 +1373,7 @@ msgstr "Customize specific engine settings for this template."
 msgid "DAG Configuration"
 msgstr "DAG Configuration"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:365
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:313
 msgid "DAG Graph"
 msgstr "DAG Graph"
 
@@ -1466,7 +1464,7 @@ msgid "Define sequences of processing steps for your recordings"
 msgstr "Define sequences of processing steps for your recordings"
 
 #: src/components/health/health-status-badge.tsx:53
-#: src/routes/_authed/_dashboard/dashboard.tsx:503
+#: src/routes/_authed/_dashboard/dashboard.tsx:537
 msgid "Degraded"
 msgstr "Degraded"
 
@@ -1480,8 +1478,8 @@ msgstr "Delays, proxy, and retention policies."
 #: src/components/filters/FilterCard.tsx:316
 #: src/components/notifications/channel-card.tsx:169
 #: src/components/notifications/channel-card.tsx:192
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:235
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:259
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:213
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:237
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
 #: src/components/pipeline/presets/preset-card.tsx:187
 #: src/components/pipeline/presets/preset-card.tsx:210
@@ -1514,7 +1512,7 @@ msgstr "Delete Job"
 msgid "Delete original file after successful remux"
 msgstr "Delete original file after successful remux"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:241
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:219
 msgid "Delete Pipeline?"
 msgstr "Delete Pipeline?"
 
@@ -1978,7 +1976,7 @@ msgstr "Environment Variables"
 #: src/routes/_authed/_dashboard/config/engines/index.tsx:34
 #: src/routes/_authed/_dashboard/config/platforms/index.tsx:58
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:107
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:196
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:310
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:142
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:227
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:140
@@ -1995,7 +1993,7 @@ msgstr "Error Details"
 msgid "Error Loading Job"
 msgstr "Error Loading Job"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:176
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:124
 msgid "Error Loading Pipeline"
 msgstr "Error Loading Pipeline"
 
@@ -2130,16 +2128,16 @@ msgid "Extract MP3"
 msgstr "Extract MP3"
 
 #: src/components/pipeline/dag-graph-view.tsx:378
-#: src/routes/_authed/_dashboard/dashboard.tsx:264
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:274
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:513
+#: src/routes/_authed/_dashboard/dashboard.tsx:270
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:222
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:461
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:329
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:72
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:287
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:107
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:401
 msgid "Failed"
 msgstr "Failed"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:131
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:79
 msgid "Failed steps retry initiated"
 msgstr "Failed steps retry initiated"
 
@@ -2152,8 +2150,8 @@ msgstr "Failed to autofill name"
 msgid "Failed to cancel job"
 msgstr "Failed to cancel job"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:148
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:168
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:96
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:253
 msgid "Failed to cancel pipeline"
 msgstr "Failed to cancel pipeline"
 
@@ -2219,7 +2217,7 @@ msgstr "Failed to delete filter"
 msgid "Failed to delete job"
 msgstr "Failed to delete job"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:180
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:265
 msgid "Failed to delete pipeline"
 msgstr "Failed to delete pipeline"
 
@@ -2270,7 +2268,7 @@ msgid "Failed to load engines: {0}"
 msgstr "Failed to load engines: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:199
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:313
 msgid "Failed to load jobs: {0}"
 msgstr "Failed to load jobs: {0}"
 
@@ -2307,11 +2305,15 @@ msgstr "Failed to load workflows: {0}"
 msgid "Failed to refresh credentials"
 msgstr "Failed to refresh credentials"
 
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:275
+msgid "Failed to retry all failed pipelines"
+msgstr "Failed to retry all failed pipelines"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:191
 msgid "Failed to retry job"
 msgstr "Failed to retry job"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:136
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:84
 msgid "Failed to retry steps"
 msgstr "Failed to retry steps"
 
@@ -2729,7 +2731,7 @@ msgid "Health"
 msgstr "Health"
 
 #: src/components/health/health-status-badge.tsx:40
-#: src/routes/_authed/_dashboard/dashboard.tsx:501
+#: src/routes/_authed/_dashboard/dashboard.tsx:535
 msgid "Healthy"
 msgstr "Healthy"
 
@@ -2950,7 +2952,9 @@ msgstr "Inspecting"
 msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
 msgstr "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
 
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:224
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:331
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:108
 msgid "Interrupted"
 msgstr "Interrupted"
 
@@ -3016,7 +3020,7 @@ msgstr "Job retry initiated"
 msgid "Jobs"
 msgstr "Jobs"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:410
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:499
 msgid "Jobs will appear here when recordings are processed."
 msgstr "Jobs will appear here when recordings are processed."
 
@@ -3036,7 +3040,7 @@ msgstr "JSON array of all outputs"
 msgid "Keep directory structure"
 msgstr "Keep directory structure"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:210
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:188
 msgid "Keep Running"
 msgstr "Keep Running"
 
@@ -3435,7 +3439,7 @@ msgstr "Modify the parameters for this processing step."
 msgid "Module Log Levels"
 msgstr "Module Log Levels"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:222
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:336
 msgid "Monitor and manage processing jobs"
 msgstr "Monitor and manage processing jobs"
 
@@ -3549,7 +3553,7 @@ msgstr "New Template Name"
 msgid "Next"
 msgstr "Next"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:338
+#: src/routes/_authed/_dashboard/dashboard.tsx:346
 msgid "No active recordings"
 msgstr "No active recordings"
 
@@ -3622,7 +3626,7 @@ msgstr "No input paths"
 msgid "No issues detected"
 msgstr "No issues detected"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:401
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:490
 msgid "No jobs found"
 msgstr "No jobs found"
 
@@ -3687,7 +3691,7 @@ msgstr "No overrides configured"
 msgid "No pipeline DAGs found."
 msgstr "No pipeline DAGs found."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:403
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:492
 msgid "No pipeline jobs yet"
 msgstr "No pipeline jobs yet"
 
@@ -3789,7 +3793,7 @@ msgstr "None (Strip Audio)"
 msgid "Normal"
 msgstr "Normal"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:378
+#: src/routes/_authed/_dashboard/dashboard.tsx:386
 msgid "Not available"
 msgstr "Not available"
 
@@ -3901,7 +3905,7 @@ msgstr "Only supported for MP4/MOV/M4V"
 #: src/components/config/platforms/platform-card.tsx:83
 #: src/components/config/templates/template-card.tsx:110
 #: src/components/notifications/channel-card.tsx:148
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:169
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:147
 #: src/components/pipeline/outputs/output-card.tsx:128
 #: src/components/pipeline/presets/preset-card.tsx:168
 #: src/components/pipeline/workflows/workflow-card.tsx:165
@@ -4000,7 +4004,7 @@ msgstr "Output Settings"
 #: src/components/sessions/overview-tab.tsx:118
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:89
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:528
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:476
 msgid "Outputs"
 msgstr "Outputs"
 
@@ -4159,11 +4163,11 @@ msgid "paused"
 msgstr "paused"
 
 #: src/components/pipeline/dag-graph-view.tsx:372
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:268
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:507
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:216
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:455
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:323
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:69
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:265
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:104
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:379
 msgid "Pending"
 msgstr "Pending"
 
@@ -4175,7 +4179,7 @@ msgstr "Pending Jobs"
 msgid "Per Extractor"
 msgstr "Per Extractor"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:425
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:514
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:308
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:399
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:282
@@ -4215,19 +4219,19 @@ msgstr "Pipeline"
 msgid "Pipeline Configuration"
 msgstr "Pipeline Configuration"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:176
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:261
 msgid "Pipeline deleted successfully"
 msgstr "Pipeline deleted successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:254
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:202
 msgid "Pipeline Execution"
 msgstr "Pipeline Execution"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:326
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:304
 msgid "Pipeline has failed jobs. Click to view details."
 msgstr "Pipeline has failed jobs. Click to view details."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:165
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:250
 msgid "Pipeline is already completed or cancelled"
 msgstr "Pipeline is already completed or cancelled"
 
@@ -4244,7 +4248,7 @@ msgid "Pipeline job created successfully"
 msgstr "Pipeline job created successfully"
 
 #: src/components/sessions/jobs-tab.tsx:28
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:219
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:333
 msgid "Pipeline Jobs"
 msgstr "Pipeline Jobs"
 
@@ -4273,7 +4277,7 @@ msgstr "Pipeline Statistics"
 msgid "Pipeline Structure"
 msgstr "Pipeline Structure"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:242
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:356
 msgid "pipelines"
 msgstr "pipelines"
 
@@ -4526,12 +4530,12 @@ msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "Process video and extract podcast audio in parallel, then upload both."
 
 #: src/components/pipeline/dag-graph-view.tsx:374
-#: src/routes/_authed/_dashboard/dashboard.tsx:248
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:270
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:509
+#: src/routes/_authed/_dashboard/dashboard.tsx:250
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:218
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:457
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:325
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:70
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:271
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:105
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:385
 msgid "Processing"
 msgstr "Processing"
 
@@ -4551,11 +4555,11 @@ msgstr "Processor"
 msgid "Processor is required"
 msgstr "Processor is required"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:334
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:282
 msgid "Progress"
 msgstr "Progress"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:317
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:295
 msgid "Progress:"
 msgstr "Progress:"
 
@@ -4857,11 +4861,15 @@ msgstr "Retention Period"
 msgid "Retries for locked files"
 msgstr "Retries for locked files"
 
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:628
+msgid "Retry All Failed"
+msgstr "Retry All Failed"
+
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:78
 msgid "Retry Delay (ms)"
 msgstr "Retry Delay (ms)"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:318
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:266
 msgid "Retry Failed Steps"
 msgstr "Retry Failed Steps"
 
@@ -4874,7 +4882,7 @@ msgstr "Retry Job"
 msgid "Retry Policy"
 msgstr "Retry Policy"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:185
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:133
 msgid "Return Previous Page"
 msgstr "Return Previous Page"
 
@@ -5063,7 +5071,7 @@ msgstr "Search engines..."
 msgid "Search events..."
 msgstr "Search events..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:231
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:345
 msgid "Search jobs..."
 msgstr "Search jobs..."
 
@@ -5457,9 +5465,9 @@ msgstr "Start QR Login"
 msgid "Start Time"
 msgstr "Start Time"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:272
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:250
 #: src/components/sessions/overview-tab.tsx:218
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:352
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:300
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:631
 msgid "Started"
 msgstr "Started"
@@ -5468,7 +5476,7 @@ msgstr "Started"
 msgid "Starting tdl process..."
 msgstr "Starting tdl process..."
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:496
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:444
 #: src/routes/_authed/_dashboard/system/health.tsx:157
 #: src/routes/_authed/_dashboard/system/health.tsx:223
 msgid "Status"
@@ -5490,7 +5498,7 @@ msgstr "Step Identifier (Unique)"
 msgid "Step Library"
 msgstr "Step Library"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:371
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:319
 msgid "Steps List"
 msgstr "Steps List"
 
@@ -5584,7 +5592,7 @@ msgstr "Streamer updated successfully"
 msgid "Streamers"
 msgstr "Streamers"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:341
+#: src/routes/_authed/_dashboard/dashboard.tsx:349
 msgid "Streamers currently live will appear here."
 msgstr "Streamers currently live will appear here."
 
@@ -5858,7 +5866,7 @@ msgstr "This step is linked to the preset <0>{presetName}</0>."
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "This streamer is currently live, but outside your configured recording schedule."
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:202
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:180
 msgid "This will cancel all pending and processing jobs in this pipeline."
 msgstr "This will cancel all pending and processing jobs in this pipeline."
 
@@ -5867,7 +5875,7 @@ msgstr "This will cancel all pending and processing jobs in this pipeline."
 msgid "This will permanently delete the notification channel \"{0}\"."
 msgstr "This will permanently delete the notification channel \"{0}\"."
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:244
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:222
 msgid "This will permanently delete the pipeline and all its associated jobs and logs. This action cannot be undone."
 msgstr "This will permanently delete the pipeline and all its associated jobs and logs. This action cannot be undone."
 
@@ -5971,7 +5979,7 @@ msgstr "Total"
 msgid "Total Size"
 msgstr "Total Size"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:340
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:288
 msgid "Total Steps"
 msgstr "Total Steps"
 
@@ -6079,7 +6087,7 @@ msgstr "Try adjusting your search or filters"
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "Try adjusting your search or filters, or add a new streamer to start monitoring."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:408
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:497
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:290
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:375
 msgid "Try adjusting your search or filters."
@@ -6145,7 +6153,7 @@ msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 
 #: src/components/health/health-status-badge.tsx:66
-#: src/routes/_authed/_dashboard/dashboard.tsx:505
+#: src/routes/_authed/_dashboard/dashboard.tsx:539
 msgid "Unhealthy"
 msgstr "Unhealthy"
 
@@ -6153,7 +6161,7 @@ msgstr "Unhealthy"
 msgid "Unix timestamp"
 msgstr "Unix timestamp"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:507
+#: src/routes/_authed/_dashboard/dashboard.tsx:541
 msgid "Unknown"
 msgstr "Unknown"
 
@@ -6186,7 +6194,7 @@ msgid "Update Channel"
 msgstr "Update Channel"
 
 #: src/components/config/global/backup-restore-card.tsx:177
-#: src/routes/_authed/_dashboard/dashboard.tsx:441
+#: src/routes/_authed/_dashboard/dashboard.tsx:449
 msgid "Updated"
 msgstr "Updated"
 
@@ -6371,7 +6379,7 @@ msgstr "Video Settings"
 msgid "View"
 msgstr "View"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:294
+#: src/routes/_authed/_dashboard/dashboard.tsx:302
 msgid "View All"
 msgstr "View All"
 
@@ -6383,11 +6391,11 @@ msgstr "View application logs in real-time. Logs are limited to the last {MAX_LO
 msgid "View Danmu"
 msgstr "View Danmu"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:550
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:498
 msgid "View Detailed Logs & Outputs"
 msgstr "View Detailed Logs & Outputs"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:181
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:159
 #: src/components/sessions/session-card.tsx:271
 #: src/routes/_authed/_dashboard/dashboard.tsx:137
 msgid "View Details"

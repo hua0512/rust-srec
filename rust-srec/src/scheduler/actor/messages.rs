@@ -369,6 +369,15 @@ impl HysteresisState {
                 false
             }
 
+            // NotLive → NotLive (never live): Suppress redundant Offline processing.
+            // We still schedule checks, but avoid unnecessary monitor writes/events.
+            (StreamerState::NotLive, StreamerState::NotLive) if !self.was_live => {
+                tracing::debug!(
+                    "HysteresisState: NotLive → NotLive (never was live), suppressing redundant event"
+                );
+                false
+            }
+
             // Any → Live: Going live, always emit
             (_, StreamerState::Live) => {
                 tracing::debug!(
@@ -559,9 +568,23 @@ impl StreamerActorState {
         self.streamer_state = result.state;
 
         // Delegate hysteresis logic to HysteresisState
-        let should_emit =
+        let mut should_emit =
             self.hysteresis
                 .should_emit(prev_state, result.state, config.offline_check_count);
+
+        // If we're stuck in NotLive → NotLive and the streamer has accumulated errors,
+        // allow a one-time Offline processing to clear the error state.
+        //
+        // Guard: only when we were never live in this actor lifecycle (no grace period),
+        // to avoid ending active sessions prematurely.
+        if !should_emit
+            && prev_state == StreamerState::NotLive
+            && result.state == StreamerState::NotLive
+            && !self.hysteresis.was_live()
+            && error_count > 0
+        {
+            should_emit = true;
+        }
 
         self.last_check = Some(result);
         self.schedule_next_check(config, error_count);
@@ -772,6 +795,32 @@ mod tests {
 
         // After 3 offline checks (>= offline_check_count), hysteresis resets
         state.record_check(CheckResult::success(StreamerState::NotLive), &config, 0);
+        assert_eq!(state.hysteresis.offline_count(), 0);
+        assert!(!state.hysteresis.was_live());
+    }
+
+    #[test]
+    fn test_hysteresis_suppresses_redundant_offline_when_never_live() {
+        let mut state = StreamerActorState::default();
+        let config = StreamerConfig::default();
+
+        // NotLive → NotLive while never live: suppress monitor emission.
+        let should_emit =
+            state.record_check(CheckResult::success(StreamerState::NotLive), &config, 0);
+        assert!(!should_emit);
+        assert_eq!(state.hysteresis.offline_count(), 0);
+        assert!(!state.hysteresis.was_live());
+    }
+
+    #[test]
+    fn test_hysteresis_allows_offline_emit_to_clear_errors_when_never_live() {
+        let mut state = StreamerActorState::default();
+        let config = StreamerConfig::default();
+
+        // Even if NotLive → NotLive is redundant, allow emitting to clear accumulated errors.
+        let should_emit =
+            state.record_check(CheckResult::success(StreamerState::NotLive), &config, 1);
+        assert!(should_emit);
         assert_eq!(state.hysteresis.offline_count(), 0);
         assert!(!state.hysteresis.was_live());
     }

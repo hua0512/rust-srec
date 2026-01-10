@@ -67,7 +67,7 @@ impl DagExecutionDbModel {
                 },
                 "Failed to serialize dag_definition; storing empty object",
             ),
-            status: DagExecutionStatus::Processing.as_str().to_string(),
+            status: DagExecutionStatus::Pending.as_str().to_string(),
             streamer_id,
             session_id,
             created_at: now.clone(),
@@ -395,7 +395,7 @@ mod tests {
         assert_eq!(dag_exec.total_steps, 2);
         assert_eq!(dag_exec.completed_steps, 0);
         assert_eq!(dag_exec.failed_steps, 0);
-        assert_eq!(dag_exec.status, "PROCESSING");
+        assert_eq!(dag_exec.status, "PENDING");
         assert!(dag_exec.get_dag_definition().is_some());
     }
 

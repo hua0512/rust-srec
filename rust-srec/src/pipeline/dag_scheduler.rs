@@ -231,6 +231,11 @@ impl DagScheduler {
             root_job_ids.push(job_id);
         }
 
+        // 5. Update DAG status to PROCESSING now that jobs are queued
+        self.dag_repository
+            .update_dag_status(&dag_id, DagExecutionStatus::Processing.as_str(), None)
+            .await?;
+
         Ok(DagCreationResult {
             dag_id,
             root_job_ids,
