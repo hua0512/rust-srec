@@ -243,6 +243,8 @@ function Dashboard() {
               loading={isStatsLoading}
               color="text-yellow-500"
               bg="bg-yellow-500/10"
+              href="/pipeline/jobs"
+              search={{ status: 'PENDING' }}
             />
             <StatCard
               title={<Trans>Processing</Trans>}
@@ -251,6 +253,8 @@ function Dashboard() {
               loading={isStatsLoading}
               color="text-blue-500"
               bg="bg-blue-500/10"
+              href="/pipeline/jobs"
+              search={{ status: 'PROCESSING' }}
             />
             <StatCard
               title={<Trans>Completed</Trans>}
@@ -259,6 +263,8 @@ function Dashboard() {
               loading={isStatsLoading}
               color="text-green-500"
               bg="bg-green-500/10"
+              href="/pipeline/jobs"
+              search={{ status: 'COMPLETED' }}
             />
             <StatCard
               title={<Trans>Failed</Trans>}
@@ -267,6 +273,8 @@ function Dashboard() {
               loading={isStatsLoading}
               color="text-red-500"
               bg="bg-red-500/10"
+              href="/pipeline/jobs"
+              search={{ status: 'FAILED' }}
             />
           </div>
         </section>
@@ -455,6 +463,8 @@ function StatCard({
   loading,
   color,
   bg,
+  href,
+  search,
 }: {
   title: React.ReactNode;
   icon: any;
@@ -462,35 +472,59 @@ function StatCard({
   loading: boolean;
   color?: string;
   bg?: string;
+  href?: string;
+  search?: any;
 }) {
+  const content = (
+    <DashboardCard
+      className={cn(
+        'h-full transition-all duration-300',
+        href &&
+          'hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 cursor-pointer active:scale-[0.98]',
+      )}
+    >
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+          {title}
+        </CardTitle>
+        <div
+          className={cn(
+            'p-2 rounded-xl transition-colors ring-1 ring-inset ring-black/5',
+            bg || 'bg-muted',
+          )}
+        >
+          <Icon className={cn('h-4 w-4', color || 'text-muted-foreground')} />
+        </div>
+      </CardHeader>
+      <CardContent className="relative z-10">
+        {loading ? (
+          <Skeleton className="h-9 w-16 rounded-lg bg-muted/20" />
+        ) : (
+          <div className="text-2xl font-bold tracking-tighter text-foreground">
+            {value}
+          </div>
+        )}
+      </CardContent>
+    </DashboardCard>
+  );
+
+  if (href) {
+    return (
+      <motion.div
+        variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
+      >
+        <Link to={href} search={search}>
+          {content}
+        </Link>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
     >
-      <DashboardCard>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            {title}
-          </CardTitle>
-          <div
-            className={cn(
-              'p-2 rounded-xl transition-colors ring-1 ring-inset ring-black/5',
-              bg || 'bg-muted',
-            )}
-          >
-            <Icon className={cn('h-4 w-4', color || 'text-muted-foreground')} />
-          </div>
-        </CardHeader>
-        <CardContent className="relative z-10">
-          {loading ? (
-            <Skeleton className="h-9 w-16 rounded-lg bg-muted/20" />
-          ) : (
-            <div className="text-2xl font-bold tracking-tighter text-foreground">
-              {value}
-            </div>
-          )}
-        </CardContent>
-      </DashboardCard>
+      {content}
     </motion.div>
   );
 }

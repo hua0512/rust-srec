@@ -32,7 +32,7 @@ import {
 import { ProcessorConfigFormProps } from './common-props';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 
 type RcloneConfig = z.infer<typeof RcloneConfigSchema>;
 
@@ -88,7 +88,7 @@ export function RcloneConfigForm({
                       <SelectTrigger className="h-11 bg-background/50">
                         <div className="flex items-center gap-2">
                           <SelectValue
-                            placeholder={t(i18n)`Select operation`}
+                            placeholder={i18n._(msg`Select operation`)}
                           />
                         </div>
                       </SelectTrigger>
@@ -161,7 +161,7 @@ export function RcloneConfigForm({
                   </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder={t(i18n)`e.g. gdrive:/videos`}
+                      placeholder={i18n._(msg`e.g. gdrive:/videos`)}
                       {...field}
                       value={field.value ?? ''}
                       className="h-11 bg-background/50 font-mono text-sm"
@@ -186,7 +186,7 @@ export function RcloneConfigForm({
                     </FormLabel>
                     <FormControl>
                       <Input
-                        placeholder={t(i18n)`/path/to/rclone.conf`}
+                        placeholder={i18n._(msg`/path/to/rclone.conf`)}
                         {...field}
                         value={field.value ?? ''}
                         className="bg-background/50"
@@ -276,7 +276,7 @@ export function RcloneConfigForm({
                     <ListInput
                       value={field.value || []}
                       onChange={field.onChange}
-                      placeholder={t(i18n)`Add rclone argument`}
+                      placeholder={i18n._(msg`Add rclone argument`)}
                     />
                   </FormControl>
                   <FormDescription>

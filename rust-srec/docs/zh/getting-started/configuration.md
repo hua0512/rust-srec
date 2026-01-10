@@ -62,8 +62,8 @@ Rust-Srec 拥有强大的模块化流水线系统，可以在不同阶段添加�
 - **Paired Segment (合并对)**: 在视频和弹幕配对后运行。
 - **Session Complete (会话结束)**: 在整个录制会话结束后运行。
 
-::: info 文件名建议
-推荐使用 `{streamer}/%Y-%m-%d_{title}`。这样可以按主播分类，并按日期建立子文件夹，方便查找。
+::: info 目录组织
+将 `output_folder` 设置为 `{streamer}/%Y-%m-%d` 可按主播分类并按日期建立子文件夹。`output_filename_template` 则可使用 `%H-%M-%S_{title}` 作为文件名。
 :::
 
 ## 环境变量

@@ -406,11 +406,11 @@ pub struct TemplateResponse {
 ///
 /// # Status Values
 ///
-/// - `pending` - Job is queued and waiting to be processed
-/// - `processing` - Job is currently being executed by a worker
-/// - `completed` - Job finished successfully
-/// - `failed` - Job encountered an error during processing
-/// - `interrupted` - Job was cancelled by user or system
+/// - `PENDING` - Job is queued and waiting to be processed
+/// - `PROCESSING` - Job is currently being executed by a worker
+/// - `COMPLETED` - Job finished successfully
+/// - `FAILED` - Job encountered an error during processing
+/// - `INTERRUPTED` - Job was cancelled by user or system
 ///
 /// # State Transitions
 ///
@@ -440,7 +440,7 @@ pub enum JobStatus {
 ///     "id": "job-uuid-123",
 ///     "session_id": "session-123",
 ///     "streamer_id": "streamer-456",
-///     "status": "completed",
+///     "status": "COMPLETED",
 ///     "processor_type": "remux",
 ///     "input_path": ["/recordings/stream.flv"],
 ///     "output_path": ["/recordings/stream.mp4"],

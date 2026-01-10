@@ -16,7 +16,7 @@ pub struct HuyaConfig {
     /// Use WUP v2 (computed query params) (default: false)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub use_wup_v2: Option<bool>,
-    /// Force origin quality stream (default: true)
+    /// Force origin quality stream (default: false)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub force_origin_quality: Option<bool>,
 }

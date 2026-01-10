@@ -20,6 +20,18 @@ use super::utils::{
 use crate::Result;
 use crate::database::models::engine::StreamlinkEngineConfig;
 
+fn build_http_cookie_args(cookie_string: &str) -> Vec<String> {
+    // Streamlink expects repeated `--http-cookie name=value` arguments.
+    cookie_string
+        .split(&[';', '\n'][..])
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .filter_map(|kv| kv.split_once('=').map(|(k, v)| (k.trim(), v.trim())))
+        .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+        .flat_map(|(k, v)| ["--http-cookie".to_string(), format!("{k}={v}")])
+        .collect()
+}
+
 /// Streamlink-based download engine.
 ///
 /// Streamlink is used for platforms that require special handling
@@ -78,7 +90,14 @@ impl StreamlinkEngine {
 
         // Add cookies if configured
         if let Some(ref cookies) = config.cookies {
-            args.extend(["--http-cookie".to_string(), cookies.clone()]);
+            let parsed = build_http_cookie_args(cookies);
+            if parsed.is_empty() {
+                // Backward-compat: preserve previous behavior if parsing fails
+                // (even though Streamlink may reject it).
+                args.extend(["--http-cookie".to_string(), cookies.clone()]);
+            } else {
+                args.extend(parsed);
+            }
         }
 
         // Add headers
@@ -668,5 +687,21 @@ mod tests {
         assert_eq!(parse_time("00:00:10.50"), Some(10.5));
         assert_eq!(parse_time("01:30:00.00"), Some(5400.0));
         assert_eq!(parse_time("invalid"), None);
+    }
+
+    #[test]
+    fn test_build_http_cookie_args_splits_cookie_string() {
+        let args = build_http_cookie_args("a=1; b=2;  c=3");
+        assert_eq!(
+            args,
+            vec![
+                "--http-cookie".to_string(),
+                "a=1".to_string(),
+                "--http-cookie".to_string(),
+                "b=2".to_string(),
+                "--http-cookie".to_string(),
+                "c=3".to_string(),
+            ]
+        );
     }
 }

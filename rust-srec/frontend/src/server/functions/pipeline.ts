@@ -141,6 +141,21 @@ export const retryDagSteps = createServerFn({ method: 'POST' })
       .parse(json);
   });
 
+export const retryAllFailedPipelines = createServerFn({
+  method: 'POST',
+}).handler(async () => {
+  const json = await fetchBackend('/pipeline/dags/retry_failed', {
+    method: 'POST',
+  });
+  return z
+    .object({
+      success: z.boolean(),
+      count: z.number(),
+      message: z.string(),
+    })
+    .parse(json);
+});
+
 export const validateDagDefinition = createServerFn({ method: 'POST' })
   .inputValidator((dag: any) => dag)
   .handler(async ({ data: dag }) => {

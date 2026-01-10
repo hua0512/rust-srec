@@ -1159,6 +1159,7 @@ pub async fn extract_metadata(
     Json(request): Json<ExtractMetadataRequest>,
 ) -> ApiResult<Json<ExtractMetadataResponse>> {
     use crate::domain::value_objects::StreamerUrl;
+    use tokio::process::Command;
 
     // Validate URL format
     let url = match StreamerUrl::new(&request.url) {
@@ -1167,7 +1168,7 @@ pub async fn extract_metadata(
     };
 
     // Extract platform info
-    let platform_name = url.platform();
+    let mut platform_name = url.platform().map(|s| s.to_string());
     let channel_id = url.channel_id();
 
     // Get config service
@@ -1182,6 +1183,25 @@ pub async fn extract_metadata(
         .await
         .map_err(ApiError::from)?;
 
+    // If the URL doesn't match any built-in platform regex, try to detect whether
+    // the external `streamlink` CLI can handle it and suggest the `streamlink`
+    // pseudo-platform.
+    if platform_name.is_none() {
+        let can_handle = Command::new(
+            std::env::var("STREAMLINK_PATH").unwrap_or_else(|_| "streamlink".to_string()),
+        )
+        .arg("--can-handle-url-no-redirect")
+        .arg(&request.url)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await
+        .is_ok_and(|s| s.success());
+        if can_handle {
+            platform_name = Some("streamlink".to_string());
+        }
+    }
+
     // Filter configs based on detected platform
     // If platform is detected, only return configs for that platform
     // If not detected, return all configs (user must choose)
@@ -1189,7 +1209,7 @@ pub async fn extract_metadata(
     let valid_configs: Vec<_> = all_configs
         .into_iter()
         .filter(|c| {
-            if let Some(detected) = platform_name {
+            if let Some(detected) = platform_name.as_deref() {
                 c.platform_name.eq_ignore_ascii_case(detected)
             } else {
                 true
@@ -1221,7 +1241,7 @@ pub async fn extract_metadata(
         .collect();
 
     Ok(Json(ExtractMetadataResponse {
-        platform: platform_name.map(|s| s.to_string()),
+        platform: platform_name,
         valid_platform_configs: valid_configs,
         channel_id,
     }))

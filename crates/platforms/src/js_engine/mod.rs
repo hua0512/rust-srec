@@ -16,11 +16,18 @@
 //! })?;
 //! ```
 
+#[cfg(feature = "rquickjs")]
 mod context;
+#[cfg(feature = "rquickjs")]
 mod error;
+#[cfg(feature = "rquickjs")]
 mod manager;
 
+#[cfg(feature = "rquickjs")]
 pub use context::BROWSER_ENV_SETUP;
+#[cfg(feature = "rquickjs")]
 pub use context::JsContext;
+#[cfg(feature = "rquickjs")]
 pub use error::JsError;
+#[cfg(feature = "rquickjs")]
 pub use manager::JsEngineManager;

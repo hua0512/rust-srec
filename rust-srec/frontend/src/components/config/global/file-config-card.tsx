@@ -78,7 +78,7 @@ export const FileConfigCard = memo(({ control }: FileConfigCardProps) => {
                 </FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="{streamer}-{title}-%Y%m%d-%H%M%S"
+                    placeholder="{streamer}-%Y%m%d-%H%M%S-{title}"
                     {...field}
                   />
                 </FormControl>

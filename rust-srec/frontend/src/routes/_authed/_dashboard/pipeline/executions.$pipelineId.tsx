@@ -15,7 +15,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   ArrowLeft,
-  Clock,
   RefreshCw,
   CheckCircle2,
   XCircle,
@@ -35,11 +34,7 @@ import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { getJobPresetName } from '@/components/pipeline/presets/default-presets-i18n';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
-import {
-  type DagStep,
-  type DagStatus,
-  type DagStepStatus,
-} from '@/api/schemas';
+import { type DagStep } from '@/api/schemas';
 
 export const Route = createFileRoute(
   '/_authed/_dashboard/pipeline/executions/$pipelineId',
@@ -47,54 +42,7 @@ export const Route = createFileRoute(
   component: PipelineExecutionPage,
 });
 
-const STATUS_CONFIG: Record<
-  DagStatus | DagStepStatus,
-  {
-    icon: React.ElementType;
-    color: string;
-    badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline';
-    animate?: boolean;
-    gradient: string;
-  }
-> = {
-  PENDING: {
-    icon: Clock,
-    color: 'text-muted-foreground',
-    badgeVariant: 'secondary',
-    gradient: 'from-gray-500/20 to-gray-500/5',
-  },
-  PROCESSING: {
-    icon: RefreshCw,
-    color: 'text-blue-500',
-    badgeVariant: 'default',
-    animate: true,
-    gradient: 'from-blue-500/20 to-blue-500/5',
-  },
-  COMPLETED: {
-    icon: CheckCircle2,
-    color: 'text-emerald-500',
-    badgeVariant: 'secondary',
-    gradient: 'from-emerald-500/20 to-emerald-500/5',
-  },
-  FAILED: {
-    icon: XCircle,
-    color: 'text-red-500',
-    badgeVariant: 'destructive',
-    gradient: 'from-red-500/20 to-red-500/5',
-  },
-  CANCELLED: {
-    icon: AlertCircle,
-    color: 'text-gray-500',
-    badgeVariant: 'secondary',
-    gradient: 'from-gray-500/20 to-gray-500/5',
-  },
-  BLOCKED: {
-    icon: Clock,
-    color: 'text-muted-foreground/40',
-    badgeVariant: 'outline',
-    gradient: 'from-gray-500/10 to-gray-500/5',
-  },
-};
+import { STATUS_CONFIG } from '@/components/pipeline/status-config';
 
 function PipelineExecutionPage() {
   const { pipelineId } = Route.useParams();
@@ -243,7 +191,7 @@ function PipelineExecutionPage() {
                   <StatusIcon
                     className={cn(
                       'h-8 w-8',
-                      statusConfig.color,
+                      statusConfig.textColor,
                       statusConfig.animate && 'animate-spin',
                     )}
                   />
@@ -257,7 +205,7 @@ function PipelineExecutionPage() {
                       variant="outline"
                       className={cn(
                         'text-xs font-mono uppercase tracking-wider bg-background/50 backdrop-blur border-border/50 relative overflow-hidden',
-                        statusConfig.color,
+                        statusConfig.textColor,
                       )}
                     >
                       {overallStatus === 'PROCESSING' && (
@@ -272,8 +220,8 @@ function PipelineExecutionPage() {
                               ? t`Completed`
                               : overallStatus === 'FAILED'
                                 ? t`Failed`
-                                : overallStatus === 'CANCELLED'
-                                  ? t`Cancelled`
+                                : overallStatus === 'INTERRUPTED'
+                                  ? t`Interrupted`
                                   : overallStatus,
                       )}
                     </Badge>
@@ -458,7 +406,7 @@ function StepCard({
                 <StatusIcon
                   className={cn(
                     'h-4 w-4',
-                    jobConfig.color,
+                    jobConfig.textColor,
                     isProcessing && 'animate-spin',
                   )}
                 />
@@ -499,7 +447,7 @@ function StepCard({
                 <span
                   className={cn(
                     'text-sm font-semibold tracking-wide',
-                    jobConfig.color,
+                    jobConfig.textColor,
                   )}
                 >
                   {i18n._(

@@ -23,7 +23,7 @@ import { motion } from 'motion/react';
 import { Copy, Settings2, Terminal } from 'lucide-react';
 import { ListInput } from '@/components/ui/list-input';
 import { useLingui } from '@lingui/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 
 type CopyMoveConfig = z.infer<typeof CopyMoveConfigSchema>;
 
@@ -93,18 +93,22 @@ export function CopyMoveConfigForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Destination Path (Optional)</Trans>
+                    <Trans>Destination Directory</Trans>
                   </FormLabel>
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
                       {...field}
                       value={field.value ?? ''}
-                      placeholder="/path/to/destination"
+                      placeholder="/path/to/destination/{platform}/{streamer}/%Y-%m-%d"
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">
-                    <Trans>If empty, uses next output path in pipeline</Trans>
+                    <Trans>
+                      Supports placeholders: {'{platform}'}, {'{streamer}'},{' '}
+                      {'{title}'}, {'{streamer_id}'}, {'{session_id}'} and time
+                      tokens like %Y/%m/%d.
+                    </Trans>
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -137,7 +141,7 @@ export function CopyMoveConfigForm({
                   </div>
                   <FormControl>
                     <Switch
-                      checked={field.value}
+                      checked={field.value ?? true}
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
@@ -160,7 +164,30 @@ export function CopyMoveConfigForm({
                   </div>
                   <FormControl>
                     <Switch
-                      checked={field.value}
+                      checked={field.value ?? true}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={control}
+              name={`${prefix}overwrite` as any}
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
+                  <div className="space-y-1">
+                    <FormLabel className="text-sm font-medium">
+                      <Trans>Overwrite Existing</Trans>
+                    </FormLabel>
+                    <FormDescription className="text-xs">
+                      <Trans>Replace destination files if they exist</Trans>
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value ?? false}
                       onCheckedChange={field.onChange}
                     />
                   </FormControl>
@@ -187,7 +214,7 @@ export function CopyMoveConfigForm({
                   <ListInput
                     value={field.value || []}
                     onChange={field.onChange}
-                    placeholder={t(i18n)`Add exclude regex pattern`}
+                    placeholder={i18n._(msg`Add exclude regex pattern`)}
                   />
                 </FormControl>
                 <FormDescription className="text-[11px] ml-1">

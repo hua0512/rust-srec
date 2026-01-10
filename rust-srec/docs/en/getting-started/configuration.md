@@ -62,8 +62,8 @@ Rust-Srec features a powerful modular pipeline system where you can add custom s
 - **Paired Segment**: Runs for video/danmaku pairs.
 - **Session Complete**: Runs when the entire recording session ends.
 
-::: info Filename Optimization
-Using `{streamer}/%Y-%m-%d_{title}` is recommended as it keeps recordings organized by streamer and sub-folders by date.
+::: info Folder Organization
+Set `output_folder` to `{streamer}/%Y-%m-%d` to organize recordings by streamer with date-based subfolders. The `output_filename_template` can then use `%H-%M-%S_{title}` for the filename itself.
 :::
 
 ## Environment Variables

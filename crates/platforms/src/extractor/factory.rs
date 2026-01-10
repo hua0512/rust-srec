@@ -2,6 +2,7 @@ use std::sync::LazyLock;
 
 use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
+use super::streamlink_extractor::StreamlinkExtractor;
 use crate::extractor::platforms::{
     self, acfun::Acfun, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya,
     pandatv::PandaTV, picarto::Picarto, redbook::RedBook, tiktok::TikTok, twitcasting::Twitcasting,
@@ -126,6 +127,11 @@ impl ExtractorFactory {
                 ));
             }
         }
-        Err(ExtractorError::UnsupportedExtractor)
+
+        // Automatic fallback: try Streamlink for anything not covered by built-in extractors.
+        // If Streamlink isn't available or can't handle the URL, preserve the legacy behavior.
+        StreamlinkExtractor::new(url.to_string(), self.client.clone(), cookies, extras)
+            .map(|e| Box::new(e) as Box<dyn PlatformExtractor>)
+            .or(Err(ExtractorError::UnsupportedExtractor))
     }
 }

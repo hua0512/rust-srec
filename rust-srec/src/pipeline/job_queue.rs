@@ -126,6 +126,7 @@ pub enum QueueDepthStatus {
 
 /// Job status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum JobStatus {
     /// Job is waiting to be processed.
     Pending,
@@ -137,6 +138,18 @@ pub enum JobStatus {
     Failed,
     /// Job was interrupted.
     Interrupted,
+}
+
+impl JobStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "PENDING",
+            Self::Processing => "PROCESSING",
+            Self::Completed => "COMPLETED",
+            Self::Failed => "FAILED",
+            Self::Interrupted => "INTERRUPTED",
+        }
+    }
 }
 
 /// Log level for job execution logs.
@@ -1245,46 +1258,41 @@ impl JobQueue {
     /// Retry a failed job.
     /// Returns error if job is not in Failed status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
-        // Get the job
-        let job = self
-            .get_job(id)
-            .await?
+        if let Some(repo) = &self.job_repository {
+            repo.reset_job_for_retry(id).await?;
+
+            let _ = self.cancellation_tokens.remove(id);
+            let _ = self.persisted_log_cursor.remove(id);
+            self.progress_cache.remove(id);
+            self.jobs_cache.remove(id);
+
+            self.depth.fetch_add(1, Ordering::SeqCst);
+            self.notify.notify_one();
+
+            let updated_job = db_model_to_job(&repo.get_job(id).await?);
+            info!("Job {} retried (attempt {})", id, updated_job.retry_count);
+            return Ok(updated_job);
+        }
+
+        let mut cached_job = self
+            .jobs_cache
+            .get_mut(id)
             .ok_or_else(|| Error::not_found("Job", id))?;
 
-        // Validate job is in Failed status
-        if job.status != JobStatus::Failed {
+        if cached_job.status != JobStatus::Failed {
             return Err(Error::InvalidStateTransition {
-                from: format!("{:?}", job.status),
-                to: "Pending".to_string(),
+                from: cached_job.status.as_str().to_string(),
+                to: "PENDING".to_string(),
             });
         }
 
-        // Update database if repository is available
-        if let Some(repo) = &self.job_repository {
-            repo.reset_job_for_retry(id).await?;
-        }
-
-        // Update cache
-        let updated_job = {
-            if let Some(mut cached_job) = self.jobs_cache.get_mut(id) {
-                cached_job.status = JobStatus::Pending;
-                cached_job.started_at = None;
-                cached_job.completed_at = None;
-                cached_job.error = None;
-                cached_job.retry_count += 1;
-                cached_job.clone()
-            } else {
-                // Create from scratch if not in cache
-                let mut new_job = job.clone();
-                new_job.status = JobStatus::Pending;
-                new_job.started_at = None;
-                new_job.completed_at = None;
-                new_job.error = None;
-                new_job.retry_count += 1;
-                self.jobs_cache.insert(id.to_string(), new_job.clone());
-                new_job
-            }
-        };
+        cached_job.status = JobStatus::Pending;
+        cached_job.started_at = None;
+        cached_job.completed_at = None;
+        cached_job.error = None;
+        cached_job.retry_count += 1;
+        let updated_job = cached_job.clone();
+        drop(cached_job);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
         self.notify.notify_one();
@@ -1307,8 +1315,8 @@ impl JobQueue {
         // Validate job is not in terminal status
         if job.status == JobStatus::Completed || job.status == JobStatus::Failed {
             return Err(Error::InvalidStateTransition {
-                from: format!("{:?}", job.status),
-                to: "Interrupted".to_string(),
+                from: job.status.as_str().to_string(),
+                to: "INTERRUPTED".to_string(),
             });
         }
 
@@ -1366,8 +1374,8 @@ impl JobQueue {
             match job.status {
                 JobStatus::Pending | JobStatus::Processing => {
                     return Err(Error::InvalidStateTransition {
-                        from: format!("{:?}", job.status),
-                        to: "Deleted".to_string(),
+                        from: job.status.as_str().to_string(),
+                        to: "DELETED".to_string(),
                     });
                 }
                 _ => {} // Terminal states are fine for deletion
@@ -1389,8 +1397,8 @@ impl JobQueue {
                     match status {
                         DbJobStatus::Pending | DbJobStatus::Processing => {
                             return Err(Error::InvalidStateTransition {
-                                from: format!("{:?}", status),
-                                to: "Deleted".to_string(),
+                                from: status.as_str().to_string(),
+                                to: "DELETED".to_string(),
                             });
                         }
                         _ => {}
@@ -2046,6 +2054,18 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         "Failed to serialize job outputs; storing empty list",
     );
 
+    let state =
+        if job.streamer_name.is_some() || job.session_title.is_some() || job.platform.is_some() {
+            serde_json::json!({
+                "streamer_name": job.streamer_name.clone(),
+                "session_title": job.session_title.clone(),
+                "platform": job.platform.clone(),
+            })
+            .to_string()
+        } else {
+            "{}".to_string()
+        };
+
     // Serialize execution_info to JSON
     let execution_info_json = job.execution_info.as_ref().and_then(|info| {
         json::to_string_option_or_warn(
@@ -2063,7 +2083,7 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         job_type: job.job_type.clone(),
         status: status.as_str().to_string(),
         config: job.config.clone().unwrap_or_else(|| "{}".to_string()),
-        state: "{}".to_string(),
+        state,
         created_at: job.created_at.to_rfc3339(),
         updated_at: Utc::now().to_rfc3339(),
         input: Some(inputs_json),
@@ -2137,6 +2157,26 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         vec![output_str]
     };
 
+    let mut streamer_name = None;
+    let mut session_title = None;
+    let mut platform = None;
+    if let Ok(state) = serde_json::from_str::<serde_json::Value>(&db_job.state)
+        && let Some(obj) = state.as_object()
+    {
+        streamer_name = obj
+            .get("streamer_name")
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+        session_title = obj
+            .get("session_title")
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+        platform = obj
+            .get("platform")
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+    }
+
     Job {
         id: db_job.id.clone(),
         job_type: db_job.job_type.clone(),
@@ -2165,9 +2205,9 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         duration_secs: db_job.duration_secs,
         queue_wait_secs: db_job.queue_wait_secs,
         dag_step_execution_id: db_job.dag_step_execution_id.clone(),
-        streamer_name: None,
-        session_title: None,
-        platform: None,
+        streamer_name,
+        session_title,
+        platform,
     }
 }
 
@@ -2205,6 +2245,28 @@ mod tests {
     }
 
     #[test]
+    fn test_job_db_state_roundtrip_preserves_platform() {
+        let job = Job::new(
+            "copy_move",
+            vec!["/input.flv".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        )
+        .with_streamer_name("StreamerName".to_string())
+        .with_session_title("SessionTitle".to_string())
+        .with_platform("Twitch".to_string());
+
+        let db = job_to_db_model(&job);
+        assert!(db.state.contains("Twitch"));
+
+        let restored = db_model_to_job(&db);
+        assert_eq!(restored.platform.as_deref(), Some("Twitch"));
+        assert_eq!(restored.streamer_name.as_deref(), Some("StreamerName"));
+        assert_eq!(restored.session_title.as_deref(), Some("SessionTitle"));
+    }
+
+    #[test]
     fn test_queue_depth_status() {
         let config = JobQueueConfig {
             warning_threshold: 10,
@@ -2231,6 +2293,45 @@ mod tests {
 
         assert!(!job_id.is_empty());
         assert_eq!(queue.depth(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_retry_job_resets_failed_to_pending() {
+        let queue = JobQueue::new();
+
+        let job = Job::new(
+            "remux",
+            vec!["/input.flv".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job.id.clone();
+        queue.enqueue(job).await.unwrap();
+
+        queue.fail(&job_id, "boom").await.unwrap();
+        assert_eq!(queue.depth(), 0);
+
+        let failed = queue.get_job(&job_id).await.unwrap().unwrap();
+        assert_eq!(failed.status, JobStatus::Failed);
+        assert!(failed.completed_at.is_some());
+
+        let retried = queue.retry_job(&job_id).await.unwrap();
+        assert_eq!(retried.status, JobStatus::Pending);
+        assert_eq!(retried.retry_count, 1);
+        assert!(retried.error.is_none());
+        assert!(retried.started_at.is_none());
+        assert!(retried.completed_at.is_none());
+        assert_eq!(queue.depth(), 1);
+
+        let err = queue.retry_job(&job_id).await.unwrap_err();
+        match err {
+            Error::InvalidStateTransition { from, to } => {
+                assert_eq!(from, "PENDING");
+                assert_eq!(to, "PENDING");
+            }
+            other => panic!("Expected InvalidStateTransition, got {:?}", other),
+        }
     }
 
     // ========================================================================
@@ -2591,8 +2692,8 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             Error::InvalidStateTransition { from, to } => {
-                assert_eq!(from, "Pending");
-                assert_eq!(to, "Deleted");
+                assert_eq!(from, "PENDING");
+                assert_eq!(to, "DELETED");
             }
             _ => panic!("Expected InvalidStateTransition error"),
         }

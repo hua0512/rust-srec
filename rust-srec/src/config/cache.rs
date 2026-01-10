@@ -318,7 +318,7 @@ mod tests {
         let config = MergedConfig::builder()
             .with_global(
                 "/app/output".to_string(),
-                "{streamer}-{title}".to_string(),
+                "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
                 "flv".to_string(),
                 1024,
                 0,

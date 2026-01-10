@@ -148,6 +148,7 @@ pub struct MessageResponse {
         crate::api::routes::pipeline::preview_pipeline_preset,
         // DAG endpoints
         crate::api::routes::pipeline::list_dags,
+        crate::api::routes::pipeline::retry_all_failed_dags,
         crate::api::routes::pipeline::get_dag_status,
         crate::api::routes::pipeline::get_dag_graph,
         crate::api::routes::pipeline::get_dag_stats,

@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import { UseFormReturn, useWatch } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -44,6 +44,11 @@ export function StreamerGeneralSettings({
   onAutofillName,
   isAutofilling = false,
 }: StreamerGeneralSettingsProps) {
+  const url = useWatch({
+    control: form.control,
+    name: 'url',
+  });
+
   return (
     <div className="space-y-6">
       <div className="space-y-4">
@@ -104,7 +109,7 @@ export function StreamerGeneralSettings({
                             size="icon"
                             className="h-10 w-10 shrink-0 bg-background/50"
                             onClick={onAutofillName}
-                            disabled={isAutofilling || !form.getValues('url')}
+                            disabled={isAutofilling || !url}
                           >
                             {isAutofilling ? (
                               <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -139,10 +144,8 @@ export function StreamerGeneralSettings({
                 <Trans>Platform Configuration</Trans>
               </FormLabel>
               <Select
-                onValueChange={(val) =>
-                  field.onChange(val === 'none' ? undefined : val)
-                }
-                value={field.value ? String(field.value) : 'none'}
+                onValueChange={field.onChange}
+                value={field.value ? String(field.value) : undefined}
               >
                 <FormControl>
                   <SelectTrigger className="bg-background/50">
@@ -150,9 +153,6 @@ export function StreamerGeneralSettings({
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="none">
-                    <Trans>None (Default)</Trans>
-                  </SelectItem>
                   {platformConfigs?.map((platform) => (
                     <SelectItem key={platform.id} value={String(platform.id)}>
                       {platform.name}

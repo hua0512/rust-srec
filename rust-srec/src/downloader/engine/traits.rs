@@ -120,7 +120,7 @@ impl DownloadConfig {
         Self {
             url: url.into(),
             output_dir: output_dir.into(),
-            filename_template: "{streamer}-{title}-%Y%m%d-%H%M%S".to_string(),
+            filename_template: "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
             output_format: "flv".to_string(),
             max_segment_duration_secs: 0,
             max_segment_size_bytes: 0,

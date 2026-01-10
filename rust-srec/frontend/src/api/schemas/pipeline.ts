@@ -126,7 +126,7 @@ export const DagStatusSchema = z.enum([
   'PROCESSING',
   'COMPLETED',
   'FAILED',
-  'CANCELLED',
+  'INTERRUPTED',
 ]);
 export type DagStatus = z.infer<typeof DagStatusSchema>;
 

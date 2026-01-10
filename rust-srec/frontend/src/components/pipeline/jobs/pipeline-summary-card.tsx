@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Link } from '@tanstack/react-router';
 import {
@@ -29,10 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   MoreHorizontal,
   XCircle,
-  Clock,
-  RefreshCw,
   CheckCircle2,
-  AlertCircle,
   Timer,
   ExternalLink,
   Layers,
@@ -44,6 +42,7 @@ import { type DagSummary } from '@/api/schemas';
 
 import { formatRelativeTime } from '@/lib/date-utils';
 import { plural } from '@lingui/core/macro';
+import { STATUS_CONFIG } from '@/components/pipeline/status-config';
 
 interface PipelineSummaryCardProps {
   pipeline: DagSummary;
@@ -52,72 +51,48 @@ interface PipelineSummaryCardProps {
   onViewDetails: (pipelineId: string) => void;
 }
 
-// Helper function to format duration removed as unused
+// Custom comparison function to prevent unnecessary re-renders
+function arePropsEqual(
+  prevProps: PipelineSummaryCardProps,
+  nextProps: PipelineSummaryCardProps,
+): boolean {
+  const prevPipeline = prevProps.pipeline;
+  const nextPipeline = nextProps.pipeline;
 
-const PipelineStatus = {
-  Pending: 'pending',
-  Processing: 'processing',
-  Completed: 'completed',
-  Failed: 'failed',
-  Mixed: 'mixed',
-} as const;
-
-interface StatusConfigItem {
-  icon: React.ElementType;
-  color: string;
-  badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline';
-  animate?: boolean;
+  return (
+    prevPipeline.id === nextPipeline.id &&
+    prevPipeline.status === nextPipeline.status &&
+    prevPipeline.progress_percent === nextPipeline.progress_percent &&
+    prevPipeline.completed_steps === nextPipeline.completed_steps &&
+    prevPipeline.failed_steps === nextPipeline.failed_steps &&
+    prevPipeline.total_steps === nextPipeline.total_steps &&
+    prevPipeline.created_at === nextPipeline.created_at &&
+    prevProps.onCancelPipeline === nextProps.onCancelPipeline &&
+    prevProps.onDeletePipeline === nextProps.onDeletePipeline &&
+    prevProps.onViewDetails === nextProps.onViewDetails
+  );
 }
 
-const STATUS_CONFIG: Record<string, StatusConfigItem> = {
-  [PipelineStatus.Pending]: {
-    icon: Clock,
-    color: 'bg-muted text-muted-foreground',
-    badgeVariant: 'secondary',
-  },
-  [PipelineStatus.Processing]: {
-    icon: RefreshCw,
-    color: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-    badgeVariant: 'default',
-    animate: true,
-  },
-  [PipelineStatus.Completed]: {
-    icon: CheckCircle2,
-    color: 'bg-green-500/10 text-green-500 border-green-500/20',
-    badgeVariant: 'secondary',
-  },
-  [PipelineStatus.Failed]: {
-    icon: XCircle,
-    color: 'bg-red-500/10 text-red-500 border-red-500/20',
-    badgeVariant: 'destructive',
-  },
-  [PipelineStatus.Mixed]: {
-    icon: AlertCircle,
-    color: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-    badgeVariant: 'secondary',
-  },
-};
-
-export function PipelineSummaryCard({
+export const PipelineSummaryCard = memo(function PipelineSummaryCard({
   pipeline,
   onCancelPipeline,
   onDeletePipeline,
   onViewDetails,
 }: PipelineSummaryCardProps) {
   const { i18n } = useLingui();
-  const status = pipeline.status.toLowerCase();
-  const statusConfig =
-    STATUS_CONFIG[status] || STATUS_CONFIG[PipelineStatus.Mixed];
+  const statusKey = pipeline.status;
+  const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG.MIXED;
   const StatusIcon = statusConfig.icon;
 
-  const isCompleted = status === PipelineStatus.Completed;
-  const isFailed = status === PipelineStatus.Failed;
-  const isPending = status === PipelineStatus.Pending;
-  const isProcessing = status === PipelineStatus.Processing;
+  const isCompleted = statusKey === 'COMPLETED';
+  const isFailed = statusKey === 'FAILED';
+  const isPending = statusKey === 'PENDING';
+  const isProcessing = statusKey === 'PROCESSING';
   // Show cancel button if there are any jobs that aren't completed or failed
   const hasUnfinishedJobs =
     pipeline.total_steps > pipeline.completed_steps + pipeline.failed_steps;
   const canCancel = isPending || isProcessing || hasUnfinishedJobs;
+  const statusLabel = statusKey.toLowerCase();
 
   return (
     <Card
@@ -131,7 +106,7 @@ export function PipelineSummaryCard({
 
       <CardHeader className="relative flex flex-row items-center gap-3 sm:gap-4 p-3 sm:pb-2 sm:space-y-0 z-10">
         <div
-          className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl ${statusConfig.color} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shrink-0`}
+          className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl ${statusConfig.bgColor} ring-1 ring-inset ring-black/5 dark:ring-white/5 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shrink-0`}
         >
           <StatusIcon
             className={`h-4 w-4 sm:h-5 sm:w-5 ${statusConfig.animate ? 'animate-spin' : ''}`}
@@ -158,7 +133,7 @@ export function PipelineSummaryCard({
           variant={statusConfig.badgeVariant}
           className="capitalize py-0 h-6 text-[10px] sm:text-xs"
         >
-          {status}
+          {statusLabel}
         </Badge>
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -345,4 +320,4 @@ export function PipelineSummaryCard({
       </CardFooter>
     </Card>
   );
-}
+}, arePropsEqual);

@@ -9,7 +9,7 @@
 CREATE TABLE global_config (
     id TEXT PRIMARY KEY NOT NULL,
     output_folder TEXT NOT NULL,
-    output_filename_template TEXT NOT NULL DEFAULT "{streamer}-{title}-%Y%m%d-%H%M%S",
+    output_filename_template TEXT NOT NULL DEFAULT "{streamer}-%Y%m%d-%H%M%S-{title}",
     output_file_format TEXT NOT NULL DEFAULT "flv",
     min_segment_size_bytes INTEGER NOT NULL DEFAULT 1048576,
     max_download_duration_secs INTEGER NOT NULL DEFAULT 0,
@@ -27,7 +27,11 @@ CREATE TABLE global_config (
     job_history_retention_days INTEGER NOT NULL DEFAULT 30,
     session_gap_time_secs INTEGER NOT NULL DEFAULT 3600,
     pipeline TEXT,
-    log_filter_directive TEXT NOT NULL DEFAULT 'rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info'
+    log_filter_directive TEXT NOT NULL DEFAULT 'rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info',
+    session_complete_pipeline TEXT,
+    paired_segment_pipeline TEXT,
+    -- Auto thumbnail generation
+    auto_thumbnail BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 -- `platform_config` table: Stores settings specific to each supported streaming platform.
@@ -50,7 +54,9 @@ CREATE TABLE platform_config (
     max_part_size_bytes BIGINT,
     download_retry_policy TEXT,
     event_hooks TEXT,
-    pipeline TEXT
+    pipeline TEXT,
+    session_complete_pipeline TEXT,
+    paired_segment_pipeline TEXT
 );
 
 -- `template_config` table: Reusable configuration templates for streamers.
@@ -74,6 +80,8 @@ CREATE TABLE template_config (
     event_hooks TEXT,
     stream_selection_config TEXT,
     pipeline TEXT,
+    session_complete_pipeline TEXT,
+    paired_segment_pipeline TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -511,6 +519,19 @@ CREATE INDEX monitor_event_outbox_undelivered
     ON monitor_event_outbox (delivered_at, id);
 
 -- ============================================
+-- TRIGGERS
+-- ============================================
+
+-- Clear job execution progress when a job is reset back to PENDING.
+-- This avoids stale progress snapshots leaking across retries or recovery.
+CREATE TRIGGER trg_job_reset_clears_progress
+AFTER UPDATE OF status ON job
+WHEN NEW.status = 'PENDING' AND OLD.status != 'PENDING'
+BEGIN
+    DELETE FROM job_execution_progress WHERE job_id = NEW.id;
+END;
+
+-- ============================================
 -- DEFAULT DATA SEEDING
 -- ============================================
 
@@ -575,7 +596,7 @@ INSERT INTO global_config (
 ) VALUES (
     'global-configuration',
     '/app/output',
-    '{streamer}-{title}-%Y%m%d-%H%M%S',
+    '{streamer}-%Y%m%d-%H%M%S-{title}',
     'flv',
     1048576,                 -- 1MB
     0,                       -- No limit
@@ -622,7 +643,7 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'Remux to MKV without re-encoding. Matroska supports more codecs and features.',
     'remux',
     'remux',
-    '{"video_codec":"copy","audio_codec":"copy","format":"mkv","overwrite":true}',
+    '{"video_codec":"copy","audio_codec":"copy","format":"mkv","faststart":false,"overwrite":true}',
     datetime('now'),
     datetime('now')
 );
@@ -874,7 +895,35 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'Run a custom FFmpeg command. Requires explicit outputs (for {output}) or configure scan_output_dir.',
     'custom',
     'execute',
-    '{"command":"ffmpeg -i \\"{input}\\" -c copy \\"{output}\\""}',
+    '{"command":"ffmpeg -i \"{input}\" -c copy \"{output}\""}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- ============================================
+-- DANMU / SUBTITLE PRESETS
+-- ============================================
+
+-- Danmu XML -> ASS subtitles (DanmakuFactory)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-danmu-to-ass',
+    'danmu_to_ass',
+    'Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe.',
+    'danmu',
+    'danmaku_factory',
+    '{"overwrite":true,"verify_output_exists":true,"prefer_manifest":true,"passthrough_inputs":true,"delete_source_xml_on_success":false}',
+    datetime('now'),
+    datetime('now')
+);
+
+-- Burn ASS subtitles into video frames (ffmpeg subtitles filter)
+INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at) VALUES (
+    'preset-default-ass-burnin',
+    'ass_burnin',
+    'Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe.',
+    'subtitle',
+    'ass_burnin',
+    '{"match_strategy":"manifest","require_ass":true,"passthrough_inputs":true,"exclude_ass_from_passthrough":true,"output_extension":"mp4","video_codec":"libx264","audio_codec":"copy","crf":23,"preset":"veryfast","overwrite":true,"delete_source_videos_on_success":false,"delete_source_ass_on_success":false}',
     datetime('now'),
     datetime('now')
 );

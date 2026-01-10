@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import {
   FormField,
@@ -59,7 +59,7 @@ export function ExecuteConfigForm({
                   </FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder={t(i18n)`e.g. echo {input} > {output}`}
+                      placeholder={i18n._(msg`e.g. echo {input} > {output}`)}
                       className="font-mono bg-background/50 border-border/50 focus:bg-background rounded-lg text-sm"
                       rows={5}
                       {...field}
@@ -76,44 +76,46 @@ export function ExecuteConfigForm({
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`First input file path`}
+                              title={i18n._(msg`First input file path`)}
                             >
                               {'{input}'}
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`First output file path`}
+                              title={i18n._(msg`First output file path`)}
                             >
                               {'{output}'}
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`JSON array of all inputs`}
+                              title={i18n._(msg`JSON array of all inputs`)}
                             >
                               {'{inputs_json}'}
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`JSON array of all outputs`}
+                              title={i18n._(msg`JSON array of all outputs`)}
                             >
                               {'{outputs_json}'}
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`Nth input: {input0}, {input1}...`}
+                              title={i18n._(
+                                msg`Nth input: {input0}, {input1}...`,
+                              )}
                             >
                               {'{inputN}'}
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(
-                                i18n,
-                              )`Nth output: {output0}, {output1}...`}
+                              title={i18n._(
+                                msg`Nth output: {output0}, {output1}...`,
+                              )}
                             >
                               {'{outputN}'}
                             </Badge>
@@ -128,35 +130,35 @@ export function ExecuteConfigForm({
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`Streamer ID`}
+                              title={i18n._(msg`Streamer ID`)}
                             >
                               {'{streamer_id}'}
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`Session ID`}
+                              title={i18n._(msg`Session ID`)}
                             >
                               {'{session_id}'}
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`Sanitized streamer name`}
+                              title={i18n._(msg`Sanitized streamer name`)}
                             >
                               {'{streamer}'}
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`Sanitized session title`}
+                              title={i18n._(msg`Sanitized session title`)}
                             >
                               {'{title}'}
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-background/50 cursor-help border-border/50"
-                              title={t(i18n)`Platform name`}
+                              title={i18n._(msg`Platform name`)}
                             >
                               {'{platform}'}
                             </Badge>
@@ -171,49 +173,49 @@ export function ExecuteConfigForm({
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
-                              title={t(i18n)`Year (4 digits)`}
+                              title={i18n._(msg`Year (4 digits)`)}
                             >
                               %Y
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
-                              title={t(i18n)`Month (01-12)`}
+                              title={i18n._(msg`Month (01-12)`)}
                             >
                               %m
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
-                              title={t(i18n)`Day (01-31)`}
+                              title={i18n._(msg`Day (01-31)`)}
                             >
                               %d
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
-                              title={t(i18n)`Hour (00-23)`}
+                              title={i18n._(msg`Hour (00-23)`)}
                             >
                               %H
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
-                              title={t(i18n)`Minute (00-59)`}
+                              title={i18n._(msg`Minute (00-59)`)}
                             >
                               %M
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
-                              title={t(i18n)`Second (00-59)`}
+                              title={i18n._(msg`Second (00-59)`)}
                             >
                               %S
                             </Badge>
                             <Badge
                               variant="outline"
                               className="font-mono text-[10px] bg-muted/30 cursor-help border-dashed"
-                              title={t(i18n)`Unix timestamp`}
+                              title={i18n._(msg`Unix timestamp`)}
                             >
                               %t
                             </Badge>
@@ -259,7 +261,7 @@ export function ExecuteConfigForm({
                   </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder={t(i18n)`e.g. /output/processed/`}
+                      placeholder={i18n._(msg`e.g. /output/processed/`)}
                       className="font-mono bg-background/50 border-border/50 focus:bg-background rounded-lg text-sm"
                       {...field}
                       value={field.value ?? ''}
@@ -285,7 +287,7 @@ export function ExecuteConfigForm({
                   </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder={t(i18n)`e.g. mp4`}
+                      placeholder={i18n._(msg`e.g. mp4`)}
                       className="font-mono bg-background/50 border-border/50 focus:bg-background rounded-lg text-sm"
                       {...field}
                       value={field.value ?? ''}
