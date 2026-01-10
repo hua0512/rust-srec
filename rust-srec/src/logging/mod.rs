@@ -4,8 +4,9 @@
 //! - Runtime log level changes via `tracing_subscriber::reload`
 //! - Broadcast channel for real-time log streaming to WebSocket clients
 //! - Log file retention cleanup (deletes logs older than 7 days)
+//! - Local timezone timestamps for logs
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,7 +17,7 @@ use tracing::{Event, Subscriber, debug, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     EnvFilter, Layer,
-    fmt::{self},
+    fmt::{self, format::Writer, time::FormatTime},
     layer::SubscriberExt,
     reload::{self, Handle},
     util::SubscriberInitExt,
@@ -33,6 +34,20 @@ const LOG_RETENTION_DAYS: i64 = 7;
 
 /// Broadcast channel capacity for log events.
 const LOG_BROADCAST_CAPACITY: usize = 1024;
+
+/// Custom timer that uses the local timezone via chrono.
+///
+/// This timer formats timestamps using the server's local timezone
+/// instead of UTC, making logs easier to correlate with local time.
+#[derive(Debug, Clone, Copy)]
+struct LocalTimer;
+
+impl FormatTime for LocalTimer {
+    fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
+        let now = Local::now();
+        write!(w, "{}", now.format("%Y-%m-%dT%H:%M:%S%.3f%:z"))
+    }
+}
 
 /// Type alias for the reload handle.
 pub type FilterHandle = Handle<EnvFilter, tracing_subscriber::Registry>;
@@ -280,11 +295,16 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
     let (log_tx, _) = broadcast::channel(LOG_BROADCAST_CAPACITY);
     let broadcast_layer = BroadcastLayer { tx: log_tx.clone() };
 
-    // Build and initialize the subscriber
+    // Build and initialize the subscriber with local timezone timestamps
     tracing_subscriber::registry()
         .with(filter_layer)
-        .with(fmt::layer()) // Console output
-        .with(fmt::layer().with_writer(non_blocking).with_ansi(false)) // File output
+        .with(fmt::layer().with_ansi(true).with_timer(LocalTimer)) // Console output with local time
+        .with(
+            fmt::layer()
+                .with_writer(non_blocking)
+                .with_ansi(false)
+                .with_timer(LocalTimer),
+        ) // File output with local time
         .with(broadcast_layer)
         .init();
 

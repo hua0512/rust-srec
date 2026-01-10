@@ -33,7 +33,7 @@ parking_lot = { workspace = true }
 # Logging
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["ansi", "json", "parking_lot"] }
 
 sysinfo = { workspace = true }
 
