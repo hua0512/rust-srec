@@ -238,6 +238,273 @@ pub struct MesioEngineConfig {
     /// Extra FLV-fix tuning knobs for Mesio.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flv_fix: Option<MesioFlvFixConfig>,
+    /// Extra HLS runtime tuning knobs for Mesio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hls: Option<MesioHlsConfig>,
+}
+
+/// Mesio HLS tuning configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsConfig {
+    /// Override low-level HTTP client tuning for HLS requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<MesioDownloaderBaseOverride>,
+    /// Override playlist polling/parsing behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playlist_config: Option<MesioHlsPlaylistConfigOverride>,
+    /// Override scheduler settings (download concurrency, buffers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduler_config: Option<MesioHlsSchedulerConfigOverride>,
+    /// Override segment/key fetcher settings (timeouts/retries/streaming threshold).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetcher_config: Option<MesioHlsFetcherConfigOverride>,
+    /// Override processor settings (processed segment cache TTL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processor_config: Option<MesioHlsProcessorConfigOverride>,
+    /// Override decryption settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decryption_config: Option<MesioHlsDecryptionConfigOverride>,
+    /// Override cache TTLs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_config: Option<MesioHlsCacheConfigOverride>,
+    /// Override output buffering, gap handling, stall timeouts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_config: Option<MesioHlsOutputConfigOverride>,
+    /// Override performance-related toggles (prefetch/batching/zero-copy/etc.).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub performance_config: Option<MesioHlsPerformanceConfigOverride>,
+
+    /// Override live gap-skip strategy (to reduce false skips from out-of-order arrivals).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_gap_strategy: Option<MesioGapSkipStrategy>,
+    /// Override Mesio HLS prefetch configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefetch: Option<MesioPrefetchOverride>,
+    /// Override Mesio HLS download concurrency.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_concurrency: Option<usize>,
+}
+
+/// Serializable HTTP version preference for Mesio downloader.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MesioHttpVersionPreference {
+    Auto,
+    Http2Only,
+    Http1Only,
+}
+
+/// Low-level HTTP client overrides for Mesio downloader.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioDownloaderBaseOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_redirects: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<Vec<(String, String)>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub danger_accept_invalid_certs: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force_ipv4: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force_ipv6: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_version: Option<MesioHttpVersionPreference>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http2_keep_alive_interval_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool_max_idle_per_host: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool_idle_timeout_ms: Option<u64>,
+}
+
+/// Serializable HLS variant selection policy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioHlsVariantSelectionPolicy {
+    HighestBitrate,
+    LowestBitrate,
+    ClosestToBitrate { target_bitrate: u64 },
+    AudioOnly,
+    VideoOnly,
+    MatchingResolution { width: u32, height: u32 },
+    Custom { value: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsPlaylistConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_playlist_fetch_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_refresh_interval_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_max_refresh_retries: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_refresh_retry_delay_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_selection_policy: Option<MesioHlsVariantSelectionPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive_refresh_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive_refresh_min_interval_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive_refresh_max_interval_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsSchedulerConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_concurrency: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processed_segment_buffer_multiplier: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsFetcherConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment_download_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_segment_retries: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment_retry_delay_base_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_download_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_key_retries: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_retry_delay_base_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment_raw_cache_ttl_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub streaming_threshold_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsProcessorConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processed_segment_ttl_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsDecryptionConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_cache_ttl_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offload_decryption_to_cpu_pool: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsCacheConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playlist_ttl_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment_ttl_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decryption_key_ttl_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioBufferLimitsOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_segments: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsOutputConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_reorder_buffer_duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_reorder_buffer_max_segments: Option<usize>,
+
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_field_present_nullable"
+    )]
+    pub live_max_overall_stall_duration_ms: Option<Option<u64>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_gap_strategy: Option<MesioGapSkipStrategy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vod_gap_strategy: Option<MesioGapSkipStrategy>,
+
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_field_present_nullable"
+    )]
+    pub vod_segment_timeout_ms: Option<Option<u64>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub buffer_limits: Option<MesioBufferLimitsOverride>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics_enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioHlsPerformanceConfigOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decryption_offload_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefetch: Option<MesioPrefetchOverride>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub buffer_pool: Option<MesioBufferPoolOverride>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_scheduler: Option<MesioBatchSchedulerOverride>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zero_copy_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics_enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioBufferPoolOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool_size: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_capacity: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioBatchSchedulerOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_window_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_batch_size: Option<usize>,
+}
+
+/// Serializable gap-skip strategy for Mesio HLS.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MesioGapSkipStrategy {
+    WaitIndefinitely,
+    SkipAfterCount { count: u64 },
+    SkipAfterDuration { duration_ms: u64 },
+    SkipAfterBoth { count: u64, duration_ms: u64 },
+}
+
+/// Partial override for Mesio HLS prefetch.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioPrefetchOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefetch_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_buffer_before_skip: Option<usize>,
 }
 
 fn default_buffer_size() -> usize {
@@ -255,6 +522,7 @@ impl Default for MesioEngineConfig {
             fix_flv: true,
             fix_hls: true,
             flv_fix: None,
+            hls: None,
         }
     }
 }
@@ -292,6 +560,41 @@ mod tests {
         assert!(parsed.fix_flv);
         assert!(!parsed.fix_hls);
         assert!(parsed.flv_fix.is_none());
+        assert!(parsed.hls.is_none());
+    }
+
+    #[test]
+    fn test_mesio_hls_gap_strategy_parse() {
+        let json = r#"
+        {
+          "hls": {
+            "live_gap_strategy": {
+              "type": "skip_after_both",
+              "count": 10,
+              "duration_ms": 1000
+            },
+            "download_concurrency": 3,
+            "prefetch": {
+              "enabled": true,
+              "prefetch_count": 4,
+              "max_buffer_before_skip": 20
+            }
+          }
+        }"#;
+        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
+        let hls = parsed.hls.unwrap();
+        assert!(matches!(
+            hls.live_gap_strategy,
+            Some(MesioGapSkipStrategy::SkipAfterBoth {
+                count: 10,
+                duration_ms: 1000
+            })
+        ));
+        assert_eq!(hls.download_concurrency, Some(3));
+        let prefetch = hls.prefetch.unwrap();
+        assert_eq!(prefetch.enabled, Some(true));
+        assert_eq!(prefetch.prefetch_count, Some(4));
+        assert_eq!(prefetch.max_buffer_before_skip, Some(20));
     }
 
     #[test]

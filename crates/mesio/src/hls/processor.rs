@@ -153,7 +153,13 @@ impl SegmentTransformer for SegmentProcessor {
             let cache_key = CacheKey::new(
                 CacheResourceType::Segment,
                 job.media_segment.uri.clone(),
-                None,
+                job.media_segment.byte_range.as_ref().map(|range| {
+                    let offset = range
+                        .offset
+                        .map(|o| o.to_string())
+                        .unwrap_or_else(|| "none".to_string());
+                    format!("br={}@{}", range.length, offset)
+                }),
             );
             let metadata = CacheMetadata::new(len as u64)
                 .with_expiration(self.config.processor_config.processed_segment_ttl);
@@ -182,11 +188,16 @@ mod tests {
     use m3u8_rs::MediaSegment;
     use proptest::prelude::*;
     use std::sync::Arc;
+    use tokio_util::sync::CancellationToken;
 
     /// Helper to create a minimal DecryptionService for testing
     fn create_test_decryption_service(config: Arc<HlsConfig>) -> Arc<DecryptionService> {
         let http_client = reqwest::Client::new();
-        let key_fetcher = Arc::new(KeyFetcher::new(http_client, config.clone()));
+        let key_fetcher = Arc::new(KeyFetcher::new(
+            http_client,
+            config.clone(),
+            CancellationToken::new(),
+        ));
         Arc::new(DecryptionService::new(config, key_fetcher, None))
     }
 

@@ -259,13 +259,29 @@ impl JobRepository for SqlxJobRepository {
     async fn reset_job_for_retry(&self, id: &str) -> Result<()> {
         retry_on_sqlite_busy("reset_job_for_retry", || async {
             let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query(
-                "UPDATE job SET status = 'PENDING', started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ?",
+            let res = sqlx::query(
+                "UPDATE job SET status = 'PENDING', started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ? AND status = 'FAILED'",
             )
             .bind(&now)
             .bind(id)
             .execute(&self.pool)
             .await?;
+
+            if res.rows_affected() == 0 {
+                let status: Option<String> =
+                    sqlx::query_scalar("SELECT status FROM job WHERE id = ?")
+                        .bind(id)
+                        .fetch_optional(&self.pool)
+                        .await?;
+
+                return match status {
+                    None => Err(Error::not_found("Job", id)),
+                    Some(status) => Err(Error::InvalidStateTransition {
+                        from: status.to_ascii_uppercase(),
+                        to: "PENDING".to_string(),
+                    }),
+                };
+            }
             Ok(())
         })
         .await

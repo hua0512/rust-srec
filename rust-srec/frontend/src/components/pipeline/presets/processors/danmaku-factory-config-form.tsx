@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
 import { ListInput } from '@/components/ui/list-input';
 import { useLingui } from '@lingui/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Settings, Terminal, Trash2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -88,7 +88,7 @@ export function DanmakuFactoryConfigForm({
                     <ListInput
                       value={field.value || []}
                       onChange={field.onChange}
-                      placeholder={t(i18n)`Add argument template`}
+                      placeholder={i18n._(msg`Add argument template`)}
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">
@@ -114,7 +114,7 @@ export function DanmakuFactoryConfigForm({
                     <ListInput
                       value={field.value || []}
                       onChange={field.onChange}
-                      placeholder={t(i18n)`Add extra argument`}
+                      placeholder={i18n._(msg`Add extra argument`)}
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">

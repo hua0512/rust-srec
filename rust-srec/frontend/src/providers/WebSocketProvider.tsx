@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, ReactNode } from 'react';
+import { useRouteContext } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { sessionQueryOptions } from '@/api/session';
 import { useDownloadStore } from '@/store/downloads';
@@ -24,7 +25,16 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const isConnectingRef = useRef<boolean>(false);
 
   // Auth state
-  const { data: sessionData } = useQuery(sessionQueryOptions);
+  const { user: routeUser } = useRouteContext({ from: '__root__' }) as {
+    user?: any;
+  };
+  const { data: sessionData } = useQuery({
+    ...sessionQueryOptions,
+    enabled: typeof window !== 'undefined',
+    initialData: routeUser ?? null,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
+  });
   const accessToken = sessionData?.token?.access_token;
   const isAuthenticated = !!accessToken;
 

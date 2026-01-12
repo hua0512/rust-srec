@@ -15,6 +15,7 @@ tokio = { workspace = true, features = [
     "io-util",
     "macros",
     "fs",
+    "process",
 ] }
 reqwest = { workspace = true, features = [
     "json",
@@ -82,7 +83,7 @@ prost-build = { workspace = true }
 
 
 [features]
-default = ["rquickjs", "native-tls"]
+default = ["native-tls"]
 rquickjs = ["dep:rquickjs"]
 static-ssl = ["openssl"]
 # TLS backend for WebSocket connections (tokio-tungstenite)

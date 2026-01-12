@@ -5,3 +5,8 @@ scripts
 *Dockerfile*
 node_modules
 .env
+.output
+.tanstack
+.nitro
+.nuxt
+dist

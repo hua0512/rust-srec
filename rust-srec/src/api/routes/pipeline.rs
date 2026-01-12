@@ -132,6 +132,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/presets/{id}/preview", get(preview_pipeline_preset))
         .route("/dags", get(list_dags))
+        .route("/dags/retry_failed", post(retry_all_failed_dags))
         .route("/dag/{dag_id}", get(get_dag_status).delete(cancel_dag))
         .route("/dag/{dag_id}/delete", delete(delete_dag))
         .route("/dag/{dag_id}/graph", get(get_dag_graph))
@@ -886,11 +887,14 @@ pub async fn get_job(
         .ok_or_else(|| ApiError::not_found(format!("Job with id '{}' not found", id)))?;
 
     // Fetch streamer name
-    let streamer_name = state.streamer_repository.as_ref().and_then(|repo| {
-        futures::executor::block_on(repo.get_streamer(&job.streamer_id))
+    let streamer_name = if let Some(repo) = state.streamer_repository.as_ref() {
+        repo.get_streamer(&job.streamer_id)
+            .await
             .ok()
             .map(|s| s.name)
-    });
+    } else {
+        None
+    };
 
     Ok(Json(job_to_response(&job, streamer_name)))
 }
@@ -921,7 +925,7 @@ pub async fn get_job(
 /// # Errors
 ///
 /// - `404 Not Found` - Job with the specified ID does not exist
-/// - `400 Bad Request` - Job is not in "failed" status
+/// - `409 Conflict` - Job is not in "failed" status
 ///
 #[utoipa::path(
     post,
@@ -930,7 +934,7 @@ pub async fn get_job(
     params(("id" = String, Path, description = "Job ID")),
     responses(
         (status = 200, description = "Job retried", body = JobResponse),
-        (status = 400, description = "Job not in failed status", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "Job not in failed status", body = crate::api::error::ApiErrorResponse),
         (status = 404, description = "Job not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -952,11 +956,14 @@ pub async fn retry_job(
         .map_err(ApiError::from)?;
 
     // Fetch streamer name
-    let streamer_name = state.streamer_repository.as_ref().and_then(|repo| {
-        futures::executor::block_on(repo.get_streamer(&job.streamer_id))
+    let streamer_name = if let Some(repo) = state.streamer_repository.as_ref() {
+        repo.get_streamer(&job.streamer_id)
+            .await
             .ok()
             .map(|s| s.name)
-    });
+    } else {
+        None
+    };
 
     Ok(Json(job_to_response(&job, streamer_name)))
 }
@@ -1276,11 +1283,14 @@ pub async fn create_pipeline(
         .ok_or_else(|| ApiError::internal("Failed to retrieve created job"))?;
 
     // Fetch streamer name (we have the ID from the request)
-    let streamer_name = state.streamer_repository.as_ref().and_then(|repo| {
-        futures::executor::block_on(repo.get_streamer(&request.streamer_id))
+    let streamer_name = if let Some(repo) = state.streamer_repository.as_ref() {
+        repo.get_streamer(&request.streamer_id)
+            .await
             .ok()
             .map(|s| s.name)
-    });
+    } else {
+        None
+    };
 
     let response = CreatePipelineResponse {
         pipeline_id: result.dag_id,
@@ -1978,7 +1988,7 @@ pub async fn list_dags(
             "PROCESSING" => "PROCESSING",
             "COMPLETED" => "COMPLETED",
             "FAILED" => "FAILED",
-            "INTERRUPTED" | "CANCELLED" => "INTERRUPTED",
+            "INTERRUPTED" => "INTERRUPTED",
             _ => s.as_str(),
         });
 
@@ -2062,6 +2072,83 @@ pub async fn list_dags(
         limit: effective_limit,
         offset: pagination.offset,
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/pipeline/dags/retry_failed",
+    tag = "pipeline",
+    responses(
+        (status = 200, description = "Bulk retry result", body = serde_json::Value)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn retry_all_failed_dags(
+    State(state): State<AppState>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    let dag_scheduler = pipeline_manager
+        .dag_scheduler()
+        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+
+    // 1. List all failed DAGs. Use a large limit to catch them all.
+    let failed_dags = dag_scheduler
+        .list_dags(Some("FAILED"), None, 1000, 0)
+        .await
+        .map_err(ApiError::from)?;
+
+    if failed_dags.is_empty() {
+        return Ok(Json(serde_json::json!({
+            "success": true,
+            "count": 0,
+            "message": "No failed DAGs found"
+        })));
+    }
+
+    let mut retried_count = 0;
+    for dag in failed_dags {
+        // Get all steps for this DAG
+        let steps = dag_scheduler
+            .get_dag_steps(&dag.id)
+            .await
+            .map_err(ApiError::from)?;
+
+        // Find failed steps
+        let failed_steps: Vec<_> = steps.iter().filter(|s| s.status == "FAILED").collect();
+
+        if failed_steps.is_empty() {
+            // DAG is failed but no steps are failed? (Reset anyway if it's in a failed state)
+            if dag.status == "FAILED" {
+                let _ = dag_scheduler.reset_dag_for_retry(&dag.id).await;
+                retried_count += 1;
+            }
+            continue;
+        }
+
+        // Prepare DAG for retry
+        if let Err(e) = dag_scheduler.reset_dag_for_retry(&dag.id).await {
+            tracing::warn!("Failed to reset DAG {} for retry: {}", dag.id, e);
+            continue;
+        }
+
+        // Retry each failed job
+        for step in failed_steps {
+            if let Some(job_id) = &step.job_id {
+                let _ = pipeline_manager.retry_job(job_id).await;
+            }
+        }
+        retried_count += 1;
+    }
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "count": retried_count,
+        "message": format!("Successfully retried {} failed DAGs", retried_count)
+    })))
 }
 
 #[utoipa::path(

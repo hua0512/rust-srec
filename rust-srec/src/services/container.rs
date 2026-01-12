@@ -886,6 +886,7 @@ impl ServiceContainer {
                 // Handle download failure for error tracking
                 if let DownloadManagerEvent::DownloadFailed {
                     ref streamer_id,
+                    ref session_id,
                     ref error,
                     ..
                 } = download_event
@@ -896,6 +897,45 @@ impl ServiceContainer {
                             warn!("Failed to record download error for {}: {}", streamer_id, e);
                         } else {
                             debug!("Recorded download error for {}: {}", streamer_id, error);
+                        }
+                    }
+
+                    // Stop danmu collection when download fails
+                    if danmu_service.is_collecting(session_id) {
+                        match danmu_service.stop_collection(session_id).await {
+                            Ok(stats) => {
+                                info!(
+                                    "Stopped danmu collection after download failure for session {}: {} messages",
+                                    session_id, stats.total_count
+                                );
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to stop danmu collection for session {}: {}",
+                                    session_id, e
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Handle download cancellation - stop danmu collection
+                if let DownloadManagerEvent::DownloadCancelled { ref session_id, .. } =
+                    download_event
+                    && danmu_service.is_collecting(session_id)
+                {
+                    match danmu_service.stop_collection(session_id).await {
+                        Ok(stats) => {
+                            info!(
+                                "Stopped danmu collection after download cancelled for session {}: {} messages",
+                                session_id, stats.total_count
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to stop danmu collection for session {}: {}",
+                                session_id, e
+                            );
                         }
                     }
                 }
@@ -1650,7 +1690,23 @@ impl ServiceContainer {
                 let stream_format = best_stream.stream_format.as_str();
                 let media_format = best_stream.media_format.as_str();
 
-                let headers = media_headers.as_ref().cloned().unwrap_or_default();
+                let mut headers = media_headers.as_ref().cloned().unwrap_or_default();
+
+                // Merge per-stream headers (e.g., Douyu hs-h5 Host override).
+                if let Some(extras) = best_stream.extras.as_ref() {
+                    if let Some(extra_headers) = extras.get("headers").and_then(|v| v.as_object()) {
+                        for (k, v) in extra_headers {
+                            if let Some(v) = v.as_str() {
+                                headers.insert(k.clone(), v.to_string());
+                            }
+                        }
+                    }
+
+                    // Backward-compat: some extractors use a flat host_header field.
+                    if let Some(host_header) = extras.get("host_header").and_then(|v| v.as_str()) {
+                        headers.insert("Host".to_string(), host_header.to_string());
+                    }
+                }
 
                 if !headers.is_empty() {
                     debug!(
@@ -1806,9 +1862,10 @@ impl ServiceContainer {
                 info!("Streamer {} ({}) went offline", streamer_name, streamer_id);
 
                 // Stop danmu collection if active
-                if let Some(sid) = session_id
-                    && danmu_service.is_collecting(&sid)
-                {
+                let sid = session_id
+                    .filter(|sid| danmu_service.is_collecting(sid))
+                    .or_else(|| danmu_service.get_session_by_streamer(&streamer_id));
+                if let Some(sid) = sid {
                     match danmu_service.stop_collection(&sid).await {
                         Ok(stats) => {
                             info!(

@@ -6,6 +6,7 @@ import { Trans } from '@lingui/react/macro';
 import { motion } from 'motion/react';
 import { Form } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
 
 import { Settings, Save, Loader2, ArrowLeft } from 'lucide-react';
 import { PlatformConfigFormSchema, PlatformConfigSchema } from '@/api/schemas';
@@ -17,6 +18,7 @@ import {
 } from '@/components/pipeline/constants';
 import { cn } from '@/lib/utils';
 import { SharedConfigEditor } from '../shared-config-editor';
+import { listEngines } from '@/server/functions';
 
 const EditPlatformSchema = PlatformConfigFormSchema.partial();
 export type EditPlatformFormValues = z.infer<typeof EditPlatformSchema>;
@@ -32,6 +34,11 @@ export function PlatformEditor({
   onSubmit,
   isUpdating,
 }: PlatformEditorProps) {
+  const { data: engines = [] } = useQuery({
+    queryKey: ['engines'],
+    queryFn: () => listEngines(),
+  });
+
   const form = useForm({
     resolver: zodResolver(EditPlatformSchema),
     defaultValues: {
@@ -173,6 +180,7 @@ export function PlatformEditor({
             }}
             credentialScope={{ type: 'platform', id: platform.id }}
             credentialPlatformNameHint={platform.name}
+            engines={engines}
             extraTabs={[
               {
                 value: 'general',

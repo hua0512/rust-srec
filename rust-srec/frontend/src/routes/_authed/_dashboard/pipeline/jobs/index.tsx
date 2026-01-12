@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback, memo, useRef } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
@@ -12,6 +12,7 @@ import {
   listPipelines,
   cancelPipeline,
   deletePipeline,
+  retryAllFailedPipelines,
 } from '@/server/functions';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -52,9 +53,21 @@ import {
 import { toast } from 'sonner';
 import { PipelineSummaryCard } from '@/components/pipeline/jobs/pipeline-summary-card';
 import { formatDuration } from '@/lib/format';
+import { z } from 'zod';
+
+// Search params schema for URL persistence
+const searchParamsSchema = z.object({
+  q: z.string().optional(),
+  status: z.string().optional(),
+  page: z.number().int().min(0).optional(),
+  size: z.number().int().positive().optional(),
+});
+
+type SearchParams = z.infer<typeof searchParamsSchema>;
 
 export const Route = createFileRoute('/_authed/_dashboard/pipeline/jobs/')({
   component: PipelineJobsPage,
+  validateSearch: (search): SearchParams => searchParamsSchema.parse(search),
 });
 
 const PAGE_SIZES = [12, 24, 48, 96];
@@ -62,40 +75,104 @@ const PAGE_SIZES = [12, 24, 48, 96];
 function PipelineJobsPage() {
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
-  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
 
-  const STATUS_FILTERS = [
-    { value: null, label: t`All`, icon: ListTodo },
-    { value: 'PENDING', label: t`Pending`, icon: Clock },
-    { value: 'PROCESSING', label: t`Processing`, icon: RefreshCw },
-    { value: 'COMPLETED', label: t`Completed`, icon: CheckCircle2 },
-    { value: 'FAILED', label: t`Failed`, icon: XCircle },
-  ] as const;
+  // Read state from URL search params
+  const { q, status, page, size } = Route.useSearch();
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [pageSize, setPageSize] = useState(24);
-  const [currentPage, setCurrentPage] = useState(0);
+  // Derive state from URL params with defaults
+  const selectedStatus = status ?? null;
+  const currentPage = page ?? 0;
+  const pageSize = size ?? 24;
 
-  // Debounce search
+  // Local state for search input (for immediate UI feedback)
+  const [localSearchQuery, setLocalSearchQuery] = useState(q ?? '');
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Track initial load to skip animations on pagination changes
+  const isInitialLoad = useRef(true);
+
+  // Sync local search query when URL q changes (e.g., on navigation back)
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-      setCurrentPage(0);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+    setLocalSearchQuery(q ?? '');
+  }, [q]);
+
+  // Memoize STATUS_FILTERS to prevent recreation on every render
+  const STATUS_FILTERS = useMemo(
+    () =>
+      [
+        { value: null, label: t`All`, icon: ListTodo },
+        { value: 'PENDING', label: t`Pending`, icon: Clock },
+        { value: 'PROCESSING', label: t`Processing`, icon: RefreshCw },
+        { value: 'COMPLETED', label: t`Completed`, icon: CheckCircle2 },
+        { value: 'FAILED', label: t`Failed`, icon: XCircle },
+        { value: 'INTERRUPTED', label: t`Interrupted`, icon: AlertCircle },
+      ] as const,
+    [],
+  );
+
+  // Helper to update search params
+  const updateSearchParams = useCallback(
+    (updates: Partial<SearchParams>) => {
+      navigate({
+        search: (prev) => {
+          const next = { ...prev, ...updates };
+          // Remove undefined/null values to keep URL clean
+          Object.keys(next).forEach((key) => {
+            const k = key as keyof SearchParams;
+            if (next[k] === undefined || next[k] === null || next[k] === '') {
+              delete next[k];
+            }
+          });
+          // Remove default values
+          if (next.page === 0) delete next.page;
+          if (next.size === 24) delete next.size;
+          return next;
+        },
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
+  // Handler for search input with debounce
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setLocalSearchQuery(value);
+      // Clear any existing timer
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      // Debounce the URL update
+      debounceTimerRef.current = setTimeout(() => {
+        updateSearchParams({ q: value || undefined, page: 0 });
+      }, 300);
+    },
+    [updateSearchParams],
+  );
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   // Reset page when status changes
-  const handleStatusChange = (status: string | null) => {
-    setSelectedStatus(status);
-    setCurrentPage(0);
-  };
+  const handleStatusChange = useCallback(
+    (newStatus: string | null) => {
+      updateSearchParams({ status: newStatus ?? undefined, page: 0 });
+    },
+    [updateSearchParams],
+  );
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
     queryKey: ['pipeline', 'stats'],
     queryFn: () => getPipelineStats(),
-    refetchInterval: 5000,
+    refetchInterval: 10000, // Reduced from 5s to 10s
+    staleTime: 5000, // Data stays fresh for 5s
+    refetchIntervalInBackground: false, // Pause polling when tab is hidden
   });
 
   const {
@@ -108,7 +185,7 @@ function PipelineJobsPage() {
       'pipeline',
       'pipelines',
       selectedStatus,
-      debouncedSearch,
+      q,
       pageSize,
       currentPage,
     ],
@@ -116,14 +193,23 @@ function PipelineJobsPage() {
       listPipelines({
         data: {
           status: selectedStatus || undefined,
-          search: debouncedSearch || undefined,
+          search: q || undefined,
           limit: pageSize,
           offset: currentPage * pageSize,
         },
       }),
-    refetchInterval: 5000,
+    refetchInterval: 10000, // Reduced from 5s to 10s
+    staleTime: 2000, // Data stays fresh for 2s, prevents refetch on quick navigation back
+    refetchIntervalInBackground: false, // Pause polling when tab is hidden
     placeholderData: keepPreviousData,
   });
+
+  // Mark initial load as complete after first successful data fetch
+  useEffect(() => {
+    if (pipelinesData && isInitialLoad.current) {
+      isInitialLoad.current = false;
+    }
+  }, [pipelinesData]);
 
   const pipelines = pipelinesData?.dags || [];
   const totalPipelines = pipelinesData?.total || 0;
@@ -179,12 +265,41 @@ function PipelineJobsPage() {
     onError: () => toast.error(t`Failed to delete pipeline`),
   });
 
-  const handleViewDetails = (pipelineId: string) => {
-    navigate({
-      to: '/pipeline/executions/$pipelineId',
-      params: { pipelineId },
-    });
-  };
+  const retryAllFailedMutation = useMutation({
+    mutationFn: () => retryAllFailedPipelines(),
+    onSuccess: (result: any) => {
+      toast.success(result.message);
+      queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+    },
+    onError: () => toast.error(t`Failed to retry all failed pipelines`),
+  });
+
+  const handleViewDetails = useCallback(
+    (pipelineId: string) => {
+      navigate({
+        to: '/pipeline/executions/$pipelineId',
+        params: { pipelineId },
+      });
+    },
+    [navigate],
+  );
+
+  // Memoize mutation callbacks to prevent child re-renders
+  const handleCancelPipeline = useCallback(
+    (pipelineId: string) => cancelPipelineMutation.mutate(pipelineId),
+    [cancelPipelineMutation],
+  );
+
+  const handleDeletePipeline = useCallback(
+    (pipelineId: string) => deletePipelineMutation.mutate(pipelineId),
+    [deletePipelineMutation],
+  );
+
+  const handleRetryAllFailed = useCallback(
+    () => retryAllFailedMutation.mutate(),
+    [retryAllFailedMutation],
+  );
 
   if (isError) {
     return (
@@ -228,8 +343,8 @@ function PipelineJobsPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder={t`Search jobs...`}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  value={localSearchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                   className="pl-9 h-9"
                 />
               </div>
@@ -302,7 +417,7 @@ function PipelineJobsPage() {
 
           {/* Status Filter */}
           <div className="px-4 md:px-8 pb-3 -mx-4 md:mx-0">
-            <nav className="flex items-center gap-1.5 px-4 md:px-0 overflow-x-auto no-scrollbar pt-1 pb-1">
+            <nav className="flex items-center gap-1.5 px-4 md:px-0 overflow-x-auto no-scrollbar pt-1 pb-1 flex-1">
               {STATUS_FILTERS.map(({ value, label, icon: Icon }) => (
                 <button
                   key={label}
@@ -327,58 +442,33 @@ function PipelineJobsPage() {
       <div className="p-4 md:px-8 pb-20 w-full">
         <AnimatePresence mode="wait">
           {isPipelinesLoading ? (
-            <motion.div
-              key="loading"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
-            >
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div
-                  key={i}
-                  className="h-[200px] border rounded-xl bg-muted/10 animate-pulse flex flex-col p-6 space-y-4 shadow-sm"
-                >
-                  <div className="flex justify-between items-start">
-                    <Skeleton className="h-10 w-10 rounded-full" />
-                    <Skeleton className="h-6 w-16" />
-                  </div>
-                  <div className="space-y-2 pt-2">
-                    <Skeleton className="h-6 w-3/4" />
-                    <Skeleton className="h-4 w-1/2" />
-                  </div>
-                  <div className="pt-4 mt-auto">
-                    <Skeleton className="h-8 w-full rounded-md" />
-                  </div>
-                </div>
-              ))}
-            </motion.div>
+            <LoadingSkeleton />
           ) : pipelines.length > 0 ? (
             <motion.div
               key="list"
               className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
-              initial={{ opacity: 0 }}
+              initial={isInitialLoad.current ? { opacity: 0 } : false}
               animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
+              transition={{ duration: 0.2 }}
             >
               {pipelines.map((pipeline: any, index: number) => (
                 <motion.div
                   key={pipeline.id}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={
+                    isInitialLoad.current ? { opacity: 0, y: 20 } : false
+                  }
                   animate={{ opacity: 1, y: 0 }}
                   transition={{
-                    duration: 0.3,
-                    delay: Math.min(index * 0.05, 0.3),
+                    duration: 0.2,
+                    delay: isInitialLoad.current
+                      ? Math.min(index * 0.03, 0.15)
+                      : 0,
                   }}
                 >
                   <PipelineSummaryCard
                     pipeline={pipeline}
-                    onCancelPipeline={(pipelineId) =>
-                      cancelPipelineMutation.mutate(pipelineId)
-                    }
-                    onDeletePipeline={(pipelineId) =>
-                      deletePipelineMutation.mutate(pipelineId)
-                    }
+                    onCancelPipeline={handleCancelPipeline}
+                    onDeletePipeline={handleDeletePipeline}
                     onViewDetails={handleViewDetails}
                   />
                 </motion.div>
@@ -396,14 +486,14 @@ function PipelineJobsPage() {
               </div>
               <div className="space-y-2 max-w-md">
                 <h3 className="font-semibold text-2xl tracking-tight">
-                  {debouncedSearch || selectedStatus ? (
+                  {q || selectedStatus ? (
                     <Trans>No jobs found</Trans>
                   ) : (
                     <Trans>No pipeline jobs yet</Trans>
                   )}
                 </h3>
                 <p className="text-muted-foreground">
-                  {debouncedSearch || selectedStatus ? (
+                  {q || selectedStatus ? (
                     <Trans>Try adjusting your search or filters.</Trans>
                   ) : (
                     <Trans>
@@ -426,8 +516,7 @@ function PipelineJobsPage() {
               <Select
                 value={pageSize.toString()}
                 onValueChange={(value) => {
-                  setPageSize(Number(value));
-                  setCurrentPage(0);
+                  updateSearchParams({ size: Number(value), page: 0 });
                 }}
               >
                 <SelectTrigger className="w-16 sm:w-20 h-8 text-xs sm:text-sm">
@@ -453,7 +542,9 @@ function PipelineJobsPage() {
                   <PaginationItem>
                     <PaginationPrevious
                       onClick={() =>
-                        setCurrentPage((p: number) => Math.max(0, p - 1))
+                        updateSearchParams({
+                          page: Math.max(0, currentPage - 1),
+                        })
                       }
                       className={cn(
                         'h-8 px-2 sm:px-3 text-xs sm:text-sm',
@@ -475,7 +566,7 @@ function PipelineJobsPage() {
                           <PaginationItem key={page}>
                             <PaginationLink
                               isActive={currentPage === page}
-                              onClick={() => setCurrentPage(page)}
+                              onClick={() => updateSearchParams({ page })}
                               className="cursor-pointer h-8 w-8 text-xs font-medium"
                             >
                               {page + 1}
@@ -492,9 +583,9 @@ function PipelineJobsPage() {
                   <PaginationItem>
                     <PaginationNext
                       onClick={() =>
-                        setCurrentPage((p: number) =>
-                          Math.min(totalPages - 1, p + 1),
-                        )
+                        updateSearchParams({
+                          page: Math.min(totalPages - 1, currentPage + 1),
+                        })
                       }
                       className={cn(
                         'h-8 px-2 sm:px-3 text-xs sm:text-sm',
@@ -510,11 +601,41 @@ function PipelineJobsPage() {
           </div>
         )}
       </div>
+      {/* Retry All Failed FAB */}
+      <AnimatePresence>
+        {selectedStatus === 'FAILED' && stats && stats.failed_count > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            className="fixed bottom-6 right-6 z-50 md:bottom-10 md:right-10"
+          >
+            <Button
+              size="lg"
+              onClick={handleRetryAllFailed}
+              disabled={retryAllFailedMutation.isPending}
+              className="rounded-full shadow-xl shadow-red-500/30 gap-2.5 h-14 px-7 bg-red-600 hover:bg-red-700 text-white border-none group transition-all duration-300 active:scale-95"
+            >
+              <RefreshCw
+                className={cn(
+                  'h-5 w-5',
+                  retryAllFailedMutation.isPending && 'animate-spin',
+                  !retryAllFailedMutation.isPending &&
+                    'group-hover:rotate-180 transition-transform duration-500',
+                )}
+              />
+              <span className="font-bold tracking-tight text-base">
+                <Trans>Retry All Failed</Trans>
+              </span>
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function StatCard({
+const StatCard = memo(function StatCard({
   title,
   value,
   loading,
@@ -548,4 +669,38 @@ function StatCard({
       </div>
     </Card>
   );
-}
+});
+
+// Memoized loading skeleton to prevent re-creation
+const SKELETON_ITEMS = [1, 2, 3, 4, 5, 6];
+
+const LoadingSkeleton = memo(function LoadingSkeleton() {
+  return (
+    <motion.div
+      key="loading"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6"
+    >
+      {SKELETON_ITEMS.map((i) => (
+        <div
+          key={i}
+          className="h-[200px] border rounded-xl bg-muted/10 animate-pulse flex flex-col p-6 space-y-4 shadow-sm"
+        >
+          <div className="flex justify-between items-start">
+            <Skeleton className="h-10 w-10 rounded-full" />
+            <Skeleton className="h-6 w-16" />
+          </div>
+          <div className="space-y-2 pt-2">
+            <Skeleton className="h-6 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+          <div className="pt-4 mt-auto">
+            <Skeleton className="h-8 w-full rounded-md" />
+          </div>
+        </div>
+      ))}
+    </motion.div>
+  );
+});

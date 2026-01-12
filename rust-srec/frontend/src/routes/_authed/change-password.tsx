@@ -14,9 +14,6 @@ import {
   FormLabel,
   FormMessage,
 } from '../../components/ui/form';
-import { useQuery } from '@tanstack/react-query';
-import { queryClient } from '../__root';
-import { sessionQueryOptions } from '../../api/session';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
@@ -24,23 +21,14 @@ import { useState, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
 export const Route = createFileRoute('/_authed/change-password')({
-  beforeLoad: async () => {
-    // Session is guaranteed by _auth layout
-    await queryClient.ensureQueryData(sessionQueryOptions);
-  },
   component: ChangePasswordPage,
 });
 
 import { changePassword } from '../../server/functions';
 
 function ChangePasswordPage() {
-  const { data: session } = useQuery(sessionQueryOptions);
-  // Map session to user interface expected by UI if needed, or update checks
-  const user = session
-    ? {
-        must_change_password: session.mustChangePassword,
-      }
-    : null;
+  const { user } = Route.useRouteContext();
+  const mustChangePassword = !!user?.mustChangePassword;
   const router = useRouter();
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -48,13 +36,13 @@ function ChangePasswordPage() {
 
   // Client-side redirect check after hydration
   useEffect(() => {
-    if (!session?.token) {
+    if (!user?.token) {
       router.navigate({
         to: '/login',
         search: { redirect: '/change-password' },
       });
     }
-  }, [session, router]);
+  }, [user, router]);
 
   const form = useForm<z.infer<typeof ChangePasswordRequestSchema>>({
     resolver: zodResolver(ChangePasswordRequestSchema),
@@ -72,10 +60,6 @@ function ChangePasswordPage() {
       await changePassword({ data: values });
 
       // Session is cleared after password change (all tokens revoked)
-      // Invalidate queries and redirect to login
-      await queryClient.invalidateQueries({
-        queryKey: sessionQueryOptions.queryKey,
-      });
       toast.success(
         t`Password changed successfully. Please login with your new password.`,
       );
@@ -129,7 +113,7 @@ function ChangePasswordPage() {
         <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px] bg-background/60 backdrop-blur-md lg:bg-transparent lg:backdrop-blur-none p-8 rounded-xl border border-white/20 shadow-xl lg:border-none lg:shadow-none lg:p-0">
           <div className="flex flex-col space-y-2 text-center">
             <h1 className="text-2xl font-semibold tracking-tight">
-              {user?.must_change_password ? (
+              {mustChangePassword ? (
                 <Trans>Change Password Required</Trans>
               ) : (
                 <Trans>Change Password</Trans>

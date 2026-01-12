@@ -91,7 +91,7 @@ export const OutputSettingsCard = memo(
                       {...field}
                       value={field.value ?? ''}
                       onChange={field.onChange}
-                      placeholder="{streamer}-{title}-%Y%m%d-%H%M%S"
+                      placeholder="{streamer}-%Y%m%d-%H%M%S-{title}"
                       className="bg-background"
                     />
                   </FormControl>

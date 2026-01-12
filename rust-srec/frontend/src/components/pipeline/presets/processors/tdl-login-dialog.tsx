@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import {
   Loader2,
   Terminal,
@@ -60,13 +60,17 @@ function extractFirstUrl(text: string): string | null {
   return raw;
 }
 
-function stripAnsi(text: string): string {
+const stripAnsi = (text: string): string => {
   // eslint-disable-next-line no-control-regex
-  return text.replace(
-    /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
-    '',
-  );
-}
+  const pattern = [
+    '[',
+    String.fromCharCode(27),
+    String.fromCharCode(155),
+    '][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]',
+  ].join('');
+  const ansiRegex = new RegExp(pattern, 'g');
+  return text.replace(ansiRegex, '');
+};
 
 function needsTelegramDesktopDir(outputText: string): boolean {
   const lower = outputText.toLowerCase();
@@ -129,10 +133,10 @@ export function TdlLoginDialog({
     mutationFn: startTdlLogin,
     onSuccess: (data) => {
       setSessionId(data.session_id);
-      toast.success(t(i18n)`TDL login session started`);
+      toast.success(i18n._(msg`TDL login session started`));
     },
     onError: (e) => {
-      toast.error(t(i18n)`Failed to start login: ${e.message}`);
+      toast.error(i18n._(msg`Failed to start login: ${e.message}`));
     },
   });
 
@@ -144,7 +148,7 @@ export function TdlLoginDialog({
       refetchStatus();
     },
     onError: (e) => {
-      toast.error(t(i18n)`Failed to send input: ${e.message}`);
+      toast.error(i18n._(msg`Failed to send input: ${e.message}`));
     },
   });
 
@@ -163,21 +167,21 @@ export function TdlLoginDialog({
       setToolStatusText(`${data.login_state}${version}`);
 
       if (!data.binary_ok) {
-        toast.error(t(i18n)`TDL not found`);
+        toast.error(i18n._(msg`TDL not found`));
         return;
       }
       if (data.login_state === 'logged_in') {
-        toast.success(t(i18n)`TDL is logged in${version}`);
+        toast.success(i18n._(msg`TDL is logged in${version}`));
         return;
       }
       if (data.login_state === 'not_logged_in') {
-        toast(t(i18n)`TDL is not logged in${version}`);
+        toast(i18n._(msg`TDL is not logged in${version}`));
         return;
       }
-      toast(t(i18n)`TDL status unknown${version}`);
+      toast(i18n._(msg`TDL status unknown${version}`));
     },
     onError: (e) => {
-      toast.error(t(i18n)`Failed to check TDL status: ${e.message}`);
+      toast.error(i18n._(msg`Failed to check TDL status: ${e.message}`));
     },
   });
 
@@ -518,9 +522,9 @@ export function TdlLoginDialog({
                     <Input
                       value={desktopDir}
                       onChange={(e) => setDesktopDir(e.target.value)}
-                      placeholder={t(
-                        i18n,
-                      )`Path to Telegram Desktop (contains tdata)`}
+                      placeholder={i18n._(
+                        msg`Path to Telegram Desktop (contains tdata)`,
+                      )}
                       className="h-9 font-mono text-xs"
                       disabled={isRunning}
                     />
@@ -531,9 +535,9 @@ export function TdlLoginDialog({
                       onClick={() => {
                         if (!desktopDir.trim()) {
                           toast.error(
-                            t(
-                              i18n,
-                            )`Please set Telegram Desktop Directory first`,
+                            i18n._(
+                              msg`Please set Telegram Desktop Directory first`,
+                            ),
                           );
                           return;
                         }
@@ -617,8 +621,8 @@ export function TdlLoginDialog({
               <Input
                 placeholder={
                   isRunning
-                    ? t(i18n)`Type your answer here...`
-                    : t(i18n)`Session is not running`
+                    ? i18n._(msg`Type your answer here...`)
+                    : i18n._(msg`Session is not running`)
                 }
                 value={inputTask}
                 onChange={(e) => setInputTask(e.target.value)}
@@ -640,7 +644,7 @@ export function TdlLoginDialog({
                       : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
-                  {isSensitive ? t(i18n)`Sensitive` : t(i18n)`Normal`}
+                  {isSensitive ? i18n._(msg`Sensitive`) : i18n._(msg`Normal`)}
                 </Button>
               </div>
             </div>

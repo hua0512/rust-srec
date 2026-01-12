@@ -39,7 +39,7 @@ export function useEditStreamer({ id, streamer }: UseEditStreamerProps) {
 
   // Initialize form
   const form = useForm<StreamerFormValues>({
-    resolver: zodResolver(StreamerFormSchema) as any,
+    resolver: zodResolver(StreamerFormSchema),
     defaultValues: {
       name: streamer.name,
       url: streamer.url,

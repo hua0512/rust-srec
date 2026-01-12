@@ -13,8 +13,10 @@
 use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{Mutex, broadcast, mpsc};
+use std::time::Duration;
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 use crate::danmu::{
     DanmuSampler, DanmuSamplingConfig as SamplerConfig, DanmuStatistics, ProviderRegistry,
@@ -25,6 +27,7 @@ use crate::error::{Error, Result};
 use platforms_parser::danmaku::ConnectionConfig;
 
 use super::events::{CollectionCommand, DanmuEvent};
+use super::runner::{CollectionRunner, RunnerParams};
 
 /// Configuration for the danmu service.
 #[derive(Debug, Clone)]
@@ -132,6 +135,8 @@ struct CollectionState {
     cancel_token: CancellationToken,
     /// Command sender
     command_tx: mpsc::Sender<CollectionCommand>,
+    /// Signals when the runner has fully stopped (including final XML flush/finalize).
+    done_rx: Option<oneshot::Receiver<()>>,
 }
 
 #[derive(Debug, Default)]
@@ -161,6 +166,8 @@ pub struct DanmuService {
     providers: Arc<ProviderRegistry>,
     /// Active collections (session_id -> state)
     collections: Arc<DashMap<String, CollectionState>>,
+    /// Reverse index for fast lookups (streamer_id -> session_id).
+    sessions_by_streamer: Arc<DashMap<String, String>>,
     /// Event sender
     event_tx: broadcast::Sender<DanmuEvent>,
     /// Global cancellation token
@@ -178,6 +185,7 @@ impl DanmuService {
             config,
             providers: Arc::new(ProviderRegistry::with_defaults()),
             collections: Arc::new(DashMap::new()),
+            sessions_by_streamer: Arc::new(DashMap::new()),
             event_tx,
             cancel_token: CancellationToken::new(),
             session_repo: None,
@@ -192,6 +200,7 @@ impl DanmuService {
             config,
             providers: Arc::new(providers),
             collections: Arc::new(DashMap::new()),
+            sessions_by_streamer: Arc::new(DashMap::new()),
             event_tx,
             cancel_token: CancellationToken::new(),
             session_repo: None,
@@ -230,6 +239,8 @@ impl DanmuService {
         cookies: Option<String>,
         extras: Option<std::collections::HashMap<String, String>>,
     ) -> Result<CollectionHandle> {
+        const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
         // Check if already collecting
         if self.collections.contains_key(session_id) {
             return Err(Error::from(
@@ -299,43 +310,101 @@ impl DanmuService {
         };
         let cancel_token = self.cancel_token.child_token();
 
+        let (ready_tx, ready_rx) = oneshot::channel::<Result<()>>();
+        let (done_tx, done_rx) = oneshot::channel::<()>();
+
         let state = CollectionState {
             streamer_id: streamer_id.to_string(),
             stats: Arc::clone(&stats),
             cancel_token: cancel_token.clone(),
             command_tx: command_tx.clone(),
+            done_rx: Some(done_rx),
         };
 
-        // Create runner
-        let runner = super::runner::CollectionRunner::new(super::runner::RunnerParams {
-            session_id: session_id.to_string(),
-            streamer_id: streamer_id.to_string(),
-            room_id: room_id.clone(),
-            provider: Arc::clone(&provider),
-            conn_config: connection_config,
-            stats: Arc::clone(&stats),
-            statistics_enabled: self.config.statistics_enabled,
-            sampler: Arc::clone(&sampler),
-            sampling_enabled: self.config.sampling_enabled,
-            event_tx: self.event_tx.clone(),
-        })
-        .await?;
-
         self.collections.insert(session_id.to_string(), state);
-
-        // Emit event
-        let _ = self.event_tx.send(DanmuEvent::CollectionStarted {
-            session_id: session_id.to_string(),
-            streamer_id: streamer_id.to_string(),
-        });
+        self.sessions_by_streamer
+            .insert(streamer_id.to_string(), session_id.to_string());
 
         // Start collection task
         let session_id_clone = session_id.to_string();
+        let streamer_id_clone = streamer_id.to_string();
+        let room_id_clone = room_id.clone();
         let event_tx = self.event_tx.clone();
         let collections = self.collections.clone();
+        let sessions_by_streamer = self.sessions_by_streamer.clone();
+        let provider = Arc::clone(&provider);
+        let stats = Arc::clone(&stats);
+        let sampler = Arc::clone(&sampler);
+        let statistics_enabled = self.config.statistics_enabled;
+        let sampling_enabled = self.config.sampling_enabled;
+        let conn_config = connection_config;
+        let cancel_token_task = cancel_token.clone();
 
         tokio::spawn(async move {
-            let result = runner.run(command_rx, cancel_token).await;
+            let runner = match tokio::time::timeout(
+                CONNECT_TIMEOUT,
+                CollectionRunner::new(RunnerParams {
+                    session_id: session_id_clone.clone(),
+                    streamer_id: streamer_id_clone.clone(),
+                    room_id: room_id_clone,
+                    provider: Arc::clone(&provider),
+                    conn_config,
+                    stats: Arc::clone(&stats),
+                    statistics_enabled,
+                    sampler: Arc::clone(&sampler),
+                    sampling_enabled,
+                    event_tx: event_tx.clone(),
+                }),
+            )
+            .await
+            {
+                Ok(Ok(runner)) => {
+                    let _ = ready_tx.send(Ok(()));
+                    runner
+                }
+                Ok(Err(e)) => {
+                    let _ = event_tx.send(DanmuEvent::Error {
+                        session_id: session_id_clone.clone(),
+                        error: e.to_string(),
+                    });
+                    let _ = ready_tx.send(Err(e));
+                    if let Some((_, state)) = collections.remove(&session_id_clone) {
+                        let should_remove = sessions_by_streamer
+                            .get(&state.streamer_id)
+                            .is_some_and(|sid| sid.value() == &session_id_clone);
+                        if should_remove {
+                            sessions_by_streamer.remove(&state.streamer_id);
+                        }
+                    }
+                    let _ = done_tx.send(());
+                    return;
+                }
+                Err(_) => {
+                    let message = format!(
+                        "Danmu connection timed out after {:?} (session_id={})",
+                        CONNECT_TIMEOUT, session_id_clone
+                    );
+                    let _ = ready_tx.send(Err(Error::from(
+                        platforms_parser::danmaku::DanmakuError::connection(message.clone()),
+                    )));
+                    let _ = event_tx.send(DanmuEvent::Error {
+                        session_id: session_id_clone.clone(),
+                        error: message,
+                    });
+                    if let Some((_, state)) = collections.remove(&session_id_clone) {
+                        let should_remove = sessions_by_streamer
+                            .get(&state.streamer_id)
+                            .is_some_and(|sid| sid.value() == &session_id_clone);
+                        if should_remove {
+                            sessions_by_streamer.remove(&state.streamer_id);
+                        }
+                    }
+                    let _ = done_tx.send(());
+                    return;
+                }
+            };
+
+            let result = runner.run(command_rx, cancel_token_task).await;
             if let Err(e) = &result {
                 let _ = event_tx.send(DanmuEvent::Error {
                     session_id: session_id_clone.clone(),
@@ -349,6 +418,12 @@ impl DanmuService {
             // If `stop_collection()` already removed the entry, `remove()` returns None and we
             // avoid emitting a duplicate stop event.
             if let Some((_, state)) = collections.remove(&session_id_clone) {
+                let should_remove = sessions_by_streamer
+                    .get(&state.streamer_id)
+                    .is_some_and(|sid| sid.value() == &session_id_clone);
+                if should_remove {
+                    sessions_by_streamer.remove(&state.streamer_id);
+                }
                 let stats = state.stats.lock().await;
                 let statistics = stats.current_stats();
                 let _ = event_tx.send(DanmuEvent::CollectionStopped {
@@ -356,7 +431,62 @@ impl DanmuService {
                     statistics,
                 });
             }
+
+            let _ = done_tx.send(());
         });
+
+        tokio::select! {
+            ready = ready_rx => {
+                match ready {
+                    Ok(Ok(())) => {
+                        let _ = self.event_tx.send(DanmuEvent::CollectionStarted {
+                            session_id: session_id.to_string(),
+                            streamer_id: streamer_id.to_string(),
+                        });
+                    }
+                    Ok(Err(e)) => {
+                        if let Some((_, state)) = self.collections.remove(session_id) {
+                            let should_remove = self
+                                .sessions_by_streamer
+                                .get(&state.streamer_id)
+                                .is_some_and(|sid| sid.value() == session_id);
+                            if should_remove {
+                                self.sessions_by_streamer.remove(&state.streamer_id);
+                            }
+                        }
+                        return Err(e);
+                    }
+                    Err(_) => {
+                        if let Some((_, state)) = self.collections.remove(session_id) {
+                            let should_remove = self
+                                .sessions_by_streamer
+                                .get(&state.streamer_id)
+                                .is_some_and(|sid| sid.value() == session_id);
+                            if should_remove {
+                                self.sessions_by_streamer.remove(&state.streamer_id);
+                            }
+                        }
+                        return Err(Error::from(platforms_parser::danmaku::DanmakuError::connection(
+                            "Danmu collection task stopped before it became ready",
+                        )));
+                    }
+                }
+            }
+            _ = cancel_token.cancelled() => {
+                if let Some((_, state)) = self.collections.remove(session_id) {
+                    let should_remove = self
+                        .sessions_by_streamer
+                        .get(&state.streamer_id)
+                        .is_some_and(|sid| sid.value() == session_id);
+                    if should_remove {
+                        self.sessions_by_streamer.remove(&state.streamer_id);
+                    }
+                }
+                return Err(Error::from(platforms_parser::danmaku::DanmakuError::connection(
+                    "Danmu collection cancelled before it became ready",
+                )));
+            }
+        }
 
         Ok(CollectionHandle {
             session_id: session_id.to_string(),
@@ -373,11 +503,33 @@ impl DanmuService {
             ))
         })?;
 
+        let should_remove = self
+            .sessions_by_streamer
+            .get(&state.streamer_id)
+            .is_some_and(|sid| sid.value() == session_id);
+        if should_remove {
+            self.sessions_by_streamer.remove(&state.streamer_id);
+        }
+
         // Send stop command
         let _ = state.command_tx.send(CollectionCommand::Stop).await;
 
         // Cancel the collection task
         state.cancel_token.cancel();
+
+        if let Some(done_rx) = state.done_rx {
+            const STOP_TIMEOUT: Duration = Duration::from_secs(10);
+            match tokio::time::timeout(STOP_TIMEOUT, done_rx).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => {}
+                Err(_) => {
+                    warn!(
+                        "Danmu collection stop timed out after {:?} (session_id={})",
+                        STOP_TIMEOUT, session_id
+                    );
+                }
+            }
+        }
 
         // Finalize statistics
         let stats = state.stats.lock().await;
@@ -427,10 +579,9 @@ impl DanmuService {
     /// Iterates over active collections to find a session matching the given streamer ID.
     /// Returns the session ID if found, None otherwise.
     pub fn get_session_by_streamer(&self, streamer_id: &str) -> Option<String> {
-        self.collections
-            .iter()
-            .find(|entry| entry.value().streamer_id == streamer_id)
-            .map(|entry| entry.key().clone())
+        self.sessions_by_streamer
+            .get(streamer_id)
+            .map(|entry| entry.value().clone())
     }
 
     /// Shutdown the service.

@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch, type Control } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -67,6 +67,49 @@ interface EngineFormProps {
   onSuccess: () => void;
 }
 
+function EngineConfigCard({
+  control,
+}: {
+  control: Control<z.infer<typeof CreateEngineRequestSchema>>;
+}) {
+  const engineType = useWatch({
+    control,
+    name: 'engine_type',
+  });
+
+  return (
+    <Card className="border-border/40 bg-gradient-to-br from-card to-card/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-shadow duration-500">
+      <CardHeader className="border-b border-border/40 bg-muted/20 pb-4">
+        <div className="flex flex-row items-center gap-3">
+          <div className="p-2 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+            {engineType === 'FFMPEG' && <Terminal className="w-5 h-5" />}
+            {engineType === 'STREAMLINK' && <Radio className="w-5 h-5" />}
+            {engineType === 'MESIO' && <Database className="w-5 h-5" />}
+          </div>
+          <div className="space-y-0.5">
+            <CardTitle className="text-lg flex items-center gap-2">
+              {engineType === 'FFMPEG'
+                ? 'FFmpeg'
+                : engineType === 'STREAMLINK'
+                  ? 'Streamlink'
+                  : 'Mesio'}
+              <Trans>Settings</Trans>
+            </CardTitle>
+            <CardDescription>
+              <Trans>Configure granular options for the selected engine.</Trans>
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-6">
+        {engineType === 'FFMPEG' && <FfmpegForm control={control} />}
+        {engineType === 'STREAMLINK' && <StreamlinkForm control={control} />}
+        {engineType === 'MESIO' && <MesioForm control={control} />}
+      </CardContent>
+    </Card>
+  );
+}
+
 function EngineForm({
   defaultValues,
   isEdit,
@@ -80,13 +123,11 @@ function EngineForm({
     defaultValues,
   });
 
-  const engineType = form.watch('engine_type');
-
   const createMutation = useMutation({
     mutationFn: (data: z.infer<typeof CreateEngineRequestSchema>) =>
       createEngine({ data }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['engines'] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['engines'] });
       onSuccess();
     },
     onError: (error: Error) => {
@@ -97,8 +138,11 @@ function EngineForm({
   const updateMutation = useMutation({
     mutationFn: (data: z.infer<typeof UpdateEngineRequestSchema>) =>
       updateEngine({ data: { id: engineId!, data } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['engines'] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['engines'] }),
+        queryClient.invalidateQueries({ queryKey: ['engine', engineId] }),
+      ]);
       onSuccess();
     },
   });
@@ -225,40 +269,7 @@ function EngineForm({
           </CardContent>
         </Card>
 
-        {/* Configuration Card */}
-        <Card className="border-border/40 bg-gradient-to-br from-card to-card/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-shadow duration-500">
-          <CardHeader className="border-b border-border/40 bg-muted/20 pb-4">
-            <div className="flex flex-row items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
-                {engineType === 'FFMPEG' && <Terminal className="w-5 h-5" />}
-                {engineType === 'STREAMLINK' && <Radio className="w-5 h-5" />}
-                {engineType === 'MESIO' && <Database className="w-5 h-5" />}
-              </div>
-              <div className="space-y-0.5">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  {engineType === 'FFMPEG'
-                    ? 'FFmpeg'
-                    : engineType === 'STREAMLINK'
-                      ? 'Streamlink'
-                      : 'Mesio'}
-                  <Trans>Settings</Trans>
-                </CardTitle>
-                <CardDescription>
-                  <Trans>
-                    Configure granular options for the selected engine.
-                  </Trans>
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {engineType === 'FFMPEG' && <FfmpegForm control={form.control} />}
-            {engineType === 'STREAMLINK' && (
-              <StreamlinkForm control={form.control} />
-            )}
-            {engineType === 'MESIO' && <MesioForm control={form.control} />}
-          </CardContent>
-        </Card>
+        <EngineConfigCard control={form.control} />
 
         <AnimatePresence>
           {form.formState.isDirty && (

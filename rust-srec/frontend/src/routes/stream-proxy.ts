@@ -29,6 +29,20 @@ export const Route = createFileRoute('/stream-proxy')({
         }
 
         try {
+          // If the client disconnects (e.g. player unmount), propagate abort to upstream.
+          // This prevents undici warnings like "Response body is not closed" when the
+          // upstream Response is GC'd while still streaming.
+          const upstreamAbortController = new AbortController();
+          if (request.signal.aborted) {
+            upstreamAbortController.abort(request.signal.reason);
+          } else {
+            request.signal.addEventListener(
+              'abort',
+              () => upstreamAbortController.abort(request.signal.reason),
+              { once: true },
+            );
+          }
+
           // Merge headers manually to avoid duplicates (case-insensitive)
           const mergedHeaders = new Headers();
           // Set allowed defaults
@@ -69,6 +83,7 @@ export const Route = createFileRoute('/stream-proxy')({
           const response = await fetch(targetUrl, {
             headers: mergedHeaders,
             redirect: 'follow', // Ensure we follow redirects
+            signal: upstreamAbortController.signal,
           });
 
           console.log('Upstream Response Status:', response.status);
@@ -111,8 +126,44 @@ export const Route = createFileRoute('/stream-proxy')({
             'Content-Length, Content-Range, Accept-Ranges',
           );
 
-          // Returns the stream
-          return new Response(response.body, {
+          // Stream the upstream body through a wrapper ReadableStream so the upstream
+          // Response body is considered consumed/closed by the runtime (and we can
+          // cancel it when the client aborts).
+          const upstreamBody = response.body;
+          if (!upstreamBody) {
+            return new Response(null, {
+              status: response.status,
+              statusText: response.statusText,
+              headers: responseHeaders,
+            });
+          }
+
+          const upstreamReader = upstreamBody.getReader();
+          const proxyBody = new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              try {
+                const { done, value } = await upstreamReader.read();
+                if (done) {
+                  controller.close();
+                  return;
+                }
+                if (value) controller.enqueue(value);
+              } catch (err) {
+                // If the client aborted, treat as a clean close.
+                if (upstreamAbortController.signal.aborted) {
+                  controller.close();
+                  return;
+                }
+                controller.error(err);
+              }
+            },
+            cancel(reason) {
+              upstreamAbortController.abort(reason);
+              upstreamReader.cancel(reason).catch(() => undefined);
+            },
+          });
+
+          return new Response(proxyBody, {
             status: response.status,
             statusText: response.statusText,
             headers: responseHeaders,

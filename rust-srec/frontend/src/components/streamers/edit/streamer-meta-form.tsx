@@ -1,4 +1,4 @@
-import { UseFormReturn } from 'react-hook-form';
+import { UseFormReturn, useWatch } from 'react-hook-form';
 import {
   FormControl,
   FormField,
@@ -59,6 +59,11 @@ export function StreamerMetaForm({
   isAutofilling = false,
   children,
 }: StreamerMetaFormProps) {
+  const url = useWatch({
+    control: form.control,
+    name: 'url',
+  });
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
@@ -151,9 +156,7 @@ export function StreamerMetaForm({
                                   className="h-11 w-11 shrink-0 bg-muted/30 border-muted-foreground/20 hover:bg-background transition-all"
                                   onClick={onAutofillName}
                                   disabled={
-                                    fieldsDisabled ||
-                                    isAutofilling ||
-                                    !form.getValues('url')
+                                    fieldsDisabled || isAutofilling || !url
                                   }
                                 >
                                   {isAutofilling ? (

@@ -231,6 +231,11 @@ impl DagScheduler {
             root_job_ids.push(job_id);
         }
 
+        // 5. Update DAG status to PROCESSING now that jobs are queued
+        self.dag_repository
+            .update_dag_status(&dag_id, DagExecutionStatus::Processing.as_str(), None)
+            .await?;
+
         Ok(DagCreationResult {
             dag_id,
             root_job_ids,
@@ -546,6 +551,12 @@ impl DagScheduler {
             session_id.clone(),
         );
         job_db.config = config;
+        job_db.state = serde_json::json!({
+            "streamer_name": streamer_name.clone(),
+            "session_title": session_title.clone(),
+            "platform": platform.clone(),
+        })
+        .to_string();
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());
 
         let job_id = job_db.id.clone();

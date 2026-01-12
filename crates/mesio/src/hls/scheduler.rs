@@ -103,6 +103,28 @@ impl BatchScheduler {
         batch
     }
 
+    /// Re-queue jobs such that they are immediately dispatchable.
+    ///
+    /// This is used when a batch is ready but scheduler concurrency is currently saturated.
+    /// We keep the remainder in the batch scheduler without restarting the batch window.
+    pub fn requeue_ready_jobs(&mut self, mut jobs: Vec<ScheduledSegmentJob>) {
+        if jobs.is_empty() {
+            return;
+        }
+
+        if self.pending.is_empty() {
+            // Mark the window as already elapsed so `time_until_ready()` returns zero.
+            let window = Duration::from_millis(self.config.batch_window_ms);
+            self.batch_start = Some(
+                Instant::now()
+                    .checked_sub(window)
+                    .unwrap_or_else(Instant::now),
+            );
+        }
+
+        self.pending.append(&mut jobs);
+    }
+
     /// Get the number of pending jobs in the current batch
     pub fn pending_count(&self) -> usize {
         self.pending.len()
@@ -371,7 +393,13 @@ impl SegmentScheduler {
                     // Dispatch any remaining batched jobs before draining
                     if batch_enabled && self.batch_scheduler.pending_count() > 0 {
                         let batch = self.batch_scheduler.take_batch();
+                        let max_concurrency = self.config.scheduler_config.download_concurrency;
+                        let mut leftovers = Vec::new();
                         for job in batch {
+                            if futures.len() >= max_concurrency {
+                                leftovers.push(job);
+                                continue;
+                            }
                             self.buffer_size += 1;
                             self.in_flight_segments.insert(job.media_sequence_number);
                             let fetcher_clone = Arc::clone(&self.segment_fetcher);
@@ -382,15 +410,22 @@ impl SegmentScheduler {
                                 job,
                             ));
                         }
+                        self.batch_scheduler.requeue_ready_jobs(leftovers);
                     }
                 }
 
                 // 2. Batch window timeout - dispatch partial batch when window expires
-                _ = tokio::time::sleep(batch_timeout.unwrap_or(Duration::MAX)), if batch_enabled && batch_timeout.is_some() && !draining => {
+                _ = tokio::time::sleep(batch_timeout.unwrap_or(Duration::MAX)), if batch_enabled && batch_timeout.is_some() && can_accept_more => {
                     if self.batch_scheduler.is_ready() {
                         let batch = self.batch_scheduler.take_batch();
                         trace!(batch_size = batch.len(), "Batch window expired, dispatching partial batch");
+                        let max_concurrency = self.config.scheduler_config.download_concurrency;
+                        let mut leftovers = Vec::new();
                         for job in batch {
+                            if futures.len() >= max_concurrency {
+                                leftovers.push(job);
+                                continue;
+                            }
                             self.buffer_size += 1;
                             self.in_flight_segments.insert(job.media_sequence_number);
                             let fetcher_clone = Arc::clone(&self.segment_fetcher);
@@ -401,6 +436,7 @@ impl SegmentScheduler {
                                 job,
                             ));
                         }
+                        self.batch_scheduler.requeue_ready_jobs(leftovers);
                     }
                 }
 
@@ -427,7 +463,13 @@ impl SegmentScheduler {
                             if self.batch_scheduler.is_ready() {
                                 let batch = self.batch_scheduler.take_batch();
                                 trace!(batch_size = batch.len(), "Batch ready (max size), dispatching");
+                                let max_concurrency = self.config.scheduler_config.download_concurrency;
+                                let mut leftovers = Vec::new();
                                 for job in batch {
+                                    if futures.len() >= max_concurrency {
+                                        leftovers.push(job);
+                                        continue;
+                                    }
                                     self.buffer_size += 1;
                                     self.in_flight_segments.insert(job.media_sequence_number);
                                     let fetcher_clone = Arc::clone(&self.segment_fetcher);
@@ -438,6 +480,7 @@ impl SegmentScheduler {
                                         job,
                                     ));
                                 }
+                                self.batch_scheduler.requeue_ready_jobs(leftovers);
                             }
                         } else {
                             // Direct dispatch without batching
@@ -461,7 +504,13 @@ impl SegmentScheduler {
                         if batch_enabled && self.batch_scheduler.pending_count() > 0 {
                             let batch = self.batch_scheduler.take_batch();
                             debug!(batch_size = batch.len(), "Dispatching remaining batch on channel close");
+                            let max_concurrency = self.config.scheduler_config.download_concurrency;
+                            let mut leftovers = Vec::new();
                             for job in batch {
+                                if futures.len() >= max_concurrency {
+                                    leftovers.push(job);
+                                    continue;
+                                }
                                 self.buffer_size += 1;
                                 self.in_flight_segments.insert(job.media_sequence_number);
                                 let fetcher_clone = Arc::clone(&self.segment_fetcher);
@@ -472,6 +521,7 @@ impl SegmentScheduler {
                                     job,
                                 ));
                             }
+                            self.batch_scheduler.requeue_ready_jobs(leftovers);
                         }
                     }
                 }

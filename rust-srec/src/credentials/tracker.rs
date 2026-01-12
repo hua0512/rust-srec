@@ -5,7 +5,7 @@
 
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 use dashmap::DashMap;
 
 use super::manager::CredentialStatus;
@@ -144,7 +144,7 @@ impl Default for DailyCheckTracker {
 /// Used to escalate notifications after consecutive failures.
 pub struct RefreshFailureTracker {
     failures: DashMap<String, FailureRecord>,
-    /// Lazy pruning guard (avoid unbounded growth from long-dead scopes).
+    /// Lazy pruning guard (avoid unbounded growth from long-dead scopes).      
     last_prune_yyyymmdd: AtomicI32,
 }
 
@@ -157,6 +157,15 @@ struct FailureRecord {
 }
 
 impl RefreshFailureTracker {
+    fn failure_ttl() -> chrono::Duration {
+        chrono::Duration::hours(6)
+    }
+
+    fn prune_key(now: DateTime<Utc>) -> i32 {
+        let date_key = DailyCheckTracker::yyyymmdd(now.date_naive());
+        date_key * 100 + now.hour() as i32
+    }
+
     /// Create a new failure tracker.
     pub fn new() -> Self {
         Self {
@@ -168,25 +177,23 @@ impl RefreshFailureTracker {
     fn prune_if_needed(&self) {
         // Keep failure history for a while, but avoid unbounded growth.
         // This is best-effort and runs at most once per day.
-        const MAX_AGE_DAYS: i64 = 7;
-
-        let today = Utc::now().date_naive();
-        let today_key = DailyCheckTracker::yyyymmdd(today);
+        let now = Utc::now();
+        let prune_key = Self::prune_key(now);
 
         let last = self.last_prune_yyyymmdd.load(Ordering::Relaxed);
-        if last == today_key {
+        if last == prune_key {
             return;
         }
 
         if self
             .last_prune_yyyymmdd
-            .compare_exchange(last, today_key, Ordering::SeqCst, Ordering::SeqCst)
+            .compare_exchange(last, prune_key, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
             return;
         }
 
-        let cutoff = Utc::now() - chrono::Duration::days(MAX_AGE_DAYS);
+        let cutoff = now - Self::failure_ttl();
         self.failures
             .retain(|_, record| record.last_failure >= cutoff);
     }
@@ -198,12 +205,18 @@ impl RefreshFailureTracker {
         let key = scope.cache_key();
         let now = Utc::now();
 
+        let ttl = Self::failure_ttl();
         let mut entry = self.failures.entry(key).or_insert(FailureRecord {
             count: 0,
             first_failure: now,
             last_failure: now,
             last_error: String::new(),
         });
+
+        if now - entry.last_failure > ttl {
+            entry.count = 0;
+            entry.first_failure = now;
+        }
 
         entry.count += 1;
         entry.last_failure = now;
@@ -223,7 +236,22 @@ impl RefreshFailureTracker {
         self.prune_if_needed();
 
         let key = scope.cache_key();
-        self.failures.get(&key).map(|r| r.count).unwrap_or(0)
+        let now = Utc::now();
+        let ttl = Self::failure_ttl();
+
+        if let Some(record) = self.failures.get(&key) {
+            let expired = now - record.last_failure > ttl;
+            let count = record.count;
+            drop(record);
+            if expired {
+                self.failures.remove(&key);
+                0
+            } else {
+                count
+            }
+        } else {
+            0
+        }
     }
 
     /// Get failure information for a scope.
@@ -231,12 +259,27 @@ impl RefreshFailureTracker {
         self.prune_if_needed();
 
         let key = scope.cache_key();
-        self.failures.get(&key).map(|r| FailureInfo {
-            count: r.count,
-            first_failure: r.first_failure,
-            last_failure: r.last_failure,
-            last_error: r.last_error.clone(),
-        })
+        let now = Utc::now();
+        let ttl = Self::failure_ttl();
+
+        if let Some(record) = self.failures.get(&key) {
+            let expired = now - record.last_failure > ttl;
+            let info = FailureInfo {
+                count: record.count,
+                first_failure: record.first_failure,
+                last_failure: record.last_failure,
+                last_error: record.last_error.clone(),
+            };
+            drop(record);
+            if expired {
+                self.failures.remove(&key);
+                None
+            } else {
+                Some(info)
+            }
+        } else {
+            None
+        }
     }
 
     /// Clear all tracked failures.
@@ -326,5 +369,29 @@ mod tests {
         // Clear on success
         tracker.clear(&scope);
         assert_eq!(tracker.failure_count(&scope), 0);
+    }
+
+    #[test]
+    fn test_failure_tracker_resets_after_ttl() {
+        let tracker = RefreshFailureTracker::new();
+        let scope = CredentialScope::Platform {
+            platform_id: "platform-bilibili".to_string(),
+            platform_name: "bilibili".to_string(),
+        };
+
+        let key = scope.cache_key();
+        let now = Utc::now();
+        tracker.failures.insert(
+            key,
+            FailureRecord {
+                count: 3,
+                first_failure: now - chrono::Duration::hours(7),
+                last_failure: now - chrono::Duration::hours(7),
+                last_error: "old".to_string(),
+            },
+        );
+
+        assert_eq!(tracker.record_failure(&scope, "new error"), 1);
+        assert_eq!(tracker.failure_count(&scope), 1);
     }
 }

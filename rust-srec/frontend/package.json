@@ -7,7 +7,7 @@
     "build": "vite build",
     "serve": "vite preview",
     "test": "vitest run",
-    "extract": "lingui extract",
+    "extract": "lingui extract --clean",
     "compile": "lingui compile",
     "format": "npx oxfmt --write .",
     "lint": "oxlint ."

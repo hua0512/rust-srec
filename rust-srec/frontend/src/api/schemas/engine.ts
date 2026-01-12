@@ -2,6 +2,36 @@ import { z } from 'zod';
 
 // --- Engine-Specific Config Schemas ---
 
+const optionalNonEmptyString = () =>
+  z
+    .string()
+    .transform((val) => {
+      const trimmed = val.trim();
+      return trimmed.length === 0 ? undefined : trimmed;
+    })
+    .optional();
+
+const optionalString = () =>
+  z
+    .string()
+    .transform((val) => (val.length === 0 ? undefined : val))
+    .optional();
+
+const optionalInt = (min: number) =>
+  z
+    .union([z.number(), z.string()])
+    .transform((val) => {
+      if (val === '') return undefined;
+      return typeof val === 'number' ? val : Number(val);
+    })
+    .refine(
+      (val) =>
+        val === undefined ||
+        (Number.isFinite(val) && Number.isInteger(val) && val >= min),
+      { message: `Must be an integer >= ${min}` },
+    )
+    .optional();
+
 export const FfmpegConfigSchema = z.object({
   binary_path: z.string().default('ffmpeg'),
   input_args: z.array(z.string()).default([]),
@@ -33,6 +63,166 @@ export const StreamlinkConfigSchema = z.object({
 });
 export type StreamlinkConfig = z.infer<typeof StreamlinkConfigSchema>;
 
+export const MesioHttpVersionPreferenceSchema = z.enum([
+  'auto',
+  'http2_only',
+  'http1_only',
+]);
+
+export const MesioDownloaderBaseOverrideSchema = z.object({
+  timeout_ms: optionalInt(0),
+  connect_timeout_ms: optionalInt(0),
+  read_timeout_ms: optionalInt(0),
+  write_timeout_ms: optionalInt(0),
+  follow_redirects: z.boolean().optional(),
+  user_agent: optionalNonEmptyString(),
+  params: z.array(z.array(z.string()).length(2)).optional(),
+  danger_accept_invalid_certs: z.boolean().optional(),
+  force_ipv4: z.boolean().optional(),
+  force_ipv6: z.boolean().optional(),
+  http_version: MesioHttpVersionPreferenceSchema.optional(),
+  http2_keep_alive_interval_ms: optionalInt(0),
+  pool_max_idle_per_host: optionalInt(0),
+  pool_idle_timeout_ms: optionalInt(0),
+});
+
+export const MesioHlsVariantSelectionPolicySchema = z.discriminatedUnion(
+  'type',
+  [
+    z.object({ type: z.literal('highest_bitrate') }),
+    z.object({ type: z.literal('lowest_bitrate') }),
+    z.object({
+      type: z.literal('closest_to_bitrate'),
+      target_bitrate: z.coerce.number().int().min(0),
+    }),
+    z.object({ type: z.literal('audio_only') }),
+    z.object({ type: z.literal('video_only') }),
+    z.object({
+      type: z.literal('matching_resolution'),
+      width: z.coerce.number().int(),
+      height: z.coerce.number().int(),
+    }),
+    z.object({ type: z.literal('custom'), value: z.string() }),
+  ],
+);
+
+export const MesioHlsPlaylistConfigOverrideSchema = z.object({
+  initial_playlist_fetch_timeout_ms: optionalInt(0),
+  live_refresh_interval_ms: optionalInt(0),
+  live_max_refresh_retries: optionalInt(0),
+  live_refresh_retry_delay_ms: optionalInt(0),
+  variant_selection_policy: MesioHlsVariantSelectionPolicySchema.optional(),
+  adaptive_refresh_enabled: z.boolean().optional(),
+  adaptive_refresh_min_interval_ms: optionalInt(0),
+  adaptive_refresh_max_interval_ms: optionalInt(0),
+});
+
+export const MesioHlsSchedulerConfigOverrideSchema = z.object({
+  download_concurrency: optionalInt(1),
+  processed_segment_buffer_multiplier: optionalInt(0),
+});
+
+export const MesioHlsFetcherConfigOverrideSchema = z.object({
+  segment_download_timeout_ms: optionalInt(0),
+  max_segment_retries: optionalInt(0),
+  segment_retry_delay_base_ms: optionalInt(0),
+  key_download_timeout_ms: optionalInt(0),
+  max_key_retries: optionalInt(0),
+  key_retry_delay_base_ms: optionalInt(0),
+  segment_raw_cache_ttl_ms: optionalInt(0),
+  streaming_threshold_bytes: optionalInt(0),
+});
+
+export const MesioHlsProcessorConfigOverrideSchema = z.object({
+  processed_segment_ttl_ms: optionalInt(0),
+});
+
+export const MesioHlsDecryptionConfigOverrideSchema = z.object({
+  key_cache_ttl_ms: optionalInt(0),
+  offload_decryption_to_cpu_pool: z.boolean().optional(),
+});
+
+export const MesioHlsCacheConfigOverrideSchema = z.object({
+  playlist_ttl_ms: optionalInt(0),
+  segment_ttl_ms: optionalInt(0),
+  decryption_key_ttl_ms: optionalInt(0),
+});
+
+export const MesioBufferLimitsOverrideSchema = z.object({
+  max_segments: optionalInt(0),
+  max_bytes: optionalInt(0),
+});
+
+export const MesioGapSkipStrategySchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('wait_indefinitely') }),
+  z.object({
+    type: z.literal('skip_after_count'),
+    count: z.coerce.number().int().min(0),
+  }),
+  z.object({
+    type: z.literal('skip_after_duration'),
+    duration_ms: z.coerce.number().int().min(0),
+  }),
+  z.object({
+    type: z.literal('skip_after_both'),
+    count: z.coerce.number().int().min(0),
+    duration_ms: z.coerce.number().int().min(0),
+  }),
+]);
+
+export const MesioHlsOutputConfigOverrideSchema = z.object({
+  live_reorder_buffer_duration_ms: optionalInt(0),
+  live_reorder_buffer_max_segments: optionalInt(0),
+  live_max_overall_stall_duration_ms: optionalInt(0),
+  live_gap_strategy: MesioGapSkipStrategySchema.optional(),
+  vod_gap_strategy: MesioGapSkipStrategySchema.optional(),
+  vod_segment_timeout_ms: optionalInt(0),
+  buffer_limits: MesioBufferLimitsOverrideSchema.optional(),
+  metrics_enabled: z.boolean().optional(),
+});
+
+export const MesioPrefetchOverrideSchema = z.object({
+  enabled: z.boolean().optional(),
+  prefetch_count: optionalInt(0),
+  max_buffer_before_skip: optionalInt(0),
+});
+
+export const MesioBufferPoolOverrideSchema = z.object({
+  enabled: z.boolean().optional(),
+  pool_size: optionalInt(0),
+  default_capacity: optionalInt(0),
+});
+
+export const MesioBatchSchedulerOverrideSchema = z.object({
+  enabled: z.boolean().optional(),
+  batch_window_ms: optionalInt(0),
+  max_batch_size: optionalInt(0),
+});
+
+export const MesioHlsPerformanceConfigOverrideSchema = z.object({
+  decryption_offload_enabled: z.boolean().optional(),
+  prefetch: MesioPrefetchOverrideSchema.optional(),
+  buffer_pool: MesioBufferPoolOverrideSchema.optional(),
+  batch_scheduler: MesioBatchSchedulerOverrideSchema.optional(),
+  zero_copy_enabled: z.boolean().optional(),
+  metrics_enabled: z.boolean().optional(),
+});
+
+export const MesioHlsConfigSchema = z.object({
+  base: MesioDownloaderBaseOverrideSchema.optional(),
+  playlist_config: MesioHlsPlaylistConfigOverrideSchema.optional(),
+  scheduler_config: MesioHlsSchedulerConfigOverrideSchema.optional(),
+  fetcher_config: MesioHlsFetcherConfigOverrideSchema.optional(),
+  processor_config: MesioHlsProcessorConfigOverrideSchema.optional(),
+  decryption_config: MesioHlsDecryptionConfigOverrideSchema.optional(),
+  cache_config: MesioHlsCacheConfigOverrideSchema.optional(),
+  output_config: MesioHlsOutputConfigOverrideSchema.optional(),
+  performance_config: MesioHlsPerformanceConfigOverrideSchema.optional(),
+  live_gap_strategy: MesioGapSkipStrategySchema.optional(),
+  prefetch: MesioPrefetchOverrideSchema.optional(),
+  download_concurrency: optionalInt(1),
+});
+
 export const MesioConfigSchema = z.object({
   buffer_size: z.coerce.number().int().min(1).default(8388608), // 8MB
   fix_flv: z.boolean().default(true),
@@ -62,42 +252,13 @@ export const MesioConfigSchema = z.object({
         }),
     })
     .optional(),
+  hls: MesioHlsConfigSchema.optional(),
 });
 export type MesioConfig = z.infer<typeof MesioConfigSchema>;
 
 // --- Engine Override Schemas ---
 // Used by template engine overrides. These are *partial* (no defaults) and
 // strict (unknown keys fail), so typos don't silently get ignored.
-
-const optionalNonEmptyString = () =>
-  z
-    .string()
-    .transform((val) => {
-      const trimmed = val.trim();
-      return trimmed.length === 0 ? undefined : trimmed;
-    })
-    .optional();
-
-const optionalString = () =>
-  z
-    .string()
-    .transform((val) => (val.length === 0 ? undefined : val))
-    .optional();
-
-const optionalInt = (min: number) =>
-  z
-    .union([z.number(), z.string()])
-    .transform((val) => {
-      if (val === '') return undefined;
-      return typeof val === 'number' ? val : Number(val);
-    })
-    .refine(
-      (val) =>
-        val === undefined ||
-        (Number.isFinite(val) && Number.isInteger(val) && val >= min),
-      { message: `Must be an integer >= ${min}` },
-    )
-    .optional();
 
 export const FfmpegConfigOverrideSchema = z
   .object({
@@ -149,6 +310,7 @@ export const MesioConfigOverrideSchema = z
     fix_flv: z.boolean().optional(),
     fix_hls: z.boolean().optional(),
     flv_fix: MesioFlvFixOverrideSchema.optional(),
+    hls: MesioHlsConfigSchema.optional(),
   })
   .strict();
 export type MesioConfigOverride = z.infer<typeof MesioConfigOverrideSchema>;

@@ -62,7 +62,11 @@ impl HlsStreamCoordinator {
             Arc::clone(&performance_metrics),
         ));
 
-        let key_fetcher = Arc::new(KeyFetcher::new(http_client.clone(), Arc::clone(&config)));
+        let key_fetcher = Arc::new(KeyFetcher::new(
+            http_client.clone(),
+            Arc::clone(&config),
+            token.clone(),
+        ));
         let decryption_service = Arc::new(DecryptionService::with_buffer_pool(
             Arc::clone(&config),
             Arc::clone(&key_fetcher),
@@ -77,6 +81,7 @@ impl HlsStreamCoordinator {
             cache_manager.clone(),
             Arc::clone(&http2_stats),
             Arc::clone(&performance_metrics),
+            token.clone(),
         ));
         let segment_processor: Arc<dyn SegmentTransformer> =
             Arc::new(SegmentProcessor::with_metrics(

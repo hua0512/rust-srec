@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use parking_lot::RwLock;
 use regex::Regex;
 use reqwest::Client;
+use reqwest::StatusCode;
 use rustc_hash::FxHashMap;
 use tracing::debug;
 
@@ -26,7 +27,7 @@ use crate::{
 pub static URL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:https?://)?(?:www\.)?douyu\.com/(\d+)").unwrap());
 
-const RID_REGEX_STR: &str = r#"\$ROOM\.room_id\s*=\s*(\d+)"#;
+const RID_REGEX_STR: &str = r#"room_id\s*=\s*(\d+)"#;
 const ROOM_STATUS_REGEX_STR: &str = r#"\$ROOM\.show_status\s*=\s*(\d+)"#;
 const VIDEO_LOOP_REGEX_STR: &str = r#"videoLoop":\s*(\d+)"#;
 static RID_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(RID_REGEX_STR).unwrap());
@@ -46,6 +47,22 @@ pub const DOUYU_DEFAULT_DID: &str = "10000000000000000000000000001501";
 /// Global cache for encryption key (used for fallback authentication)
 static ENCRYPTION_KEY_CACHE: LazyLock<RwLock<FxHashMap<String, CachedEncryptionKey>>> =
     LazyLock::new(|| RwLock::new(FxHashMap::default()));
+
+fn normalize_douyu_error_body(body: &str) -> String {
+    body.trim()
+        .trim_matches('"')
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect()
+}
+
+fn is_douyu_auth_failed(status: StatusCode, body: &str) -> bool {
+    if status == StatusCode::FORBIDDEN {
+        return true;
+    }
+    let normalized = normalize_douyu_error_body(body);
+    normalized.contains("鉴权失败")
+}
 
 pub struct Douyu {
     pub extractor: Extractor,
@@ -74,7 +91,7 @@ impl Douyu {
         let cdn = extras
             .as_ref()
             .and_then(|extras| extras.get("cdn").and_then(|v| v.as_str()))
-            .unwrap_or("ws-h5")
+            .unwrap_or("hw-h5")
             .to_string();
 
         let disable_interactive_game = extras
@@ -159,23 +176,26 @@ impl Douyu {
     }
 
     pub(crate) async fn get_web_response(&self) -> Result<String, ExtractorError> {
-        let response = self
-            .extractor
-            .client
-            .get(&self.extractor.url)
-            .send()
-            .await?;
-        let body = response.text().await.map_err(ExtractorError::from)?;
+        let response = self.extractor.get(&self.extractor.url).send().await?;
+        if !response.status().is_success() {
+            return Err(ExtractorError::ValidationError(format!(
+                "Failed to get web response: {}",
+                response.status()
+            )));
+        }
+        let body = response.text().await?;
+        if body.is_empty() {
+            return Err(ExtractorError::ValidationError(
+                "Empty web response".to_string(),
+            ));
+        }
+        // debug!("Web response: {}", body);
         Ok(body)
     }
 
     pub(crate) async fn get_room_info(&self, rid: u64) -> Result<String, ExtractorError> {
-        let response = self
-            .extractor
-            .client
-            .get(format!("https://open.douyucdn.cn/api/RoomApi/room/{rid}"))
-            .send()
-            .await?;
+        let url = format!("https://open.douyucdn.cn/api/RoomApi/room/{rid}");
+        let response = self.extractor.get(&url).send().await?;
         let body = response.text().await.map_err(ExtractorError::from)?;
         Ok(body)
     }
@@ -227,13 +247,8 @@ impl Douyu {
         &self,
         rid: u64,
     ) -> Result<DouyuBetardResponse, ExtractorError> {
-        let response = self
-            .extractor
-            .client
-            .get(format!("https://www.douyu.com/betard/{rid}"))
-            .header(reqwest::header::REFERER, Self::BASE_URL)
-            .send()
-            .await?;
+        let url = format!("https://www.douyu.com/betard/{rid}");
+        let response = self.extractor.get(&url).send().await?;
 
         let body = response.text().await.map_err(ExtractorError::from)?;
         // debug!("betard body : {}", body);
@@ -376,9 +391,20 @@ impl Douyu {
             .send()
             .await?;
 
+        let status = response.status();
         let body = response.text().await.map_err(ExtractorError::from)?;
+        debug!(
+            "Encryption key response (status {}): {}",
+            status,
+            &body[..body.len().min(500)]
+        );
+
         let enc_response: DouyuEncryptionResponse = serde_json::from_str(&body).map_err(|e| {
-            ExtractorError::ValidationError(format!("Failed to parse encryption response: {}", e))
+            ExtractorError::ValidationError(format!(
+                "Failed to parse encryption response: {} - body: {}",
+                e,
+                &body[..body.len().min(500)]
+            ))
         })?;
 
         if enc_response.error != 0 {
@@ -391,6 +417,11 @@ impl Douyu {
         let data = enc_response.data.ok_or_else(|| {
             ExtractorError::ValidationError("Encryption API returned no data".to_string())
         })?;
+
+        debug!(
+            "Encryption key fetched: rand_str={}, enc_time={}, is_special={}",
+            data.rand_str, data.enc_time, data.is_special
+        );
 
         Ok(CachedEncryptionKey::new(data, user_agent))
     }
@@ -424,6 +455,10 @@ impl Douyu {
         }
 
         Ok(new_key)
+    }
+
+    fn invalidate_encryption_key(did: &str) {
+        ENCRYPTION_KEY_CACHE.write().remove(did);
     }
 
     /// Generates authentication signature using fallback method (no JS engine required)
@@ -509,55 +544,167 @@ impl Douyu {
     ) -> Result<DouyuH5PlayData, ExtractorError> {
         let did = did.unwrap_or(DOUYU_DEFAULT_DID);
 
-        let (sign_result, key_data) = self.fallback_sign_with_key(rid, did, None).await?;
+        // If auth fails, refresh encryption key once and retry (Python tends to refresh often).
+        for attempt in 0..2 {
+            if attempt == 1 {
+                debug!(
+                    "Retrying getH5PlayV1 after auth failure by refreshing encryption key (rid={}, did={})",
+                    rid, did
+                );
+                Self::invalidate_encryption_key(did);
+            }
 
-        let mut form_data: FxHashMap<&str, String> = FxHashMap::default();
-        form_data.insert("enc_data", sign_result.enc_data);
-        form_data.insert("tt", sign_result.ts.to_string());
-        form_data.insert("did", did.to_string());
-        form_data.insert("auth", sign_result.auth);
-        form_data.insert("cdn", cdn.to_string());
-        form_data.insert("rate", rate.to_string());
-        form_data.insert("ver", "219032101".to_string());
-        form_data.insert("iar", "0".to_string());
-        form_data.insert("ive", "0".to_string());
-        form_data.insert("rid", rid.to_string());
-        form_data.insert("hevc", "0".to_string());
-        form_data.insert("fa", "0".to_string());
-        form_data.insert("sov", "0".to_string());
+            let (sign_result, key_data) = self.fallback_sign_with_key(rid, did, None).await?;
 
-        // Use V1 API endpoint for fallback auth
-        let resp = self
-            .extractor
-            .client
-            .post(format!("https://www.douyu.com/lapi/live/getH5PlayV1/{rid}"))
-            .header(reqwest::header::USER_AGENT, &key_data.user_agent)
-            .header(reqwest::header::REFERER, Self::BASE_URL)
-            .form(&form_data)
-            .send()
-            .await?
-            .json::<DouyuH5PlayResponse>()
-            .await?;
+            let mut form_data: HashMap<&str, String> = HashMap::new();
+            form_data.insert("enc_data", sign_result.enc_data);
+            form_data.insert("tt", sign_result.ts.to_string());
+            form_data.insert("did", did.to_string());
+            form_data.insert("auth", sign_result.auth);
+            form_data.insert("cdn", cdn.to_string());
+            form_data.insert("rate", rate.to_string());
+            form_data.insert("ver", "219032101".to_string());
+            form_data.insert("iar", "0".to_string());
+            form_data.insert("ive", "0".to_string());
+            form_data.insert("rid", rid.to_string());
+            form_data.insert("hevc", "0".to_string());
+            form_data.insert("fa", "0".to_string());
+            form_data.insert("sov", "0".to_string());
 
-        if resp.error != 0 {
-            return Err(ExtractorError::ValidationError(format!(
-                "Failed to get play info (fallback): {}",
-                resp.msg
-            )));
+            // Fallback auth always uses V1 API with POST
+            debug!(
+                "Requesting getH5PlayV1 with auth={}, ts={}, did={}",
+                form_data.get("auth").unwrap_or(&String::new()),
+                form_data.get("tt").unwrap_or(&String::new()),
+                did
+            );
+
+            let api_response = self
+                .extractor
+                .client
+                .post(format!("https://www.douyu.com/lapi/live/getH5PlayV1/{rid}"))
+                .header(reqwest::header::USER_AGENT, &key_data.user_agent)
+                .header(reqwest::header::REFERER, Self::BASE_URL)
+                .query(&form_data)
+                .form(&form_data)
+                .send()
+                .await?;
+
+            let status = api_response.status();
+            let body = api_response.text().await?;
+            debug!("getH5PlayV1 response (status {}): {}", status, body);
+
+            if is_douyu_auth_failed(status, &body) {
+                if attempt == 0 {
+                    continue;
+                }
+                return Err(ExtractorError::ValidationError(format!(
+                    "getH5PlayV1 auth failed (status {}): {}",
+                    status,
+                    normalize_douyu_error_body(&body)
+                )));
+            }
+
+            let resp: DouyuH5PlayResponse = serde_json::from_str(&body).map_err(|e| {
+                ExtractorError::ValidationError(format!(
+                    "Failed to parse getH5PlayV1 response: {} - body: {}",
+                    e,
+                    &body[..body.len().min(500)]
+                ))
+            })?;
+
+            if resp.error != 0 {
+                // Some failures are auth-related but returned as JSON.
+                if is_douyu_auth_failed(status, &resp.msg) && attempt == 0 {
+                    continue;
+                }
+                return Err(ExtractorError::ValidationError(format!(
+                    "Failed to get play info (fallback): {}",
+                    resp.msg
+                )));
+            }
+
+            return resp.data.ok_or_else(|| {
+                ExtractorError::ValidationError(
+                    "Failed to get play info (fallback): no data".to_string(),
+                )
+            });
         }
 
-        resp.data.ok_or_else(|| {
-            ExtractorError::ValidationError(
-                "Failed to get play info (fallback): no data".to_string(),
-            )
-        })
+        Err(ExtractorError::ValidationError(
+            "getH5PlayV1 auth failed after retry".to_string(),
+        ))
     }
 
     // ==================== CDN URL Construction ====================
 
+    fn build_base_req_query(rid: u64, cdn: &str, rate: i64) -> HashMap<&'static str, String> {
+        let mut req_query = HashMap::new();
+        req_query.insert("cdn", cdn.to_string());
+        req_query.insert("rate", rate.to_string());
+        req_query.insert("ver", "219032101".to_string());
+        req_query.insert("iar", "0".to_string());
+        req_query.insert("ive", "0".to_string());
+        req_query.insert("rid", rid.to_string());
+        req_query.insert("hevc", "0".to_string());
+        req_query.insert("fa", "0".to_string());
+        req_query.insert("sov", "0".to_string());
+        req_query
+    }
+
+    async fn get_mobile_play_url(
+        &self,
+        req_query: &HashMap<&str, String>,
+    ) -> Result<String, ExtractorError> {
+        let api_response = self
+            .extractor
+            .client
+            .post(format!(
+                "https://{}/api/room/ratestream",
+                Self::MOBILE_DOMAIN
+            ))
+            .header(
+                reqwest::header::USER_AGENT,
+                Self::random_mobile_user_agent(),
+            )
+            .header(reqwest::header::REFERER, Self::BASE_URL)
+            .form(req_query)
+            .send()
+            .await?;
+
+        let status = api_response.status();
+        let body = api_response.text().await?;
+        debug!("Mobile ratestream response (status {}): {}", status, body);
+
+        let resp: crate::extractor::platforms::douyu::models::DouyuMobilePlayResponse =
+            serde_json::from_str(&body).map_err(|e| {
+                ExtractorError::ValidationError(format!(
+                    "Failed to parse mobile ratestream response: {} - body: {}",
+                    e,
+                    &body[..body.len().min(500)]
+                ))
+            })?;
+
+        if resp.code != 0 {
+            return Err(ExtractorError::ValidationError(format!(
+                "Failed to get mobile play info: {}",
+                resp.msg
+            )));
+        }
+
+        Ok(resp
+            .data
+            .ok_or_else(|| {
+                ExtractorError::ValidationError(
+                    "Failed to get mobile play info: no data".to_string(),
+                )
+            })?
+            .url)
+    }
+
     /// Parses a Douyu stream URL into its components
     /// Returns the Tencent app name, stream ID, and query parameters
-    pub fn parse_stream_url(url: &str) -> Result<ParsedStreamInfo, ExtractorError> {
+    pub fn parse_stream_url(url: &str, rid: u64) -> Result<ParsedStreamInfo, ExtractorError> {
         // Split URL into base and query string
         let parts: Vec<&str> = url.splitn(2, '?').collect();
         let base_url = parts[0];
@@ -565,13 +712,8 @@ impl Douyu {
 
         // Parse query parameters
         let mut query_params: HashMap<String, String> = HashMap::new();
-        for pair in query_string.split('&') {
-            if let Some((key, value)) = pair.split_once('=') {
-                query_params.insert(
-                    key.to_string(),
-                    urlencoding::decode(value).unwrap_or_default().to_string(),
-                );
-            }
+        for (k, v) in url::form_urlencoded::parse(query_string.as_bytes()) {
+            query_params.insert(k.into_owned(), v.into_owned());
         }
 
         // Extract host from URL
@@ -582,21 +724,31 @@ impl Douyu {
             .unwrap_or("")
             .to_string();
 
-        // Extract stream ID (last path segment without extension)
-        let stream_id = base_url
-            .split('/')
-            .next_back()
-            .unwrap_or("")
-            .split('.')
-            .next()
-            .unwrap_or("")
-            .split('_')
-            .next()
-            .unwrap_or("")
-            .to_string();
+        // Extract stream ID similar to Python: /({rid}[^\._/]+)
+        let stream_id = Self::extract_stream_id_from_base_url(base_url, rid).unwrap_or_else(|| {
+            base_url
+                .split('/')
+                .next_back()
+                .unwrap_or("")
+                .split('.')
+                .next()
+                .unwrap_or("")
+                .split('_')
+                .next()
+                .unwrap_or("")
+                .to_string()
+        });
 
-        // Get Tencent app name from host
-        let tx_app_name = Self::get_tx_app_name(&host);
+        // Get app name from the path prefix (like Python get_tx_app_name)
+        let prefix = base_url
+            .split(&stream_id)
+            .next()
+            .unwrap_or(base_url)
+            .trim_end_matches('/');
+        let app_name = prefix.split('/').next_back().unwrap_or("");
+
+        // Get Tencent app name from host (suffix mapping) or fallback to app name
+        let tx_app_name = Self::get_tx_app_name(&host, app_name);
 
         Ok(ParsedStreamInfo {
             tx_app_name,
@@ -606,9 +758,22 @@ impl Douyu {
         })
     }
 
+    fn extract_stream_id_from_base_url(base_url: &str, rid: u64) -> Option<String> {
+        let rid_str = rid.to_string();
+        let marker = format!("/{rid_str}");
+        let pos = base_url.find(&marker)?;
+        let start = pos + 1; // skip '/'
+        let rest = base_url.get(start..)?;
+        let end = rest
+            .find(|c: char| ['.', '_', '/'].contains(&c))
+            .unwrap_or(rest.len());
+        let out = rest.get(..end)?.to_string();
+        if out.is_empty() { None } else { Some(out) }
+    }
+
     /// Gets the Tencent Cloud app name from the RTMP URL host
     /// Maps host suffixes to dyliveflv app names
-    fn get_tx_app_name(host: &str) -> String {
+    fn get_tx_app_name(host: &str, app_name: &str) -> String {
         if let Some(captures) = TX_HOST_SUFFIX_REGEX.captures(host)
             && let Some(suffix) = captures.get(1)
         {
@@ -617,31 +782,31 @@ impl Douyu {
             let num = if suffix_str == "sa" { "1" } else { suffix_str };
             return format!("dyliveflv{}", num);
         }
-        // Default fallback
-        "dyliveflv1".to_string()
+        if app_name.is_empty() {
+            "dyliveflv1".to_string()
+        } else {
+            app_name.to_string()
+        }
     }
 
-    /// Builds a Tencent CDN (tct) URL from stream info
-    /// This is used as an intermediate step for building Huoshan URLs
-    pub fn build_tencent_url(
-        stream_info: &ParsedStreamInfo,
-        additional_params: Option<&HashMap<String, String>>,
-    ) -> Result<String, ExtractorError> {
-        let origin = stream_info
-            .query_params
+    async fn build_tencent_url_with_mobile_token(
+        &self,
+        rid: u64,
+        tx_app_name: &str,
+        stream_id: &str,
+        base_query: &HashMap<String, String>,
+        req_query: &HashMap<&str, String>,
+    ) -> Result<(String, HashMap<String, String>), ExtractorError> {
+        let origin = base_query
             .get("origin")
             .map(|s| CdnOrigin::from_str(s))
             .unwrap_or(CdnOrigin::Unknown);
 
-        // Validate origin - only tct, hw, dy can be converted to Tencent CDN
         match origin {
             CdnOrigin::Unknown => {
                 return Err(ExtractorError::ValidationError(format!(
                     "Unknown origin '{}' cannot be converted to Tencent CDN",
-                    stream_info
-                        .query_params
-                        .get("origin")
-                        .unwrap_or(&"".to_string())
+                    base_query.get("origin").cloned().unwrap_or_default()
                 )));
             }
             CdnOrigin::Douyu => {
@@ -650,74 +815,73 @@ impl Douyu {
             _ => {}
         }
 
-        let tx_host = "tc-tct.douyucdn2.cn";
-        let mut query = stream_info.query_params.clone();
-        query.insert("fcdn".to_string(), "tct".to_string());
+        let mobile_url = self.get_mobile_play_url(req_query).await?;
+        let mobile_info = Self::parse_stream_url(&mobile_url, rid)?;
+        let mut mobile_query = mobile_info.query_params;
+        mobile_query.remove("vhost");
 
-        // Add additional params if provided
-        if let Some(params) = additional_params {
-            for (k, v) in params {
-                query.insert(k.clone(), v.clone());
-            }
+        let mut query = base_query.clone();
+        query.insert("fcdn".to_string(), "tct".to_string());
+        for (k, v) in mobile_query {
+            query.insert(k, v);
         }
 
-        // Remove vhost if present (needed for mobile token)
-        query.remove("vhost");
-
         let query_string = Self::encode_query_params(&query);
-        Ok(format!(
-            "https://{}/{}/{}.flv?{}",
-            tx_host, stream_info.tx_app_name, stream_info.stream_id, query_string
-        ))
+        let tx_url = format!(
+            "https://tc-tct.douyucdn2.cn/{}/{}.flv?{}",
+            tx_app_name, stream_id, query_string
+        );
+
+        Ok((tx_url, query))
     }
 
-    /// Builds a Huoshan/Volcano CDN (hs-h5) URL
-    /// This CDN often provides better performance for some users
-    ///
-    /// # Arguments
-    /// * `stream_info` - Parsed stream info from the original URL
-    /// * `tencent_url` - The Tencent CDN URL (used for fp_user_url parameter)
-    ///
-    /// # Returns
-    /// A tuple of (fake_host, cname_url) where:
-    /// - fake_host: The Host header value to use when requesting the URL
-    /// - cname_url: The actual URL to request
-    pub fn build_huoshan_url(
-        stream_info: &ParsedStreamInfo,
-        tencent_url: &str,
+    async fn build_hs_url(
+        &self,
+        stream_url: &str,
+        rid: u64,
+        req_query: &HashMap<&str, String>,
+        is_tct: bool,
     ) -> Result<(String, String), ExtractorError> {
-        // Get the Tencent host from the URL
+        let stream_info = Self::parse_stream_url(stream_url, rid)?;
+
+        let mut query = stream_info.query_params.clone();
+        let tencent_url = if is_tct {
+            stream_url.to_string()
+        } else {
+            let (tx_url, updated_query) = self
+                .build_tencent_url_with_mobile_token(
+                    rid,
+                    &stream_info.tx_app_name,
+                    &stream_info.stream_id,
+                    &query,
+                    req_query,
+                )
+                .await?;
+            query = updated_query;
+            tx_url
+        };
+
         let tx_host = tencent_url
             .split("//")
             .nth(1)
             .and_then(|s| s.split('/').next())
             .unwrap_or("tc-tct.douyucdn2.cn");
 
-        // Build Huoshan host from app name
+        let hs_host = format!(
+            "{}.douyucdn2.cn",
+            stream_info.tx_app_name.replace("dyliveflv", "huos")
+        )
+        .replace("huos1.", "huosa.");
 
-        // 1. Replace dyliveflv with huos in app name
-        let app_part = stream_info.tx_app_name.replace("dyliveflv", "huos");
-
-        // 2. Construct initial host string
-        let hs_host_initial = format!("{}.douyucdn2.cn", app_part);
-
-        // 3. Perform final replacement on the full host string
-        let hs_host = hs_host_initial.replace("huos1.", "huosa.");
-
-        // Build query params for Huoshan URL
-        let mut query = stream_info.query_params.clone();
-        let encoded_url = urlencoding::encode(tencent_url);
-        query.insert("fp_user_url".to_string(), encoded_url.to_string());
+        let encoded_url = urlencoding::encode(&tencent_url).to_string();
+        query.insert("fp_user_url".to_string(), encoded_url);
         query.insert("vhost".to_string(), tx_host.to_string());
         query.insert("domain".to_string(), tx_host.to_string());
 
         let query_string = Self::encode_query_params(&query);
-
-        // Huoshan CNAME host
-        let hs_cname_host = "douyu-pull.s.volcfcdndvs.com";
         let hs_cname_url = format!(
-            "http://{}/live/{}.flv?{}",
-            hs_cname_host, stream_info.stream_id, query_string
+            "http://douyu-pull.s.volcfcdndvs.com/live/{}.flv?{}",
+            stream_info.stream_id, query_string
         );
 
         Ok((hs_host, hs_cname_url))
@@ -725,9 +889,13 @@ impl Douyu {
 
     /// Encodes query parameters into a URL query string
     fn encode_query_params(params: &HashMap<String, String>) -> String {
-        params
-            .iter()
-            .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
+        let mut keys: Vec<&String> = params.keys().collect();
+        keys.sort_unstable();
+        keys.into_iter()
+            .map(|k| {
+                let v = params.get(k).map(String::as_str).unwrap_or_default();
+                format!("{}={}", k, urlencoding::encode(v))
+            })
             .collect::<Vec<_>>()
             .join("&")
     }
@@ -786,6 +954,50 @@ impl Douyu {
             }
         };
 
+        // Prefer checking live status from HTML first (avoid calling betard for
+        // offline/loop rooms). If parsing fails, we'll fall back to betard.
+        let live_from_html = match (
+            self.extract_room_status(&response),
+            self.extract_video_loop(&response),
+        ) {
+            (Ok(room_status), Ok(video_loop)) => Some(room_status == 1 && video_loop == 0),
+            _ => None,
+        };
+
+        if let Some(false) = live_from_html {
+            // Not live (or is playing a recording loop). Try RoomApi for metadata,
+            // but don't fail extraction if it errors.
+            let mut title = "Douyu".to_string();
+            let mut artist = String::new();
+            let mut cover_url = None;
+            let mut avatar_url = None;
+
+            match self
+                .get_room_info(rid)
+                .await
+                .and_then(|body| self.parse_room_info(&body))
+            {
+                Ok(room_info) => {
+                    title = room_info.data.room_name;
+                    artist = room_info.data.owner_name;
+                    cover_url = Some(room_info.data.room_thumb);
+                    avatar_url = Some(room_info.data.avatar);
+                }
+                Err(e) => {
+                    debug!("Failed to fetch RoomApi metadata for {}: {}", rid, e);
+                }
+            }
+
+            return Ok(self.create_media_info(
+                &title,
+                &artist,
+                cover_url,
+                avatar_url,
+                false,
+                vec![],
+            ));
+        }
+
         // Use betard API for more reliable room info including VIP status
         let betard_info = self.get_betard_room_info(rid).await;
         // debug!("betard_info: {:#?}", betard_info);
@@ -815,24 +1027,28 @@ impl Douyu {
                 )
             }
             Err(e) => {
-                // Fallback to HTML parsing and RoomApi
-                debug!("Betard API failed, falling back to HTML parsing: {}", e);
-                let room_status = self.extract_room_status(&response)?;
-                let video_loop = self.extract_video_loop(&response)?;
-                let live = room_status == 1 && video_loop == 0;
+                debug!("Betard API failed, falling back: {}", e);
 
-                // Get room info from RoomApi for metadata
-                let room_info = self.get_room_info(rid).await?;
-                let room_info = self.parse_room_info(&room_info)?;
+                let live = live_from_html.unwrap_or(true);
 
-                (
-                    live,
-                    false, // Cannot determine VIP status without betard API
-                    room_info.data.room_name.clone(),
-                    room_info.data.owner_name.clone(),
-                    Some(room_info.data.room_thumb.clone()),
-                    Some(room_info.data.avatar.clone()),
-                )
+                match self
+                    .get_room_info(rid)
+                    .await
+                    .and_then(|body| self.parse_room_info(&body))
+                {
+                    Ok(room_info) => (
+                        live,
+                        false, // Cannot determine VIP status without betard API
+                        room_info.data.room_name,
+                        room_info.data.owner_name,
+                        Some(room_info.data.room_thumb),
+                        Some(room_info.data.avatar),
+                    ),
+                    Err(e) => {
+                        debug!("RoomApi failed for {}: {}", rid, e);
+                        (live, false, "Douyu".to_string(), String::new(), None, None)
+                    }
+                }
             }
         };
 
@@ -884,7 +1100,7 @@ impl Douyu {
     async fn get_streams_with_stable_auth(
         &self,
         rid: u64,
-        is_vip: bool,
+        _is_vip: bool,
     ) -> Result<Vec<StreamInfo>, ExtractorError> {
         let mut stream_infos = vec![];
 
@@ -893,57 +1109,13 @@ impl Douyu {
             .get_play_info_fallback_with_scdn_avoidance(rid, &self.cdn, self.rate, None)
             .await?;
 
-        // Build the base stream URL
-        let base_stream_url = format!("{}/{}", data.rtmp_url, data.rtmp_live);
-
-        // Attempt to build hs-h5 URL details regardless of selection
-        // This allows us to inject it as an option or use it if selected
-        let hs_url_details = match Self::parse_stream_url(&base_stream_url) {
-            Ok(stream_info) => {
-                // First build Tencent URL if not already tct
-                let is_tct = data.rtmp_cdn == "tct-h5";
-                let tct_url = if is_tct {
-                    Some(base_stream_url.clone())
-                } else {
-                    match Self::build_tencent_url(&stream_info, None) {
-                        Ok(url) => Some(url),
-                        Err(e) => {
-                            debug!("Failed to build Tencent URL: {}, using original", e);
-                            None
-                        }
-                    }
-                };
-
-                if let Some(tct_url) = tct_url {
-                    // Then build Huoshan URL
-                    match Self::build_huoshan_url(&stream_info, &tct_url) {
-                        Ok((host, url)) => {
-                            debug!("Built hs-h5 URL: {} (Host: {})", url, host);
-                            Some((url, host))
-                        }
-                        Err(e) => {
-                            debug!("Failed to build Huoshan URL: {}", e);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            }
-            Err(e) => {
-                debug!("Failed to parse stream URL: {}", e);
-                None
-            }
-        };
-
         // Prepare the list of CDNs to process
         let mut cdns_to_process = data.cdns.clone();
 
-        // Check if we need to inject hs-h5
-        let has_hs = cdns_to_process.iter().any(|c| c.cdn == "hs-h5");
-        if !has_hs && hs_url_details.is_some() {
-            debug!("Injecting 'hs-h5' into available CDNs");
-            // Create a synthetic hs-h5 entry
+        // Align with Python: only offer hs-h5 by default when user explicitly selects it.
+        let want_hs = self.cdn == "hs-h5";
+        if want_hs && !cdns_to_process.iter().any(|c| c.cdn == "hs-h5") {
+            // Create a synthetic hs-h5 entry (resolved in get_url).
             let is_h265 = cdns_to_process
                 .iter()
                 .find(|c| c.cdn == "tct-h5")
@@ -958,21 +1130,16 @@ impl Douyu {
             });
         }
 
-        let (final_stream_url, hs_host) = if let Some((url, host)) = hs_url_details {
-            (url, Some(host))
+        let preferred_cdn = if want_hs {
+            "hs-h5"
         } else {
-            (base_stream_url.clone(), None)
+            actual_cdn.as_str()
         };
+        let preferred_rate = self.rate as u64;
 
         for cdn in cdns_to_process {
             for rate in &data.multirates {
-                let stream_url = if (cdn.cdn == "hs-h5" && hs_host.is_some())
-                    || (cdn.cdn == actual_cdn && rate.rate == self.rate as u64)
-                {
-                    final_stream_url.clone()
-                } else {
-                    "".to_string()
-                };
+                let stream_url = "".to_string();
 
                 let format = if data.rtmp_live.contains("flv") {
                     StreamFormat::Flv
@@ -987,19 +1154,17 @@ impl Douyu {
 
                 let codec = if cdn.is_h265 { "hevc,aac" } else { "avc,aac" };
 
-                let mut extras = serde_json::json!({
+                let priority = if cdn.cdn == preferred_cdn && rate.rate == preferred_rate {
+                    0
+                } else {
+                    10
+                };
+
+                let extras = serde_json::json!({
                     "cdn": cdn.cdn.clone(),
                     "rate": rate.rate.to_string(),
                     "rid": rid.to_string(),
-                    "is_vip": is_vip.to_string(),
                 });
-
-                // Add host header if hs-h5 URL was built
-                if let Some(host) = hs_host.as_ref()
-                    && cdn.cdn == "hs-h5"
-                {
-                    extras["host_header"] = serde_json::Value::String(host.clone());
-                }
 
                 let stream = StreamInfo {
                     url: stream_url,
@@ -1007,7 +1172,7 @@ impl Douyu {
                     media_format,
                     quality: rate.name.to_string(),
                     bitrate: rate.bit,
-                    priority: 0,
+                    priority,
                     extras: Some(extras),
                     codec: codec.to_string(),
                     fps: 0.0,
@@ -1120,8 +1285,61 @@ impl PlatformExtractor for Douyu {
             .ok_or_else(|| ExtractorError::ValidationError("Missing rate in extras".to_string()))?;
 
         debug!("Resolving Douyu stream URL for rid: {}", rid);
-        let resp = self.get_play_info_fallback(rid, cdn, rate, None).await?;
-        stream_info.url = format!("{}/{}", resp.rtmp_url, resp.rtmp_live);
+        let (resp, actual_cdn) = self
+            .get_play_info_fallback_with_scdn_avoidance(rid, cdn, rate, None)
+            .await?;
+
+        let base_stream_url = format!("{}/{}", resp.rtmp_url, resp.rtmp_live);
+
+        if cdn == "hs-h5" {
+            let need_build = self.force_hs || resp.rtmp_cdn != "hs-h5";
+            if need_build {
+                let req_query = Self::build_base_req_query(rid, &actual_cdn, rate);
+                let is_tct = resp.rtmp_cdn == "tct-h5";
+
+                match self
+                    .build_hs_url(&base_stream_url, rid, &req_query, is_tct)
+                    .await
+                {
+                    Ok((host, url)) => {
+                        stream_info.url = url;
+
+                        let extras_value = stream_info
+                            .extras
+                            .get_or_insert_with(|| serde_json::json!({}));
+                        if !extras_value.is_object() {
+                            *extras_value = serde_json::json!({});
+                        }
+                        let extras_obj = extras_value.as_object_mut().unwrap();
+
+                        // Backward-compat (older code used host_header string).
+                        extras_obj.insert(
+                            "host_header".to_string(),
+                            serde_json::Value::String(host.clone()),
+                        );
+
+                        let headers_value = extras_obj
+                            .entry("headers".to_string())
+                            .or_insert_with(|| serde_json::json!({}));
+                        if !headers_value.is_object() {
+                            *headers_value = serde_json::json!({});
+                        }
+                        headers_value
+                            .as_object_mut()
+                            .unwrap()
+                            .insert("Host".to_string(), serde_json::Value::String(host));
+                    }
+                    Err(e) => {
+                        debug!("Failed to build hs-h5 URL (fallback to base): {}", e);
+                        stream_info.url = base_stream_url;
+                    }
+                }
+            } else {
+                stream_info.url = base_stream_url;
+            }
+        } else {
+            stream_info.url = base_stream_url;
+        }
         Ok(())
     }
 }
