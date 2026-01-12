@@ -18,7 +18,7 @@ pub struct PrefetchConfig {
 impl Default for PrefetchConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             prefetch_count: 2,
             max_buffer_before_skip: 40,
         }
@@ -185,7 +185,7 @@ impl Default for HlsPlaylistConfig {
             variant_selection_policy: Default::default(),
             adaptive_refresh_enabled: true,
             adaptive_refresh_min_interval: Duration::from_millis(500),
-            adaptive_refresh_max_interval: Duration::from_secs(5),
+            adaptive_refresh_max_interval: Duration::from_secs(3),
         }
     }
 }

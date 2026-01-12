@@ -675,7 +675,6 @@ impl PlaylistEngine {
     }
 
     /// Processes the segments of a new playlist to identify new ones and create jobs.
-    #[allow(clippy::too_many_arguments)]
     async fn process_segments(
         &self,
         new_playlist: &MediaPlaylist,
