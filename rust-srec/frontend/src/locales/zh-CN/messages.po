@@ -170,6 +170,10 @@ msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 msgid "Accent Color"
 msgstr "强调色"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:158
+msgid "Accept Invalid Certs"
+msgstr "接受无效证书"
+
 #: src/components/streamers/card/stream-actions-menu.tsx:42
 msgid "Actions"
 msgstr "操作"
@@ -191,6 +195,10 @@ msgstr "正在录制"
 #: src/routes/_authed/_dashboard/dashboard.tsx:292
 msgid "Active Recordings"
 msgstr "正在录制"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:216
+msgid "Adaptive Refresh"
+msgstr "自适应刷新"
 
 #: src/components/notifications/forms/webhook-form.tsx:409
 msgid "Add"
@@ -309,6 +317,10 @@ msgstr "添加自定义标签"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:121
 msgid "Additional arguments appended to the command."
 msgstr "附加到命令的额外参数。"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:219
+msgid "Adjust refresh rate based on target duration"
+msgstr "根据目标时长动态调整刷新率"
 
 #: src/components/config/shared/danmu-config-form.tsx:146
 msgid "Adjust sampling rate based on danmu traffic volume."
@@ -482,10 +494,6 @@ msgstr "ASS 字幕内嵌"
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
-#: src/components/config/engines/forms/mesio-form.tsx:95
-msgid "Attempt to repair timestamps in FLV streams"
-msgstr "尝试修复 FLV 流中的时间戳"
-
 #: src/components/pipeline/presets/default-presets-i18n.ts:39
 #: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:133
@@ -535,6 +543,10 @@ msgstr "认证"
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:174
 msgid "Authentication & Setup"
 msgstr "身份验证与设置"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:123
+msgid "Auto"
+msgstr "自动"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:211
 msgid "Auto (QR → Phone & Code → Desktop)"
@@ -608,6 +620,10 @@ msgstr "返回录制会话"
 msgid "Background refresh enabled"
 msgstr "后台刷新已启用"
 
+#: src/components/config/engines/forms/mesio-form.tsx:200
+msgid "Backjump Threshold"
+msgstr "回跳阈值"
+
 #: src/components/config/shared/retry-policy-form.tsx:76
 msgid "Backoff Multiplier"
 msgstr "退避倍率"
@@ -621,6 +637,10 @@ msgstr "备份"
 #: src/routes/_authed/_dashboard/config/route.tsx:87
 msgid "Backup & Restore"
 msgstr "备份与恢复"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:351
+msgid "Base"
+msgstr "基础"
 
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:91
 msgid "Base delay between retries"
@@ -663,6 +683,10 @@ msgstr "Bearer Token"
 msgid "best"
 msgstr "最佳"
 
+#: src/components/config/engines/forms/mesio-form.tsx:153
+msgid "BETA"
+msgstr "测试版"
+
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:188
 msgid "Bilibili QR Login"
 msgstr "哔哩哔哩扫码登录"
@@ -693,19 +717,11 @@ msgstr "圆角半径"
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "浏览处理任务生成的媒体文件"
 
-#: src/components/config/engines/forms/mesio-form.tsx:49
-msgid "Buffer Settings"
-msgstr "缓冲区设置"
-
-#: src/components/config/engines/forms/mesio-form.tsx:59
-msgid "Buffer Size"
-msgstr "缓冲区大小"
-
 #: src/components/pipeline/presets/default-presets-i18n.ts:79
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。支持清单感知和批量处理。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:69
+#: src/components/config/engines/forms/mesio-form.tsx:305
 msgid "bytes"
 msgstr "字节"
 
@@ -826,7 +842,7 @@ msgstr "声道"
 msgid "Check if file exists after conversion"
 msgstr "转换后检查文件是否存在"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:410
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:414
 msgid "Check Login"
 msgstr "检查登录"
 
@@ -900,7 +916,7 @@ msgid "Cloning..."
 msgstr "正在克隆..."
 
 #: src/components/config/global/backup-restore-card.tsx:569
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:682
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:686
 msgid "Close"
 msgstr "关闭"
 
@@ -925,7 +941,7 @@ msgstr "命令模板参数。使用 {input} 和 {output} 占位符。"
 msgid "Comment"
 msgstr "评论"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:353
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:357
 msgid "Complete the Telegram login process in this terminal."
 msgstr "在此终端中完成 Telegram 登录过程。"
 
@@ -1060,6 +1076,10 @@ msgstr "确认新密码"
 #: src/routes/_authed/change-password.tsx:236
 msgid "Confirm Password"
 msgstr "确认密码"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:64
+msgid "Connect Timeout (ms)"
+msgstr "连接超时 (ms)"
 
 #: src/components/connection-status-indicator.tsx:24
 #: src/components/logging/log-viewer.tsx:341
@@ -1447,10 +1467,6 @@ msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原始分辨率缩略图，上传两者至云端并删除本地文件。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:74
-msgid "Default: 8388608 (8 MiB)"
-msgstr "默认：8388608（8 MiB）"
-
 #: src/components/pipeline/workflows/step-config-dialog.tsx:408
 msgid "Define how this step identifies itself and connects to others."
 msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
@@ -1675,6 +1691,10 @@ msgstr "下载"
 msgid "Download Backup"
 msgstr "下载备份"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:244
+msgid "Download Concurrency"
+msgstr "下载并发数"
+
 #: src/components/config/platforms/tabs/general-tab.tsx:76
 msgid "Download Delay"
 msgstr "录制延迟"
@@ -1704,14 +1724,6 @@ msgstr "下载中"
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
 
-#: src/components/config/engines/forms/mesio-form.tsx:210
-msgid "Drop duplicate sequence headers"
-msgstr "丢弃重复序列头"
-
-#: src/components/config/engines/forms/mesio-form.tsx:248
-msgid "Drop repeated A/V tags and detect replay loops (useful when streams go offline and replay tail)."
-msgstr "丢弃重复的音视频标签并检测回放循环（在流离线并回放尾部时很有用）。"
-
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:680
 msgid "Dry Run"
 msgstr "演练模式"
@@ -1719,10 +1731,6 @@ msgstr "演练模式"
 #: src/components/pipeline/presets/default-presets-i18n.ts:93
 msgid "Dual Format"
 msgstr "双格式输出"
-
-#: src/components/config/engines/forms/mesio-form.tsx:238
-msgid "Duplicate media-tag filtering"
-msgstr "重复媒体标签过滤"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:563
 #: src/components/streamers/edit/active-download-card.tsx:69
@@ -1845,6 +1853,14 @@ msgstr "生效范围"
 msgid "Enable"
 msgstr "启用"
 
+#: src/components/config/engines/forms/mesio-form.tsx:331
+msgid "Enable advanced FLV timestamp repairing"
+msgstr "启用高级 FLV 时间戳修复"
+
+#: src/components/config/engines/forms/mesio-form.tsx:354
+msgid "Enable advanced HLS segment reconstruction"
+msgstr "启用高级 HLS 分段重建"
+
 #: src/components/streamers/config/streamer-general-settings.tsx:255
 msgid "Enable Monitoring"
 msgstr "启用监控"
@@ -1860,10 +1876,6 @@ msgstr "启用代理"
 #: src/components/config/global/file-config-card.tsx:36
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "启用弹幕/聊天消息与视频一起录制。"
-
-#: src/components/config/engines/forms/mesio-form.tsx:314
-msgid "Enable Replay Offset Matching"
-msgstr "启用回放偏移匹配"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:50
 msgid "Enable translucent background blur effects."
@@ -2076,11 +2088,6 @@ msgstr "执行记录"
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
 
-#: src/components/config/engines/forms/mesio-form.tsx:185
-#: src/components/config/engines/forms/mesio-form.tsx:244
-msgid "Experimental"
-msgstr "实验性"
-
 #: src/components/sessions/session-card.tsx:235
 msgid "Explore"
 msgstr "浏览"
@@ -2160,7 +2167,7 @@ msgid "Failed to change password"
 msgstr "修改密码失败"
 
 #. placeholder {0}: e.message
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:180
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:184
 msgid "Failed to check TDL status: {0}"
 msgstr "检查 TDL 状态失败：{0}"
 
@@ -2318,7 +2325,7 @@ msgid "Failed to retry steps"
 msgstr "无法重试步骤"
 
 #. placeholder {0}: e.message
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:147
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:151
 msgid "Failed to send input: {0}"
 msgstr "发送输入失败：{0}"
 
@@ -2327,7 +2334,7 @@ msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
 #. placeholder {0}: e.message
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:135
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:139
 msgid "Failed to start login: {0}"
 msgstr "启动登录失败：{0}"
 
@@ -2406,6 +2413,10 @@ msgstr "获取"
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:359
+msgid "Fetcher"
+msgstr "获取器"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:633
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
@@ -2473,6 +2484,10 @@ msgstr "过滤器删除成功"
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
+#: src/components/config/engines/forms/mesio-form.tsx:157
+msgid "Filter repeated tags and detect stream replay loops"
+msgstr "过滤重复标签并检测流重放循环"
+
 #: src/components/filters/forms/FilterTypeSelector.tsx:73
 msgid "Filter Type"
 msgstr "过滤器类型"
@@ -2480,6 +2495,10 @@ msgstr "过滤器类型"
 #: src/components/filters/FilterDialog.tsx:159
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
+
+#: src/components/config/engines/forms/mesio-form.tsx:180
+msgid "Filter Window Size"
+msgstr "过滤窗口大小"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:500
 msgid "Filtering & Behavior"
@@ -2501,13 +2520,13 @@ msgstr "第一个输出文件路径"
 msgid "Fix configuration errors before saving"
 msgstr "保存前修复配置错误"
 
-#: src/components/config/engines/forms/mesio-form.tsx:92
-msgid "Fix FLV"
-msgstr "修复 FLV"
+#: src/components/config/engines/forms/mesio-form.tsx:328
+msgid "Fix FLV Streams"
+msgstr "修复 FLV 流"
 
-#: src/components/config/engines/forms/mesio-form.tsx:115
-msgid "Fix HLS"
-msgstr "修复 HLS"
+#: src/components/config/engines/forms/mesio-form.tsx:351
+msgid "Fix HLS Discontinuities"
+msgstr "修复 HLS 不连续性"
 
 #: src/components/config/shared/danmu-config-form.tsx:135
 msgid "Fixed Interval"
@@ -2517,10 +2536,6 @@ msgstr "固定间隔"
 msgid "Flow & Dependencies"
 msgstr "流程与依赖"
 
-#: src/components/config/engines/forms/mesio-form.tsx:137
-msgid "FLV Fix (Advanced)"
-msgstr "FLV 修复 (高级)"
-
 #: src/routes/_authed/_dashboard/config/logging.tsx:58
 msgid "FLV parser"
 msgstr "FLV 解析器"
@@ -2528,6 +2543,14 @@ msgstr "FLV 解析器"
 #: src/routes/_authed/_dashboard/config/logging.tsx:59
 msgid "FLV stream fixing pipeline"
 msgstr "FLV 流修复管道"
+
+#: src/components/config/engines/forms/mesio-form.tsx:270
+msgid "FLV Tuning"
+msgstr "FLV 调优"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:140
+msgid "Follow Redirects"
+msgstr "跟随重定向"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:257
 msgid "Fonts Directory"
@@ -2590,6 +2613,7 @@ msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和
 msgid "Full Processing"
 msgstr "全流程处理"
 
+#: src/components/config/engines/forms/mesio-form.tsx:266
 #: src/components/config/platforms/platform-editor.tsx:189
 #: src/components/config/templates/tabs/platform-override-card.tsx:62
 #: src/components/config/templates/template-editor.tsx:247
@@ -2660,6 +2684,14 @@ msgstr "玻璃模式"
 msgid "Global"
 msgstr "全局"
 
+#: src/components/config/engines/forms/mesio-form.tsx:295
+msgid "Global Buffer Size"
+msgstr "全局缓冲区大小"
+
+#: src/components/config/engines/forms/mesio-form.tsx:285
+msgid "Global Configuration"
+msgstr "全局配置"
+
 #: src/components/config/platforms/tabs/general-tab.tsx:57
 #: src/components/config/platforms/tabs/general-tab.tsx:89
 #: src/components/config/shared/limits-card.tsx:58
@@ -2669,6 +2701,10 @@ msgstr "全局"
 #: src/components/config/shared/proxy-settings-card.tsx:277
 msgid "Global Default"
 msgstr "全局默认"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:49
+msgid "Global Timeout (ms)"
+msgstr "全局超时 (ms)"
 
 #: src/components/not-found.tsx:24
 msgid "Go back"
@@ -2705,10 +2741,6 @@ msgstr "H.264"
 #: src/components/pipeline/presets/default-presets-i18n.ts:72
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
-
-#: src/components/config/engines/forms/mesio-form.tsx:118
-msgid "Handle discontinuities in HLS streams"
-msgstr "处理 HLS 流中的不连续段"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:671
 msgid "Hardware Acceleration"
@@ -2775,6 +2807,10 @@ msgstr "HLS 解析器"
 msgid "HLS stream fixing pipeline"
 msgstr "HLS 流修复管道"
 
+#: src/components/config/engines/forms/mesio-form.tsx:275
+msgid "HLS Tuning"
+msgstr "HLS 调优"
+
 #: src/components/default-catch-boundary.tsx:47
 #: src/components/sidebar/navbar.tsx:60
 msgid "Home"
@@ -2807,6 +2843,18 @@ msgstr "HTTP 中间件"
 #: src/routes/_authed/_dashboard/config/logging.tsx:65
 msgid "HTTP requests"
 msgstr "HTTP 请求"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:111
+msgid "HTTP Version Preference"
+msgstr "HTTP 版本偏好"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:125
+msgid "HTTP/1.1 Only"
+msgstr "仅 HTTP/1.1"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:124
+msgid "HTTP/2 Only"
+msgstr "仅 HTTP/2"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:99
 msgid "https://lb-eu.cdn-perfprod.com"
@@ -2948,7 +2996,7 @@ msgstr "输入路径（逗号分隔）"
 msgid "Inspecting"
 msgstr "检查中"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:453
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:457
 msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
 msgstr "Windows 不支持通过此 API 进行交互式密码输入。请使用“桌面登录”（导入 tdata）或在常规终端中登录一次。"
 
@@ -3130,6 +3178,10 @@ msgstr "直播中"
 msgid "Live Preview"
 msgstr "实时预览"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:184
+msgid "Live Refresh Interval (ms)"
+msgstr "直播刷新间隔 (ms)"
+
 #. placeholder {0}: i18n._(template.label)
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:32
 msgid "Loaded template: {0}"
@@ -3193,11 +3245,11 @@ msgid "Login Args"
 msgstr "登录参数"
 
 #. placeholder {0}: typeof status === 'object' && 'failed' in status ? status.failed.message : 'Unknown error'
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:598
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:602
 msgid "Login failed: {0}"
 msgstr "登录失败：{0}"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:592
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:596
 msgid "Login session cancelled"
 msgstr "登录会话已取消"
 
@@ -3216,6 +3268,10 @@ msgstr "登录类型"
 #: src/components/sidebar/navbar.tsx:27
 msgid "Logs"
 msgstr "日志"
+
+#: src/components/config/engines/forms/mesio-form.tsx:148
+msgid "Loop Protection"
+msgstr "循环保护"
 
 #: src/components/streamers/config/streamer-general-settings.tsx:233
 #: src/components/streamers/edit/streamer-meta-form.tsx:208
@@ -3316,12 +3372,20 @@ msgstr "最大分片大小"
 msgid "Max Quality Thumbnail"
 msgstr "最高质量缩略图"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:199
+msgid "Max Refresh Retries"
+msgstr "最大刷新重试次数"
+
 #: src/components/config/shared/retry-policy-form.tsx:56
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:614
 msgid "Max Retries"
 msgstr "最大重试次数"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:278
+msgid "Max Segment Retries"
+msgstr "最大分段重试次数"
 
 #: src/components/config/global/concurrency-card.tsx:74
 msgid "Max Uploads"
@@ -3532,6 +3596,10 @@ msgstr "网络与系统"
 #: src/components/sidebar/navbar.tsx:46
 msgid "New"
 msgstr "新建"
+
+#: src/components/config/engines/forms/mesio-form.tsx:97
+msgid "NEW"
+msgstr "新"
 
 #: src/routes/_authed/change-password.tsx:194
 msgid "New Password"
@@ -3787,7 +3855,7 @@ msgstr "无（默认）"
 msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:643
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:647
 #: src/components/streamers/config/streamer-general-settings.tsx:230
 #: src/components/streamers/edit/streamer-meta-form.tsx:205
 msgid "Normal"
@@ -3832,6 +3900,10 @@ msgstr "确认主播离线所需的连续失败检查次数。较高的值可以
 msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
 msgstr "在数据库中保留已完成、失败或中断任务历史记录的天数。"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:250
+msgid "Number of parallel segment downloads"
+msgstr "并行下载分段数"
+
 #: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:122
 msgid "Number of retries for API requests."
 msgstr "API 请求重试次数。"
@@ -3865,6 +3937,14 @@ msgstr "离线检测"
 #: src/components/config/global/network-system-card.tsx:142
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:319
+msgid "Offload Decryption"
+msgstr "卸载解密"
+
+#: src/components/config/engines/forms/mesio-form.tsx:221
+msgid "Offset Consistency Check"
+msgstr "偏移一致性检查"
 
 #: src/components/config/shared/event-hooks-form.tsx:134
 msgid "On Download Complete"
@@ -3924,6 +4004,10 @@ msgstr "操作模式"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:65
 msgid "Operation Type"
 msgstr "操作类型"
+
+#: src/components/config/engines/forms/mesio-form.tsx:123
+msgid "Optimize Stream Headers"
+msgstr "优化流头部"
 
 #: src/components/config/shared/proxy-settings-card.tsx:175
 #: src/components/config/shared/proxy-settings-card.tsx:194
@@ -4130,7 +4214,7 @@ msgstr "透传输入"
 msgid "Password"
 msgstr "密码"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:487
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:491
 msgid "Password / 2FA blocked"
 msgstr "密码/两步验证被阻止"
 
@@ -4146,7 +4230,7 @@ msgstr "受保护流的密码。"
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
 msgstr "DanmakuFactory 可执行文件路径。如果为空，则使用环境变量或 PATH。"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:522
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:526
 msgid "Path to Telegram Desktop (contains tdata)"
 msgstr "Telegram Desktop 路径（包含 tdata）"
 
@@ -4197,6 +4281,10 @@ msgstr "逐段"
 #: src/components/config/shared-config-editor.tsx:539
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:363
+msgid "Perf"
+msgstr "性能"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:662
 #: src/components/sessions/overview-tab.tsx:196
@@ -4349,6 +4437,10 @@ msgstr "播放"
 msgid "Player"
 msgstr "播放器"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:355
+msgid "Playlist"
+msgstr "播放列表"
+
 #: src/components/player/url-input-form.tsx:29
 msgid "Please enter a valid URL"
 msgstr "请输入有效的 URL"
@@ -4373,7 +4465,7 @@ msgstr "请重启系统以确保所有配置更改已完全生效。"
 msgid "Please select a JSON file"
 msgstr "请选择一个 JSON 文件"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:535
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:539
 msgid "Please set Telegram Desktop Directory first"
 msgstr "请先设置 Telegram Desktop 目录"
 
@@ -4517,7 +4609,7 @@ msgid "Priority"
 msgstr "优先级"
 
 #. placeholder {0}: status.exited.code ?? 0
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:594
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:598
 msgid "Process exited with code {0}"
 msgstr "进程以代码 {0} 退出"
 
@@ -4580,7 +4672,7 @@ msgid "Proxy URL"
 msgstr "代理 URL"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:214
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:504
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:508
 msgid "QR Code"
 msgstr "二维码"
 
@@ -4643,6 +4735,10 @@ msgstr "Rclone 可执行文件"
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:79
+msgid "Read Timeout (ms)"
+msgstr "读取超时 (ms)"
+
 #: src/components/config/engines/engine-card.tsx:146
 msgid "Ready"
 msgstr "就绪"
@@ -4678,6 +4774,10 @@ msgstr "最近录制会话"
 #: src/components/config/global/backup-restore-card.tsx:509
 msgid "Recommended"
 msgstr "推荐"
+
+#: src/components/config/engines/forms/mesio-form.tsx:310
+msgid "Recommended: 8388608 (8 MiB)"
+msgstr "推荐：8388608 (8 MiB)"
 
 #: src/components/config/global/file-config-card.tsx:34
 #: src/components/config/shared/record-danmu-card.tsx:38
@@ -4795,10 +4895,6 @@ msgstr "替换输出文件"
 msgid "Replace output files if they already exist"
 msgstr "若输出文件已存在则替换"
 
-#: src/components/config/engines/forms/mesio-form.tsx:294
-msgid "Replay Backjump Threshold (ms)"
-msgstr "回放跳回阈值 (毫秒)"
-
 #: src/components/notifications/forms/webhook-form.tsx:182
 msgid "Request timeout duration"
 msgstr "请求超时时长"
@@ -4833,7 +4929,7 @@ msgstr "资源"
 msgid "Restart Required"
 msgstr "需要重启"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:548
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:552
 msgid "Restart with -d"
 msgstr "使用 -d 重启"
 
@@ -5120,6 +5216,10 @@ msgstr "秒"
 msgid "Segment"
 msgstr "分段"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:263
+msgid "Segment Download Timeout (ms)"
+msgstr "分段下载超时 (ms)"
+
 #: src/components/streamers/edit/active-download-card.tsx:77
 msgid "Segments"
 msgstr "分段"
@@ -5215,11 +5315,11 @@ msgstr "已选"
 msgid "Selected"
 msgstr "已选择"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:658
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:662
 msgid "Send"
 msgstr "发送"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:643
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:647
 msgid "Sensitive"
 msgstr "敏感"
 
@@ -5275,7 +5375,7 @@ msgstr "录制会话 ID"
 msgid "Session ID is required"
 msgstr "会话 ID 是必需的"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:621
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:625
 msgid "Session is not running"
 msgstr "会话未运行"
 
@@ -5305,7 +5405,7 @@ msgstr "会话缩略图"
 msgid "Sessions"
 msgstr "录制会话"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:477
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:481
 msgid "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is in PATH."
 msgstr "将“TDL 二进制路径”设置为你的 `tdl` 可执行文件，或确保 `tdl` 在 PATH 中。"
 
@@ -5420,17 +5520,13 @@ msgstr "按时长分割。"
 msgid "Split after size."
 msgstr "按大小分割。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:148
-msgid "Split on sequence header change"
-msgstr "在序列头变更时分段"
+#: src/components/config/engines/forms/mesio-form.tsx:81
+msgid "Split on any raw header change. Safe but may cause extra files."
+msgstr "在任意原始头变更时分割。安全但可能产生额外文件。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:189
-msgid "Split only when codec configuration changes (reduces false splits)."
-msgstr "仅当编码配置发生变化时分段（减少错误分段）。"
-
-#: src/components/config/engines/forms/mesio-form.tsx:166
-msgid "Split whenever raw sequence-header bytes change (most conservative, may split on non-semantic changes)."
-msgstr "当原始序列头字节发生变化时分段（最保守，可能会在非语义变化时分段）。"
+#: src/components/config/engines/forms/mesio-form.tsx:101
+msgid "Split only on codec configuration changes. Reduces false splits."
+msgstr "仅在编解码器配置变更时分割。减少误分割。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Standard"
@@ -5444,7 +5540,7 @@ msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 msgid "Start checking this streamer immediately."
 msgstr "立即开始检查此主播。"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:309
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:313
 msgid "Start Desktop Login"
 msgstr "开始桌面登录"
 
@@ -5452,11 +5548,11 @@ msgstr "开始桌面登录"
 msgid "Start Over"
 msgstr "重新开始"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:311
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:315
 msgid "Start Phone & Code Login"
 msgstr "开始手机号和验证码登录"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:313
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:317
 msgid "Start QR Login"
 msgstr "开始二维码登录"
 
@@ -5472,7 +5568,7 @@ msgstr "开始时间"
 msgid "Started"
 msgstr "已开始"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:562
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:566
 msgid "Starting tdl process..."
 msgstr "正在启动 tdl 进程..."
 
@@ -5530,6 +5626,10 @@ msgstr "流选项"
 #: src/routes/_authed/_dashboard/player/index.tsx:301
 msgid "Stream Player"
 msgstr "流播放器"
+
+#: src/components/config/engines/forms/mesio-form.tsx:63
+msgid "Stream Splitting Strategy"
+msgstr "流分割策略"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:223
 msgid "Streamer"
@@ -5641,9 +5741,9 @@ msgstr "支持的平台"
 msgid "Supports placeholders: {platform}, {streamer}, {title}, {streamer_id}, {session_id} and time tokens like %Y/%m/%d."
 msgstr "支持占位符：{platform}, {streamer}, {title}, {streamer_id}, {session_id} 和时间标记，如 %Y/%m/%d。"
 
-#: src/components/config/engines/forms/mesio-form.tsx:213
-msgid "Suppress redundant sequence headers with the same config (can reduce player stutter)."
-msgstr "抑制具有相同配置的冗余序列头（可减少播放器卡顿）。"
+#: src/components/config/engines/forms/mesio-form.tsx:126
+msgid "Suppress redundant headers to reduce player micro-stutter"
+msgstr "抑制冗余头部以减少播放器微卡顿"
 
 #: src/components/language-switcher.tsx:39
 #: src/components/language-switcher.tsx:45
@@ -5698,7 +5798,7 @@ msgstr "每个采样周期捕获的目标消息数量。"
 msgid "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
 msgstr "TDL 账户命名空间 (`tdl --ns ...`)。使用它来管理多个 Telegram 账户。"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:474
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:478
 msgid "TDL binary not found"
 msgstr "未找到 TDL 二进制文件"
 
@@ -5706,31 +5806,31 @@ msgstr "未找到 TDL 二进制文件"
 msgid "TDL Binary Path"
 msgstr "TDL 二进制路径"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:350
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:354
 msgid "TDL Interactive Login"
 msgstr "TDL 交互式登录"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:170
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:174
 msgid "TDL is logged in{version}"
 msgstr "TDL 已登录{version}"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:174
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:178
 msgid "TDL is not logged in{version}"
 msgstr "TDL 未登录{version}"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:132
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:136
 msgid "TDL login session started"
 msgstr "TDL 登录会话已开始"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:166
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:170
 msgid "TDL not found"
 msgstr "未找到 TDL"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:464
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:468
 msgid "TDL Status"
 msgstr "TDL 状态"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:177
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:181
 msgid "TDL status unknown{version}"
 msgstr "TDL 状态未知{version}"
 
@@ -5738,7 +5838,7 @@ msgstr "TDL 状态未知{version}"
 msgid "Telegram 2FA password is not supported"
 msgstr "不支持 Telegram 两步验证密码"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:372
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:376
 msgid "Telegram 2FA via web is unsupported"
 msgstr "不支持通过 Web 进行 Telegram 两步验证"
 
@@ -5746,7 +5846,7 @@ msgstr "不支持通过 Web 进行 Telegram 两步验证"
 msgid "Telegram Desktop"
 msgstr "Telegram 桌面版"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:515
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:519
 msgid "Telegram Desktop data required"
 msgstr "需要 Telegram 桌面版数据"
 
@@ -5845,7 +5945,7 @@ msgstr "主题模式"
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:490
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:494
 msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
 msgstr "该登录需要 Telegram 两步验证密码。请启用“允许两步验证”并重启。"
 
@@ -6136,7 +6236,7 @@ msgstr "Twitch 代理播放列表排除"
 msgid "Type"
 msgstr "类型"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:620
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:624
 msgid "Type your answer here..."
 msgstr "在此输入你的回答..."
 
@@ -6262,11 +6362,11 @@ msgstr "使用任务清单中的 danmu_inputs"
 msgid "Use mobile API for stream extraction."
 msgstr "使用移动端 API 进行流提取。"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:421
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:425
 msgid "Use Phone & Code"
 msgstr "使用手机号和验证码"
 
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:432
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:436
 msgid "Use QR Login"
 msgstr "使用二维码登录"
 
@@ -6303,6 +6403,7 @@ msgid "Used for Desktop login (fallback); points to Telegram Desktop folder cont
 msgstr "用于桌面登录（备选）；指向包含 `tdata` 的 Telegram Desktop 文件夹。"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:94
+#: src/components/config/engines/forms/mesio-hls-form.tsx:94
 msgid "User Agent"
 msgstr "User-Agent"
 
@@ -6455,11 +6556,7 @@ msgstr "宽度"
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "宽度（像素，保持宽高比）"
 
-#: src/components/config/engines/forms/mesio-form.tsx:275
-msgid "Window Capacity (Tags)"
-msgstr "窗口容量 (标签数)"
-
-#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:450
+#: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:454
 msgid "Windows Console Error"
 msgstr "Windows 控制台错误"
 
@@ -6513,6 +6610,10 @@ msgstr "昨天"
 #: src/components/sessions/session-list.tsx:78
 msgid "Your digital library is currently empty. Start recording to populate your sessions here."
 msgstr "你的数字库目前为空。开始录制以在此显示会话。"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:301
+msgid "Zero Copy Processing"
+msgstr "零拷贝处理"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:15
 msgid "ZIP Archive"

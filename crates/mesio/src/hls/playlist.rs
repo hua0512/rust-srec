@@ -78,8 +78,9 @@ struct AdaptiveRefreshTracker {
     recent_results: std::collections::VecDeque<bool>,
     /// Number of consecutive refreshes with no new segments
     consecutive_empty: u32,
-    /// Last time we got new segments
-    last_segment_time: Option<std::time::Instant>,
+    /// New segments discovered on the most recent refresh.
+    /// When this is >1, it usually indicates we're behind and should refresh more aggressively.
+    last_new_segments_count: usize,
 }
 
 impl AdaptiveRefreshTracker {
@@ -90,12 +91,13 @@ impl AdaptiveRefreshTracker {
             max_interval,
             recent_results: std::collections::VecDeque::with_capacity(10),
             consecutive_empty: 0,
-            last_segment_time: None,
+            last_new_segments_count: 0,
         }
     }
 
     /// Record the result of a playlist refresh
     fn record_refresh(&mut self, new_segments_count: usize) {
+        self.last_new_segments_count = new_segments_count;
         let got_segments = new_segments_count > 0;
 
         // Track recent results (keep last 10)
@@ -106,10 +108,13 @@ impl AdaptiveRefreshTracker {
 
         if got_segments {
             self.consecutive_empty = 0;
-            self.last_segment_time = Some(std::time::Instant::now());
         } else {
             self.consecutive_empty += 1;
         }
+    }
+
+    fn clamp_interval(&self, interval: Duration) -> Duration {
+        interval.max(self.min_interval).min(self.max_interval)
     }
 
     /// Get the recommended refresh interval based on recent patterns
@@ -118,29 +123,27 @@ impl AdaptiveRefreshTracker {
             return default_interval;
         }
 
-        // If we've had multiple consecutive empty refreshes, back off
-        if self.consecutive_empty >= 3 {
-            // Exponential backoff, capped at max_interval
+        let mut interval = default_interval;
+
+        // If we discovered multiple unseen segments, we're likely behind; poll aggressively
+        // to catch up and reduce end-to-end latency.
+        if self.last_new_segments_count >= 2 {
+            interval = self.min_interval;
+        } else if self.consecutive_empty >= 3 {
+            // Exponential backoff after several empty refreshes.
             let backoff_factor = 1.5_f64.powi(self.consecutive_empty.min(5) as i32);
-            let backed_off =
-                Duration::from_secs_f64(default_interval.as_secs_f64() * backoff_factor);
-            return backed_off.min(self.max_interval);
+            interval = Duration::from_secs_f64(default_interval.as_secs_f64() * backoff_factor);
+        } else {
+            // If we're consistently getting segments, we can poll slightly faster.
+            let recent_success_rate = self.recent_results.iter().filter(|&&got| got).count() as f64
+                / self.recent_results.len().max(1) as f64;
+
+            if recent_success_rate > 0.8 && self.recent_results.len() >= 5 {
+                interval = Duration::from_secs_f64(default_interval.as_secs_f64() * 0.8);
+            }
         }
 
-        // If we're consistently getting segments, we can be more aggressive
-        let recent_success_rate = self.recent_results.iter().filter(|&&got| got).count() as f64
-            / self.recent_results.len().max(1) as f64;
-
-        if recent_success_rate > 0.8 && self.recent_results.len() >= 5 {
-            // High success rate - can poll slightly faster
-            let faster = Duration::from_secs_f64(default_interval.as_secs_f64() * 0.8);
-            return faster.max(self.min_interval);
-        }
-
-        // Default behavior
-        default_interval
-            .max(self.min_interval)
-            .min(self.max_interval)
+        self.clamp_interval(interval)
     }
 }
 
@@ -439,7 +442,7 @@ impl PlaylistProvider for PlaylistEngine {
 
         loop {
             match self
-                .fetch_and_parse_playlist(&playlist_url, &last_playlist_bytes)
+                .fetch_and_parse_playlist(&playlist_url, &last_playlist_bytes, &token)
                 .await
             {
                 Ok(Some((new_playlist, new_playlist_bytes))) => {
@@ -471,7 +474,7 @@ impl PlaylistProvider for PlaylistEngine {
                     }
                 }
                 Ok(None) => {
-                    // Playlist unchanged or parse error, just wait for next refresh
+                    // Playlist unchanged, just wait for next refresh
                     retries = 0;
                     adaptive_tracker.record_refresh(0); // No new segments
                 }
@@ -481,18 +484,24 @@ impl PlaylistProvider for PlaylistEngine {
                     if retries > self.config.playlist_config.live_max_refresh_retries {
                         return Err(e);
                     }
-                    tokio::time::sleep(
-                        self.config.playlist_config.live_refresh_retry_delay * retries,
-                    )
-                    .await;
+                    tokio::select! {
+                        biased;
+                        _ = token.cancelled() => {
+                            info!("Cancellation token received during retry sleep for {}.", playlist_url_str);
+                            return Ok(());
+                        }
+                        _ = tokio::time::sleep(
+                            self.config.playlist_config.live_refresh_retry_delay * retries,
+                        ) => {}
+                    }
                 }
             }
 
             // Calculate refresh delay - use adaptive if enabled, otherwise use target_duration/2
-            let refresh_delay = adaptive_tracker.get_refresh_interval(
-                Duration::from_secs(current_playlist.target_duration / 2)
-                    .max(self.config.playlist_config.live_refresh_interval),
-            );
+            let base_refresh_interval =
+                Duration::from_secs_f64(current_playlist.target_duration as f64 * 0.5)
+                    .max(self.config.playlist_config.live_refresh_interval);
+            let refresh_delay = adaptive_tracker.get_refresh_interval(base_refresh_interval);
 
             tokio::select! {
                 biased;
@@ -612,17 +621,27 @@ impl PlaylistEngine {
         &self,
         playlist_url: &Url,
         last_playlist_bytes: &Option<bytes::Bytes>,
+        token: &CancellationToken,
     ) -> Result<Option<(MediaPlaylist, bytes::Bytes)>, HlsDownloaderError> {
+        if token.is_cancelled() {
+            return Err(HlsDownloaderError::Cancelled);
+        }
+
         let response = self
             .http_client
             .get(playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
-            .query(&self.config.base.params)
-            .send()
-            .await
-            .map_err(|e| HlsDownloaderError::NetworkError {
-                source: Arc::new(e),
-            })?;
+            .query(&self.config.base.params);
+
+        let response = tokio::select! {
+            _ = token.cancelled() => {
+                return Err(HlsDownloaderError::Cancelled);
+            }
+            response = response.send() => response,
+        }
+        .map_err(|e| HlsDownloaderError::NetworkError {
+            source: Arc::new(e),
+        })?;
 
         if !response.status().is_success() {
             return Err(HlsDownloaderError::PlaylistError(format!(
@@ -631,13 +650,15 @@ impl PlaylistEngine {
             )));
         }
 
-        let playlist_bytes =
-            response
-                .bytes()
-                .await
-                .map_err(|e| HlsDownloaderError::NetworkError {
-                    source: Arc::new(e),
-                })?;
+        let playlist_bytes = tokio::select! {
+            _ = token.cancelled() => {
+                return Err(HlsDownloaderError::Cancelled);
+            }
+            bytes = response.bytes() => bytes,
+        }
+        .map_err(|e| HlsDownloaderError::NetworkError {
+            source: Arc::new(e),
+        })?;
 
         // Fast path: check if we have a previous playlist and if lengths differ
         if let Some(last_bytes) = last_playlist_bytes.as_ref()
@@ -667,10 +688,9 @@ impl PlaylistEngine {
             Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => Err(HlsDownloaderError::PlaylistError(
                 format!("Expected Media Playlist, got Master for {playlist_url}"),
             )),
-            Err(e) => {
-                error!("Failed to parse refreshed playlist {playlist_url}: {e}");
-                Ok(None)
-            }
+            Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
+                "Failed to parse refreshed playlist {playlist_url}: {e}"
+            ))),
         }
     }
 
@@ -945,6 +965,8 @@ mod tests {
     use super::*;
     use crate::hls::config::HlsConfig;
     use moka::future::Cache;
+    use std::collections::VecDeque;
+    use tokio_util::sync::CancellationToken;
 
     fn parse_media_playlist(input: &str) -> MediaPlaylist {
         match parse_playlist_res(input.as_bytes()).expect("playlist should parse") {
@@ -1031,5 +1053,63 @@ mod tests {
                 offset: Some(10),
             })
         );
+    }
+
+    #[test]
+    fn adaptive_refresh_backoff_respects_min_interval() {
+        let mut tracker = AdaptiveRefreshTracker {
+            enabled: true,
+            min_interval: Duration::from_millis(500),
+            max_interval: Duration::from_secs(3),
+            recent_results: VecDeque::new(),
+            consecutive_empty: 3,
+            last_new_segments_count: 0,
+        };
+
+        // Simulate tiny default interval (e.g., user configured very small live_refresh_interval).
+        let interval = tracker.get_refresh_interval(Duration::from_millis(100));
+        assert!(interval >= Duration::from_millis(500));
+
+        // Ensure we still clamp to max.
+        tracker.consecutive_empty = 10;
+        let interval = tracker.get_refresh_interval(Duration::from_secs(10));
+        assert!(interval <= Duration::from_secs(3));
+    }
+
+    #[test]
+    fn adaptive_refresh_success_path_respects_max_interval() {
+        let mut tracker =
+            AdaptiveRefreshTracker::new(true, Duration::from_millis(500), Duration::from_secs(3));
+
+        for _ in 0..10 {
+            tracker.record_refresh(1);
+        }
+
+        // Even if the default interval is large, adaptive refresh should still clamp to max.
+        let interval = tracker.get_refresh_interval(Duration::from_secs(10));
+        assert!(interval <= Duration::from_secs(3));
+    }
+
+    #[test]
+    fn adaptive_refresh_catches_up_when_behind() {
+        let mut tracker =
+            AdaptiveRefreshTracker::new(true, Duration::from_millis(500), Duration::from_secs(3));
+
+        tracker.record_refresh(3);
+        let interval = tracker.get_refresh_interval(Duration::from_secs(1));
+        assert_eq!(interval, Duration::from_millis(500));
+    }
+
+    #[tokio::test]
+    async fn fetch_and_parse_playlist_returns_cancelled_when_token_cancelled() {
+        let engine =
+            PlaylistEngine::new(reqwest::Client::new(), None, Arc::new(HlsConfig::default()));
+        let url = Url::parse("https://example.com/playlist.m3u8").expect("valid url");
+        let token = CancellationToken::new();
+        token.cancel();
+
+        let res = engine.fetch_and_parse_playlist(&url, &None, &token).await;
+
+        assert!(matches!(res, Err(HlsDownloaderError::Cancelled)));
     }
 }

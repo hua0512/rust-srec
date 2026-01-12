@@ -14,6 +14,8 @@ use tracing::{Span, debug, error, info, instrument, trace};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use url::Url;
 
+use tokio_util::sync::CancellationToken;
+
 use crate::hls::scheduler::ScheduledSegmentJob;
 
 /// Tracks HTTP/2 connection statistics for observability
@@ -184,8 +186,9 @@ pub struct SegmentFetcher {
     config: Arc<HlsConfig>,
     cache_service: Option<Arc<CacheManager>>,
     http2_stats: Arc<Http2Stats>,
-    /// Optional shared performance metrics for recording HTTP version usage
+    /// Optional shared performance metrics for recording HTTP version usage    
     performance_metrics: Option<Arc<super::metrics::PerformanceMetrics>>,
+    token: CancellationToken,
 }
 
 impl SegmentFetcher {
@@ -193,6 +196,7 @@ impl SegmentFetcher {
         http_client: Client,
         config: Arc<HlsConfig>,
         cache_service: Option<Arc<CacheManager>>,
+        token: CancellationToken,
     ) -> Self {
         Self {
             http_client,
@@ -200,6 +204,7 @@ impl SegmentFetcher {
             cache_service,
             http2_stats: Arc::new(Http2Stats::new()),
             performance_metrics: None,
+            token,
         }
     }
 
@@ -209,8 +214,9 @@ impl SegmentFetcher {
         config: Arc<HlsConfig>,
         cache_service: Option<Arc<CacheManager>>,
         http2_stats: Arc<Http2Stats>,
+        token: CancellationToken,
     ) -> Self {
-        let mut fetcher = Self::new(http_client, config, cache_service);
+        let mut fetcher = Self::new(http_client, config, cache_service, token);
         fetcher.http2_stats = http2_stats;
         fetcher
     }
@@ -222,8 +228,9 @@ impl SegmentFetcher {
         cache_service: Option<Arc<CacheManager>>,
         http2_stats: Arc<Http2Stats>,
         performance_metrics: Arc<super::metrics::PerformanceMetrics>,
+        token: CancellationToken,
     ) -> Self {
-        let mut fetcher = Self::with_stats(http_client, config, cache_service, http2_stats);
+        let mut fetcher = Self::with_stats(http_client, config, cache_service, http2_stats, token);
         fetcher.performance_metrics = Some(performance_metrics);
         fetcher
     }
@@ -247,6 +254,10 @@ impl SegmentFetcher {
         let streaming_threshold = self.config.fetcher_config.streaming_threshold_bytes;
 
         loop {
+            if self.token.is_cancelled() {
+                return Err(HlsDownloaderError::Cancelled);
+            }
+
             attempts += 1;
             let mut request_builder = self
                 .http_client
@@ -262,11 +273,16 @@ impl SegmentFetcher {
             // Start timing the download for latency metrics
             let download_start = std::time::Instant::now();
 
-            match request_builder
-                .timeout(self.config.fetcher_config.segment_download_timeout)
-                .send()
-                .await
-            {
+            let response = tokio::select! {
+                _ = self.token.cancelled() => {
+                    return Err(HlsDownloaderError::Cancelled);
+                }
+                response = request_builder
+                    .timeout(self.config.fetcher_config.segment_download_timeout)
+                    .send() => response,
+            };
+
+            match response {
                 Ok(response) => {
                     if response.status().is_success() {
                         let http_version = response.version();
@@ -290,7 +306,13 @@ impl SegmentFetcher {
                             self.stream_response(response, segment_span).await?
                         } else {
                             // Small segments: use simple bytes() for efficiency
-                            let bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
+                            let bytes = tokio::select! {
+                                _ = self.token.cancelled() => {
+                                    return Err(HlsDownloaderError::Cancelled);
+                                }
+                                bytes = response.bytes() => bytes,
+                            }
+                            .map_err(HlsDownloaderError::from)?;
                             segment_span.pb_set_position(bytes.len() as u64);
                             bytes
                         };
@@ -370,7 +392,12 @@ impl SegmentFetcher {
 
             let delay = self.config.fetcher_config.segment_retry_delay_base
                 * (2_u32.pow(attempts.saturating_sub(1)));
-            tokio::time::sleep(delay).await;
+            tokio::select! {
+                _ = self.token.cancelled() => {
+                    return Err(HlsDownloaderError::Cancelled);
+                }
+                _ = tokio::time::sleep(delay) => {}
+            }
         }
     }
 
@@ -389,7 +416,12 @@ impl SegmentFetcher {
         let mut stream = response.bytes_stream();
         let mut downloaded: u64 = 0;
 
-        while let Some(chunk_result) = stream.next().await {
+        while let Some(chunk_result) = tokio::select! {
+            _ = self.token.cancelled() => {
+                return Err(HlsDownloaderError::Cancelled);
+            }
+            next = stream.next() => next,
+        } {
             let chunk = chunk_result.map_err(HlsDownloaderError::from)?;
             downloaded += chunk.len() as u64;
             buffer.extend_from_slice(&chunk);

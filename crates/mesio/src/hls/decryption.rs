@@ -12,6 +12,7 @@ use hex;
 use m3u8_rs::Key;
 use reqwest::Client;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 // --- DecryptionOffloader Struct ---
 // Offloads CPU-intensive decryption to Tokio's blocking thread pool.
@@ -126,30 +127,46 @@ impl DecryptionOffloader {
 pub struct KeyFetcher {
     http_client: Client,
     config: Arc<HlsConfig>,
+    token: CancellationToken,
 }
 
 impl KeyFetcher {
-    pub fn new(http_client: Client, config: Arc<HlsConfig>) -> Self {
+    pub fn new(http_client: Client, config: Arc<HlsConfig>, token: CancellationToken) -> Self {
         Self {
             http_client,
             config,
+            token,
         }
     }
 
     pub async fn fetch_key(&self, key_uri: &str) -> Result<Bytes, HlsDownloaderError> {
         let mut attempts = 0;
         loop {
+            if self.token.is_cancelled() {
+                return Err(HlsDownloaderError::Cancelled);
+            }
             attempts += 1;
-            match self
-                .http_client
-                .get(key_uri)
-                .timeout(self.config.fetcher_config.key_download_timeout)
-                .send()
-                .await
-            {
+            let response = tokio::select! {
+                _ = self.token.cancelled() => {
+                    return Err(HlsDownloaderError::Cancelled);
+                }
+                response = self
+                    .http_client
+                    .get(key_uri)
+                    .timeout(self.config.fetcher_config.key_download_timeout)
+                    .send() => response,
+            };
+
+            match response {
                 Ok(response) => {
                     if response.status().is_success() {
-                        return response.bytes().await.map_err(HlsDownloaderError::from);
+                        let bytes = tokio::select! {
+                            _ = self.token.cancelled() => {
+                                return Err(HlsDownloaderError::Cancelled);
+                            }
+                            bytes = response.bytes() => bytes,
+                        };
+                        return bytes.map_err(HlsDownloaderError::from);
                     } else if response.status().is_client_error() {
                         return Err(HlsDownloaderError::DecryptionError(format!(
                             "Client error {} fetching key from {}",
@@ -182,7 +199,12 @@ impl KeyFetcher {
             }
             let delay = self.config.fetcher_config.key_retry_delay_base
                 * (2_u32.pow(attempts.saturating_sub(1)));
-            tokio::time::sleep(delay).await;
+            tokio::select! {
+                _ = self.token.cancelled() => {
+                    return Err(HlsDownloaderError::Cancelled);
+                }
+                _ = tokio::time::sleep(delay) => {}
+            }
         }
     }
 }

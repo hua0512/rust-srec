@@ -87,7 +87,7 @@ impl HlsDownloader {
     /// Create a MesioDownloaderFactory with the configured settings.
     fn create_factory(&self, token: CancellationToken) -> MesioDownloaderFactory {
         let config = self.config_snapshot();
-        let hls_config = build_hls_config(&config, self.hls_config.clone());
+        let hls_config = build_hls_config(&config, self.hls_config.clone(), &self.engine_config);
 
         MesioDownloaderFactory::new()
             .with_hls_config(hls_config)

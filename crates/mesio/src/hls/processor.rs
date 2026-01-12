@@ -188,11 +188,16 @@ mod tests {
     use m3u8_rs::MediaSegment;
     use proptest::prelude::*;
     use std::sync::Arc;
+    use tokio_util::sync::CancellationToken;
 
     /// Helper to create a minimal DecryptionService for testing
     fn create_test_decryption_service(config: Arc<HlsConfig>) -> Arc<DecryptionService> {
         let http_client = reqwest::Client::new();
-        let key_fetcher = Arc::new(KeyFetcher::new(http_client, config.clone()));
+        let key_fetcher = Arc::new(KeyFetcher::new(
+            http_client,
+            config.clone(),
+            CancellationToken::new(),
+        ));
         Arc::new(DecryptionService::new(config, key_fetcher, None))
     }
 

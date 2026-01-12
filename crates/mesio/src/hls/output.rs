@@ -526,22 +526,24 @@ impl OutputManager {
     pub async fn run(&mut self) {
         debug!("is_live_stream: {}", self.is_live_stream);
 
+        // When a gap is detected, we need a periodic wake-up to re-evaluate gap policies
+        // (duration-based skipping / VOD timeouts). Otherwise, if no new segments arrive
+        // (or backpressure pauses input), we can stall indefinitely without advancing.
+        const GAP_EVALUATION_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+
         loop {
-            // Determine timeout for select! based on live_max_overall_stall_duration
+            // Determine timeout for select! based on *remaining* live stall time.
+            // This must be derived from `last_input_received_time`, otherwise other periodic
+            // wake-ups (e.g. gap evaluation) would continuously reset a fixed-duration timer.
             let overall_stall_timeout = if self.is_live_stream
-                && self
-                    .config
-                    .output_config
-                    .live_max_overall_stall_duration
-                    .is_some()
+                && let Some(max_stall_duration) =
+                    self.config.output_config.live_max_overall_stall_duration
+                && let Some(last_input_time) = self.last_input_received_time
             {
-                self.config
-                    .output_config
-                    .live_max_overall_stall_duration
-                    .unwrap_or_else(|| std::time::Duration::from_secs(u64::MAX / 2))
+                max_stall_duration.saturating_sub(last_input_time.elapsed())
             } else {
-                // Effectively infinite timeout if not live or not configured
-                std::time::Duration::from_secs(u64::MAX / 2) // A very long duration for select!
+                // Effectively infinite timeout if not live or not configured.
+                std::time::Duration::from_secs(u64::MAX / 2)
             };
 
             tokio::select! {
@@ -698,6 +700,16 @@ impl OutputManager {
                             // For live streams, this also indicates the end of input.
                             break;
                         }
+                    }
+                }
+
+                // Branch 4: Periodic gap evaluation
+                // This ensures duration-based gap skipping and VOD timeouts can trigger even if no
+                // further segments arrive (or input is paused by backpressure).
+                _ = sleep(GAP_EVALUATION_INTERVAL), if self.gap_state.is_some() => {
+                    if self.try_emit_segments().await.is_err() {
+                        error!("Error emitting segments from buffer during gap evaluation tick. Exiting.");
+                        break;
                     }
                 }
             }
@@ -1623,6 +1635,82 @@ mod tests {
         assert_eq!(data_events.len(), 2);
         assert!(data_events[0].is_init_segment());
         assert!(!data_events[1].is_init_segment());
+
+        token.cancel();
+        drop(input_tx);
+        let _ = join.await;
+    }
+
+    #[tokio::test]
+    async fn duration_gap_skip_triggers_without_new_input() {
+        let mut config = HlsConfig::default();
+        config.output_config.live_max_overall_stall_duration = None;
+        config.output_config.live_gap_strategy =
+            GapSkipStrategy::SkipAfterDuration(Duration::from_millis(50));
+
+        let (input_tx, input_rx) = mpsc::channel(16);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let token = CancellationToken::new();
+
+        let mut mgr = OutputManager::new(
+            Arc::new(config),
+            input_rx,
+            event_tx,
+            true,
+            100,
+            token.clone(),
+        );
+
+        let join = tokio::spawn(async move {
+            mgr.run().await;
+        });
+
+        // Provide init for fMP4, but do not provide media segment #100 (create a gap).
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "init.mp4".to_string(),
+                data: test_init_segment(b"init"),
+                media_sequence_number: 100,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        // Provide media for #101; OutputManager should skip the missing #100 after duration even
+        // if nothing else arrives.
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "segment101.m4s".to_string(),
+                data: test_media_segment(b"media101"),
+                media_sequence_number: 101,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        // We should eventually see a GapSkipped event and then Data emitted for #101.
+        let (saw_gap, saw_data) = tokio::time::timeout(Duration::from_secs(2), async {
+            let mut saw_gap = false;
+            let mut saw_data = false;
+            while let Some(evt) = event_rx.recv().await {
+                match evt {
+                    Ok(HlsStreamEvent::GapSkipped { .. }) => saw_gap = true,
+                    Ok(HlsStreamEvent::Data(_)) => {
+                        saw_data = true;
+                        if saw_gap {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            (saw_gap, saw_data)
+        })
+        .await
+        .expect("timed out waiting for gap skip + data");
+
+        assert!(saw_gap, "expected GapSkipped event");
+        assert!(saw_data, "expected Data event after gap skip");
 
         token.cancel();
         drop(input_tx);
