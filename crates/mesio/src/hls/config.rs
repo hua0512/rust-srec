@@ -113,10 +113,13 @@ pub enum GapSkipStrategy {
 
 impl Default for GapSkipStrategy {
     fn default() -> Self {
-        // Default: skip after 3 segments OR 5 seconds for live
+        // Default: skip after 10 segments OR 2 second for live.
+        // Rationale: with concurrent downloads, segments can arrive out-of-order.
+        // A low count threshold (e.g. 3) can cause false skips where the missing
+        // segment arrives shortly after the skip decision.
         GapSkipStrategy::SkipAfterBoth {
-            count: 3,
-            duration: Duration::from_secs(5),
+            count: 10,
+            duration: Duration::from_secs(2),
         }
     }
 }

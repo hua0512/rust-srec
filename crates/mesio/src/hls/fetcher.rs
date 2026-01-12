@@ -253,11 +253,9 @@ impl SegmentFetcher {
                 .get(segment_url.clone())
                 .query(&self.config.base.params);
             if let Some(range) = byte_range {
-                let range_str = if let Some(offset) = range.offset {
-                    format!("bytes={}-{}", range.length, range.length + offset - 1)
-                } else {
-                    format!("bytes=0-{}", range.length - 1)
-                };
+                let start = range.offset.unwrap_or(0);
+                let end = start.saturating_add(range.length).saturating_sub(1);
+                let range_str = format!("bytes={start}-{end}");
                 request_builder = request_builder.header(reqwest::header::RANGE, range_str);
             }
 
@@ -435,7 +433,13 @@ impl SegmentDownloader for SegmentFetcher {
         let cache_key = CacheKey::new(
             CacheResourceType::Segment,
             job.media_segment.uri.clone(),
-            None,
+            job.media_segment.byte_range.as_ref().map(|range| {
+                let offset = range
+                    .offset
+                    .map(|o| o.to_string())
+                    .unwrap_or_else(|| "none".to_string());
+                format!("br={}@{}", range.length, offset)
+            }),
         );
 
         let mut cached_bytes: Option<Bytes> = None;

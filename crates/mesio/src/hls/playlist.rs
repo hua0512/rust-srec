@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
 #[async_trait]
@@ -689,6 +689,9 @@ impl PlaylistEngine {
         let base_url_parsed = Url::parse(base_url).ok();
         let base_url_arc: Arc<str> = Arc::from(base_url);
         let playlist_level_map = Self::parse_playlist_level_map(new_playlist);
+        let mut last_non_empty_segment_uri: Option<String> = None;
+        let mut last_byterange_uri: Option<String> = None;
+        let mut last_byterange_end: Option<u64> = None;
 
         // Helper to merge query params from parent if missing in child
         let parent_params: Vec<(String, String)> = parent_query
@@ -743,6 +746,7 @@ impl PlaylistEngine {
                 let idx: usize = $idx;
                 let segment: &MediaSegment = $segment;
                 let is_ad: bool = $is_ad;
+                let msn = new_playlist.media_sequence + idx as u64;
 
                 let resolved_key = segment.key.as_ref().map(|key| {
                     let mut key = key.clone();
@@ -796,38 +800,102 @@ impl PlaylistEngine {
                     }
                 }
 
-                let absolute_segment_uri = resolve_uri(&segment.uri).unwrap_or_else(|_| {
-                    error!(
-                        "Failed to resolve segment URI '{}' with base '{}'",
-                        segment.uri, base_url
-                    );
-                    segment.uri.clone()
-                });
-
-                let final_segment_uri = merge_params(&absolute_segment_uri);
-
-                if !seen_segment_uris.contains_key(&final_segment_uri) {
-                    if is_ad {
-                        debug!("Skipping Twitch ad segment: {}", segment.uri);
+                let effective_segment_uri = if segment.uri.trim().is_empty() {
+                    if segment.byte_range.is_some() {
+                        last_non_empty_segment_uri.as_deref().unwrap_or("")
                     } else {
-                        let mut segment_for_job = segment.clone();
-                        segment_for_job.key = resolved_key.clone();
-                        segment_for_job.uri = final_segment_uri.clone();
-                        seen_segment_uris
-                            .insert(final_segment_uri.clone(), ())
-                            .await;
-                        trace!("New segment detected: {}", final_segment_uri);
-                        let job = ScheduledSegmentJob {
-                            base_url: Arc::clone(&base_url_arc),
-                            media_sequence_number: new_playlist.media_sequence + idx as u64,
-                            media_segment: Arc::new(segment_for_job),
-                            is_init_segment: false,
-                            is_prefetch: false,
-                        };
-                        jobs_to_send.push(job);
+                        ""
                     }
                 } else {
-                    trace!("Segment {} already seen, skipping.", final_segment_uri);
+                    last_non_empty_segment_uri = Some(segment.uri.clone());
+                    segment.uri.as_str()
+                };
+
+                if effective_segment_uri.trim().is_empty() {
+                    warn!(
+                        msn = msn,
+                        "Skipping segment with empty URI (may be an incomplete segment entry)",
+                    );
+                } else {
+                    let mut should_skip = false;
+                    let mut effective_byte_range: Option<m3u8_rs::ByteRange> = None;
+
+                    if let Some(byte_range) = segment.byte_range.as_ref() {
+                        let inferred_offset = byte_range.offset.or_else(|| {
+                            if last_byterange_uri.as_deref() == Some(effective_segment_uri) {
+                                last_byterange_end
+                            } else {
+                                None
+                            }
+                        });
+
+                        if let Some(offset) = inferred_offset {
+                            effective_byte_range = Some(m3u8_rs::ByteRange {
+                                length: byte_range.length,
+                                offset: Some(offset),
+                            });
+                            last_byterange_uri = Some(effective_segment_uri.to_string());
+                            last_byterange_end = Some(offset.saturating_add(byte_range.length));
+                        } else {
+                            warn!(
+                                msn = msn,
+                                uri = %effective_segment_uri,
+                                "Skipping segment with BYTERANGE missing offset and no prior range to infer from"
+                            );
+                            last_byterange_uri = None;
+                            last_byterange_end = None;
+                            should_skip = true;
+                        }
+                    } else {
+                        last_byterange_uri = None;
+                        last_byterange_end = None;
+                    }
+
+                    if !should_skip {
+                        let absolute_segment_uri =
+                            resolve_uri(effective_segment_uri).unwrap_or_else(|_| {
+                                error!(
+                                    "Failed to resolve segment URI '{}' with base '{}'",
+                                    effective_segment_uri, base_url
+                                );
+                                effective_segment_uri.to_string()
+                            });
+
+                        let final_segment_uri = merge_params(&absolute_segment_uri);
+
+                        let segment_identity = if let Some(br) = effective_byte_range.as_ref() {
+                            let offset = br
+                                .offset
+                                .map(|o| o.to_string())
+                                .unwrap_or_else(|| "none".to_string());
+                            format!("{final_segment_uri}|br={}@{offset}", br.length)
+                        } else {
+                            final_segment_uri.clone()
+                        };
+
+                        if !seen_segment_uris.contains_key(&segment_identity) {
+                            if is_ad {
+                                debug!("Skipping Twitch ad segment: {}", segment.uri);
+                            } else {
+                                let mut segment_for_job = segment.clone();
+                                segment_for_job.key = resolved_key.clone();
+                                segment_for_job.uri = final_segment_uri.clone();
+                                segment_for_job.byte_range = effective_byte_range.clone();
+                                seen_segment_uris.insert(segment_identity, ()).await;
+                                trace!("New segment detected: {}", final_segment_uri);
+                                let job = ScheduledSegmentJob {
+                                    base_url: Arc::clone(&base_url_arc),
+                                    media_sequence_number: msn,
+                                    media_segment: Arc::new(segment_for_job),
+                                    is_init_segment: false,
+                                    is_prefetch: false,
+                                };
+                                jobs_to_send.push(job);
+                            }
+                        } else {
+                            trace!("Segment {} already seen, skipping.", final_segment_uri);
+                        }
+                    }
                 }
 
                 Ok::<(), HlsDownloaderError>(())
@@ -870,5 +938,99 @@ impl PlaylistEngine {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hls::config::HlsConfig;
+    use moka::future::Cache;
+
+    fn parse_media_playlist(input: &str) -> MediaPlaylist {
+        match parse_playlist_res(input.as_bytes()).expect("playlist should parse") {
+            m3u8_rs::Playlist::MediaPlaylist(pl) => pl,
+            m3u8_rs::Playlist::MasterPlaylist(_) => panic!("expected media playlist"),
+        }
+    }
+
+    #[tokio::test]
+    async fn process_segments_skips_empty_uri_segment() {
+        let engine =
+            PlaylistEngine::new(reqwest::Client::new(), None, Arc::new(HlsConfig::default()));
+        let playlist = parse_media_playlist(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:2.0,\n\n",
+        );
+        let seen: Cache<String, ()> = Cache::builder().max_capacity(100).build();
+        let mut last_map_uri = None;
+        let mut twitch_processor = None;
+        let jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                &seen,
+                &mut last_map_uri,
+                &mut twitch_processor,
+                None,
+            )
+            .await
+            .expect("process_segments should succeed");
+        assert!(jobs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_segments_infers_byterange_offset_and_reuses_previous_uri() {
+        let engine =
+            PlaylistEngine::new(reqwest::Client::new(), None, Arc::new(HlsConfig::default()));
+        let mut playlist = parse_media_playlist(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:2.0,\n#EXT-X-BYTERANGE:10@0\nfile.ts\n",
+        );
+        playlist.segments.push(MediaSegment {
+            uri: String::new(),
+            duration: 2.0,
+            byte_range: Some(m3u8_rs::ByteRange {
+                length: 5,
+                offset: None,
+            }),
+            ..Default::default()
+        });
+        let seen: Cache<String, ()> = Cache::builder().max_capacity(100).build();
+        let mut last_map_uri = None;
+        let mut twitch_processor = None;
+        let jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                &seen,
+                &mut last_map_uri,
+                &mut twitch_processor,
+                None,
+            )
+            .await
+            .expect("process_segments should succeed");
+
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(
+            jobs[0].media_segment.uri,
+            "https://example.com/path/file.ts"
+        );
+        assert_eq!(
+            jobs[0].media_segment.byte_range,
+            Some(m3u8_rs::ByteRange {
+                length: 10,
+                offset: Some(0),
+            })
+        );
+        assert_eq!(
+            jobs[1].media_segment.uri,
+            "https://example.com/path/file.ts"
+        );
+        assert_eq!(
+            jobs[1].media_segment.byte_range,
+            Some(m3u8_rs::ByteRange {
+                length: 5,
+                offset: Some(10),
+            })
+        );
     }
 }

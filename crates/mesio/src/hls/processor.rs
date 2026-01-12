@@ -153,7 +153,13 @@ impl SegmentTransformer for SegmentProcessor {
             let cache_key = CacheKey::new(
                 CacheResourceType::Segment,
                 job.media_segment.uri.clone(),
-                None,
+                job.media_segment.byte_range.as_ref().map(|range| {
+                    let offset = range
+                        .offset
+                        .map(|o| o.to_string())
+                        .unwrap_or_else(|| "none".to_string());
+                    format!("br={}@{}", range.length, offset)
+                }),
             );
             let metadata = CacheMetadata::new(len as u64)
                 .with_expiration(self.config.processor_config.processed_segment_ttl);
