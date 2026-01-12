@@ -30,9 +30,9 @@ function ChangePasswordPage() {
   const { user } = Route.useRouteContext();
   const mustChangePassword = !!user?.mustChangePassword;
   const router = useRouter();
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);        
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);        
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Client-side redirect check after hydration
   useEffect(() => {

@@ -29,12 +29,7 @@ import {
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { MesioHlsForm } from './mesio-hls-form';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface SubFormProps {
   control: Control<any>;
@@ -79,7 +74,8 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
                           </span>
                           <span className="text-[10px] text-muted-foreground leading-relaxed max-w-[300px]">
                             <Trans>
-                              Split on any raw header change. Safe but may cause extra files.
+                              Split on any raw header change. Safe but may cause
+                              extra files.
                             </Trans>
                           </span>
                         </div>
@@ -99,7 +95,8 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
                           </div>
                           <span className="text-[10px] text-muted-foreground leading-relaxed max-w-[300px]">
                             <Trans>
-                              Split only on codec configuration changes. Reduces false splits.
+                              Split only on codec configuration changes. Reduces
+                              false splits.
                             </Trans>
                           </span>
                         </div>
@@ -123,7 +120,10 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
                       <Trans>Optimize Stream Headers</Trans>
                     </FormLabel>
                     <FormDescription className="text-[10px]">
-                      <Trans>Suppress redundant headers to reduce player micro-stutter</Trans>
+                      <Trans>
+                        Suppress redundant headers to reduce player
+                        micro-stutter
+                      </Trans>
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -154,7 +154,9 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
                       </Badge>
                     </FormLabel>
                     <FormDescription className="text-[10px]">
-                      <Trans>Filter repeated tags and detect stream replay loops</Trans>
+                      <Trans>
+                        Filter repeated tags and detect stream replay loops
+                      </Trans>
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -265,19 +267,38 @@ export function MesioForm({ control, basePath = 'config' }: MesioFormProps) {
           <Settings2 className="w-4 h-4 text-primary" />
           <Trans>General</Trans>
         </TabsTrigger>
-        <TabsTrigger value="flv" className="flex-1 gap-2 disabled:opacity-50" disabled={!fixFlv}>
+        <TabsTrigger
+          value="flv"
+          className="flex-1 gap-2 disabled:opacity-50"
+          disabled={!fixFlv}
+        >
           <Film className="w-4 h-4 text-orange-500" />
           <Trans>FLV Tuning</Trans>
-          {!fixFlv && <Badge variant="outline" className="text-[8px] h-3 px-1 ml-1">Off</Badge>}
+          {!fixFlv && (
+            <Badge variant="outline" className="text-[8px] h-3 px-1 ml-1">
+              Off
+            </Badge>
+          )}
         </TabsTrigger>
-        <TabsTrigger value="hls" className="flex-1 gap-2 disabled:opacity-50" disabled={!fixHls}>
+        <TabsTrigger
+          value="hls"
+          className="flex-1 gap-2 disabled:opacity-50"
+          disabled={!fixHls}
+        >
           <Wrench className="w-4 h-4 text-blue-500" />
           <Trans>HLS Tuning</Trans>
-          {!fixHls && <Badge variant="outline" className="text-[8px] h-3 px-1 ml-1">Off</Badge>}
+          {!fixHls && (
+            <Badge variant="outline" className="text-[8px] h-3 px-1 ml-1">
+              Off
+            </Badge>
+          )}
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent value="general" className="space-y-6 mt-0 focus-visible:outline-none">
+      <TabsContent
+        value="general"
+        className="space-y-6 mt-0 focus-visible:outline-none"
+      >
         <Card className="border-border/40 bg-background/40 shadow-sm">
           <CardHeader className="pb-3 pt-4 px-4">
             <CardTitle className="text-sm font-medium flex items-center gap-2">

@@ -189,7 +189,7 @@ export function TdlLoginDialog({
   useEffect(() => {
     if (!open) {
       if (sessionId) {
-        cancelTdlLogin({ data: sessionId }).catch(() => { });
+        cancelTdlLogin({ data: sessionId }).catch(() => {});
       }
       setSessionId(null);
       setInputTask('');
@@ -366,7 +366,7 @@ export function TdlLoginDialog({
                   className={cn(
                     'capitalize px-3 py-1',
                     isRunning &&
-                    'animate-pulse bg-green-500 hover:bg-green-600',
+                      'animate-pulse bg-green-500 hover:bg-green-600',
                   )}
                 >
                   {typeof status === 'string' ? status : Object.keys(status)[0]}
@@ -447,115 +447,115 @@ export function TdlLoginDialog({
             isPasswordBlocked ||
             isWindowsError ||
             toolStatusText) && (
-              <div className="mb-3 space-y-2">
-                {isWindowsError && (
-                  <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3">
-                    <div className="text-xs font-medium text-red-600">
-                      <Trans>Windows Console Error</Trans>
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-1">
-                      <Trans>
-                        Interactive password entry via this API is not supported
-                        on Windows. Please use "Desktop Login" (import tdata) or
-                        log in once in a regular terminal.
-                      </Trans>
-                    </div>
+            <div className="mb-3 space-y-2">
+              {isWindowsError && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3">
+                  <div className="text-xs font-medium text-red-600">
+                    <Trans>Windows Console Error</Trans>
                   </div>
-                )}
-                {toolStatusText && (
-                  <div className="flex items-center justify-between rounded-xl border border-border/40 bg-muted/20 p-3">
+                  <div className="text-[11px] text-muted-foreground mt-1">
+                    <Trans>
+                      Interactive password entry via this API is not supported
+                      on Windows. Please use "Desktop Login" (import tdata) or
+                      log in once in a regular terminal.
+                    </Trans>
+                  </div>
+                </div>
+              )}
+              {toolStatusText && (
+                <div className="flex items-center justify-between rounded-xl border border-border/40 bg-muted/20 p-3">
+                  <div className="text-xs font-medium">
+                    <Trans>TDL Status</Trans>
+                  </div>
+                  <Badge variant="secondary" className="capitalize">
+                    {toolStatusText}
+                  </Badge>
+                </div>
+              )}
+              {isTdlNotFound && (
+                <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3">
+                  <div className="text-xs font-medium text-red-600">
+                    <Trans>TDL binary not found</Trans>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1">
+                    <Trans>
+                      Set "TDL Binary Path" to your `tdl` executable, or make
+                      sure `tdl` is in PATH.
+                    </Trans>
+                  </div>
+                </div>
+              )}
+              {isPasswordBlocked && !allowPassword && (
+                <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-3">
+                  <div className="text-xs font-medium text-orange-600">
+                    <Trans>Password / 2FA blocked</Trans>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1">
+                    <Trans>
+                      This login requires a Telegram 2FA password. Enable "Allow
+                      2FA" and restart.
+                    </Trans>
+                  </div>
+                </div>
+              )}
+              {qrUrl && (
+                <div className="flex items-center gap-3 rounded-xl border border-border/40 bg-muted/20 p-3">
+                  <div className="rounded-lg bg-white p-2">
+                    <QRCodeSVG value={qrUrl} size={96} />
+                  </div>
+                  <div className="min-w-0">
                     <div className="text-xs font-medium">
-                      <Trans>TDL Status</Trans>
+                      <Trans>QR Code</Trans>
                     </div>
-                    <Badge variant="secondary" className="capitalize">
-                      {toolStatusText}
-                    </Badge>
-                  </div>
-                )}
-                {isTdlNotFound && (
-                  <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3">
-                    <div className="text-xs font-medium text-red-600">
-                      <Trans>TDL binary not found</Trans>
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-1">
-                      <Trans>
-                        Set "TDL Binary Path" to your `tdl` executable, or make
-                        sure `tdl` is in PATH.
-                      </Trans>
+                    <div className="text-[11px] text-muted-foreground break-all">
+                      {qrUrl}
                     </div>
                   </div>
-                )}
-                {isPasswordBlocked && !allowPassword && (
-                  <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-3">
-                    <div className="text-xs font-medium text-orange-600">
-                      <Trans>Password / 2FA blocked</Trans>
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-1">
-                      <Trans>
-                        This login requires a Telegram 2FA password. Enable "Allow
-                        2FA" and restart.
-                      </Trans>
-                    </div>
+                </div>
+              )}
+              {showDesktopHint && (
+                <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-3">
+                  <div className="text-xs font-medium text-orange-600">
+                    <Trans>Telegram Desktop data required</Trans>
                   </div>
-                )}
-                {qrUrl && (
-                  <div className="flex items-center gap-3 rounded-xl border border-border/40 bg-muted/20 p-3">
-                    <div className="rounded-lg bg-white p-2">
-                      <QRCodeSVG value={qrUrl} size={96} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-medium">
-                        <Trans>QR Code</Trans>
-                      </div>
-                      <div className="text-[11px] text-muted-foreground break-all">
-                        {qrUrl}
-                      </div>
-                    </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Input
+                      value={desktopDir}
+                      onChange={(e) => setDesktopDir(e.target.value)}
+                      placeholder={i18n._(
+                        msg`Path to Telegram Desktop (contains tdata)`,
+                      )}
+                      className="h-9 font-mono text-xs"
+                      disabled={isRunning}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9"
+                      onClick={() => {
+                        if (!desktopDir.trim()) {
+                          toast.error(
+                            i18n._(
+                              msg`Please set Telegram Desktop Directory first`,
+                            ),
+                          );
+                          return;
+                        }
+                        if (sessionId) {
+                          cancelTdlLogin({ data: sessionId }).catch(() => {});
+                          setSessionId(null);
+                        }
+                        startLogin('desktop');
+                      }}
+                      disabled={startMutation.isPending || isRunning}
+                    >
+                      <Trans>Restart with -d</Trans>
+                    </Button>
                   </div>
-                )}
-                {showDesktopHint && (
-                  <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-3">
-                    <div className="text-xs font-medium text-orange-600">
-                      <Trans>Telegram Desktop data required</Trans>
-                    </div>
-                    <div className="mt-2 flex items-center gap-2">
-                      <Input
-                        value={desktopDir}
-                        onChange={(e) => setDesktopDir(e.target.value)}
-                        placeholder={i18n._(
-                          msg`Path to Telegram Desktop (contains tdata)`,
-                        )}
-                        className="h-9 font-mono text-xs"
-                        disabled={isRunning}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9"
-                        onClick={() => {
-                          if (!desktopDir.trim()) {
-                            toast.error(
-                              i18n._(
-                                msg`Please set Telegram Desktop Directory first`,
-                              ),
-                            );
-                            return;
-                          }
-                          if (sessionId) {
-                            cancelTdlLogin({ data: sessionId }).catch(() => { });
-                            setSessionId(null);
-                          }
-                          startLogin('desktop');
-                        }}
-                        disabled={startMutation.isPending || isRunning}
-                      >
-                        <Trans>Restart with -d</Trans>
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
+          )}
           <ScrollArea
             ref={scrollRef}
             className="flex-1 w-full rounded-xl bg-slate-950 p-4 font-mono text-xs text-slate-50 border border-slate-800 shadow-inner"

@@ -86,22 +86,25 @@ export const MesioDownloaderBaseOverrideSchema = z.object({
   pool_idle_timeout_ms: optionalInt(0),
 });
 
-export const MesioHlsVariantSelectionPolicySchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('highest_bitrate') }),
-  z.object({ type: z.literal('lowest_bitrate') }),
-  z.object({
-    type: z.literal('closest_to_bitrate'),
-    target_bitrate: z.coerce.number().int().min(0),
-  }),
-  z.object({ type: z.literal('audio_only') }),
-  z.object({ type: z.literal('video_only') }),
-  z.object({
-    type: z.literal('matching_resolution'),
-    width: z.coerce.number().int(),
-    height: z.coerce.number().int(),
-  }),
-  z.object({ type: z.literal('custom'), value: z.string() }),
-]);
+export const MesioHlsVariantSelectionPolicySchema = z.discriminatedUnion(
+  'type',
+  [
+    z.object({ type: z.literal('highest_bitrate') }),
+    z.object({ type: z.literal('lowest_bitrate') }),
+    z.object({
+      type: z.literal('closest_to_bitrate'),
+      target_bitrate: z.coerce.number().int().min(0),
+    }),
+    z.object({ type: z.literal('audio_only') }),
+    z.object({ type: z.literal('video_only') }),
+    z.object({
+      type: z.literal('matching_resolution'),
+      width: z.coerce.number().int(),
+      height: z.coerce.number().int(),
+    }),
+    z.object({ type: z.literal('custom'), value: z.string() }),
+  ],
+);
 
 export const MesioHlsPlaylistConfigOverrideSchema = z.object({
   initial_playlist_fetch_timeout_ms: optionalInt(0),
