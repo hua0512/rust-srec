@@ -705,7 +705,7 @@ msgstr "可执行文件路径"
 msgid "Bitrate"
 msgstr "比特率"
 
-#: src/components/pipeline/dag-graph-view.tsx:370
+#: src/components/pipeline/dag-graph-view.tsx:375
 msgid "Blocked"
 msgstr "已阻止"
 
@@ -761,7 +761,7 @@ msgstr "取消处理管道"
 msgid "Cancel Pipeline?"
 msgstr "取消处理管道？"
 
-#: src/components/pipeline/dag-graph-view.tsx:380
+#: src/components/pipeline/dag-graph-view.tsx:385
 #: src/components/streamers/card/use-streamer-status.tsx:36
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:463
 msgid "Cancelled"
@@ -949,7 +949,7 @@ msgstr "在此终端中完成 Telegram 登录过程。"
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
-#: src/components/pipeline/dag-graph-view.tsx:376
+#: src/components/pipeline/dag-graph-view.tsx:381
 #: src/routes/_authed/_dashboard/dashboard.tsx:260
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:220
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:294
@@ -2134,7 +2134,7 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
-#: src/components/pipeline/dag-graph-view.tsx:378
+#: src/components/pipeline/dag-graph-view.tsx:383
 #: src/routes/_authed/_dashboard/dashboard.tsx:270
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:222
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:461
@@ -4246,7 +4246,7 @@ msgstr "暂停"
 msgid "paused"
 msgstr "条已暂停"
 
-#: src/components/pipeline/dag-graph-view.tsx:372
+#: src/components/pipeline/dag-graph-view.tsx:377
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:216
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:455
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:323
@@ -4621,7 +4621,7 @@ msgstr "本地处理：重封装为 MP4，生成缩略图，移动到归档文�
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 
-#: src/components/pipeline/dag-graph-view.tsx:374
+#: src/components/pipeline/dag-graph-view.tsx:379
 #: src/routes/_authed/_dashboard/dashboard.tsx:250
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:457
@@ -6476,7 +6476,7 @@ msgstr "视频编码"
 msgid "Video Settings"
 msgstr "视频设置"
 
-#: src/components/pipeline/dag-graph-view.tsx:323
+#: src/components/pipeline/dag-graph-view.tsx:328
 msgid "View"
 msgstr "查看"
 

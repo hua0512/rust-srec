@@ -226,7 +226,7 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
               refY="5"
               orient="auto"
             >
-              <path d="M0,0 L10,5 L0,10 Z" fill="rgba(59, 130, 246, 0.5)" />
+              <path d="M0,0 L10,5 L0,10 Z" fill="rgb(59, 130, 246)" />
             </marker>
           </defs>
 
@@ -240,20 +240,25 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
               fromNode?.status === 'PROCESSING' ||
               fromNode?.status === 'COMPLETED';
 
-            // Calculate points
-            const startX = from.x + 180;
-            const startY = from.y + 45;
-            const endX = to.x;
-            const endY = to.y + 45;
+            // Calculate points - arrows connect at node edges only
+            const startX = from.x + 180; // Right edge of source node
+            const startY = from.y + 45; // Vertical center
+            const endX = to.x; // Left edge of target node
+            const endY = to.y + 45; // Vertical center
             const midX = (startX + endX) / 2;
             const pathString = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+
+            // Shorter path for flow animation (doesn't need marker)
+            const flowEndX = to.x - 15;
+            const flowMidX = (startX + flowEndX) / 2;
+            const flowPathString = `M ${startX} ${startY} C ${flowMidX} ${startY}, ${flowMidX} ${endY}, ${flowEndX} ${endY}`;
 
             return (
               <g key={`${edge.from}-${edge.to}-${idx}`}>
                 {/* Shadow/Glow Path */}
                 {isActive && (
                   <path
-                    d={pathString}
+                    d={flowPathString}
                     fill="none"
                     stroke="rgba(59, 130, 246, 0.08)"
                     strokeWidth="6"
@@ -283,7 +288,7 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                 {/* Flow Animation */}
                 {isActive && (
                   <motion.path
-                    d={pathString}
+                    d={flowPathString}
                     fill="none"
                     stroke="url(#edgeGradient)"
                     strokeWidth="3.5"
@@ -304,7 +309,7 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
         </svg>
 
         {/* Nodes Layer */}
-        <div className="relative">
+        <div className="relative z-10">
           {graph.nodes.map((node, idx) => {
             const pos = nodePositions[node.id];
             const config = STATUS_CONFIG[node.status];

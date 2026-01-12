@@ -705,7 +705,7 @@ msgstr "Binary Path"
 msgid "Bitrate"
 msgstr "Bitrate"
 
-#: src/components/pipeline/dag-graph-view.tsx:370
+#: src/components/pipeline/dag-graph-view.tsx:375
 msgid "Blocked"
 msgstr "Blocked"
 
@@ -761,7 +761,7 @@ msgstr "Cancel Pipeline"
 msgid "Cancel Pipeline?"
 msgstr "Cancel Pipeline?"
 
-#: src/components/pipeline/dag-graph-view.tsx:380
+#: src/components/pipeline/dag-graph-view.tsx:385
 #: src/components/streamers/card/use-streamer-status.tsx:36
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:463
 msgid "Cancelled"
@@ -949,7 +949,7 @@ msgstr "Complete the Telegram login process in this terminal."
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
-#: src/components/pipeline/dag-graph-view.tsx:376
+#: src/components/pipeline/dag-graph-view.tsx:381
 #: src/routes/_authed/_dashboard/dashboard.tsx:260
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:220
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:294
@@ -2134,7 +2134,7 @@ msgstr "Extract high-quality audio for podcast distribution and upload."
 msgid "Extract MP3"
 msgstr "Extract MP3"
 
-#: src/components/pipeline/dag-graph-view.tsx:378
+#: src/components/pipeline/dag-graph-view.tsx:383
 #: src/routes/_authed/_dashboard/dashboard.tsx:270
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:222
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:461
@@ -4246,7 +4246,7 @@ msgstr "Pause"
 msgid "paused"
 msgstr "paused"
 
-#: src/components/pipeline/dag-graph-view.tsx:372
+#: src/components/pipeline/dag-graph-view.tsx:377
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:216
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:455
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:323
@@ -4621,7 +4621,7 @@ msgstr "Process locally: Remux to MP4, generate thumbnail, move to archive folde
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "Process video and extract podcast audio in parallel, then upload both."
 
-#: src/components/pipeline/dag-graph-view.tsx:374
+#: src/components/pipeline/dag-graph-view.tsx:379
 #: src/routes/_authed/_dashboard/dashboard.tsx:250
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:457
@@ -6476,7 +6476,7 @@ msgstr "Video Codec"
 msgid "Video Settings"
 msgstr "Video Settings"
 
-#: src/components/pipeline/dag-graph-view.tsx:323
+#: src/components/pipeline/dag-graph-view.tsx:328
 msgid "View"
 msgstr "View"
 
