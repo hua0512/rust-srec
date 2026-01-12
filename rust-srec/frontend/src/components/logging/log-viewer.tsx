@@ -2,6 +2,7 @@
  * Real-time log viewer component that consumes the log streaming WebSocket.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouteContext } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { t } from '@lingui/core/macro';
@@ -148,7 +149,14 @@ export function LogViewer() {
   const logIdRef = useRef(0);
   const pausedLogsRef = useRef<DisplayLogEvent[]>([]);
 
-  const { data: sessionData } = useQuery(sessionQueryOptions);
+  const { user: routeUser } = useRouteContext({ from: '__root__' }) as {
+    user?: any;
+  };
+  const { data: sessionData } = useQuery({
+    ...sessionQueryOptions,
+    enabled: typeof window !== 'undefined',
+    initialData: routeUser ?? null,
+  });
   const accessToken = sessionData?.token?.access_token;
 
   // Handle WebSocket message

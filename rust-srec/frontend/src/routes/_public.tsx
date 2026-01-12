@@ -1,13 +1,10 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router';
-import { queryClient } from './__root';
-import { sessionQueryOptions } from '../api/session';
 
 export const Route = createFileRoute('/_public')({
-  beforeLoad: async () => {
-    // Check session
-    // We don't redirect here to avoid swallowing Set-Cookie headers on the server
-    const session = await queryClient.ensureQueryData(sessionQueryOptions);
-    return { session };
+  beforeLoad: ({ context }) => {
+    // Root route already validated/rotated tokens via `fetchUser()`.
+    // Avoid re-calling `checkAuthFn()` here to reduce duplicate refresh races.
+    return { session: context.user ?? null };
   },
   component: PublicLayout,
 });

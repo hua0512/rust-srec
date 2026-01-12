@@ -379,7 +379,7 @@ msgstr "Alerts when disk space is running low."
 msgid "All"
 msgstr "All"
 
-#: src/components/logging/log-viewer.tsx:405
+#: src/components/logging/log-viewer.tsx:413
 msgid "All Levels"
 msgstr "All Levels"
 
@@ -564,11 +564,11 @@ msgstr "Auto Thumbnail"
 msgid "Auto-Refresh"
 msgstr "Auto-Refresh"
 
-#: src/components/logging/log-viewer.tsx:419
+#: src/components/logging/log-viewer.tsx:427
 msgid "Auto-scroll disabled"
 msgstr "Auto-scroll disabled"
 
-#: src/components/logging/log-viewer.tsx:419
+#: src/components/logging/log-viewer.tsx:427
 msgid "Auto-scroll enabled"
 msgstr "Auto-scroll enabled"
 
@@ -798,16 +798,16 @@ msgid "Category"
 msgstr "Category"
 
 #: src/components/sidebar/navbar.tsx:28
-#: src/routes/_authed/change-password.tsx:135
-#: src/routes/_authed/change-password.tsx:282
+#: src/routes/_authed/change-password.tsx:119
+#: src/routes/_authed/change-password.tsx:266
 msgid "Change Password"
 msgstr "Change Password"
 
-#: src/routes/_authed/change-password.tsx:133
+#: src/routes/_authed/change-password.tsx:117
 msgid "Change Password Required"
 msgstr "Change Password Required"
 
-#: src/routes/_authed/change-password.tsx:280
+#: src/routes/_authed/change-password.tsx:264
 msgid "Changing Password..."
 msgstr "Changing Password..."
 
@@ -887,7 +887,7 @@ msgstr "Choose your display language"
 msgid "Cleanup"
 msgstr "Cleanup"
 
-#: src/components/logging/log-viewer.tsx:380
+#: src/components/logging/log-viewer.tsx:388
 msgid "Clear"
 msgstr "Clear"
 
@@ -1069,11 +1069,11 @@ msgstr "Configure where and how you receive notifications."
 msgid "Confirm Import"
 msgstr "Confirm Import"
 
-#: src/routes/_authed/change-password.tsx:242
+#: src/routes/_authed/change-password.tsx:226
 msgid "Confirm new password"
 msgstr "Confirm new password"
 
-#: src/routes/_authed/change-password.tsx:236
+#: src/routes/_authed/change-password.tsx:220
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
@@ -1082,7 +1082,7 @@ msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
 #: src/components/connection-status-indicator.tsx:24
-#: src/components/logging/log-viewer.tsx:341
+#: src/components/logging/log-viewer.tsx:349
 msgid "Connected"
 msgstr "Connected"
 
@@ -1334,11 +1334,11 @@ msgstr "Cron Expression"
 msgid "Current Filter Directive"
 msgstr "Current Filter Directive"
 
-#: src/routes/_authed/change-password.tsx:156
+#: src/routes/_authed/change-password.tsx:140
 msgid "Current password"
 msgstr "Current password"
 
-#: src/routes/_authed/change-password.tsx:150
+#: src/routes/_authed/change-password.tsx:134
 msgid "Current Password"
 msgstr "Current Password"
 
@@ -1655,7 +1655,7 @@ msgid "Disabled"
 msgstr "Disabled"
 
 #: src/components/connection-status-indicator.tsx:34
-#: src/components/logging/log-viewer.tsx:346
+#: src/components/logging/log-viewer.tsx:354
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -1974,7 +1974,7 @@ msgstr "Enter categories to match against (e.g. Just Chatting, Gaming)."
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
-#: src/components/logging/log-viewer.tsx:484
+#: src/components/logging/log-viewer.tsx:492
 msgid "entries"
 msgstr "entries"
 
@@ -2162,7 +2162,7 @@ msgstr "Failed to cancel job"
 msgid "Failed to cancel pipeline"
 msgstr "Failed to cancel pipeline"
 
-#: src/routes/_authed/change-password.tsx:86
+#: src/routes/_authed/change-password.tsx:70
 msgid "Failed to change password"
 msgstr "Failed to change password"
 
@@ -2767,9 +2767,9 @@ msgstr "Health"
 msgid "Healthy"
 msgstr "Healthy"
 
-#: src/routes/_authed/change-password.tsx:176
-#: src/routes/_authed/change-password.tsx:218
-#: src/routes/_authed/change-password.tsx:262
+#: src/routes/_authed/change-password.tsx:160
+#: src/routes/_authed/change-password.tsx:202
+#: src/routes/_authed/change-password.tsx:246
 #: src/routes/_public/login.tsx:200
 msgid "Hide password"
 msgstr "Hide password"
@@ -3236,7 +3236,7 @@ msgstr "Logging"
 msgid "Logging configuration updated"
 msgstr "Logging configuration updated"
 
-#: src/components/logging/log-viewer.tsx:493
+#: src/components/logging/log-viewer.tsx:501
 msgid "Logging paused"
 msgstr "Logging paused"
 
@@ -3601,11 +3601,11 @@ msgstr "New"
 msgid "NEW"
 msgstr "NEW"
 
-#: src/routes/_authed/change-password.tsx:194
+#: src/routes/_authed/change-password.tsx:178
 msgid "New Password"
 msgstr "New Password"
 
-#: src/routes/_authed/change-password.tsx:200
+#: src/routes/_authed/change-password.tsx:184
 msgid "New password (min 8 chars)"
 msgstr "New password (min 8 chars)"
 
@@ -3711,7 +3711,7 @@ msgstr "No limit"
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
-#: src/components/logging/log-viewer.tsx:437
+#: src/components/logging/log-viewer.tsx:445
 msgid "No logs to display"
 msgstr "No logs to display"
 
@@ -4218,7 +4218,7 @@ msgstr "Password"
 msgid "Password / 2FA blocked"
 msgstr "Password / 2FA blocked"
 
-#: src/routes/_authed/change-password.tsx:80
+#: src/routes/_authed/change-password.tsx:64
 msgid "Password changed successfully. Please login with your new password."
 msgstr "Password changed successfully. Please login with your new password."
 
@@ -4238,11 +4238,11 @@ msgstr "Path to Telegram Desktop (contains tdata)"
 msgid "Path Variables"
 msgstr "Path Variables"
 
-#: src/components/logging/log-viewer.tsx:374
+#: src/components/logging/log-viewer.tsx:382
 msgid "Pause"
 msgstr "Pause"
 
-#: src/components/logging/log-viewer.tsx:487
+#: src/components/logging/log-viewer.tsx:495
 msgid "paused"
 msgstr "paused"
 
@@ -4449,7 +4449,7 @@ msgstr "Please enter a valid URL"
 msgid "Please enter at least one URL"
 msgstr "Please enter at least one URL"
 
-#: src/routes/_authed/change-password.tsx:139
+#: src/routes/_authed/change-password.tsx:123
 msgid "Please enter your new password details"
 msgstr "Please enter your new password details"
 
@@ -4747,7 +4747,7 @@ msgstr "Ready"
 msgid "Ready to Watch"
 msgstr "Ready to Watch"
 
-#: src/components/logging/log-viewer.tsx:328
+#: src/components/logging/log-viewer.tsx:336
 msgid "Real-Time Logs"
 msgstr "Real-Time Logs"
 
@@ -4941,7 +4941,7 @@ msgstr "Restore from a backup file"
 msgid "Restore password"
 msgstr "Restore password"
 
-#: src/components/logging/log-viewer.tsx:369
+#: src/components/logging/log-viewer.tsx:377
 msgid "Resume"
 msgstr "Resume"
 
@@ -5171,7 +5171,7 @@ msgstr "Search events..."
 msgid "Search jobs..."
 msgstr "Search jobs..."
 
-#: src/components/logging/log-viewer.tsx:390
+#: src/components/logging/log-viewer.tsx:398
 msgid "Search logs..."
 msgstr "Search logs..."
 
@@ -5436,9 +5436,9 @@ msgstr "Settings updated successfully"
 msgid "Shared pipeline utilities"
 msgstr "Shared pipeline utilities"
 
-#: src/routes/_authed/change-password.tsx:178
-#: src/routes/_authed/change-password.tsx:220
-#: src/routes/_authed/change-password.tsx:264
+#: src/routes/_authed/change-password.tsx:162
+#: src/routes/_authed/change-password.tsx:204
+#: src/routes/_authed/change-password.tsx:248
 #: src/routes/_public/login.tsx:202
 msgid "Show password"
 msgstr "Show password"
@@ -6484,7 +6484,7 @@ msgstr "View"
 msgid "View All"
 msgstr "View All"
 
-#: src/components/logging/log-viewer.tsx:352
+#: src/components/logging/log-viewer.tsx:360
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 
@@ -6510,7 +6510,7 @@ msgstr "Wait"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/logging/log-viewer.tsx:441
+#: src/components/logging/log-viewer.tsx:449
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 

@@ -379,7 +379,7 @@ msgstr "磁盘空间不足时发出警报。"
 msgid "All"
 msgstr "全部"
 
-#: src/components/logging/log-viewer.tsx:405
+#: src/components/logging/log-viewer.tsx:413
 msgid "All Levels"
 msgstr "所有级别"
 
@@ -564,11 +564,11 @@ msgstr "自动封面"
 msgid "Auto-Refresh"
 msgstr "自动刷新"
 
-#: src/components/logging/log-viewer.tsx:419
+#: src/components/logging/log-viewer.tsx:427
 msgid "Auto-scroll disabled"
 msgstr "已关闭自动滚动"
 
-#: src/components/logging/log-viewer.tsx:419
+#: src/components/logging/log-viewer.tsx:427
 msgid "Auto-scroll enabled"
 msgstr "已开启自动滚动"
 
@@ -798,16 +798,16 @@ msgid "Category"
 msgstr "分类"
 
 #: src/components/sidebar/navbar.tsx:28
-#: src/routes/_authed/change-password.tsx:135
-#: src/routes/_authed/change-password.tsx:282
+#: src/routes/_authed/change-password.tsx:119
+#: src/routes/_authed/change-password.tsx:266
 msgid "Change Password"
 msgstr "修改密码"
 
-#: src/routes/_authed/change-password.tsx:133
+#: src/routes/_authed/change-password.tsx:117
 msgid "Change Password Required"
 msgstr "需要修改密码"
 
-#: src/routes/_authed/change-password.tsx:280
+#: src/routes/_authed/change-password.tsx:264
 msgid "Changing Password..."
 msgstr "正在修改密码..."
 
@@ -887,7 +887,7 @@ msgstr "选择你的显示语言"
 msgid "Cleanup"
 msgstr "清理"
 
-#: src/components/logging/log-viewer.tsx:380
+#: src/components/logging/log-viewer.tsx:388
 msgid "Clear"
 msgstr "清空"
 
@@ -1069,11 +1069,11 @@ msgstr "配置接收通知的位置和方式。"
 msgid "Confirm Import"
 msgstr "确认导入"
 
-#: src/routes/_authed/change-password.tsx:242
+#: src/routes/_authed/change-password.tsx:226
 msgid "Confirm new password"
 msgstr "确认新密码"
 
-#: src/routes/_authed/change-password.tsx:236
+#: src/routes/_authed/change-password.tsx:220
 msgid "Confirm Password"
 msgstr "确认密码"
 
@@ -1082,7 +1082,7 @@ msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
 
 #: src/components/connection-status-indicator.tsx:24
-#: src/components/logging/log-viewer.tsx:341
+#: src/components/logging/log-viewer.tsx:349
 msgid "Connected"
 msgstr "已连接"
 
@@ -1334,11 +1334,11 @@ msgstr "Cron 表达式"
 msgid "Current Filter Directive"
 msgstr "当前过滤指令"
 
-#: src/routes/_authed/change-password.tsx:156
+#: src/routes/_authed/change-password.tsx:140
 msgid "Current password"
 msgstr "当前密码"
 
-#: src/routes/_authed/change-password.tsx:150
+#: src/routes/_authed/change-password.tsx:134
 msgid "Current Password"
 msgstr "当前密码"
 
@@ -1655,7 +1655,7 @@ msgid "Disabled"
 msgstr "已禁用"
 
 #: src/components/connection-status-indicator.tsx:34
-#: src/components/logging/log-viewer.tsx:346
+#: src/components/logging/log-viewer.tsx:354
 msgid "Disconnected"
 msgstr "已断开"
 
@@ -1974,7 +1974,7 @@ msgstr "输入要匹配的分类（例如 Just Chatting、Gaming）。"
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
-#: src/components/logging/log-viewer.tsx:484
+#: src/components/logging/log-viewer.tsx:492
 msgid "entries"
 msgstr "条"
 
@@ -2162,7 +2162,7 @@ msgstr "取消处理任务失败"
 msgid "Failed to cancel pipeline"
 msgstr "取消处理管道失败"
 
-#: src/routes/_authed/change-password.tsx:86
+#: src/routes/_authed/change-password.tsx:70
 msgid "Failed to change password"
 msgstr "修改密码失败"
 
@@ -2767,9 +2767,9 @@ msgstr "健康"
 msgid "Healthy"
 msgstr "正常"
 
-#: src/routes/_authed/change-password.tsx:176
-#: src/routes/_authed/change-password.tsx:218
-#: src/routes/_authed/change-password.tsx:262
+#: src/routes/_authed/change-password.tsx:160
+#: src/routes/_authed/change-password.tsx:202
+#: src/routes/_authed/change-password.tsx:246
 #: src/routes/_public/login.tsx:200
 msgid "Hide password"
 msgstr "隐藏密码"
@@ -3236,7 +3236,7 @@ msgstr "日志"
 msgid "Logging configuration updated"
 msgstr "日志配置已更新"
 
-#: src/components/logging/log-viewer.tsx:493
+#: src/components/logging/log-viewer.tsx:501
 msgid "Logging paused"
 msgstr "日志已暂停"
 
@@ -3601,11 +3601,11 @@ msgstr "新建"
 msgid "NEW"
 msgstr "新"
 
-#: src/routes/_authed/change-password.tsx:194
+#: src/routes/_authed/change-password.tsx:178
 msgid "New Password"
 msgstr "新密码"
 
-#: src/routes/_authed/change-password.tsx:200
+#: src/routes/_authed/change-password.tsx:184
 msgid "New password (min 8 chars)"
 msgstr "新密码（至少 8 个字符）"
 
@@ -3711,7 +3711,7 @@ msgstr "不限"
 msgid "No logs available for this execution."
 msgstr "该执行记录暂无日志。"
 
-#: src/components/logging/log-viewer.tsx:437
+#: src/components/logging/log-viewer.tsx:445
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
@@ -4218,7 +4218,7 @@ msgstr "密码"
 msgid "Password / 2FA blocked"
 msgstr "密码/两步验证被阻止"
 
-#: src/routes/_authed/change-password.tsx:80
+#: src/routes/_authed/change-password.tsx:64
 msgid "Password changed successfully. Please login with your new password."
 msgstr "密码修改成功。请使用新密码登录。"
 
@@ -4238,11 +4238,11 @@ msgstr "Telegram Desktop 路径（包含 tdata）"
 msgid "Path Variables"
 msgstr "路径变量"
 
-#: src/components/logging/log-viewer.tsx:374
+#: src/components/logging/log-viewer.tsx:382
 msgid "Pause"
 msgstr "暂停"
 
-#: src/components/logging/log-viewer.tsx:487
+#: src/components/logging/log-viewer.tsx:495
 msgid "paused"
 msgstr "条已暂停"
 
@@ -4449,7 +4449,7 @@ msgstr "请输入有效的 URL"
 msgid "Please enter at least one URL"
 msgstr "请至少输入一个 URL"
 
-#: src/routes/_authed/change-password.tsx:139
+#: src/routes/_authed/change-password.tsx:123
 msgid "Please enter your new password details"
 msgstr "请输入你的新密码信息"
 
@@ -4747,7 +4747,7 @@ msgstr "就绪"
 msgid "Ready to Watch"
 msgstr "准备观看"
 
-#: src/components/logging/log-viewer.tsx:328
+#: src/components/logging/log-viewer.tsx:336
 msgid "Real-Time Logs"
 msgstr "实时日志"
 
@@ -4941,7 +4941,7 @@ msgstr "从备份文件恢复"
 msgid "Restore password"
 msgstr "重置密码"
 
-#: src/components/logging/log-viewer.tsx:369
+#: src/components/logging/log-viewer.tsx:377
 msgid "Resume"
 msgstr "继续"
 
@@ -5171,7 +5171,7 @@ msgstr "搜索事件..."
 msgid "Search jobs..."
 msgstr "搜索处理任务..."
 
-#: src/components/logging/log-viewer.tsx:390
+#: src/components/logging/log-viewer.tsx:398
 msgid "Search logs..."
 msgstr "搜索日志..."
 
@@ -5436,9 +5436,9 @@ msgstr "设置更新成功"
 msgid "Shared pipeline utilities"
 msgstr "共享的处理管道工具"
 
-#: src/routes/_authed/change-password.tsx:178
-#: src/routes/_authed/change-password.tsx:220
-#: src/routes/_authed/change-password.tsx:264
+#: src/routes/_authed/change-password.tsx:162
+#: src/routes/_authed/change-password.tsx:204
+#: src/routes/_authed/change-password.tsx:248
 #: src/routes/_public/login.tsx:202
 msgid "Show password"
 msgstr "显示密码"
@@ -6484,7 +6484,7 @@ msgstr "查看"
 msgid "View All"
 msgstr "查看全部"
 
-#: src/components/logging/log-viewer.tsx:352
+#: src/components/logging/log-viewer.tsx:360
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "实时查看应用日志。日志仅保留最近 {MAX_LOG_ENTRIES} 条。"
 
@@ -6510,7 +6510,7 @@ msgstr "等待"
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
-#: src/components/logging/log-viewer.tsx:441
+#: src/components/logging/log-viewer.tsx:449
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
 
