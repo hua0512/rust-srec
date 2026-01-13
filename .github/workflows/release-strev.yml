@@ -13,24 +13,39 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  CARGO_INCREMENTAL: 0
 
 jobs:
   check-and-test:
     name: Check and Test
     runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v6
+      - uses: mozilla-actions/sccache-action@v0.0.6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci
       - name: Check
-        run: cargo check -p strev
+        run: cargo check -p strev --locked
       - name: Clippy
-        run: cargo clippy -p strev -- -D warnings
+        run: cargo clippy -p strev --locked -- -D warnings
       - name: Test
-        run: cargo test -p strev
+        run: cargo nextest run -p strev --locked
+      - name: Doctests
+        run: cargo test -p strev --locked --doc
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats || true
 
   build:
     name: Build
@@ -67,14 +82,19 @@ jobs:
             artifact_name: strev
             asset_name: strev-macos-arm64
     runs-on: ${{ matrix.os }}
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v6
+      - uses: mozilla-actions/sccache-action@v0.0.6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
         with:
+          shared-key: ci
           key: ${{ matrix.target }}
       - name: Install build dependencies on Linux
         if: contains(matrix.os, 'ubuntu') && !contains(matrix.target, 'musl')
@@ -88,12 +108,12 @@ jobs:
           sudo apt-get install -y musl-tools musl-dev
       - name: Build
         if: "!contains(matrix.target, 'musl')"
-        run: cargo build -p strev --release --target ${{ matrix.target }}
+        run: cargo build -p strev --locked --release --target ${{ matrix.target }}
       - name: Build (musl static)
         if: contains(matrix.target, 'musl')
         env:
           CC: musl-gcc
-        run: cargo build -p strev --release --target ${{ matrix.target }} --features static-ssl
+        run: cargo build -p strev --locked --release --target ${{ matrix.target }} --features static-ssl
       - name: Rename binary
         shell: bash
         run: cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "${{ matrix.asset_name }}"
@@ -103,6 +123,9 @@ jobs:
           name: ${{ matrix.asset_name }}
           path: ${{ matrix.asset_name }}
           if-no-files-found: error
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats || true
 
   release:
     name: Release

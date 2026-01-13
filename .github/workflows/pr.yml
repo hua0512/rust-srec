@@ -10,20 +10,33 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  CARGO_INCREMENTAL: 0
 
 jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v6
+      - uses: mozilla-actions/sccache-action@v0.0.6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci
+          save-if: ${{ false }}
       - name: Clippy check
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats || true
 
   test:
     name: Test Suite
@@ -36,13 +49,27 @@ jobs:
           - os: macos-15-intel
           - os: macos-latest
     runs-on: ${{ matrix.os }}
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v6
+      - uses: mozilla-actions/sccache-action@v0.0.6
       - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci
+          save-if: ${{ false }}
       - name: Run tests
-        run: cargo test --workspace
+        run: cargo nextest run --locked --workspace
+      - name: Run doctests
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --locked --workspace --doc
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats || true
 
   frontend-lint:
     name: Frontend Lint
