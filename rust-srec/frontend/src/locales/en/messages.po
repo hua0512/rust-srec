@@ -192,7 +192,7 @@ msgstr "Active Days"
 msgid "Active Download"
 msgstr "Active Download"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:292
+#: src/routes/_authed/_dashboard/dashboard.tsx:315
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
@@ -463,7 +463,7 @@ msgstr "Are you sure you want to delete this job?"
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "Are you sure you want to delete this session? This action cannot be undone."
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:90
+#: src/routes/_authed/_dashboard/dashboard.tsx:109
 #: src/routes/_authed/_dashboard/streamers/index.tsx:207
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
@@ -576,6 +576,10 @@ msgstr "Auto-scroll enabled"
 #: src/components/streamers/edit/streamer-meta-form.tsx:171
 msgid "Autofill name from URL"
 msgstr "Autofill name from URL"
+
+#: src/routes/_public/login.tsx:109
+msgid "Automate your stream recordings with ease and reliability."
+msgstr "Automate your stream recordings with ease and reliability."
 
 #: src/components/config/global/file-config-card.tsx:47
 msgid "Automatically generate a thumbnail for the first segment of each session."
@@ -850,7 +854,7 @@ msgstr "Check Login"
 msgid "Check size after copy"
 msgstr "Check size after copy"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:73
+#: src/routes/_authed/_dashboard/dashboard.tsx:91
 #: src/routes/_authed/_dashboard/streamers/index.tsx:190
 msgid "Check triggered"
 msgstr "Check triggered"
@@ -950,7 +954,7 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
 #: src/components/pipeline/dag-graph-view.tsx:381
-#: src/routes/_authed/_dashboard/dashboard.tsx:260
+#: src/routes/_authed/_dashboard/dashboard.tsx:283
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:220
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:294
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:459
@@ -1428,7 +1432,7 @@ msgstr "Dark"
 msgid "Dashboard"
 msgstr "Dashboard"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:203
+#: src/routes/_authed/_dashboard/dashboard.tsx:232
 #: src/routes/_authed/_dashboard/system/health.tsx:325
 msgid "Database"
 msgstr "Database"
@@ -1480,7 +1484,7 @@ msgid "Define sequences of processing steps for your recordings"
 msgstr "Define sequences of processing steps for your recordings"
 
 #: src/components/health/health-status-badge.tsx:53
-#: src/routes/_authed/_dashboard/dashboard.tsx:537
+#: src/routes/_authed/_dashboard/dashboard.tsx:583
 msgid "Degraded"
 msgstr "Degraded"
 
@@ -1659,7 +1663,7 @@ msgstr "Disabled"
 msgid "Disconnected"
 msgstr "Disconnected"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:217
+#: src/routes/_authed/_dashboard/dashboard.tsx:242
 msgid "Disk"
 msgstr "Disk"
 
@@ -1707,7 +1711,7 @@ msgstr "Download Engine"
 msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:210
+#: src/routes/_authed/_dashboard/dashboard.tsx:237
 #: src/routes/_authed/_dashboard/system/health.tsx:326
 msgid "Download Manager"
 msgstr "Download Manager"
@@ -1970,7 +1974,7 @@ msgstr "Enter a URL to parse and play a stream"
 msgid "Enter categories to match against (e.g. Just Chatting, Gaming)."
 msgstr "Enter categories to match against (e.g. Just Chatting, Gaming)."
 
-#: src/routes/_public/login.tsx:146
+#: src/routes/_public/login.tsx:124
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
@@ -2135,7 +2139,7 @@ msgid "Extract MP3"
 msgstr "Extract MP3"
 
 #: src/components/pipeline/dag-graph-view.tsx:383
-#: src/routes/_authed/_dashboard/dashboard.tsx:270
+#: src/routes/_authed/_dashboard/dashboard.tsx:293
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:222
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:461
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:329
@@ -2241,7 +2245,7 @@ msgstr "Failed to delete session"
 msgid "Failed to delete sessions"
 msgstr "Failed to delete sessions"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:67
+#: src/routes/_authed/_dashboard/dashboard.tsx:85
 #: src/routes/_authed/_dashboard/streamers/index.tsx:185
 msgid "Failed to delete streamer"
 msgstr "Failed to delete streamer"
@@ -2338,7 +2342,7 @@ msgstr "Failed to send test notification"
 msgid "Failed to start login: {0}"
 msgstr "Failed to start login: {0}"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:75
+#: src/routes/_authed/_dashboard/dashboard.tsx:93
 #: src/routes/_authed/_dashboard/streamers/index.tsx:192
 msgid "Failed to trigger check"
 msgstr "Failed to trigger check"
@@ -2370,7 +2374,7 @@ msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
 #: src/hooks/use-edit-streamer.ts:80
-#: src/routes/_authed/_dashboard/dashboard.tsx:86
+#: src/routes/_authed/_dashboard/dashboard.tsx:104
 #: src/routes/_authed/_dashboard/streamers/index.tsx:203
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
@@ -2763,14 +2767,14 @@ msgid "Health"
 msgstr "Health"
 
 #: src/components/health/health-status-badge.tsx:40
-#: src/routes/_authed/_dashboard/dashboard.tsx:535
+#: src/routes/_authed/_dashboard/dashboard.tsx:581
 msgid "Healthy"
 msgstr "Healthy"
 
 #: src/routes/_authed/change-password.tsx:160
 #: src/routes/_authed/change-password.tsx:202
 #: src/routes/_authed/change-password.tsx:246
-#: src/routes/_public/login.tsx:200
+#: src/routes/_public/login.tsx:223
 msgid "Hide password"
 msgstr "Hide password"
 
@@ -3228,6 +3232,10 @@ msgstr "Local Archive"
 msgid "Log levels & modules"
 msgstr "Log levels & modules"
 
+#: src/routes/_public/login.tsx:75
+msgid "Logged in successfully"
+msgstr "Logged in successfully"
+
 #: src/routes/_authed/_dashboard/config/route.tsx:72
 msgid "Logging"
 msgstr "Logging"
@@ -3243,6 +3251,10 @@ msgstr "Logging paused"
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:412
 msgid "Login Args"
 msgstr "Login Args"
+
+#: src/routes/_public/login.tsx:160
+msgid "Login failed"
+msgstr "Login failed"
 
 #. placeholder {0}: typeof status === 'object' && 'failed' in status ? status.failed.message : 'Unknown error'
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:602
@@ -3573,7 +3585,7 @@ msgstr "Name autofilled successfully"
 msgid "Name is required"
 msgstr "Name is required"
 
-#: src/routes/_public/login.tsx:161
+#: src/routes/_public/login.tsx:182
 msgid "name@example.com"
 msgstr "name@example.com"
 
@@ -3621,7 +3633,7 @@ msgstr "New Template Name"
 msgid "Next"
 msgstr "Next"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:346
+#: src/routes/_authed/_dashboard/dashboard.tsx:367
 msgid "No active recordings"
 msgstr "No active recordings"
 
@@ -3861,7 +3873,7 @@ msgstr "None (Strip Audio)"
 msgid "Normal"
 msgstr "Normal"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:386
+#: src/routes/_authed/_dashboard/dashboard.tsx:411
 msgid "Not available"
 msgstr "Not available"
 
@@ -4096,7 +4108,7 @@ msgstr "Outputs"
 msgid "Outside Schedule"
 msgstr "Outside Schedule"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:159
+#: src/routes/_authed/_dashboard/dashboard.tsx:188
 msgid "Overall Health"
 msgstr "Overall Health"
 
@@ -4210,13 +4222,17 @@ msgstr "Passthrough Inputs"
 #: src/components/config/shared/proxy-settings-card.tsx:189
 #: src/components/notifications/forms/email-form.tsx:101
 #: src/components/notifications/forms/webhook-form.tsx:321
-#: src/routes/_public/login.tsx:176
+#: src/routes/_public/login.tsx:198
 msgid "Password"
 msgstr "Password"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:491
 msgid "Password / 2FA blocked"
 msgstr "Password / 2FA blocked"
+
+#: src/routes/_public/login.tsx:70
+msgid "Password change required"
+msgstr "Password change required"
 
 #: src/routes/_authed/change-password.tsx:64
 msgid "Password changed successfully. Please login with your new password."
@@ -4255,7 +4271,7 @@ msgstr "paused"
 msgid "Pending"
 msgstr "Pending"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:240
+#: src/routes/_authed/_dashboard/dashboard.tsx:263
 msgid "Pending Jobs"
 msgstr "Pending Jobs"
 
@@ -4356,7 +4372,7 @@ msgstr "Pipeline Name"
 msgid "Pipeline name is required"
 msgstr "Pipeline name is required"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:235
+#: src/routes/_authed/_dashboard/dashboard.tsx:258
 msgid "Pipeline Statistics"
 msgstr "Pipeline Statistics"
 
@@ -4622,7 +4638,7 @@ msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "Process video and extract podcast audio in parallel, then upload both."
 
 #: src/components/pipeline/dag-graph-view.tsx:379
-#: src/routes/_authed/_dashboard/dashboard.tsx:250
+#: src/routes/_authed/_dashboard/dashboard.tsx:273
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:457
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:325
@@ -4937,7 +4953,7 @@ msgstr "Restart with -d"
 msgid "Restore from a backup file"
 msgstr "Restore from a backup file"
 
-#: src/routes/_public/login.tsx:217
+#: src/routes/_public/login.tsx:240
 msgid "Restore password"
 msgstr "Restore password"
 
@@ -5439,11 +5455,11 @@ msgstr "Shared pipeline utilities"
 #: src/routes/_authed/change-password.tsx:162
 #: src/routes/_authed/change-password.tsx:204
 #: src/routes/_authed/change-password.tsx:248
-#: src/routes/_public/login.tsx:202
+#: src/routes/_public/login.tsx:225
 msgid "Show password"
 msgstr "Show password"
 
-#: src/routes/_public/login.tsx:228
+#: src/routes/_public/login.tsx:251
 msgid "Sign In"
 msgstr "Sign In"
 
@@ -5452,7 +5468,7 @@ msgstr "Sign In"
 msgid "Sign out"
 msgstr "Sign out"
 
-#: src/routes/_public/login.tsx:226
+#: src/routes/_public/login.tsx:249
 msgid "Signing in..."
 msgstr "Signing in..."
 
@@ -5648,7 +5664,7 @@ msgstr "Streamer Check"
 msgid "Streamer created successfully"
 msgstr "Streamer created successfully"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:63
+#: src/routes/_authed/_dashboard/dashboard.tsx:81
 #: src/routes/_authed/_dashboard/streamers/index.tsx:181
 msgid "Streamer deleted"
 msgstr "Streamer deleted"
@@ -5674,7 +5690,7 @@ msgstr "Streamer is on cooldown"
 msgid "Streamer pagination"
 msgstr "Streamer pagination"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:82
+#: src/routes/_authed/_dashboard/dashboard.tsx:100
 #: src/routes/_authed/_dashboard/streamers/index.tsx:199
 msgid "Streamer updated"
 msgstr "Streamer updated"
@@ -5692,7 +5708,7 @@ msgstr "Streamer updated successfully"
 msgid "Streamers"
 msgstr "Streamers"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:349
+#: src/routes/_authed/_dashboard/dashboard.tsx:370
 msgid "Streamers currently live will appear here."
 msgstr "Streamers currently live will appear here."
 
@@ -5770,7 +5786,7 @@ msgid "System Health"
 msgstr "System Health"
 
 #: src/components/config/engines/engine-card.tsx:170
-#: src/routes/_authed/_dashboard/dashboard.tsx:128
+#: src/routes/_authed/_dashboard/dashboard.tsx:157
 msgid "System Status"
 msgstr "System Status"
 
@@ -6253,7 +6269,7 @@ msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 
 #: src/components/health/health-status-badge.tsx:66
-#: src/routes/_authed/_dashboard/dashboard.tsx:539
+#: src/routes/_authed/_dashboard/dashboard.tsx:585
 msgid "Unhealthy"
 msgstr "Unhealthy"
 
@@ -6261,7 +6277,7 @@ msgstr "Unhealthy"
 msgid "Unix timestamp"
 msgstr "Unix timestamp"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:541
+#: src/routes/_authed/_dashboard/dashboard.tsx:587
 msgid "Unknown"
 msgstr "Unknown"
 
@@ -6294,7 +6310,7 @@ msgid "Update Channel"
 msgstr "Update Channel"
 
 #: src/components/config/global/backup-restore-card.tsx:177
-#: src/routes/_authed/_dashboard/dashboard.tsx:449
+#: src/routes/_authed/_dashboard/dashboard.tsx:482
 msgid "Updated"
 msgstr "Updated"
 
@@ -6410,7 +6426,7 @@ msgstr "User Agent"
 #: src/components/config/shared/proxy-settings-card.tsx:171
 #: src/components/notifications/forms/email-form.tsx:82
 #: src/components/notifications/forms/webhook-form.tsx:306
-#: src/routes/_public/login.tsx:157
+#: src/routes/_public/login.tsx:178
 msgid "Username"
 msgstr "Username"
 
@@ -6480,7 +6496,7 @@ msgstr "Video Settings"
 msgid "View"
 msgstr "View"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:302
+#: src/routes/_authed/_dashboard/dashboard.tsx:325
 msgid "View All"
 msgstr "View All"
 
@@ -6498,7 +6514,7 @@ msgstr "View Detailed Logs & Outputs"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:159
 #: src/components/sessions/session-card.tsx:271
-#: src/routes/_authed/_dashboard/dashboard.tsx:137
+#: src/routes/_authed/_dashboard/dashboard.tsx:166
 msgid "View Details"
 msgstr "View Details"
 
@@ -6536,7 +6552,7 @@ msgstr "Webhook URL"
 msgid "Week"
 msgstr "Week"
 
-#: src/routes/_public/login.tsx:143
+#: src/routes/_public/login.tsx:121
 msgid "Welcome back"
 msgstr "Welcome back"
 

@@ -1094,6 +1094,9 @@ impl ServiceContainer {
     fn setup_danmu_event_subscriptions(&self) {
         let mut receiver = self.danmu_service.subscribe();
         let pipeline_manager = self.pipeline_manager.clone();
+        let download_manager = self.download_manager.clone();
+        let streamer_manager = self.streamer_manager.clone();
+        let stream_monitor = self.stream_monitor.clone();
         let discarded_segment_keys = self.discarded_segment_keys.clone();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -1158,6 +1161,46 @@ impl ServiceContainer {
                                         }
                                         // Forward to pipeline manager for processing
                                         pipeline_manager.handle_danmu_event(event.clone()).await;
+                                    }
+                                    DanmuEvent::Control { session_id, streamer_id, platform, control } => {
+                                        warn!(
+                                            "Danmu control event for session {} (streamer={} platform={}): {:?}",
+                                            session_id, streamer_id, platform, control
+                                        );
+
+                                        // Forward to pipeline manager (e.g., title updates).
+                                        pipeline_manager.handle_danmu_event(event.clone()).await;
+
+                                        // Treat stream-closed as authoritative end-of-stream:
+                                        // - stop downloads promptly
+                                        // - end session and bypass resume hysteresis
+                                        if matches!(control, crate::danmu::DanmuControlEvent::StreamClosed { .. }) {
+                                            if let Some(download_info) = download_manager.get_download_by_streamer(streamer_id)
+                                            && let Err(e) = download_manager.stop_download(&download_info.id).await
+                                        {
+                                            warn!(
+                                                "Failed to stop download {} after danmu stream closed (streamer={}): {}",
+                                                download_info.id, streamer_id, e
+                                            );
+                                        }
+                                            stream_monitor.mark_session_hard_ended(streamer_id, session_id);
+                                            if let Some(streamer) = streamer_manager.get_streamer(streamer_id) {
+                                                if let Err(e) = stream_monitor
+                                                    .handle_offline_with_session(&streamer, Some(session_id.clone()))
+                                                    .await
+                                                {
+                                                    warn!(
+                                                        "Failed to mark streamer offline after danmu stream closed (streamer={} session={}): {}",
+                                                        streamer_id, session_id, e
+                                                    );
+                                                }
+                                            } else {
+                                                warn!(
+                                                    "Streamer metadata not found for stream-closed danmu control (streamer={} session={})",
+                                                    streamer_id, session_id
+                                                );
+                                            }
+                                        }
                                     }
                                     DanmuEvent::Reconnecting { session_id, attempt } => {
                                         warn!(

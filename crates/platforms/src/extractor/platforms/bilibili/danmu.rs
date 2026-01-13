@@ -16,9 +16,9 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
-use crate::danmaku::DanmuMessage;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::{DEFAULT_UA, default_client};
 
 use super::URL_REGEX;
@@ -286,8 +286,8 @@ impl BilibiliDanmuProtocol {
         packets
     }
 
-    /// Parse a notification message (op=5) into DanmuMessage.
-    fn parse_notification(body: &[u8]) -> Option<DanmuMessage> {
+    /// Parse a notification message (op=5) into a danmu item.
+    fn parse_notification(body: &[u8]) -> Option<DanmuItem> {
         let json: Value = serde_json::from_slice(body).ok()?;
         let cmd = json.get("cmd")?.as_str()?;
 
@@ -296,11 +296,43 @@ impl BilibiliDanmuProtocol {
         // DANMU_MSG_MIRROR are mirror of DANMU_MSG
 
         match cmd_base {
-            "DANMU_MSG" | "DANMU_MSG_MIRROR" => Self::parse_danmu_msg(&json),
-            "SEND_GIFT" => Self::parse_gift(&json),
-            "SUPER_CHAT_MESSAGE" => Self::parse_super_chat(&json),
+            "DANMU_MSG" | "DANMU_MSG_MIRROR" => {
+                Self::parse_danmu_msg(&json).map(DanmuItem::Message)
+            }
+            "SEND_GIFT" => Self::parse_gift(&json).map(DanmuItem::Message),
+            "SUPER_CHAT_MESSAGE" => Self::parse_super_chat(&json).map(DanmuItem::Message),
+            "ROOM_CHANGE" => Self::parse_room_change(&json),
             _ => None,
         }
+    }
+
+    /// Parse ROOM_CHANGE (room info update) into a control event.
+    ///
+    /// Bilibili sends this when the streamer updates the title / area / tags.
+    fn parse_room_change(json: &Value) -> Option<DanmuItem> {
+        let data = json.get("data")?;
+
+        let title = data
+            .get("title")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        let category = data
+            .get("area_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+        let parent_category = data
+            .get("parent_area_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
+
+        Some(DanmuItem::Control(DanmuControlEvent::RoomInfoChanged {
+            title,
+            category,
+            parent_category,
+        }))
     }
 
     /// Parse DANMU_MSG into DanmuMessage.
@@ -479,17 +511,17 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
         message: &Message,
         _room_id: &str,
         _tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuMessage>> {
+    ) -> Result<Vec<DanmuItem>> {
         match message {
             Message::Binary(data) => {
                 let packets = Self::decode_packets(data);
-                let mut danmus = Vec::new();
+                let mut items = Vec::new();
 
                 for packet in packets {
                     match packet.operation {
                         op::NOTIFICATION => {
-                            if let Some(danmu) = Self::parse_notification(&packet.body) {
-                                danmus.push(danmu);
+                            if let Some(item) = Self::parse_notification(&packet.body) {
+                                items.push(item);
                             }
                         }
                         // op::HEARTBEAT_REPLY => {
@@ -504,7 +536,7 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
                     }
                 }
 
-                Ok(danmus)
+                Ok(items)
             }
             _ => Ok(vec![]),
         }
@@ -608,6 +640,35 @@ mod tests {
         assert_eq!(msg.user_id, "12345");
     }
 
+    #[test]
+    fn test_parse_room_change_emits_control() {
+        let json = serde_json::json!({
+            "cmd": "ROOM_CHANGE",
+            "data": {
+                "title": "New Stream Title",
+                "area_name": "Some Area",
+                "parent_area_name": "Some Parent"
+            }
+        });
+
+        let body = serde_json::to_vec(&json).unwrap();
+        let item =
+            BilibiliDanmuProtocol::parse_notification(&body).expect("should parse ROOM_CHANGE");
+
+        match item {
+            DanmuItem::Control(DanmuControlEvent::RoomInfoChanged {
+                title,
+                category,
+                parent_category,
+            }) => {
+                assert_eq!(title.as_deref(), Some("New Stream Title"));
+                assert_eq!(category.as_deref(), Some("Some Area"));
+                assert_eq!(parent_category.as_deref(), Some("Some Parent"));
+            }
+            other => panic!("Unexpected item: {other:?}"),
+        }
+    }
+
     /// Real integration test - connects to an actual Bilibili live room
     /// Run with: cargo test --package platforms-parser bilibili::danmu::tests::test_real_connection -- --ignored --nocapture
     #[tokio::test]
@@ -638,10 +699,15 @@ mod tests {
 
         while start.elapsed() < Duration::from_secs(60) {
             match provider.receive(&connection).await {
-                Ok(Some(msg)) => {
-                    println!("[{:?}] {}: {}", msg.message_type, msg.username, msg.content);
-                    message_count += 1;
-                }
+                Ok(Some(item)) => match item {
+                    crate::danmaku::DanmuItem::Message(msg) => {
+                        println!("[{:?}] {}: {}", msg.message_type, msg.username, msg.content);
+                        message_count += 1;
+                    }
+                    crate::danmaku::DanmuItem::Control(control) => {
+                        println!("[control] {:?}", control);
+                    }
+                },
                 Ok(None) => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }

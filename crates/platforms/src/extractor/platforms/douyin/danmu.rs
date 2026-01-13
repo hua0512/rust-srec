@@ -16,9 +16,9 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
-use crate::danmaku::DanmuMessage;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::douyin::apis::LIVE_DOUYIN_URL;
 use crate::extractor::platforms::douyin::douyin_proto;
@@ -205,10 +205,10 @@ impl DouyinDanmuProtocol {
         (msg_id, timestamp)
     }
 
-    /// Parses a list of messages from a Response into DanmuMessages
+    /// Parses a list of messages from a Response into danmu items.
     fn parse_response_messages(
         messages_list: &[douyin_proto::webcast::im::Message],
-    ) -> Vec<DanmuMessage> {
+    ) -> Vec<DanmuItem> {
         let mut parsed = Vec::new();
         for message in messages_list.iter() {
             #[allow(clippy::single_match)]
@@ -245,7 +245,23 @@ impl DouyinDanmuProtocol {
                         let danmu = DanmuMessage::chat(msg_id, user_id, username, content)
                             .with_timestamp(timestamp)
                             .with_color(color);
-                        parsed.push(danmu);
+                        parsed.push(DanmuItem::Message(danmu));
+                    }
+                }
+                "WebcastControlMessage" => {
+                    if let Ok(control_msg) =
+                        douyin_proto::webcast::im::ControlMessage::decode(message.payload.as_ref())
+                    {
+                        debug!("Control message: {:?}", control_msg);
+                        // Douyin: treat only action == 3 as a stream-closed signal.
+                        if control_msg.action == 3 {
+                            let tips = control_msg.tips.trim().to_string();
+                            let tips = (!tips.is_empty()).then_some(tips);
+                            parsed.push(DanmuItem::Control(DanmuControlEvent::StreamClosed {
+                                message: tips,
+                                action: Some(control_msg.action),
+                            }));
+                        }
                     }
                 }
                 _ => {} // _ => debug!("Ignored message type: {}", message.method),
@@ -315,7 +331,7 @@ impl DanmuProtocol for DouyinDanmuProtocol {
         message: &Message,
         _room_id: &str,
         tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuMessage>> {
+    ) -> Result<Vec<DanmuItem>> {
         match message {
             Message::Binary(data) => {
                 let (response, log_id) = Self::decode_push_frame(data)?;
@@ -496,14 +512,19 @@ mod tests {
                                             response.messages.len()
                                         );
 
-                                        let danmus = DouyinDanmuProtocol::parse_response_messages(
+                                        let items = DouyinDanmuProtocol::parse_response_messages(
                                             &response.messages,
                                         );
-                                        for danmu in danmus {
-                                            println!(
-                                                "    [{}] {}: {}",
-                                                danmu.timestamp, danmu.username, danmu.content
-                                            );
+                                        for item in items {
+                                            match item {
+                                                DanmuItem::Message(danmu) => println!(
+                                                    "    [{}] {}: {}",
+                                                    danmu.timestamp, danmu.username, danmu.content
+                                                ),
+                                                DanmuItem::Control(control) => {
+                                                    println!("    [control] {:?}", control);
+                                                }
+                                            }
                                         }
                                     }
                                     Err(e) => {

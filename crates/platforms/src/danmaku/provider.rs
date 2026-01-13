@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
 use crate::danmaku::error::Result;
-use crate::danmaku::message::DanmuMessage;
+use crate::danmaku::event::DanmuItem;
 use crate::danmaku::websocket::WebSocketProviderConfig;
 
 /// Connection handle for an active danmu stream.
@@ -107,9 +107,9 @@ pub trait DanmuProvider: Send + Sync {
     /// Disconnect from the danmu stream.
     async fn disconnect(&self, connection: &mut DanmuConnection) -> Result<()>;
 
-    /// Receive the next danmu message.
+    /// Receive the next danmu item (message or control event).
     /// Returns None if the connection is closed.
-    async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuMessage>>;
+    async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuItem>>;
 
     /// Check if the provider supports the given URL.
     fn supports_url(&self, url: &str) -> bool;

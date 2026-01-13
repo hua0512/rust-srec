@@ -10,7 +10,7 @@ use tracing::debug;
 
 use crate::danmaku::error::Result;
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
-use crate::danmaku::{DanmuMessage, DanmuType};
+use crate::danmaku::{DanmuItem, DanmuMessage, DanmuType};
 
 use super::URL_REGEX;
 
@@ -213,10 +213,10 @@ impl DanmuProtocol for TwitchDanmuProtocol {
         message: &Message,
         _room_id: &str,
         tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuMessage>> {
+    ) -> Result<Vec<DanmuItem>> {
         match message {
             Message::Text(text) => {
-                let mut danmus = Vec::new();
+                let mut items = Vec::new();
 
                 // Handle each line (Twitch may send multiple messages in one frame)
                 for line in text.lines() {
@@ -238,11 +238,11 @@ impl DanmuProtocol for TwitchDanmuProtocol {
 
                     // Parse chat messages
                     if let Some(danmu) = Self::parse_irc_message(trimmed) {
-                        danmus.push(danmu);
+                        items.push(DanmuItem::Message(danmu));
                     }
                 }
 
-                Ok(danmus)
+                Ok(items)
             }
             Message::Binary(data) => {
                 // Twitch IRC uses text, but handle binary just in case
@@ -346,10 +346,15 @@ mod tests {
 
         while start.elapsed() < Duration::from_secs(60) {
             match provider.receive(&connection).await {
-                Ok(Some(msg)) => {
-                    println!("[{:?}] {}: {}", msg.message_type, msg.username, msg.content);
-                    message_count += 1;
-                }
+                Ok(Some(item)) => match item {
+                    crate::danmaku::DanmuItem::Message(msg) => {
+                        println!("[{:?}] {}: {}", msg.message_type, msg.username, msg.content);
+                        message_count += 1;
+                    }
+                    crate::danmaku::DanmuItem::Control(control) => {
+                        println!("[control] {:?}", control);
+                    }
+                },
                 Ok(None) => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }

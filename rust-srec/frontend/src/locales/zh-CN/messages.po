@@ -192,7 +192,7 @@ msgstr "生效日期"
 msgid "Active Download"
 msgstr "正在录制"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:292
+#: src/routes/_authed/_dashboard/dashboard.tsx:315
 msgid "Active Recordings"
 msgstr "正在录制"
 
@@ -463,7 +463,7 @@ msgstr "确定要删除该处理任务吗？"
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "确定要删除此会话吗？此操作无法撤销。"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:90
+#: src/routes/_authed/_dashboard/dashboard.tsx:109
 #: src/routes/_authed/_dashboard/streamers/index.tsx:207
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
@@ -576,6 +576,10 @@ msgstr "已开启自动滚动"
 #: src/components/streamers/edit/streamer-meta-form.tsx:171
 msgid "Autofill name from URL"
 msgstr "从 URL 自动填充名称"
+
+#: src/routes/_public/login.tsx:109
+msgid "Automate your stream recordings with ease and reliability."
+msgstr "轻松自动化您的直播录制。"
 
 #: src/components/config/global/file-config-card.tsx:47
 msgid "Automatically generate a thumbnail for the first segment of each session."
@@ -850,7 +854,7 @@ msgstr "检查登录"
 msgid "Check size after copy"
 msgstr "复制后检查大小"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:73
+#: src/routes/_authed/_dashboard/dashboard.tsx:91
 #: src/routes/_authed/_dashboard/streamers/index.tsx:190
 msgid "Check triggered"
 msgstr "已触发检查"
@@ -950,7 +954,7 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
 #: src/components/pipeline/dag-graph-view.tsx:381
-#: src/routes/_authed/_dashboard/dashboard.tsx:260
+#: src/routes/_authed/_dashboard/dashboard.tsx:283
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:220
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:294
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:459
@@ -1428,7 +1432,7 @@ msgstr "深色"
 msgid "Dashboard"
 msgstr "仪表盘"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:203
+#: src/routes/_authed/_dashboard/dashboard.tsx:232
 #: src/routes/_authed/_dashboard/system/health.tsx:325
 msgid "Database"
 msgstr "数据库"
@@ -1480,7 +1484,7 @@ msgid "Define sequences of processing steps for your recordings"
 msgstr "为录制内容定义处理步骤序列"
 
 #: src/components/health/health-status-badge.tsx:53
-#: src/routes/_authed/_dashboard/dashboard.tsx:537
+#: src/routes/_authed/_dashboard/dashboard.tsx:583
 msgid "Degraded"
 msgstr "降级"
 
@@ -1659,7 +1663,7 @@ msgstr "已禁用"
 msgid "Disconnected"
 msgstr "已断开"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:217
+#: src/routes/_authed/_dashboard/dashboard.tsx:242
 msgid "Disk"
 msgstr "磁盘"
 
@@ -1707,7 +1711,7 @@ msgstr "录制引擎"
 msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:210
+#: src/routes/_authed/_dashboard/dashboard.tsx:237
 #: src/routes/_authed/_dashboard/system/health.tsx:326
 msgid "Download Manager"
 msgstr "下载管理"
@@ -1970,7 +1974,7 @@ msgstr "输入 URL 以解析并播放流"
 msgid "Enter categories to match against (e.g. Just Chatting, Gaming)."
 msgstr "输入要匹配的分类（例如 Just Chatting、Gaming）。"
 
-#: src/routes/_public/login.tsx:146
+#: src/routes/_public/login.tsx:124
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
@@ -2135,7 +2139,7 @@ msgid "Extract MP3"
 msgstr "提取 MP3"
 
 #: src/components/pipeline/dag-graph-view.tsx:383
-#: src/routes/_authed/_dashboard/dashboard.tsx:270
+#: src/routes/_authed/_dashboard/dashboard.tsx:293
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:222
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:461
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:329
@@ -2241,7 +2245,7 @@ msgstr "删除会话失败"
 msgid "Failed to delete sessions"
 msgstr "删除会话失败"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:67
+#: src/routes/_authed/_dashboard/dashboard.tsx:85
 #: src/routes/_authed/_dashboard/streamers/index.tsx:185
 msgid "Failed to delete streamer"
 msgstr "删除主播失败"
@@ -2338,7 +2342,7 @@ msgstr "发送测试通知失败"
 msgid "Failed to start login: {0}"
 msgstr "启动登录失败：{0}"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:75
+#: src/routes/_authed/_dashboard/dashboard.tsx:93
 #: src/routes/_authed/_dashboard/streamers/index.tsx:192
 msgid "Failed to trigger check"
 msgstr "触发检查失败"
@@ -2370,7 +2374,7 @@ msgid "Failed to update settings"
 msgstr "更新设置失败"
 
 #: src/hooks/use-edit-streamer.ts:80
-#: src/routes/_authed/_dashboard/dashboard.tsx:86
+#: src/routes/_authed/_dashboard/dashboard.tsx:104
 #: src/routes/_authed/_dashboard/streamers/index.tsx:203
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
@@ -2763,14 +2767,14 @@ msgid "Health"
 msgstr "健康"
 
 #: src/components/health/health-status-badge.tsx:40
-#: src/routes/_authed/_dashboard/dashboard.tsx:535
+#: src/routes/_authed/_dashboard/dashboard.tsx:581
 msgid "Healthy"
 msgstr "正常"
 
 #: src/routes/_authed/change-password.tsx:160
 #: src/routes/_authed/change-password.tsx:202
 #: src/routes/_authed/change-password.tsx:246
-#: src/routes/_public/login.tsx:200
+#: src/routes/_public/login.tsx:223
 msgid "Hide password"
 msgstr "隐藏密码"
 
@@ -3228,6 +3232,10 @@ msgstr "本地归档"
 msgid "Log levels & modules"
 msgstr "日志级别与模块"
 
+#: src/routes/_public/login.tsx:75
+msgid "Logged in successfully"
+msgstr "登录成功"
+
 #: src/routes/_authed/_dashboard/config/route.tsx:72
 msgid "Logging"
 msgstr "日志"
@@ -3243,6 +3251,10 @@ msgstr "日志已暂停"
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:412
 msgid "Login Args"
 msgstr "登录参数"
+
+#: src/routes/_public/login.tsx:160
+msgid "Login failed"
+msgstr "登录失败"
 
 #. placeholder {0}: typeof status === 'object' && 'failed' in status ? status.failed.message : 'Unknown error'
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:602
@@ -3573,7 +3585,7 @@ msgstr "名称自动填充成功"
 msgid "Name is required"
 msgstr "必须填写名称"
 
-#: src/routes/_public/login.tsx:161
+#: src/routes/_public/login.tsx:182
 msgid "name@example.com"
 msgstr "name@example.com"
 
@@ -3621,7 +3633,7 @@ msgstr "新模板名称"
 msgid "Next"
 msgstr "下一步"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:346
+#: src/routes/_authed/_dashboard/dashboard.tsx:367
 msgid "No active recordings"
 msgstr "暂无正在录制"
 
@@ -3861,7 +3873,7 @@ msgstr "无（剥离音频）"
 msgid "Normal"
 msgstr "正常"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:386
+#: src/routes/_authed/_dashboard/dashboard.tsx:411
 msgid "Not available"
 msgstr "不可用"
 
@@ -4096,7 +4108,7 @@ msgstr "输出"
 msgid "Outside Schedule"
 msgstr "不在计划时间内"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:159
+#: src/routes/_authed/_dashboard/dashboard.tsx:188
 msgid "Overall Health"
 msgstr "总体健康"
 
@@ -4210,13 +4222,17 @@ msgstr "透传输入"
 #: src/components/config/shared/proxy-settings-card.tsx:189
 #: src/components/notifications/forms/email-form.tsx:101
 #: src/components/notifications/forms/webhook-form.tsx:321
-#: src/routes/_public/login.tsx:176
+#: src/routes/_public/login.tsx:198
 msgid "Password"
 msgstr "密码"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:491
 msgid "Password / 2FA blocked"
 msgstr "密码/两步验证被阻止"
+
+#: src/routes/_public/login.tsx:70
+msgid "Password change required"
+msgstr "请修改密码"
 
 #: src/routes/_authed/change-password.tsx:64
 msgid "Password changed successfully. Please login with your new password."
@@ -4255,7 +4271,7 @@ msgstr "条已暂停"
 msgid "Pending"
 msgstr "待处理"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:240
+#: src/routes/_authed/_dashboard/dashboard.tsx:263
 msgid "Pending Jobs"
 msgstr "待处理任务"
 
@@ -4356,7 +4372,7 @@ msgstr "处理管道名称"
 msgid "Pipeline name is required"
 msgstr "处理管道名称是必填项"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:235
+#: src/routes/_authed/_dashboard/dashboard.tsx:258
 msgid "Pipeline Statistics"
 msgstr "处理管道统计"
 
@@ -4622,7 +4638,7 @@ msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 
 #: src/components/pipeline/dag-graph-view.tsx:379
-#: src/routes/_authed/_dashboard/dashboard.tsx:250
+#: src/routes/_authed/_dashboard/dashboard.tsx:273
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:457
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:325
@@ -4937,7 +4953,7 @@ msgstr "使用 -d 重启"
 msgid "Restore from a backup file"
 msgstr "从备份文件恢复"
 
-#: src/routes/_public/login.tsx:217
+#: src/routes/_public/login.tsx:240
 msgid "Restore password"
 msgstr "重置密码"
 
@@ -5439,11 +5455,11 @@ msgstr "共享的处理管道工具"
 #: src/routes/_authed/change-password.tsx:162
 #: src/routes/_authed/change-password.tsx:204
 #: src/routes/_authed/change-password.tsx:248
-#: src/routes/_public/login.tsx:202
+#: src/routes/_public/login.tsx:225
 msgid "Show password"
 msgstr "显示密码"
 
-#: src/routes/_public/login.tsx:228
+#: src/routes/_public/login.tsx:251
 msgid "Sign In"
 msgstr "登录"
 
@@ -5452,7 +5468,7 @@ msgstr "登录"
 msgid "Sign out"
 msgstr "退出登录"
 
-#: src/routes/_public/login.tsx:226
+#: src/routes/_public/login.tsx:249
 msgid "Signing in..."
 msgstr "正在登录..."
 
@@ -5648,7 +5664,7 @@ msgstr "主播检查"
 msgid "Streamer created successfully"
 msgstr "主播创建成功"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:63
+#: src/routes/_authed/_dashboard/dashboard.tsx:81
 #: src/routes/_authed/_dashboard/streamers/index.tsx:181
 msgid "Streamer deleted"
 msgstr "主播已删除"
@@ -5674,7 +5690,7 @@ msgstr "主播处于冷却期"
 msgid "Streamer pagination"
 msgstr "主播分页"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:82
+#: src/routes/_authed/_dashboard/dashboard.tsx:100
 #: src/routes/_authed/_dashboard/streamers/index.tsx:199
 msgid "Streamer updated"
 msgstr "主播已更新"
@@ -5692,7 +5708,7 @@ msgstr "主播更新成功"
 msgid "Streamers"
 msgstr "主播"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:349
+#: src/routes/_authed/_dashboard/dashboard.tsx:370
 msgid "Streamers currently live will appear here."
 msgstr "当前正在直播的主播会显示在这里。"
 
@@ -5770,7 +5786,7 @@ msgid "System Health"
 msgstr "系统健康"
 
 #: src/components/config/engines/engine-card.tsx:170
-#: src/routes/_authed/_dashboard/dashboard.tsx:128
+#: src/routes/_authed/_dashboard/dashboard.tsx:157
 msgid "System Status"
 msgstr "系统状态"
 
@@ -6253,7 +6269,7 @@ msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
 #: src/components/health/health-status-badge.tsx:66
-#: src/routes/_authed/_dashboard/dashboard.tsx:539
+#: src/routes/_authed/_dashboard/dashboard.tsx:585
 msgid "Unhealthy"
 msgstr "不健康"
 
@@ -6261,7 +6277,7 @@ msgstr "不健康"
 msgid "Unix timestamp"
 msgstr "Unix 时间戳"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:541
+#: src/routes/_authed/_dashboard/dashboard.tsx:587
 msgid "Unknown"
 msgstr "未知"
 
@@ -6294,7 +6310,7 @@ msgid "Update Channel"
 msgstr "更新渠道"
 
 #: src/components/config/global/backup-restore-card.tsx:177
-#: src/routes/_authed/_dashboard/dashboard.tsx:449
+#: src/routes/_authed/_dashboard/dashboard.tsx:482
 msgid "Updated"
 msgstr "已更新"
 
@@ -6410,7 +6426,7 @@ msgstr "User-Agent"
 #: src/components/config/shared/proxy-settings-card.tsx:171
 #: src/components/notifications/forms/email-form.tsx:82
 #: src/components/notifications/forms/webhook-form.tsx:306
-#: src/routes/_public/login.tsx:157
+#: src/routes/_public/login.tsx:178
 msgid "Username"
 msgstr "用户名"
 
@@ -6480,7 +6496,7 @@ msgstr "视频设置"
 msgid "View"
 msgstr "查看"
 
-#: src/routes/_authed/_dashboard/dashboard.tsx:302
+#: src/routes/_authed/_dashboard/dashboard.tsx:325
 msgid "View All"
 msgstr "查看全部"
 
@@ -6498,7 +6514,7 @@ msgstr "查看详细日志与输出"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:159
 #: src/components/sessions/session-card.tsx:271
-#: src/routes/_authed/_dashboard/dashboard.tsx:137
+#: src/routes/_authed/_dashboard/dashboard.tsx:166
 msgid "View Details"
 msgstr "查看详情"
 
@@ -6536,7 +6552,7 @@ msgstr "Webhook URL"
 msgid "Week"
 msgstr "本周"
 
-#: src/routes/_public/login.tsx:143
+#: src/routes/_public/login.tsx:121
 msgid "Welcome back"
 msgstr "欢迎回来"
 

@@ -11,9 +11,9 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
-use crate::danmaku::DanmuMessage;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::douyu::stt;
 
@@ -168,11 +168,11 @@ impl DanmuProtocol for DouyuDanmuProtocol {
         message: &Message,
         _room_id: &str,
         _tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuMessage>> {
+    ) -> Result<Vec<DanmuItem>> {
         match message {
             Message::Binary(data) => {
                 let packets = parse_packets(data);
-                let mut danmus = Vec::new();
+                let mut items = Vec::new();
 
                 for payload in packets {
                     let (msg_type, map) = parse_message(&payload);
@@ -180,12 +180,12 @@ impl DanmuProtocol for DouyuDanmuProtocol {
                     match msg_type {
                         DouyuMessageType::ChatMsg => {
                             if let Some(danmu) = Self::parse_chat_message(&map) {
-                                danmus.push(danmu);
+                                items.push(DanmuItem::Message(danmu));
                             }
                         }
                         DouyuMessageType::Gift => {
                             if let Some(danmu) = Self::parse_gift_message(&map) {
-                                danmus.push(danmu);
+                                items.push(DanmuItem::Message(danmu));
                             }
                         }
                         DouyuMessageType::LoginRes => {
@@ -204,7 +204,7 @@ impl DanmuProtocol for DouyuDanmuProtocol {
                     }
                 }
 
-                Ok(danmus)
+                Ok(items)
             }
             Message::Text(text) => {
                 debug!("Received text message: {}", text);
@@ -415,15 +415,22 @@ mod tests {
             while let Some(msg_result) = ws_stream.next().await {
                 match msg_result {
                     Ok(msg) => match protocol.decode_message(&msg, room_id, &tx).await {
-                        Ok(danmus) => {
-                            for danmu in danmus {
-                                println!(
-                                    "[{}] {}: {}",
-                                    danmu.timestamp.format("%H:%M:%S"),
-                                    danmu.username,
-                                    danmu.content
-                                );
-                                message_count += 1;
+                        Ok(items) => {
+                            for item in items {
+                                match item {
+                                    crate::danmaku::DanmuItem::Message(danmu) => {
+                                        println!(
+                                            "[{}] {}: {}",
+                                            danmu.timestamp.format("%H:%M:%S"),
+                                            danmu.username,
+                                            danmu.content
+                                        );
+                                        message_count += 1;
+                                    }
+                                    crate::danmaku::DanmuItem::Control(control) => {
+                                        println!("[control] {:?}", control);
+                                    }
+                                }
                             }
                         }
                         Err(e) => {

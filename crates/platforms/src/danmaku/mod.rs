@@ -1,4 +1,5 @@
 pub mod error;
+pub mod event;
 pub mod message;
 pub mod provider;
 pub mod registry;
@@ -8,6 +9,7 @@ pub mod websocket;
 pub mod writer;
 
 pub use error::{DanmakuError, Result};
+pub use event::{DanmuControlEvent, DanmuItem};
 pub use message::{DanmuMessage, DanmuType};
 pub use provider::{ConnectionConfig, DanmuConnection, DanmuProvider};
 pub use registry::ProviderRegistry;
