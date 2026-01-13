@@ -41,6 +41,7 @@ export const useSidebar = create(
     {
       name: 'sidebar',
       storage: createJSONStorage(() => localStorage),
+      skipHydration: true,
     },
   ),
 );

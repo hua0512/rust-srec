@@ -90,6 +90,7 @@ export const Route = createRootRoute({
 import { I18nProvider } from '@lingui/react';
 import { i18n, activateLocale, initializeLocale, type Locale } from '../i18n';
 import { ThemeProvider } from '../components/theme-provider';
+import { useSidebar } from '../store/sidebar';
 import { Toaster } from '../components/ui/sonner';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -117,6 +118,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // After hydration, switch to client-detected locale (which may differ if user has localStorage preference)
   useEffect(() => {
     initializeLocale();
+    useSidebar.persist.rehydrate();
   }, []);
 
   return (
