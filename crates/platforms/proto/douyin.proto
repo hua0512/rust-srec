@@ -1685,7 +1685,7 @@ message Webcast {
     }
 
     message ControlMessage {
-      Common common = 1;
+      // Common common = 1;
       uint64 action = 2;
       string tips = 3;
       Extra extra = 4;

@@ -240,6 +240,38 @@ pub enum ConfigUpdateType {
     Multiple,
 }
 
+/// Reason why a download was stopped.
+///
+/// Used to disambiguate user cancellation from internal orchestration stops.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DownloadStopCause {
+    /// User explicitly cancelled the download (typically implies "stop monitoring").
+    User,
+    /// Stream was determined to be offline (end-of-stream).
+    StreamerOffline,
+    /// Danmu stream emitted `StreamClosed` and we stop the download promptly.
+    DanmuStreamClosed,
+    /// Streamer was disabled/deleted; downloads are stopped as part of cleanup.
+    StreamerDisabled,
+    /// Application shutdown.
+    Shutdown,
+    /// Other internal/system stop reason.
+    Other(String),
+}
+
+impl DownloadStopCause {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::User => "user",
+            Self::StreamerOffline => "streamer_offline",
+            Self::DanmuStreamClosed => "danmu_stream_closed",
+            Self::StreamerDisabled => "streamer_disabled",
+            Self::Shutdown => "shutdown",
+            Self::Other(_) => "other",
+        }
+    }
+}
+
 /// Events emitted by the Download Manager.
 #[derive(Debug, Clone)]
 pub enum DownloadManagerEvent {
@@ -298,6 +330,7 @@ pub enum DownloadManagerEvent {
         download_id: String,
         streamer_id: String,
         session_id: String,
+        cause: DownloadStopCause,
     },
     /// Configuration was updated for a download.
     ConfigUpdated {
@@ -443,26 +476,20 @@ impl DownloadManager {
             .await
     }
 
-    /// Resolve engine from ID string.
-    ///
-    /// Returns (Engine instance, EngineType).
     /// Resolve engine to use.
     ///
     /// If an override value is provided for the resolved engine ID (either passed ID or global default),
     /// a new engine instance is created with the merged configuration.
     /// Otherwise, the shared cached engine instance is returned.
+    ///
+    /// Returns (Engine instance, EngineType, EngineKey).
     async fn resolve_engine(
         &self,
         engine_id: Option<&str>,
         overrides: Option<&serde_json::Value>,
     ) -> Result<(Arc<dyn DownloadEngine>, EngineType, EngineKey)> {
-        // Determine which engine ID we are using
-        let target_id = if let Some(id) = engine_id {
-            id
-        } else {
-            // Fallback to default engine type string
-            self.config.read().default_engine.as_str()
-        };
+        let default_engine = self.config.read().default_engine;
+        let target_id = engine_id.unwrap_or(default_engine.as_str());
 
         // 1. Check for overrides first
         let specific_override = overrides.and_then(|o| o.get(target_id));
@@ -473,110 +500,38 @@ impl DownloadManager {
             debug!("Applying engine override for {}", target_id);
             let override_hash = Self::hash_override(override_config);
 
-            // Need to know the type first
-            // Try to parse ID as type, or look up in DB to get type
-            let engine_type = if let Ok(t) = target_id.parse::<EngineType>() {
-                t
-            } else if let Some(repo) = &self.config_repo {
-                if let Ok(config) = repo.get_engine_config(target_id).await {
-                    config.engine_type.parse::<EngineType>().map_err(|_| {
-                        crate::Error::Other(format!("Unknown engine type: {}", config.engine_type))
-                    })?
-                } else {
-                    // Config not found, but we have override?
-                    // Fallback to default? Or error?
-                    // If ID was not a type and not in DB, we can't do much.
-                    return Err(crate::Error::Other(format!(
-                        "Unknown engine: {}",
-                        target_id
-                    )));
-                }
-            } else {
-                return Err(crate::Error::Other(format!(
-                    "Unknown engine: {}",
-                    target_id
-                )));
-            };
+            // Resolve engine type from ID string or DB lookup
+            let engine_type = self.resolve_engine_type(target_id).await?;
+            let key = EngineKey::with_override(engine_type, engine_id, override_hash);
 
-            // Now we have the type. We need the BASE config to merge with.
-            // If ID was a known type (e.g. "ffmpeg"), base config is Default::default().
-            // If ID was a DB config, base config is from DB.
-
-            match engine_type {
+            let engine: Arc<dyn DownloadEngine> = match engine_type {
                 EngineType::Ffmpeg => {
-                    let mut base_config = if let Some(repo) = &self.config_repo {
-                        if let Ok(c) = repo.get_engine_config(target_id).await {
-                            serde_json::from_str::<FfmpegEngineConfig>(&c.config)
-                                .unwrap_or_default()
-                        } else {
-                            FfmpegEngineConfig::default()
-                        }
-                    } else {
-                        FfmpegEngineConfig::default()
-                    };
-
-                    // Merge override
-                    if let Ok(merged) = Self::merge_config_json(&base_config, override_config) {
-                        base_config = serde_json::from_value(merged).unwrap_or(base_config);
-                    }
-
-                    let key =
-                        EngineKey::with_override(EngineType::Ffmpeg, engine_id, override_hash);
-                    return Ok((
-                        Arc::new(FfmpegEngine::with_config(base_config)),
-                        EngineType::Ffmpeg,
-                        key,
-                    ));
+                    let base_config = self
+                        .load_engine_config_or_default::<FfmpegEngineConfig>(target_id)
+                        .await;
+                    let merged_config =
+                        Self::apply_override_best_effort(base_config, override_config);
+                    Arc::new(FfmpegEngine::with_config(merged_config))
                 }
                 EngineType::Streamlink => {
-                    let mut base_config = if let Some(repo) = &self.config_repo {
-                        if let Ok(c) = repo.get_engine_config(target_id).await {
-                            serde_json::from_str::<StreamlinkEngineConfig>(&c.config)
-                                .unwrap_or_default()
-                        } else {
-                            StreamlinkEngineConfig::default()
-                        }
-                    } else {
-                        StreamlinkEngineConfig::default()
-                    };
-
-                    // Merge override
-                    if let Ok(merged) = Self::merge_config_json(&base_config, override_config) {
-                        base_config = serde_json::from_value(merged).unwrap_or(base_config);
-                    }
-
-                    let key =
-                        EngineKey::with_override(EngineType::Streamlink, engine_id, override_hash);
-                    return Ok((
-                        Arc::new(StreamlinkEngine::with_config(base_config)),
-                        EngineType::Streamlink,
-                        key,
-                    ));
+                    let base_config = self
+                        .load_engine_config_or_default::<StreamlinkEngineConfig>(target_id)
+                        .await;
+                    let merged_config =
+                        Self::apply_override_best_effort(base_config, override_config);
+                    Arc::new(StreamlinkEngine::with_config(merged_config))
                 }
                 EngineType::Mesio => {
-                    let mut base_config = if let Some(repo) = &self.config_repo {
-                        if let Ok(c) = repo.get_engine_config(target_id).await {
-                            serde_json::from_str::<MesioEngineConfig>(&c.config).unwrap_or_default()
-                        } else {
-                            MesioEngineConfig::default()
-                        }
-                    } else {
-                        MesioEngineConfig::default()
-                    };
-
-                    // Merge override
-                    if let Ok(merged) = Self::merge_config_json(&base_config, override_config) {
-                        base_config = serde_json::from_value(merged).unwrap_or(base_config);
-                    }
-
-                    let key = EngineKey::with_override(EngineType::Mesio, engine_id, override_hash);
-                    return Ok((
-                        Arc::new(MesioEngine::with_config(base_config)),
-                        EngineType::Mesio,
-                        key,
-                    ));
+                    let base_config = self
+                        .load_engine_config_or_default::<MesioEngineConfig>(target_id)
+                        .await;
+                    let merged_config =
+                        Self::apply_override_best_effort(base_config, override_config);
+                    Arc::new(MesioEngine::with_config(merged_config))
                 }
-            }
+            };
+
+            return Ok((engine, engine_type, key));
         }
 
         // 2. Normal resolution (no overrides)
@@ -595,60 +550,101 @@ impl DownloadManager {
 
             // Otherwise try to look up in DB
             if let Some(repo) = &self.config_repo {
-                if let Ok(config) = repo.get_engine_config(id).await {
-                    // Found valid config, instantiate specific engine
-                    if let Ok(engine_type) = config.engine_type.parse::<EngineType>() {
-                        return match engine_type {
+                match repo.get_engine_config(id).await {
+                    Ok(config) => {
+                        let engine_type =
+                            config.engine_type.parse::<EngineType>().map_err(|_| {
+                                crate::Error::Other(format!(
+                                    "Unknown engine type in config: {}",
+                                    config.engine_type
+                                ))
+                            })?;
+
+                        let key = EngineKey::custom(engine_type, id);
+                        let engine: Arc<dyn DownloadEngine> = match engine_type {
                             EngineType::Ffmpeg => {
                                 let engine_config: FfmpegEngineConfig =
                                     parse_engine_config("ffmpeg", &config.config)?;
-                                Ok((
-                                    Arc::new(FfmpegEngine::with_config(engine_config))
-                                        as Arc<dyn DownloadEngine>,
-                                    engine_type,
-                                    EngineKey::custom(engine_type, id),
-                                ))
+                                Arc::new(FfmpegEngine::with_config(engine_config))
                             }
                             EngineType::Streamlink => {
                                 let engine_config: StreamlinkEngineConfig =
                                     parse_engine_config("streamlink", &config.config)?;
-                                Ok((
-                                    Arc::new(StreamlinkEngine::with_config(engine_config))
-                                        as Arc<dyn DownloadEngine>,
-                                    engine_type,
-                                    EngineKey::custom(engine_type, id),
-                                ))
+                                Arc::new(StreamlinkEngine::with_config(engine_config))
                             }
                             EngineType::Mesio => {
                                 let engine_config: MesioEngineConfig =
                                     parse_engine_config("mesio", &config.config)?;
-                                Ok((
-                                    Arc::new(MesioEngine::with_config(engine_config))
-                                        as Arc<dyn DownloadEngine>,
-                                    engine_type,
-                                    EngineKey::custom(engine_type, id),
-                                ))
+                                Arc::new(MesioEngine::with_config(engine_config))
                             }
                         };
-                    } else {
-                        return Err(crate::Error::Other(format!(
-                            "Unknown engine type in config: {}",
-                            config.engine_type
-                        )));
+
+                        return Ok((engine, engine_type, key));
                     }
-                } else {
-                    warn!("Engine config {} not found, using default", id);
+                    Err(_) => {
+                        warn!("Engine config {} not found, using default", id);
+                    }
                 }
             }
         }
 
         // Return default
-        let default_type = self.config.read().default_engine;
-        let engine = self.get_engine(default_type).ok_or_else(|| {
-            crate::Error::Other(format!("Default engine {} not registered", default_type))
+        let engine = self.get_engine(default_engine).ok_or_else(|| {
+            crate::Error::Other(format!("Default engine {} not registered", default_engine))
         })?;
-        let key = EngineKey::global(default_type);
-        Ok((engine, default_type, key))
+        let key = EngineKey::global(default_engine);
+        Ok((engine, default_engine, key))
+    }
+
+    async fn load_engine_config_or_default<T>(&self, id: &str) -> T
+    where
+        T: DeserializeOwned + Default,
+    {
+        let Some(repo) = &self.config_repo else {
+            return T::default();
+        };
+
+        match repo.get_engine_config(id).await {
+            Ok(config) => serde_json::from_str::<T>(&config.config).unwrap_or_default(),
+            Err(_) => T::default(),
+        }
+    }
+
+    fn apply_override_best_effort<T>(mut base: T, override_val: &serde_json::Value) -> T
+    where
+        T: Serialize + DeserializeOwned,
+    {
+        if let Ok(merged) = Self::merge_config_json(&base, override_val)
+            && let Ok(updated) = serde_json::from_value::<T>(merged)
+        {
+            base = updated;
+        }
+
+        base
+    }
+
+    /// Resolve engine type from an ID string.
+    ///
+    /// First tries to parse as a known `EngineType`, then falls back to DB lookup.
+    async fn resolve_engine_type(&self, id: &str) -> Result<EngineType> {
+        // Try parsing as known type first
+        if let Ok(t) = id.parse::<EngineType>() {
+            return Ok(t);
+        }
+
+        // Try DB lookup
+        let Some(repo) = &self.config_repo else {
+            return Err(crate::Error::Other(format!("Unknown engine: {}", id)));
+        };
+
+        let config = repo
+            .get_engine_config(id)
+            .await
+            .map_err(|_| crate::Error::Other(format!("Unknown engine: {}", id)))?;
+
+        config.engine_type.parse::<EngineType>().map_err(|_| {
+            crate::Error::Other(format!("Unknown engine type: {}", config.engine_type))
+        })
     }
 
     /// Helper to merge a base config with JSON overrides
@@ -966,6 +962,16 @@ impl DownloadManager {
 
     /// Stop a download.
     pub async fn stop_download(&self, download_id: &str) -> Result<()> {
+        self.stop_download_with_reason(download_id, DownloadStopCause::User)
+            .await
+    }
+
+    /// Stop a download with an explicit reason.
+    pub async fn stop_download_with_reason(
+        &self,
+        download_id: &str,
+        cause: DownloadStopCause,
+    ) -> Result<()> {
         if let Some((_, download)) = self.active_downloads.remove(download_id) {
             let engine_type = download.handle.engine_type;
 
@@ -982,6 +988,7 @@ impl DownloadManager {
                 download_id: download_id.to_string(),
                 streamer_id: streamer_id.clone(),
                 session_id: download.handle.config_snapshot().session_id,
+                cause,
             });
 
             info!("Stopped download {}", download_id);
@@ -1415,7 +1422,11 @@ impl DownloadManager {
 
         let mut stopped = Vec::new();
         for id in download_ids {
-            if self.stop_download(&id).await.is_ok() {
+            if self
+                .stop_download_with_reason(&id, DownloadStopCause::Shutdown)
+                .await
+                .is_ok()
+            {
                 stopped.push(id);
             }
         }

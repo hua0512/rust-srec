@@ -25,12 +25,13 @@ use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use crate::database::repositories::{
     ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
 };
+use crate::domain::Priority;
 use crate::downloader::DownloadManagerEvent;
 use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorHandle, ConfigRouter, ConfigScope, DownloadEndReason, MonitorBatchChecker,
+    ActorHandle, ConfigRouter, ConfigScope, DownloadEndPolicy, MonitorBatchChecker,
     MonitorStatusChecker, PlatformConfig, PlatformMapping, PlatformMessage, ShutdownReport,
     StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig, TaskCompletionAction,
 };
@@ -792,7 +793,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             let priority = metadata
                 .as_ref()
                 .map(|m| m.priority)
-                .unwrap_or(crate::domain::Priority::Normal);
+                .unwrap_or(Priority::Normal);
             let batch_capable = metadata
                 .as_ref()
                 .map(|m| self.is_batch_capable_platform(&m.platform_config_id))
@@ -821,7 +822,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                             check_interval_ms: config.check_interval_ms,
                             offline_check_interval_ms: config.offline_check_interval_ms,
                             offline_check_count: config.offline_check_count,
-                            priority: crate::domain::Priority::Normal,
+                            priority: Priority::Normal,
                             batch_capable: false,
                         })
                 },
@@ -906,7 +907,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             DownloadManagerEvent::DownloadCompleted { streamer_id, .. } => {
                 send_to_actor(
                     streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndReason::StreamerOffline),
+                    StreamerMessage::DownloadEnded(DownloadEndPolicy::StreamerOffline),
                 )
                 .await;
             }
@@ -915,16 +916,22 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             } => {
                 send_to_actor(
                     streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndReason::SegmentFailed(error)),
+                    StreamerMessage::DownloadEnded(DownloadEndPolicy::SegmentFailed(error)),
                 )
                 .await;
             }
-            DownloadManagerEvent::DownloadCancelled { streamer_id, .. } => {
-                send_to_actor(
-                    streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndReason::Cancelled),
-                )
-                .await;
+            DownloadManagerEvent::DownloadCancelled {
+                streamer_id, cause, ..
+            } => {
+                let end_reason = match cause {
+                    crate::downloader::DownloadStopCause::User => DownloadEndPolicy::UserCancelled,
+                    crate::downloader::DownloadStopCause::StreamerOffline => {
+                        DownloadEndPolicy::StreamerOffline
+                    }
+                    other => DownloadEndPolicy::Stopped(other),
+                };
+
+                send_to_actor(streamer_id, StreamerMessage::DownloadEnded(end_reason)).await;
             }
             DownloadManagerEvent::DownloadRejected {
                 streamer_id,
@@ -935,7 +942,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 let retry_secs = retry_after_secs.unwrap_or(60);
                 send_to_actor(
                     streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndReason::CircuitBreakerBlocked {
+                    StreamerMessage::DownloadEnded(DownloadEndPolicy::CircuitBreakerBlocked {
                         reason,
                         retry_after_secs: retry_secs,
                         session_id,

@@ -1821,7 +1821,9 @@ where
     /// 1. Persisting the danmu segment to the database as a media output
     /// 2. Creating pipeline jobs if a pipeline is configured for the streamer
     pub async fn handle_danmu_event(&self, event: crate::danmu::DanmuEvent) {
+        use crate::danmu::DanmuControlEvent;
         use crate::danmu::DanmuEvent;
+        use crate::database::models::TitleEntry;
 
         match event {
             DanmuEvent::CollectionStarted {
@@ -1866,6 +1868,75 @@ where
                                 last_seen: std::time::Instant::now(),
                                 definition: def,
                             });
+                    }
+                }
+            }
+            DanmuEvent::Control {
+                session_id,
+                streamer_id,
+                control,
+                ..
+            } => {
+                // Bump activity timestamp for any tracked pipelines to prevent premature cleanup.
+                if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
+                    entry.last_seen = std::time::Instant::now();
+                }
+                if let Some(mut entry) = self.paired_segment_pipelines.get_mut(&session_id) {
+                    entry.last_seen = std::time::Instant::now();
+                }
+
+                // Apply title changes immediately so session titles stay accurate even when
+                // the monitor polling interval is long.
+                if let DanmuControlEvent::RoomInfoChanged {
+                    title: Some(title), ..
+                } = &control
+                {
+                    let Some(repo) = &self.session_repo else {
+                        return;
+                    };
+                    match repo.get_session(&session_id).await {
+                        Ok(session) => {
+                            let now = chrono::Utc::now();
+                            let mut titles: Vec<TitleEntry> = match session.titles.as_deref() {
+                                Some(json) => serde_json::from_str(json).unwrap_or_default(),
+                                None => Vec::new(),
+                            };
+
+                            let needs_update =
+                                titles.last().map(|t| t.title != *title).unwrap_or(true);
+                            if needs_update {
+                                titles.push(TitleEntry {
+                                    ts: now.to_rfc3339(),
+                                    title: title.clone(),
+                                });
+                                match serde_json::to_string(&titles) {
+                                    Ok(updated) => {
+                                        if let Err(e) =
+                                            repo.update_session_titles(&session_id, &updated).await
+                                        {
+                                            warn!(
+                                                streamer_id = %streamer_id,
+                                                session_id = %session_id,
+                                                error = %e,
+                                                "Failed to persist session title update from danmu control event"
+                                            );
+                                        }
+                                    }
+                                    Err(e) => warn!(
+                                        streamer_id = %streamer_id,
+                                        session_id = %session_id,
+                                        error = %e,
+                                        "Failed to serialize session titles for danmu control title update"
+                                    ),
+                                }
+                            }
+                        }
+                        Err(e) => warn!(
+                            streamer_id = %streamer_id,
+                            session_id = %session_id,
+                            error = %e,
+                            "Failed to load session for danmu control title update"
+                        ),
                     }
                 }
             }

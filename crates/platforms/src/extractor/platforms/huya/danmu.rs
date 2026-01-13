@@ -15,9 +15,9 @@ use tars_codec::{
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
-use crate::danmaku::DanmuMessage;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::platforms::huya::huya_uri;
 use crate::extractor::platforms::huya::{HuyaSourceType, HuyaWsCmd};
 use crate::extractor::platforms::huya::{
@@ -127,7 +127,7 @@ impl DanmuProtocol for HuyaDanmuProtocol {
         message: &Message,
         room_id: &str,
         tx: &tokio::sync::mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuMessage>> {
+    ) -> Result<Vec<DanmuItem>> {
         match message {
             Message::Binary(data) => self.parse_socket_command(data, room_id, tx).await,
             _ => Ok(vec![]),
@@ -246,7 +246,7 @@ impl HuyaDanmuProtocol {
         data: &[u8],
         room_id: &str,
         tx: &tokio::sync::mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuMessage>> {
+    ) -> Result<Vec<DanmuItem>> {
         if data.len() < 4 {
             return Ok(vec![]);
         }
@@ -377,7 +377,7 @@ impl HuyaDanmuProtocol {
                                         if color != -1 && color != 0 {
                                             danmu = danmu.with_color(format!("#{:06X}", color));
                                         }
-                                        return Ok(vec![danmu]);
+                                        return Ok(vec![DanmuItem::Message(danmu)]);
                                     }
                                 }
                                 Err(e) => {
@@ -481,10 +481,15 @@ mod tests {
             })
             .await
             {
-                Ok(Ok(Some(msg))) => {
-                    println!("{}: {}", msg.username, msg.content);
-                    message_count += 1;
-                }
+                Ok(Ok(Some(item))) => match item {
+                    crate::danmaku::DanmuItem::Message(msg) => {
+                        println!("{}: {}", msg.username, msg.content);
+                        message_count += 1;
+                    }
+                    crate::danmaku::DanmuItem::Control(control) => {
+                        println!("[control] {:?}", control);
+                    }
+                },
                 Ok(Ok(None)) => {
                     // No message, continue
                 }
@@ -561,9 +566,19 @@ mod tests {
 
                                     // Parse through our protocol
                                     match protocol.parse_socket_command(&data, room_id, &tx).await {
-                                        Ok(danmus) => {
-                                            for danmu in danmus {
-                                                println!("  -> Danmu: {} - {}", danmu.username, danmu.content);
+                                        Ok(items) => {
+                                            for item in items {
+                                                match item {
+                                                    crate::danmaku::DanmuItem::Message(danmu) => {
+                                                        println!(
+                                                            "  -> Danmu: {} - {}",
+                                                            danmu.username, danmu.content
+                                                        );
+                                                    }
+                                                    crate::danmaku::DanmuItem::Control(control) => {
+                                                        println!("  -> Control: {:?}", control);
+                                                    }
+                                                }
                                             }
                                         }
                                         Err(e) => {

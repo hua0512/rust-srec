@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use platforms_parser::danmaku::{
-    ConnectionConfig, DanmuConnection, DanmuProvider,
+    ConnectionConfig, DanmuConnection, DanmuControlEvent, DanmuItem, DanmuProvider,
     message::{DanmuMessage, DanmuType},
 };
 
@@ -152,7 +152,10 @@ impl CollectionRunner {
 
                 // Receive danmu messages
                 result = self.provider.receive(&self.connection) => {
-                    self.handle_receive_result(result).await?;
+                    match self.handle_receive_result(result).await? {
+                        CommandResult::Continue => {}
+                        CommandResult::Stop => break,
+                    }
                 }
             }
         }
@@ -293,12 +296,10 @@ impl CollectionRunner {
     /// Handle the result of receiving a message from the provider.
     async fn handle_receive_result(
         &mut self,
-        result: platforms_parser::danmaku::error::Result<Option<DanmuMessage>>,
-    ) -> Result<()> {
+        result: platforms_parser::danmaku::error::Result<Option<DanmuItem>>,
+    ) -> Result<CommandResult> {
         match result {
-            Ok(Some(message)) => {
-                self.handle_message(message).await?;
-            }
+            Ok(Some(item)) => return self.handle_item(item).await,
             Ok(None) => {
                 // No message available, wait a bit
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -313,11 +314,43 @@ impl CollectionRunner {
                 return Err(Error::DanmakuError(e));
             }
         }
-        Ok(())
+        Ok(CommandResult::Continue)
+    }
+
+    async fn handle_item(&mut self, item: DanmuItem) -> Result<CommandResult> {
+        match item {
+            DanmuItem::Message(message) => self.handle_message(message).await,
+            DanmuItem::Control(control) => self.handle_control(control).await,
+        }
+    }
+
+    async fn handle_control(&mut self, control: DanmuControlEvent) -> Result<CommandResult> {
+        // Control events are not written to XML.
+        //
+        // For `StreamClosed`, we emit the control event first (so the application can react
+        // immediately), then shut down gracefully. Shutdown finalizes the active segment (emitting
+        // `DanmuEvent::SegmentCompleted` if a segment is open); `DanmuEvent::CollectionStopped` is
+        // emitted by the service after the runner exits.
+        let _ = self.event_tx.send(DanmuEvent::Control {
+            session_id: self.session_id.clone(),
+            streamer_id: self.streamer_id.clone(),
+            platform: self.provider.platform().to_string(),
+            control: control.clone(),
+        });
+
+        match control {
+            DanmuControlEvent::StreamClosed { .. } => {
+                self.shutdown().await?;
+                Ok(CommandResult::Stop)
+            }
+            DanmuControlEvent::RoomInfoChanged { .. } | DanmuControlEvent::Other { .. } => {
+                Ok(CommandResult::Continue)
+            }
+        }
     }
 
     /// Handle a received danmu message.
-    async fn handle_message(&mut self, message: DanmuMessage) -> Result<()> {
+    async fn handle_message(&mut self, message: DanmuMessage) -> Result<CommandResult> {
         if self.statistics_enabled {
             // Update session-level statistics
             let is_gift = matches!(message.message_type, DanmuType::Gift | DanmuType::SuperChat);
@@ -347,6 +380,6 @@ impl CollectionRunner {
             }
         }
 
-        Ok(())
+        Ok(CommandResult::Continue)
     }
 }

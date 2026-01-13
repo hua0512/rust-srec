@@ -16,9 +16,9 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{debug, warn};
 
-use crate::danmaku::DanmuMessage;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::default::default_client;
 
 use super::URL_REGEX;
@@ -405,10 +405,10 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
         message: &Message,
         _room_id: &str,
         tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuMessage>> {
+    ) -> Result<Vec<DanmuItem>> {
         match message {
             Message::Text(text) => {
-                let mut danmus = Vec::new();
+                let mut items = Vec::new();
 
                 // TwitCasting sends JSON arrays of comments
                 for line in text.lines() {
@@ -421,15 +421,18 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
                     if parsed.is_empty() {
                         debug!("TwitCasting non-comment message: {}", line);
                     }
-                    danmus.extend(parsed);
+                    items.extend(parsed.into_iter().map(DanmuItem::Message));
                 }
 
-                Ok(danmus)
+                Ok(items)
             }
             Message::Binary(data) => {
                 // Try to parse binary as text
                 if let Ok(text) = String::from_utf8(data.to_vec()) {
-                    return Ok(Self::parse_comments(&text));
+                    return Ok(Self::parse_comments(&text)
+                        .into_iter()
+                        .map(DanmuItem::Message)
+                        .collect());
                 }
                 Ok(vec![])
             }
@@ -557,10 +560,18 @@ mod tests {
 
                 while start.elapsed() < Duration::from_secs(60) {
                     match provider.receive(&connection).await {
-                        Ok(Some(msg)) => {
-                            println!("[{:?}] {}: {}", msg.message_type, msg.username, msg.content);
-                            message_count += 1;
-                        }
+                        Ok(Some(item)) => match item {
+                            crate::danmaku::DanmuItem::Message(msg) => {
+                                println!(
+                                    "[{:?}] {}: {}",
+                                    msg.message_type, msg.username, msg.content
+                                );
+                                message_count += 1;
+                            }
+                            crate::danmaku::DanmuItem::Control(control) => {
+                                println!("[control] {:?}", control);
+                            }
+                        },
                         Ok(None) => {
                             tokio::time::sleep(Duration::from_millis(100)).await;
                         }

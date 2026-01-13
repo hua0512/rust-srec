@@ -112,6 +112,15 @@ message DownloadCancelled {
   string download_id = 1;
   string streamer_id = 2;
   string session_id = 3;
+  // Download stop cause (best-effort).
+  // Values are produced by server-side `DownloadStopCause::as_str()` and may include:
+  // - "user"
+  // - "streamer_offline"
+  // - "danmu_stream_closed"
+  // - "streamer_disabled"
+  // - "shutdown"
+  // - "other"
+  string cause = 4;
 }
 
 // Download rejected event (rejected before starting).

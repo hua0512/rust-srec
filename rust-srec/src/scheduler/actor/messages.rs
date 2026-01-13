@@ -11,6 +11,7 @@ use chrono::{DateTime, Utc};
 use tokio::sync::oneshot;
 
 use crate::domain::{Priority, StreamerState};
+use crate::downloader::DownloadStopCause;
 use crate::downloader::engine::DownloadProgress;
 use crate::streamer::StreamerMetadata;
 
@@ -50,16 +51,16 @@ pub enum StreamerMessage {
     },
     /// Notify that the download has ended (streamer went offline or error).
     /// This triggers the actor to resume status checking.
-    DownloadEnded(DownloadEndReason),
+    DownloadEnded(DownloadEndPolicy),
     /// Request graceful shutdown.
     Stop,
     /// Query current state (response sent via oneshot channel).
     GetState(oneshot::Sender<StreamerActorState>),
 }
 
-/// Reason why a download ended.
+/// Policy for how the actor should react to a download ending.
 ///
-/// Each variant indicates a different end condition and triggers specific
+/// Each variant indicates a different end condition and triggers specific      
 /// behavior in the StreamerActor. See `StreamerActor::handle_download_ended()`
 /// for detailed behavior documentation.
 ///
@@ -75,14 +76,17 @@ pub enum StreamerMessage {
 /// - **`SegmentFailed`**: Segment download failed. Actor continues monitoring with
 ///   immediate check to verify status.
 ///
-/// - **`Cancelled`**: User cancelled the download. **Actor stops monitoring entirely**
-///   by returning a fatal error. The download orchestration layer must update the
+/// - **`UserCancelled`**: User cancelled the download. **Actor stops monitoring entirely**
+///   by returning a fatal error. The download orchestration layer should update the
 ///   streamer state to `CANCELLED` in the database before sending this message.
+///
+/// - **`Stopped`**: Download was stopped by internal orchestration. Actor continues
+///   monitoring and treats this like an end-of-stream signal (publishing Offline).
 ///
 /// - **`Other`**: Unknown/unexpected error. Actor continues monitoring with normal
 ///   scheduling, letting the grace period confirm actual state.
 #[derive(Debug, Clone)]
-pub enum DownloadEndReason {
+pub enum DownloadEndPolicy {
     /// Streamer went offline normally.
     ///
     /// The download orchestration confirmed the stream ended. The actor will
@@ -90,6 +94,11 @@ pub enum DownloadEndReason {
     /// monitoring using the shorter offline polling interval for a few checks
     /// to detect quick restarts.
     StreamerOffline,
+
+    /// Download stopped by internal orchestration (not user intent).
+    ///
+    /// The actor treats this like an end-of-stream signal, but continues monitoring.
+    Stopped(DownloadStopCause),
 
     /// Network error during download (e.g., timeout, connection lost).
     ///
@@ -103,7 +112,7 @@ pub enum DownloadEndReason {
     /// **This stops the actor entirely.** User intent is "I don't want to monitor
     /// this streamer anymore." The download orchestration layer must update the
     /// streamer state to `CANCELLED` in the database before sending this message.
-    Cancelled,
+    UserCancelled,
 
     /// Segment download failed (may indicate offline or network issue).
     ///

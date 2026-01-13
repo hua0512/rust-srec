@@ -14,7 +14,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::danmaku::ConnectionConfig;
 use crate::danmaku::error::{DanmakuError, Result};
-use crate::danmaku::message::DanmuMessage;
+use crate::danmaku::event::DanmuItem;
 use crate::danmaku::provider::{DanmuConnection, DanmuProvider};
 
 const MAX_ACTIVE_CONNECTIONS: usize = 1024;
@@ -61,14 +61,14 @@ pub trait DanmuProtocol: Send + Sync + 'static {
         Duration::from_secs(30)
     }
 
-    /// Decode a WebSocket message into a list of DanmuMessages
+    /// Decode a WebSocket message into a list of danmu items (messages or control events).
     /// `room_id` is provided so protocols can use it for responses that need the room context
     async fn decode_message(
         &self,
         message: &Message,
         room_id: &str,
         tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuMessage>>;
+    ) -> Result<Vec<DanmuItem>>;
 }
 
 /// Internal state for a WebSocket connection
@@ -86,7 +86,7 @@ struct WsConnectionState {
     #[allow(dead_code)]
     reconnect_count: Arc<AtomicU32>,
     /// Message receiver
-    message_rx: mpsc::Receiver<DanmuMessage>,
+    message_rx: mpsc::Receiver<DanmuItem>,
     /// Task handles
     tasks: Vec<JoinHandle<()>>,
     /// Shutdown sender
@@ -155,7 +155,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
     ) -> Result<(
         Arc<AtomicBool>,
         Arc<AtomicU32>,
-        mpsc::Receiver<DanmuMessage>,
+        mpsc::Receiver<DanmuItem>,
         mpsc::Sender<()>,
         Vec<JoinHandle<()>>,
     )> {
@@ -342,8 +342,8 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                                     Some(Ok(msg)) => {
                                         match protocol.decode_message(&msg, &room_id_owned, &response_tx_clone).await {
                                             Ok(messages) => {
-                                                for danmu in messages {
-                                                    if message_tx.send(danmu).await.is_err() {
+                                                for item in messages {
+                                                    if message_tx.send(item).await.is_err() {
                                                         break; // Channel closed
                                                     }
                                                 }
@@ -448,7 +448,7 @@ impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
         Ok(())
     }
 
-    async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuMessage>> {
+    async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuItem>> {
         let state_arc = {
             let map = self.connections.read().await;
             map.get(&connection.id).cloned()

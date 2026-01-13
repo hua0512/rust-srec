@@ -89,6 +89,12 @@ pub struct StreamMonitor<
     rate_limiter: RateLimiterManager,
     /// In-flight request deduplication.
     in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
+    /// Sessions that were authoritatively ended by danmu/control signals.
+    ///
+    /// When present for a streamer, session resumption by `session_gap` is suppressed
+    /// for that specific session ID (i.e., we always create a new session if the
+    /// streamer goes live again).
+    hard_ended_sessions: DashMap<String, String>,
     /// Sender for in-flight cleanup requests (single worker processes these).
     cleanup_tx: mpsc::Sender<String>,
     /// Event broadcaster for notifications.
@@ -213,6 +219,7 @@ impl<
             batch_detector,
             rate_limiter,
             in_flight: in_flight.clone(),
+            hard_ended_sessions: DashMap::new(),
             cleanup_tx,
             event_broadcaster: MonitorEventBroadcaster::new(),
             pool,
@@ -236,6 +243,14 @@ impl<
     /// Get the event broadcaster for external use.
     pub fn event_broadcaster(&self) -> &MonitorEventBroadcaster {
         &self.event_broadcaster
+    }
+
+    /// Mark a session as authoritatively ended (e.g., via danmu/control event).
+    ///
+    /// This suppresses session resumption by `session_gap` for this specific session ID.
+    pub fn mark_session_hard_ended(&self, streamer_id: &str, session_id: &str) {
+        self.hard_ended_sessions
+            .insert(streamer_id.to_string(), session_id.to_string());
     }
 
     /// Stop the stream monitor's background tasks.
@@ -690,6 +705,24 @@ impl<
                             chrono::Utc::now()
                         });
 
+                    // If this session was authoritatively ended (e.g., via danmu stream-closed),
+                    // do not resume it even if it's within the session gap window.
+                    let suppress_resume = self
+                        .hard_ended_sessions
+                        .get(&streamer.id)
+                        .is_some_and(|sid| sid.value() == &session.id);
+                    if suppress_resume {
+                        info!(
+                            "Creating new session for {} (previous session {} was hard-ended)",
+                            streamer.name, session.id
+                        );
+                        self.hard_ended_sessions.remove(&streamer.id);
+                        let new_id = uuid::Uuid::new_v4().to_string();
+                        SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title)
+                            .await?;
+                        info!("Created new session {}", new_id);
+                        new_id
+                    } else
                     // Check if the stream is a continuation (monitoring gap)
                     if SessionTxOps::should_resume_by_continuation(end_time, started_at) {
                         info!(

@@ -104,7 +104,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
           case EventType.EVENT_TYPE_DOWNLOAD_CANCELLED:
             if ('downloadCancelled' in message.payload) {
-              removeDownload(message.payload.downloadCancelled.downloadId);
+              const cancelled = message.payload.downloadCancelled;
+              if (cancelled.cause && cancelled.cause !== 'user') {
+                console.warn('Download cancelled:', cancelled);
+              }
+              removeDownload(cancelled.downloadId);
             }
             break;
 

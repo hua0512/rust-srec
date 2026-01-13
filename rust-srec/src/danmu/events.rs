@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 
-use crate::danmu::DanmuStatistics;
+use crate::danmu::{DanmuControlEvent, DanmuStatistics};
 
 /// Events emitted by the danmu service.
 ///
@@ -41,6 +41,17 @@ pub enum DanmuEvent {
         segment_id: String,
         output_path: PathBuf,
         message_count: u64,
+    },
+    /// Platform control event (best-effort signal derived from danmu stream).
+    ///
+    /// When a provider emits `DanmuControlEvent::StreamClosed`, the runner will shut down
+    /// gracefully, which may be followed by `SegmentCompleted` (if a segment is active) and then
+    /// `CollectionStopped`.
+    Control {
+        session_id: String,
+        streamer_id: String,
+        platform: String,
+        control: DanmuControlEvent,
     },
     /// Connection lost and reconnecting
     Reconnecting { session_id: String, attempt: u32 },

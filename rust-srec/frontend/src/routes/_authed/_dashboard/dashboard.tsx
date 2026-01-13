@@ -29,6 +29,24 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { formatRelativeTime } from '@/lib/date-utils';
 import { formatDuration } from '@/lib/format';
+import { useCallback, useMemo, memo } from 'react';
+
+const CONTAINER_VARIANTS = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+    },
+  },
+};
+
+const ITEM_VARIANTS = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0 },
+};
+
+const SKELETON_ARRAY = Array.from({ length: 4 });
 
 export const Route = createFileRoute('/_authed/_dashboard/dashboard')({
   component: Dashboard,
@@ -55,7 +73,7 @@ function Dashboard() {
     refetchInterval: 5000,
   });
 
-  const activeStreamers = streamers?.items || [];
+  const activeStreamers = useMemo(() => streamers?.items || [], [streamers]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteStreamer({ data: id }),
@@ -86,31 +104,42 @@ function Dashboard() {
       toast.error(error.message || t`Failed to update streamer`),
   });
 
-  const handleDelete = (id: string) => {
-    if (confirm(t`Are you sure you want to delete this streamer?`)) {
-      deleteMutation.mutate(id);
-    }
-  };
-
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
+  const handleDelete = useCallback(
+    (id: string) => {
+      if (confirm(t`Are you sure you want to delete this streamer?`)) {
+        deleteMutation.mutate(id);
+      }
     },
-  };
+    [deleteMutation],
+  );
 
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0 },
-  };
+  const handleToggle = useCallback(
+    (id: string, enabled: boolean) => toggleMutation.mutate({ id, enabled }),
+    [toggleMutation],
+  );
+
+  const handleCheck = useCallback(
+    (id: string) => checkMutation.mutate(id),
+    [checkMutation],
+  );
+
+  const dbComponent = useMemo(
+    () => health?.components.find((c: any) => c.name === 'database'),
+    [health],
+  );
+  const downloadMgrComponent = useMemo(
+    () => health?.components.find((c: any) => c.name === 'download_manager'),
+    [health],
+  );
+  const diskComponent = useMemo(
+    () => health?.components.find((c: any) => c.name.startsWith('disk:')),
+    [health],
+  );
 
   return (
     <div className="min-h-screen p-3 md:p-8 space-y-6 md:space-y-8 bg-gradient-to-br from-background via-background to-muted/20">
       <motion.div
-        variants={container}
+        variants={CONTAINER_VARIANTS}
         initial="hidden"
         animate="show"
         className="space-y-10 relative z-10"
@@ -118,7 +147,7 @@ function Dashboard() {
         {/* System Health Section */}
         <section className="space-y-6">
           <motion.div
-            variants={item}
+            variants={ITEM_VARIANTS}
             className="flex items-center justify-between"
           >
             <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-3">
@@ -141,18 +170,18 @@ function Dashboard() {
 
           <div className="grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-4">
             {isHealthLoading || !health ? (
-              Array.from({ length: 4 }).map((_, i) => (
+              SKELETON_ARRAY.map((_, i) => (
                 <Skeleton key={i} className="h-32 rounded-2xl bg-muted/20" />
               ))
             ) : (
               <motion.div
-                variants={container}
+                variants={CONTAINER_VARIANTS}
                 initial="hidden"
                 animate="show"
                 className="contents"
               >
                 {/* Summary Card */}
-                <motion.div variants={item} className="h-full">
+                <motion.div variants={ITEM_VARIANTS} className="h-full">
                   <DashboardCard className="h-full">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
@@ -201,23 +230,17 @@ function Dashboard() {
                 {/* Key Components */}
                 <ComponentStatusCard
                   name={t`Database`}
-                  component={health.components.find(
-                    (c: any) => c.name === 'database',
-                  )}
+                  component={dbComponent}
                   icon={HardDrive}
                 />
                 <ComponentStatusCard
                   name={t`Download Manager`}
-                  component={health.components.find(
-                    (c: any) => c.name === 'download_manager',
-                  )}
+                  component={downloadMgrComponent}
                   icon={Activity}
                 />
                 <ComponentStatusCard
                   name={t`Disk`}
-                  component={health.components.find((c: any) =>
-                    c.name.startsWith('disk:'),
-                  )}
+                  component={diskComponent}
                   icon={HardDrive}
                 />
               </motion.div>
@@ -227,7 +250,7 @@ function Dashboard() {
 
         {/* Pipeline Stats Section */}
         <section className="space-y-6">
-          <motion.div variants={item}>
+          <motion.div variants={ITEM_VARIANTS}>
             <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10 text-primary">
                 <Activity className="h-5 w-5" />
@@ -282,7 +305,7 @@ function Dashboard() {
         {/* Active Recordings Section */}
         <section className="space-y-6">
           <motion.div
-            variants={item}
+            variants={ITEM_VARIANTS}
             className="flex items-center justify-between"
           >
             <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-3">
@@ -307,7 +330,7 @@ function Dashboard() {
 
           <div className="grid gap-4 md:gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {isStreamersLoading ? (
-              Array.from({ length: 4 }).map((_, i) => (
+              SKELETON_ARRAY.map((_, i) => (
                 <Skeleton
                   key={i}
                   className="h-[200px] w-full rounded-2xl bg-muted/20"
@@ -324,10 +347,8 @@ function Dashboard() {
                   <StreamerCard
                     streamer={streamer}
                     onDelete={handleDelete}
-                    onToggle={(id, enabled) =>
-                      toggleMutation.mutate({ id, enabled })
-                    }
-                    onCheck={(id) => checkMutation.mutate(id)}
+                    onToggle={handleToggle}
+                    onCheck={handleCheck}
                   />
                 </motion.div>
               ))
@@ -358,176 +379,201 @@ function Dashboard() {
   );
 }
 
-function ComponentStatusCard({
-  name,
-  component,
-  icon: Icon,
-}: {
-  name: string;
-  component: any;
-  icon: any;
-}) {
-  const { i18n } = useLingui();
+const ComponentStatusCard = memo(
+  ({
+    name,
+    component,
+    icon: Icon,
+  }: {
+    name: string;
+    component: any;
+    icon: any;
+  }) => {
+    const { i18n } = useLingui();
 
-  if (!component)
+    if (!component)
+      return (
+        <motion.div
+          variants={{
+            hidden: { opacity: 0, y: 20 },
+            show: { opacity: 1, y: 0 },
+          }}
+          className="h-full"
+        >
+          <DashboardCard className="h-full opacity-60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                {name}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground font-mono">
+                <Trans>Not available</Trans>
+              </div>
+            </CardContent>
+          </DashboardCard>
+        </motion.div>
+      );
+
+    const isHealthy = component.status === 'healthy';
+
     return (
       <motion.div
-        variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
+        variants={{
+          hidden: { opacity: 0, y: 20 },
+          show: { opacity: 1, y: 0 },
+        }}
         className="h-full"
       >
-        <DashboardCard className="h-full opacity-60">
-          <CardHeader className="pb-2">
+        <DashboardCard
+          className={cn(
+            'h-full',
+            !isHealthy && 'border-red-500/30 bg-red-500/5',
+          )}
+        >
+          <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
               {name}
             </CardTitle>
+            <div
+              className={cn(
+                'p-1.5 rounded-md transition-colors',
+                isHealthy
+                  ? 'bg-secondary/50 text-secondary-foreground'
+                  : 'bg-red-500/10 text-red-500',
+              )}
+            >
+              <Icon className="h-4 w-4" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-sm text-muted-foreground font-mono">
-              <Trans>Not available</Trans>
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-3 w-3">
+                {!isHealthy && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                )}
+                <span
+                  className={cn(
+                    'relative inline-flex rounded-full h-3 w-3',
+                    isHealthy
+                      ? 'bg-green-500'
+                      : component.status === 'degraded'
+                        ? 'bg-yellow-500'
+                        : 'bg-red-500',
+                  )}
+                ></span>
+              </div>
+
+              <div
+                className={cn(
+                  'text-lg font-bold capitalize truncate tracking-tight',
+                  !isHealthy && 'text-red-500 dark:text-red-400',
+                )}
+              >
+                {!isHealthy &&
+                component.message &&
+                component.message.length < 30
+                  ? component.message
+                  : getStatusLabel(component.status)}
+              </div>
             </div>
+            {component.last_check && (
+              <p className="text-[10px] text-muted-foreground/60 mt-3 font-mono">
+                <Trans>Updated</Trans>{' '}
+                {formatRelativeTime(component.last_check, i18n.locale)}
+              </p>
+            )}
           </CardContent>
         </DashboardCard>
       </motion.div>
     );
+  },
+);
 
-  const isHealthy = component.status === 'healthy';
+ComponentStatusCard.displayName = 'ComponentStatusCard';
 
-  return (
-    <motion.div
-      variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
-      className="h-full"
-    >
+const StatCard = memo(
+  ({
+    title,
+    icon: Icon,
+    value,
+    loading,
+    color,
+    bg,
+    href,
+    search,
+  }: {
+    title: React.ReactNode;
+    icon: any;
+    value?: number;
+    loading: boolean;
+    color?: string;
+    bg?: string;
+    href?: string;
+    search?: any;
+  }) => {
+    const content = (
       <DashboardCard
-        className={cn('h-full', !isHealthy && 'border-red-500/30 bg-red-500/5')}
+        className={cn(
+          'h-full transition-all duration-300',
+          href &&
+            'hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 cursor-pointer active:scale-[0.98]',
+        )}
       >
-        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-            {name}
+            {title}
           </CardTitle>
           <div
             className={cn(
-              'p-1.5 rounded-md transition-colors',
-              isHealthy
-                ? 'bg-secondary/50 text-secondary-foreground'
-                : 'bg-red-500/10 text-red-500',
+              'p-2 rounded-xl transition-colors ring-1 ring-inset ring-black/5',
+              bg || 'bg-muted',
             )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className={cn('h-4 w-4', color || 'text-muted-foreground')} />
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-3 w-3">
-              {!isHealthy && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              )}
-              <span
-                className={cn(
-                  'relative inline-flex rounded-full h-3 w-3',
-                  isHealthy
-                    ? 'bg-green-500'
-                    : component.status === 'degraded'
-                      ? 'bg-yellow-500'
-                      : 'bg-red-500',
-                )}
-              ></span>
+        <CardContent className="relative z-10">
+          {loading ? (
+            <Skeleton className="h-9 w-16 rounded-lg bg-muted/20" />
+          ) : (
+            <div className="text-2xl font-bold tracking-tighter text-foreground">
+              {value}
             </div>
-
-            <div
-              className={cn(
-                'text-lg font-bold capitalize truncate tracking-tight',
-                !isHealthy && 'text-red-500 dark:text-red-400',
-              )}
-            >
-              {!isHealthy && component.message && component.message.length < 30
-                ? component.message
-                : getStatusLabel(component.status)}
-            </div>
-          </div>
-          {component.last_check && (
-            <p className="text-[10px] text-muted-foreground/60 mt-3 font-mono">
-              <Trans>Updated</Trans>{' '}
-              {formatRelativeTime(component.last_check, i18n.locale)}
-            </p>
           )}
         </CardContent>
       </DashboardCard>
-    </motion.div>
-  );
-}
+    );
 
-function StatCard({
-  title,
-  icon: Icon,
-  value,
-  loading,
-  color,
-  bg,
-  href,
-  search,
-}: {
-  title: React.ReactNode;
-  icon: any;
-  value?: number;
-  loading: boolean;
-  color?: string;
-  bg?: string;
-  href?: string;
-  search?: any;
-}) {
-  const content = (
-    <DashboardCard
-      className={cn(
-        'h-full transition-all duration-300',
-        href &&
-          'hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 cursor-pointer active:scale-[0.98]',
-      )}
-    >
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          {title}
-        </CardTitle>
-        <div
-          className={cn(
-            'p-2 rounded-xl transition-colors ring-1 ring-inset ring-black/5',
-            bg || 'bg-muted',
-          )}
+    if (href) {
+      return (
+        <motion.div
+          variants={{
+            hidden: { opacity: 0, y: 20 },
+            show: { opacity: 1, y: 0 },
+          }}
         >
-          <Icon className={cn('h-4 w-4', color || 'text-muted-foreground')} />
-        </div>
-      </CardHeader>
-      <CardContent className="relative z-10">
-        {loading ? (
-          <Skeleton className="h-9 w-16 rounded-lg bg-muted/20" />
-        ) : (
-          <div className="text-2xl font-bold tracking-tighter text-foreground">
-            {value}
-          </div>
-        )}
-      </CardContent>
-    </DashboardCard>
-  );
+          <Link to={href} search={search}>
+            {content}
+          </Link>
+        </motion.div>
+      );
+    }
 
-  if (href) {
     return (
       <motion.div
-        variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
+        variants={{
+          hidden: { opacity: 0, y: 20 },
+          show: { opacity: 1, y: 0 },
+        }}
       >
-        <Link to={href} search={search}>
-          {content}
-        </Link>
+        {content}
       </motion.div>
     );
-  }
+  },
+);
 
-  return (
-    <motion.div
-      variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }}
-    >
-      {content}
-    </motion.div>
-  );
-}
+StatCard.displayName = 'StatCard';
 
 function getStatusLabel(status: string) {
   switch (status.toLowerCase()) {

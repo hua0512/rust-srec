@@ -93,6 +93,8 @@ const CATEGORY_LABELS: Record<string, any> = {
   file_ops: msg`File Ops`,
   custom: msg`Custom`,
   metadata: msg`Metadata`,
+  danmu: msg`Danmaku`,
+  subtitle: msg`Subtitle`,
 };
 
 export function PresetCard({
@@ -119,7 +121,7 @@ export function PresetCard({
       typeof preset.config === 'string'
         ? JSON.parse(preset.config)
         : preset.config;
-  } catch {}
+  } catch { }
 
   const description = DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id]
     ? i18n._(DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id])

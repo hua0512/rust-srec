@@ -18,6 +18,9 @@ pub use engine::{
     DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, SegmentEvent, SegmentInfo,
 };
 
-pub use manager::{ConfigUpdateType, DownloadManager, DownloadManagerConfig, DownloadManagerEvent};
+pub use manager::{
+    ConfigUpdateType, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
+    DownloadStopCause,
+};
 pub use resilience::{CircuitBreaker, EngineKey, RetryConfig};
 pub use stream_selector::{StreamSelectionConfig, StreamSelector};

@@ -368,11 +368,13 @@ fn map_event_to_protobuf(
             download_id,
             streamer_id,
             session_id,
+            cause,
         } => {
             let payload = DownloadCancelled {
                 download_id: download_id.clone(),
                 streamer_id: streamer_id.clone(),
                 session_id: session_id.clone(),
+                cause: cause.as_str().to_string(),
             };
             Some(WsMessage {
                 event_type: EventType::DownloadCancelled as i32,
@@ -554,6 +556,7 @@ mod tests {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             session_id: "session-1".to_string(),
+            cause: crate::downloader::DownloadStopCause::User,
         };
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
@@ -562,6 +565,7 @@ mod tests {
         if let Some(Payload::DownloadCancelled(payload)) = msg.payload {
             assert_eq!(payload.download_id, "dl-1");
             assert_eq!(payload.streamer_id, "streamer-123");
+            assert_eq!(payload.cause, "user");
         } else {
             panic!("Expected DownloadCancelled payload");
         }
