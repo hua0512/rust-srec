@@ -1,11 +1,18 @@
+import { useEffect } from 'react';
 import { ThemeProvider as NextThemesProvider } from 'next-themes';
-import { useThemeStore } from '../stores/theme-store';
+import { useThemeStore, applyTheme } from '../stores/theme-store';
 
 export function ThemeProvider({
   children,
   ...props
 }: React.ComponentProps<typeof NextThemesProvider>) {
-  useThemeStore();
+  const themeState = useThemeStore();
+
+  // Apply theme-specific side effects after the component mounts on the client
+  // to avoid hydration mismatches (direct DOM mutation during render).
+  useEffect(() => {
+    applyTheme(themeState);
+  }, [themeState]);
 
   return (
     <NextThemesProvider

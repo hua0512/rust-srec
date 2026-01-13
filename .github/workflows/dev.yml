@@ -51,12 +51,16 @@ jobs:
           - os: macos-15-intel
           - os: macos-latest
     runs-on: ${{ matrix.os }}
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v6
+      - name: Enable sccache
+        if: runner.os != 'macOS' || runner.arch == 'ARM64'
+        shell: pwsh
+        run: |
+          "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: mozilla-actions/sccache-action@v0.0.9
+        if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
           version: "v0.13.0"
       - uses: dtolnay/rust-toolchain@stable
@@ -71,7 +75,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --locked --workspace --doc
       - name: sccache stats
-        if: always()
+        if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
 
   build:
@@ -137,12 +141,16 @@ jobs:
             srec_artifact_name: rust-srec
             srec_asset_name: rust-srec-macos-arm64
     runs-on: ${{ matrix.os }}
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v6
+      - name: Enable sccache
+        if: runner.os != 'macOS' || runner.arch == 'ARM64'
+        shell: pwsh
+        run: |
+          "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: mozilla-actions/sccache-action@v0.0.9
+        if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
           version: "v0.13.0"
       - uses: dtolnay/rust-toolchain@stable
@@ -213,7 +221,7 @@ jobs:
           path: ${{ matrix.srec_asset_name }}
           if-no-files-found: error
       - name: sccache stats
-        if: always()
+        if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
 
   docker-build:

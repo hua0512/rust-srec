@@ -74,32 +74,42 @@ export const useThemeStore = create<ThemeState>()(
     }),
     {
       name: 'app-theme-storage',
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          updateThemeColor(state.themeColor);
-          updateRadius(state.radius);
-          updateCustomCss(state.customCss, state.isCustomCssEnabled);
-          updateGlassMode(state.isGlassEnabled);
-        }
+      onRehydrateStorage: () => () => {
+        // We no longer apply themes immediately during rehydration
+        // to avoid hydration mismatches. The ThemeProvider will handle it.
+        console.log('[ThemeStore] Rehydrated theme state');
       },
     },
   ),
 );
 
 // Side Effects Helpers
-function updateThemeColor(color: ThemeColor) {
+export function applyTheme(state: {
+  themeColor: ThemeColor;
+  radius: number;
+  customCss: string;
+  isCustomCssEnabled: boolean;
+  isGlassEnabled: boolean;
+}) {
+  updateThemeColor(state.themeColor);
+  updateRadius(state.radius);
+  updateCustomCss(state.customCss, state.isCustomCssEnabled);
+  updateGlassMode(state.isGlassEnabled);
+}
+
+export function updateThemeColor(color: ThemeColor) {
   if (typeof document !== 'undefined') {
     document.body.setAttribute('data-theme-color', color);
   }
 }
 
-function updateRadius(radius: number) {
+export function updateRadius(radius: number) {
   if (typeof document !== 'undefined') {
     document.body.style.setProperty('--radius', `${radius}rem`);
   }
 }
 
-function updateCustomCss(css: string, enabled: boolean) {
+export function updateCustomCss(css: string, enabled: boolean) {
   if (typeof document !== 'undefined') {
     const styleId = 'custom-theme-style';
     const existingStyle = document.getElementById(styleId);
@@ -120,7 +130,7 @@ function updateCustomCss(css: string, enabled: boolean) {
   }
 }
 
-function updateGlassMode(enabled: boolean) {
+export function updateGlassMode(enabled: boolean) {
   if (typeof document !== 'undefined') {
     if (enabled) {
       document.body.setAttribute('data-glass', 'true');

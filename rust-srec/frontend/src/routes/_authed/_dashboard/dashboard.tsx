@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { formatRelativeTime } from '@/lib/date-utils';
 import { formatDuration } from '@/lib/format';
-import { useCallback, useMemo, memo } from 'react';
+import { useCallback, useMemo, memo, useState, useEffect } from 'react';
 
 const CONTAINER_VARIANTS = {
   hidden: { opacity: 0 },
@@ -54,6 +54,11 @@ export const Route = createFileRoute('/_authed/_dashboard/dashboard')({
 
 function Dashboard() {
   const queryClient = useQueryClient();
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const { data: health, isLoading: isHealthLoading } = useQuery({
     queryKey: ['health'],
@@ -232,16 +237,19 @@ function Dashboard() {
                   name={t`Database`}
                   component={dbComponent}
                   icon={HardDrive}
+                  mounted={mounted}
                 />
                 <ComponentStatusCard
                   name={t`Download Manager`}
                   component={downloadMgrComponent}
                   icon={Activity}
+                  mounted={mounted}
                 />
                 <ComponentStatusCard
                   name={t`Disk`}
                   component={diskComponent}
                   icon={HardDrive}
+                  mounted={mounted}
                 />
               </motion.div>
             )}
@@ -384,10 +392,12 @@ const ComponentStatusCard = memo(
     name,
     component,
     icon: Icon,
+    mounted,
   }: {
     name: string;
     component: any;
     icon: any;
+    mounted: boolean;
   }) => {
     const { i18n } = useLingui();
 
@@ -480,7 +490,9 @@ const ComponentStatusCard = memo(
             {component.last_check && (
               <p className="text-[10px] text-muted-foreground/60 mt-3 font-mono">
                 <Trans>Updated</Trans>{' '}
-                {formatRelativeTime(component.last_check, i18n.locale)}
+                {mounted
+                  ? formatRelativeTime(component.last_check, i18n.locale)
+                  : '-'}
               </p>
             )}
           </CardContent>

@@ -120,7 +120,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <html lang={i18n.locale} suppressHydrationWarning>
+    <html lang={serverLocale || i18n.locale} suppressHydrationWarning>
       <head>
         <link rel="icon" type="image/svg+xml" href="/stream-rec.svg"></link>
         <HeadContent />
