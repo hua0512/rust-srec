@@ -33,7 +33,7 @@ use super::messages::{
 };
 use super::metrics::ActorMetrics;
 use super::monitor_adapter::StatusChecker;
-use crate::domain::StreamerState;
+use crate::domain::{Priority, StreamerState};
 use crate::monitor::LiveStatus;
 use crate::streamer::StreamerMetadata;
 
@@ -142,7 +142,7 @@ impl StreamerActor {
         status_checker: Arc<dyn StatusChecker>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
-        let is_high_priority = config.priority == crate::domain::Priority::High;
+        let is_high_priority = config.priority == Priority::High;
 
         let actor_metadata = ActorMetadata::streamer(&streamer_id, is_high_priority);
         let handle = ActorHandle::new(tx.clone(), cancellation_token.clone(), actor_metadata);
@@ -186,7 +186,7 @@ impl StreamerActor {
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
         let (priority_tx, priority_rx) = mpsc::channel(DEFAULT_PRIORITY_MAILBOX_CAPACITY);
-        let is_high_priority = config.priority == crate::domain::Priority::High;
+        let is_high_priority = config.priority == Priority::High;
 
         let actor_metadata = ActorMetadata::streamer(&streamer_id, is_high_priority);
         let handle = ActorHandle::with_priority(
@@ -880,7 +880,7 @@ impl StreamerActor {
     /// | `StreamerOffline` | Continue monitoring | Preserve (start post-live short polling) | Offline interval | Stream ended naturally, keep watching for next stream (and catch quick restarts) |
     /// | `NetworkError` | Continue monitoring | Preserve | Immediate | Technical issue, verify status quickly to resume if still live |
     /// | `SegmentFailed` | Continue monitoring | Preserve | Immediate | Technical issue, verify status quickly to resume if still live |
-    /// | `Cancelled` | **STOP ACTOR** | N/A | N/A | User explicitly wants to stop monitoring this streamer |
+    /// | `UserCancelled` | **STOP ACTOR** | N/A | N/A | User explicitly wants to stop monitoring this streamer |
     /// | `Other` | Continue monitoring | Preserve | Normal interval | Unknown reason, verify actual state through checks |
     ///
     /// ## StreamerOffline
@@ -894,7 +894,7 @@ impl StreamerActor {
     /// state and check immediately to quickly resume if the streamer is still live. If they're
     /// truly offline, the grace period will confirm it through multiple checks.
     ///
-    /// ## Cancelled (User-Initiated Stop)
+    /// ## UserCancelled (User-Initiated Stop)
     ///
     /// **Returns fatal error to stop the actor entirely.** This handles **Scenario 2: Manual Download Cancellation**:
     /// - User cancels a download via UI/API (without disabling the streamer)
@@ -914,7 +914,7 @@ impl StreamerActor {
     ///
     /// **IMPORTANT**: The download orchestration layer must:
     /// 1. Update the streamer state to `CANCELLED` in the database
-    /// 2. Send the `DownloadEnded(Cancelled)` message
+    /// 2. Send the `DownloadEnded(UserCancelled)` message
     /// 3. The actor will stop gracefully with a fatal error
     ///
     /// This prevents the scheduler from respawning the actor since the streamer state
@@ -925,9 +925,9 @@ impl StreamerActor {
     /// allowing the grace period to confirm the actual state through status checks.
     async fn handle_download_ended(
         &mut self,
-        reason: super::messages::DownloadEndReason,
+        reason: super::messages::DownloadEndPolicy,
     ) -> Result<(), ActorError> {
-        use super::messages::DownloadEndReason;
+        use super::messages::DownloadEndPolicy;
 
         info!("StreamerActor {} download ended: {:?}", self.id, reason);
 
@@ -936,7 +936,7 @@ impl StreamerActor {
 
         // Update state and schedule check based on reason
         match reason {
-            DownloadEndReason::StreamerOffline => {
+            DownloadEndPolicy::StreamerOffline | DownloadEndPolicy::Stopped(_) => {
                 // Streamer went offline normally. Push an Offline status to the monitor
                 // immediately so DB/session state is updated without waiting for the next check.
                 let metadata = self
@@ -964,14 +964,14 @@ impl StreamerActor {
                 // Schedule next check using offline interval while "recently live".
                 self.state.schedule_next_check(&self.config, error_count);
             }
-            DownloadEndReason::NetworkError(_) | DownloadEndReason::SegmentFailed(_) => {
+            DownloadEndPolicy::NetworkError(_) | DownloadEndPolicy::SegmentFailed(_) => {
                 // Network issue - we don't know if streamer is still live
                 // Schedule immediate check to verify status and potentially resume quickly
                 // Don't reset hysteresis - let the check result determine it
                 self.state.streamer_state = StreamerState::NotLive;
                 self.state.schedule_immediate_check();
             }
-            DownloadEndReason::Cancelled => {
+            DownloadEndPolicy::UserCancelled => {
                 // User cancelled - stop monitoring this streamer entirely
                 // User intent: "I don't want to monitor this streamer anymore"
                 // The download orchestration layer should update the streamer state
@@ -993,21 +993,37 @@ impl StreamerActor {
                     );
                 }
 
-                info!(
-                    "StreamerActor {} stopping due to user cancellation",
-                    self.id
+                if metadata.state == StreamerState::Cancelled || !metadata.is_active() {
+                    info!(
+                        "StreamerActor {} stopping due to user cancellation",
+                        self.id
+                    );
+                    return Err(ActorError::fatal(
+                        "User cancelled download - stopping monitoring",
+                    ));
+                }
+
+                // Orchestration bug / inconsistent state: avoid stopping the actor if the
+                // streamer is still active, otherwise the supervisor will restart it.
+                warn!(
+                    "StreamerActor {} received UserCancelled but streamer state is still {:?}; continuing monitoring",
+                    self.id, metadata.state
                 );
-                return Err(ActorError::fatal(
-                    "User cancelled download - stopping monitoring",
-                ));
+                self.state.streamer_state = StreamerState::NotLive;
+                if !self.state.hysteresis.was_live() {
+                    // Be robust to externally orchestrated downloads where we never observed Live.
+                    self.state.hysteresis.mark_live();
+                }
+                self.state.hysteresis.mark_offline_observed();
+                self.state.schedule_next_check(&self.config, error_count);
             }
-            DownloadEndReason::Other(_) => {
+            DownloadEndPolicy::Other(_) => {
                 // Unknown reason - don't reset hysteresis, let status checks verify state
                 // If streamer is truly offline, grace period will confirm it through multiple checks
                 self.state.streamer_state = StreamerState::NotLive;
                 self.state.schedule_next_check(&self.config, error_count);
             }
-            DownloadEndReason::CircuitBreakerBlocked {
+            DownloadEndPolicy::CircuitBreakerBlocked {
                 reason,
                 retry_after_secs,
                 ..
@@ -1777,6 +1793,7 @@ mod tests {
     #[tokio::test]
     async fn test_streamer_actor_resume_on_download_end() {
         let metadata_store = create_test_metadata_store();
+        let metadata_store_for_update = metadata_store.clone();
         let config = StreamerConfig::default();
         let token = CancellationToken::new();
 
@@ -1797,7 +1814,7 @@ mod tests {
 
         // Simulate download ended (streamer offline)
         let result = actor
-            .handle_download_ended(super::super::messages::DownloadEndReason::StreamerOffline)
+            .handle_download_ended(super::super::messages::DownloadEndPolicy::StreamerOffline)
             .await;
         assert!(result.is_ok());
 
@@ -1817,7 +1834,7 @@ mod tests {
 
         // Simulate download failed (network error)
         let result = actor
-            .handle_download_ended(super::super::messages::DownloadEndReason::NetworkError(
+            .handle_download_ended(super::super::messages::DownloadEndPolicy::NetworkError(
                 "timeout".into(),
             ))
             .await;
@@ -1834,8 +1851,11 @@ mod tests {
         actor.state.next_check = None;
 
         // Simulate user cancelled download
+        if let Some(mut entry) = metadata_store_for_update.get_mut("test-streamer") {
+            entry.state = StreamerState::Cancelled;
+        }
         let result = actor
-            .handle_download_ended(super::super::messages::DownloadEndReason::Cancelled)
+            .handle_download_ended(super::super::messages::DownloadEndPolicy::UserCancelled)
             .await;
 
         // Should return fatal error since user wants to stop monitoring
@@ -1851,7 +1871,7 @@ mod tests {
 
         // Simulate download ended with unknown reason
         let result = actor
-            .handle_download_ended(super::super::messages::DownloadEndReason::Other(
+            .handle_download_ended(super::super::messages::DownloadEndPolicy::Other(
                 "unknown".into(),
             ))
             .await;

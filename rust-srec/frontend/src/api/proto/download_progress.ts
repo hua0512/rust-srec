@@ -57,6 +57,7 @@ export interface SegmentCompleted {
   segmentIndex: number;
   durationSecs: number;
   sizeBytes: bigint;
+  sessionId: string;
 }
 
 // Download completed event
@@ -73,6 +74,7 @@ export interface DownloadCompleted {
 export interface DownloadFailed {
   downloadId: string;
   streamerId: string;
+  sessionId: string;
   error: string;
   recoverable: boolean;
 }
@@ -81,6 +83,8 @@ export interface DownloadFailed {
 export interface DownloadCancelled {
   downloadId: string;
   streamerId: string;
+  sessionId: string;
+  cause: string;
 }
 
 // Download rejected event
@@ -210,6 +214,7 @@ message SegmentCompleted {
   uint32 segment_index = 4;
   double duration_secs = 5;
   uint64 size_bytes = 6;
+  string session_id = 7;
 }
 
 message DownloadCompleted {
@@ -224,13 +229,16 @@ message DownloadCompleted {
 message DownloadFailed {
   string download_id = 1;
   string streamer_id = 2;
-  string error = 3;
-  bool recoverable = 4;
+  string session_id = 3;
+  string error = 4;
+  bool recoverable = 5;
 }
 
 message DownloadCancelled {
   string download_id = 1;
   string streamer_id = 2;
+  string session_id = 3;
+  string cause = 4;
 }
 
 message DownloadRejected {
@@ -340,6 +348,7 @@ export function decodeWsMessage(data: Uint8Array): WsMessage {
         segmentIndex: (raw.segmentIndex as number) || 0,
         durationSecs: (raw.durationSecs as number) || 0,
         sizeBytes: toBigInt(raw.sizeBytes),
+        sessionId: (raw.sessionId as string) || '',
       },
     };
   } else if (decoded.downloadCompleted) {
@@ -360,6 +369,7 @@ export function decodeWsMessage(data: Uint8Array): WsMessage {
       downloadFailed: {
         downloadId: (raw.downloadId as string) || '',
         streamerId: (raw.streamerId as string) || '',
+        sessionId: (raw.sessionId as string) || '',
         error: (raw.error as string) || '',
         recoverable: (raw.recoverable as boolean) || false,
       },
@@ -370,6 +380,8 @@ export function decodeWsMessage(data: Uint8Array): WsMessage {
       downloadCancelled: {
         downloadId: (raw.downloadId as string) || '',
         streamerId: (raw.streamerId as string) || '',
+        sessionId: (raw.sessionId as string) || '',
+        cause: (raw.cause as string) || '',
       },
     };
   } else if (decoded.downloadRejected) {

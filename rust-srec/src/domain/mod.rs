@@ -10,6 +10,3 @@ pub mod value_objects;
 
 pub use streamer::{Streamer, StreamerState};
 pub use value_objects::*;
-
-// Re-export Priority from database models for convenience
-pub use crate::database::models::Priority;

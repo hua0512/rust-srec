@@ -69,6 +69,8 @@ const CATEGORY_LABELS: Record<string, any> = {
   file_ops: msg`File Ops`,
   custom: msg`Custom`,
   metadata: msg`Metadata`,
+  danmu: msg`Danmaku`,
+  subtitle: msg`Subtitle`,
 };
 
 const PAGE_SIZES = [12, 24, 48, 96];
@@ -267,11 +269,10 @@ function PresetsPage() {
         <nav className="flex items-center gap-1">
           <button
             onClick={() => handleCategoryChange(null)}
-            className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-              selectedCategory === null
+            className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${selectedCategory === null
                 ? 'bg-primary text-primary-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-            }`}
+              }`}
           >
             <span className="relative z-10 flex items-center gap-1.5">
               <Trans>All</Trans>
@@ -282,11 +283,10 @@ function PresetsPage() {
             <button
               key={cat}
               onClick={() => handleCategoryChange(cat)}
-              className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${
-                selectedCategory === cat
+              className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${selectedCategory === cat
                   ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
+                }`}
             >
               <span className="relative z-10 capitalize">
                 {i18n._(CATEGORY_LABELS[cat] || cat)}

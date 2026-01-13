@@ -1176,7 +1176,12 @@ impl ServiceContainer {
                                         // - end session and bypass resume hysteresis
                                         if matches!(control, crate::danmu::DanmuControlEvent::StreamClosed { .. }) {
                                             if let Some(download_info) = download_manager.get_download_by_streamer(streamer_id)
-                                            && let Err(e) = download_manager.stop_download(&download_info.id).await
+                                            && let Err(e) = download_manager
+                                                .stop_download_with_reason(
+                                                    &download_info.id,
+                                                    crate::downloader::DownloadStopCause::DanmuStreamClosed,
+                                                )
+                                                .await
                                         {
                                             warn!(
                                                 "Failed to stop download {} after danmu stream closed (streamer={}): {}",
@@ -1577,7 +1582,13 @@ impl ServiceContainer {
             );
         } else {
             for download in downloads {
-                match download_manager.stop_download(&download.id).await {
+                match download_manager
+                    .stop_download_with_reason(
+                        &download.id,
+                        crate::downloader::DownloadStopCause::StreamerDisabled,
+                    )
+                    .await
+                {
                     Ok(()) => {
                         info!(
                             "Cancelled download {} for disabled streamer {}",
@@ -1925,7 +1936,13 @@ impl ServiceContainer {
                 // Stop download if active
                 if let Some(download_info) = download_manager.get_download_by_streamer(&streamer_id)
                 {
-                    match download_manager.stop_download(&download_info.id).await {
+                    match download_manager
+                        .stop_download_with_reason(
+                            &download_info.id,
+                            crate::downloader::DownloadStopCause::StreamerOffline,
+                        )
+                        .await
+                    {
                         Ok(()) => {
                             info!(
                                 "Stopped download {} for streamer {}",

@@ -372,7 +372,7 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/components/pipeline/workflows/step-library.tsx:291
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:198
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:277
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:278
 #: src/routes/_authed/_dashboard/sessions/index.tsx:186
 #: src/routes/_authed/_dashboard/sessions/index.tsx:504
 #: src/routes/_authed/_dashboard/streamers/index.tsx:67
@@ -743,7 +743,7 @@ msgstr "C:path1.flv,C:path2.flv"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:171
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:194
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:231
-#: src/components/pipeline/presets/preset-card.tsx:204
+#: src/components/pipeline/presets/preset-card.tsx:206
 #: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:196
 #: src/components/streamers/streamer-form.tsx:218
@@ -900,7 +900,7 @@ msgid "Click to add. You can reorder steps in the editor."
 msgstr "点击添加。你可以在编辑器中重新排序步骤。"
 
 #: src/components/config/templates/template-card.tsx:120
-#: src/components/pipeline/presets/preset-card.tsx:178
+#: src/components/pipeline/presets/preset-card.tsx:180
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:275
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:509
 msgid "Clone"
@@ -1402,6 +1402,8 @@ msgid "DAG Graph"
 msgstr "DAG 图"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:46
+#: src/components/pipeline/presets/preset-card.tsx:96
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:72
 msgid "Danmaku"
 msgstr "弹幕"
 
@@ -1501,8 +1503,8 @@ msgstr "延迟、代理与保留策略。"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:213
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:237
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
-#: src/components/pipeline/presets/preset-card.tsx:187
-#: src/components/pipeline/presets/preset-card.tsx:210
+#: src/components/pipeline/presets/preset-card.tsx:189
+#: src/components/pipeline/presets/preset-card.tsx:212
 #: src/components/pipeline/presets/preset-templates.ts:65
 #: src/components/pipeline/workflows/workflow-card.tsx:179
 #: src/components/pipeline/workflows/workflow-card.tsx:202
@@ -1536,7 +1538,7 @@ msgstr "成功重封装后删除原始文件"
 msgid "Delete Pipeline?"
 msgstr "删除处理管道？"
 
-#: src/components/pipeline/presets/preset-card.tsx:193
+#: src/components/pipeline/presets/preset-card.tsx:195
 msgid "Delete Preset?"
 msgstr "删除预设？"
 
@@ -1816,7 +1818,7 @@ msgstr "例如：标准处理"
 #: src/components/config/templates/template-card.tsx:116
 #: src/components/filters/FilterCard.tsx:305
 #: src/components/notifications/channel-card.tsx:154
-#: src/components/pipeline/presets/preset-card.tsx:174
+#: src/components/pipeline/presets/preset-card.tsx:176
 #: src/components/pipeline/workflows/workflow-card.tsx:171
 #: src/components/sidebar/navbar.tsx:47
 #: src/components/streamers/card/stream-actions-menu.tsx:88
@@ -1994,7 +1996,7 @@ msgstr "环境变量"
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:107
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:310
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:142
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:227
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:229
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:140
 #: src/routes/_authed/_dashboard/streamers/index.tsx:70
 msgid "Error"
@@ -2176,7 +2178,7 @@ msgid "Failed to check TDL status: {0}"
 msgstr "检查 TDL 状态失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:188
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:190
 msgid "Failed to clone preset: {0}"
 msgstr "克隆预设失败：{0}"
 
@@ -2233,7 +2235,7 @@ msgid "Failed to delete pipeline"
 msgstr "删除处理管道失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:170
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:172
 msgid "Failed to delete preset: {0}"
 msgstr "删除预设失败：{0}"
 
@@ -2294,7 +2296,7 @@ msgid "Failed to load platforms: {0}"
 msgstr "加载平台列表失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:230
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:232
 msgid "Failed to load presets: {0}"
 msgstr "加载预设失败：{0}"
 
@@ -3653,7 +3655,7 @@ msgstr "此处理器没有可用配置。"
 msgid "No configuration form available for this processor."
 msgstr "此处理器没有可用的配置表单。"
 
-#: src/components/pipeline/presets/preset-card.tsx:246
+#: src/components/pipeline/presets/preset-card.tsx:248
 msgid "No configuration."
 msgstr "无配置。"
 
@@ -3669,7 +3671,7 @@ msgstr "未配置自定义请求头"
 msgid "No custom tags added"
 msgstr "未添加自定义标签"
 
-#: src/components/pipeline/presets/preset-card.tsx:223
+#: src/components/pipeline/presets/preset-card.tsx:225
 msgid "No description."
 msgstr "暂无描述。"
 
@@ -3999,7 +4001,7 @@ msgstr "仅支持 MP4/MOV/M4V"
 #: src/components/notifications/channel-card.tsx:148
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:147
 #: src/components/pipeline/outputs/output-card.tsx:128
-#: src/components/pipeline/presets/preset-card.tsx:168
+#: src/components/pipeline/presets/preset-card.tsx:170
 #: src/components/pipeline/workflows/workflow-card.tsx:165
 msgid "Open menu"
 msgstr "打开菜单"
@@ -4541,7 +4543,7 @@ msgstr "保留路径"
 msgid "preset"
 msgstr "预设"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:176
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:178
 msgid "Preset cloned successfully"
 msgstr "预设克隆成功"
 
@@ -4549,7 +4551,7 @@ msgstr "预设克隆成功"
 msgid "Preset created successfully"
 msgstr "预设创建成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:166
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:168
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
@@ -4569,13 +4571,13 @@ msgstr "预设步骤"
 msgid "Preset updated successfully"
 msgstr "预设更新成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:262
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:264
 msgid "presets"
 msgstr "预设"
 
 #: src/components/sidebar/navbar.tsx:43
 #: src/lib/menu-list.ts:74
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:242
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:244
 msgid "Presets"
 msgstr "预设"
 
@@ -4998,7 +5000,7 @@ msgstr "重试策略"
 msgid "Return Previous Page"
 msgstr "返回上一页"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:244
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:246
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "处理管道步骤可复用的处理器配置"
 
@@ -5199,7 +5201,7 @@ msgstr "搜索媒体文件..."
 msgid "Search platforms..."
 msgstr "搜索平台..."
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:252
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:254
 msgid "Search presets..."
 msgstr "搜索预设..."
 
@@ -5733,6 +5735,8 @@ msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:47
+#: src/components/pipeline/presets/preset-card.tsx:97
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:73
 msgid "Subtitle"
 msgstr "字幕"
 
@@ -5996,7 +6000,7 @@ msgid "This will permanently delete the pipeline and all its associated jobs and
 msgstr "这将永久删除处理管道及其关联的所有任务和日志。此操作无法撤销。"
 
 #. placeholder {0}: preset.name
-#: src/components/pipeline/presets/preset-card.tsx:196
+#: src/components/pipeline/presets/preset-card.tsx:198
 msgid "This will permanently delete the preset \"{0}\". Pipelines using this preset may fail if not updated."
 msgstr "这将永久删除预设“{0}”。若不更新，使用该预设的处理管道可能会失败。"
 

@@ -27,7 +27,7 @@ mod supervisor;
 pub use config_router::{ConfigRouter, ConfigScope, PlatformMapping, RoutingResult};
 pub use handle::{ActorHandle, ActorMetadata, SendError};
 pub use messages::{
-    BatchDetectionResult, CheckResult, DownloadEndReason, PlatformActorState, PlatformConfig,
+    BatchDetectionResult, CheckResult, DownloadEndPolicy, PlatformActorState, PlatformConfig,
     PlatformMessage, StreamerActorState, StreamerConfig, StreamerMessage, SupervisorMessage,
 };
 pub use metrics::{

@@ -13,29 +13,9 @@ use crate::api::models::{
     UpdatePriorityRequest, UpdateStreamerRequest,
 };
 use crate::api::server::AppState;
-use crate::domain::Priority as DomainPriority;
 use crate::domain::streamer::StreamerState;
-use crate::domain::value_objects::Priority as ApiPriority;
 use crate::streamer::StreamerMetadata;
 use crate::utils::json::{self, JsonContext};
-
-/// Convert API Priority to Domain Priority.
-fn api_to_domain_priority(p: ApiPriority) -> DomainPriority {
-    match p {
-        ApiPriority::High => DomainPriority::High,
-        ApiPriority::Normal => DomainPriority::Normal,
-        ApiPriority::Low => DomainPriority::Low,
-    }
-}
-
-/// Convert Domain Priority to API Priority.
-fn domain_to_api_priority(p: DomainPriority) -> ApiPriority {
-    match p {
-        DomainPriority::High => ApiPriority::High,
-        DomainPriority::Normal => ApiPriority::Normal,
-        DomainPriority::Low => ApiPriority::Low,
-    }
-}
 
 /// Create the streamers router.
 pub fn router() -> Router<AppState> {
@@ -59,7 +39,7 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
         platform_config_id: metadata.platform_config_id.clone(),
         template_id: metadata.template_config_id.clone(),
         state: metadata.state,
-        priority: domain_to_api_priority(metadata.priority),
+        priority: metadata.priority,
         enabled: metadata.state != StreamerState::Disabled,
         consecutive_error_count: metadata.consecutive_error_count,
         disabled_until: metadata.disabled_until,
@@ -128,7 +108,7 @@ pub async fn create_streamer(
         } else {
             StreamerState::Disabled
         },
-        priority: api_to_domain_priority(request.priority),
+        priority: request.priority,
         consecutive_error_count: 0,
         disabled_until: None,
         last_error: None,
@@ -192,8 +172,7 @@ pub async fn list_streamers(
         streamers.retain(|s| states.contains(&s.state));
     }
     if let Some(priority) = &filters.priority {
-        let domain_priority = api_to_domain_priority(*priority);
-        streamers.retain(|s| s.priority == domain_priority);
+        streamers.retain(|s| s.priority == *priority);
     }
     if let Some(enabled) = filters.enabled {
         streamers.retain(|s| (s.state != StreamerState::Disabled) == enabled);
@@ -430,8 +409,7 @@ pub async fn update_streamer(
         "Computed new state for update"
     );
 
-    // Convert API priority to domain priority if provided
-    let new_priority = request.priority.map(api_to_domain_priority);
+    let new_priority = request.priority;
 
     // `template_id` supports "missing" (no update) vs explicit `null` (clear).
     let template_config_id = request.template_id;
@@ -575,9 +553,8 @@ pub async fn update_priority(
     }
 
     // Update priority
-    let domain_priority = api_to_domain_priority(request.priority);
     streamer_manager
-        .update_priority(&id, domain_priority)
+        .update_priority(&id, request.priority)
         .await
         .map_err(ApiError::from)?;
 
@@ -592,6 +569,7 @@ pub async fn update_priority(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::Priority;
 
     #[test]
     fn test_create_streamer_request_validation() {
@@ -600,7 +578,7 @@ mod tests {
             url: "".to_string(),
             platform_config_id: "platform1".to_string(),
             template_id: None,
-            priority: ApiPriority::Normal,
+            priority: Priority::Normal,
             enabled: true,
             streamer_specific_config: None,
         };
@@ -619,7 +597,7 @@ mod tests {
             platform_config_id: "twitch".to_string(),
             template_config_id: Some("template1".to_string()),
             state: StreamerState::Live,
-            priority: DomainPriority::High,
+            priority: Priority::High,
             consecutive_error_count: 2,
             disabled_until: None,
             last_error: Some("test error".to_string()),
@@ -652,7 +630,7 @@ mod tests {
             platform_config_id: "platform".to_string(),
             template_config_id: None,
             state: StreamerState::Disabled,
-            priority: DomainPriority::Normal,
+            priority: Priority::Normal,
             consecutive_error_count: 0,
             disabled_until: None,
             last_error: None,
@@ -665,37 +643,6 @@ mod tests {
         let response = metadata_to_response(&metadata);
         assert!(!response.enabled);
     }
-
-    #[test]
-    fn test_priority_conversion() {
-        // API to Domain
-        assert_eq!(
-            api_to_domain_priority(ApiPriority::High),
-            DomainPriority::High
-        );
-        assert_eq!(
-            api_to_domain_priority(ApiPriority::Normal),
-            DomainPriority::Normal
-        );
-        assert_eq!(
-            api_to_domain_priority(ApiPriority::Low),
-            DomainPriority::Low
-        );
-
-        // Domain to API
-        assert_eq!(
-            domain_to_api_priority(DomainPriority::High),
-            ApiPriority::High
-        );
-        assert_eq!(
-            domain_to_api_priority(DomainPriority::Normal),
-            ApiPriority::Normal
-        );
-        assert_eq!(
-            domain_to_api_priority(DomainPriority::Low),
-            ApiPriority::Low
-        );
-    }
 }
 
 #[cfg(test)]
@@ -704,6 +651,7 @@ mod property_tests {
     use crate::config::ConfigEventBroadcaster;
     use crate::database::models::StreamerDbModel;
     use crate::database::repositories::streamer::StreamerRepository;
+    use crate::domain::Priority;
     use crate::streamer::StreamerManager;
     use async_trait::async_trait;
     use chrono::{DateTime, Utc};
@@ -967,11 +915,11 @@ mod property_tests {
     }
 
     // Strategy for generating priorities
-    fn priority_strategy() -> impl Strategy<Value = DomainPriority> {
+    fn priority_strategy() -> impl Strategy<Value = Priority> {
         prop_oneof![
-            Just(DomainPriority::High),
-            Just(DomainPriority::Normal),
-            Just(DomainPriority::Low),
+            Just(Priority::High),
+            Just(Priority::Normal),
+            Just(Priority::Low),
         ]
     }
 

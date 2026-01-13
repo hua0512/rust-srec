@@ -299,16 +299,40 @@ impl BilibiliDanmuProtocol {
             "DANMU_MSG" | "DANMU_MSG_MIRROR" => {
                 Self::parse_danmu_msg(&json).map(DanmuItem::Message)
             }
-            "SEND_GIFT" => Self::parse_gift(&json).map(DanmuItem::Message),
+            "SEND_GIFT" => Self::parse_gift(&json).map(DanmuItem::Message),     
             "SUPER_CHAT_MESSAGE" => Self::parse_super_chat(&json).map(DanmuItem::Message),
             "ROOM_CHANGE" => Self::parse_room_change(&json),
+            // Stream-ending / enforcement events.
+            // Bilibili emits these when the live room is forcibly ended/locked.
+            "ROOM_LOCK" | "CUT_OFF" => Self::parse_stream_closed(cmd_base, &json),
             _ => None,
         }
     }
 
+    fn parse_stream_closed(cmd: &str, json: &Value) -> Option<DanmuItem> {
+        let data = json.get("data");
+
+        let message = data
+            .and_then(|d| {
+                d.get("message")
+                    .or_else(|| d.get("msg"))
+                    .or_else(|| d.get("reason"))
+                    .or_else(|| d.get("text"))
+            })
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(|| Some(cmd.to_string()));
+
+        Some(DanmuItem::Control(DanmuControlEvent::StreamClosed {
+            message,
+            action: None,
+        }))
+    }
+
     /// Parse ROOM_CHANGE (room info update) into a control event.
     ///
-    /// Bilibili sends this when the streamer updates the title / area / tags.
+    /// Bilibili sends this when the streamer updates the title / area / tags.  
     fn parse_room_change(json: &Value) -> Option<DanmuItem> {
         let data = json.get("data")?;
 
@@ -664,6 +688,50 @@ mod tests {
                 assert_eq!(title.as_deref(), Some("New Stream Title"));
                 assert_eq!(category.as_deref(), Some("Some Area"));
                 assert_eq!(parent_category.as_deref(), Some("Some Parent"));
+            }
+            other => panic!("Unexpected item: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_room_lock_emits_stream_closed() {
+        let json = serde_json::json!({
+            "cmd": "ROOM_LOCK",
+            "data": {
+                "message": "room locked"
+            }
+        });
+
+        let body = serde_json::to_vec(&json).unwrap();
+        let item =
+            BilibiliDanmuProtocol::parse_notification(&body).expect("should parse ROOM_LOCK");
+
+        match item {
+            DanmuItem::Control(DanmuControlEvent::StreamClosed { message, action }) => {
+                assert_eq!(message.as_deref(), Some("room locked"));
+                assert_eq!(action, None);
+            }
+            other => panic!("Unexpected item: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cut_off_emits_stream_closed() {
+        let json = serde_json::json!({
+            "cmd": "CUT_OFF",
+            "data": {
+                "msg": "cut off"
+            }
+        });
+
+        let body = serde_json::to_vec(&json).unwrap();
+        let item =
+            BilibiliDanmuProtocol::parse_notification(&body).expect("should parse CUT_OFF");
+
+        match item {
+            DanmuItem::Control(DanmuControlEvent::StreamClosed { message, action }) => {
+                assert_eq!(message.as_deref(), Some("cut off"));
+                assert_eq!(action, None);
             }
             other => panic!("Unexpected item: {other:?}"),
         }

@@ -252,7 +252,7 @@ impl DouyinDanmuProtocol {
                     if let Ok(control_msg) =
                         douyin_proto::webcast::im::ControlMessage::decode(message.payload.as_ref())
                     {
-                        debug!("Control message: {:?}", control_msg);
+                        // debug!("Control message: {:?}", control_msg);
                         // Douyin: treat only action == 3 as a stream-closed signal.
                         if control_msg.action == 3 {
                             let tips = control_msg.tips.trim().to_string();

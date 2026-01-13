@@ -4,6 +4,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::domain::Priority;
+
 /// Streamer database model.
 /// The central entity representing a content creator to be monitored.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -147,74 +149,6 @@ impl StreamerState {
     }
 }
 
-/// Streamer priority levels for resource allocation.
-/// Note: Ord is manually implemented so High > Normal > Low
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Default,
-    Serialize,
-    Deserialize,
-    strum::Display,
-    strum::EnumString,
-)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum Priority {
-    /// VIP streamers, never miss. First to get download slots.
-    High,
-    /// Standard streamers. Fair scheduling.
-    #[default]
-    Normal,
-    /// Background/archive streamers. Paused first during resource constraints.
-    Low,
-}
-
-impl PartialOrd for Priority {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Priority {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Higher priority = higher numeric value
-        let self_val = match self {
-            Priority::High => 3,
-            Priority::Normal => 2,
-            Priority::Low => 1,
-        };
-        let other_val = match other {
-            Priority::High => 3,
-            Priority::Normal => 2,
-            Priority::Low => 1,
-        };
-        self_val.cmp(&other_val)
-    }
-}
-
-impl Priority {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::High => "HIGH",
-            Self::Normal => "NORMAL",
-            Self::Low => "LOW",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "HIGH" => Some(Self::High),
-            "NORMAL" => Some(Self::Normal),
-            "LOW" => Some(Self::Low),
-            _ => None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,12 +168,6 @@ mod tests {
         assert!(StreamerState::Live.can_transition_to(StreamerState::NotLive));
         assert!(StreamerState::InspectingLive.can_transition_to(StreamerState::Live));
         assert!(!StreamerState::Cancelled.can_transition_to(StreamerState::Live));
-    }
-
-    #[test]
-    fn test_priority_ordering() {
-        assert!(Priority::High > Priority::Normal);
-        assert!(Priority::Normal > Priority::Low);
     }
 
     #[test]
