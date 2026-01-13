@@ -54,7 +54,7 @@ regex = { version = "1.12.2", default-features = false, features = ["std", "unic
 futures = "0.3.31"
 chrono = { version = "0.4.40", features = ["serde"] }
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
-prost = "0.14.1"
+prost = "0.14.3"
 prost-types = "0.14.1"
 prost-build = "0.14.1"
 parking_lot = "0.12.3"
