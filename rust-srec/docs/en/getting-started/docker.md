@@ -1,3 +1,7 @@
+<script setup>
+import { withBase } from 'vitepress'
+</script>
+
 # Docker Deployment
 
 Docker is the easiest and recommended way to deploy Rust-Srec.
@@ -16,8 +20,8 @@ Docker is the easiest and recommended way to deploy Rust-Srec.
    ```
 
 2. Download the example configuration files:
-   - <a href="/docker-compose.example.yml" download>docker-compose.example.yml</a>
-   - <a href="/.env.example" download>.env.example</a>
+   - <a :href="withBase('/docker-compose.example.yml')" download>docker-compose.example.yml</a>
+   - <a :href="withBase('/.env.example')" download>.env.example</a>
 
 3. Rename the files:
    ```bash
@@ -49,7 +53,7 @@ Ensure your `DATA_DIR` and `OUTPUT_DIR` are on a drive with sufficient space. St
 
 ## Configuration
 
-The <a href="/.env.example" download>.env</a> file contains all the necessary environment variables.
+The <a :href="withBase('/.env.example')" download>.env</a> file contains all the necessary environment variables.
 
 | Variable | Description |
 |----------|-------------|
@@ -62,7 +66,7 @@ For a complete list of all available environment variables and their description
 
 ### docker-compose.yml
 
-Our <a href="/docker-compose.example.yml" download>standard example</a> includes:
+Our <a :href="withBase('/docker-compose.example.yml')" download>standard example</a> includes:
 - **Automatic Restart**: `unless-stopped`
 - **Healthchecks**: Ensures the frontend only starts after the backend is ready
 - **Resource Limits**: Configurable CPU and memory limits
