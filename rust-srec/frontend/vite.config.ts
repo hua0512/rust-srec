@@ -41,11 +41,12 @@ export default defineConfig(() => ({
       output: {
         advancedChunks: {
           groups: [
-            { name: 'vendor-player-art', test: /artplayer/ },
-            { name: 'vendor-player-hls', test: /hls\.js/ },
-            { name: 'vendor-player-mpegts', test: /mpegts\.js/ },
-            { name: 'vendor-ui', test: /@radix-ui|lucide-react|motion|sonner/ },
-            { name: 'vendor-utils', test: /date-fns|zod|react-hook-form|ky/ },
+            { name: 'vendor-player-art', test: /node_modules[\\/]artplayer/ },
+            { name: 'vendor-player-hls', test: /node_modules[\\/]hls\.js/ },
+            {
+              name: 'vendor-player-mpegts',
+              test: /node_modules[\\/]mpegts\.js/,
+            },
           ],
         },
       },

@@ -74,6 +74,7 @@ export const useThemeStore = create<ThemeState>()(
     }),
     {
       name: 'app-theme-storage',
+      skipHydration: true,
       onRehydrateStorage: () => () => {
         // We no longer apply themes immediately during rehydration
         // to avoid hydration mismatches. The ThemeProvider will handle it.

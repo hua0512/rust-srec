@@ -11,10 +11,10 @@ const TanStackRouterDevtools =
   process.env.NODE_ENV === 'production'
     ? () => null
     : lazy(() =>
-      import('@tanstack/react-router-devtools').then((res) => ({
-        default: res.TanStackRouterDevtools,
-      })),
-    );
+        import('@tanstack/react-router-devtools').then((res) => ({
+          default: res.TanStackRouterDevtools,
+        })),
+      );
 
 const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
   // Use ensureValidToken to validate the session and refresh if needed
@@ -91,6 +91,7 @@ import { I18nProvider } from '@lingui/react';
 import { i18n, activateLocale, initializeLocale, type Locale } from '../i18n';
 import { ThemeProvider } from '../components/theme-provider';
 import { useSidebar } from '../store/sidebar';
+import { useThemeStore } from '../stores/theme-store';
 import { Toaster } from '../components/ui/sonner';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -119,6 +120,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     initializeLocale();
     useSidebar.persist.rehydrate();
+    useThemeStore.persist.rehydrate();
   }, []);
 
   return (
