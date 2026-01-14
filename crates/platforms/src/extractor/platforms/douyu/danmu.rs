@@ -86,6 +86,7 @@ impl DouyuDanmuProtocol {
     }
 
     /// Parse gift messages from STT payload.
+    #[allow(dead_code)]
     fn parse_gift_message(map: &rustc_hash::FxHashMap<String, String>) -> Option<DanmuMessage> {
         let gift = DouyuGiftMessage::from_map(map)?;
 
@@ -183,11 +184,11 @@ impl DanmuProtocol for DouyuDanmuProtocol {
                                 items.push(DanmuItem::Message(danmu));
                             }
                         }
-                        DouyuMessageType::Gift => {
-                            if let Some(danmu) = Self::parse_gift_message(&map) {
-                                items.push(DanmuItem::Message(danmu));
-                            }
-                        }
+                        // DouyuMessageType::Gift => {
+                        //     if let Some(danmu) = Self::parse_gift_message(&map) {
+                        //         items.push(DanmuItem::Message(danmu));
+                        //     }
+                        // }
                         DouyuMessageType::LoginRes => {
                             debug!("Douyu login response received");
                         }
