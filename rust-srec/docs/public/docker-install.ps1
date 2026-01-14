@@ -1,4 +1,10 @@
-﻿#Requires -Version 5.1
+﻿[CmdletBinding()]
+param(
+    [string]$InstallDir = ".\rust-srec",
+    [string]$Version = "latest"
+)
+
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Rust-Srec Installation Script for Windows
@@ -9,12 +15,6 @@
 .LINK
     https://github.com/hua0512/rust-srec
 #>
-
-[CmdletBinding()]
-param(
-    [string]$InstallDir = ".\rust-srec",
-    [string]$Version = "latest"
-)
 
 # Fix encoding for PowerShell 5.1
 if ($PSVersionTable.PSVersion.Major -le 5) {
