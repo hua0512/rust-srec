@@ -34,7 +34,9 @@ use super::messages::{
 use super::metrics::ActorMetrics;
 use super::monitor_adapter::StatusChecker;
 use crate::domain::{Priority, StreamerState};
+use crate::downloader::DownloadStopCause;
 use crate::monitor::LiveStatus;
+use crate::scheduler::actor::DownloadEndPolicy;
 use crate::streamer::StreamerMetadata;
 
 /// Result type for actor operations.
@@ -923,12 +925,7 @@ impl StreamerActor {
     /// ## Other
     /// Unknown/unexpected reasons. We preserve hysteresis and use normal scheduling,
     /// allowing the grace period to confirm the actual state through status checks.
-    async fn handle_download_ended(
-        &mut self,
-        reason: super::messages::DownloadEndPolicy,
-    ) -> Result<(), ActorError> {
-        use super::messages::DownloadEndPolicy;
-
+    async fn handle_download_ended(&mut self, reason: DownloadEndPolicy) -> Result<(), ActorError> {
         info!("StreamerActor {} download ended: {:?}", self.id, reason);
 
         let error_count = self.get_error_count();
@@ -936,6 +933,31 @@ impl StreamerActor {
 
         // Update state and schedule check based on reason
         match reason {
+            DownloadEndPolicy::Stopped(DownloadStopCause::DanmuStreamClosed) => {
+                // Authoritative offline signal: platform explicitly told us the stream ended.
+                // Unlike ambiguous offline detection, we know for certain this stream is over.
+                // Reset hysteresis completely and use normal polling interval (no short polling).
+                let metadata = self
+                    .get_metadata()
+                    .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
+                if let Err(e) = self
+                    .status_checker
+                    .process_status(&metadata, LiveStatus::Offline)
+                    .await
+                {
+                    warn!(
+                        "StreamerActor {} failed to process offline status on DanmuStreamClosed: {}",
+                        self.id, e
+                    );
+                }
+
+                // Reset hysteresis completely - we definitively know the stream ended.
+                // This will cause schedule_next_check to use the normal (longer) interval
+                // since was_live becomes false.
+                self.state.streamer_state = StreamerState::NotLive;
+                self.state.hysteresis.reset();
+                self.state.schedule_next_check(&self.config, error_count);
+            }
             DownloadEndPolicy::StreamerOffline | DownloadEndPolicy::Stopped(_) => {
                 // Streamer went offline normally. Push an Offline status to the monitor
                 // immediately so DB/session state is updated without waiting for the next check.
