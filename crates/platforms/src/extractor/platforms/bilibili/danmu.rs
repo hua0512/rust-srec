@@ -299,7 +299,7 @@ impl BilibiliDanmuProtocol {
             "DANMU_MSG" | "DANMU_MSG_MIRROR" => {
                 Self::parse_danmu_msg(&json).map(DanmuItem::Message)
             }
-            "SEND_GIFT" => Self::parse_gift(&json).map(DanmuItem::Message),     
+            "SEND_GIFT" => Self::parse_gift(&json).map(DanmuItem::Message),
             "SUPER_CHAT_MESSAGE" => Self::parse_super_chat(&json).map(DanmuItem::Message),
             "ROOM_CHANGE" => Self::parse_room_change(&json),
             // Stream-ending / enforcement events.
@@ -725,8 +725,7 @@ mod tests {
         });
 
         let body = serde_json::to_vec(&json).unwrap();
-        let item =
-            BilibiliDanmuProtocol::parse_notification(&body).expect("should parse CUT_OFF");
+        let item = BilibiliDanmuProtocol::parse_notification(&body).expect("should parse CUT_OFF");
 
         match item {
             DanmuItem::Control(DanmuControlEvent::StreamClosed { message, action }) => {
