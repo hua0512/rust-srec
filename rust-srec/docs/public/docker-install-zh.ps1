@@ -10,17 +10,17 @@
     https://github.com/hua0512/rust-srec
 #>
 
-# Fix encoding for Chinese characters in PowerShell 5.1
-if ($PSVersionTable.PSVersion.Major -le 5) {
-    $OutputEncoding = [System.Text.Encoding]::UTF8
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-}
-
 [CmdletBinding()]
 param(
     [string]$InstallDir = ".\rust-srec",
     [string]$Version = "latest"
 )
+
+# Fix encoding for Chinese characters in PowerShell 5.1
+if ($PSVersionTable.PSVersion.Major -le 5) {
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+}
 
 $ErrorActionPreference = "Stop"
 $BaseUrl = "https://hua0512.github.io/rust-srec"
@@ -68,8 +68,8 @@ function Test-DockerCompose {
 function Install-RustSrec {
     Write-Host ""
     Write-Host "+============================================================+" -ForegroundColor Green
-    Write-Host "|          Rust-Srec 安装脚本                                |" -ForegroundColor Green
-    Write-Host "|          自动直播录制工具                                  |" -ForegroundColor Green
+    Write-Host "|                Rust-Srec 安装脚本                          |" -ForegroundColor Green
+    Write-Host "|                自动直播录制工具                            |" -ForegroundColor Green
     Write-Host "+============================================================+" -ForegroundColor Green
     Write-Host ""
 
@@ -93,19 +93,22 @@ function Install-RustSrec {
     Write-Success "所有要求已满足"
 
     # Version selection
-    if ($Version -eq "latest") {
-        Write-Host ""
-        Write-Host "选择安装版本:" -ForegroundColor Yellow
-        Write-Host "  1) latest  - 稳定版 (推荐)"
-        Write-Host "  2) dev     - 开发版 (最新功能)"
-        Write-Host ""
-        $versionChoice = Read-Host "请输入选项 [1]"
-        switch ($versionChoice) {
-            "2" { $Version = "dev" }
-            "dev" { $Version = "dev" }
-            default { $Version = "latest" }
+    if ($Global:Version -eq "latest" -or $Version -eq "latest") {
+        $selectedVersion = if ($Version -ne "latest") { $Version } else { $Global:Version }
+        if ($selectedVersion -eq "latest") {
+            Write-Host ""
+            Write-Host "选择安装版本:" -ForegroundColor Yellow
+            Write-Host "  1) latest  - 稳定版 (推荐)"
+            Write-Host "  2) dev     - 开发版 (最新功能)"
+            Write-Host ""
+            $versionChoice = Read-Host "请输入选项 [1]"
+            switch ($versionChoice) {
+                "2" { $Global:Version = "dev" }
+                "dev" { $Global:Version = "dev" }
+                default { $Global:Version = "latest" }
+            }
         }
-        Write-Info "已选择版本: $Version"
+        Write-Info "已选择版本: $Global:Version"
     }
 
     # Create installation directory
@@ -139,9 +142,9 @@ function Install-RustSrec {
     $envContent = $envContent -replace "JWT_SECRET=.*", "JWT_SECRET=$jwtSecret"
     $envContent = $envContent -replace "SESSION_SECRET=.*", "SESSION_SECRET=$sessionSecret"
     
-    if ($Version -ne "latest") {
-        Write-Info "设置版本: $Version"
-        $envContent = $envContent -replace "VERSION=.*", "VERSION=$Version"
+    if ($Global:Version -ne "latest") {
+        Write-Info "设置版本: $Global:Version"
+        $envContent = $envContent -replace "VERSION=.*", "VERSION=$Global:Version"
     }
     
     Set-Content ".env" $envContent -NoNewline -Encoding UTF8
@@ -149,7 +152,7 @@ function Install-RustSrec {
 
     Write-Host ""
     Write-Host "+============================================================+" -ForegroundColor Green
-    Write-Host "|              安装完成!                                     |" -ForegroundColor Green
+    Write-Host "|                      安装完成!                             |" -ForegroundColor Green
     Write-Host "+============================================================+" -ForegroundColor Green
     Write-Host ""
     Write-Host "安装目录: $(Get-Location)"
@@ -190,6 +193,10 @@ function Install-RustSrec {
         Write-Info "稍后可使用以下命令启动: docker compose up -d"
     }
 }
+
+# Use Script or Global scope for parameters to handle IEX usage better
+if ($null -eq $Global:Version) { $Global:Version = $Version }
+if ($null -eq $Global:InstallDir) { $Global:InstallDir = $InstallDir }
 
 # Run installation
 Install-RustSrec

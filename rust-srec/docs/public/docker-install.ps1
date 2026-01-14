@@ -10,17 +10,17 @@
     https://github.com/hua0512/rust-srec
 #>
 
-# Fix encoding for PowerShell 5.1
-if ($PSVersionTable.PSVersion.Major -le 5) {
-    $OutputEncoding = [System.Text.Encoding]::UTF8
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-}
-
 [CmdletBinding()]
 param(
     [string]$InstallDir = ".\rust-srec",
     [string]$Version = "latest"
 )
+
+# Fix encoding for PowerShell 5.1
+if ($PSVersionTable.PSVersion.Major -le 5) {
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+}
 
 $ErrorActionPreference = "Stop"
 $BaseUrl = "https://hua0512.github.io/rust-srec"
@@ -93,19 +93,22 @@ function Install-RustSrec {
     Write-Success "All requirements met"
 
     # Version selection
-    if ($Version -eq "latest") {
-        Write-Host ""
-        Write-Host "Select version to install:" -ForegroundColor Yellow
-        Write-Host "  1) latest  - Stable release (recommended)"
-        Write-Host "  2) dev     - Development build (bleeding edge)"
-        Write-Host ""
-        $versionChoice = Read-Host "Enter choice [1]"
-        switch ($versionChoice) {
-            "2" { $Version = "dev" }
-            "dev" { $Version = "dev" }
-            default { $Version = "latest" }
+    if ($Global:Version -eq "latest" -or $Version -eq "latest") {
+        $selectedVersion = if ($Version -ne "latest") { $Version } else { $Global:Version }
+        if ($selectedVersion -eq "latest") {
+            Write-Host ""
+            Write-Host "Select version to install:" -ForegroundColor Yellow
+            Write-Host "  1) latest  - Stable release (recommended)"
+            Write-Host "  2) dev     - Development build (bleeding edge)"
+            Write-Host ""
+            $versionChoice = Read-Host "Enter choice [1]"
+            switch ($versionChoice) {
+                "2" { $Global:Version = "dev" }
+                "dev" { $Global:Version = "dev" }
+                default { $Global:Version = "latest" }
+            }
         }
-        Write-Info "Selected version: $Version"
+        Write-Info "Selected version: $Global:Version"
     }
 
     # Create installation directory
@@ -139,9 +142,9 @@ function Install-RustSrec {
     $envContent = $envContent -replace "JWT_SECRET=.*", "JWT_SECRET=$jwtSecret"
     $envContent = $envContent -replace "SESSION_SECRET=.*", "SESSION_SECRET=$sessionSecret"
     
-    if ($Version -ne "latest") {
-        Write-Info "Setting version to: $Version"
-        $envContent = $envContent -replace "VERSION=.*", "VERSION=$Version"
+    if ($Global:Version -ne "latest") {
+        Write-Info "Setting version to: $Global:Version"
+        $envContent = $envContent -replace "VERSION=.*", "VERSION=$Global:Version"
     }
     
     Set-Content ".env" $envContent -NoNewline -Encoding UTF8
@@ -190,6 +193,10 @@ function Install-RustSrec {
         Write-Info "You can start Rust-Srec later with: docker compose up -d"
     }
 }
+
+# Use Script or Global scope for parameters to handle IEX usage better
+if ($null -eq $Global:Version) { $Global:Version = $Version }
+if ($null -eq $Global:InstallDir) { $Global:InstallDir = $InstallDir }
 
 # Run installation
 Install-RustSrec

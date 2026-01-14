@@ -90,8 +90,8 @@ download() {
 main() {
     echo ""
     echo -e "${GREEN}+============================================================+${NC}"
-    echo -e "${GREEN}|${NC}          ${BLUE}Rust-Srec 安装脚本${NC}                                ${GREEN}|${NC}"
-    echo -e "${GREEN}|${NC}          自动直播录制工具                                   ${GREEN}|${NC}"
+    echo -e "${GREEN}|${NC}                ${BLUE}Rust-Srec 安装脚本${NC}                          ${GREEN}|${NC}"
+    echo -e "${GREEN}|${NC}                自动直播录制工具                             ${GREEN}|${NC}"
     echo -e "${GREEN}+============================================================+${NC}"
     echo ""
     
@@ -165,7 +165,7 @@ main() {
     
     echo ""
     echo -e "${GREEN}+============================================================+${NC}"
-    echo -e "${GREEN}|${NC}              ${BLUE}安装完成!${NC}                                      ${GREEN}|${NC}"
+    echo -e "${GREEN}|${NC}                        ${BLUE}安装完成!${NC}                           ${GREEN}|${NC}"
     echo -e "${GREEN}+============================================================+${NC}"
     echo ""
     echo "安装目录: $(pwd)"
