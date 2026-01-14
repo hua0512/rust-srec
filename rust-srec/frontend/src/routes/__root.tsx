@@ -11,10 +11,10 @@ const TanStackRouterDevtools =
   process.env.NODE_ENV === 'production'
     ? () => null
     : lazy(() =>
-        import('@tanstack/react-router-devtools').then((res) => ({
-          default: res.TanStackRouterDevtools,
-        })),
-      );
+      import('@tanstack/react-router-devtools').then((res) => ({
+        default: res.TanStackRouterDevtools,
+      })),
+    );
 
 const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
   // Use ensureValidToken to validate the session and refresh if needed
@@ -122,12 +122,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
+    // suppressHydrationWarning is required for next-themes which adds className on client
     <html lang={serverLocale || i18n.locale} suppressHydrationWarning>
       <head>
         <link rel="icon" type="image/svg+xml" href="/stream-rec.svg"></link>
         <HeadContent />
       </head>
-      <body suppressHydrationWarning>
+      <body>
         <QueryClientProvider client={queryClient}>
           <I18nProvider i18n={i18n}>
             <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
