@@ -1941,12 +1941,15 @@ where
                 }
             }
             DanmuEvent::CollectionStopped { session_id, .. } => {
+                // Only process if we're tracking this session for session-complete coordination.
+                // If no session_complete_pipeline is configured, init_session was never called
+                // and we don't need to track danmu completion.
                 if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
                     entry.last_seen = std::time::Instant::now();
+                    self.session_complete_coordinator
+                        .on_danmu_complete(&session_id);
+                    self.try_trigger_session_complete(&session_id).await;
                 }
-                self.session_complete_coordinator
-                    .on_danmu_complete(&session_id);
-                self.try_trigger_session_complete(&session_id).await;
             }
             DanmuEvent::SegmentCompleted {
                 streamer_id,

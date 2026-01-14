@@ -4,7 +4,7 @@
 //! and state updates for streamers.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use futures::StreamExt;
@@ -40,6 +40,13 @@ const STREAM_CHECK_HARD_TIMEOUT: Duration = Duration::from_secs(300);
 /// This is a performance optimization only. If cleanup is delayed, the effect is limited
 /// to temporarily reusing the most recent result for the same streamer.
 const IN_FLIGHT_DEDUP_WINDOW: Duration = Duration::from_millis(100);
+
+/// Cleanup interval for hard_ended_sessions pruning (10 minutes).
+const HARD_ENDED_CLEANUP_INTERVAL: Duration = Duration::from_secs(600);
+
+/// Maximum age for hard_ended_sessions entries before they are pruned (1 hour).
+/// This is much longer than typical session_gap values, so stale entries don't affect correctness.
+const HARD_ENDED_MAX_AGE: Duration = Duration::from_secs(3600);
 
 /// Configuration for the stream monitor.
 #[derive(Debug, Clone)]
@@ -94,7 +101,9 @@ pub struct StreamMonitor<
     /// When present for a streamer, session resumption by `session_gap` is suppressed
     /// for that specific session ID (i.e., we always create a new session if the
     /// streamer goes live again).
-    hard_ended_sessions: DashMap<String, String>,
+    ///
+    /// Key: streamer_id, Value: (session_id, insertion_time) for time-based pruning.
+    hard_ended_sessions: Arc<DashMap<String, (String, Instant)>>,
     /// Sender for in-flight cleanup requests (single worker processes these).
     cleanup_tx: mpsc::Sender<String>,
     /// Event broadcaster for notifications.
@@ -130,6 +139,19 @@ impl<
     CR: ConfigRepository + Send + Sync + 'static,
 > StreamMonitor<SR, FR, SSR, CR>
 {
+    async fn reload_streamer_cache(&self, streamer_id: &str, context: &str) {
+        if let Err(error) = self.streamer_manager.reload_from_repo(streamer_id).await {
+            warn!(
+                "Failed to reload streamer {} after {}: {}. Cache may be stale.",
+                streamer_id, context, error
+            );
+        }
+    }
+
+    fn notify_outbox(&self) {
+        self.outbox_notify.notify_one();
+    }
+
     /// Create a new stream monitor.
     pub fn new(
         streamer_manager: Arc<StreamerManager<SR>>,
@@ -219,7 +241,7 @@ impl<
             batch_detector,
             rate_limiter,
             in_flight: in_flight.clone(),
-            hard_ended_sessions: DashMap::new(),
+            hard_ended_sessions: Arc::new(DashMap::new()),
             cleanup_tx,
             event_broadcaster: MonitorEventBroadcaster::new(),
             pool,
@@ -230,7 +252,8 @@ impl<
         };
 
         monitor.spawn_outbox_publisher(outbox_notify, cancellation.clone());
-        Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation);
+        Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation.clone());
+        Self::spawn_hard_ended_cleanup(monitor.hard_ended_sessions.clone(), cancellation);
 
         monitor
     }
@@ -248,9 +271,12 @@ impl<
     /// Mark a session as authoritatively ended (e.g., via danmu/control event).
     ///
     /// This suppresses session resumption by `session_gap` for this specific session ID.
+    /// Entries are automatically pruned after `HARD_ENDED_MAX_AGE` to prevent memory leaks.
     pub fn mark_session_hard_ended(&self, streamer_id: &str, session_id: &str) {
-        self.hard_ended_sessions
-            .insert(streamer_id.to_string(), session_id.to_string());
+        self.hard_ended_sessions.insert(
+            streamer_id.to_string(),
+            (session_id.to_string(), Instant::now()),
+        );
     }
 
     /// Stop the stream monitor's background tasks.
@@ -296,6 +322,37 @@ impl<
         });
     }
 
+    /// Spawn a periodic cleanup task for hard_ended_sessions to prevent unbounded growth.
+    fn spawn_hard_ended_cleanup(
+        hard_ended_sessions: Arc<DashMap<String, (String, Instant)>>,
+        cancellation_token: CancellationToken,
+    ) {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(HARD_ENDED_CLEANUP_INTERVAL);
+            loop {
+                tokio::select! {
+                    biased;
+
+                    _ = cancellation_token.cancelled() => {
+                        debug!("Hard-ended sessions cleanup worker shutting down");
+                        break;
+                    }
+                    _ = interval.tick() => {
+                        let before = hard_ended_sessions.len();
+                        hard_ended_sessions.retain(|_, (_, inserted_at)| {
+                            inserted_at.elapsed() < HARD_ENDED_MAX_AGE
+                        });
+                        let removed = before.saturating_sub(hard_ended_sessions.len());
+                        if removed > 0 {
+                            debug!("Pruned {} stale hard_ended_sessions entries", removed);
+                        }
+                    }
+                }
+            }
+            debug!("Hard-ended sessions cleanup worker stopped");
+        });
+    }
+
     fn spawn_outbox_publisher(
         &self,
         outbox_notify: Arc<Notify>,
@@ -323,7 +380,9 @@ impl<
                     break;
                 }
 
-                if let Err(e) = flush_outbox_once(&pool, &broadcaster).await {
+                if let Err(e) =
+                    flush_outbox_until_wait(&pool, &broadcaster, &cancellation_token).await
+                {
                     warn!("Monitor outbox flush failed: {}", e);
                 }
             }
@@ -381,14 +440,14 @@ impl<
         let credential_service = self.credential_service.clone();
         let streamer_id_owned = streamer.id.clone();
         let streamer_id = streamer.id.as_str();
-        let platform_id = streamer.platform().to_string();
+        let platform_id = streamer.platform();
 
         // get_or_try_init ensures only ONE caller executes the closure,
         // all other concurrent callers wait for the result
         let result = cell
             .get_or_try_init(|| async move {
                 // Acquire rate limit token
-                let wait_time = rate_limiter.acquire(&platform_id).await;
+                let wait_time = rate_limiter.acquire(platform_id).await;
                 if !wait_time.is_zero() {
                     debug!("Rate limited for {:?}", wait_time);
                 }
@@ -498,9 +557,8 @@ impl<
         // from leaking entries when errors occur.
         // Use the cleanup worker (DelayQueue) to avoid spawning per-entry tasks.
         // If the channel is saturated, fall back to immediate cleanup (dedup is best-effort).
-        let cleanup_id = streamer.id.clone();
-        if self.cleanup_tx.try_send(cleanup_id.clone()).is_err() {
-            self.in_flight.remove(&cleanup_id);
+        if self.cleanup_tx.try_send(streamer.id.clone()).is_err() {
+            self.in_flight.remove(&streamer.id);
         }
 
         // Now check result - cleanup is already scheduled
@@ -660,7 +718,7 @@ impl<
             streamer.name,
             title,
             streams.len(),
-            media_headers.as_ref().map(|h| h.len()).unwrap_or(0)
+            media_headers.as_ref().map_or(0, |h| h.len())
         );
 
         let now = chrono::Utc::now();
@@ -710,7 +768,7 @@ impl<
                     let suppress_resume = self
                         .hard_ended_sessions
                         .get(&streamer.id)
-                        .is_some_and(|sid| sid.value() == &session.id);
+                        .is_some_and(|entry| entry.value().0 == session.id);
                     if suppress_resume {
                         info!(
                             "Creating new session for {} (previous session {} was hard-ended)",
@@ -806,15 +864,9 @@ impl<
 
         tx.commit().await?;
 
-        // Reload metadata from DB to sync in-memory cache.
-        // Errors here are logged but not propagated since the DB transaction succeeded.
-        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
-            warn!(
-                "Failed to reload streamer {} after state update: {}. Cache may be stale.",
-                streamer.id, e
-            );
-        }
-        self.outbox_notify.notify_one();
+        self.reload_streamer_cache(&streamer.id, "state update")
+            .await;
+        self.notify_outbox();
 
         Ok(())
     }
@@ -884,14 +936,9 @@ impl<
 
             tx.commit().await?;
 
-            // Reload metadata from DB to sync in-memory cache.
-            if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
-                warn!(
-                    "Failed to reload streamer {} after offline update: {}. Cache may be stale.",
-                    streamer.id, e
-                );
-            }
-            self.outbox_notify.notify_one();
+            self.reload_streamer_cache(&streamer.id, "offline update")
+                .await;
+            self.notify_outbox();
         } else if has_errors {
             // Successful check with accumulated errors: clear them
             // This handles TemporalDisabled -> NotLive and NotLive with errors -> NotLive clean
@@ -912,13 +959,8 @@ impl<
 
             tx.commit().await?;
 
-            // Reload metadata from DB to sync in-memory cache.
-            if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
-                warn!(
-                    "Failed to reload streamer {} after clearing error state: {}. Cache may be stale.",
-                    streamer.id, e
-                );
-            }
+            self.reload_streamer_cache(&streamer.id, "clearing error state")
+                .await;
         }
 
         Ok(())
@@ -1000,15 +1042,9 @@ impl<
 
         tx.commit().await?;
 
-        // Reload metadata from DB to sync in-memory cache.
-        // Errors here are logged but not propagated since the DB transaction succeeded.
-        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
-            warn!(
-                "Failed to reload streamer {} after state update: {}. Cache may be stale.",
-                streamer.id, e
-            );
-        }
-        self.outbox_notify.notify_one();
+        self.reload_streamer_cache(&streamer.id, "state update")
+            .await;
+        self.notify_outbox();
 
         Ok(())
     }
@@ -1054,15 +1090,9 @@ impl<
 
         tx.commit().await?;
 
-        // Reload metadata from DB to sync in-memory cache.
-        // Errors here are logged but not propagated since the DB transaction succeeded.
-        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
-            warn!(
-                "Failed to reload streamer {} after state update: {}. Cache may be stale.",
-                streamer.id, e
-            );
-        }
-        self.outbox_notify.notify_one();
+        self.reload_streamer_cache(&streamer.id, "state update")
+            .await;
+        self.notify_outbox();
 
         Ok(())
     }
@@ -1114,15 +1144,9 @@ impl<
 
         tx.commit().await?;
 
-        // Reload metadata from DB to sync in-memory cache.
-        // Errors here are logged but not propagated since the DB transaction succeeded.
-        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
-            warn!(
-                "Failed to reload streamer {} after state update: {}. Cache may be stale.",
-                streamer.id, e
-            );
-        }
-        self.outbox_notify.notify_one();
+        self.reload_streamer_cache(&streamer.id, "state update")
+            .await;
+        self.notify_outbox();
 
         Ok(())
     }
@@ -1168,13 +1192,8 @@ impl<
 
         tx.commit().await?;
 
-        // Reload metadata from DB to sync in-memory cache.
-        if let Err(e) = self.streamer_manager.reload_from_repo(&streamer.id).await {
-            warn!(
-                "Failed to reload streamer {} after circuit breaker block: {}. Cache may be stale.",
-                streamer.id, e
-            );
-        }
+        self.reload_streamer_cache(&streamer.id, "circuit breaker block")
+            .await;
 
         Ok(())
     }
@@ -1182,12 +1201,43 @@ impl<
 
 const OUTBOX_NO_RECEIVER_MAX_ATTEMPTS: i64 = 5;
 const OUTBOX_NO_RECEIVER_MAX_AGE_SECS: i64 = 30;
-async fn flush_outbox_once(pool: &SqlitePool, broadcaster: &MonitorEventBroadcaster) -> Result<()> {
+
+struct FlushOutboxResult {
+    fetched: usize,
+    needs_wait: bool,
+}
+
+async fn flush_outbox_until_wait(
+    pool: &SqlitePool,
+    broadcaster: &MonitorEventBroadcaster,
+    cancellation_token: &CancellationToken,
+) -> Result<()> {
+    loop {
+        if cancellation_token.is_cancelled() {
+            return Ok(());
+        }
+
+        let result = flush_outbox_once(pool, broadcaster).await?;
+        if result.fetched == 0 || result.needs_wait {
+            return Ok(());
+        }
+    }
+}
+async fn flush_outbox_once(
+    pool: &SqlitePool,
+    broadcaster: &MonitorEventBroadcaster,
+) -> Result<FlushOutboxResult> {
     let entries = MonitorOutboxOps::fetch_undelivered(pool, 100).await?;
 
     if entries.is_empty() {
-        return Ok(());
+        return Ok(FlushOutboxResult {
+            fetched: 0,
+            needs_wait: false,
+        });
     }
+
+    let fetched = entries.len();
+    let mut needs_wait = false;
 
     for entry in entries {
         match serde_json::from_str::<MonitorEvent>(&entry.payload) {
@@ -1232,18 +1282,27 @@ async fn flush_outbox_once(pool: &SqlitePool, broadcaster: &MonitorEventBroadcas
                             );
                             MonitorOutboxOps::record_failure(pool, entry.id, "no receivers")
                                 .await?;
+                            needs_wait = true;
                         }
                     }
                 }
             }
             Err(e) => {
-                warn!("Invalid monitor outbox payload id={}: {}", entry.id, e);
-                MonitorOutboxOps::record_failure(pool, entry.id, &e.to_string()).await?;
+                // A JSON parse failure is not recoverable, and will otherwise permanently
+                // poison the outbox head-of-line (ORDER BY id). Discard it.
+                warn!(
+                    "Invalid monitor outbox payload id={}, discarding: {}",
+                    entry.id, e
+                );
+                MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
             }
         }
     }
 
-    Ok(())
+    Ok(FlushOutboxResult {
+        fetched,
+        needs_wait,
+    })
 }
 
 /// Get a summary of a live status for logging.

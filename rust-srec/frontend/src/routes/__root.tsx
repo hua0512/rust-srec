@@ -90,6 +90,8 @@ export const Route = createRootRoute({
 import { I18nProvider } from '@lingui/react';
 import { i18n, activateLocale, initializeLocale, type Locale } from '../i18n';
 import { ThemeProvider } from '../components/theme-provider';
+import { useSidebar } from '../store/sidebar';
+import { useThemeStore } from '../stores/theme-store';
 import { Toaster } from '../components/ui/sonner';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -117,15 +119,18 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // After hydration, switch to client-detected locale (which may differ if user has localStorage preference)
   useEffect(() => {
     initializeLocale();
+    useSidebar.persist.rehydrate();
+    useThemeStore.persist.rehydrate();
   }, []);
 
   return (
-    <html lang={i18n.locale} suppressHydrationWarning>
+    // suppressHydrationWarning is required for next-themes which adds className on client
+    <html lang={serverLocale || i18n.locale} suppressHydrationWarning>
       <head>
         <link rel="icon" type="image/svg+xml" href="/stream-rec.svg"></link>
         <HeadContent />
       </head>
-      <body suppressHydrationWarning>
+      <body>
         <QueryClientProvider client={queryClient}>
           <I18nProvider i18n={i18n}>
             <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">

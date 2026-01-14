@@ -13,24 +13,41 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  CARGO_INCREMENTAL: 0
 
 jobs:
   check-and-test:
     name: Check and Test
     runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v6
+      - uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          version: "v0.13.0"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci
       - name: Check
-        run: cargo check -p rust-srec
+        run: cargo check -p rust-srec --locked
       - name: Clippy
-        run: cargo clippy -p rust-srec -- -D warnings
+        run: cargo clippy -p rust-srec --locked -- -D warnings
       - name: Test
-        run: cargo test -p rust-srec
+        run: cargo nextest run -p rust-srec --locked
+      - name: Doctests
+        run: cargo test -p rust-srec --locked --doc
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats || true
 
   build:
     name: Build
@@ -69,12 +86,23 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+      - name: Enable sccache
+        if: runner.os != 'macOS' || runner.arch == 'ARM64'
+        shell: pwsh
+        run: |
+          "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - uses: mozilla-actions/sccache-action@v0.0.9
+        if: runner.os != 'macOS' || runner.arch == 'ARM64'
+        with:
+          version: "v0.13.0"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
         with:
+          shared-key: ci
           key: ${{ matrix.target }}
       - name: Install build dependencies on Linux
         if: contains(matrix.os, 'ubuntu') && !contains(matrix.target, 'musl')
@@ -88,12 +116,12 @@ jobs:
           sudo apt-get install -y musl-tools musl-dev
       - name: Build
         if: "!contains(matrix.target, 'musl')"
-        run: cargo build -p rust-srec --release --target ${{ matrix.target }}
+        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }}
       - name: Build (musl static)
         if: contains(matrix.target, 'musl')
         env:
           CC: musl-gcc
-        run: cargo build -p rust-srec --release --target ${{ matrix.target }} --features static-ssl
+        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }} --features static-ssl
       - name: Rename binary
         shell: bash
         run: cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "${{ matrix.asset_name }}"
@@ -103,6 +131,9 @@ jobs:
           name: ${{ matrix.asset_name }}
           path: ${{ matrix.asset_name }}
           if-no-files-found: error
+      - name: sccache stats
+        if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
+        run: sccache --show-stats || true
 
   docker-build:
     name: Build Docker

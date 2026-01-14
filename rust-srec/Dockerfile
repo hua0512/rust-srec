@@ -1,11 +1,18 @@
+# syntax=docker/dockerfile:1
+
+ARG RUST_VERSION=1.92.0
+
+# =============================================================================
+# Stage 0: Chef - Rust toolchain + cargo-chef (shared base)
+# =============================================================================
+FROM rust:${RUST_VERSION}-bookworm AS chef
+RUN cargo install --locked cargo-chef
+WORKDIR /app
+
 # =============================================================================
 # Stage 1: Planner - Generate recipe.json (dependency manifest)
 # =============================================================================
-FROM rust:1.92.0-bookworm AS planner
-
-RUN cargo install cargo-chef
-
-WORKDIR /app
+FROM chef AS planner
 
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
@@ -19,9 +26,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 # =============================================================================
 # Stage 2: Cacher - Build dependencies only (highly cacheable)
 # =============================================================================
-FROM rust:1.92.0-bookworm AS cacher
-
-RUN cargo install cargo-chef
+FROM chef AS cacher
 
 # Install build dependencies including protoc
 RUN apt-get update && apt-get install -y \
@@ -33,12 +38,12 @@ WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
 
 # Build only dependencies - this layer is cached if recipe.json unchanged
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json
 
 # =============================================================================
 # Stage 3: Builder - Build the actual application
 # =============================================================================
-FROM rust:1.92.0-bookworm AS builder
+FROM chef AS builder
 
 # Install build dependencies including protoc
 RUN apt-get update && apt-get install -y \
@@ -59,7 +64,7 @@ COPY mesio-cli ./mesio-cli
 COPY strev-cli ./strev-cli
 
 # Build the release binary (only compiles our code, deps are cached)
-RUN cargo build --release --bin rust-srec
+RUN cargo build --locked --release --bin rust-srec
 
 # Runtime stage
 FROM debian:bookworm-slim

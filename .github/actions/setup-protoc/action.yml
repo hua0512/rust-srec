@@ -8,8 +8,16 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Install protoc (Unix)
+    - name: Cache protoc (Unix)
       if: runner.os != 'Windows'
+      id: cache-protoc-unix
+      uses: actions/cache@v4
+      with:
+        path: ~/.protoc/${{ inputs.version }}
+        key: protoc-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Install protoc (Unix)
+      if: runner.os != 'Windows' && steps.cache-protoc-unix.outputs.cache-hit != 'true'
       shell: bash
       run: |
         case "${{ runner.os }}-${{ runner.arch }}" in
@@ -19,14 +27,37 @@ runs:
           "macOS-ARM64") ARCH="osx-aarch_64" ;;
           *) echo "Unsupported platform: ${{ runner.os }}-${{ runner.arch }}" && exit 1 ;;
         esac
-        curl -LO --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 120 "https://github.com/protocolbuffers/protobuf/releases/download/v${{ inputs.version }}/protoc-${{ inputs.version }}-${ARCH}.zip"
-        unzip protoc-${{ inputs.version }}-${ARCH}.zip -d $HOME/.local
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        INSTALL_DIR="$HOME/.protoc/${{ inputs.version }}"
+        mkdir -p "$INSTALL_DIR"
+        curl -Lo protoc.zip --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 30 --max-time 120 "https://github.com/protocolbuffers/protobuf/releases/download/v${{ inputs.version }}/protoc-${{ inputs.version }}-${ARCH}.zip"
+        unzip -q protoc.zip -d "$INSTALL_DIR"
+        rm protoc.zip
+
+    - name: Add protoc to PATH (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: echo "$HOME/.protoc/${{ inputs.version }}/bin" >> "$GITHUB_PATH"
+
+    - name: Cache protoc (Windows)
+      if: runner.os == 'Windows'
+      id: cache-protoc-windows
+      uses: actions/cache@v4
+      with:
+        path: ~/.protoc/${{ inputs.version }}
+        key: protoc-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}
 
     - name: Install protoc (Windows)
+      if: runner.os == 'Windows' && steps.cache-protoc-windows.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $installDir = Join-Path $env:USERPROFILE ".protoc\${{ inputs.version }}"
+        New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+        Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v${{ inputs.version }}/protoc-${{ inputs.version }}-win64.zip" -OutFile protoc.zip
+        Expand-Archive -Path protoc.zip -DestinationPath $installDir -Force
+        Remove-Item protoc.zip
+
+    - name: Add protoc to PATH (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        Invoke-WebRequest -Uri "https://github.com/protocolbuffers/protobuf/releases/download/v${{ inputs.version }}/protoc-${{ inputs.version }}-win64.zip" -OutFile protoc.zip
-        Expand-Archive -Path protoc.zip -DestinationPath "$env:USERPROFILE\.local"
-        "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        (Join-Path $env:USERPROFILE ".protoc\${{ inputs.version }}\bin") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append

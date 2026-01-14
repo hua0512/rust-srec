@@ -638,70 +638,6 @@ impl Douyu {
 
     // ==================== CDN URL Construction ====================
 
-    fn build_base_req_query(rid: u64, cdn: &str, rate: i64) -> HashMap<&'static str, String> {
-        let mut req_query = HashMap::new();
-        req_query.insert("cdn", cdn.to_string());
-        req_query.insert("rate", rate.to_string());
-        req_query.insert("ver", "219032101".to_string());
-        req_query.insert("iar", "0".to_string());
-        req_query.insert("ive", "0".to_string());
-        req_query.insert("rid", rid.to_string());
-        req_query.insert("hevc", "0".to_string());
-        req_query.insert("fa", "0".to_string());
-        req_query.insert("sov", "0".to_string());
-        req_query
-    }
-
-    async fn get_mobile_play_url(
-        &self,
-        req_query: &HashMap<&str, String>,
-    ) -> Result<String, ExtractorError> {
-        let api_response = self
-            .extractor
-            .client
-            .post(format!(
-                "https://{}/api/room/ratestream",
-                Self::MOBILE_DOMAIN
-            ))
-            .header(
-                reqwest::header::USER_AGENT,
-                Self::random_mobile_user_agent(),
-            )
-            .header(reqwest::header::REFERER, Self::BASE_URL)
-            .form(req_query)
-            .send()
-            .await?;
-
-        let status = api_response.status();
-        let body = api_response.text().await?;
-        debug!("Mobile ratestream response (status {}): {}", status, body);
-
-        let resp: crate::extractor::platforms::douyu::models::DouyuMobilePlayResponse =
-            serde_json::from_str(&body).map_err(|e| {
-                ExtractorError::ValidationError(format!(
-                    "Failed to parse mobile ratestream response: {} - body: {}",
-                    e,
-                    &body[..body.len().min(500)]
-                ))
-            })?;
-
-        if resp.code != 0 {
-            return Err(ExtractorError::ValidationError(format!(
-                "Failed to get mobile play info: {}",
-                resp.msg
-            )));
-        }
-
-        Ok(resp
-            .data
-            .ok_or_else(|| {
-                ExtractorError::ValidationError(
-                    "Failed to get mobile play info: no data".to_string(),
-                )
-            })?
-            .url)
-    }
-
     /// Parses a Douyu stream URL into its components
     /// Returns the Tencent app name, stream ID, and query parameters
     pub fn parse_stream_url(url: &str, rid: u64) -> Result<ParsedStreamInfo, ExtractorError> {
@@ -789,15 +725,14 @@ impl Douyu {
         }
     }
 
-    async fn build_tencent_url_with_mobile_token(
-        &self,
-        rid: u64,
-        tx_app_name: &str,
-        stream_id: &str,
-        base_query: &HashMap<String, String>,
-        req_query: &HashMap<&str, String>,
-    ) -> Result<(String, HashMap<String, String>), ExtractorError> {
-        let origin = base_query
+    /// Builds a Tencent CDN URL from the current stream info.
+    /// Mirrors the direct conversion path in the old builder.
+    fn build_tencent_url(
+        stream_info: &ParsedStreamInfo,
+        additional_params: Option<&HashMap<String, String>>,
+    ) -> Result<String, ExtractorError> {
+        let origin = stream_info
+            .query_params
             .get("origin")
             .map(|s| CdnOrigin::from_str(s))
             .unwrap_or(CdnOrigin::Unknown);
@@ -806,7 +741,10 @@ impl Douyu {
             CdnOrigin::Unknown => {
                 return Err(ExtractorError::ValidationError(format!(
                     "Unknown origin '{}' cannot be converted to Tencent CDN",
-                    base_query.get("origin").cloned().unwrap_or_default()
+                    stream_info
+                        .query_params
+                        .get("origin")
+                        .unwrap_or(&"".to_string())
                 )));
             }
             CdnOrigin::Douyu => {
@@ -815,52 +753,30 @@ impl Douyu {
             _ => {}
         }
 
-        let mobile_url = self.get_mobile_play_url(req_query).await?;
-        let mobile_info = Self::parse_stream_url(&mobile_url, rid)?;
-        let mut mobile_query = mobile_info.query_params;
-        mobile_query.remove("vhost");
-
-        let mut query = base_query.clone();
+        let tx_host = "tc-tct.douyucdn2.cn";
+        let mut query = stream_info.query_params.clone();
         query.insert("fcdn".to_string(), "tct".to_string());
-        for (k, v) in mobile_query {
-            query.insert(k, v);
+
+        if let Some(params) = additional_params {
+            for (k, v) in params {
+                query.insert(k.clone(), v.clone());
+            }
         }
 
-        let query_string = Self::encode_query_params(&query);
-        let tx_url = format!(
-            "https://tc-tct.douyucdn2.cn/{}/{}.flv?{}",
-            tx_app_name, stream_id, query_string
-        );
+        query.remove("vhost");
 
-        Ok((tx_url, query))
+        let query_string = Self::encode_query_params(&query);
+        Ok(format!(
+            "https://{}/{}/{}.flv?{}",
+            tx_host, stream_info.tx_app_name, stream_info.stream_id, query_string
+        ))
     }
 
-    async fn build_hs_url(
-        &self,
-        stream_url: &str,
-        rid: u64,
-        req_query: &HashMap<&str, String>,
-        is_tct: bool,
+    /// Builds a Huoshan/Volcano (hs-h5) URL from a Tencent URL.
+    fn build_huoshan_url(
+        stream_info: &ParsedStreamInfo,
+        tencent_url: &str,
     ) -> Result<(String, String), ExtractorError> {
-        let stream_info = Self::parse_stream_url(stream_url, rid)?;
-
-        let mut query = stream_info.query_params.clone();
-        let tencent_url = if is_tct {
-            stream_url.to_string()
-        } else {
-            let (tx_url, updated_query) = self
-                .build_tencent_url_with_mobile_token(
-                    rid,
-                    &stream_info.tx_app_name,
-                    &stream_info.stream_id,
-                    &query,
-                    req_query,
-                )
-                .await?;
-            query = updated_query;
-            tx_url
-        };
-
         let tx_host = tencent_url
             .split("//")
             .nth(1)
@@ -873,7 +789,8 @@ impl Douyu {
         )
         .replace("huos1.", "huosa.");
 
-        let encoded_url = urlencoding::encode(&tencent_url).to_string();
+        let mut query = stream_info.query_params.clone();
+        let encoded_url = urlencoding::encode(tencent_url).to_string();
         query.insert("fp_user_url".to_string(), encoded_url);
         query.insert("vhost".to_string(), tx_host.to_string());
         query.insert("domain".to_string(), tx_host.to_string());
@@ -1112,9 +1029,10 @@ impl Douyu {
         // Prepare the list of CDNs to process
         let mut cdns_to_process = data.cdns.clone();
 
-        // Align with Python: only offer hs-h5 by default when user explicitly selects it.
+        // Always offer hs-h5 (Huoshan) as an option, even if it's not returned by the API.
+        // It can be resolved later in `get_url` by constructing the URL manually.
         let want_hs = self.cdn == "hs-h5";
-        if want_hs && !cdns_to_process.iter().any(|c| c.cdn == "hs-h5") {
+        if !cdns_to_process.iter().any(|c| c.cdn == "hs-h5") {
             // Create a synthetic hs-h5 entry (resolved in get_url).
             let is_h265 = cdns_to_process
                 .iter()
@@ -1285,7 +1203,7 @@ impl PlatformExtractor for Douyu {
             .ok_or_else(|| ExtractorError::ValidationError("Missing rate in extras".to_string()))?;
 
         debug!("Resolving Douyu stream URL for rid: {}", rid);
-        let (resp, actual_cdn) = self
+        let (resp, _actual_cdn) = self
             .get_play_info_fallback_with_scdn_avoidance(rid, cdn, rate, None)
             .await?;
 
@@ -1294,13 +1212,25 @@ impl PlatformExtractor for Douyu {
         if cdn == "hs-h5" {
             let need_build = self.force_hs || resp.rtmp_cdn != "hs-h5";
             if need_build {
-                let req_query = Self::build_base_req_query(rid, &actual_cdn, rate);
-                let is_tct = resp.rtmp_cdn == "tct-h5";
+                let stream_info_parsed = match Self::parse_stream_url(&base_stream_url, rid) {
+                    Ok(info) => info,
+                    Err(e) => {
+                        debug!("Failed to parse stream URL: {} (fallback to base)", e);
+                        stream_info.url = base_stream_url;
+                        return Ok(());
+                    }
+                };
 
-                match self
-                    .build_hs_url(&base_stream_url, rid, &req_query, is_tct)
-                    .await
-                {
+                let tencent_url = match Self::build_tencent_url(&stream_info_parsed, None) {
+                    Ok(url) => url,
+                    Err(e) => {
+                        debug!("Failed to build Tencent URL: {} (fallback to base)", e);
+                        stream_info.url = base_stream_url;
+                        return Ok(());
+                    }
+                };
+
+                match Self::build_huoshan_url(&stream_info_parsed, &tencent_url) {
                     Ok((host, url)) => {
                         stream_info.url = url;
 

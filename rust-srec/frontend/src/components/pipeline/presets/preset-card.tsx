@@ -121,7 +121,7 @@ export function PresetCard({
       typeof preset.config === 'string'
         ? JSON.parse(preset.config)
         : preset.config;
-  } catch { }
+  } catch {}
 
   const description = DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id]
     ? i18n._(DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id])

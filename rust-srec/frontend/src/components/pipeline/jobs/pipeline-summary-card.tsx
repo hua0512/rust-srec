@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Link } from '@tanstack/react-router';
 import {
@@ -80,6 +80,11 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
   onViewDetails,
 }: PipelineSummaryCardProps) {
   const { i18n } = useLingui();
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const statusKey = pipeline.status;
   const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG.MIXED;
   const StatusIcon = statusConfig.icon;
@@ -248,7 +253,9 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
       <CardContent className="relative pb-4 flex-1 z-10">
         <p className="text-[10px] sm:text-xs text-muted-foreground/80 mb-3 sm:mb-4 leading-relaxed font-light truncate">
           <Trans>Started</Trans>{' '}
-          {formatRelativeTime(new Date(pipeline.created_at), i18n.locale)}
+          {mounted
+            ? formatRelativeTime(new Date(pipeline.created_at), i18n.locale)
+            : '-'}
           {pipeline.session_id && (
             <Trans> - Session: {pipeline.session_id.substring(0, 8)}</Trans>
           )}
