@@ -1,3 +1,7 @@
+<script setup>
+import { withBase } from 'vitepress'
+</script>
+
 # 配置
 
 rust-srec 使用 **4 层配置层级** 实现灵活控制。详见 [配置层级](../concepts/configuration.md)。
@@ -68,7 +72,7 @@ Rust-Srec 拥有强大的模块化流水线系统，可以在不同阶段添加�
 
 ## 环境变量
 
-你可以在 [`.env`](/.env.zh.example) 文件中配置以下环境变量。
+你可以在 <a :href="withBase('/env.zh.example')" download=".env.example">.env</a> 文件中配置以下环境变量。
 
 ### 通用
 | 变量 | 说明 | 默认值 |

@@ -1,3 +1,7 @@
+<script setup>
+import { withBase } from 'vitepress'
+</script>
+
 # Configuration
 
 Rust-Srec uses a **4-layer configuration hierarchy** for flexible control. See [Configuration Layers](../concepts/configuration.md) for detailed architecture.
@@ -68,7 +72,7 @@ Set `output_folder` to `{streamer}/%Y-%m-%d` to organize recordings by streamer 
 
 ## Environment Variables
 
-The following environment variables can be configured in your [`.env`](/.env.example) file.
+The following environment variables can be configured in your <a :href="withBase('/env.example')" download=".env.example">.env</a> file.
 
 ### General
 | Variable | Description | Default |
