@@ -1,4 +1,5 @@
-﻿[CmdletBinding()]
+# Rust-Srec Installation Script
+[CmdletBinding()]
 param(
     [string]$InstallDir = ".\rust-srec",
     [string]$Version = "latest"
