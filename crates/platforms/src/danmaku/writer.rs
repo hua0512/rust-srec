@@ -164,9 +164,9 @@ impl XmlDanmuWriter {
             // Row ID is the message count + 1
             let row_id = self.message_count + 1;
 
-            // Format: <d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id},user={username}">{content}</d>
+            // Format: <d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id}" user="{username}">{content}</d>
             let xml = format!(
-                "  <d p=\"{:.3},{},{},{},{},{},{},{} user={}\">{}</d>\n",
+                "  <d p=\"{:.3},{},{},{},{},{},{},{}\" user=\"{}\">{}</d>\n",
                 offset_secs,
                 danmu_type,
                 DEFAULT_FONT_SIZE,
