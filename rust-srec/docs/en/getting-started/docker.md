@@ -13,6 +13,28 @@ Docker is the easiest and recommended way to deploy Rust-Srec.
 
 ## Quick Start
 
+### One-Line Install (Linux/macOS)
+
+Run this command to automatically set up Rust-Srec:
+
+```bash
+curl -fsSL https://hua0512.github.io/rust-srec/docker-install.sh | bash
+```
+
+### One-Line Install (Windows PowerShell)
+
+```powershell
+irm https://hua0512.github.io/rust-srec/docker-install.ps1 | iex
+```
+
+The scripts will:
+- Create the directory structure
+- Download configuration files
+- Generate secure secrets automatically
+- Optionally start the application
+
+### Manual Setup
+
 1. Create a project directory:
    ```bash
    mkdir rust-srec && cd rust-srec

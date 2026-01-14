@@ -13,6 +13,28 @@ Docker 是运行 Rust-Srec 最简单且推荐的方式。
 
 ## 快速开始
 
+### 一键安装 (Linux/macOS)
+
+运行以下命令自动安装配置 Rust-Srec：
+
+```bash
+curl -fsSL https://hua0512.github.io/rust-srec/docker-install-zh.sh | bash
+```
+
+### 一键安装 (Windows PowerShell)
+
+```powershell
+irm https://hua0512.github.io/rust-srec/docker-install-zh.ps1 | iex
+```
+
+脚本会自动完成：
+- 创建目录结构
+- 下载配置文件
+- 生成安全密钥
+- 可选择立即启动应用
+
+### 手动安装
+
 1. 创建项目目录：
    ```bash
    mkdir rust-srec && cd rust-srec
