@@ -12,8 +12,8 @@ export default withMermaid(
             /^\/api\/docs/,
             /^http:\/\/localhost/,
             '/docker-compose.example.yml',
-            '/.env.example',
-            '/.env.zh.example',
+            '/env.example',
+            '/env.zh.example',
         ],
 
         locales: {

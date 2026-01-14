@@ -21,7 +21,7 @@ Docker is the easiest and recommended way to deploy Rust-Srec.
 
 2. Download the example configuration files:
    - <a :href="withBase('/docker-compose.example.yml')" download>docker-compose.example.yml</a>
-   - <a :href="withBase('/.env.example')" download>.env.example</a>
+   - <a :href="withBase('/env.example')" download=".env.example">.env.example</a>
 
 3. Rename the files:
    ```bash
@@ -53,7 +53,7 @@ Ensure your `DATA_DIR` and `OUTPUT_DIR` are on a drive with sufficient space. St
 
 ## Configuration
 
-The <a :href="withBase('/.env.example')" download>.env</a> file contains all the necessary environment variables.
+The <a :href="withBase('/env.example')" download=".env.example">.env</a> file contains all the necessary environment variables.
 
 | Variable | Description |
 |----------|-------------|

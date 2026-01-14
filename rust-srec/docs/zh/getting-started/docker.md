@@ -21,7 +21,7 @@ Docker 是运行 Rust-Srec 最简单且推荐的方式。
 
 2. 下载示例配置文件：
    - <a :href="withBase('/docker-compose.example.yml')" download>docker-compose.example.yml</a>
-   - <a :href="withBase('/.env.example')" download>.env.example</a> (英文) 或 <a :href="withBase('/.env.zh.example')" download>.env.zh.example</a> (中文)
+   - <a :href="withBase('/env.example')" download=".env.example">.env.example</a> (英文) 或 <a :href="withBase('/env.zh.example')" download=".env.example">.env.zh.example</a> (中文)
 
 3. 重命名文件：
    ```bash
@@ -53,7 +53,7 @@ Docker 是运行 Rust-Srec 最简单且推荐的方式。
 
 ## 配置说明
 
-<a :href="withBase('/.env.example')" download>.env</a> 文件包含了所有必要的环境变量。
+<a :href="withBase('/env.example')" download=".env.example">.env</a> 文件包含了所有必要的环境变量。
 
 | 变量 | 说明 |
 |------|------|
