@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Rust-Srec Installation Script for Windows
@@ -9,6 +9,12 @@
 .LINK
     https://github.com/hua0512/rust-srec
 #>
+
+# Fix encoding for PowerShell 5.1
+if ($PSVersionTable.PSVersion.Major -le 5) {
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+}
 
 [CmdletBinding()]
 param(

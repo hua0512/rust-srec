@@ -166,9 +166,9 @@ main() {
     fi
     
     echo ""
-    echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║${NC}              ${BLUE}Installation Complete!${NC}                       ${GREEN}║${NC}"
-    echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}+============================================================+${NC}"
+    echo -e "${GREEN}|${NC}              ${BLUE}Installation Complete!${NC}                       ${GREEN}|${NC}"
+    echo -e "${GREEN}+============================================================+${NC}"
     echo ""
     echo "Installation directory: $(pwd)"
     echo ""
@@ -187,7 +187,7 @@ main() {
     echo "     Username: ${GREEN}admin${NC}"
     echo "     Password: ${GREEN}admin123!${NC}"
     echo ""
-    echo -e "${YELLOW}⚠ Important:${NC} Change the default password after first login!"
+    echo -e "${YELLOW}[!] Important:${NC} Change the default password after first login!"
     echo ""
     
     # Ask if user wants to start now
