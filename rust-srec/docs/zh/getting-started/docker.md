@@ -16,8 +16,8 @@ Docker 是运行 Rust-Srec 最简单且推荐的方式。
    ```
 
 2. 下载示例配置文件：
-   - <a href="/rust-srec/docker-compose.example.yml" download>docker-compose.example.yml</a>
-   - <a href="/rust-srec/.env.example" download>.env.example</a> (英文) 或 <a href="/rust-srec/.env.zh.example" download>.env.zh.example</a> (中文)
+   - <a href="/docker-compose.example.yml" download>docker-compose.example.yml</a>
+   - <a href="/.env.example" download>.env.example</a> (英文) 或 <a href="/.env.zh.example" download>.env.zh.example</a> (中文)
 
 3. 重命名文件：
    ```bash
@@ -49,7 +49,7 @@ Docker 是运行 Rust-Srec 最简单且推荐的方式。
 
 ## 配置说明
 
-<a href="/rust-srec/.env.example" download>.env</a> 文件包含了所有必要的环境变量。
+<a href="/.env.example" download>.env</a> 文件包含了所有必要的环境变量。
 
 | 变量 | 说明 |
 |------|------|
@@ -62,7 +62,7 @@ Docker 是运行 Rust-Srec 最简单且推荐的方式。
 
 ### docker-compose.yml
 
-我们的标准示例 <a href="/rust-srec/docker-compose.example.yml" download>docker-compose.example.yml</a> 包含了：
+我们的标准示例 <a href="/docker-compose.example.yml" download>docker-compose.example.yml</a> 包含了：
 - **自动重启**：`unless-stopped`
 - **健康检查**：确保前端在后端就绪后才启动
 - **资源限制**：可配置的 CPU 和内存限制
