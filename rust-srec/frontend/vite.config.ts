@@ -39,34 +39,14 @@ export default defineConfig(() => ({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: (id) => {
-          if (id.includes('node_modules')) {
-            if (id.includes('artplayer')) return 'vendor-player-art';
-            if (id.includes('hls.js')) return 'vendor-player-hls';
-            if (id.includes('mpegts.js')) return 'vendor-player-mpegts';
-
-            // UI Libraries
-            if (
-              id.includes('@radix-ui') ||
-              id.includes('lucide-react') ||
-              id.includes('motion') ||
-              id.includes('sonner')
-            ) {
-              return 'vendor-ui';
-            }
-
-            // Utils
-            if (
-              id.includes('date-fns') ||
-              id.includes('zod') ||
-              id.includes('react-hook-form') ||
-              id.includes('ky')
-            ) {
-              return 'vendor-utils';
-            }
-
-            // We avoid bundling react/tanstack explicitly here to let Vite handle common chunking
-          }
+        advancedChunks: {
+          groups: [
+            { name: 'vendor-player-art', test: /artplayer/ },
+            { name: 'vendor-player-hls', test: /hls\.js/ },
+            { name: 'vendor-player-mpegts', test: /mpegts\.js/ },
+            { name: 'vendor-ui', test: /@radix-ui|lucide-react|motion|sonner/ },
+            { name: 'vendor-utils', test: /date-fns|zod|react-hook-form|ky/ },
+          ],
         },
       },
     },
