@@ -33,7 +33,7 @@ irm https://docs.srec.rs/install.ps1 | iex
 - 可选择立即启动应用
 
 ::: tip 自定义安装
-你可以通过环境变量自定义安装：
+脚本会自动检测系统语言并选择中文版或英文版。你也可以通过环境变量自定义安装：
 
 **Linux/macOS:**
 ```bash
@@ -43,12 +43,13 @@ RUST_SREC_DIR=/opt/rust-srec VERSION=dev curl -fsSL https://docs.srec.rs/docker-
 
 **Windows PowerShell:**
 ```powershell
-# 安装开发版到自定义目录
-$env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"; irm https://docs.srec.rs/install.ps1 | iex
+# 安装开发版到自定义目录 (强制使用中文版)
+$env:SREC_LANG = "zh"; $env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"; irm https://docs.srec.rs/install.ps1 | iex
 ```
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
+| `SREC_LANG` | 语言选择 (`zh` 或 `en`) | 自动检测 |
 | `RUST_SREC_DIR` | 安装目录 | `./rust-srec` |
 | `VERSION` | Docker 镜像标签 (`latest` 或 `dev`) | `latest` |
 :::

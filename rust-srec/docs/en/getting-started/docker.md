@@ -33,7 +33,7 @@ The scripts will:
 - Optionally start the application
 
 ::: tip Customizing Installation
-You can customize the installation using environment variables:
+The script auto-detects your system language. You can also customize the installation using environment variables:
 
 **Linux/macOS:**
 ```bash
@@ -48,7 +48,8 @@ $env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"; irm https://docs.srec
 ```
 
 | Variable | Description | Default |
-|----------|-------------|--------|
+|----------|-------------|---------|
+| `SREC_LANG` | Language (`zh` or `en`) | Auto-detect |
 | `RUST_SREC_DIR` | Installation directory | `./rust-srec` |
 | `VERSION` | Docker image tag (`latest` or `dev`) | `latest` |
 :::
