@@ -24,7 +24,7 @@ curl -fsSL https://docs.srec.rs/docker-install-zh.sh | bash
 ### 一键安装 (Windows PowerShell)
 
 ```powershell
-iwr -useb https://docs.srec.rs/docker-install-zh.ps1 | iex
+irm https://docs.srec.rs/install.ps1 | iex
 ```
 
 脚本会自动完成：
@@ -44,7 +44,7 @@ RUST_SREC_DIR=/opt/rust-srec VERSION=dev curl -fsSL https://docs.srec.rs/docker-
 **Windows PowerShell:**
 ```powershell
 # 安装开发版到自定义目录
-$env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"; iwr -useb https://docs.srec.rs/docker-install-zh.ps1 | iex
+$env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"; irm https://docs.srec.rs/install.ps1 | iex
 ```
 
 | 变量 | 说明 | 默认值 |

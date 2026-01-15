@@ -24,7 +24,7 @@ curl -fsSL https://docs.srec.rs/docker-install.sh | bash
 ### One-Line Install (Windows PowerShell)
 
 ```powershell
-iwr -useb https://docs.srec.rs/docker-install.ps1 | iex
+irm https://docs.srec.rs/install.ps1 | iex
 ```
 
 The scripts will:
@@ -44,7 +44,7 @@ RUST_SREC_DIR=/opt/rust-srec VERSION=dev curl -fsSL https://docs.srec.rs/docker-
 **Windows PowerShell:**
 ```powershell
 # Install dev version to custom directory
-$env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"; iwr -useb https://docs.srec.rs/docker-install.ps1 | iex
+$env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"; irm https://docs.srec.rs/install.ps1 | iex
 ```
 
 | Variable | Description | Default |

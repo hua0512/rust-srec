@@ -2,12 +2,11 @@
 # Rust-Srec Installation Script for Windows
 # https://github.com/hua0512/rust-srec
 #
-# Usage:
-#   iwr -useb https://docs.srec.rs/docker-install.ps1 | iex
-#   irm https://docs.srec.rs/docker-install.ps1 | iex
+# Usage (via bootstrap loader):
+#   irm https://docs.srec.rs/install.ps1 | iex
 #
 # With parameters:
-#   $env:RUST_SREC_DIR = "C:\my-path"; $env:VERSION = "dev"; iwr -useb https://docs.srec.rs/docker-install.ps1 | iex
+#   $env:RUST_SREC_DIR = "C:\my-path"; $env:VERSION = "dev"; irm https://docs.srec.rs/install.ps1 | iex
 #
 
 #Requires -Version 5.1

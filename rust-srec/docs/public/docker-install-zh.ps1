@@ -2,12 +2,11 @@
 # Rust-Srec 安装脚本 (中文版)
 # https://github.com/hua0512/rust-srec
 #
-# 使用方法:
-#   iwr -useb https://docs.srec.rs/docker-install-zh.ps1 | iex
-#   irm https://docs.srec.rs/docker-install-zh.ps1 | iex
+# 使用方法 (通过引导加载器):
+#   irm https://docs.srec.rs/install.ps1 | iex
 #
 # 使用参数:
-#   $env:RUST_SREC_DIR = "C:\my-path"; $env:VERSION = "dev"; iwr -useb https://docs.srec.rs/docker-install-zh.ps1 | iex
+#   $env:RUST_SREC_DIR = "C:\my-path"; $env:VERSION = "dev"; irm https://docs.srec.rs/install.ps1 | iex
 #
 
 #Requires -Version 5.1
