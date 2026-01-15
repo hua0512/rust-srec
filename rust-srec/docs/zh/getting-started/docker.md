@@ -28,7 +28,6 @@ irm https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docs/publ
 ```
 
 脚本会自动完成：
-- 创建目录结构
 - 下载配置文件
 - 生成安全密钥
 - 可选择立即启动应用
@@ -38,7 +37,6 @@ irm https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docs/publ
 1. 创建项目目录：
    ```bash
    mkdir rust-srec && cd rust-srec
-   mkdir -p data config output logs
    ```
 
 2. 下载示例配置文件：

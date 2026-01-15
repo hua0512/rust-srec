@@ -117,13 +117,6 @@ function Install-RustSrec {
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     Set-Location $InstallDir
 
-    # Create subdirectories
-    Write-Info "创建数据目录..."
-    @("data", "config", "output", "logs") | ForEach-Object {
-        New-Item -ItemType Directory -Path $_ -Force | Out-Null
-    }
-    Write-Success "目录创建完成"
-
     # Download configuration files
     Write-Info "下载 docker-compose.yml..."
     Invoke-WebRequest -Uri "$BaseUrl/docker-compose.example.yml" -OutFile "docker-compose.yml" -UseBasicParsing
@@ -139,7 +132,7 @@ function Install-RustSrec {
     $sessionSecret = New-SecureSecret -Length 32
 
     # Update .env with generated secrets
-    $envContent = Get-Content ".env" -Raw
+    $envContent = Get-Content ".env" -Raw -Encoding UTF8
     $envContent = $envContent -replace "JWT_SECRET=.*", "JWT_SECRET=$jwtSecret"
     $envContent = $envContent -replace "SESSION_SECRET=.*", "SESSION_SECRET=$sessionSecret"
     

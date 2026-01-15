@@ -124,11 +124,6 @@ main() {
     mkdir -p "$INSTALL_DIR"
     cd "$INSTALL_DIR"
     
-    # Create subdirectories
-    info "创建数据目录..."
-    mkdir -p data config output logs
-    success "目录创建完成"
-    
     # Download configuration files
     info "下载 docker-compose.yml..."
     download "$BASE_URL/docker-compose.example.yml" "docker-compose.yml"

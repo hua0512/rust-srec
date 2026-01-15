@@ -125,11 +125,6 @@ main() {
     mkdir -p "$INSTALL_DIR"
     cd "$INSTALL_DIR"
     
-    # Create subdirectories
-    info "Creating data directories..."
-    mkdir -p data config output logs
-    success "Directories created"
-    
     # Download configuration files
     info "Downloading docker-compose.yml..."
     download "$BASE_URL/docker-compose.example.yml" "docker-compose.yml"

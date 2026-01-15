@@ -28,7 +28,6 @@ irm https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docs/publ
 ```
 
 The scripts will:
-- Create the directory structure
 - Download configuration files
 - Generate secure secrets automatically
 - Optionally start the application
@@ -38,7 +37,6 @@ The scripts will:
 1. Create a project directory:
    ```bash
    mkdir rust-srec && cd rust-srec
-   mkdir -p data config output logs
    ```
 
 2. Download the example configuration files:
