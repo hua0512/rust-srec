@@ -1,4 +1,4 @@
-﻿# Rust-Srec Installation Script
+# Rust-Srec Installation Script
 [CmdletBinding()]
 param(
     [string]$InstallDir = ".\rust-srec",
@@ -12,7 +12,7 @@ param(
 .DESCRIPTION
     自动配置 Rust-Srec Docker 部署
 .EXAMPLE
-    irm https://hua0512.github.io/rust-srec/docker-install-zh.ps1 | iex
+    irm https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docs/public/docker-install-zh.ps1 | iex
 .LINK
     https://github.com/hua0512/rust-srec
 #>

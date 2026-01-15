@@ -24,7 +24,7 @@ curl -fsSL https://hua0512.github.io/rust-srec/docker-install.sh | bash
 ### One-Line Install (Windows PowerShell)
 
 ```powershell
-irm https://hua0512.github.io/rust-srec/docker-install.ps1 | iex
+irm https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docs/public/docker-install.ps1 | iex
 ```
 
 The scripts will:

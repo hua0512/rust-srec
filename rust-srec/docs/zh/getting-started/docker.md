@@ -24,7 +24,7 @@ curl -fsSL https://hua0512.github.io/rust-srec/docker-install-zh.sh | bash
 ### 一键安装 (Windows PowerShell)
 
 ```powershell
-irm https://hua0512.github.io/rust-srec/docker-install-zh.ps1 | iex
+irm https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docs/public/docker-install-zh.ps1 | iex
 ```
 
 脚本会自动完成：

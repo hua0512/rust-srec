@@ -12,7 +12,7 @@ param(
 .DESCRIPTION
     Automatically sets up Rust-Srec Docker deployment
 .EXAMPLE
-    irm https://hua0512.github.io/rust-srec/docker-install.ps1 | iex
+    irm https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docs/public/docker-install.ps1 | iex
 .LINK
     https://github.com/hua0512/rust-srec
 #>
