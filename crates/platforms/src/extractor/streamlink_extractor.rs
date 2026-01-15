@@ -194,78 +194,88 @@ impl PlatformExtractor for StreamlinkExtractor {
 
         let plugin = json.plugin.unwrap_or_else(|| "unknown".to_string());
         let metadata = json.metadata.unwrap_or_default();
-        let streams = json
-            .streams
-            .ok_or_else(|| ExtractorError::NoStreamsFound)?
-            .into_iter()
-            .filter_map(|(name, s)| s.url.clone().map(|url| (name, url, s)))
-            .collect::<Vec<_>>();
+        let streams = json.streams.ok_or_else(|| ExtractorError::NoStreamsFound)?;
 
-        if streams.is_empty() {
-            return Err(ExtractorError::NoStreamsFound);
-        }
-
-        let media_headers = streams
-            .iter()
-            .find(|(name, _, _)| name == "best")
-            .or_else(|| streams.first())
-            .and_then(|(_, _, s)| s.headers.clone())
-            .map(|h| h.into_iter().collect::<FxHashMap<String, String>>());
+        let title = metadata.title.unwrap_or_default();
+        let artist = metadata.author.unwrap_or_default();
+        let category = metadata.category;
 
         let mut media_extras = FxHashMap::default();
         media_extras.insert("streamlink_plugin".to_string(), plugin);
         if let Some(id) = metadata.id {
             media_extras.insert("id".to_string(), id);
         }
-        if let Some(category) = metadata.category {
-            media_extras.insert("category".to_string(), category);
+        if let Some(category) = category.as_ref() {
+            media_extras.insert("category".to_string(), category.clone());
         }
 
+        let mut best_headers: Option<HashMap<String, String>> = None;
+        let mut first_headers: Option<HashMap<String, String>> = None;
+
         let mut stream_infos = Vec::with_capacity(streams.len());
-        for (idx, (name, url, s)) in streams.into_iter().enumerate() {
-            let stream_format = infer_stream_format(s.stream_type.as_deref(), &url);
+        let mut idx = 0usize;
+        for (name, s) in streams.into_iter() {
+            let StreamlinkStream {
+                stream_type,
+                url,
+                headers,
+                master,
+            } = s;
+            let Some(url) = url else { continue };
+
+            if name == "best" && best_headers.is_none() {
+                best_headers = headers;
+            } else if first_headers.is_none() {
+                first_headers = headers;
+            }
+
+            let stream_format = infer_stream_format(stream_type.as_deref(), &url);
             let media_format = infer_media_format(stream_format, &url);
             let priority = match name.as_str() {
                 "best" => 0,
                 "worst" => 1000,
                 _ => 10 + idx as u32,
             };
+            idx += 1;
 
-            stream_infos.push(StreamInfo {
-                url,
-                stream_format,
-                media_format,
-                quality: name,
-                bitrate: 0,
-                priority,
-                extras: Some(
-                    serde_json::json!({
-                        "streamlink_type": s.stream_type.unwrap_or_default(),
-                        "master": s.master,
-                    })
-                    .as_object()
-                    .cloned()
-                    .map(serde_json::Value::Object)
-                    .unwrap_or(serde_json::Value::Null),
-                )
-                .filter(|v| !v.is_null()),
-                codec: String::new(),
-                fps: 0.0,
-                is_headers_needed: false,
-            });
+            stream_infos.push(
+                StreamInfo::builder(url, stream_format, media_format)
+                    .quality(name)
+                    .priority(priority)
+                    .extras_opt(
+                        Some(
+                            serde_json::json!({
+                                "streamlink_type": stream_type.unwrap_or_default(),
+                                "master": master,
+                            })
+                            .as_object()
+                            .cloned()
+                            .map(serde_json::Value::Object)
+                            .unwrap_or(serde_json::Value::Null),
+                        )
+                        .filter(|v| !v.is_null()),
+                    )
+                    .build(),
+            );
         }
 
-        Ok(MediaInfo {
-            site_url: self.extractor.url.clone(),
-            title: metadata.title.unwrap_or_default(),
-            artist: metadata.author.unwrap_or_default(),
-            cover_url: None,
-            artist_url: None,
-            is_live: true,
-            streams: stream_infos,
-            headers: media_headers,
-            extras: Some(media_extras).filter(|m| !m.is_empty()),
-        })
+        if stream_infos.is_empty() {
+            return Err(ExtractorError::NoStreamsFound);
+        }
+
+        let media_headers = best_headers
+            .or(first_headers)
+            .map(|h| h.into_iter().collect::<FxHashMap<String, String>>());
+
+        Ok(
+            MediaInfo::builder(self.extractor.url.clone(), title, artist)
+                .category_one_opt(category)
+                .is_live(true)
+                .streams(stream_infos)
+                .headers_opt(media_headers)
+                .extras_opt(Some(media_extras).filter(|m| !m.is_empty()))
+                .build(),
+        )
     }
 
     async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {

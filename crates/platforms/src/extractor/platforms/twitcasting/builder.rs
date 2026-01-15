@@ -116,17 +116,9 @@ impl Twitcasting {
 
     /// Create MediaInfo for non-live stream
     fn create_offline_media_info(&self, rid: &str) -> MediaInfo {
-        MediaInfo {
-            site_url: self.extractor.url.clone(),
-            title: String::new(),
-            artist: rid.to_string(),
-            cover_url: None,
-            artist_url: None,
-            is_live: false,
-            streams: vec![],
-            headers: None,
-            extras: None,
-        }
+        MediaInfo::builder(self.extractor.url.clone(), "", rid.to_string())
+            .is_live(false)
+            .build()
     }
 
     /// Extract all available HLS streams
@@ -176,17 +168,13 @@ impl Twitcasting {
 
         // TODO: Support wss streams (fmp4) - could be added here in the future
 
-        Ok(MediaInfo {
-            site_url: self.extractor.url.clone(),
-            title: String::new(),
-            artist: rid.to_string(),
-            cover_url: None,
-            artist_url: None,
-            is_live: true,
-            streams: streams_info,
-            headers: Some(self.extractor.get_platform_headers_map()),
-            extras: None,
-        })
+        Ok(
+            MediaInfo::builder(self.extractor.url.clone(), "", rid.to_string())
+                .is_live(true)
+                .streams(streams_info)
+                .headers(self.extractor.get_platform_headers_map())
+                .build(),
+        )
     }
 }
 

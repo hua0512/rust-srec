@@ -10,6 +10,7 @@ use flate2::read::ZlibDecoder;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -20,8 +21,10 @@ use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
 use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::{DEFAULT_UA, default_client};
+use chrono::{TimeZone, Utc};
 
 use super::URL_REGEX;
+use super::cookie_utils::{extract_cookie_value, strip_refresh_token};
 use super::utils::generate_fake_buvid3;
 use super::wbi::{encode_wbi, get_wbi_keys};
 
@@ -97,6 +100,8 @@ pub struct BilibiliDanmuProtocol {
     client: Client,
     /// Optional cookies for authenticated sessions
     cookies: Option<String>,
+    uid: Option<u64>,
+    connection_cookies: Option<String>,
 }
 
 impl BilibiliDanmuProtocol {
@@ -110,7 +115,53 @@ impl BilibiliDanmuProtocol {
         Self {
             client: default_client(),
             cookies: Some(cookies.into()),
+            uid: None,
+            connection_cookies: None,
         }
+    }
+
+    fn build_cookie_header(user_cookies: Option<&str>, fallback_buvid3: &str) -> String {
+        let mut buvid3_value: Option<String> = None;
+        let mut other_parts: Vec<String> = Vec::new();
+
+        if let Some(user_cookies) = user_cookies {
+            for part in user_cookies.split(';') {
+                let part = part.trim();
+                if part.is_empty() {
+                    continue;
+                }
+
+                let mut kv = part.splitn(2, '=');
+                let name = kv.next().unwrap_or("").trim();
+                let value = kv.next().map(str::trim);
+
+                if name.eq_ignore_ascii_case("buvid3") {
+                    if buvid3_value.is_none() && matches!(value, Some(v) if !v.is_empty()) {
+                        buvid3_value = value.map(ToString::to_string);
+                    }
+                    continue;
+                }
+
+                other_parts.push(part.to_string());
+            }
+        }
+
+        let buvid3_value = buvid3_value.unwrap_or_else(|| fallback_buvid3.to_string());
+
+        if other_parts.is_empty() {
+            format!("buvid3={}", buvid3_value)
+        } else {
+            format!("buvid3={}; {}", buvid3_value, other_parts.join("; "))
+        }
+    }
+
+    fn http_cookie_header(&self) -> Option<String> {
+        if let Some(cookies) = self.connection_cookies.as_deref() {
+            return Some(strip_refresh_token(cookies));
+        }
+        self.cookies
+            .as_deref()
+            .map(|c| strip_refresh_token(&self.normalize_cookies(c)))
     }
 
     /// Get real room ID from short ID.
@@ -169,11 +220,16 @@ impl BilibiliDanmuProtocol {
         debug!("getDanmuInfo URL: {}", url);
 
         // Make request
-        let response = self
+        let mut req = self
             .client
             .get(&url)
             .header(reqwest::header::USER_AGENT, DEFAULT_UA)
-            .header(reqwest::header::REFERER, "https://live.bilibili.com")
+            .header(reqwest::header::REFERER, "https://live.bilibili.com");
+        if let Some(cookie_header) = self.http_cookie_header() {
+            req = req.header(reqwest::header::COOKIE, cookie_header);
+        }
+
+        let response = req
             .timeout(Duration::from_secs(10))
             .send()
             .await
@@ -227,9 +283,22 @@ impl BilibiliDanmuProtocol {
     }
 
     /// Build authentication packet.
-    fn build_auth_packet(room_id: u64, token: &str) -> Bytes {
+    fn build_auth_packet(&self, room_id: u64, token: &str) -> Bytes {
+        // If `uid` is set to a non-zero user mid, the token must be obtained with
+        // matching authenticated cookies (otherwise the server may reset the connection).
+        let uid = if self.uid.is_some()
+            && self
+                .connection_cookies
+                .as_deref()
+                .and_then(|c| extract_cookie_value(c, "SESSDATA"))
+                .is_some()
+        {
+            self.uid.unwrap_or(0)
+        } else {
+            0
+        };
         let auth_data = AuthData {
-            uid: 0, // Anonymous
+            uid,
             roomid: room_id,
             protover: 3, // Request Brotli compression
             platform: "web",
@@ -424,13 +493,39 @@ impl BilibiliDanmuProtocol {
         let gift_name = data.get("giftName")?.as_str()?.to_string();
         let num = data.get("num").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
 
-        Some(DanmuMessage::gift(
+        let price = data
+            .get("price")
+            .or_else(|| data.get("total_coin"))
+            .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
+            .unwrap_or(0);
+
+        let timestamp_ms = data
+            .get("timestamp")
+            .and_then(|v| v.as_i64().or_else(|| v.as_u64().map(|u| u as i64)))
+            .map(|ts| {
+                if ts > 1_000_000_000_000 {
+                    ts
+                } else {
+                    ts * 1000
+                }
+            });
+
+        let mut msg = DanmuMessage::gift(
             uuid::Uuid::new_v4().to_string(),
             uid.to_string(),
             name,
             gift_name,
             num,
-        ))
+        )
+        .with_metadata("price", serde_json::json!(price));
+
+        if let Some(ts_ms) = timestamp_ms
+            && let Some(dt) = Utc.timestamp_millis_opt(ts_ms).single()
+        {
+            msg = msg.with_timestamp(dt);
+        }
+
+        Some(msg)
     }
 
     /// Parse SUPER_CHAT_MESSAGE into DanmuMessage.
@@ -441,20 +536,44 @@ impl BilibiliDanmuProtocol {
         let name = user_info.get("uname")?.as_str()?.to_string();
         let uid = data.get("uid")?.as_u64()?;
         let content = data.get("message")?.as_str()?.to_string();
-        let price = data.get("price").and_then(|v| v.as_u64()).unwrap_or(0);
+        let price = data
+            .get("price")
+            .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
+            .unwrap_or(0);
 
-        // Use chat() with metadata for super chat since super_chat() doesn't exist
-        let mut danmu = DanmuMessage::chat(
+        let keep_time = data
+            .get("time")
+            .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
+            .unwrap_or(0);
+
+        let timestamp_ms = data
+            .get("ts")
+            .or_else(|| data.get("timestamp"))
+            .and_then(|v| v.as_i64().or_else(|| v.as_u64().map(|u| u as i64)))
+            .map(|ts| {
+                if ts > 1_000_000_000_000 {
+                    ts
+                } else {
+                    ts * 1000
+                }
+            });
+
+        let mut msg = DanmuMessage::super_chat(
             uuid::Uuid::new_v4().to_string(),
             uid.to_string(),
             name,
-            format!("[SC ￥{}] {}", price, content),
-        );
+            content,
+            price,
+        )
+        .with_super_chat_keep_time(keep_time);
 
-        danmu = danmu.with_metadata("type", "super_chat".into());
-        danmu = danmu.with_metadata("price", (price * 1000).into());
+        if let Some(ts_ms) = timestamp_ms
+            && let Some(dt) = Utc.timestamp_millis_opt(ts_ms).single()
+        {
+            msg = msg.with_timestamp(dt);
+        }
 
-        Some(danmu)
+        Some(msg)
     }
 }
 
@@ -500,15 +619,31 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
     }
 
     fn cookies(&self) -> Option<String> {
-        let buvid3 = generate_fake_buvid3();
-        let base_cookie = format!("buvid3={}", buvid3);
+        let fallback_buvid3 = generate_fake_buvid3();
+        Some(Self::build_cookie_header(
+            self.cookies.as_deref(),
+            &fallback_buvid3,
+        ))
+    }
 
-        // Merge with user-provided cookies
-        if let Some(ref user_cookies) = self.cookies {
-            Some(format!("{}; {}", base_cookie, user_cookies))
-        } else {
-            Some(base_cookie)
-        }
+    fn send_cookie_header(&self) -> bool {
+        false
+    }
+
+    fn normalize_cookies(&self, cookies: &str) -> String {
+        let fallback_buvid3 = generate_fake_buvid3();
+        Self::build_cookie_header(Some(cookies), &fallback_buvid3)
+    }
+
+    fn configure_connection(
+        &mut self,
+        cookies: Option<&str>,
+        _extras: Option<&HashMap<String, String>>,
+    ) {
+        self.uid = cookies
+            .and_then(|cookies| extract_cookie_value(cookies, "DedeUserID"))
+            .and_then(|v| v.parse::<u64>().ok());
+        self.connection_cookies = cookies.map(ToString::to_string);
     }
 
     async fn handshake_messages(&self, room_id: &str) -> Result<Vec<Message>> {
@@ -517,7 +652,7 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
         let (_ws_url, token) = self.get_danmu_info(real_room_id).await?;
 
         // Build auth packet
-        let auth_packet = Self::build_auth_packet(real_room_id, &token);
+        let auth_packet = self.build_auth_packet(real_room_id, &token);
 
         Ok(vec![Message::Binary(auth_packet)])
     }
@@ -645,6 +780,37 @@ mod tests {
     }
 
     #[test]
+    fn test_auth_packet_uses_uid_from_cookies() {
+        let mut protocol = BilibiliDanmuProtocol::default();
+        protocol.configure_connection(Some("DedeUserID=42; SESSDATA=abc"), None);
+
+        let packet = protocol.build_auth_packet(123, "token");
+        let json: serde_json::Value = serde_json::from_slice(&packet[16..]).unwrap();
+        assert_eq!(json.get("uid").and_then(|v| v.as_u64()), Some(42));
+        assert_eq!(json.get("roomid").and_then(|v| v.as_u64()), Some(123));
+    }
+
+    #[test]
+    fn test_cookie_buvid3_uses_provided_value() {
+        let cookies = "SESSDATA=abc; buvid3=provided; bili_jct=xyz";
+        let merged = BilibiliDanmuProtocol::build_cookie_header(Some(cookies), "fallback");
+        assert!(merged.contains("buvid3=provided"));
+        assert!(!merged.contains("buvid3=fallback"));
+        assert!(!merged.contains("buvid3=provided; buvid3="));
+        assert!(merged.contains("SESSDATA=abc"));
+        assert!(merged.contains("bili_jct=xyz"));
+    }
+
+    #[test]
+    fn test_cookie_adds_fallback_buvid3_when_missing() {
+        let cookies = "SESSDATA=abc; bili_jct=xyz";
+        let merged = BilibiliDanmuProtocol::build_cookie_header(Some(cookies), "fallback");
+        assert!(merged.starts_with("buvid3=fallback; "));
+        assert!(merged.contains("SESSDATA=abc"));
+        assert!(merged.contains("bili_jct=xyz"));
+    }
+
+    #[test]
     fn test_parse_danmu_msg() {
         let json = serde_json::json!({
             "cmd": "DANMU_MSG",
@@ -662,6 +828,74 @@ mod tests {
         assert_eq!(msg.content, "Hello World");
         assert_eq!(msg.username, "TestUser");
         assert_eq!(msg.user_id, "12345");
+    }
+
+    #[test]
+    fn test_parse_send_gift_emits_gift_message() {
+        let json = serde_json::json!({
+            "cmd": "SEND_GIFT",
+            "data": {
+                "uname": "GiftUser",
+                "uid": 42,
+                "giftName": "Rocket",
+                "num": 5,
+                "price": 100,
+                "timestamp": 1700000000123_i64
+            }
+        });
+
+        let body = serde_json::to_vec(&json).unwrap();
+        let item =
+            BilibiliDanmuProtocol::parse_notification(&body).expect("should parse SEND_GIFT");
+
+        match item {
+            DanmuItem::Message(msg) => {
+                assert_eq!(msg.message_type, crate::danmaku::message::DanmuType::Gift);
+                assert_eq!(msg.user_id, "42");
+                assert_eq!(msg.username, "GiftUser");
+                assert_eq!(msg.content, "赠送 Rocket x5");
+                let meta = msg.metadata.expect("gift metadata");
+                assert_eq!(meta.get("price").unwrap(), 100);
+            }
+            other => panic!("Unexpected item: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_super_chat_emits_super_chat_message() {
+        let json = serde_json::json!({
+            "cmd": "SUPER_CHAT_MESSAGE",
+            "data": {
+                "uid": 99,
+                "price": 30,
+                "time": 60,
+                "ts": 1700000000456_i64,
+                "message": "Hello",
+                "user_info": {
+                    "uname": "SCUser"
+                }
+            }
+        });
+
+        let body = serde_json::to_vec(&json).unwrap();
+        let item = BilibiliDanmuProtocol::parse_notification(&body)
+            .expect("should parse SUPER_CHAT_MESSAGE");
+
+        match item {
+            DanmuItem::Message(msg) => {
+                assert_eq!(
+                    msg.message_type,
+                    crate::danmaku::message::DanmuType::SuperChat
+                );
+                assert_eq!(msg.user_id, "99");
+                assert_eq!(msg.username, "SCUser");
+                assert_eq!(msg.content, "Hello");
+                let meta = msg.metadata.expect("super chat metadata");
+                assert_eq!(meta.get("price").unwrap(), 30);
+                assert_eq!(meta.get("keep_time").unwrap(), 60);
+            }
+            other => panic!("Unexpected item: {other:?}"),
+        }
     }
 
     #[test]

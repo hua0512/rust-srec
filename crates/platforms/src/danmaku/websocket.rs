@@ -19,6 +19,63 @@ use crate::danmaku::provider::{DanmuConnection, DanmuProvider};
 
 const MAX_ACTIVE_CONNECTIONS: usize = 1024;
 
+fn parse_cookie_header(input: &str) -> Vec<(String, String)> {
+    input
+        .split(';')
+        .filter_map(|part| {
+            let part = part.trim();
+            if part.is_empty() {
+                return None;
+            }
+
+            let mut kv = part.splitn(2, '=');
+            let name = kv.next()?.trim();
+            let value = kv.next()?.trim();
+            if name.is_empty() || value.is_empty() {
+                return None;
+            }
+
+            Some((name.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
+fn merge_cookie_headers(base: Option<&str>, extra: Option<&str>) -> Option<String> {
+    let base = base.map(str::trim).filter(|s| !s.is_empty());
+    let extra = extra.map(str::trim).filter(|s| !s.is_empty());
+
+    match (base, extra) {
+        (None, None) => None,
+        (Some(base), None) => Some(base.to_string()),
+        (None, Some(extra)) => Some(extra.to_string()),
+        (Some(base), Some(extra)) => {
+            let mut parts = parse_cookie_header(base);
+            let mut index_by_name: HashMap<String, usize> = HashMap::with_capacity(parts.len());
+            for (idx, (name, _)) in parts.iter().enumerate() {
+                index_by_name.insert(name.clone(), idx);
+            }
+
+            for (name, value) in parse_cookie_header(extra) {
+                if let Some(existing_idx) = index_by_name.get(&name) {
+                    parts[*existing_idx].1 = value;
+                } else {
+                    let idx = parts.len();
+                    parts.push((name.clone(), value));
+                    index_by_name.insert(name, idx);
+                }
+            }
+
+            Some(
+                parts
+                    .into_iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            )
+        }
+    }
+}
+
 /// Protocol definitions for a specific platform.
 #[async_trait]
 pub trait DanmuProtocol: Send + Sync + 'static {
@@ -40,10 +97,39 @@ pub trait DanmuProtocol: Send + Sync + 'static {
         vec![]
     }
 
-    /// Get cookies for the WebSocket connection
-    /// Returns an optional cookie string to be added to the Cookie header
+    /// Get cookies for the danmu connection.
+    ///
+    /// When `send_cookie_header()` is true, these cookies may be sent as the `Cookie`
+    /// header during the WebSocket upgrade.
     fn cookies(&self) -> Option<String> {
         None
+    }
+
+    /// Whether to send the `Cookie` header during the WebSocket upgrade.
+    ///
+    /// Defaults to `true` to preserve historical behavior, but platforms that don't
+    /// require cookies (or where cookies are sensitive) should override to `false`.
+    fn send_cookie_header(&self) -> bool {
+        true
+    }
+
+    /// Normalize/adjust cookies before sending them.
+    ///
+    /// This is useful for platforms that require specific cookie keys to exist
+    /// or need to alias cookie names.
+    fn normalize_cookies(&self, cookies: &str) -> String {
+        cookies.to_string()
+    }
+
+    /// Configure protocol state based on connection inputs.
+    ///
+    /// This is useful for passing derived session information (e.g. uid) into
+    /// handshake/auth messages.
+    fn configure_connection(
+        &mut self,
+        _cookies: Option<&str>,
+        _extras: Option<&HashMap<String, String>>,
+    ) {
     }
 
     /// Generate handshake messages to send upon connection
@@ -165,10 +251,11 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
         let (response_tx, mut response_rx) = mpsc::channel::<Message>(100);
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
 
-        let protocol = self.protocol.clone();
+        let mut protocol = self.protocol.clone();
         let ws_config = config.websocket.unwrap_or(self.config);
         let room_id_owned = room_id.to_string();
         let cookies = config.cookies;
+        let extras = config.extras;
         let is_connected_clone = is_connected.clone();
         let reconnect_count_clone = reconnect_count.clone();
 
@@ -186,32 +273,46 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
 
                 // Connect if not connected
                 if current_stream.is_none() {
+                    // Compute cookies and let the protocol derive per-connection state (e.g. uid)
+                    // before resolving the final WebSocket URL.
+                    let protocol_cookies = protocol.cookies();
+                    let merged_cookies =
+                        merge_cookie_headers(protocol_cookies.as_deref(), cookies.as_deref())
+                            .map(|c| protocol.normalize_cookies(&c));
+                    protocol.configure_connection(merged_cookies.as_deref(), extras.as_ref());
+
                     match protocol.websocket_url(&room_id_owned).await {
                         Ok(url) => {
                             info!("Connecting to WebSocket: {}", url);
 
                             // Build request with custom headers
                             let mut headers = protocol.headers(&room_id_owned);
-                            let protocol_cookies = protocol.cookies();
 
-                            // Use provided cookies if available, otherwise fallback to protocol cookies
-                            let cookies = cookies.clone().or(protocol_cookies);
-
-                            // Add or merge cookies into headers
-                            if let Some(cookie_str) = cookies {
-                                // Check if Cookie header already exists
-                                let mut found = false;
-                                for (name, value) in headers.iter_mut() {
-                                    if name.eq_ignore_ascii_case("Cookie") {
-                                        // Merge with existing cookie
-                                        *value = format!("{}; {}", value, cookie_str);
-                                        found = true;
-                                        break;
+                            if protocol.send_cookie_header() {
+                                // Add or merge cookies into headers
+                                if let Some(cookie_str) = merged_cookies.clone() {
+                                    // Check if Cookie header already exists
+                                    let mut found = false;
+                                    for (name, value) in headers.iter_mut() {
+                                        if name.eq_ignore_ascii_case("Cookie") {
+                                            // Merge with existing cookie
+                                            let merged = merge_cookie_headers(
+                                                Some(value.as_str()),
+                                                Some(cookie_str.as_str()),
+                                            )
+                                            .unwrap_or_else(|| cookie_str.clone());
+                                            *value = protocol.normalize_cookies(&merged);
+                                            found = true;
+                                            break;
+                                        }
+                                    }
+                                    if !found {
+                                        headers.push(("Cookie".to_string(), cookie_str));
                                     }
                                 }
-                                if !found {
-                                    headers.push(("Cookie".to_string(), cookie_str));
-                                }
+                            } else {
+                                // Explicitly drop any Cookie header to avoid leakage.
+                                headers.retain(|(name, _)| !name.eq_ignore_ascii_case("Cookie"));
                             }
 
                             let connect_result = if headers.is_empty() {
@@ -476,5 +577,30 @@ impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
         self.protocol.extract_room_id(url)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_cookie_headers_merges_and_overrides() {
+        let base = "a=1; b=2";
+        let extra = "b=3; c=4";
+        assert_eq!(
+            merge_cookie_headers(Some(base), Some(extra)).as_deref(),
+            Some("a=1; b=3; c=4")
+        );
+    }
+
+    #[test]
+    fn test_merge_cookie_headers_ignores_empty_parts() {
+        let base = "a=1; ; b=2; invalid";
+        let extra = "b=3; c=4; =nope; d=";
+        assert_eq!(
+            merge_cookie_headers(Some(base), Some(extra)).as_deref(),
+            Some("a=1; b=3; c=4")
+        );
     }
 }

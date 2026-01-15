@@ -9,7 +9,6 @@ use url::Url;
 
 use crate::extractor::hls_extractor::HlsExtractor;
 use crate::extractor::platforms::pandatv::models::{PandaTvBjResponse, PandaTvLiveResponse};
-use crate::media::StreamInfo;
 use crate::{
     extractor::{
         error::ExtractorError,
@@ -91,31 +90,6 @@ impl PandaTV {
         Ok(response)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn create_media_info(
-        &self,
-        title: String,
-        artist: String,
-        artist_url: Option<String>,
-        cover_url: Option<String>,
-        is_live: bool,
-        streams: Vec<StreamInfo>,
-        headers: Option<FxHashMap<String, String>>,
-        extras: Option<FxHashMap<String, String>>,
-    ) -> MediaInfo {
-        MediaInfo {
-            site_url: Self::BASE_URL.to_string(),
-            title,
-            artist,
-            artist_url,
-            cover_url,
-            is_live,
-            streams,
-            headers,
-            extras,
-        }
-    }
-
     async fn parse_live_info(
         &self,
         response: PandaTvBjResponse,
@@ -132,16 +106,9 @@ impl PandaTV {
         let is_live = media.is_some() && media.as_ref().unwrap().is_live;
 
         if !is_live {
-            return Ok(self.create_media_info(
-                title,
-                artist,
-                None,
-                None,
-                is_live,
-                vec![],
-                None,
-                None,
-            ));
+            return Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
+                .is_live(false)
+                .build());
         }
 
         let media = media.as_ref().unwrap();
@@ -167,6 +134,10 @@ impl PandaTV {
         }
 
         let live_info = self.get_live_info(&media.user_id, pwd).await?;
+
+        let category =
+            (!live_info.media.category.is_empty()).then(|| vec![live_info.media.category.clone()]);
+        let live_start_time = live_info.media.start_time.parse::<i64>().ok();
 
         // debug!("Live info: {:?}", live_info);
 
@@ -194,16 +165,22 @@ impl PandaTV {
             .extract_hls_stream(&self.extractor.client, Some(headers), &hls_url, None, None)
             .await?;
 
-        Ok(self.create_media_info(
-            title,
-            artist,
-            Some(artist_url),
-            cover_url,
-            is_live,
-            streams,
-            Some(self.extractor.get_platform_headers_map()),
-            Some(extras),
-        ))
+        let builder = MediaInfo::builder(Self::BASE_URL, title, artist)
+            .category_opt(category)
+            .artist_url(artist_url)
+            .cover_url_opt(cover_url)
+            .is_live(is_live)
+            .streams(streams)
+            .headers(self.extractor.get_platform_headers_map())
+            .extras(extras);
+
+        let builder = if let Some(live_start_time) = live_start_time {
+            builder.live_start_time_unix(live_start_time)
+        } else {
+            builder
+        };
+
+        Ok(builder.build())
     }
 
     async fn get_live_info(

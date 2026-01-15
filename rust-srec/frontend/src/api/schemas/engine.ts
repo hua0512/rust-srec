@@ -173,6 +173,8 @@ export const MesioGapSkipStrategySchema = z.discriminatedUnion('type', [
 export const MesioHlsOutputConfigOverrideSchema = z.object({
   live_reorder_buffer_duration_ms: optionalInt(0),
   live_reorder_buffer_max_segments: optionalInt(0),
+  gap_evaluation_interval_ms: optionalInt(0),
+  max_pending_init_segments: optionalInt(0),
   live_max_overall_stall_duration_ms: optionalInt(0),
   live_gap_strategy: MesioGapSkipStrategySchema.optional(),
   vod_gap_strategy: MesioGapSkipStrategySchema.optional(),

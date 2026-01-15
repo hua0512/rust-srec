@@ -13,9 +13,11 @@ use rsa::{Oaep, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use thiserror::Error;
+use tracing::debug;
 
 use super::cookie_utils::{
-    extract_cookie_value, extract_refresh_csrf, parse_set_cookies, rebuild_cookies, urls,
+    extract_cookie_value, extract_refresh_csrf, parse_set_cookies, rebuild_cookies,
+    strip_refresh_token, urls,
 };
 
 /// Bilibili's RSA public key for CorrespondPath generation.
@@ -67,6 +69,59 @@ pub struct RefreshedCookies {
     pub refresh_token: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct UserInfoResponse {
+    code: i64,
+    data: Option<UserInfoData>,
+    message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UserInfoData {
+    uid: u64,
+}
+
+async fn try_fetch_uid(client: &Client, cookies: &str) -> Result<Option<u64>, CookieRefreshError> {
+    let response = client
+        .get(urls::USER_INFO)
+        .header("Cookie", cookies)
+        .header("User-Agent", USER_AGENT)
+        .header(reqwest::header::REFERER, "https://live.bilibili.com")
+        .send()
+        .await?;
+
+    let body: UserInfoResponse = response
+        .json()
+        .await
+        .map_err(|e| CookieRefreshError::Parse(e.to_string()))?;
+
+    if body.code != 0 {
+        let message = body.message.unwrap_or_else(|| "Unknown error".to_string());
+        return Err(CookieRefreshError::Parse(format!(
+            "get_user_info returned error {}: {}",
+            body.code, message
+        )));
+    }
+
+    Ok(body.data.map(|d| d.uid))
+}
+
+async fn persist_uid_cookie_best_effort(client: &Client, cookies: &str) -> String {
+    if extract_cookie_value(cookies, "DedeUserID").is_some() {
+        return cookies.to_string();
+    }
+
+    let uid = match try_fetch_uid(client, cookies).await {
+        Ok(Some(uid)) => uid,
+        _ => return cookies.to_string(),
+    };
+    debug!("Fetched UID: {}", uid);
+
+    let mut updates = std::collections::HashMap::new();
+    updates.insert("DedeUserID".to_string(), uid.to_string());
+    rebuild_cookies(cookies, &updates)
+}
+
 /// Load the Bilibili RSA public key.
 fn load_public_key() -> Result<RsaPublicKey, CookieRefreshError> {
     RsaPublicKey::from_public_key_pem(BILIBILI_PUBKEY_PEM)
@@ -92,14 +147,15 @@ pub async fn check_cookie_status(
     client: &Client,
     cookies: &str,
 ) -> Result<CookieStatus, CookieRefreshError> {
-    let bili_jct = extract_cookie_value(cookies, "bili_jct")
+    let cookies = strip_refresh_token(cookies);
+    let bili_jct = extract_cookie_value(&cookies, "bili_jct")
         .ok_or(CookieRefreshError::MissingCookie("bili_jct"))?;
 
     let url = format!("{}?csrf={}", urls::COOKIE_INFO, bili_jct);
 
     let response = client
         .get(&url)
-        .header("Cookie", cookies)
+        .header("Cookie", &cookies)
         .header("User-Agent", USER_AGENT)
         .send()
         .await?;
@@ -156,7 +212,8 @@ pub async fn refresh_cookies(
     cookies: &str,
     refresh_token: &str,
 ) -> Result<RefreshedCookies, CookieRefreshError> {
-    let bili_jct = extract_cookie_value(cookies, "bili_jct")
+    let cookies = strip_refresh_token(cookies);
+    let bili_jct = extract_cookie_value(&cookies, "bili_jct")
         .ok_or(CookieRefreshError::MissingCookie("bili_jct"))?;
 
     // Step 1: Generate CorrespondPath using current timestamp
@@ -172,7 +229,7 @@ pub async fn refresh_cookies(
 
     let correspond_response = client
         .get(&correspond_url)
-        .header("Cookie", cookies)
+        .header("Cookie", &cookies)
         .header("User-Agent", USER_AGENT)
         .send()
         .await?;
@@ -206,7 +263,7 @@ pub async fn refresh_cookies(
 
     let refresh_response = client
         .post(urls::REFRESH)
-        .header("Cookie", cookies)
+        .header("Cookie", &cookies)
         .header("User-Agent", USER_AGENT)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .form(&refresh_params)
@@ -238,14 +295,6 @@ pub async fn refresh_cookies(
         )));
     }
 
-    // Extract new cookies
-    let new_sessdata = new_cookies_map.get("SESSDATA").ok_or_else(|| {
-        CookieRefreshError::RefreshFailed(format!(
-            "Missing SESSDATA in response (received cookies: {:?}, body: {})",
-            new_cookies_map.keys().collect::<Vec<_>>(),
-            refresh_body
-        ))
-    })?;
     let new_bili_jct = new_cookies_map.get("bili_jct").ok_or_else(|| {
         CookieRefreshError::RefreshFailed(format!(
             "Missing bili_jct in response (received cookies: {:?})",
@@ -262,7 +311,8 @@ pub async fn refresh_cookies(
         })?;
 
     // Step 4: Confirm refresh (invalidate old token)
-    let new_cookies_temp = format!("SESSDATA={}; bili_jct={}", new_sessdata, new_bili_jct);
+    // Use a full cookie header to maximize compatibility (some flows require more than just SESSDATA/bili_jct).
+    let provisional_cookies = rebuild_cookies(&cookies, &new_cookies_map);
 
     let confirm_params = [
         ("csrf", new_bili_jct.as_str()),
@@ -271,7 +321,7 @@ pub async fn refresh_cookies(
 
     let confirm_response = client
         .post(urls::CONFIRM)
-        .header("Cookie", &new_cookies_temp)
+        .header("Cookie", &provisional_cookies)
         .header("User-Agent", USER_AGENT)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .form(&confirm_params)
@@ -285,7 +335,8 @@ pub async fn refresh_cookies(
         .map_err(|e| CookieRefreshError::Parse(e.to_string()))?;
 
     // Build full cookie string preserving other cookies
-    let final_cookies = rebuild_cookies(cookies, &new_cookies_map);
+    let final_cookies = rebuild_cookies(&cookies, &new_cookies_map);
+    let final_cookies = persist_uid_cookie_best_effort(client, &final_cookies).await;
 
     Ok(RefreshedCookies {
         cookies: final_cookies,
@@ -295,9 +346,10 @@ pub async fn refresh_cookies(
 
 /// Validate cookies by making an authenticated API call.
 pub async fn validate_cookies(client: &Client, cookies: &str) -> Result<bool, CookieRefreshError> {
+    let cookies = strip_refresh_token(cookies);
     let response = client
         .get(urls::NAV)
-        .header("Cookie", cookies)
+        .header("Cookie", &cookies)
         .header("User-Agent", USER_AGENT)
         .send()
         .await?;

@@ -132,19 +132,15 @@ impl TikTok {
 
             // Helper closure to create stream info
             let create_stream =
-                |url: String, stream_format: StreamFormat, media_format: MediaFormat| StreamInfo {
-                    url,
-                    stream_format,
-                    media_format,
-                    quality: quality_id.clone(),
-                    bitrate,
-                    priority: 0,
-                    extras: Some(json!({
-                        "sdk_key": &sdk_key,
-                    })),
-                    codec: codec_string.clone(),
-                    fps: 0.0,
-                    is_headers_needed: false,
+                |url: String, stream_format: StreamFormat, media_format: MediaFormat| {
+                    StreamInfo::builder(url, stream_format, media_format)
+                        .quality(quality_id.clone())
+                        .bitrate(bitrate)
+                        .extras(json!({
+                            "sdk_key": &sdk_key,
+                        }))
+                        .codec(codec_string.clone())
+                        .build()
                 };
 
             // Add FLV stream if available
@@ -196,43 +192,44 @@ impl TikTok {
         let user = &user_info.user;
 
         let is_live = user.status == 2;
-
-        let mut media_info = MediaInfo {
-            site_url: self.extractor.url.clone(),
-            title: String::from(""),
-            artist: user.nickname.clone(),
-            artist_url: Some(user.avatar_larger.clone()),
-            is_live,
-            streams: Vec::new(),
-            cover_url: None,
-            headers: Some(self.get_extractor().get_platform_headers_map()),
-            extras: None,
-        };
+        let headers = Some(self.get_extractor().get_platform_headers_map());
 
         if !is_live {
-            return Ok(media_info);
+            return Ok(
+                MediaInfo::builder(self.extractor.url.clone(), "", user.nickname.clone())
+                    .artist_url(user.avatar_larger.clone())
+                    .is_live(false)
+                    .headers_opt(headers)
+                    .build(),
+            );
         }
 
         let stream_details = user_info.stream_details.as_ref().ok_or_else(|| {
             ExtractorError::ValidationError("Stream details not found".to_string())
         })?;
 
-        media_info.title = stream_details.title.clone();
-
-        media_info.cover_url = Some(stream_details.cover_url.clone());
-
         // Process streams only if live
         let mut streams = self.process_stream_data(&stream_details.stream_data, "avc")?;
         let hevc_streams = self.process_stream_data(&stream_details.hevc_stream_data, "hevc")?;
         streams.extend(hevc_streams);
 
-        if streams.is_empty() {
-            media_info.is_live = false;
-        } else {
-            media_info.streams = streams;
+        let is_live = !streams.is_empty();
+        if !is_live {
+            streams.clear();
         }
 
-        Ok(media_info)
+        Ok(MediaInfo::builder(
+            self.extractor.url.clone(),
+            stream_details.title.clone(),
+            user.nickname.clone(),
+        )
+        .artist_url(user.avatar_larger.clone())
+        .cover_url(stream_details.cover_url.clone())
+        .live_start_time_unix(stream_details.start_time)
+        .is_live(is_live)
+        .streams(streams)
+        .headers_opt(headers)
+        .build())
     }
 }
 

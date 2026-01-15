@@ -118,39 +118,39 @@ impl Huya {
     ) -> Vec<StreamInfo> {
         vec![
             // FLV stream
-            StreamInfo {
-                url: if add_ratio {
+            StreamInfo::builder(
+                if add_ratio {
                     format!("{flv_url}&ratio={bitrate}")
                 } else {
                     flv_url.to_string()
                 },
-                stream_format: StreamFormat::Flv,
-                media_format: MediaFormat::Flv,
-                quality: quality.to_string(),
-                bitrate,
-                priority,
-                codec: "avc".to_string(),
-                is_headers_needed: true,
-                fps: 0.0,
-                extras: Some(extras.clone()),
-            },
+                StreamFormat::Flv,
+                MediaFormat::Flv,
+            )
+            .quality(quality)
+            .bitrate(bitrate)
+            .priority(priority)
+            .codec("avc")
+            .is_headers_needed(true)
+            .extras(extras.clone())
+            .build(),
             // HLS stream
-            StreamInfo {
-                url: if add_ratio {
+            StreamInfo::builder(
+                if add_ratio {
                     format!("{hls_url}&ratio={bitrate}")
                 } else {
                     hls_url.to_string()
                 },
-                stream_format: StreamFormat::Hls,
-                media_format: MediaFormat::Ts,
-                quality: quality.to_string(),
-                bitrate,
-                priority,
-                codec: "avc".to_string(),
-                is_headers_needed: true,
-                fps: 0.0,
-                extras: Some(extras.clone()),
-            },
+                StreamFormat::Hls,
+                MediaFormat::Ts,
+            )
+            .quality(quality)
+            .bitrate(bitrate)
+            .priority(priority)
+            .codec("avc")
+            .is_headers_needed(true)
+            .extras(extras.clone())
+            .build(),
         ]
     }
 
