@@ -1,18 +1,30 @@
-import { i18n } from '@lingui/core';
+import { setupI18n, type I18n } from '@lingui/core';
 import { useEffect, useState } from 'react';
 import { messages as enMessages } from './locales/en/messages';
 import { messages as zhCNMessages } from './locales/zh-CN/messages';
-
-// Load messages for all locales
-i18n.load({
-  en: enMessages,
-  'zh-CN': zhCNMessages,
-});
 
 export const locales = ['en', 'zh-CN'] as const;
 export type Locale = (typeof locales)[number];
 
 export const defaultLocale: Locale = 'en';
+
+const allMessages = {
+  en: enMessages,
+  'zh-CN': zhCNMessages,
+} as const;
+
+/**
+ * Create a fresh i18n instance.
+ *
+ * IMPORTANT: In SSR, i18n MUST be per-request to avoid cross-request locale
+ * bleed (which can cause intermittent hydration mismatches under load).
+ */
+export function createI18n(): I18n {
+  return setupI18n({
+    locale: defaultLocale,
+    messages: allMessages,
+  });
+}
 
 /**
  * Detect locale from browser settings.
@@ -88,14 +100,10 @@ export function parseAcceptLanguage(
   return defaultLocale;
 }
 
-// Activate default locale at module level (SSR-safe)
-// The actual locale will be set by activateLocale() on both server and client
-i18n.activate(defaultLocale);
-
 /**
  * Activate a specific locale.
  */
-export function activateLocale(locale: Locale): void {
+export function activateLocale(i18n: I18n, locale: Locale): void {
   if (i18n.locale !== locale) {
     console.log(`[i18n] Activating locale: ${locale}`);
     i18n.activate(locale);
@@ -106,11 +114,11 @@ export function activateLocale(locale: Locale): void {
  * Initialize locale on the client side.
  * Call this early in the app to switch to the user's preferred locale.
  */
-export function initializeLocale(): Locale {
+export function initializeLocale(i18n: I18n): Locale {
   if (typeof window === 'undefined') return defaultLocale;
 
   const locale = detectClientLocale();
-  activateLocale(locale);
+  activateLocale(i18n, locale);
   return locale;
 }
 
@@ -122,15 +130,13 @@ export function initializeLocale(): Locale {
  * components can choose not to render i18n-dependent content until
  * the locale is properly set up on the client.
  */
-export function useInitLocale(): boolean {
+export function useInitLocale(i18n: I18n): boolean {
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    initializeLocale();
+    initializeLocale(i18n);
     setIsInitialized(true);
-  }, []);
+  }, [i18n]);
 
   return isInitialized;
 }
-
-export { i18n };

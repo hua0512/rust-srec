@@ -1,5 +1,5 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router';
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 
 import appCss from '../styles.css?url';
 import { NotFound } from '@/components/not-found';
@@ -88,7 +88,7 @@ export const Route = createRootRoute({
 });
 
 import { I18nProvider } from '@lingui/react';
-import { i18n, activateLocale, initializeLocale, type Locale } from '../i18n';
+import { activateLocale, createI18n, initializeLocale, type Locale } from '../i18n';
 import { ThemeProvider } from '../components/theme-provider';
 import { useSidebar } from '../store/sidebar';
 import { useThemeStore } from '../stores/theme-store';
@@ -101,6 +101,8 @@ import { useRouteContext } from '@tanstack/react-router';
 export const queryClient = new QueryClient();
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const i18n = useMemo(() => createI18n(), []);
+
   // Get the server-detected locale from route context
   const { serverLocale } = useRouteContext({ from: '__root__' }) as {
     serverLocale?: Locale;
@@ -112,16 +114,16 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // On first render (both SSR and hydration), activate the server-detected locale
   // This ensures server and client render with the same locale during hydration
   if (!initializedRef.current && serverLocale) {
-    activateLocale(serverLocale);
+    activateLocale(i18n, serverLocale);
     initializedRef.current = true;
   }
 
   // After hydration, switch to client-detected locale (which may differ if user has localStorage preference)
   useEffect(() => {
-    initializeLocale();
+    initializeLocale(i18n);
     useSidebar.persist.rehydrate();
     useThemeStore.persist.rehydrate();
-  }, []);
+  }, [i18n]);
 
   return (
     // suppressHydrationWarning is required for next-themes which adds className on client
