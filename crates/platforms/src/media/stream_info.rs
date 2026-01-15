@@ -16,18 +16,17 @@ use std::fmt;
 ///     use platforms_parser::media::{StreamInfo, StreamFormat, formats::MediaFormat};
 ///
 ///     // Create a sample StreamInfo
-///     let stream_info = StreamInfo {
-///         url: "https://example.com/stream".to_string(),
-///         stream_format: StreamFormat::Hls,
-///         media_format: MediaFormat::Mp4,
-///         quality: "1080p".to_string(),
-///         bitrate: 5000000,
-///         priority: 1,
-///         extras: None,
-///         codec: "h264".to_string(),
-///         fps: 30.0,
-///         is_headers_needed: false,
-///     };
+///     let stream_info = StreamInfo::builder(
+///         "https://example.com/stream",
+///         StreamFormat::Hls,
+///         MediaFormat::Mp4,
+///     )
+///     .quality("1080p")
+///     .bitrate(5_000_000)
+///     .priority(1)
+///     .codec("h264")
+///     .fps(30.0)
+///     .build();
 ///
 ///     // Serialize to JSON
 ///     let json_string = serde_json::to_string(&stream_info)?;
@@ -68,7 +67,29 @@ pub struct StreamInfo {
     pub is_headers_needed: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct StreamInfoBuilder {
+    url: String,
+    stream_format: StreamFormat,
+    media_format: MediaFormat,
+    quality: String,
+    bitrate: u64,
+    priority: u32,
+    extras: Option<serde_json::Value>,
+    codec: String,
+    fps: f64,
+    is_headers_needed: bool,
+}
+
 impl StreamInfo {
+    pub fn builder(
+        url: impl Into<String>,
+        stream_format: StreamFormat,
+        media_format: MediaFormat,
+    ) -> StreamInfoBuilder {
+        StreamInfoBuilder::new(url, stream_format, media_format)
+    }
+
     /// Serialize the StreamInfo to a JSON string
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
@@ -92,6 +113,87 @@ impl StreamInfo {
     /// Create from a serde_json::Value
     pub fn from_value(value: serde_json::Value) -> Result<Self, serde_json::Error> {
         serde_json::from_value(value)
+    }
+}
+
+impl StreamInfoBuilder {
+    pub fn new(
+        url: impl Into<String>,
+        stream_format: StreamFormat,
+        media_format: MediaFormat,
+    ) -> Self {
+        Self {
+            url: url.into(),
+            stream_format,
+            media_format,
+            quality: String::new(),
+            bitrate: 0,
+            priority: 0,
+            extras: None,
+            codec: String::new(),
+            fps: 0.0,
+            is_headers_needed: false,
+        }
+    }
+
+    pub fn url(mut self, url: impl Into<String>) -> Self {
+        self.url = url.into();
+        self
+    }
+
+    pub fn quality(mut self, quality: impl Into<String>) -> Self {
+        self.quality = quality.into();
+        self
+    }
+
+    pub fn bitrate(mut self, bitrate: u64) -> Self {
+        self.bitrate = bitrate;
+        self
+    }
+
+    pub fn priority(mut self, priority: u32) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    pub fn extras(mut self, extras: serde_json::Value) -> Self {
+        self.extras = Some(extras);
+        self
+    }
+
+    pub fn extras_opt(mut self, extras: Option<serde_json::Value>) -> Self {
+        self.extras = extras;
+        self
+    }
+
+    pub fn codec(mut self, codec: impl Into<String>) -> Self {
+        self.codec = codec.into();
+        self
+    }
+
+    pub fn fps(mut self, fps: f64) -> Self {
+        self.fps = fps;
+        self
+    }
+
+    pub fn is_headers_needed(mut self, is_headers_needed: bool) -> Self {
+        self.is_headers_needed = is_headers_needed;
+        self
+    }
+
+    pub fn build(self) -> StreamInfo {
+        StreamInfo {
+            url: self.url,
+            stream_format: self.stream_format,
+            media_format: self.media_format,
+            quality: self.quality,
+            bitrate: self.bitrate,
+            priority: self.priority,
+            extras: self.extras,
+            codec: self.codec,
+            fps: self.fps,
+            is_headers_needed: self.is_headers_needed,
+        }
     }
 }
 

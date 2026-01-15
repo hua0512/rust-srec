@@ -107,17 +107,9 @@ impl Weibo {
     async fn get_live_info(&self, room_id: &str) -> Result<MediaInfo, ExtractorError> {
         if room_id.is_empty() {
             // streamer is offline
-            return Ok(MediaInfo {
-                site_url: self.extractor.url.clone(),
-                title: "".to_string(),
-                artist: "".to_string(),
-                artist_url: None,
-                cover_url: None,
-                is_live: false,
-                streams: vec![],
-                headers: None,
-                extras: None,
-            });
+            return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")
+                .is_live(false)
+                .build());
         }
 
         let response = self
@@ -135,17 +127,9 @@ impl Weibo {
                 Err(ExtractorError::StreamerNotFound)
             } else if msg.is_empty() {
                 // if msg is empty, then is not live
-                return Ok(MediaInfo {
-                    site_url: self.extractor.url.clone(),
-                    title: "".to_string(),
-                    artist: "".to_string(),
-                    artist_url: None,
-                    cover_url: None,
-                    is_live: false,
-                    streams: vec![],
-                    headers: None,
-                    extras: None,
-                });
+                return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")
+                    .is_live(false)
+                    .build());
             } else {
                 Err(ExtractorError::ValidationError(msg))
             };
@@ -154,17 +138,9 @@ impl Weibo {
         // debug!("response: {:?}", response);
 
         if response.data.is_none() {
-            return Ok(MediaInfo {
-                site_url: self.extractor.url.clone(),
-                title: "".to_string(),
-                artist: "".to_string(),
-                artist_url: None,
-                cover_url: None,
-                is_live: false,
-                streams: vec![],
-                headers: None,
-                extras: None,
-            });
+            return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")
+                .is_live(false)
+                .build());
         }
 
         let data = response.data.unwrap();
@@ -180,17 +156,13 @@ impl Weibo {
         let is_live = data.status == 1;
 
         if !is_live {
-            return Ok(MediaInfo {
-                site_url: self.extractor.url.clone(),
-                title,
-                artist,
-                artist_url: Some(avatar_url),
-                cover_url: Some(cover_url),
-                is_live: false,
-                streams: vec![],
-                headers: None,
-                extras: None,
-            });
+            return Ok(
+                MediaInfo::builder(self.extractor.url.clone(), title, artist)
+                    .artist_url(avatar_url)
+                    .cover_url(cover_url)
+                    .is_live(false)
+                    .build(),
+            );
         }
 
         let flv_url = data
@@ -215,46 +187,34 @@ impl Weibo {
 
         let mut streams = vec![];
         if let Some(flv_url) = flv_url {
-            streams.push(StreamInfo {
-                url: flv_url,
-                quality: "Source".to_string(),
-                stream_format: StreamFormat::Flv,
-                media_format: MediaFormat::Flv,
-                bitrate: 0,
-                priority: 0,
-                extras: None,
-                codec: "hvc1".to_string(),
-                fps: 0.0,
-                is_headers_needed: true,
-            });
+            streams.push(
+                StreamInfo::builder(flv_url, StreamFormat::Flv, MediaFormat::Flv)
+                    .quality("Source")
+                    .codec("hvc1")
+                    .is_headers_needed(true)
+                    .build(),
+            );
         }
 
         if let Some(hls_url) = hls_url {
-            streams.push(StreamInfo {
-                url: hls_url,
-                quality: "Source".to_string(),
-                stream_format: StreamFormat::Hls,
-                media_format: MediaFormat::Ts,
-                bitrate: 0,
-                priority: 0,
-                extras: None,
-                codec: "hvc1".to_string(),
-                fps: 0.0,
-                is_headers_needed: true,
-            });
+            streams.push(
+                StreamInfo::builder(hls_url, StreamFormat::Hls, MediaFormat::Ts)
+                    .quality("Source")
+                    .codec("hvc1")
+                    .is_headers_needed(true)
+                    .build(),
+            );
         }
 
-        Ok(MediaInfo {
-            site_url: self.extractor.url.clone(),
-            title,
-            artist,
-            artist_url: Some(avatar_url),
-            cover_url: Some(cover_url),
-            is_live: true,
-            streams,
-            headers: Some(self.extractor.get_platform_headers_map()),
-            extras: None,
-        })
+        Ok(
+            MediaInfo::builder(self.extractor.url.clone(), title, artist)
+                .artist_url(avatar_url)
+                .cover_url(cover_url)
+                .is_live(true)
+                .streams(streams)
+                .headers(self.extractor.get_platform_headers_map())
+                .build(),
+        )
     }
 }
 

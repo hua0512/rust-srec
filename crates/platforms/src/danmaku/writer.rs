@@ -172,8 +172,7 @@ impl XmlDanmuWriter {
                 _ => {
                     // Get danmu type for Bilibili format
                     let danmu_type = message_type_to_bilibili_type(&message.message_type);
-                    let color =
-                        message_color_to_bilibili_color(message).unwrap_or(DEFAULT_COLOR);
+                    let color = message_color_to_bilibili_color(message).unwrap_or(DEFAULT_COLOR);
                     let content = message_content_for_xml(message);
 
                     // Format: <d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id}" user="{username}">{content}</d>
@@ -330,10 +329,7 @@ fn gift_to_xml(message: &DanmuMessage, ts: f64, timestamp_ms: i64) -> String {
             .get("gift_count")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        price = metadata
-            .get("price")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        price = metadata.get("price").and_then(|v| v.as_u64()).unwrap_or(0);
     }
 
     format!(
@@ -353,10 +349,7 @@ fn super_chat_to_xml(message: &DanmuMessage, ts: f64, timestamp_ms: i64) -> Stri
     let mut keep_time: u64 = 0;
 
     if let Some(metadata) = message.metadata.as_ref() {
-        price = metadata
-            .get("price")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        price = metadata.get("price").and_then(|v| v.as_u64()).unwrap_or(0);
         keep_time = metadata
             .get("keep_time")
             .or_else(|| metadata.get("time"))
@@ -474,11 +467,12 @@ mod tests {
     async fn test_xml_writer_writes_gift_and_super_chat_content() {
         use chrono::TimeZone;
 
-        let tmp = std::env::temp_dir()
-            .join(format!("rust-srec-xml-writer-{}.xml", uuid::Uuid::new_v4()));
+        let tmp =
+            std::env::temp_dir().join(format!("rust-srec-xml-writer-{}.xml", uuid::Uuid::new_v4()));
         let start = Utc.timestamp_opt(1_700_000_000, 0).single().unwrap();
-        let mut writer =
-            XmlDanmuWriter::with_start_time(&tmp, start).await.expect("writer");
+        let mut writer = XmlDanmuWriter::with_start_time(&tmp, start)
+            .await
+            .expect("writer");
 
         let gift = DanmuMessage::gift("g1", "u1", "GiftUser", "Rocket", 5)
             .with_timestamp(start + chrono::Duration::milliseconds(1500))

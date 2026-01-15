@@ -237,22 +237,23 @@ impl Bilibili {
                             let quality_desc = quality_map.get(&qn).copied().unwrap_or("Unknown");
 
                             let bitrate = if qn < 1000 { qn as u64 * 10 } else { qn as u64 };
-                            streams.push(StreamInfo {
-                                url,
-                                stream_format: protocol_name,
-                                media_format: MediaFormat::from_extension(&f.format_name),
-                                quality: quality_desc.to_string(),
-                                bitrate,
-                                priority: 0,
-                                extras: Some(serde_json::json!({
+                            streams.push(
+                                StreamInfo::builder(
+                                    url,
+                                    protocol_name,
+                                    MediaFormat::from_extension(&f.format_name),
+                                )
+                                .quality(quality_desc.to_string())
+                                .bitrate(bitrate)
+                                .extras(serde_json::json!({
                                     "qn": qn,
                                     "rid": room_id,
                                     "cdn": cdn,
-                                })),
-                                codec: c.codec_name.to_string(),
-                                fps: 0.0,
-                                is_headers_needed: true,
-                            });
+                                }))
+                                .codec(c.codec_name.to_string())
+                                .is_headers_needed(true)
+                                .build(),
+                            );
                         }
                     }
                 }
@@ -264,32 +265,49 @@ impl Bilibili {
     pub async fn get_live_info(&self, room_id: &str) -> Result<MediaInfo, ExtractorError> {
         let (room_info, anchor_info) = self.fetch_room_info(room_id).await?;
 
-        let is_live = room_info.live_status == 1;
-        let title = room_info.title;
+        let RoomInfoDetails {
+            room_id,
+            title,
+            cover,
+            tags,
+            live_status,
+            live_start_time,
+            ..
+        } = room_info;
+
+        let is_live = live_status == 1;
         let artist = anchor_info.base_info.uname;
-        let cover_url = Some(room_info.cover);
-        let artist_url = Some(anchor_info.base_info.face);
+        let categories = tags
+            .split(&[',', '|', '/'][..])
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let category = (!categories.is_empty()).then_some(categories);
 
         let streams = if is_live {
-            self.process_streams(room_info.room_id, self.quality)
-                .await?
+            self.process_streams(room_id, self.quality).await?
         } else {
             Vec::new()
         };
 
         let headers = Some(self.extractor.get_platform_headers_map());
 
-        Ok(MediaInfo::new(
-            self.extractor.url.clone(),
-            title,
-            artist,
-            cover_url,
-            artist_url,
-            is_live,
-            streams,
-            headers,
-            None,
-        ))
+        let builder = MediaInfo::builder(self.extractor.url.clone(), title, artist)
+            .category_opt(category)
+            .cover_url(cover)
+            .artist_url(anchor_info.base_info.face)
+            .is_live(is_live)
+            .streams(streams)
+            .headers_opt(headers);
+
+        let builder = if live_start_time > 0 {
+            builder.live_start_time_unix_seconds(live_start_time as i64)
+        } else {
+            builder
+        };
+
+        Ok(builder.build())
     }
 }
 

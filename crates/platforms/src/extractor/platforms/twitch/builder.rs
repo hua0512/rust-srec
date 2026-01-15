@@ -8,10 +8,10 @@ use crate::extractor::platforms::twitch::models::TwitchResponse;
 use crate::media::StreamInfo;
 use crate::media::media_info::MediaInfo;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use rand::Rng;
 use regex::Regex;
 use reqwest::Client;
-use rustc_hash::FxHashMap;
 use tracing::debug;
 
 pub static URL_REGEX: LazyLock<Regex> =
@@ -142,31 +142,6 @@ impl Twitch {
         Ok(responses)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn create_media_info(
-        &self,
-        title: String,
-        artist: String,
-        artist_url: Option<String>,
-        cover_url: Option<String>,
-        is_live: bool,
-        streams: Vec<StreamInfo>,
-        headers: Option<FxHashMap<String, String>>,
-        extras: Option<FxHashMap<String, String>>,
-    ) -> MediaInfo {
-        MediaInfo {
-            site_url: Self::BASE_URL.to_string(),
-            title,
-            artist,
-            artist_url,
-            cover_url,
-            is_live,
-            streams,
-            headers,
-            extras,
-        }
-    }
-
     pub async fn get_live_stream_info(&self) -> Result<MediaInfo, ExtractorError> {
         let room_id = self.extract_room_id()?;
         debug!("room_id: {}", room_id);
@@ -188,14 +163,7 @@ impl Twitch {
                 }),
             ),
         ];
-        let queries_string = format!(
-            "[{}]",
-            queries
-                .iter()
-                .map(|q| q.to_string())
-                .collect::<Vec<_>>()
-                .join(",")
-        );
+        let queries_string = format!("[{},{}]", queries[0], queries[1]);
 
         debug!("queries_string: {}", queries_string);
 
@@ -251,31 +219,38 @@ impl Twitch {
         // Get profile image URL, prefer from user_or_error
         let avatar_url = user_or_error.profile_image_url.to_string();
 
+        let stream = user_opt
+            .and_then(|u| u.stream.as_ref())
+            .or(user_or_error.stream.as_ref());
+
+        let category = stream
+            .and_then(|s| s.game.as_ref())
+            .map(|g| vec![g.name.clone()]);
+
+        let live_start_time = stream
+            .and_then(|s| s.created_at.as_deref())
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
         if !is_live || self.skip_live_extraction {
-            return Ok(self.create_media_info(
-                title,
-                artist,
-                Some(avatar_url),
-                None,
-                is_live,
-                vec![],
-                None,
-                None,
-            ));
+            return Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
+                .category_opt(category)
+                .live_start_time_opt(live_start_time)
+                .artist_url(avatar_url)
+                .is_live(is_live)
+                .build());
         }
 
         let streams = self.get_streams(room_id).await?;
 
-        Ok(self.create_media_info(
-            title,
-            artist,
-            Some(avatar_url),
-            None,
-            is_live,
-            streams,
-            Some(self.extractor.get_platform_headers_map()),
-            None,
-        ))
+        Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
+            .category_opt(category)
+            .live_start_time_opt(live_start_time)
+            .artist_url(avatar_url)
+            .is_live(is_live)
+            .streams(streams)
+            .headers(self.extractor.get_platform_headers_map())
+            .build())
     }
 
     pub async fn get_streams(&self, rid: &str) -> Result<Vec<StreamInfo>, ExtractorError> {

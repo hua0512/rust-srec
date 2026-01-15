@@ -7,7 +7,7 @@ use crate::extractor::platforms::douyin::apis::{
 };
 use crate::extractor::platforms::douyin::models::{
     DouyinAppResponse, DouyinPcData, DouyinPcResponse, DouyinQuality, DouyinStreamDataParsed,
-    DouyinStreamExtras, DouyinStreamUrl, DouyinUserInfo, normalize_bitrate, normalize_codec,
+    DouyinStreamUrl, DouyinUserInfo, normalize_bitrate, normalize_codec,
 };
 use crate::extractor::platforms::douyin::sign::gen_verify_fp;
 use crate::extractor::platforms::douyin::utils::{
@@ -24,7 +24,7 @@ use reqwest::{Client, RequestBuilder};
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 use tracing::debug;
 
 pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -797,26 +797,25 @@ impl<'a> DouyinRequest<'a> {
                 normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
                 normalize_codec(&details.v_codec),
                 details.fps,
-                Some(Arc::new(DouyinStreamExtras {
-                    resolution: details.resolution.clone(),
-                    sdk_key: details.sdk_key.clone(),
+                Some(serde_json::json!({
+                    "resolution": details.resolution.as_str(),
+                    "sdk_key": details.sdk_key.as_str(),
                 })),
             ),
             None => ("原画", 0, String::new(), 0, None),
         };
 
-        Some(StreamInfo {
-            url: origin_url,
-            stream_format: StreamFormat::Flv,
-            media_format: MediaFormat::Flv,
-            quality: quality_name.to_string(),
-            bitrate: bitrate as u64,
-            priority: 10,
-            extras: extras.map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null)),
-            codec,
-            fps: fps as f64,
-            is_headers_needed: true,
-        })
+        Some(
+            StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
+                .quality(quality_name.to_string())
+                .bitrate(bitrate as u64)
+                .priority(10)
+                .extras_opt(extras)
+                .codec(codec)
+                .fps(fps as f64)
+                .is_headers_needed(true)
+                .build(),
+        )
     }
 
     /// Extracts all available streams from the SDK data with owned qualities
@@ -845,9 +844,9 @@ impl<'a> DouyinRequest<'a> {
             };
 
             let extras = quality_details.map(|details| {
-                Arc::new(DouyinStreamExtras {
-                    resolution: details.resolution.clone(),
-                    sdk_key: details.sdk_key.clone(),
+                serde_json::json!({
+                    "resolution": details.resolution.as_str(),
+                    "sdk_key": details.sdk_key.as_str(),
                 })
             });
 
@@ -965,26 +964,25 @@ impl<'a> DouyinRequest<'a> {
                 normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
                 normalize_codec(details.v_codec),
                 details.fps,
-                Some(Arc::new(DouyinStreamExtras {
-                    resolution: details.resolution.to_string(),
-                    sdk_key: details.sdk_key.to_string(),
+                Some(serde_json::json!({
+                    "resolution": details.resolution,
+                    "sdk_key": details.sdk_key,
                 })),
             ),
             None => ("原画", 0, String::new(), 0, None),
         };
 
-        Some(StreamInfo {
-            url: origin_url,
-            stream_format: StreamFormat::Flv,
-            media_format: MediaFormat::Flv,
-            quality: quality_name.to_string(),
-            bitrate: bitrate as u64,
-            priority: 10,
-            extras: extras.map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null)),
-            codec,
-            fps: fps as f64,
-            is_headers_needed: true,
-        })
+        Some(
+            StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
+                .quality(quality_name.to_string())
+                .bitrate(bitrate as u64)
+                .priority(10)
+                .extras_opt(extras)
+                .codec(codec)
+                .fps(fps as f64)
+                .is_headers_needed(true)
+                .build(),
+        )
     }
 
     /// Extracts all available streams from the SDK data.
@@ -1011,9 +1009,9 @@ impl<'a> DouyinRequest<'a> {
             };
 
             let extras = quality_details.map(|details| {
-                Arc::new(DouyinStreamExtras {
-                    resolution: details.resolution.to_string(),
-                    sdk_key: details.sdk_key.to_string(),
+                serde_json::json!({
+                    "resolution": details.resolution,
+                    "sdk_key": details.sdk_key,
                 })
             });
 
@@ -1058,22 +1056,20 @@ impl<'a> DouyinRequest<'a> {
         bitrate: u64,
         codec: &str,
         fps: i32,
-        extras: Option<&Arc<DouyinStreamExtras>>,
+        extras: Option<&serde_json::Value>,
         streams: &mut Vec<StreamInfo>,
     ) {
         if !url.is_empty() {
-            streams.push(StreamInfo {
-                url: url.to_string(),
-                stream_format: format,
-                media_format,
-                quality: quality_name.to_string(),
-                bitrate,
-                priority: 0,
-                extras: extras.map(|e| serde_json::to_value(e).unwrap_or(serde_json::Value::Null)),
-                codec: codec.to_string(),
-                fps: fps as f64,
-                is_headers_needed: true,
-            });
+            streams.push(
+                StreamInfo::builder(url.to_string(), format, media_format)
+                    .quality(quality_name.to_string())
+                    .bitrate(bitrate)
+                    .extras_opt(extras.cloned())
+                    .codec(codec.to_string())
+                    .fps(fps as f64)
+                    .is_headers_needed(true)
+                    .build(),
+            );
         }
     }
 
@@ -1083,33 +1079,21 @@ impl<'a> DouyinRequest<'a> {
             Vec::with_capacity(stream_url.flv_pull_url.len() + stream_url.hls_pull_url_map.len());
 
         for (quality, url) in &stream_url.flv_pull_url {
-            streams.push(StreamInfo {
-                url: url.to_string(),
-                stream_format: StreamFormat::Flv,
-                media_format: MediaFormat::Flv,
-                quality: quality.to_string(),
-                bitrate: 0,
-                priority: 0,
-                extras: None,
-                fps: 0.0,
-                codec: String::new(),
-                is_headers_needed: true,
-            });
+            streams.push(
+                StreamInfo::builder(url.to_string(), StreamFormat::Flv, MediaFormat::Flv)
+                    .quality(quality.to_string())
+                    .is_headers_needed(true)
+                    .build(),
+            );
         }
 
         for (quality, url) in &stream_url.hls_pull_url_map {
-            streams.push(StreamInfo {
-                url: url.to_string(),
-                stream_format: StreamFormat::Hls,
-                media_format: MediaFormat::Ts,
-                quality: quality.to_string(),
-                bitrate: 0,
-                priority: 0,
-                extras: None,
-                fps: 0.0,
-                codec: String::new(),
-                is_headers_needed: true,
-            });
+            streams.push(
+                StreamInfo::builder(url.to_string(), StreamFormat::Hls, MediaFormat::Ts)
+                    .quality(quality.to_string())
+                    .is_headers_needed(true)
+                    .build(),
+            );
         }
         streams
     }

@@ -276,11 +276,9 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                     // Compute cookies and let the protocol derive per-connection state (e.g. uid)
                     // before resolving the final WebSocket URL.
                     let protocol_cookies = protocol.cookies();
-                    let merged_cookies = merge_cookie_headers(
-                        protocol_cookies.as_deref(),
-                        cookies.as_deref(),
-                    )
-                    .map(|c| protocol.normalize_cookies(&c));
+                    let merged_cookies =
+                        merge_cookie_headers(protocol_cookies.as_deref(), cookies.as_deref())
+                            .map(|c| protocol.normalize_cookies(&c));
                     protocol.configure_connection(merged_cookies.as_deref(), extras.as_ref());
 
                     match protocol.websocket_url(&room_id_owned).await {
@@ -291,7 +289,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                             let mut headers = protocol.headers(&room_id_owned);
 
                             if protocol.send_cookie_header() {
-                                // Add or merge cookies into headers      
+                                // Add or merge cookies into headers
                                 if let Some(cookie_str) = merged_cookies.clone() {
                                     // Check if Cookie header already exists
                                     let mut found = false;

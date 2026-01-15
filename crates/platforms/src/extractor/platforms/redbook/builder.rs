@@ -133,18 +133,15 @@ impl RedBook {
                     MediaFormat::Ts
                 };
 
-                streams.push(StreamInfo {
-                    url: url.to_string(),
-                    stream_format: format,
-                    media_format,
-                    quality: display_quality,
-                    bitrate: 0,
-                    priority: (priority_offset + index) as u32,
-                    codec: codec.to_string(),
-                    fps: 0.0,
-                    is_headers_needed: true,
-                    extras: Some(extras),
-                });
+                streams.push(
+                    StreamInfo::builder(url.to_string(), format, media_format)
+                        .quality(display_quality)
+                        .priority((priority_offset + index) as u32)
+                        .extras(extras)
+                        .codec(codec.to_string())
+                        .is_headers_needed(true)
+                        .build(),
+                );
             }
         }
 
@@ -219,17 +216,10 @@ impl RedBook {
         // Validate live status
         if !is_live {
             // not live
-            return Ok(MediaInfo {
-                site_url,
-                title: format!("{artist} 的直播"),
-                artist: artist.to_string(),
-                cover_url: None,
-                artist_url: avatar_url,
-                is_live: false,
-                streams: Vec::new(),
-                headers: None,
-                extras: None,
-            });
+            return Ok(MediaInfo::builder(site_url, title, artist.to_string())
+                .artist_url_opt(avatar_url)
+                .is_live(false)
+                .build());
         }
 
         // Build streams from both h264 and h265 arrays

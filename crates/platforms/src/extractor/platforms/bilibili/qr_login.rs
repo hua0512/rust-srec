@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
-use crate::extractor::default::DEFAULT_UA;
 use super::cookie_utils::{extract_cookie_value, rebuild_cookies, urls};
+use crate::extractor::default::DEFAULT_UA;
 
 /// AppKey for TV login (云视听小电视).
 const TV_APPKEY: &str = "4409e2ce8ffd12b8";

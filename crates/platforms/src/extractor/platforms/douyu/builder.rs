@@ -1084,19 +1084,16 @@ impl Douyu {
                     "rid": rid.to_string(),
                 });
 
-                let stream = StreamInfo {
-                    url: stream_url,
-                    stream_format: format,
-                    media_format,
-                    quality: rate.name.to_string(),
-                    bitrate: rate.bit,
-                    priority,
-                    extras: Some(extras),
-                    codec: codec.to_string(),
-                    fps: 0.0,
-                    is_headers_needed: true,
-                };
-                stream_infos.push(stream);
+                stream_infos.push(
+                    StreamInfo::builder(stream_url, format, media_format)
+                        .quality(rate.name.to_string())
+                        .bitrate(rate.bit)
+                        .priority(priority)
+                        .extras(extras)
+                        .codec(codec.to_string())
+                        .is_headers_needed(true)
+                        .build(),
+                );
             }
         }
 

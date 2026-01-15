@@ -502,7 +502,13 @@ impl BilibiliDanmuProtocol {
         let timestamp_ms = data
             .get("timestamp")
             .and_then(|v| v.as_i64().or_else(|| v.as_u64().map(|u| u as i64)))
-            .map(|ts| if ts > 1_000_000_000_000 { ts } else { ts * 1000 });
+            .map(|ts| {
+                if ts > 1_000_000_000_000 {
+                    ts
+                } else {
+                    ts * 1000
+                }
+            });
 
         let mut msg = DanmuMessage::gift(
             uuid::Uuid::new_v4().to_string(),
@@ -544,7 +550,13 @@ impl BilibiliDanmuProtocol {
             .get("ts")
             .or_else(|| data.get("timestamp"))
             .and_then(|v| v.as_i64().or_else(|| v.as_u64().map(|u| u as i64)))
-            .map(|ts| if ts > 1_000_000_000_000 { ts } else { ts * 1000 });
+            .map(|ts| {
+                if ts > 1_000_000_000_000 {
+                    ts
+                } else {
+                    ts * 1000
+                }
+            });
 
         let mut msg = DanmuMessage::super_chat(
             uuid::Uuid::new_v4().to_string(),
@@ -871,7 +883,10 @@ mod tests {
 
         match item {
             DanmuItem::Message(msg) => {
-                assert_eq!(msg.message_type, crate::danmaku::message::DanmuType::SuperChat);
+                assert_eq!(
+                    msg.message_type,
+                    crate::danmaku::message::DanmuType::SuperChat
+                );
                 assert_eq!(msg.user_id, "99");
                 assert_eq!(msg.username, "SCUser");
                 assert_eq!(msg.content, "Hello");

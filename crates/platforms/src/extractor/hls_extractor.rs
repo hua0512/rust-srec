@@ -70,18 +70,12 @@ pub trait HlsExtractor {
                     MediaFormat::Ts
                 };
 
-                vec![StreamInfo {
-                    url: m3u8_url.to_string(),
-                    stream_format: StreamFormat::Hls,
-                    media_format,
-                    quality: quality_name.unwrap_or("Source").to_string(),
-                    bitrate: 0,
-                    priority: 0,
-                    extras,
-                    codec: "".to_string(),
-                    fps: 0.0,
-                    is_headers_needed: false,
-                }]
+                vec![
+                    StreamInfo::builder(m3u8_url.to_string(), StreamFormat::Hls, media_format)
+                        .quality(quality_name.unwrap_or("Source"))
+                        .extras_opt(extras)
+                        .build(),
+                ]
             }
         };
 
@@ -114,19 +108,13 @@ fn process_master_playlist(
                 .map(|r| format!("{} - {}x{}", video, r.width, r.height))
                 .unwrap_or(video);
 
-            StreamInfo {
-                url: stream_url.to_string(),
-                stream_format: StreamFormat::Hls,
-                // we do not know the media format here, so we use Ts as default
-                media_format: MediaFormat::Ts,
-                quality,
-                bitrate,
-                priority: 0,
-                extras: extras.as_ref().cloned(),
-                codec: variant.codecs.unwrap_or_default(),
-                fps: variant.frame_rate.unwrap_or(0.0),
-                is_headers_needed: false,
-            }
+            StreamInfo::builder(stream_url.to_string(), StreamFormat::Hls, MediaFormat::Ts)
+                .quality(quality)
+                .bitrate(bitrate)
+                .extras_opt(extras.as_ref().cloned())
+                .codec(variant.codecs.unwrap_or_default())
+                .fps(variant.frame_rate.unwrap_or(0.0))
+                .build()
         })
         .collect()
 }

@@ -82,17 +82,12 @@ impl Picarto {
         let is_live = channel.streaming;
 
         if !is_live {
-            return Ok(MediaInfo {
-                site_url: self.extractor.url.clone(),
-                title,
-                artist,
-                cover_url: None,
-                artist_url: Some(avatar_url),
-                is_live,
-                streams: vec![],
-                headers: None,
-                extras: None,
-            });
+            return Ok(
+                MediaInfo::builder(self.extractor.url.clone(), title, artist)
+                    .artist_url(avatar_url)
+                    .is_live(false)
+                    .build(),
+            );
         }
 
         if data.load_balancer.is_none() {
@@ -133,30 +128,20 @@ impl Picarto {
             .extract_hls_stream(&self.extractor.client, Some(headers), &hls_url, None, None)
             .await?;
 
-        streams.push(StreamInfo {
-            url: mp4_url,
-            stream_format: StreamFormat::Mp4,
-            media_format: MediaFormat::Mp4,
-            quality: "Source".to_string(),
-            bitrate: 0,
-            priority: 0,
-            extras: None,
-            codec: "".to_string(),
-            fps: 0.0,
-            is_headers_needed: false,
-        });
+        streams.push(
+            StreamInfo::builder(mp4_url, StreamFormat::Mp4, MediaFormat::Mp4)
+                .quality("Source")
+                .build(),
+        );
 
-        Ok(MediaInfo {
-            site_url: self.extractor.url.clone(),
-            title,
-            artist,
-            cover_url: None,
-            artist_url: Some(avatar_url),
-            is_live,
-            streams,
-            headers: Some(self.extractor.get_platform_headers_map()),
-            extras: None,
-        })
+        Ok(
+            MediaInfo::builder(self.extractor.url.clone(), title, artist)
+                .artist_url(avatar_url)
+                .is_live(is_live)
+                .streams(streams)
+                .headers(self.extractor.get_platform_headers_map())
+                .build(),
+        )
     }
 }
 

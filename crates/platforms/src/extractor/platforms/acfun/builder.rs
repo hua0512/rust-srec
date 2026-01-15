@@ -102,17 +102,9 @@ impl PlatformExtractor for Acfun {
             .await?;
 
         if start_play_response.result != 1 {
-            return Ok(MediaInfo {
-                title: "".to_string(),
-                is_live: false,
-                streams: vec![],
-                site_url: self.extractor.url.clone(),
-                artist: "".to_string(),
-                artist_url: None,
-                cover_url: None,
-                headers: None,
-                extras: None,
-            });
+            return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")
+                .is_live(false)
+                .build());
         }
 
         let data = start_play_response.data.ok_or_else(|| {
@@ -125,17 +117,13 @@ impl PlatformExtractor for Acfun {
             .live_adaptive_manifest
             .into_iter()
             .flat_map(|manifest| manifest.adaptation_set.representation)
-            .map(|rep| StreamInfo {
-                url: rep.url,
-                stream_format: StreamFormat::Flv,
-                media_format: MediaFormat::Flv,
-                quality: rep.name,
-                bitrate: rep.bitrate as u64,
-                priority: rep.level,
-                extras: None,
-                codec: rep.media_type,
-                fps: 0.0,
-                is_headers_needed: false,
+            .map(|rep| {
+                StreamInfo::builder(rep.url, StreamFormat::Flv, MediaFormat::Flv)
+                    .quality(rep.name)
+                    .bitrate(rep.bitrate as u64)
+                    .priority(rep.level)
+                    .codec(rep.media_type)
+                    .build()
             })
             .collect::<Vec<_>>();
 
@@ -143,17 +131,13 @@ impl PlatformExtractor for Acfun {
             return Err(ExtractorError::NoStreamsFound);
         }
 
-        Ok(MediaInfo {
-            title: data.caption,
-            is_live: true,
-            streams,
-            site_url: self.extractor.url.clone(),
-            artist: "".to_string(),
-            artist_url: None,
-            cover_url: None,
-            headers: None,
-            extras: None,
-        })
+        Ok(
+            MediaInfo::builder(self.extractor.url.clone(), data.caption, "")
+                .is_live(true)
+                .live_start_time_unix(data.live_start_time)
+                .streams(streams)
+                .build(),
+        )
     }
 }
 

@@ -194,7 +194,7 @@ pub mod urls {
     /// Confirm refresh URL
     pub const CONFIRM: &str = "https://passport.bilibili.com/x/passport-login/web/confirm/refresh";
     /// NAV API for validation
-    pub const NAV: &str = "https://api.bilibili.com/x/web-interface/nav";       
+    pub const NAV: &str = "https://api.bilibili.com/x/web-interface/nav";
     /// Live user info API (requires authenticated cookies)
     pub const USER_INFO: &str =
         "https://api.live.bilibili.com/xlive/web-ucenter/user/get_user_info";
