@@ -4,8 +4,8 @@
 # https://github.com/hua0512/rust-srec
 #
 # 使用方法:
-#   curl -fsSL https://hua0512.github.io/rust-srec/docker-install-zh.sh | bash
-#   wget -qO- https://hua0512.github.io/rust-srec/docker-install-zh.sh | bash
+#   curl -fsSL https://docs.srec.rs/docker-install-zh.sh | bash
+#   wget -qO- https://docs.srec.rs/docker-install-zh.sh | bash
 #
 
 set -euo pipefail
@@ -20,7 +20,7 @@ NC='\033[0m' # No Color
 # Default values
 INSTALL_DIR="${RUST_SREC_DIR:-./rust-srec}"
 VERSION="${VERSION:-latest}"
-BASE_URL="https://hua0512.github.io/rust-srec"
+BASE_URL="https://docs.srec.rs"
 
 # Print colored messages
 info() { echo -e "${BLUE}[信息]${NC} $*"; }
@@ -107,7 +107,7 @@ main() {
         echo "  1) latest  - 稳定版 (推荐)"
         echo "  2) dev     - 开发版 (最新功能)"
         echo ""
-        read -p "请输入选项 [1]: " version_choice
+        read -p "请输入选项 [1]: " version_choice < /dev/tty
         case "$version_choice" in
             2|dev)
                 VERSION="dev"
@@ -184,7 +184,7 @@ main() {
     echo ""
     
     # Ask if user wants to start now
-    read -p "是否立即启动 Rust-Srec? [y/N] " -n 1 -r
+    read -p "是否立即启动 Rust-Srec? [y/N] " -n 1 -r < /dev/tty
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         info "正在启动 Rust-Srec..."

@@ -18,19 +18,40 @@ Docker 是运行 Rust-Srec 最简单且推荐的方式。
 运行以下命令自动安装配置 Rust-Srec：
 
 ```bash
-curl -fsSL https://hua0512.github.io/rust-srec/docker-install-zh.sh | bash
+curl -fsSL https://docs.srec.rs/docker-install-zh.sh | bash
 ```
 
 ### 一键安装 (Windows PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docs/public/docker-install-zh.ps1 | iex
+iwr -useb https://docs.srec.rs/docker-install-zh.ps1 | iex
 ```
 
 脚本会自动完成：
 - 下载配置文件
 - 生成安全密钥
 - 可选择立即启动应用
+
+::: tip 自定义安装
+你可以通过环境变量自定义安装：
+
+**Linux/macOS:**
+```bash
+# 安装开发版到自定义目录
+RUST_SREC_DIR=/opt/rust-srec VERSION=dev curl -fsSL https://docs.srec.rs/docker-install-zh.sh | bash
+```
+
+**Windows PowerShell:**
+```powershell
+# 安装开发版到自定义目录
+$env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"; iwr -useb https://docs.srec.rs/docker-install-zh.ps1 | iex
+```
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `RUST_SREC_DIR` | 安装目录 | `./rust-srec` |
+| `VERSION` | Docker 镜像标签 (`latest` 或 `dev`) | `latest` |
+:::
 
 ### 手动安装
 

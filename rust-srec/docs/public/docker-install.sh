@@ -4,8 +4,8 @@
 # https://github.com/hua0512/rust-srec
 #
 # Usage:
-#   curl -fsSL https://hua0512.github.io/rust-srec/docker-install.sh | bash
-#   wget -qO- https://hua0512.github.io/rust-srec/docker-install.sh | bash
+#   curl -fsSL https://docs.srec.rs/docker-install.sh | bash
+#   wget -qO- https://docs.srec.rs/docker-install.sh | bash
 #
 
 set -euo pipefail
@@ -20,7 +20,7 @@ NC='\033[0m' # No Color
 # Default values
 INSTALL_DIR="${RUST_SREC_DIR:-./rust-srec}"
 VERSION="${VERSION:-latest}"
-BASE_URL="https://hua0512.github.io/rust-srec"
+BASE_URL="https://docs.srec.rs"
 
 # Print colored messages
 info() { echo -e "${BLUE}[INFO]${NC} $*"; }
@@ -108,7 +108,7 @@ main() {
         echo "  1) latest  - Stable release (recommended)"
         echo "  2) dev     - Development build (bleeding edge)"
         echo ""
-        read -p "Enter choice [1]: " version_choice
+        read -p "Enter choice [1]: " version_choice < /dev/tty
         case "$version_choice" in
             2|dev)
                 VERSION="dev"
@@ -186,7 +186,7 @@ main() {
     echo ""
     
     # Ask if user wants to start now
-    read -p "Would you like to start Rust-Srec now? [y/N] " -n 1 -r
+    read -p "Would you like to start Rust-Srec now? [y/N] " -n 1 -r < /dev/tty
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         info "Starting Rust-Srec..."
