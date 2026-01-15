@@ -89,24 +89,17 @@ impl Twitch {
         sha256_hash: &str,
         variables: serde_json::Value,
     ) -> String {
-        let query = format!(
-            r#"
-        {{  
-         "operationName": "{operation_name}",
-            "extensions": {{
-                "persistedQuery": {{
-                "version": 1,
-                "sha256Hash": "{sha256_hash}"
-            }}
-        }},
-            "variables": {variables}
-        }}
-        "#,
-            operation_name = operation_name,
-            sha256_hash = sha256_hash,
-            variables = serde_json::to_string(&variables).unwrap()
-        );
-        query.trim().to_string()
+        serde_json::to_string(&serde_json::json!({
+            "operationName": operation_name,
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": sha256_hash,
+                }
+            },
+            "variables": variables,
+        }))
+        .unwrap()
     }
 
     const GPL_API_URL: &str = "https://gql.twitch.tv/gql";
@@ -145,45 +138,38 @@ impl Twitch {
     pub async fn get_live_stream_info(&self) -> Result<MediaInfo, ExtractorError> {
         let room_id = self.extract_room_id()?;
         debug!("room_id: {}", room_id);
-        let queries = [
-            self.build_persisted_query_request(
-                "ChannelShell",
-                "fea4573a7bf2644f5b3f2cbbdcbee0d17312e48d2e55f080589d053aad353f11",
-                serde_json::json!({
-                    "login": room_id,
-                }),
-            ),
-            self.build_persisted_query_request(
-                "StreamMetadata",
-                "b57f9b910f8cd1a4659d894fe7550ccc81ec9052c01e438b290fd66a040b9b93",
-                serde_json::json!({
-                    "channelLogin": room_id,
-                    "previewImageURL": "",
-                    "includeIsDJ" : true,
-                }),
-            ),
-        ];
-        let queries_string = format!("[{},{}]", queries[0], queries[1]);
+        let channel_shell_query = self.build_persisted_query_request(
+            "ChannelShell",
+            "fea4573a7bf2644f5b3f2cbbdcbee0d17312e48d2e55f080589d053aad353f11",
+            serde_json::json!({
+                "login": room_id,
+            }),
+        );
+        let stream_metadata_query = self.build_persisted_query_request(
+            "StreamMetadata",
+            "b57f9b910f8cd1a4659d894fe7550ccc81ec9052c01e438b290fd66a040b9b93",
+            serde_json::json!({
+                "channelLogin": room_id,
+                "previewImageURL": "",
+                "includeIsDJ": true,
+            }),
+        );
+        let queries_string = format!("[{channel_shell_query},{stream_metadata_query}]");
 
         debug!("queries_string: {}", queries_string);
 
         let response = self.post_gql::<TwitchResponse>(queries_string).await?;
         debug!("response: {:?}", response);
 
-        // Filter out responses with errors and keep only valid data responses
-        let valid_responses: Vec<&TwitchResponse> =
-            response.iter().filter(|r| r.data.is_some()).collect();
-
-        if valid_responses.is_empty() {
+        let mut valid_responses = response.iter().filter(|r| r.data.is_some());
+        let Some(channel_shell) = valid_responses.next() else {
             return Err(ExtractorError::ValidationError(
                 "No valid response from Twitch API".to_string(),
             ));
-        }
+        };
 
-        let channel_shell = valid_responses.first().unwrap();
-
-        // Try to get stream_metadata, if not available use channel_shell data
-        let stream_metadata = valid_responses.get(1).unwrap_or(channel_shell);
+        // Try to get stream_metadata, if not available use channel_shell data.
+        let stream_metadata = valid_responses.next().unwrap_or(channel_shell);
 
         let user_or_error = &channel_shell
             .data

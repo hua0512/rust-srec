@@ -88,6 +88,19 @@ impl Bilibili {
 
     const WBI_WEB_LOCATION: &str = "444.8";
 
+    fn extract_cdn_from_host(host: &str) -> &str {
+        let host = host.split_once("//").map_or(host, |(_, rest)| rest);
+        host.split_once('.').map_or("", |(cdn, _)| cdn)
+    }
+
+    fn concat_url(host: &str, base_url: &str, extra: &str) -> String {
+        let mut url = String::with_capacity(host.len() + base_url.len() + extra.len());
+        url.push_str(host);
+        url.push_str(base_url);
+        url.push_str(extra);
+        url
+    }
+
     pub fn new(
         url: String,
         client: Client,
@@ -197,14 +210,20 @@ impl Bilibili {
         let data = json.data;
         let playurl_info = data.playurl_info;
 
-        let quality_map = playurl_info
-            .playurl
-            .g_qn_desc
-            .iter()
-            .map(|q| (q.qn, q.desc.as_str()))
-            .collect::<FxHashMap<_, _>>();
+        let mut quality_map = FxHashMap::default();
+        quality_map.reserve(playurl_info.playurl.g_qn_desc.len());
+        for q in &playurl_info.playurl.g_qn_desc {
+            quality_map.insert(q.qn, q.desc.as_str());
+        }
 
-        let mut streams = Vec::new();
+        let estimated_streams = playurl_info.playurl.stream.iter().fold(0usize, |acc, s| {
+            s.format.iter().fold(acc, |acc, f| {
+                f.codec.iter().fold(acc, |acc, c| {
+                    acc.saturating_add(c.url_info.len().saturating_mul(c.accept_qn.len()))
+                })
+            })
+        });
+        let mut streams = Vec::with_capacity(estimated_streams);
         for s in &playurl_info.playurl.stream {
             debug!("protocol_name: {:?}", s.protocol_name);
             let protocol_name = if s.protocol_name == "http_stream" {
@@ -215,44 +234,42 @@ impl Bilibili {
 
             for f in &s.format {
                 debug!("format_name: {:?}", f.format_name);
+                let media_format = MediaFormat::from_extension(&f.format_name);
                 for c in &f.codec {
                     let current_qn = c.current_qn;
+                    let accept_qn = c
+                        .accept_qn
+                        .iter()
+                        .map(|&qn| {
+                            let quality_desc = quality_map.get(&qn).copied().unwrap_or("Unknown");
+                            let qn_u64 = qn.max(0) as u64;
+                            let bitrate = if qn_u64 < 1000 { qn_u64 * 10 } else { qn_u64 };
+                            (qn, quality_desc, bitrate)
+                        })
+                        .collect::<Vec<_>>();
+
                     for u in &c.url_info {
-                        for &qn in &c.accept_qn {
+                        let cdn = Self::extract_cdn_from_host(&u.host);
+
+                        for &(qn, quality_desc, bitrate) in &accept_qn {
                             let url = if qn == current_qn {
-                                format!("{}{}{}", u.host, c.base_url, u.extra)
+                                Self::concat_url(&u.host, &c.base_url, &u.extra)
                             } else {
                                 String::new()
                             };
 
-                            let cdn = u
-                                .host
-                                .split("//")
-                                .nth(1)
-                                .unwrap_or("")
-                                .split('.')
-                                .next()
-                                .unwrap_or("");
-
-                            let quality_desc = quality_map.get(&qn).copied().unwrap_or("Unknown");
-
-                            let bitrate = if qn < 1000 { qn as u64 * 10 } else { qn as u64 };
                             streams.push(
-                                StreamInfo::builder(
-                                    url,
-                                    protocol_name,
-                                    MediaFormat::from_extension(&f.format_name),
-                                )
-                                .quality(quality_desc.to_string())
-                                .bitrate(bitrate)
-                                .extras(serde_json::json!({
-                                    "qn": qn,
-                                    "rid": room_id,
-                                    "cdn": cdn,
-                                }))
-                                .codec(c.codec_name.to_string())
-                                .is_headers_needed(true)
-                                .build(),
+                                StreamInfo::builder(url, protocol_name, media_format)
+                                    .quality(quality_desc.to_string())
+                                    .bitrate(bitrate)
+                                    .extras(serde_json::json!({
+                                        "qn": qn,
+                                        "rid": room_id,
+                                        "cdn": cdn,
+                                    }))
+                                    .codec(c.codec_name.to_string())
+                                    .is_headers_needed(true)
+                                    .build(),
                             );
                         }
                     }
@@ -335,10 +352,7 @@ impl PlatformExtractor for Bilibili {
             ExtractorError::ValidationError("Room ID not found in extras".to_string())
         })?;
 
-        let cdn = extras
-            .get("cdn")
-            .and_then(|c| c.as_str())
-            .map(|s| s.to_string());
+        let cdn = extras.get("cdn").and_then(|c| c.as_str());
 
         // skip extraction if url is already present
         if !stream_info.url.is_empty() {
@@ -407,17 +421,12 @@ impl PlatformExtractor for Bilibili {
         }
 
         if let Some(cdn) = cdn {
-            if let Some(url_info) = codec.url_info.iter().find(|&u| {
-                u.host
-                    .split("//")
-                    .nth(1)
-                    .unwrap_or("")
-                    .split('.')
-                    .next()
-                    .unwrap_or("")
-                    == cdn
-            }) {
-                let url = format!("{}{}{}", url_info.host, codec.base_url, url_info.extra);
+            if let Some(url_info) = codec
+                .url_info
+                .iter()
+                .find(|&u| Self::extract_cdn_from_host(&u.host) == cdn)
+            {
+                let url = Self::concat_url(&url_info.host, &codec.base_url, &url_info.extra);
                 if reqwest::Url::parse(&url).is_ok() {
                     stream_info.url = url;
                     return Ok(());
@@ -430,7 +439,7 @@ impl PlatformExtractor for Bilibili {
 
         // If no CDN is specified, just pick the first valid URL.
         for url_info in &codec.url_info {
-            let url = format!("{}{}{}", url_info.host, codec.base_url, url_info.extra);
+            let url = Self::concat_url(&url_info.host, &codec.base_url, &url_info.extra);
             if reqwest::Url::parse(&url).is_ok() {
                 stream_info.url = url;
                 return Ok(());
@@ -459,7 +468,7 @@ mod tests {
             .with_max_level(Level::DEBUG)
             .init();
         let bilibili = Bilibili::new(
-            "https://live.bilibili.com/27708284".to_string(),
+            "https://live.bilibili.com/6".to_string(),
             default_client(),
             None,
             None,
