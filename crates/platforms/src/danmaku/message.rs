@@ -80,20 +80,55 @@ impl DanmuMessage {
         gift_name: impl Into<String>,
         gift_count: u32,
     ) -> Self {
+        let gift_name = gift_name.into();
+        let content = format!("赠送 {} x{}", gift_name, gift_count);
+
         let mut metadata = HashMap::new();
-        metadata.insert("gift_name".to_string(), serde_json::json!(gift_name.into()));
+        metadata.insert("gift_name".to_string(), serde_json::json!(gift_name));
         metadata.insert("gift_count".to_string(), serde_json::json!(gift_count));
 
         Self {
             id: id.into(),
             user_id: user_id.into(),
             username: username.into(),
-            content: String::new(),
+            content,
             color: None,
             timestamp: Utc::now(),
             message_type: DanmuType::Gift,
             metadata: Some(metadata),
         }
+    }
+
+    /// Create a new super chat message.
+    pub fn super_chat(
+        id: impl Into<String>,
+        user_id: impl Into<String>,
+        username: impl Into<String>,
+        content: impl Into<String>,
+        price: u64,
+    ) -> Self {
+        let mut metadata = HashMap::new();
+        metadata.insert("price".to_string(), serde_json::json!(price));
+
+        Self {
+            id: id.into(),
+            user_id: user_id.into(),
+            username: username.into(),
+            content: content.into(),
+            color: None,
+            timestamp: Utc::now(),
+            message_type: DanmuType::SuperChat,
+            metadata: Some(metadata),
+        }
+    }
+
+    pub fn with_super_chat_keep_time(mut self, keep_time: u64) -> Self {
+        if self.message_type == DanmuType::SuperChat {
+            self.metadata
+                .get_or_insert_with(HashMap::new)
+                .insert("keep_time".to_string(), serde_json::json!(keep_time));
+        }
+        self
     }
 
     /// Set the color of the message.
@@ -138,9 +173,20 @@ mod tests {
         let msg = DanmuMessage::gift("2", "user2", "GiftUser", "Rocket", 5);
 
         assert_eq!(msg.message_type, DanmuType::Gift);
+        assert_eq!(msg.content, "赠送 Rocket x5");
         let metadata = msg.metadata.as_ref().unwrap();
         assert_eq!(metadata.get("gift_name").unwrap(), "Rocket");
         assert_eq!(metadata.get("gift_count").unwrap(), 5);
+    }
+
+    #[test]
+    fn test_danmu_message_super_chat() {
+        let msg = DanmuMessage::super_chat("3", "user3", "SCUser", "Hello", 30);
+
+        assert_eq!(msg.message_type, DanmuType::SuperChat);
+        assert_eq!(msg.content, "Hello");
+        let metadata = msg.metadata.as_ref().unwrap();
+        assert_eq!(metadata.get("price").unwrap(), 30);
     }
 
     #[test]

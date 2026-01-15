@@ -1,6 +1,11 @@
 //! XML writer for danmu messages.
 //!
-//! Provides functionality to write danmu messages to XML files in a Bilibili-compatible format.
+//! Provides functionality to write danmu messages to XML files in a mostly
+//! Bilibili-compatible format.
+//!
+//! This writer uses the standard `<d>` nodes for regular danmu messages, and
+//! additionally emits custom `<gift>` / `<sc>` nodes for gift and super chat
+//! events (for richer downstream processing).
 //!
 //! ## Danmu Format
 //!
@@ -14,7 +19,7 @@
 //! - `type`: Danmu display type (1=scroll, 4=bottom, 5=top, etc.)
 //! - `size`: Font size (default: 25)
 //! - `color`: Decimal RGB color (default: 16777215 = white)
-//! - `timestamp`: Unix timestamp when danmu was sent
+//! - `timestamp`: Unix timestamp in milliseconds when danmu was sent
 //! - `pool`: Danmu pool (0=normal, 1=subtitle, 2=special)
 //! - `uid_crc32`: CRC32 hash of the sender's user ID
 //! - `row_id`: Row ID for ordering (uses message count)
@@ -139,7 +144,7 @@ impl XmlDanmuWriter {
     /// - `type`: Danmu type (1=scroll right-to-left, 4=bottom, 5=top)
     /// - `size`: Font size (default 25)
     /// - `color`: Decimal RGB color (default white = 16777215)
-    /// - `timestamp`: Unix timestamp of the message
+    /// - `timestamp`: Unix timestamp in milliseconds of the message
     /// - `pool`: Danmu pool (0=normal)
     /// - `uid_crc32`: CRC32 of user ID
     /// - `row_id`: Message sequence number
@@ -152,32 +157,41 @@ impl XmlDanmuWriter {
                 .max(0);
             let offset_secs = offset_ms as f64 / 1000.0;
 
-            // Get danmu type for Bilibili format
-            let danmu_type = message_type_to_bilibili_type(&message.message_type);
-
             // Calculate CRC32 of user ID
             let uid_crc32 = crc32_hash(&message.user_id);
 
-            // Unix timestamp
-            let unix_timestamp = message.timestamp.timestamp();
+            // Unix timestamp in milliseconds
+            let unix_timestamp_ms = message.timestamp.timestamp_millis();
 
             // Row ID is the message count + 1
             let row_id = self.message_count + 1;
 
-            // Format: <d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id}" user="{username}">{content}</d>
-            let xml = format!(
-                "  <d p=\"{:.3},{},{},{},{},{},{},{}\" user=\"{}\">{}</d>\n",
-                offset_secs,
-                danmu_type,
-                DEFAULT_FONT_SIZE,
-                DEFAULT_COLOR,
-                unix_timestamp,
-                DEFAULT_POOL,
-                uid_crc32,
-                row_id,
-                escape_xml(&message.username),
-                escape_xml(&message.content),
-            );
+            let xml = match message.message_type {
+                DanmuType::Gift => gift_to_xml(message, offset_secs, unix_timestamp_ms),
+                DanmuType::SuperChat => super_chat_to_xml(message, offset_secs, unix_timestamp_ms),
+                _ => {
+                    // Get danmu type for Bilibili format
+                    let danmu_type = message_type_to_bilibili_type(&message.message_type);
+                    let color =
+                        message_color_to_bilibili_color(message).unwrap_or(DEFAULT_COLOR);
+                    let content = message_content_for_xml(message);
+
+                    // Format: <d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id}" user="{username}">{content}</d>
+                    format!(
+                        "  <d p=\"{:.3},{},{},{},{},{},{},{}\" user=\"{}\">{}</d>\n",
+                        offset_secs,
+                        danmu_type,
+                        DEFAULT_FONT_SIZE,
+                        color,
+                        unix_timestamp_ms,
+                        DEFAULT_POOL,
+                        uid_crc32,
+                        row_id,
+                        escape_xml(&message.username),
+                        escape_xml(&content),
+                    )
+                }
+            };
             file.write_all(xml.as_bytes()).await?;
             self.message_count += 1;
 
@@ -236,6 +250,130 @@ pub fn message_type_to_int(msg_type: &DanmuType) -> u8 {
         DanmuType::Subscription => 7,
         DanmuType::Other => 0,
     }
+}
+
+fn message_color_to_bilibili_color(message: &DanmuMessage) -> Option<u32> {
+    let raw = message.color.as_deref()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    let hex = raw.strip_prefix('#').unwrap_or(raw);
+    if hex.len() != 6 || !hex.is_ascii() {
+        return None;
+    }
+
+    u32::from_str_radix(hex, 16).ok()
+}
+
+fn message_content_for_xml(message: &DanmuMessage) -> String {
+    match message.message_type {
+        DanmuType::SuperChat => {
+            let content = message.content.trim();
+            let content = content.to_string();
+
+            let price = message
+                .metadata
+                .as_ref()
+                .and_then(|m| m.get("price"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+
+            if price > 0 && !content.is_empty() {
+                format!("[SC ￥{}] {}", price, content)
+            } else if price > 0 {
+                format!("[SC ￥{}]", price)
+            } else {
+                content
+            }
+        }
+        DanmuType::Gift => {
+            let content = message.content.trim();
+            if !content.is_empty() {
+                return content.to_string();
+            }
+
+            let Some(metadata) = message.metadata.as_ref() else {
+                return String::new();
+            };
+
+            let gift_name = metadata
+                .get("gift_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let gift_count = metadata
+                .get("gift_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+
+            if gift_count > 0 && !gift_name.is_empty() {
+                format!("赠送 {} x{}", gift_name, gift_count)
+            } else {
+                String::new()
+            }
+        }
+        _ => message.content.clone(),
+    }
+}
+
+fn gift_to_xml(message: &DanmuMessage, ts: f64, timestamp_ms: i64) -> String {
+    let mut gift_name = "";
+    let mut gift_count: u64 = 0;
+    let mut price: u64 = 0;
+
+    if let Some(metadata) = message.metadata.as_ref() {
+        gift_name = metadata
+            .get("gift_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        gift_count = metadata
+            .get("gift_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        price = metadata
+            .get("price")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+    }
+
+    format!(
+        "  <gift ts=\"{:.3}\" giftname=\"{}\" giftcount=\"{}\" price=\"{}\" user=\"{}\" uid=\"{}\" timestamp=\"{}\"></gift>\n",
+        ts,
+        escape_xml(gift_name),
+        gift_count,
+        price,
+        escape_xml(&message.username),
+        escape_xml(&message.user_id),
+        timestamp_ms,
+    )
+}
+
+fn super_chat_to_xml(message: &DanmuMessage, ts: f64, timestamp_ms: i64) -> String {
+    let mut price: u64 = 0;
+    let mut keep_time: u64 = 0;
+
+    if let Some(metadata) = message.metadata.as_ref() {
+        price = metadata
+            .get("price")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        keep_time = metadata
+            .get("keep_time")
+            .or_else(|| metadata.get("time"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+    }
+
+    format!(
+        "  <sc ts=\"{:.3}\" user=\"{}\" uid=\"{}\" price=\"{}\" time=\"{}\" timestamp=\"{}\">{}</sc>\n",
+        ts,
+        escape_xml(&message.username),
+        escape_xml(&message.user_id),
+        price,
+        keep_time,
+        timestamp_ms,
+        escape_xml(message.content.trim()),
+    )
 }
 
 /// Escape special XML characters in a string.
@@ -330,5 +468,45 @@ mod tests {
         assert_eq!(crc32_hash(""), 0);
         assert_eq!(crc32_hash("123456"), 0x0972D361);
         assert_eq!(crc32_hash("test"), 0xD87F7E0C);
+    }
+
+    #[tokio::test]
+    async fn test_xml_writer_writes_gift_and_super_chat_content() {
+        use chrono::TimeZone;
+
+        let tmp = std::env::temp_dir()
+            .join(format!("rust-srec-xml-writer-{}.xml", uuid::Uuid::new_v4()));
+        let start = Utc.timestamp_opt(1_700_000_000, 0).single().unwrap();
+        let mut writer =
+            XmlDanmuWriter::with_start_time(&tmp, start).await.expect("writer");
+
+        let gift = DanmuMessage::gift("g1", "u1", "GiftUser", "Rocket", 5)
+            .with_timestamp(start + chrono::Duration::milliseconds(1500))
+            .with_color("#FF0000");
+        writer.write_message(&gift).await.expect("gift write");
+
+        let super_chat = DanmuMessage::super_chat("s1", "u2", "SCUser", "Hello", 30)
+            .with_timestamp(start + chrono::Duration::milliseconds(2500));
+        writer.write_message(&super_chat).await.expect("sc write");
+
+        writer.finalize().await.expect("finalize");
+
+        let xml = tokio::fs::read_to_string(&tmp).await.expect("read xml");
+        let _ = tokio::fs::remove_file(&tmp).await;
+
+        assert!(xml.contains("<gift "));
+        assert!(xml.contains("giftname=\"Rocket\""));
+        assert!(xml.contains("giftcount=\"5\""));
+        assert!(xml.contains("user=\"GiftUser\""));
+        assert!(xml.contains("uid=\"u1\""));
+        assert!(xml.contains("ts=\"1.500\""));
+        assert!(xml.contains("timestamp=\""));
+
+        assert!(xml.contains("<sc "));
+        assert!(xml.contains("user=\"SCUser\""));
+        assert!(xml.contains("uid=\"u2\""));
+        assert!(xml.contains("price=\"30\""));
+        assert!(xml.contains("ts=\"2.500\""));
+        assert!(xml.contains(">Hello</sc>"));
     }
 }

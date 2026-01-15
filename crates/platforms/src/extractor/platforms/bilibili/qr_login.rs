@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 use crate::extractor::default::DEFAULT_UA;
+use super::cookie_utils::{extract_cookie_value, rebuild_cookies, urls};
 
 /// AppKey for TV login (云视听小电视).
 const TV_APPKEY: &str = "4409e2ce8ffd12b8";
@@ -245,7 +246,42 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
             })
     });
 
-    if cookies.is_some() || refresh_token.is_some() {
+    let cookies = if let Some(cookies) = cookies {
+        // Best-effort: persist uid (DedeUserID) into cookies so downstream refresh/storage can rely on it.
+        if extract_cookie_value(&cookies, "DedeUserID").is_some() {
+            Some(cookies)
+        } else {
+            let maybe_uid = match client
+                .get(urls::USER_INFO)
+                .header("Cookie", &cookies)
+                .header("User-Agent", DEFAULT_UA)
+                .header(reqwest::header::REFERER, "https://live.bilibili.com")
+                .send()
+                .await
+            {
+                Ok(resp) => match resp.json::<serde_json::Value>().await {
+                    Ok(v) => v
+                        .get("data")
+                        .and_then(|d| d.get("uid"))
+                        .and_then(|u| u.as_u64()),
+                    Err(_) => None,
+                },
+                Err(_) => None,
+            };
+
+            if let Some(uid) = maybe_uid {
+                let mut updates = std::collections::HashMap::new();
+                updates.insert("DedeUserID".to_string(), uid.to_string());
+                Some(rebuild_cookies(&cookies, &updates))
+            } else {
+                Some(cookies)
+            }
+        }
+    } else {
+        None
+    };
+
+    if cookies.is_some() && refresh_token.is_some() {
         Ok(QrPollResult {
             status: QrPollStatus::Success,
             message,
