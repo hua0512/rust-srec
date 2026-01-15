@@ -269,6 +269,12 @@ fn apply_hls_engine_overrides(
         if let Some(v) = oc.live_reorder_buffer_max_segments {
             hls_config.output_config.live_reorder_buffer_max_segments = v.max(1);
         }
+        if let Some(v) = oc.gap_evaluation_interval_ms {
+            hls_config.output_config.gap_evaluation_interval = ms(v.max(1));
+        }
+        if let Some(v) = oc.max_pending_init_segments {
+            hls_config.output_config.max_pending_init_segments = v;
+        }
         if let Some(value) = oc.live_max_overall_stall_duration_ms {
             hls_config.output_config.live_max_overall_stall_duration = value.map(ms);
         }

@@ -529,7 +529,14 @@ impl OutputManager {
         // When a gap is detected, we need a periodic wake-up to re-evaluate gap policies
         // (duration-based skipping / VOD timeouts). Otherwise, if no new segments arrive
         // (or backpressure pauses input), we can stall indefinitely without advancing.
-        const GAP_EVALUATION_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
+        let gap_evaluation_interval = {
+            let interval = self.config.output_config.gap_evaluation_interval;
+            if interval == std::time::Duration::ZERO {
+                std::time::Duration::from_millis(1)
+            } else {
+                interval
+            }
+        };
 
         loop {
             // Determine timeout for select! based on *remaining* live stall time.
@@ -609,9 +616,12 @@ impl OutputManager {
                                     .insert(current_segment_sequence, buffered_init);
 
                                 // Prevent unbounded growth if a playlist produces many init segments.
-                                const MAX_PENDING_INIT_SEGMENTS: usize = 8;
-                                while self.pending_init_segments.len() > MAX_PENDING_INIT_SEGMENTS {
-                                    self.pending_init_segments.pop_first();
+                                let max_pending_init_segments =
+                                    self.config.output_config.max_pending_init_segments;
+                                if max_pending_init_segments > 0 {
+                                    while self.pending_init_segments.len() > max_pending_init_segments {
+                                        self.pending_init_segments.pop_first();
+                                    }
                                 }
 
                                 // An init segment can unblock emission for already-buffered media.
@@ -624,7 +634,9 @@ impl OutputManager {
                             }
 
                             // Record segment received in metrics
-                            self.metrics.record_segment_received();
+                            if self.config.output_config.metrics_enabled {
+                                self.metrics.record_segment_received();
+                            }
 
                             // --- Stale Segment Rejection ---
                             // Check if segment is stale (MSN < expected_next_media_sequence)
@@ -634,7 +646,9 @@ impl OutputManager {
                                     "Rejecting stale segment {} (expected >= {}). Segment already emitted or skipped.",
                                     current_segment_sequence, self.expected_next_media_sequence
                                 );
-                                self.metrics.record_segment_rejected_stale();
+                                if self.config.output_config.metrics_enabled {
+                                    self.metrics.record_segment_rejected_stale();
+                                }
                                 continue; // Skip buffering this segment
                             }
 
@@ -666,8 +680,12 @@ impl OutputManager {
                             self.reorder_buffer.insert(current_segment_sequence, buffered_segment);
 
                             // Update metrics for buffer depth
-                            self.metrics.update_buffer_depth(self.reorder_buffer.len() as u64);
-                            self.metrics.update_buffer_bytes(self.current_buffer_bytes as u64);
+                            if self.config.output_config.metrics_enabled {
+                                self.metrics
+                                    .update_buffer_depth(self.reorder_buffer.len() as u64);
+                                self.metrics
+                                    .update_buffer_bytes(self.current_buffer_bytes as u64);
+                            }
 
                             // Log warning if buffer is now at capacity
                             if self.is_buffer_full() {
@@ -706,7 +724,7 @@ impl OutputManager {
                 // Branch 4: Periodic gap evaluation
                 // This ensures duration-based gap skipping and VOD timeouts can trigger even if no
                 // further segments arrive (or input is paused by backpressure).
-                _ = sleep(GAP_EVALUATION_INTERVAL), if self.gap_state.is_some() => {
+                _ = sleep(gap_evaluation_interval), if self.gap_state.is_some() => {
                     if self.try_emit_segments().await.is_err() {
                         error!("Error emitting segments from buffer during gap evaluation tick. Exiting.");
                         break;
@@ -742,8 +760,10 @@ impl OutputManager {
         }
 
         // Log metrics summary before sending StreamEnded event
-        debug!("Logging reorder buffer metrics summary on stream end.");
-        self.metrics.log_summary();
+        if self.config.output_config.metrics_enabled {
+            debug!("Logging reorder buffer metrics summary on stream end.");
+            self.metrics.log_summary();
+        }
 
         // Log performance metrics summary on stream end
         if let Some(ref performance_metrics) = self.performance_metrics {
@@ -793,7 +813,9 @@ impl OutputManager {
 
                     // Record reorder delay (time spent in buffer)
                     let delay_ms = buffered_segment.time_in_buffer().as_millis() as u64;
-                    self.metrics.record_reorder_delay(delay_ms);
+                    if self.config.output_config.metrics_enabled {
+                        self.metrics.record_reorder_delay(delay_ms);
+                    }
 
                     // Extract the ProcessedSegmentOutput from BufferedSegment
                     let segment_output = buffered_segment.output;
@@ -826,7 +848,9 @@ impl OutputManager {
 
                                     // Record reorder delay
                                     let delay = buffered_seg.time_in_buffer().as_millis() as u64;
-                                    self.metrics.record_reorder_delay(delay);
+                                    if self.config.output_config.metrics_enabled {
+                                        self.metrics.record_reorder_delay(delay);
+                                    }
 
                                     // Emit the segment data
                                     let event =
@@ -834,14 +858,18 @@ impl OutputManager {
                                     if self.event_tx.send(Ok(event)).await.is_err() {
                                         return Err(());
                                     }
-                                    self.metrics.record_segment_emitted();
+                                    if self.config.output_config.metrics_enabled {
+                                        self.metrics.record_segment_emitted();
+                                    }
                                 }
                             }
                             // Update metrics for buffer depth after flush
-                            self.metrics
-                                .update_buffer_depth(self.reorder_buffer.len() as u64);
-                            self.metrics
-                                .update_buffer_bytes(self.current_buffer_bytes as u64);
+                            if self.config.output_config.metrics_enabled {
+                                self.metrics
+                                    .update_buffer_depth(self.reorder_buffer.len() as u64);
+                                self.metrics
+                                    .update_buffer_bytes(self.current_buffer_bytes as u64);
+                            }
                         }
 
                         // Reset gap state on discontinuity
@@ -881,7 +909,9 @@ impl OutputManager {
                     }
 
                     // Record segment emitted in metrics
-                    self.metrics.record_segment_emitted();
+                    if self.config.output_config.metrics_enabled {
+                        self.metrics.record_segment_emitted();
+                    }
                     if is_media {
                         self.has_emitted_media_segment = true;
                     }
@@ -892,10 +922,12 @@ impl OutputManager {
                     self.gap_state = None;
 
                     // Update metrics for buffer depth
-                    self.metrics
-                        .update_buffer_depth(self.reorder_buffer.len() as u64);
-                    self.metrics
-                        .update_buffer_bytes(self.current_buffer_bytes as u64);
+                    if self.config.output_config.metrics_enabled {
+                        self.metrics
+                            .update_buffer_depth(self.reorder_buffer.len() as u64);
+                        self.metrics
+                            .update_buffer_bytes(self.current_buffer_bytes as u64);
+                    }
                 } else {
                     // Should not happen if first_entry returned Some
                     break;
@@ -912,12 +944,16 @@ impl OutputManager {
                         .current_buffer_bytes
                         .saturating_sub(buffered_segment.size_bytes);
                     // Record stale rejection in metrics
-                    self.metrics.record_segment_rejected_stale();
+                    if self.config.output_config.metrics_enabled {
+                        self.metrics.record_segment_rejected_stale();
+                    }
                     // Update metrics for buffer depth
-                    self.metrics
-                        .update_buffer_depth(self.reorder_buffer.len() as u64);
-                    self.metrics
-                        .update_buffer_bytes(self.current_buffer_bytes as u64);
+                    if self.config.output_config.metrics_enabled {
+                        self.metrics
+                            .update_buffer_depth(self.reorder_buffer.len() as u64);
+                        self.metrics
+                            .update_buffer_bytes(self.current_buffer_bytes as u64);
+                    }
                 }
             } else {
                 // Gap detected (segment_sequence > self.expected_next_media_sequence)
@@ -935,7 +971,9 @@ impl OutputManager {
                         self.expected_next_media_sequence, segment_sequence
                     );
                     // Record gap detected in metrics
-                    self.metrics.record_gap_detected();
+                    if self.config.output_config.metrics_enabled {
+                        self.metrics.record_gap_detected();
+                    }
 
                     // Create new gap state with timestamp
                     let mut new_gap_state = GapState::new(self.expected_next_media_sequence);
@@ -984,7 +1022,9 @@ impl OutputManager {
 
                         // Record gap skip in metrics
                         let skipped_count = segment_sequence - self.expected_next_media_sequence;
-                        self.metrics.record_gap_skip(skipped_count);
+                        if self.config.output_config.metrics_enabled {
+                            self.metrics.record_gap_skip(skipped_count);
+                        }
 
                         // Advance to next available segment
                         self.expected_next_media_sequence = segment_sequence;
@@ -1013,7 +1053,9 @@ impl OutputManager {
 
                     // Record gap skip in metrics
                     let skipped_count = segment_sequence - self.expected_next_media_sequence;
-                    self.metrics.record_gap_skip(skipped_count);
+                    if self.config.output_config.metrics_enabled {
+                        self.metrics.record_gap_skip(skipped_count);
+                    }
 
                     // Emit GapSkipped event
                     let gap_skipped_event = HlsStreamEvent::GapSkipped {
@@ -1175,9 +1217,11 @@ impl OutputManager {
 
         // --- Update metrics after pruning ---
         let current_depth = self.reorder_buffer.len() as u64;
-        self.metrics.update_buffer_depth(current_depth);
-        self.metrics
-            .update_buffer_bytes(self.current_buffer_bytes as u64);
+        if self.config.output_config.metrics_enabled {
+            self.metrics.update_buffer_depth(current_depth);
+            self.metrics
+                .update_buffer_bytes(self.current_buffer_bytes as u64);
+        }
     }
 
     /// Flushes remaining segments from the reorder buffer.
@@ -1193,7 +1237,9 @@ impl OutputManager {
 
             // Record reorder delay (time spent in buffer)
             let delay_ms = buffered_segment.time_in_buffer().as_millis() as u64;
-            self.metrics.record_reorder_delay(delay_ms);
+            if self.config.output_config.metrics_enabled {
+                self.metrics.record_reorder_delay(delay_ms);
+            }
 
             // Extract the ProcessedSegmentOutput from BufferedSegment
             let segment_output = buffered_segment.output;
@@ -1249,15 +1295,19 @@ impl OutputManager {
             }
 
             // Record segment emitted in metrics
-            self.metrics.record_segment_emitted();
+            if self.config.output_config.metrics_enabled {
+                self.metrics.record_segment_emitted();
+            }
             if is_media {
                 self.has_emitted_media_segment = true;
             }
         }
 
         // Update metrics for buffer depth (should be 0 after flush)
-        self.metrics.update_buffer_depth(0);
-        self.metrics.update_buffer_bytes(0);
+        if self.config.output_config.metrics_enabled {
+            self.metrics.update_buffer_depth(0);
+            self.metrics.update_buffer_bytes(0);
+        }
         self.current_buffer_bytes = 0;
 
         Ok(())
@@ -1309,8 +1359,10 @@ impl OutputManager {
         self.vod_gap_strategy_override = None;
 
         // Update metrics for buffer depth (should be 0 after clear)
-        self.metrics.update_buffer_depth(0);
-        self.metrics.update_buffer_bytes(0);
+        if self.config.output_config.metrics_enabled {
+            self.metrics.update_buffer_depth(0);
+            self.metrics.update_buffer_bytes(0);
+        }
     }
 
     async fn emit_applicable_init_segment(

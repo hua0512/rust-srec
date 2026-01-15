@@ -311,6 +311,18 @@ pub struct HlsOutputConfig {
     /// Max number of segments in reorder buffer
     pub live_reorder_buffer_max_segments: usize,
 
+    /// How often to wake up and re-evaluate gap policies when stalled.
+    ///
+    /// This ensures duration-based gap skipping and VOD timeouts can trigger even
+    /// if no new segments arrive (or input is paused by backpressure).
+    pub gap_evaluation_interval: Duration,
+    /// Maximum number of pending fMP4 init segments to keep.
+    ///
+    /// Init segments are tracked separately from the media reorder buffer and
+    /// can otherwise grow without bound on long-running streams.
+    ///
+    /// `0` disables the limit.
+    pub max_pending_init_segments: usize,
     /// Duration to wait for a segment to be received before considering it stalled.
     /// If the overall stall duration exceeds this value, the downloader will throw an error.
     /// If None, this timeout is disabled.
@@ -333,6 +345,8 @@ impl Default for HlsOutputConfig {
         Self {
             live_reorder_buffer_duration: Duration::from_secs(30),
             live_reorder_buffer_max_segments: 10,
+            gap_evaluation_interval: Duration::from_millis(200),
+            max_pending_init_segments: 8,
             live_max_overall_stall_duration: Some(Duration::from_secs(60)),
             live_gap_strategy: GapSkipStrategy::default(),
             vod_gap_strategy: GapSkipStrategy::WaitIndefinitely,

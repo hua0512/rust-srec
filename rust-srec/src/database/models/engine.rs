@@ -426,6 +426,12 @@ pub struct MesioHlsOutputConfigOverride {
     pub live_reorder_buffer_duration_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub live_reorder_buffer_max_segments: Option<usize>,
+    /// How often to wake up and re-evaluate gap policies when stalled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_evaluation_interval_ms: Option<u64>,
+    /// Maximum number of pending fMP4 init segments to keep (`0` disables the limit).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_pending_init_segments: Option<usize>,
 
     #[serde(
         default,
