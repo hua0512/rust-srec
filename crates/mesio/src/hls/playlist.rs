@@ -592,19 +592,17 @@ impl PlaylistEngine {
         })
     }
 
-    /// Removes Twitch ad-related EXT-X-DATERANGE tags from the playlist and transforms
-    /// EXT-X-TWITCH-PREFETCH tags into standard segments.
+    /// Transforms Twitch-specific tags into m3u8-rs compatible ones.
+    ///
+    /// - Keeps `#EXT-X-DATERANGE` tags so we can detect stitched ads (Streamlink logic)
+    /// - Transforms `#EXT-X-TWITCH-PREFETCH` tags into standard segments
     fn preprocess_twitch_playlist(&self, playlist_content: &str) -> String {
         let mut out = String::with_capacity(playlist_content.len());
         for line in playlist_content.lines() {
-            if line.starts_with("#EXT-X-DATERANGE")
-                && (line.contains("twitch-stitched-ad") || line.contains("stitched-ad-"))
-            {
-                // skip ad tag
-            } else if let Some(prefetch_uri) = line.strip_prefix("#EXT-X-TWITCH-PREFETCH:") {
+            if let Some(prefetch_uri) = line.strip_prefix("#EXT-X-TWITCH-PREFETCH:") {
                 debug!("Transformed prefetch tag to segment: {}", prefetch_uri);
-                // The duration is not provided, so we use a common value.
-                // The title is used as a heuristic to identify the segment as an ad later.
+                // The duration is not provided. Use a placeholder and let the Twitch
+                // processor handle ad detection / time extrapolation.
                 out.push_str("#EXTINF:2.002,PREFETCH_SEGMENT\n");
                 out.push_str(prefetch_uri);
                 out.push('\n');
@@ -761,10 +759,11 @@ impl PlaylistEngine {
         };
 
         macro_rules! handle_segment {
-            ($idx:expr, $segment:expr, $is_ad:expr) => {{
+            ($idx:expr, $segment:expr, $is_ad:expr, $discontinuity:expr) => {{
                 let idx: usize = $idx;
                 let segment: &MediaSegment = $segment;
                 let is_ad: bool = $is_ad;
+                let discontinuity: bool = $discontinuity;
                 let msn = new_playlist.media_sequence + idx as u64;
 
                 let resolved_key = segment.key.as_ref().map(|key| {
@@ -802,7 +801,7 @@ impl PlaylistEngine {
                             uri: final_map_uri.clone(),
                             duration: 0.0,
                             byte_range: map_info.byte_range.clone(),
-                            discontinuity: segment.discontinuity,
+                            discontinuity,
                             key: resolved_key.clone(),
                             map: None,
                             ..Default::default()
@@ -900,6 +899,7 @@ impl PlaylistEngine {
                                 segment_for_job.key = resolved_key.clone();
                                 segment_for_job.uri = final_segment_uri.clone();
                                 segment_for_job.byte_range = effective_byte_range.clone();
+                                segment_for_job.discontinuity = discontinuity;
                                 seen_segment_uris.insert(segment_identity, ()).await;
                                 trace!("New segment detected: {}", final_segment_uri);
                                 let job = ScheduledSegmentJob {
@@ -907,7 +907,7 @@ impl PlaylistEngine {
                                     media_sequence_number: msn,
                                     media_segment: Arc::new(segment_for_job),
                                     is_init_segment: false,
-                                    is_prefetch: false,
+                                    is_prefetch: segment.title.as_deref() == Some("PREFETCH_SEGMENT"),
                                 };
                                 jobs_to_send.push(job);
                             }
@@ -924,11 +924,16 @@ impl PlaylistEngine {
         if let Some(processor) = twitch_processor {
             let processed_segments = processor.process_playlist(new_playlist);
             for (idx, processed_segment) in processed_segments.into_iter().enumerate() {
-                handle_segment!(idx, processed_segment.segment, processed_segment.is_ad)?;
+                handle_segment!(
+                    idx,
+                    processed_segment.segment,
+                    processed_segment.is_ad,
+                    processed_segment.discontinuity
+                )?;
             }
         } else {
             for (idx, segment) in new_playlist.segments.iter().enumerate() {
-                handle_segment!(idx, segment, false)?;
+                handle_segment!(idx, segment, false, segment.discontinuity)?;
             }
         }
         Ok(jobs_to_send)
@@ -1053,6 +1058,23 @@ mod tests {
                 offset: Some(10),
             })
         );
+    }
+
+    #[test]
+    fn preprocess_twitch_playlist_keeps_daterange_and_transforms_prefetch() {
+        let engine =
+            PlaylistEngine::new(reqwest::Client::new(), None, Arc::new(HlsConfig::default()));
+
+        let input = "#EXTM3U\n\
+#EXT-X-DATERANGE:ID=\"stitched-ad-1\",CLASS=\"twitch-stitched-ad\",START-DATE=\"2026-01-01T00:00:02Z\",DURATION=4.0\n\
+#EXT-X-TWITCH-PREFETCH:https://example.com/prefetch.ts\n";
+
+        let out = engine.preprocess_twitch_playlist(input);
+
+        assert!(out.contains("#EXT-X-DATERANGE:ID=\"stitched-ad-1\""));
+        assert!(!out.contains("#EXT-X-TWITCH-PREFETCH:"));
+        assert!(out.contains("PREFETCH_SEGMENT"));
+        assert!(out.contains("https://example.com/prefetch.ts"));
     }
 
     #[test]
