@@ -52,7 +52,7 @@ async-trait = "0.1.89"
 rand = "0.9.2"
 regex = { version = "1.12.2", default-features = false, features = ["std", "unicode-perl"] }
 futures = "0.3.31"
-chrono = { version = "0.4.40", features = ["serde"] }
+chrono = { version = "0.4.43", features = ["serde"] }
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 prost = "0.14.3"
 prost-types = "0.14.3"
