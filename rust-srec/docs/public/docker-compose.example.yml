@@ -37,14 +37,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-    deploy:
-      resources:
-        limits:
-          cpus: "${CPU_LIMIT:-4}"
-          memory: ${MEMORY_LIMIT:-4G}
-        reservations:
-          cpus: "${CPU_RESERVATION:-1}"
-          memory: ${MEMORY_RESERVATION:-512M}
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "${CPU_LIMIT:-4}"
+    #       memory: ${MEMORY_LIMIT:-4G}
+    #     reservations:
+    #       cpus: "${CPU_RESERVATION:-1}"
+    #       memory: ${MEMORY_RESERVATION:-512M}
     logging:
       driver: "json-file"
       options:
