@@ -9,7 +9,13 @@ import { Trans } from '@lingui/react/macro';
 import { t } from '@lingui/core/macro';
 import { Globe, Lock, User, Monitor, ShieldCheck, Shield } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
 import {
   FormControl,
   FormDescription,
@@ -84,7 +90,7 @@ export function ProxyConfigSettings({
   return (
     <div
       className={cn(
-        'rounded-xl border border-dashed transition-all duration-200',
+        'rounded-xl border transition-all duration-200',
         parsedConfig.enabled
           ? 'bg-accent/5 border-primary/20'
           : 'bg-muted/10 border-muted',
@@ -223,8 +229,23 @@ export function ProxySettingsCard({
   proxyMode = 'object',
 }: ProxySettingsCardProps) {
   return (
-    <Card className="border-dashed shadow-none">
-      <CardContent className="pt-6">
+    <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
+      <CardHeader className="pb-3 px-6 pt-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+            <Shield className="w-5 h-5" />
+          </div>
+          <div>
+            <CardTitle className="text-lg">
+              <Trans>Proxy Configuration</Trans>
+            </CardTitle>
+            <CardDescription>
+              <Trans>Configure proxy strategies and connection details.</Trans>
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="px-6 pb-6 pt-0">
         <FormField
           control={form.control}
           name={name}
@@ -237,11 +258,10 @@ export function ProxySettingsCard({
               <FormItem className="space-y-6">
                 <div className="flex items-center justify-between p-4 rounded-xl border bg-muted/30">
                   <div className="space-y-0.5">
-                    <FormLabel className="text-base font-semibold flex items-center gap-2">
-                      <Shield className="w-4 h-4" />
+                    <FormLabel className="text-sm font-semibold flex items-center gap-2">
                       <Trans>Proxy Strategy</Trans>
                     </FormLabel>
-                    <FormDescription>
+                    <FormDescription className="text-xs">
                       <Trans>
                         Choose how this streamer handles proxy connections.
                       </Trans>
@@ -268,7 +288,7 @@ export function ProxySettingsCard({
                     }}
                   >
                     <FormControl>
-                      <SelectTrigger className="w-[200px] bg-background">
+                      <SelectTrigger className="w-[180px] bg-background h-9 rounded-lg">
                         <SelectValue />
                       </SelectTrigger>
                     </FormControl>

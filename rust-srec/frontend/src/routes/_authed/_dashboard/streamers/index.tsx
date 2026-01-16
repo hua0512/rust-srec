@@ -480,8 +480,8 @@ function StreamersPage() {
         {/* FAB */}
         <motion.div
           className="fixed bottom-8 right-8 z-50"
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
+          initial={{ scale: 0.93, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
         >

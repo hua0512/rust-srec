@@ -307,11 +307,12 @@ impl<'a> DouyinRequest<'a> {
     /// let mut params = HashMap::new();
     /// params.insert("web_rid", "12345");
     /// params.insert("aid", "6383");
-    /// let signed_params = self.get_a_bogus_params(&params).await?;
+    /// let signed_params = self.get_a_bogus_params(&params, DEFAULT_UA).await?;
     /// ```
     async fn get_a_bogus_params(
         &self,
         params: &HashMap<&str, &str>,
+        user_agent: &str,
     ) -> Result<String, ExtractorError> {
         let params_str = params
             .iter()
@@ -319,7 +320,7 @@ impl<'a> DouyinRequest<'a> {
             .collect::<Vec<_>>()
             .join("&");
         debug!("params_str: {}", params_str);
-        let mut abogus = ABogus::new(None, Some(DEFAULT_UA), None);
+        let mut abogus = ABogus::new(None, Some(user_agent), None);
         let (final_params, _, _, _) = abogus.generate_abogus(&params_str, "");
         Ok(final_params)
     }
@@ -329,7 +330,7 @@ impl<'a> DouyinRequest<'a> {
         let mut params = get_common_params();
         params.insert("web_rid", &self.web_rid);
         params.insert("cookie_enabled", "true");
-        let abogus = self.get_a_bogus_params(&params).await?;
+        let abogus = self.get_a_bogus_params(&params, DEFAULT_UA).await?;
         let url = format!("{WEBCAST_ENTER_URL}?{abogus}");
         debug!("url: {}", url);
 
@@ -355,13 +356,12 @@ impl<'a> DouyinRequest<'a> {
         params.insert("live_id", "1");
         params.insert("version_code", "99.99.99");
         params.insert("app_id", "1128");
-        params.insert("compress", "gzip");
         params.insert("aid", "6383");
 
         let verify_fp = gen_verify_fp();
         params.insert("verifyFp", verify_fp.as_str());
 
-        let abogus = self.get_a_bogus_params(&params).await?;
+        let abogus = self.get_a_bogus_params(&params, DEFAULT_MOBILE_UA).await?;
 
         let url = format!("{APP_REFLOW_URL}?{abogus}");
         debug!("url: {}", url);

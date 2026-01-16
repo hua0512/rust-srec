@@ -262,14 +262,14 @@ export function MesioForm({ control, basePath = 'config' }: MesioFormProps) {
 
   return (
     <Tabs defaultValue="general" className="w-full space-y-4">
-      <TabsList className="bg-background/40 border border-border/40 p-1 h-11 shrink-0">
-        <TabsTrigger value="general" className="flex-1 gap-2">
+      <TabsList className="w-full bg-background/40 border border-border/40 p-1 py-1.5 h-auto overflow-x-auto no-scrollbar justify-start">
+        <TabsTrigger value="general" className="flex-1 min-w-[100px] gap-2">
           <Settings2 className="w-4 h-4 text-primary" />
           <Trans>General</Trans>
         </TabsTrigger>
         <TabsTrigger
           value="flv"
-          className="flex-1 gap-2 disabled:opacity-50"
+          className="flex-1 min-w-[100px] gap-2 disabled:opacity-50"
           disabled={!fixFlv}
         >
           <Film className="w-4 h-4 text-orange-500" />
@@ -282,7 +282,7 @@ export function MesioForm({ control, basePath = 'config' }: MesioFormProps) {
         </TabsTrigger>
         <TabsTrigger
           value="hls"
-          className="flex-1 gap-2 disabled:opacity-50"
+          className="flex-1 min-w-[100px] gap-2 disabled:opacity-50"
           disabled={!fixHls}
         >
           <Wrench className="w-4 h-4 text-blue-500" />

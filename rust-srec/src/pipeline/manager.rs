@@ -72,6 +72,11 @@ struct PairedSegmentPipelineEntry {
 
 const SESSION_COMPLETE_TTL_SECS: u64 = 48 * 60 * 60;
 const SESSION_COMPLETE_CLEANUP_INTERVAL_SECS: u64 = 10 * 60;
+// When session-complete triggering is gated on DB `sessions.end_time`, it's possible for
+// the "all outputs complete" condition to become true before the DB end_time is persisted.
+// A periodic retry prevents the session-complete pipeline from getting stuck waiting for
+// an event that may never re-run `try_trigger_session_complete`.
+const SESSION_COMPLETE_RETRY_INTERVAL_SECS: u64 = 5;
 const PAIRED_SEGMENT_TTL_SECS: u64 = 6 * 60 * 60;
 
 fn parse_trailing_u32(value: &str) -> Option<u32> {
@@ -626,6 +631,36 @@ where
                                 true
                             }
                         });
+                    }
+                }
+            }
+        });
+
+        // Periodically retry session-complete triggering for sessions that are already ready
+        // (outputs collected + segment/paired DAGs done) but are still waiting for DB end_time.
+        let retry_manager = self.clone();
+        let retry_token = self.cancellation_token.clone();
+        tokio::spawn(async move {
+            let interval = std::time::Duration::from_secs(SESSION_COMPLETE_RETRY_INTERVAL_SECS);
+            loop {
+                tokio::select! {
+                    _ = retry_token.cancelled() => break,
+                    _ = tokio::time::sleep(interval) => {
+                        let ready_sessions: Vec<String> = retry_manager
+                            .session_complete_pipelines
+                            .iter()
+                            .filter_map(|entry| {
+                                let session_id = entry.key().clone();
+                                retry_manager
+                                    .session_complete_coordinator
+                                    .is_ready_nonempty(&session_id)
+                                    .then_some(session_id)
+                            })
+                            .collect();
+
+                        for session_id in ready_sessions {
+                            retry_manager.try_trigger_session_complete(&session_id).await;
+                        }
                     }
                 }
             }

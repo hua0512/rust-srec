@@ -202,7 +202,12 @@ impl<
             }
         }
 
-        // Create HTTP client
+        let detector = Arc::new(StreamDetector::with_http_config(
+            config.request_timeout,
+            config.max_concurrent_requests,
+        ));
+
+        // BatchDetector currently uses a single client (not per-streamer); keep the prior client config behavior.
         let mut client_builder = platforms_parser::extractor::create_client_builder(None);
 
         if config.request_timeout > Duration::ZERO {
@@ -221,7 +226,6 @@ impl<
             reqwest::Client::new()
         });
 
-        let detector = Arc::new(StreamDetector::with_client(client.clone()));
         let batch_detector = BatchDetector::with_client(client, rate_limiter.clone());
 
         let outbox_notify = Arc::new(Notify::new());
@@ -537,6 +541,7 @@ impl<
                             cookies,
                             Some(&config.stream_selection),
                             config.platform_extras.clone(),
+                            &config.proxy_config,
                         )
                         .await
                 };

@@ -7,7 +7,14 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
+import { Webhook } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
 interface EventHooks {
@@ -102,15 +109,26 @@ export const EventHooksForm = memo(
     );
 
     return (
-      <Card className="border-dashed shadow-none">
-        <CardContent className="pt-6 space-y-4">
-          <p className="text-sm text-muted-foreground mb-4">
-            <Trans>
-              Execute shell commands on lifecycle events. Commands run in the
-              system shell.
-            </Trans>
-          </p>
-
+      <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
+        <CardHeader className="pb-3 px-6 pt-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <Webhook className="w-5 h-5" />
+            </div>
+            <div>
+              <CardTitle className="text-lg">
+                <Trans>Event Hooks</Trans>
+              </CardTitle>
+              <CardDescription>
+                <Trans>
+                  Execute shell commands on lifecycle events. Commands run in
+                  the system shell.
+                </Trans>
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="px-6 pb-6 pt-0 space-y-4">
           {renderField(
             'on_online',
             <Trans>On Online</Trans>,

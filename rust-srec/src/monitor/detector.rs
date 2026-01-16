@@ -5,12 +5,14 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use dashmap::DashMap;
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorFactory;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 use crate::Result;
+use crate::domain::ProxyConfig;
 use crate::domain::filter::{Filter, FilterType};
 use crate::downloader::{StreamSelectionConfig, StreamSelector};
 use crate::streamer::StreamerMetadata;
@@ -143,26 +145,41 @@ impl LiveStatus {
 
 /// Stream detector for checking live status.
 pub struct StreamDetector {
-    /// HTTP client for API requests (kept for potential direct use).
-    #[allow(dead_code)]
-    client: reqwest::Client,
-    /// Platform extractor factory.
-    extractor_factory: ExtractorFactory,
+    request_timeout: std::time::Duration,
+    pool_max_idle_per_host: usize,
+    client_cache: DashMap<ProxyKey, reqwest::Client>,
 }
 
 impl StreamDetector {
     /// Create a new stream detector.
     pub fn new() -> Self {
-        Self::with_client(reqwest::Client::new())
+        Self::with_http_config(std::time::Duration::ZERO, 0)
     }
 
-    /// Create a new stream detector with a custom HTTP client.
-    pub fn with_client(client: reqwest::Client) -> Self {
-        let extractor_factory = ExtractorFactory::new(client.clone());
+    pub fn with_http_config(
+        request_timeout: std::time::Duration,
+        pool_max_idle_per_host: usize,
+    ) -> Self {
         Self {
-            client,
-            extractor_factory,
+            request_timeout,
+            pool_max_idle_per_host,
+            client_cache: DashMap::new(),
         }
+    }
+
+    fn client_for_proxy_config(&self, proxy_config: &ProxyConfig) -> reqwest::Client {
+        let key = ProxyKey::from(proxy_config);
+        if let Some(existing) = self.client_cache.get(&key) {
+            return existing.clone();
+        }
+
+        let client = crate::utils::http_client::build_platforms_client(
+            proxy_config,
+            self.request_timeout,
+            self.pool_max_idle_per_host,
+        );
+        self.client_cache.insert(key, client.clone());
+        client
     }
 
     /// Merge stream selection preferences into platform_extras.
@@ -221,7 +238,8 @@ impl StreamDetector {
         streamer: &StreamerMetadata,
         selection_config: Option<&StreamSelectionConfig>,
     ) -> Result<LiveStatus> {
-        self.check_status_with_cookies(streamer, None, selection_config, None)
+        let proxy_config = ProxyConfig::disabled();
+        self.check_status_with_cookies(streamer, None, selection_config, None, &proxy_config)
             .await
     }
 
@@ -238,6 +256,7 @@ impl StreamDetector {
         cookies: Option<String>,
         selection_config: Option<&StreamSelectionConfig>,
         platform_extras: Option<serde_json::Value>,
+        proxy_config: &ProxyConfig,
     ) -> Result<LiveStatus> {
         debug!(
             "Checking status for streamer: {} ({}) with platform_extras: {}",
@@ -251,12 +270,11 @@ impl StreamDetector {
         let merged_extras =
             Self::merge_selection_config_into_extras(platform_extras, selection_config);
 
+        let extractor_factory = ExtractorFactory::new(self.client_for_proxy_config(proxy_config));
+
         // Create platform extractor for this streamer's URL
         let extractor =
-            match self
-                .extractor_factory
-                .create_extractor(&streamer.url, cookies, merged_extras)
-            {
+            match extractor_factory.create_extractor(&streamer.url, cookies, merged_extras) {
                 Ok(ext) => ext,
                 Err(ExtractorError::UnsupportedExtractor) => {
                     warn!("Unsupported platform for URL: {}", streamer.url);
@@ -490,9 +508,16 @@ impl StreamDetector {
         cookies: Option<String>,
         selection_config: Option<&StreamSelectionConfig>,
         platform_extras: Option<serde_json::Value>,
+        proxy_config: &ProxyConfig,
     ) -> Result<LiveStatus> {
         let status = self
-            .check_status_with_cookies(streamer, cookies, selection_config, platform_extras)
+            .check_status_with_cookies(
+                streamer,
+                cookies,
+                selection_config,
+                platform_extras,
+                proxy_config,
+            )
             .await?;
 
         // If offline, no need to filter
@@ -537,6 +562,27 @@ impl StreamDetector {
 impl Default for StreamDetector {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ProxyKey {
+    enabled: bool,
+    url: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+    use_system_proxy: bool,
+}
+
+impl From<&ProxyConfig> for ProxyKey {
+    fn from(value: &ProxyConfig) -> Self {
+        Self {
+            enabled: value.enabled,
+            url: value.url.clone(),
+            username: value.username.clone(),
+            password: value.password.clone(),
+            use_system_proxy: value.use_system_proxy,
+        }
     }
 }
 

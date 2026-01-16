@@ -190,7 +190,7 @@ export const StepLibrary = memo(function StepLibrary({
     },
     exit: {
       opacity: 0,
-      scale: 0.9,
+      scale: 0.93,
       transition: { duration: 0.2 },
     },
   };
@@ -374,8 +374,8 @@ export const StepLibrary = memo(function StepLibrary({
                                   )}
                                   {isAdded && (
                                     <motion.div
-                                      initial={{ scale: 0 }}
-                                      animate={{ scale: 1 }}
+                                      initial={{ scale: 0.93, opacity: 0 }}
+                                      animate={{ scale: 1, opacity: 1 }}
                                       className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center text-white shadow-sm"
                                     >
                                       <CheckCircle2 className="h-3 w-3" />
@@ -505,8 +505,8 @@ export const StepLibrary = memo(function StepLibrary({
                                 <div className="flex items-center gap-2">
                                   {isAdded && (
                                     <motion.div
-                                      initial={{ scale: 0 }}
-                                      animate={{ scale: 1 }}
+                                      initial={{ scale: 0.93, opacity: 0 }}
+                                      animate={{ scale: 1, opacity: 1 }}
                                       className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center text-white shadow-sm"
                                     >
                                       <CheckCircle2 className="h-3 w-3" />
