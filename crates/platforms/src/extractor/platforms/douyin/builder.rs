@@ -780,30 +780,32 @@ impl<'a> DouyinRequest<'a> {
         stream_data: &DouyinStreamDataParsed,
         qualities: &[crate::extractor::platforms::douyin::models::DouyinQualityOwned],
     ) -> Option<StreamInfo> {
+        let origin_quality_details = qualities.iter().find(|q| q.sdk_key == "origin")?;
+        let origin_quality_data = stream_data
+            .data
+            .get(origin_quality_details.sdk_key.as_str())?;
+        if origin_quality_data.main.flv.is_empty()
+            || !Self::_is_or4_stream_url(&origin_quality_data.main.flv)
+        {
+            return None;
+        }
+
         let ao_quality_data = stream_data.data.get("ao")?;
         if ao_quality_data.main.flv.is_empty() {
             return None;
         }
+        let origin_url = ao_quality_data.main.flv.replace("&only_audio=1", "");
 
-        let origin_url = ao_quality_data
-            .main
-            .flv
-            .replace("&only_audio=1", "&only_audio=0");
-        let origin_quality_details = qualities.iter().find(|q| q.sdk_key == "origin");
-
-        let (quality_name, bitrate, codec, fps, extras) = match origin_quality_details {
-            Some(details) => (
-                "原画",
-                normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
-                normalize_codec(&details.v_codec),
-                details.fps,
-                Some(serde_json::json!({
-                    "resolution": details.resolution.as_str(),
-                    "sdk_key": details.sdk_key.as_str(),
-                })),
-            ),
-            None => ("原画", 0, String::new(), 0, None),
-        };
+        let quality_name = origin_quality_details.name.as_str();
+        let bitrate = u32::try_from(origin_quality_details.v_bit_rate)
+            .map(normalize_bitrate)
+            .unwrap_or(0);
+        let codec = normalize_codec(&origin_quality_details.v_codec);
+        let fps = origin_quality_details.fps;
+        let extras = Some(serde_json::json!({
+            "resolution": origin_quality_details.resolution.as_str(),
+            "sdk_key": origin_quality_details.sdk_key.as_str(),
+        }));
 
         Some(
             StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
@@ -919,7 +921,7 @@ impl<'a> DouyinRequest<'a> {
         // 1. Attempt to extract origin quality stream if forced
         let mut origin_quality_filled = false;
         if self.config.force_origin_quality
-            && let Some(origin_stream) = self._extract_origin_stream(stream_data, qualities)
+            && let Some(origin_stream) = self._extract_valid_origin_stream(stream_data, qualities)
         {
             streams.push(origin_stream);
             origin_quality_filled = true;
@@ -942,35 +944,35 @@ impl<'a> DouyinRequest<'a> {
     }
 
     /// Extracts the "origin" quality stream if available.
-    fn _extract_origin_stream(
+    fn _extract_valid_origin_stream(
         &self,
         stream_data: &DouyinStreamDataParsed,
         qualities: &[DouyinQuality],
     ) -> Option<StreamInfo> {
+        let origin_quality_details = qualities.iter().find(|q| q.sdk_key == "origin")?;
+        let origin_quality_data = stream_data.data.get(origin_quality_details.sdk_key)?;
+        if origin_quality_data.main.flv.is_empty()
+            || !Self::_is_or4_stream_url(&origin_quality_data.main.flv)
+        {
+            return None;
+        }
+
         let ao_quality_data = stream_data.data.get("ao")?;
         if ao_quality_data.main.flv.is_empty() {
             return None;
         }
+        let origin_url = ao_quality_data.main.flv.replace("&only_audio=1", "");
 
-        let origin_url = ao_quality_data
-            .main
-            .flv
-            .replace("&only_audio=1", "&only_audio=0");
-        let origin_quality_details = qualities.iter().find(|q| q.sdk_key == "origin");
-
-        let (quality_name, bitrate, codec, fps, extras) = match origin_quality_details {
-            Some(details) => (
-                "原画",
-                normalize_bitrate(details.v_bit_rate.try_into().unwrap()),
-                normalize_codec(details.v_codec),
-                details.fps,
-                Some(serde_json::json!({
-                    "resolution": details.resolution,
-                    "sdk_key": details.sdk_key,
-                })),
-            ),
-            None => ("原画", 0, String::new(), 0, None),
-        };
+        let quality_name = origin_quality_details.name;
+        let bitrate = u32::try_from(origin_quality_details.v_bit_rate)
+            .map(normalize_bitrate)
+            .unwrap_or(0);
+        let codec = normalize_codec(origin_quality_details.v_codec);
+        let fps = origin_quality_details.fps;
+        let extras = Some(serde_json::json!({
+            "resolution": origin_quality_details.resolution,
+            "sdk_key": origin_quality_details.sdk_key,
+        }));
 
         Some(
             StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
@@ -983,6 +985,10 @@ impl<'a> DouyinRequest<'a> {
                 .is_headers_needed(true)
                 .build(),
         )
+    }
+
+    fn _is_or4_stream_url(url: &str) -> bool {
+        url.contains("_or4.")
     }
 
     /// Extracts all available streams from the SDK data.
@@ -1124,7 +1130,7 @@ mod tests {
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
 
-    const TEST_URL: &str = "https://live.douyin.com/778Nmi";
+    const TEST_URL: &str = "https://live.douyin.com/PenguinVal";
 
     #[tokio::test]
     #[ignore]

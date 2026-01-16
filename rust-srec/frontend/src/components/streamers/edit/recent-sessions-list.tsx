@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react';
 import { FileVideo, Calendar, Clock, HardDrive } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { useLingui } from '@lingui/react';
@@ -46,9 +47,11 @@ export const RecentSessionsList = memo(function RecentSessionsList({
       ) : recentSessions.length > 0 ? (
         <div className="space-y-3">
           {recentSessions.map((session) => (
-            <div
+            <Link
               key={session.id}
-              className="group flex flex-col gap-1 p-3 rounded-lg border bg-background/50 hover:bg-background hover:border-primary/20 transition-all"
+              to="/sessions/$sessionId"
+              params={{ sessionId: session.id }}
+              className="group flex flex-col gap-1 p-3 rounded-lg border bg-background/50 hover:bg-background hover:border-primary/20 transition-all cursor-pointer block"
             >
               <div className="flex items-center justify-between">
                 <span
@@ -100,7 +103,7 @@ export const RecentSessionsList = memo(function RecentSessionsList({
                   </span>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       ) : (

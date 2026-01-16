@@ -3252,7 +3252,7 @@ msgstr "List of allowed file extensions (without dot)."
 
 #: src/components/streamers/card/use-streamer-status.tsx:31
 #: src/components/streamers/card/use-streamer-status.tsx:167
-#: src/components/streamers/edit/recent-sessions-list.tsx:71
+#: src/components/streamers/edit/recent-sessions-list.tsx:74
 #: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.tsx:187
 #: src/routes/_authed/_dashboard/streamers/index.tsx:68
@@ -3937,7 +3937,7 @@ msgstr "No presets yet"
 msgid "No preview generated"
 msgstr "No preview generated"
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:108
+#: src/components/streamers/edit/recent-sessions-list.tsx:111
 msgid "No recent sessions found."
 msgstr "No recent sessions found."
 
@@ -4047,7 +4047,7 @@ msgstr "OAuth Token"
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:237
 #: src/components/streamers/card/use-streamer-status.tsx:246
-#: src/components/streamers/edit/recent-sessions-list.tsx:69
+#: src/components/streamers/edit/recent-sessions-list.tsx:72
 #: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.tsx:69
 msgid "Offline"
@@ -4924,7 +4924,7 @@ msgstr "Receive a notification when a stream ends."
 msgid "Receive a notification when a streamer goes live."
 msgstr "Receive a notification when a streamer goes live."
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:34
+#: src/components/streamers/edit/recent-sessions-list.tsx:35
 msgid "Recent Sessions"
 msgstr "Recent Sessions"
 
