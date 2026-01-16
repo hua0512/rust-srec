@@ -10,9 +10,9 @@ rust-toolchain.toml
 
 # Env
 .env
-.env.example
-*.env
-*.env.example
+.env.*
+!.env.example
+!*.env.example
 
 # Editor / IDE
 .vscode/

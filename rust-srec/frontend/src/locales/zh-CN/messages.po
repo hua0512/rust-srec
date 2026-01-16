@@ -89,6 +89,11 @@ msgstr "{0, plural, other {# 个警告}}"
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, other {个文件}}"
 
+#. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:101
+msgid "{0} Configuration"
+msgstr "{0} 配置"
+
 #. placeholder {0}: session.danmu_count?.toLocaleString() || 0
 #: src/components/sessions/overview-tab.tsx:93
 msgid "{0} Danmu"
@@ -129,10 +134,6 @@ msgstr "0（无）- 9（最佳）"
 #: src/components/config/global/resource-limits-card.tsx:70
 msgid "0 = Unlimited"
 msgstr "0 = 不限"
-
-#: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:81
-msgid "0 for original quality."
-msgstr "0 为原画质量。"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:859
 msgid "0:v:0"
@@ -395,6 +396,14 @@ msgstr "全部时间"
 msgid "Allowed Extensions"
 msgstr "允许的扩展名"
 
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:73
+msgid "Alternative protocol variant for live stream extraction."
+msgstr "用于直播提取的备选协议变体。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:101
+msgid "Always prioritize Huoshan delivery nodes."
+msgstr "始终优先使用火山分发节点。"
+
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:174
 msgid "An error occurred"
 msgstr "发生错误"
@@ -403,7 +412,7 @@ msgstr "发生错误"
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:111
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:162
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
@@ -494,6 +503,14 @@ msgstr "ASS 字幕内嵌"
 msgid "At least one input path is required"
 msgstr "至少需要一个输入路径"
 
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:44
+msgid "Attempt to get the highest original quality available."
+msgstr "尝试获取可用的最高原画质量。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
+msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
+msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:39
 #: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:133
@@ -535,6 +552,7 @@ msgstr "音频设置"
 msgid "Auth Type"
 msgstr "认证类型"
 
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:29
 #: src/components/config/shared/network-settings-card.tsx:156
 #: src/components/notifications/forms/webhook-form.tsx:195
 msgid "Authentication"
@@ -642,7 +660,7 @@ msgstr "备份"
 msgid "Backup & Restore"
 msgstr "备份与恢复"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:980
+#: src/components/config/engines/forms/mesio-hls-form.tsx:983
 msgid "Base"
 msgstr "基础"
 
@@ -695,10 +713,6 @@ msgstr "测试版"
 msgid "Bilibili QR Login"
 msgstr "哔哩哔哩扫码登录"
 
-#: src/components/config/platforms/tabs/specific-configs/BilibiliConfigFields.tsx:69
-msgid "Bilibili quality identification (QN)."
-msgstr "B站画质标识 (QN)。"
-
 #: src/components/config/engines/forms/ffmpeg-form.tsx:41
 #: src/components/config/engines/forms/streamlink-form.tsx:37
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:59
@@ -709,7 +723,7 @@ msgstr "可执行文件路径"
 msgid "Bitrate"
 msgstr "比特率"
 
-#: src/components/pipeline/dag-graph-view.tsx:375
+#: src/components/pipeline/dag-graph-view.tsx:388
 msgid "Blocked"
 msgstr "已阻止"
 
@@ -777,7 +791,7 @@ msgstr "取消处理管道"
 msgid "Cancel Pipeline?"
 msgstr "取消处理管道？"
 
-#: src/components/pipeline/dag-graph-view.tsx:385
+#: src/components/pipeline/dag-graph-view.tsx:398
 #: src/components/streamers/card/use-streamer-status.tsx:36
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:463
 msgid "Cancelled"
@@ -796,6 +810,10 @@ msgstr "采集模式"
 #: src/components/config/shared/record-danmu-card.tsx:41
 msgid "Capture real-time comments and chat messages if available."
 msgstr "如果可用，采集实时评论和聊天消息。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:93
+msgid "Capture separate stream data."
+msgstr "采集分离的流数据。"
 
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:43
 msgid "Capture Settings"
@@ -887,7 +905,7 @@ msgstr "检查中..."
 msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
 
-#: src/components/config/shared/proxy-settings-card.tsx:245
+#: src/components/config/shared/proxy-settings-card.tsx:265
 msgid "Choose how this streamer handles proxy connections."
 msgstr "选择此主播如何处理代理连接。"
 
@@ -965,7 +983,7 @@ msgstr "在此终端中完成 Telegram 登录过程。"
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
-#: src/components/pipeline/dag-graph-view.tsx:381
+#: src/components/pipeline/dag-graph-view.tsx:394
 #: src/routes/_authed/_dashboard/dashboard.tsx:291
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:220
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:294
@@ -1068,6 +1086,10 @@ msgstr "配置所选引擎的详细选项。"
 #: src/components/config/global/backup-restore-card.tsx:318
 msgid "Configure how you want to import data from the selected backup file."
 msgstr "配置从所选备份文件导入数据的方式。"
+
+#: src/components/config/shared/proxy-settings-card.tsx:243
+msgid "Configure proxy strategies and connection details."
+msgstr "配置代理策略和连接详情。"
 
 #: src/components/filters/FilterDialog.tsx:214
 msgid "Configure recording rules for this streamer."
@@ -1369,7 +1391,7 @@ msgstr "自定义"
 msgid "Custom Config"
 msgstr "自定义配置"
 
-#: src/components/config/shared/proxy-settings-card.tsx:280
+#: src/components/config/shared/proxy-settings-card.tsx:300
 msgid "Custom Configuration"
 msgstr "自定义配置"
 
@@ -1429,7 +1451,7 @@ msgstr "弹幕转 ASS"
 msgid "Danmaku to ASS Subtitles"
 msgstr "弹幕转 ASS 字幕"
 
-#: src/components/config/shared-config-editor.tsx:210
+#: src/components/config/shared-config-editor.tsx:206
 msgid "Danmu"
 msgstr "弹幕"
 
@@ -1667,10 +1689,6 @@ msgstr "命令执行后扫描新文件的目录"
 msgid "Disable"
 msgstr "禁用"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:46
-msgid "Disable Interactive Games"
-msgstr "禁用互动游戏"
-
 #: src/components/streamers/card/use-streamer-status.tsx:41
 #: src/routes/_authed/_dashboard/streamers/index.tsx:71
 msgid "Disabled"
@@ -1697,7 +1715,7 @@ msgstr "已完成"
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:90
 msgid "Double Screen Data"
 msgstr "双屏数据"
 
@@ -1895,7 +1913,7 @@ msgstr "启用或禁用此 Webhook"
 msgid "Enable Performance Metrics (Default: On)"
 msgstr "启用性能指标（默认：开）"
 
-#: src/components/config/shared/proxy-settings-card.tsx:111
+#: src/components/config/shared/proxy-settings-card.tsx:117
 msgid "Enable Proxy"
 msgstr "启用代理"
 
@@ -2072,6 +2090,10 @@ msgstr "错误：无法加载预设详情。"
 msgid "ETA"
 msgstr "预计剩余时间"
 
+#: src/components/config/shared/event-hooks-form.tsx:120
+msgid "Event Hooks"
+msgstr "事件钩子"
+
 #: src/components/filters/FilterCard.tsx:121
 #: src/components/filters/FilterCard.tsx:235
 #: src/components/filters/forms/CategoryFilterForm.tsx:52
@@ -2101,7 +2123,7 @@ msgstr "排除的扩展名"
 msgid "Execute Command"
 msgstr "执行命令"
 
-#: src/components/config/shared/event-hooks-form.tsx:108
+#: src/components/config/shared/event-hooks-form.tsx:123
 msgid "Execute shell commands on lifecycle events. Commands run in the system shell."
 msgstr "在生命周期事件上执行 Shell 命令。命令在系统 Shell 中运行。"
 
@@ -2117,6 +2139,18 @@ msgstr "执行记录"
 #: src/routes/_authed/_dashboard/player/index.tsx:318
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
+
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:58
+msgid "Experimental"
+msgstr "实验性"
+
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:243
+msgid "Expert mode: Edit the raw platform-specific configuration directly."
+msgstr "专家模式：直接编辑原始的平台特定配置。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:247
+msgid "Explicit TTWID cookie value to use for all requests."
+msgstr "用于所有请求的显式 TTWID Cookie 值。"
 
 #: src/components/sessions/session-card.tsx:235
 msgid "Explore"
@@ -2164,7 +2198,14 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
-#: src/components/pipeline/dag-graph-view.tsx:383
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:27
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:29
+msgid "Extraction Settings"
+msgstr "提取设置"
+
+#: src/components/pipeline/dag-graph-view.tsx:396
 #: src/routes/_authed/_dashboard/dashboard.tsx:301
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:222
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:461
@@ -2443,7 +2484,7 @@ msgstr "获取"
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:992
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1001
 msgid "Fetcher"
 msgstr "获取器"
 
@@ -2514,6 +2555,10 @@ msgstr "过滤器删除成功"
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:134
+msgid "Filter Interactive Games"
+msgstr "过滤互动玩法"
+
 #: src/components/config/engines/forms/mesio-form.tsx:157
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "过滤重复标签并检测流重放循环"
@@ -2534,7 +2579,7 @@ msgstr "过滤窗口大小"
 msgid "Filtering & Behavior"
 msgstr "过滤与行为"
 
-#: src/components/config/shared-config-editor.tsx:155
+#: src/components/config/shared-config-editor.tsx:151
 msgid "Filters"
 msgstr "过滤器"
 
@@ -2586,7 +2631,7 @@ msgstr "跟随重定向（默认：开）"
 msgid "Fonts Directory"
 msgstr "字体目录"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:93
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:98
 msgid "Force Huoshan CDN"
 msgstr "强制火山 CDN"
 
@@ -2598,13 +2643,13 @@ msgstr "强制 IPv4（默认：关闭）"
 msgid "Force IPv6 (Default: Off)"
 msgstr "强制 IPv6（默认：关闭）"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:132
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:120
 msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:38
-#: src/components/config/platforms/tabs/specific-configs/HuyaConfigFields.tsx:86
-#: src/components/config/platforms/tabs/specific-configs/TikTokConfigFields.tsx:29
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:113
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
@@ -2612,15 +2657,15 @@ msgstr "强制原画质量"
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
-#: src/components/config/platforms/tabs/specific-configs/HuyaConfigFields.tsx:89
-msgid "Force requesting the highest origin quality."
-msgstr "强制请求最高原画质量。"
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:116
+msgid "Force requesting the highest origin quality available (Direct stream)."
+msgstr "强制请求可用的最高原画质量（直连流）。"
 
 #: src/components/config/shared/output-settings-card.tsx:142
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:121
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:132
 msgid "Form"
 msgstr "表单"
 
@@ -2672,10 +2717,6 @@ msgstr "常规"
 msgid "General Configuration"
 msgstr "常规配置"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:106
-msgid "General options for extractors"
-msgstr "提取器常规选项"
-
 #: src/components/pipeline/presets/default-presets-i18n.ts:57
 msgid "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
 msgstr "生成全高清缩略图（宽 1280px），适用于现代显示器与播放器。"
@@ -2720,7 +2761,7 @@ msgstr "开始使用"
 msgid "Glass Mode"
 msgstr "玻璃模式"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:91
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
 #: src/components/sidebar/navbar.tsx:39
 #: src/routes/_authed/_dashboard/config/route.tsx:48
 msgid "Global"
@@ -2740,7 +2781,7 @@ msgstr "全局配置"
 #: src/components/config/shared/limits-card.tsx:86
 #: src/components/config/shared/limits-card.tsx:112
 #: src/components/config/shared/output-settings-card.tsx:133
-#: src/components/config/shared/proxy-settings-card.tsx:277
+#: src/components/config/shared/proxy-settings-card.tsx:297
 msgid "Global Default"
 msgstr "全局默认"
 
@@ -2862,7 +2903,7 @@ msgstr "HLS 调优"
 msgid "Home"
 msgstr "主页"
 
-#: src/components/config/shared-config-editor.tsx:199
+#: src/components/config/shared-config-editor.tsx:195
 msgid "Hooks"
 msgstr "钩子"
 
@@ -2873,10 +2914,6 @@ msgstr "小时 (00-23)"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:192
 msgid "How to pair video files with .ass subtitles"
 msgstr "如何将视频文件与 .ass 字幕配对"
-
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:99
-msgid "How TTWID cookies are managed."
-msgstr "TTWID Cookie 管理方式。"
 
 #: src/components/config/shared/network-settings-card.tsx:227
 msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
@@ -3072,6 +3109,10 @@ msgstr "主播直播时检测流结束的检查间隔。"
 msgid "Interval between checks."
 msgstr "检查间隔。"
 
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:217
+msgid "Isolation level for tracking identifiers. Global is usually best."
+msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
+
 #: src/components/config/shared/retry-policy-form.tsx:134
 msgid "Jitter"
 msgstr "抖动"
@@ -3122,7 +3163,7 @@ msgstr "处理任务"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:131
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:148
 msgid "JSON"
 msgstr "JSON"
 
@@ -3211,7 +3252,7 @@ msgstr "允许的文件扩展名列表（不含点号）。"
 
 #: src/components/streamers/card/use-streamer-status.tsx:31
 #: src/components/streamers/card/use-streamer-status.tsx:167
-#: src/components/streamers/edit/recent-sessions-list.tsx:71
+#: src/components/streamers/edit/recent-sessions-list.tsx:74
 #: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.tsx:187
 #: src/routes/_authed/_dashboard/streamers/index.tsx:68
@@ -3356,6 +3397,10 @@ msgstr "管理"
 msgid "Manage credentials and session cookies."
 msgstr "管理凭据和会话 Cookie。"
 
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:110
+msgid "Manage specialized extraction and identification options."
+msgstr "管理专门的提取和识别选项。"
+
 #: src/components/config/shared/output-settings-card.tsx:45
 msgid "Manage storage paths and file formats."
 msgstr "管理存储路径和文件格式。"
@@ -3436,6 +3481,10 @@ msgstr "最大间隔（s）"
 #: src/components/config/global/concurrency-card.tsx:112
 msgid "Max IO Jobs"
 msgstr "最大 IO 任务数"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:177
+msgid "Max number of retry attempts for metadata fetching."
+msgstr "元数据获取的最大重试次数。"
 
 #: src/components/config/global/resource-limits-card.tsx:82
 #: src/components/config/shared/limits-card.tsx:105
@@ -3672,9 +3721,13 @@ msgstr "命名空间"
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
 
-#: src/components/config/shared-config-editor.tsx:177
+#: src/components/config/shared-config-editor.tsx:173
 msgid "Network"
 msgstr "网络"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:122
+msgid "Network & Content"
+msgstr "网络与内容"
 
 #: src/components/config/global/network-system-card.tsx:41
 msgid "Network & System"
@@ -3884,7 +3937,7 @@ msgstr "暂无预设"
 msgid "No preview generated"
 msgstr "未生成预览"
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:108
+#: src/components/streamers/edit/recent-sessions-list.tsx:111
 msgid "No recent sessions found."
 msgstr "未找到最近的录制会话。"
 
@@ -3892,9 +3945,9 @@ msgstr "未找到最近的录制会话。"
 msgid "No refresh needed or not supported"
 msgstr "无需刷新或不支持"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:142
-msgid "No specific options available for this platform."
-msgstr "此平台没有特定选项。"
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:161
+msgid "No specialized options available for this platform."
+msgstr "此平台没有可用的专门选项。"
 
 #: src/components/pipeline/workflows/steps-list.tsx:197
 msgid "No Steps Added"
@@ -3987,18 +4040,14 @@ msgstr "确认主播离线所需的连续失败检查次数。较高的值可以
 msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
 msgstr "在数据库中保留已完成、失败或中断任务历史记录的天数。"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:122
-msgid "Number of retries for API requests."
-msgstr "API 请求重试次数。"
-
-#: src/components/config/platforms/tabs/specific-configs/TwitchConfigFields.tsx:29
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:42
 msgid "OAuth Token"
 msgstr "OAuth 令牌"
 
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:237
 #: src/components/streamers/card/use-streamer-status.tsx:246
-#: src/components/streamers/edit/recent-sessions-list.tsx:69
+#: src/components/streamers/edit/recent-sessions-list.tsx:72
 #: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.tsx:69
 msgid "Offline"
@@ -4029,27 +4078,27 @@ msgstr "卸载解密（默认：开）"
 msgid "Offset Consistency Check"
 msgstr "偏移一致性检查"
 
-#: src/components/config/shared/event-hooks-form.tsx:134
+#: src/components/config/shared/event-hooks-form.tsx:152
 msgid "On Download Complete"
 msgstr "录制完成时"
 
-#: src/components/config/shared/event-hooks-form.tsx:140
+#: src/components/config/shared/event-hooks-form.tsx:158
 msgid "On Download Error"
 msgstr "录制出错时"
 
-#: src/components/config/shared/event-hooks-form.tsx:128
+#: src/components/config/shared/event-hooks-form.tsx:146
 msgid "On Download Start"
 msgstr "录制开始时"
 
-#: src/components/config/shared/event-hooks-form.tsx:122
+#: src/components/config/shared/event-hooks-form.tsx:140
 msgid "On Offline"
 msgstr "离线时"
 
-#: src/components/config/shared/event-hooks-form.tsx:116
+#: src/components/config/shared/event-hooks-form.tsx:134
 msgid "On Online"
 msgstr "上线时"
 
-#: src/components/config/shared/event-hooks-form.tsx:146
+#: src/components/config/shared/event-hooks-form.tsx:164
 msgid "On Pipeline Complete"
 msgstr "处理管道完成时"
 
@@ -4092,8 +4141,8 @@ msgstr "操作类型"
 msgid "Optimize Stream Headers"
 msgstr "优化流头部"
 
-#: src/components/config/shared/proxy-settings-card.tsx:175
-#: src/components/config/shared/proxy-settings-card.tsx:194
+#: src/components/config/shared/proxy-settings-card.tsx:181
+#: src/components/config/shared/proxy-settings-card.tsx:200
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:242
 msgid "Optional"
 msgstr "可选"
@@ -4111,17 +4160,13 @@ msgstr "附加到 `tdl login` 的可选额外参数。"
 msgid "Options"
 msgstr "选项"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:104
-msgid "Options for {platformName}"
-msgstr "{platformName} 选项"
-
 #: src/components/streamers/card/use-streamer-status.tsx:34
 msgid "Out of Space"
 msgstr "空间不足"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1004
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1019
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:166
+#: src/components/config/shared-config-editor.tsx:162
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -4244,23 +4289,23 @@ msgid "Overwrite Output"
 msgstr "覆盖输出"
 
 #: src/components/config/global/pipeline-config-card.tsx:214
-#: src/components/config/shared-config-editor.tsx:459
+#: src/components/config/shared-config-editor.tsx:439
 msgid "Paired"
 msgstr "已配对"
 
-#: src/components/config/shared-config-editor.tsx:600
+#: src/components/config/shared-config-editor.tsx:580
 msgid "Paired pipeline is not supported for this entity."
 msgstr "该实体不支持配对分段处理管道。"
 
 #: src/components/config/global/pipeline-config-card.tsx:211
-#: src/components/config/shared-config-editor.tsx:456
+#: src/components/config/shared-config-editor.tsx:436
 msgid "Paired Segment"
 msgstr "配对分段"
 
 #: src/components/config/global/pipeline-config-card.tsx:222
 #: src/components/config/global/pipeline-config-card.tsx:305
-#: src/components/config/shared-config-editor.tsx:467
-#: src/components/config/shared-config-editor.tsx:570
+#: src/components/config/shared-config-editor.tsx:447
+#: src/components/config/shared-config-editor.tsx:550
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
@@ -4290,8 +4335,7 @@ msgstr "解析中..."
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
-#: src/components/config/platforms/tabs/specific-configs/TwitcastingConfigFields.tsx:29
-#: src/components/config/shared/proxy-settings-card.tsx:189
+#: src/components/config/shared/proxy-settings-card.tsx:195
 #: src/components/notifications/forms/email-form.tsx:101
 #: src/components/notifications/forms/webhook-form.tsx:321
 #: src/routes/_public/login.tsx:198
@@ -4309,10 +4353,6 @@ msgstr "请修改密码"
 #: src/routes/_authed/change-password.tsx:64
 msgid "Password changed successfully. Please login with your new password."
 msgstr "密码修改成功。请使用新密码登录。"
-
-#: src/components/config/platforms/tabs/specific-configs/TwitcastingConfigFields.tsx:35
-msgid "Password for protected streams."
-msgstr "受保护流的密码。"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:69
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
@@ -4334,7 +4374,7 @@ msgstr "暂停"
 msgid "paused"
 msgstr "条已暂停"
 
-#: src/components/pipeline/dag-graph-view.tsx:377
+#: src/components/pipeline/dag-graph-view.tsx:390
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:216
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:455
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:323
@@ -4347,10 +4387,6 @@ msgstr "待处理"
 msgid "Pending Jobs"
 msgstr "待处理任务"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:94
-msgid "Per Extractor"
-msgstr "按提取器"
-
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:514
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:308
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:401
@@ -4359,18 +4395,22 @@ msgid "Per page:"
 msgstr "每页："
 
 #: src/components/config/global/pipeline-config-card.tsx:174
-#: src/components/config/shared-config-editor.tsx:417
+#: src/components/config/shared-config-editor.tsx:397
 msgid "Per-segment"
 msgstr "逐段"
 
 #: src/components/config/global/pipeline-config-card.tsx:185
 #: src/components/config/global/pipeline-config-card.tsx:290
-#: src/components/config/shared-config-editor.tsx:428
-#: src/components/config/shared-config-editor.tsx:539
+#: src/components/config/shared-config-editor.tsx:408
+#: src/components/config/shared-config-editor.tsx:519
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:998
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:211
+msgid "Per-Streamer"
+msgstr "按主播"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1010
 msgid "Perf"
 msgstr "性能"
 
@@ -4384,7 +4424,7 @@ msgstr "性能"
 msgid "Phone & Code (2FA optional)"
 msgstr "手机号和验证码（可选两步验证）"
 
-#: src/components/config/shared-config-editor.tsx:221
+#: src/components/config/shared-config-editor.tsx:217
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:69
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:439
@@ -4497,7 +4537,7 @@ msgstr "平台覆盖设置"
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:100
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:106
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
@@ -4525,7 +4565,7 @@ msgstr "播放"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:986
+#: src/components/config/engines/forms/mesio-hls-form.tsx:992
 msgid "Playlist"
 msgstr "播放列表"
 
@@ -4589,7 +4629,7 @@ msgstr "优先使用二维码登录；其次是手机号和验证码（可选两
 msgid "Preferences"
 msgstr "偏好设置"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:27
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:41
 msgid "Preferred CDN"
 msgstr "首选 CDN"
 
@@ -4605,7 +4645,7 @@ msgstr "首选格式"
 msgid "Preferred Qualities"
 msgstr "首选画质"
 
-#: src/components/config/platforms/tabs/specific-configs/BilibiliConfigFields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:57
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
@@ -4721,7 +4761,7 @@ msgstr "本地处理：重封装为 MP4，生成缩略图，移动到归档文�
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 
-#: src/components/pipeline/dag-graph-view.tsx:379
+#: src/components/pipeline/dag-graph-view.tsx:392
 #: src/routes/_authed/_dashboard/dashboard.tsx:281
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:457
@@ -4755,19 +4795,28 @@ msgstr "进度"
 msgid "Progress:"
 msgstr "进度："
 
-#: src/components/config/shared-config-editor.tsx:188
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:29
+msgid "Protection Settings"
+msgstr "保护设置"
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:26
+msgid "Protocol Settings"
+msgstr "协议设置"
+
+#: src/components/config/shared-config-editor.tsx:184
 msgid "Proxy"
 msgstr "代理"
 
 #: src/components/config/global/network-system-card.tsx:274
+#: src/components/config/shared/proxy-settings-card.tsx:240
 msgid "Proxy Configuration"
 msgstr "代理配置"
 
-#: src/components/config/shared/proxy-settings-card.tsx:242
+#: src/components/config/shared/proxy-settings-card.tsx:262
 msgid "Proxy Strategy"
 msgstr "代理策略"
 
-#: src/components/config/shared/proxy-settings-card.tsx:154
+#: src/components/config/shared/proxy-settings-card.tsx:160
 msgid "Proxy URL"
 msgstr "代理 URL"
 
@@ -4797,9 +4846,13 @@ msgstr "质量（qscale）"
 msgid "Quality Control"
 msgstr "质量控制"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:70
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
 msgid "Quality Rate"
 msgstr "画质等级"
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:101
+msgid "Quality Settings"
+msgstr "画质设置"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:591
 msgid "Queue"
@@ -4817,9 +4870,9 @@ msgstr "内存使用率"
 msgid "Ratio"
 msgstr "比例"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:216
-msgid "Raw JSON configuration specific to this platform."
-msgstr "此平台专用的原始 JSON 配置。"
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:223
+msgid "Raw JSON Editor"
+msgstr "原始 JSON 编辑器"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:633
 msgid "Raw Segment TTL (ms)"
@@ -4871,7 +4924,7 @@ msgstr "当直播结束时接收通知。"
 msgid "Receive a notification when a streamer goes live."
 msgstr "当主播开播时接收通知。"
 
-#: src/components/streamers/edit/recent-sessions-list.tsx:34
+#: src/components/streamers/edit/recent-sessions-list.tsx:35
 msgid "Recent Sessions"
 msgstr "最近录制会话"
 
@@ -5015,9 +5068,13 @@ msgstr "请求超时时长"
 msgid "Require Subtitles"
 msgstr "需要字幕"
 
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:55
+msgid "Required if the stream is password-protected by the broadcaster."
+msgstr "如果直播间被主播设置了密码保护，则为必填。"
+
 #: src/components/config/global/pipeline-config-card.tsx:237
-#: src/components/config/shared-config-editor.tsx:482
-#: src/components/config/shared-config-editor.tsx:580
+#: src/components/config/shared-config-editor.tsx:462
+#: src/components/config/shared-config-editor.tsx:560
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
@@ -5108,7 +5165,7 @@ msgstr "处理管道步骤可复用的处理器配置"
 msgid "Review recorded streams and manage archives"
 msgstr "查看录制内容并管理归档"
 
-#: src/components/config/shared/proxy-settings-card.tsx:114
+#: src/components/config/shared/proxy-settings-card.tsx:120
 msgid "Route traffic through an intermediate server"
 msgstr "通过中间服务器转发流量"
 
@@ -5125,38 +5182,38 @@ msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
 #: src/components/config/global/pipeline-config-card.tsx:291
-#: src/components/config/shared-config-editor.tsx:542
+#: src/components/config/shared-config-editor.tsx:522
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "在每个录制分段完成后立即运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:321
-#: src/components/config/shared-config-editor.tsx:620
+#: src/components/config/shared-config-editor.tsx:599
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
 
 #: src/components/config/global/pipeline-config-card.tsx:271
-#: src/components/config/shared-config-editor.tsx:518
+#: src/components/config/shared-config-editor.tsx:498
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
-#: src/components/config/shared/event-hooks-form.tsx:130
+#: src/components/config/shared/event-hooks-form.tsx:148
 msgid "Runs when a download begins."
 msgstr "录制开始时运行。"
 
-#: src/components/config/shared/event-hooks-form.tsx:136
+#: src/components/config/shared/event-hooks-form.tsx:154
 msgid "Runs when a download completes successfully."
 msgstr "录制成功完成时运行。"
 
-#: src/components/config/shared/event-hooks-form.tsx:142
+#: src/components/config/shared/event-hooks-form.tsx:160
 msgid "Runs when a download encounters an error."
 msgstr "录制发生错误时运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:231
-#: src/components/config/shared-config-editor.tsx:476
+#: src/components/config/shared-config-editor.tsx:456
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
 
-#: src/components/config/shared-config-editor.tsx:574
+#: src/components/config/shared-config-editor.tsx:554
 msgid "Runs when both video and danmu segments are available."
 msgstr "当视频和弹幕分段都可用时运行。"
 
@@ -5164,15 +5221,15 @@ msgstr "当视频和弹幕分段都可用时运行。"
 msgid "Runs when both video and danmu segments are available. Requires \"Record Danmu\" to be enabled."
 msgstr "当视频和弹幕分段都可用时运行。需要启用“录制弹幕”。"
 
-#: src/components/config/shared/event-hooks-form.tsx:148
+#: src/components/config/shared/event-hooks-form.tsx:166
 msgid "Runs when the post-processing pipeline completes."
 msgstr "后处理管道完成时运行。"
 
-#: src/components/config/shared/event-hooks-form.tsx:124
+#: src/components/config/shared/event-hooks-form.tsx:142
 msgid "Runs when the streamer goes offline."
 msgstr "主播离线时运行。"
 
-#: src/components/config/shared/event-hooks-form.tsx:118
+#: src/components/config/shared/event-hooks-form.tsx:136
 msgid "Runs when the streamer goes online."
 msgstr "主播上线时运行。"
 
@@ -5329,8 +5386,12 @@ msgstr "秒 (00-59)"
 msgid "secs"
 msgstr "秒"
 
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
+msgid "Security & Identity"
+msgstr "安全与身份"
+
 #: src/components/config/global/pipeline-config-card.tsx:177
-#: src/components/config/shared-config-editor.tsx:420
+#: src/components/config/shared-config-editor.tsx:400
 msgid "Segment"
 msgstr "分段"
 
@@ -5412,6 +5473,10 @@ msgstr "选择此过滤器生效的日期。"
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:84
+msgid "Select the highest quality level you want to attempt capturing."
+msgstr "选择你想要尝试采集的最高质量等级。"
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:507
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
@@ -5446,25 +5511,25 @@ msgid "Separate multiple paths with commas."
 msgstr "用英文逗号分隔多个路径。"
 
 #: src/components/config/global/pipeline-config-card.tsx:257
-#: src/components/config/shared-config-editor.tsx:502
+#: src/components/config/shared-config-editor.tsx:482
 #: src/components/pipeline/outputs/output-card.tsx:201
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:254
 msgid "Session"
 msgstr "会话"
 
 #: src/components/config/global/pipeline-config-card.tsx:254
-#: src/components/config/shared-config-editor.tsx:499
+#: src/components/config/shared-config-editor.tsx:479
 msgid "Session Complete"
 msgstr "会话完成"
 
 #: src/components/config/global/pipeline-config-card.tsx:265
 #: src/components/config/global/pipeline-config-card.tsx:320
-#: src/components/config/shared-config-editor.tsx:510
-#: src/components/config/shared-config-editor.tsx:617
+#: src/components/config/shared-config-editor.tsx:490
+#: src/components/config/shared-config-editor.tsx:596
 msgid "Session Complete Pipeline"
 msgstr "会话完成处理管道"
 
-#: src/components/config/shared-config-editor.tsx:640
+#: src/components/config/shared-config-editor.tsx:619
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
@@ -5592,7 +5657,7 @@ msgstr "大小"
 msgid "Size and duration constraints for recordings."
 msgstr "录制的大小与时长限制。"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:154
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:150
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
 
@@ -5621,9 +5686,13 @@ msgstr "特定"
 msgid "Specific settings for the platform."
 msgstr "平台的特定设置。"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:120
-msgid "Specific TTWID value for this platform."
-msgstr "此平台的特定 TTWID 值。"
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:236
+msgid "Specific TTWID Cookie"
+msgstr "特定 TTWID Cookie"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:53
+msgid "Specify preferred content delivery network (e.g., ws-h5, hs-h5)."
+msgstr "指定首选的内容分发网络（例如 ws-h5, hs-h5）。"
 
 #: src/components/streamers/edit/active-download-card.tsx:47
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:601
@@ -5653,6 +5722,10 @@ msgstr "标准"
 #: src/components/filters/forms/CronFilterForm.tsx:34
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:41
+msgid "Standard protocol for extraction. Recommended for most cases."
+msgstr "提取的标准协议。推荐用于大多数情况。"
 
 #: src/components/streamers/config/streamer-general-settings.tsx:258
 msgid "Start checking this streamer immediately."
@@ -5740,6 +5813,10 @@ msgstr "流监控遇到问题"
 #: src/components/player/stream-info-card.tsx:102
 msgid "Stream Options"
 msgstr "流选项"
+
+#: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:42
+msgid "Stream Password"
+msgstr "直播密码"
 
 #: src/routes/_authed/_dashboard/player/index.tsx:301
 msgid "Stream Player"
@@ -6074,7 +6151,7 @@ msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and res
 msgstr "该登录需要 Telegram 两步验证密码。请启用“允许两步验证”并重启。"
 
 #: src/components/config/global/pipeline-config-card.tsx:191
-#: src/components/config/shared-config-editor.tsx:436
+#: src/components/config/shared-config-editor.tsx:416
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
@@ -6223,21 +6300,21 @@ msgstr "轨道信息"
 msgid "Transcode H.264"
 msgstr "转码 H.264"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:157
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:153
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyuConfigFields.tsx:49
-msgid "Treat interactive games as offline to avoid recording if not desired."
-msgstr "将互动游戏视为离线，以避免录制不需要的内容。"
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:137
+msgid "Treat interactive games as offline platforms during extraction checks."
+msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
 #: src/components/config/global/pipeline-config-card.tsx:187
-#: src/components/config/shared-config-editor.tsx:430
+#: src/components/config/shared-config-editor.tsx:410
 msgid "Triggered after each segment recording"
 msgstr "每个分段录制后触发"
 
 #: src/components/config/global/pipeline-config-card.tsx:267
-#: src/components/config/shared-config-editor.tsx:512
+#: src/components/config/shared-config-editor.tsx:492
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
@@ -6298,7 +6375,7 @@ msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
 #: src/components/config/global/pipeline-config-card.tsx:224
-#: src/components/config/shared-config-editor.tsx:469
+#: src/components/config/shared-config-editor.tsx:449
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
@@ -6336,11 +6413,7 @@ msgstr "重试"
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:110
-msgid "TTWID Cookie"
-msgstr "TTWID Cookie"
-
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:78
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:191
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
@@ -6348,9 +6421,9 @@ msgstr "TTWID 管理模式"
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
-#: src/components/config/platforms/tabs/specific-configs/TwitchConfigFields.tsx:40
-msgid "Twitch OAuth token for subscriber-only streams."
-msgstr "用于订阅者专属流的 Twitch OAuth 令牌。"
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:56
+msgid "Twitch OAuth token for subscriber-only and high-quality streams."
+msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:94
 msgid "Twitch Proxy Playlist"
@@ -6482,13 +6555,17 @@ msgstr "必须填写 URL"
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:84
+msgid "Use 0 for original quality."
+msgstr "使用 0 表示原画质量。"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:196
 msgid "Use danmu_inputs from job manifest"
 msgstr "使用任务清单中的 danmu_inputs"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:135
-msgid "Use mobile API for stream extraction."
-msgstr "使用移动端 API 进行流提取。"
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:123
+msgid "Use mobile endpoint for extraction."
+msgstr "使用移动端端点进行提取。"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:425
 msgid "Use Phone & Code"
@@ -6498,11 +6575,7 @@ msgstr "使用手机号和验证码"
 msgid "Use QR Login"
 msgstr "使用二维码登录"
 
-#: src/components/config/platforms/tabs/specific-configs/DouyinConfigFields.tsx:60
-msgid "Use separate stream data for double screen."
-msgstr "为双屏使用独立的流数据。"
-
-#: src/components/config/shared/proxy-settings-card.tsx:134
+#: src/components/config/shared/proxy-settings-card.tsx:140
 msgid "Use System Proxy"
 msgstr "使用系统代理"
 
@@ -6510,19 +6583,11 @@ msgstr "使用系统代理"
 msgid "Use TLS"
 msgstr "启用 TLS"
 
-#: src/components/config/platforms/tabs/specific-configs/HuyaConfigFields.tsx:27
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:38
 msgid "Use WUP Protocol"
 msgstr "使用 WUP 协议"
 
-#: src/components/config/platforms/tabs/specific-configs/HuyaConfigFields.tsx:30
-msgid "Use WUP protocol for extraction. Recommended for most cases."
-msgstr "使用 WUP 协议进行提取。推荐在大多数情况下使用。"
-
-#: src/components/config/platforms/tabs/specific-configs/HuyaConfigFields.tsx:59
-msgid "Use WUP protocol for live stream extraction. Only available for numeric room IDs."
-msgstr "使用 WUP 协议提取直播流。仅适用于数字房间号。"
-
-#: src/components/config/platforms/tabs/specific-configs/HuyaConfigFields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:70
 msgid "Use WUP V2"
 msgstr "使用 WUP V2"
 
@@ -6535,7 +6600,7 @@ msgstr "用于桌面登录（备选）；指向包含 `tdata` 的 Telegram Deskt
 msgid "User Agent"
 msgstr "User-Agent"
 
-#: src/components/config/shared/proxy-settings-card.tsx:171
+#: src/components/config/shared/proxy-settings-card.tsx:177
 #: src/components/notifications/forms/email-form.tsx:82
 #: src/components/notifications/forms/webhook-form.tsx:306
 #: src/routes/_public/login.tsx:178
@@ -6604,7 +6669,7 @@ msgstr "视频编码"
 msgid "Video Settings"
 msgstr "视频设置"
 
-#: src/components/pipeline/dag-graph-view.tsx:328
+#: src/components/pipeline/dag-graph-view.tsx:341
 msgid "View"
 msgstr "查看"
 

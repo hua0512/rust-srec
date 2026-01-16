@@ -282,7 +282,20 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                     ease: 'easeInOut',
                     delay: idx * 0.05,
                   }}
-                  markerEnd="url(#premium-arrowhead)"
+                />
+
+                {/* Arrowhead - appears after line draws */}
+                <motion.polygon
+                  points={`${endX - 14},${endY - 7} ${endX},${endY} ${endX - 14},${endY + 7}`}
+                  fill="rgb(59, 130, 246)"
+                  initial={{ opacity: 0, scale: 0.5 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{
+                    duration: 0.3,
+                    delay: idx * 0.05 + 1.0,
+                    ease: 'easeOut',
+                  }}
+                  style={{ transformOrigin: `${endX}px ${endY}px` }}
                 />
 
                 {/* Flow Animation */}

@@ -300,7 +300,7 @@ export const NetworkSettingsCard = memo(
                     </div>
                   </div>
                 ) : (
-                  <div className="text-sm text-muted-foreground italic p-3 rounded-xl bg-muted/20 border border-dashed">
+                  <div className="text-sm text-muted-foreground italic p-3 rounded-xl bg-muted/20 border">
                     <Trans>No credentials found.</Trans>
                   </div>
                 )}

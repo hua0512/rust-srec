@@ -973,32 +973,47 @@ export function MesioHlsForm({
     <Card className="border-border/40 bg-background/20 shadow-none overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200">
       <CardContent className="p-3">
         <Tabs defaultValue="base" className="w-full">
-          <TabsList className="grid w-full grid-cols-5 mb-4 bg-muted/30 p-1 h-10">
-            <TabsTrigger value="base" className="text-[10px] gap-1 px-1">
+          <TabsList className="flex w-full mb-4 bg-muted/30 p-1 py-1.5 h-auto overflow-x-auto no-scrollbar justify-start">
+            <TabsTrigger
+              value="base"
+              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
+            >
               <Globe className="w-3 h-3 text-sky-500" />
               <span className="hidden sm:inline">
                 <Trans>Base</Trans>
               </span>
             </TabsTrigger>
-            <TabsTrigger value="playlist" className="text-[10px] gap-1 px-1">
+            <TabsTrigger
+              value="playlist"
+              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
+            >
               <ListMusic className="w-3 h-3 text-pink-500" />
               <span className="hidden sm:inline">
                 <Trans>Playlist</Trans>
               </span>
             </TabsTrigger>
-            <TabsTrigger value="fetcher" className="text-[10px] gap-1 px-1">
+            <TabsTrigger
+              value="fetcher"
+              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
+            >
               <Bot className="w-3 h-3 text-purple-500" />
               <span className="hidden sm:inline">
                 <Trans>Fetcher</Trans>
               </span>
             </TabsTrigger>
-            <TabsTrigger value="performance" className="text-[10px] gap-1 px-1">
+            <TabsTrigger
+              value="performance"
+              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
+            >
               <Zap className="w-3 h-3 text-yellow-500" />
               <span className="hidden sm:inline">
                 <Trans>Perf</Trans>
               </span>
             </TabsTrigger>
-            <TabsTrigger value="output" className="text-[10px] gap-1 px-1">
+            <TabsTrigger
+              value="output"
+              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
+            >
               <Share2 className="w-3 h-3 text-emerald-500" />
               <span className="hidden sm:inline">
                 <Trans>Output</Trans>

@@ -352,8 +352,8 @@ function WorkflowsPage() {
         {/* Floating Action Button */}
         <motion.div
           className="fixed bottom-8 right-8 z-50"
-          initial={{ scale: 0, rotate: 90 }}
-          animate={{ scale: 1, rotate: 0 }}
+          initial={{ scale: 0.93, rotate: 90, opacity: 0 }}
+          animate={{ scale: 1, rotate: 0, opacity: 1 }}
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
         >

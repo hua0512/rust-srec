@@ -419,7 +419,6 @@ mod tests {
         );
         assert!(result.is_ok());
         let packet = result.unwrap();
-        std::fs::write("living_info_packet.bin", packet.clone()).unwrap();
         assert!(!packet.is_empty());
     }
 
