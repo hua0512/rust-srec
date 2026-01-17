@@ -184,17 +184,24 @@ function Install-RustSrec {
             Write-Info "Starting Rust-Srec..."
             $startSuccess = $false
             
+            # Temporarily allow errors (Docker outputs progress to stderr which can trigger PS errors)
+            $prevErrorAction = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            
             # Try docker compose first (Docker Desktop v2+)
-            docker compose up -d 2>&1 | Out-Host
+            # Use cmd /c to prevent stderr from being treated as PowerShell error
+            cmd /c "docker compose up -d" 2>&1 | ForEach-Object { Write-Host $_ }
             if ($LASTEXITCODE -eq 0) {
                 $startSuccess = $true
             } else {
                 # Fallback to docker-compose (standalone)
-                docker-compose up -d 2>&1 | Out-Host
+                cmd /c "docker-compose up -d" 2>&1 | ForEach-Object { Write-Host $_ }
                 if ($LASTEXITCODE -eq 0) {
                     $startSuccess = $true
                 }
             }
+            
+            $ErrorActionPreference = $prevErrorAction
             
             Write-Host ""
             if ($startSuccess) {
