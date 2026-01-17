@@ -67,14 +67,9 @@ function Get-RemoteFile {
         [string]$OutFile
     )
     try {
-        # Use Invoke-WebRequest and read raw bytes from stream
-        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing
-        # Use RawContentStream to get bytes (works for both text and binary)
-        $stream = $response.RawContentStream
-        $stream.Position = 0
-        $bytes = New-Object byte[] $stream.Length
-        $null = $stream.Read($bytes, 0, $stream.Length)
-        [System.IO.File]::WriteAllBytes($OutFile, $bytes)
+        # Use -OutFile which respects PowerShell's current location (Push-Location)
+        # Note: [System.IO.File]::WriteAllBytes() would use .NET's working directory instead
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
     } catch {
         Write-Err "Failed to download: $Url"
         throw
