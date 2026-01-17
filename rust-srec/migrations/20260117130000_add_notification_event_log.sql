@@ -37,8 +37,20 @@ CREATE TABLE web_push_subscription (
     min_priority TEXT NOT NULL DEFAULT 'critical',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    next_attempt_at TEXT,
+    last_429_at TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_web_push_subscription_user_id
 ON web_push_subscription(user_id);
+
+-- Index for finding subscriptions ready to retry
+CREATE INDEX IF NOT EXISTS idx_web_push_subscription_next_attempt_at
+    ON web_push_subscription(next_attempt_at)
+    WHERE next_attempt_at IS NOT NULL;
+
+-- Index for tracking recent rate limit issues
+CREATE INDEX IF NOT EXISTS idx_web_push_subscription_last_429_at
+    ON web_push_subscription(last_429_at)
+    WHERE last_429_at IS NOT NULL;
