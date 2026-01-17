@@ -728,18 +728,20 @@ impl<
 
         let now = chrono::Utc::now();
 
-        // Transaction: (session create/resume + streamer state update + outbox event).
-        // If anything fails, the database remains consistent and no event is emitted.
-        // Use BEGIN IMMEDIATE to prevent deadlocks during concurrent checks.
-        let mut tx = self.begin_immediate().await?;
-
-        // Logic for session management (creation or resumption)
+        // Load config before acquiring an IMMEDIATE transaction; this avoids holding a write lock
+        // while doing unrelated reads.
         let merged_config = self
             .config_service
             .get_config_for_streamer(&streamer.id)
             .await?;
         let gap_secs = merged_config.session_gap_time_secs;
 
+        // Transaction: (session create/resume + streamer state update + outbox event).
+        // If anything fails, the database remains consistent and no event is emitted.
+        // Use BEGIN IMMEDIATE to prevent deadlocks during concurrent checks.
+        let mut tx = self.begin_immediate().await?;
+
+        // Logic for session management (creation or resumption)
         // Check for last session
         let last_session = SessionTxOps::get_last_session(&mut tx, &streamer.id).await?;
 

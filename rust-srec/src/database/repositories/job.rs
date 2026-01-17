@@ -364,65 +364,73 @@ impl JobRepository for SqlxJobRepository {
         retry_on_sqlite_busy("claim_next_pending_job", || async {
             let now = chrono::Utc::now().to_rfc3339();
 
-            // SQLite supports `RETURNING` in modern versions; this keeps the claim
-            // atomic and avoids a list+update race between workers.
+            // Avoid taking a write lock when there are no pending jobs: first select the next job id,
+            // then claim it with a conditional UPDATE. This reduces lock contention under load.
             //
             // We keep ordering consistent with list_jobs_filtered: priority DESC, created_at DESC.
-            let (sql, bind_job_types): (String, bool) = match job_types {
-                Some(types) if !types.is_empty() => {
-                    let placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-                    (
-                        format!(
+            for _ in 0..3 {
+                let next_id: Option<String> = match job_types {
+                    Some(types) if !types.is_empty() => {
+                        let placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+                        let sql = format!(
                             r#"
-                            UPDATE job
-                            SET status = 'PROCESSING',
-                                started_at = ?,
-                                updated_at = ?
-                            WHERE id = (
-                                SELECT id
-                                FROM job
-                                WHERE status = 'PENDING' AND job_type IN ({})
-                                ORDER BY priority DESC, created_at DESC
-                                LIMIT 1
-                            )
-                              AND status = 'PENDING'
-                            RETURNING *
+                            SELECT id
+                            FROM job
+                            WHERE status = 'PENDING' AND job_type IN ({})
+                            ORDER BY priority DESC, created_at DESC
+                            LIMIT 1
                             "#,
                             placeholders
-                        ),
-                        true,
-                    )
-                }
-                _ => (
+                        );
+
+                        let mut query = sqlx::query_scalar::<_, String>(&sql);
+                        for jt in types {
+                            query = query.bind(jt);
+                        }
+                        query.fetch_optional(&self.pool).await?
+                    }
+                    _ => {
+                        sqlx::query_scalar::<_, String>(
+                            r#"
+                            SELECT id
+                            FROM job
+                            WHERE status = 'PENDING'
+                            ORDER BY priority DESC, created_at DESC
+                            LIMIT 1
+                            "#,
+                        )
+                        .fetch_optional(&self.pool)
+                        .await?
+                    }
+                };
+
+                let Some(next_id) = next_id else {
+                    return Ok(None);
+                };
+
+                let claimed = sqlx::query_as::<_, JobDbModel>(
                     r#"
                     UPDATE job
                     SET status = 'PROCESSING',
                         started_at = ?,
                         updated_at = ?
-                    WHERE id = (
-                        SELECT id
-                        FROM job
-                        WHERE status = 'PENDING'
-                        ORDER BY priority DESC, created_at DESC
-                        LIMIT 1
-                    )
+                    WHERE id = ?
                       AND status = 'PENDING'
                     RETURNING *
-                    "#
-                    .to_string(),
-                    false,
-                ),
-            };
+                    "#,
+                )
+                .bind(&now)
+                .bind(&now)
+                .bind(&next_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
-            let mut query = sqlx::query_as::<_, JobDbModel>(&sql).bind(&now).bind(&now);
-            if bind_job_types && let Some(types) = job_types {
-                for jt in types {
-                    query = query.bind(jt);
+                if claimed.is_some() {
+                    return Ok(claimed);
                 }
             }
 
-            let claimed = query.fetch_optional(&self.pool).await?;
-            Ok(claimed)
+            Ok(None)
         })
         .await
     }

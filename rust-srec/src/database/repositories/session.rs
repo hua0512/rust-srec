@@ -7,6 +7,7 @@ use crate::database::models::{
     DanmuStatisticsDbModel, LiveSessionDbModel, MediaOutputDbModel, OutputFilters, Pagination,
     SessionFilters,
 };
+use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
 
 /// Session repository trait.
@@ -218,51 +219,93 @@ impl SessionRepository for SqlxSessionRepository {
     }
 
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&output.id)
-        .bind(&output.session_id)
-        .bind(&output.parent_media_output_id)
-        .bind(&output.file_path)
-        .bind(&output.file_type)
-        .bind(output.size_bytes)
-        .bind(&output.created_at)
-        .execute(&self.pool)
-        .await?;
+        retry_on_sqlite_busy("create_media_output", || async {
+            let mut conn = self.pool.acquire().await?;
+            sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
 
-        // Update session total size
-        sqlx::query(
-            "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
-        )
-        .bind(output.size_bytes)
-        .bind(&output.session_id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+            let result: Result<()> = async {
+                sqlx::query(
+                    r#"
+                    INSERT INTO media_outputs (id, session_id, parent_media_output_id, file_path, file_type, size_bytes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(&output.id)
+                .bind(&output.session_id)
+                .bind(&output.parent_media_output_id)
+                .bind(&output.file_path)
+                .bind(&output.file_type)
+                .bind(output.size_bytes)
+                .bind(&output.created_at)
+                .execute(&mut *conn)
+                .await?;
+
+                // Update session total size
+                sqlx::query(
+                    "UPDATE live_sessions SET total_size_bytes = total_size_bytes + ? WHERE id = ?",
+                )
+                .bind(output.size_bytes)
+                .bind(&output.session_id)
+                .execute(&mut *conn)
+                .await?;
+
+                Ok(())
+            }
+            .await;
+
+            match result {
+                Ok(()) => {
+                    sqlx::query("COMMIT").execute(&mut *conn).await?;
+                    Ok(())
+                }
+                Err(err) => {
+                    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+                    Err(err)
+                }
+            }
+        })
+        .await
     }
 
     async fn delete_media_output(&self, id: &str) -> Result<()> {
         // Get output info before deletion to update session size
         let output = self.get_media_output(id).await?;
 
-        sqlx::query("DELETE FROM media_outputs WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        retry_on_sqlite_busy("delete_media_output", || async {
+            let mut conn = self.pool.acquire().await?;
+            sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
 
-        // Update session total size
-        sqlx::query(
-            "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
-        )
-        .bind(output.size_bytes)
-        .bind(&output.session_id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+            let result: Result<()> = async {
+                sqlx::query("DELETE FROM media_outputs WHERE id = ?")
+                    .bind(id)
+                    .execute(&mut *conn)
+                    .await?;
+
+                // Update session total size
+                sqlx::query(
+                    "UPDATE live_sessions SET total_size_bytes = total_size_bytes - ? WHERE id = ?",
+                )
+                .bind(output.size_bytes)
+                .bind(&output.session_id)
+                .execute(&mut *conn)
+                .await?;
+
+                Ok(())
+            }
+            .await;
+
+            match result {
+                Ok(()) => {
+                    sqlx::query("COMMIT").execute(&mut *conn).await?;
+                    Ok(())
+                }
+                Err(err) => {
+                    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+                    Err(err)
+                }
+            }
+        })
+        .await
     }
 
     async fn get_danmu_statistics(
