@@ -67,10 +67,14 @@ function Get-RemoteFile {
         [string]$OutFile
     )
     try {
-        # Use Invoke-WebRequest with explicit encoding handling
+        # Use Invoke-WebRequest and read raw bytes from stream
         $response = Invoke-WebRequest -Uri $Url -UseBasicParsing
-        # Write content as bytes to preserve encoding
-        [System.IO.File]::WriteAllBytes($OutFile, $response.Content)
+        # Use RawContentStream to get bytes (works for both text and binary)
+        $stream = $response.RawContentStream
+        $stream.Position = 0
+        $bytes = New-Object byte[] $stream.Length
+        $null = $stream.Read($bytes, 0, $stream.Length)
+        [System.IO.File]::WriteAllBytes($OutFile, $bytes)
     } catch {
         Write-Err "Failed to download: $Url"
         throw
