@@ -29,6 +29,7 @@ export function Navbar() {
     users: <Trans>Users</Trans>,
     pipeline: <Trans>Pipeline</Trans>,
     notifications: <Trans>Notifications</Trans>,
+    events: <Trans>Events</Trans>,
     player: <Trans>Player</Trans>,
     system: <Trans>System</Trans>,
     backup: <Trans>Backup</Trans>,

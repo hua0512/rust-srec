@@ -81,6 +81,7 @@ use crate::database::repositories::{
 };
 use crate::downloader::DownloadManager;
 use crate::metrics::HealthChecker;
+use crate::notification::web_push::WebPushService;
 use crate::pipeline::PipelineManager;
 use crate::streamer::StreamerManager;
 use platforms_parser::extractor::create_client_builder;
@@ -121,6 +122,8 @@ pub struct AppState {
     pub notification_repository: Option<Arc<dyn NotificationRepository>>,
     /// Notification service for testing and reloading
     pub notification_service: Option<Arc<NotificationService>>,
+    /// Web push service for browser notifications (VAPID)
+    pub web_push_service: Option<Arc<WebPushService>>,
     /// Logging configuration for dynamic log level changes
     pub logging_config: Option<Arc<crate::logging::LoggingConfig>>,
     /// Shared HTTP client for parsing/resolving URLs
@@ -162,6 +165,7 @@ impl AppState {
             job_preset_repository: None,
             notification_repository: None,
             notification_service: None,
+            web_push_service: None,
             logging_config: None,
             http_client: Some(Self::build_http_client()),
             credential_service: None,
@@ -190,6 +194,7 @@ impl AppState {
             job_preset_repository: None,
             notification_repository: None,
             notification_service: None,
+            web_push_service: None,
             logging_config: None,
             http_client: Some(Self::build_http_client()),
             credential_service: None,
@@ -222,6 +227,7 @@ impl AppState {
             job_preset_repository: None,
             notification_repository: None,
             notification_service: None,
+            web_push_service: None,
             logging_config: None,
             http_client: Some(Self::build_http_client()),
             credential_service: None,
@@ -306,6 +312,12 @@ impl AppState {
     /// Set the notification service.
     pub fn with_notification_service(mut self, service: Arc<NotificationService>) -> Self {
         self.notification_service = Some(service);
+        self
+    }
+
+    /// Set the web push service.
+    pub fn with_web_push_service(mut self, service: Arc<WebPushService>) -> Self {
+        self.web_push_service = Some(service);
         self
     }
 

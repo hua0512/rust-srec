@@ -102,6 +102,25 @@ The <a :href="withBase('/env.example')" download=".env.example">.env</a> file co
 | `JWT_SECRET` | Secret key for JWT signing (**Required**) |
 | `SESSION_SECRET` | Secret for frontend session encryption (**Required**) |
 
+### Browser Notifications (Web Push)
+
+To enable browser push notifications, generate VAPID keys and set them in `.env`:
+
+```bash
+docker run --rm ghcr.io/hua0512/rust-srec:latest /app/rust-srec-vapid
+# or: npx --yes web-push generate-vapid-keys
+```
+
+| Variable | Description |
+|----------|-------------|
+| `WEB_PUSH_VAPID_PUBLIC_KEY` | VAPID public key (base64url, unpadded) |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | VAPID private key (base64url, unpadded) |
+| `WEB_PUSH_VAPID_SUBJECT` | VAPID subject (e.g. `mailto:admin@localhost`) |
+
+::: tip Note
+Web Push requires HTTPS (or localhost).
+:::
+
 ::: tip Full Reference
 For a complete list of all available environment variables and their descriptions, see the [Environment Variables Reference](./configuration.md#environment-variables).
 :::

@@ -25,6 +25,10 @@ services:
       - REFRESH_TOKEN_EXPIRATION_SECS=${REFRESH_TOKEN_EXPIRATION_SECS:-604800}
       # Password Policy
       - MIN_PASSWORD_LENGTH=${MIN_PASSWORD_LENGTH:-8}
+      # Browser Notifications (Web Push / VAPID)
+      - WEB_PUSH_VAPID_PUBLIC_KEY=${WEB_PUSH_VAPID_PUBLIC_KEY:-}
+      - WEB_PUSH_VAPID_PRIVATE_KEY=${WEB_PUSH_VAPID_PRIVATE_KEY:-}
+      - WEB_PUSH_VAPID_SUBJECT=${WEB_PUSH_VAPID_SUBJECT:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/live"]
       interval: 30s

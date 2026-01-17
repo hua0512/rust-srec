@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/tooltip';
 import {
   Activity,
+  Bell,
   CircleHelp,
   Clock,
   Database,
@@ -220,6 +221,52 @@ export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
               </FormItem>
             )}
           />
+          <FormField
+            control={control}
+            name="notification_event_log_retention_days"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="flex items-center gap-1.5">
+                  <Bell className="h-3.5 w-3.5 text-rose-500/80" />
+                  <Trans>Notification Log Retention</Trans>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <CircleHelp className="h-3.5 w-3.5 text-muted-foreground/40 cursor-help hover:text-muted-foreground transition-colors" />
+                    </TooltipTrigger>
+                    <TooltipContent className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden">
+                      <StatusInfoTooltip
+                        icon={<Bell className="w-4 h-4" />}
+                        title={<Trans>Notification Retention</Trans>}
+                        theme="rose"
+                      >
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          <Trans>
+                            Number of days to keep the notification event log in
+                            the database. This affects the Notifications →
+                            Events page.
+                          </Trans>
+                        </p>
+                      </StatusInfoTooltip>
+                    </TooltipContent>
+                  </Tooltip>
+                </FormLabel>
+                <FormControl>
+                  <InputWithUnit
+                    unitType="duration"
+                    value={(field.value ?? 0) * 86400}
+                    onChange={(val) =>
+                      field.onChange(val !== null ? Math.round(val / 86400) : 0)
+                    }
+                    placeholder="0"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <FormField
             control={control}
             name="session_gap_time_secs"

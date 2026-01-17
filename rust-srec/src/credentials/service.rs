@@ -11,6 +11,7 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::database::repositories::config::ConfigRepository;
 use crate::domain::streamer::Streamer;
+use crate::notification::{NotificationEvent, NotificationService};
 use crate::streamer::StreamerMetadata;
 
 use super::error::CredentialError;
@@ -31,6 +32,8 @@ pub struct CredentialRefreshService<R: ConfigRepository> {
     failure_tracker: Arc<RefreshFailureTracker>,
     /// Per-scope locks to prevent concurrent refreshes
     refresh_locks: dashmap::DashMap<String, Arc<Mutex<()>>>,
+    /// Optional notification service for broadcasting credential events.
+    notification_service: Option<Arc<NotificationService>>,
 }
 
 impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
@@ -43,7 +46,13 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             daily_tracker: Arc::new(DailyCheckTracker::new()),
             failure_tracker: Arc::new(RefreshFailureTracker::new()),
             refresh_locks: dashmap::DashMap::new(),
+            notification_service: None,
         }
+    }
+
+    /// Wire a NotificationService to emit CredentialEvents as NotificationEvents.
+    pub fn set_notification_service(&mut self, service: Arc<NotificationService>) {
+        self.notification_service = Some(service);
     }
 
     /// Register a credential manager for a platform.
@@ -230,9 +239,47 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             }
             CredentialStatus::Invalid { reason, error_code } => {
                 error!(%reason, ?error_code, "Credentials are invalid - manual re-login required");
+
+                // Emit a notification event once per day (this path runs only on uncached checks).
+                self.maybe_notify_credential_event(CredentialEvent::Invalid {
+                    scope: source.scope.clone(),
+                    platform: source.platform_name.clone(),
+                    reason: reason.clone(),
+                    error_code,
+                    timestamp: Utc::now(),
+                });
+
                 Err(CredentialError::InvalidCredentials(reason))
             }
         }
+    }
+
+    fn maybe_notify_credential_event(&self, event: CredentialEvent) {
+        let Some(service) = self.notification_service.as_ref().cloned() else {
+            return;
+        };
+
+        // Basic anti-spam gating for recurring failures.
+        if let CredentialEvent::RefreshFailed {
+            requires_relogin,
+            failure_count,
+            ..
+        } = &event
+        {
+            let should_notify = *requires_relogin || *failure_count == 1 || *failure_count % 3 == 0;
+            if !should_notify {
+                return;
+            }
+        }
+
+        tokio::spawn(async move {
+            if let Err(e) = service
+                .notify(NotificationEvent::Credential { event })
+                .await
+            {
+                warn!(error = %e, "Failed to dispatch credential notification");
+            }
+        });
     }
 
     /// Perform credential refresh.
@@ -273,6 +320,10 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
                 // Clear failure tracking
                 self.failure_tracker.clear(&source.scope);
 
+                self.maybe_notify_credential_event(
+                    self.create_refresh_success_event(source, &new_creds),
+                );
+
                 Ok(Some(new_creds.cookies))
             }
             Err(e) => {
@@ -311,6 +362,8 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
                     %failure_count,
                     "Credential refresh failed"
                 );
+
+                self.maybe_notify_credential_event(self.create_refresh_failed_event(source, &e));
 
                 Err(e)
             }

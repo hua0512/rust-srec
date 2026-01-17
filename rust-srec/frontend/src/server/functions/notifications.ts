@@ -5,6 +5,8 @@ import {
   CreateChannelRequestSchema,
   UpdateChannelRequestSchema,
   NotificationEventTypeInfoSchema,
+  NotificationEventLogSchema,
+  WebPushSubscriptionSchema,
 } from '../../api/schemas/notifications';
 import { z } from 'zod';
 
@@ -84,5 +86,88 @@ export const testChannel = createServerFn({ method: 'POST' })
   .handler(async ({ data: id }) => {
     await fetchBackend(`/notifications/channels/${id}/test`, {
       method: 'POST',
+    });
+  });
+
+export const listEvents = createServerFn({ method: 'GET' })
+  .inputValidator(
+    (
+      q: {
+        limit?: number;
+        offset?: number;
+        event_type?: string;
+        streamer_id?: string;
+        search?: string;
+      } = {},
+    ) => q,
+  )
+  .handler(async ({ data }) => {
+    const params = new URLSearchParams();
+    if (data.limit) params.set('limit', String(data.limit));
+    if (data.offset) params.set('offset', String(data.offset));
+    if (data.event_type) params.set('event_type', data.event_type);
+    if (data.streamer_id) params.set('streamer_id', data.streamer_id);
+    if (data.search) params.set('search', data.search);
+
+    const qs = params.toString();
+    const json = await fetchBackend(
+      `/notifications/events${qs ? `?${qs}` : ''}`,
+    );
+    return z.array(NotificationEventLogSchema).parse(json);
+  });
+
+// --- Web Push (VAPID) ---
+
+const WebPushPublicKeySchema = z.object({
+  public_key: z.string(),
+});
+
+export const getWebPushPublicKey = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const json = await fetchBackend('/notifications/web-push/public-key');
+    return WebPushPublicKeySchema.parse(json);
+  },
+);
+
+export const listWebPushSubscriptions = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const json = await fetchBackend('/notifications/web-push/subscriptions');
+  return z.array(WebPushSubscriptionSchema).parse(json);
+});
+
+const WebPushSubscriptionJsonSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string().min(1),
+    auth: z.string().min(1),
+  }),
+});
+
+export const subscribeWebPush = createServerFn({ method: 'POST' })
+  .inputValidator(
+    (d: {
+      subscription: z.infer<typeof WebPushSubscriptionJsonSchema>;
+      min_priority?: string;
+    }) => d,
+  )
+  .handler(async ({ data }) => {
+    const payload = {
+      subscription: WebPushSubscriptionJsonSchema.parse(data.subscription),
+      min_priority: data.min_priority,
+    };
+    const json = await fetchBackend('/notifications/web-push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return WebPushSubscriptionSchema.parse(json);
+  });
+
+export const unsubscribeWebPush = createServerFn({ method: 'POST' })
+  .inputValidator((d: { endpoint: string }) => d)
+  .handler(async ({ data }) => {
+    await fetchBackend('/notifications/web-push/unsubscribe', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint: data.endpoint }),
     });
   });

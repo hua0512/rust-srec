@@ -7,6 +7,7 @@ type TooltipColorTheme =
   | 'red'
   | 'violet'
   | 'blue'
+  | 'rose'
   | 'slate';
 
 interface StatusInfoTooltipProps {
@@ -83,6 +84,15 @@ const themeStyles: Record<
     ring: 'ring-slate-500/20',
     shadow: 'shadow-[inset_0_0_10px_rgba(100,116,139,0.1)]',
   },
+  rose: {
+    headerGradient:
+      'from-rose-500/10 via-rose-500/5 to-transparent border-rose-500/10',
+    headerBorder: 'border-rose-500/10',
+    iconBg: 'bg-rose-500/10',
+    iconColor: 'text-rose-600',
+    ring: 'ring-rose-500/20',
+    shadow: 'shadow-[inset_0_0_10px_rgba(244,63,94,0.1)]',
+  },
 };
 
 export function StatusInfoTooltip({
@@ -93,10 +103,10 @@ export function StatusInfoTooltip({
   children,
   className,
 }: StatusInfoTooltipProps) {
-  const styles = themeStyles[theme];
+  const styles = themeStyles[theme] || themeStyles.slate;
 
   // Extract color for CSS variables
-  const colorMatch = styles.iconColor.match(/text-([a-z]+)-600/);
+  const colorMatch = styles.iconColor?.match(/text-([a-z]+)-600/);
   const colorName = colorMatch ? colorMatch[1] : 'primary';
 
   return (

@@ -95,6 +95,7 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         default_download_engine: config.default_download_engine,
         record_danmu: config.record_danmu,
         job_history_retention_days: config.job_history_retention_days as u32,
+        notification_event_log_retention_days: config.notification_event_log_retention_days as u32,
         session_gap_time_secs: config.session_gap_time_secs as u64,
         pipeline: config.pipeline,
         session_complete_pipeline: config.session_complete_pipeline,
@@ -208,6 +209,7 @@ pub async fn update_global_config(
         offline_check_delay_ms: |v: serde_json::Value| v.as_i64(),
         offline_check_count: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
         job_history_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+        notification_event_log_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
         session_gap_time_secs: |v: serde_json::Value| v.as_i64(),
         default_download_engine: |v: serde_json::Value| v.as_str().map(String::from),
         record_danmu: |v: serde_json::Value| v.as_bool(),
@@ -415,6 +417,7 @@ mod tests {
             max_concurrent_cpu_jobs: 0,
             max_concurrent_io_jobs: 8,
             job_history_retention_days: 30,
+            notification_event_log_retention_days: 30,
             session_gap_time_secs: 3600,
             pipeline: None,
             session_complete_pipeline: None,
@@ -461,6 +464,7 @@ mod property_tests {
                 offline_check_delay_ms: |v: serde_json::Value| v.as_i64(),
                 offline_check_count: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
                 job_history_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
+                notification_event_log_retention_days: |v: serde_json::Value| v.as_i64().map(|n| n as i32),
                 session_gap_time_secs: |v: serde_json::Value| v.as_i64(),
                 default_download_engine: |v: serde_json::Value| v.as_str().map(String::from),
                 record_danmu: |v: serde_json::Value| v.as_bool(),
@@ -536,6 +540,7 @@ mod property_tests {
             offline_check_delay_ms in prop::option::of(1000u64..120000u64),
             offline_check_count in prop::option::of(1u32..10u32),
             job_history_retention_days in prop::option::of(1u32..365u32),
+            notification_event_log_retention_days in prop::option::of(1u32..365u32),
             default_download_engine in prop::option::of(download_engine_strategy()),
             record_danmu in prop::option::of(prop::bool::ANY),
             proxy_config in prop::option::of(proxy_config_strategy()),
@@ -560,6 +565,7 @@ mod property_tests {
                 offline_check_delay_ms: offline_check_delay_ms.map(|v| serde_json::json!(v)),
                 offline_check_count: offline_check_count.map(|v| serde_json::json!(v)),
                 job_history_retention_days: job_history_retention_days.map(|v| serde_json::json!(v)),
+                notification_event_log_retention_days: notification_event_log_retention_days.map(|v| serde_json::json!(v)),
                 default_download_engine: default_download_engine.clone().map(|v| serde_json::json!(v)),
                 record_danmu: record_danmu.map(|v| serde_json::json!(v)),
                 proxy_config: proxy_config.clone().map(|v| serde_json::json!(v)),
@@ -657,6 +663,12 @@ mod property_tests {
                 prop_assert_eq!(config.job_history_retention_days, job_history as i32, "job_history_retention_days should be updated");
             } else {
                 prop_assert_eq!(config.job_history_retention_days, original_config.job_history_retention_days, "job_history_retention_days should remain unchanged");
+            }
+
+            if let Some(notification_retention) = notification_event_log_retention_days {
+                prop_assert_eq!(config.notification_event_log_retention_days, notification_retention as i32, "notification_event_log_retention_days should be updated");
+            } else {
+                prop_assert_eq!(config.notification_event_log_retention_days, original_config.notification_event_log_retention_days, "notification_event_log_retention_days should remain unchanged");
             }
 
             if let Some(ref engine) = default_download_engine {

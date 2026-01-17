@@ -182,6 +182,7 @@ msgstr "操作"
 #: src/components/notifications/forms/webhook-form.tsx:113
 #: src/components/streamers/edit/streamer-meta-form.tsx:224
 #: src/routes/_authed/_dashboard/config/language.tsx:96
+#: src/routes/_authed/_dashboard/notifications/index.tsx:408
 msgid "Active"
 msgstr "启用"
 
@@ -229,7 +230,7 @@ msgstr "添加参数模板"
 msgid "Add at least one step"
 msgstr "至少添加一个步骤"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:130
+#: src/routes/_authed/_dashboard/notifications/index.tsx:337
 msgid "Add Channel"
 msgstr "添加渠道"
 
@@ -370,6 +371,7 @@ msgstr "专辑"
 msgid "Alerts when disk space is running low."
 msgstr "磁盘空间不足时发出警报。"
 
+#: src/components/notifications/browser-channel-dialog.tsx:162
 #: src/components/pipeline/workflows/step-library.tsx:291
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:198
@@ -391,6 +393,10 @@ msgstr "所有平台"
 #: src/routes/_authed/_dashboard/sessions/index.tsx:192
 msgid "All Time"
 msgstr "全部时间"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:251
+msgid "All Types"
+msgstr "所有类型"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:561
 msgid "Allowed Extensions"
@@ -638,6 +644,10 @@ msgstr "返回处理任务列表"
 msgid "Back to Sessions"
 msgstr "返回录制会话"
 
+#: src/components/notifications/browser-channel-dialog.tsx:123
+msgid "Background"
+msgstr "后台"
+
 #: src/components/config/shared/network-settings-card.tsx:294
 msgid "Background refresh enabled"
 msgstr "后台刷新已启用"
@@ -650,7 +660,7 @@ msgstr "回跳阈值"
 msgid "Backoff Multiplier"
 msgstr "退避倍率"
 
-#: src/components/sidebar/navbar.tsx:34
+#: src/components/sidebar/navbar.tsx:35
 msgid "Backup"
 msgstr "备份"
 
@@ -727,6 +737,10 @@ msgstr "比特率"
 msgid "Blocked"
 msgstr "已阻止"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:279
+msgid "Blocked by browser"
+msgstr "被浏览器阻止"
+
 #: src/routes/_authed/_dashboard/config/theme.tsx:70
 msgid "Border Radius"
 msgstr "圆角半径"
@@ -734,6 +748,15 @@ msgstr "圆角半径"
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:159
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "浏览处理任务生成的媒体文件"
+
+#: src/components/notifications/browser-channel-dialog.tsx:62
+#: src/routes/_authed/_dashboard/notifications/index.tsx:414
+msgid "Browser Notifications"
+msgstr "浏览器通知"
+
+#: src/components/notifications/browser-channel-dialog.tsx:171
+msgid "Browser Status"
+msgstr "浏览器状态"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:912
 msgid "Buffer Limits"
@@ -849,7 +872,7 @@ msgstr "正在修改密码..."
 msgid "Channel created"
 msgstr "渠道已创建"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:44
+#: src/routes/_authed/_dashboard/notifications/index.tsx:220
 msgid "Channel deleted"
 msgstr "渠道已删除"
 
@@ -861,7 +884,7 @@ msgstr "渠道已更新"
 msgid "channel1,channel2"
 msgstr "频道1,频道2"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:126
+#: src/routes/_authed/_dashboard/notifications/index.tsx:310
 msgid "channels"
 msgstr "个渠道"
 
@@ -950,6 +973,7 @@ msgid "Cloning..."
 msgstr "正在克隆..."
 
 #: src/components/config/global/backup-restore-card.tsx:569
+#: src/components/notifications/browser-channel-dialog.tsx:205
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:686
 msgid "Close"
 msgstr "关闭"
@@ -1083,6 +1107,10 @@ msgstr "配置录制引擎参数"
 msgid "Configure granular options for the selected engine."
 msgstr "配置所选引擎的详细选项。"
 
+#: src/components/notifications/browser-channel-dialog.tsx:66
+msgid "Configure how you receive alerts in this browser and via system push notifications."
+msgstr "配置如何在此浏览器中以及通过系统推送通知接收警报。"
+
 #: src/components/config/global/backup-restore-card.tsx:318
 msgid "Configure how you want to import data from the selected backup file."
 msgstr "配置从所选备份文件导入数据的方式。"
@@ -1094,6 +1122,10 @@ msgstr "配置代理策略和连接详情。"
 #: src/components/filters/FilterDialog.tsx:214
 msgid "Configure recording rules for this streamer."
 msgstr "配置此主播的录制规则。"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:445
+msgid "Configure Settings"
+msgstr "配置设置"
 
 #: src/components/pipeline/workflows/steps-list.tsx:163
 msgid "Configure Step"
@@ -1172,12 +1204,17 @@ msgstr "Cookie"
 msgid "Cookies Only"
 msgstr "仅 Cookie"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:477
+msgid "Copied"
+msgstr "已复制"
+
 #: src/components/pipeline/outputs/output-card.tsx:139
 msgid "Copied!"
 msgstr "已复制！"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:101
+#: src/routes/_authed/_dashboard/notifications/events.tsx:483
 msgid "Copy"
 msgstr "复制"
 
@@ -1231,10 +1268,6 @@ msgstr "CPU 使用率"
 msgid "Create"
 msgstr "创建"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:198
-msgid "Create a channel to receive alerts about downloads, errors, and system events."
-msgstr "创建一个渠道以接收下载、错误和系统事件的警报。"
-
 #. placeholder {0}: presetToClone?.name
 #. placeholder {0}: templateToClone?.name
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:246
@@ -1256,7 +1289,6 @@ msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
 #: src/components/notifications/channel-form.tsx:254
 #: src/components/notifications/channel-form.tsx:366
-#: src/routes/_authed/_dashboard/notifications/index.tsx:206
 msgid "Create Channel"
 msgstr "创建渠道"
 
@@ -1355,6 +1387,10 @@ msgstr "CRF（恒定码率因子）"
 #: src/components/notifications/subscription-manager.tsx:168
 msgid "Critical alert when the processing queue is full."
 msgstr "处理队列已满时发出严重警报。"
+
+#: src/components/notifications/browser-channel-dialog.tsx:150
+msgid "Critical Only"
+msgstr "仅限严重"
 
 #: src/components/notifications/subscription-manager.tsx:162
 msgid "Critical system errors or streamer failures."
@@ -1528,7 +1564,7 @@ msgstr "为录制内容定义处理步骤序列"
 msgid "Degraded"
 msgstr "降级"
 
-#: src/components/config/global/network-system-card.tsx:42
+#: src/components/config/global/network-system-card.tsx:43
 msgid "Delays, proxy, and retention policies."
 msgstr "延迟、代理与保留策略。"
 
@@ -1673,6 +1709,10 @@ msgstr "内部服务与资源的详细健康检查。"
 msgid "Detailed processor settings"
 msgstr "处理器详细设置"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:421
+msgid "Details Ready"
+msgstr "详情就绪"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:440
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
@@ -1690,6 +1730,8 @@ msgid "Disable"
 msgstr "禁用"
 
 #: src/components/streamers/card/use-streamer-status.tsx:41
+#: src/routes/_authed/_dashboard/notifications/index.tsx:429
+#: src/routes/_authed/_dashboard/notifications/index.tsx:437
 #: src/routes/_authed/_dashboard/streamers/index.tsx:71
 msgid "Disabled"
 msgstr "已禁用"
@@ -1731,6 +1773,11 @@ msgstr "下载"
 msgid "Download Backup"
 msgstr "下载备份"
 
+#. placeholder {0}: inner.path || inner.title || 'unknown'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:517
+msgid "Download completed: {0}"
+msgstr "下载已完成：{0}"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:719
 msgid "Download Concurrency"
 msgstr "下载并发数"
@@ -1747,6 +1794,11 @@ msgstr "录制引擎"
 msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
+#. placeholder {0}: error || 'Unknown error'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:519
+msgid "Download failed: {0}"
+msgstr "下载失败：{0}"
+
 #: src/routes/_authed/_dashboard/dashboard.tsx:243
 #: src/routes/_authed/_dashboard/system/health.tsx:326
 msgid "Download Manager"
@@ -1755,6 +1807,11 @@ msgstr "下载管理"
 #: src/components/config/shared/network-settings-card.tsx:320
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
+
+#. placeholder {0}: inner.title || streamer || 'unknown'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:515
+msgid "Download started: {0}"
+msgstr "下载已开始：{0}"
 
 #: src/components/streamers/edit/active-download-card.tsx:40
 msgid "Downloading"
@@ -1854,7 +1911,7 @@ msgstr "例如：标准处理"
 #: src/components/notifications/channel-card.tsx:154
 #: src/components/pipeline/presets/preset-card.tsx:176
 #: src/components/pipeline/workflows/workflow-card.tsx:171
-#: src/components/sidebar/navbar.tsx:47
+#: src/components/sidebar/navbar.tsx:48
 #: src/components/streamers/card/stream-actions-menu.tsx:88
 msgid "Edit"
 msgstr "编辑"
@@ -1927,6 +1984,8 @@ msgstr "启用半透明背景模糊效果。"
 
 #: src/components/notifications/forms/discord-form.tsx:119
 #: src/components/notifications/forms/email-form.tsx:206
+#: src/routes/_authed/_dashboard/notifications/index.tsx:428
+#: src/routes/_authed/_dashboard/notifications/index.tsx:437
 msgid "Enabled"
 msgstr "启用"
 
@@ -2000,7 +2059,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:376
 #: src/components/config/global/backup-restore-card.tsx:381
 #: src/components/config/templates/template-editor.tsx:257
-#: src/components/sidebar/navbar.tsx:35
+#: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.tsx:66
 msgid "Engines"
 msgstr "引擎列表"
@@ -2094,6 +2153,15 @@ msgstr "预计剩余时间"
 msgid "Event Hooks"
 msgstr "事件钩子"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:247
+msgid "Event Type"
+msgstr "事件类型"
+
+#: src/components/sidebar/navbar.tsx:32
+#: src/routes/_authed/_dashboard/notifications/index.tsx:315
+msgid "Events"
+msgstr "事件"
+
 #: src/components/filters/FilterCard.tsx:121
 #: src/components/filters/FilterCard.tsx:235
 #: src/components/filters/forms/CategoryFilterForm.tsx:52
@@ -2131,7 +2199,7 @@ msgstr "在生命周期事件上执行 Shell 命令。命令在系统 Shell 中�
 msgid "Execution Settings"
 msgstr "执行设置"
 
-#: src/components/sidebar/navbar.tsx:40
+#: src/components/sidebar/navbar.tsx:41
 msgid "Executions"
 msgstr "执行记录"
 
@@ -2252,6 +2320,10 @@ msgstr "克隆预设失败：{0}"
 msgid "Failed to clone template: {0}"
 msgstr "克隆模板失败：{0}"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:479
+msgid "Failed to copy"
+msgstr "复制失败"
+
 #: src/components/notifications/channel-form.tsx:191
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
@@ -2283,7 +2355,7 @@ msgstr "创建模板失败：{0}"
 msgid "Failed to create workflow: {0}"
 msgstr "创建工作流失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:48
+#: src/routes/_authed/_dashboard/notifications/index.tsx:224
 msgid "Failed to delete channel"
 msgstr "删除渠道失败"
 
@@ -2322,6 +2394,14 @@ msgstr "删除主播失败"
 msgid "Failed to delete workflow: {0}"
 msgstr "删除工作流失败：{0}"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:172
+msgid "Failed to disable Web Push"
+msgstr "禁用 Web 推送失败"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:213
+msgid "Failed to enable Web Push"
+msgstr "启用 Web 推送失败"
+
 #: src/components/config/global/backup-restore-card.tsx:92
 msgid "Failed to export configuration"
 msgstr "导出配置失败"
@@ -2344,6 +2424,10 @@ msgstr "加载引擎失败：{0}"
 #: src/routes/_authed/_dashboard/config/engines/index.tsx:37
 msgid "Failed to load engines: {0}"
 msgstr "加载引擎列表失败：{0}"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:208
+msgid "Failed to load events"
+msgstr "加载事件失败"
 
 #. placeholder {0}: error.message
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:313
@@ -2400,7 +2484,7 @@ msgstr "无法重试步骤"
 msgid "Failed to send input: {0}"
 msgstr "发送输入失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:58
+#: src/routes/_authed/_dashboard/notifications/index.tsx:234
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
@@ -2435,6 +2519,10 @@ msgstr "更新平台失败：{0}"
 #: src/routes/_authed/_dashboard/pipeline/presets/$presetId.tsx:39
 msgid "Failed to update preset: {0}"
 msgstr "更新预设失败：{0}"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:142
+msgid "Failed to update priority"
+msgstr "更新优先级失败"
 
 #: src/routes/_authed/_dashboard/config/global.tsx:133
 msgid "Failed to update settings"
@@ -2562,6 +2650,10 @@ msgstr "过滤互动玩法"
 #: src/components/config/engines/forms/mesio-form.tsx:157
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "过滤重复标签并检测流重放循环"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:237
+msgid "Filter streamer..."
+msgstr "过滤主播..."
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:73
 msgid "Filter Type"
@@ -2762,7 +2854,7 @@ msgid "Glass Mode"
 msgstr "玻璃模式"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
-#: src/components/sidebar/navbar.tsx:39
+#: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.tsx:48
 msgid "Global"
 msgstr "全局"
@@ -2845,7 +2937,7 @@ msgstr "Header 键"
 msgid "Header Value"
 msgstr "Header 值"
 
-#: src/components/sidebar/navbar.tsx:45
+#: src/components/sidebar/navbar.tsx:46
 msgid "Health"
 msgstr "健康"
 
@@ -2882,7 +2974,11 @@ msgstr "高质量 H.265/HEVC 压缩（CRF 22）。文件更小，但编码更慢
 msgid "High Quality MP3"
 msgstr "高质量 MP3"
 
-#: src/components/config/global/network-system-card.tsx:196
+#: src/components/notifications/browser-channel-dialog.tsx:154
+msgid "High+"
+msgstr "高+"
+
+#: src/components/config/global/network-system-card.tsx:197
 msgid "History Retention"
 msgstr "历史保留"
 
@@ -2899,7 +2995,7 @@ msgid "HLS Tuning"
 msgstr "HLS 调优"
 
 #: src/components/default-catch-boundary.tsx:47
-#: src/components/sidebar/navbar.tsx:60
+#: src/components/sidebar/navbar.tsx:61
 msgid "Home"
 msgstr "主页"
 
@@ -3020,6 +3116,10 @@ msgstr "正在导入..."
 msgid "In active"
 msgstr "进行中"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:409
+msgid "Inactive"
+msgstr "未激活"
+
 #: src/components/filters/FilterCard.tsx:113
 #: src/components/filters/FilterCard.tsx:237
 msgid "Include"
@@ -3087,6 +3187,10 @@ msgstr "检查中"
 msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
 msgstr "Windows 不支持通过此 API 进行交互式密码输入。请使用“桌面登录”（导入 tdata）或在常规终端中登录一次。"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:417
+msgid "Internal"
+msgstr "内部"
+
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:224
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:331
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:108
@@ -3097,11 +3201,11 @@ msgstr "已中断"
 msgid "Interval (seconds)"
 msgstr "间隔（秒）"
 
-#: src/components/config/global/network-system-card.tsx:69
+#: src/components/config/global/network-system-card.tsx:70
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "检查主播是否在线的间隔。较慢的间隔可以减少 API 使用，但可能会延迟录制开始。"
 
-#: src/components/config/global/network-system-card.tsx:112
+#: src/components/config/global/network-system-card.tsx:113
 msgid "Interval between checks when a streamer is live to detect when the stream ends."
 msgstr "主播直播时检测流结束的检查间隔。"
 
@@ -3153,7 +3257,7 @@ msgstr "任务预设"
 msgid "Job retry initiated"
 msgstr "已开始重试处理任务"
 
-#: src/components/sidebar/navbar.tsx:41
+#: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:84
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:247
 msgid "Jobs"
@@ -3264,6 +3368,15 @@ msgstr "直播"
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
 msgstr "直播中"
+
+#: src/components/notifications/browser-channel-dialog.tsx:80
+#: src/routes/_authed/_dashboard/notifications/index.tsx:424
+msgid "Live Polling"
+msgstr "实时轮询"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:76
+msgid "Live polling notifications enabled"
+msgstr "实时轮询通知已启用"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:89
 msgid "Live Preview"
@@ -3409,7 +3522,7 @@ msgstr "管理存储路径和文件格式。"
 msgid "Manage Subscriptions"
 msgstr "管理订阅"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:120
+#: src/routes/_authed/_dashboard/notifications/index.tsx:304
 msgid "Manage where system notifications are sent"
 msgstr "管理系统通知发送到哪里"
 
@@ -3531,7 +3644,7 @@ msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
-#: src/components/config/global/network-system-card.tsx:242
+#: src/components/config/global/network-system-card.tsx:289
 msgid "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
 msgstr "片段之间的最大空闲时间，超过此时间系统将开始新的录制会话，而不是继续当前会话。"
 
@@ -3729,11 +3842,11 @@ msgstr "网络"
 msgid "Network & Content"
 msgstr "网络与内容"
 
-#: src/components/config/global/network-system-card.tsx:41
+#: src/components/config/global/network-system-card.tsx:42
 msgid "Network & System"
 msgstr "网络与系统"
 
-#: src/components/sidebar/navbar.tsx:46
+#: src/components/sidebar/navbar.tsx:47
 msgid "New"
 msgstr "新建"
 
@@ -3818,6 +3931,10 @@ msgstr "未定义环境变量"
 msgid "No errors found. Max depth: {0}"
 msgstr "未发现错误。最大深度：{0}"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:337
+msgid "No events found"
+msgstr "未找到事件"
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:662
 msgid "No Extension"
 msgstr "无扩展名"
@@ -3874,10 +3991,6 @@ msgstr "未添加元数据标签"
 #: src/routes/_authed/_dashboard/config/logging.tsx:315
 msgid "No modules configured"
 msgstr "未配置模块"
-
-#: src/routes/_authed/_dashboard/notifications/index.tsx:195
-msgid "No notification channels"
-msgstr "暂无通知渠道"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:499
 msgid "No other steps available to depend on."
@@ -4001,6 +4114,10 @@ msgstr "无（剥离音频）"
 msgid "Normal"
 msgstr "正常"
 
+#: src/components/notifications/browser-channel-dialog.tsx:158
+msgid "Normal+"
+msgstr "普通+"
+
 #: src/routes/_authed/_dashboard/dashboard.tsx:421
 msgid "Not available"
 msgstr "不可用"
@@ -4009,13 +4126,38 @@ msgstr "不可用"
 msgid "Not Found"
 msgstr "未找到主播"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:277
+msgid "Not supported in this browser"
+msgstr "此浏览器不支持"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:316
+msgid "Notification Channels"
+msgstr "通知渠道"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:198
+#: src/routes/_authed/_dashboard/notifications/events.tsx:228
+msgid "Notification Events"
+msgstr "通知事件"
+
+#: src/components/config/global/network-system-card.tsx:231
+msgid "Notification Log Retention"
+msgstr "通知日志保留"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:188
+msgid "Notification permission not granted"
+msgstr "未授予通知权限"
+
+#: src/components/config/global/network-system-card.tsx:239
+msgid "Notification Retention"
+msgstr "通知保留"
+
 #: src/routes/_authed/_dashboard/system/health.tsx:330
 msgid "Notification Service"
 msgstr "通知服务"
 
 #: src/components/sidebar/navbar.tsx:31
 #: src/lib/menu-list.ts:123
-#: src/routes/_authed/_dashboard/notifications/index.tsx:117
+#: src/routes/_authed/_dashboard/notifications/index.tsx:301
 msgid "Notifications"
 msgstr "通知"
 
@@ -4032,13 +4174,17 @@ msgstr "第 N 个输出：{output0}, {output1}..."
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
 
-#: src/components/config/global/network-system-card.tsx:154
+#: src/components/config/global/network-system-card.tsx:155
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 msgstr "确认主播离线所需的连续失败检查次数。较高的值可以防止\"假\"离线检测。"
 
-#: src/components/config/global/network-system-card.tsx:200
+#: src/components/config/global/network-system-card.tsx:201
 msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
 msgstr "在数据库中保留已完成、失败或中断任务历史记录的天数。"
+
+#: src/components/config/global/network-system-card.tsx:243
+msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
+msgstr "在数据库中保留通知事件日志的天数。这会影响“通知 → 事件”页面。"
 
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:42
 msgid "OAuth Token"
@@ -4057,16 +4203,16 @@ msgstr "离线"
 msgid "OFFLINE"
 msgstr "离线"
 
-#: src/components/config/global/network-system-card.tsx:100
-#: src/components/config/global/network-system-card.tsx:108
+#: src/components/config/global/network-system-card.tsx:101
+#: src/components/config/global/network-system-card.tsx:109
 msgid "Offline Check"
 msgstr "离线检查"
 
-#: src/components/config/global/network-system-card.tsx:150
+#: src/components/config/global/network-system-card.tsx:151
 msgid "Offline Detection"
 msgstr "离线检测"
 
-#: src/components/config/global/network-system-card.tsx:142
+#: src/components/config/global/network-system-card.tsx:143
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
 
@@ -4215,7 +4361,7 @@ msgid "Output Settings"
 msgstr "输出设置"
 
 #: src/components/sessions/overview-tab.tsx:118
-#: src/components/sidebar/navbar.tsx:42
+#: src/components/sidebar/navbar.tsx:43
 #: src/lib/menu-list.ts:89
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:476
 msgid "Outputs"
@@ -4420,6 +4566,10 @@ msgstr "性能"
 msgid "Performance"
 msgstr "性能"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:281
+msgid "Permission required"
+msgstr "需要权限"
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:217
 msgid "Phone & Code (2FA optional)"
 msgstr "手机号和验证码（可选两步验证）"
@@ -4551,7 +4701,7 @@ msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:388
 #: src/components/config/templates/template-editor.tsx:267
-#: src/components/sidebar/navbar.tsx:36
+#: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.tsx:54
 msgid "Platforms"
 msgstr "平台"
@@ -4560,7 +4710,7 @@ msgstr "平台"
 msgid "Play"
 msgstr "播放"
 
-#: src/components/sidebar/navbar.tsx:32
+#: src/components/sidebar/navbar.tsx:33
 #: src/lib/menu-list.ts:96
 msgid "Player"
 msgstr "播放器"
@@ -4697,7 +4847,7 @@ msgstr "预设更新成功"
 msgid "presets"
 msgstr "预设"
 
-#: src/components/sidebar/navbar.tsx:43
+#: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:74
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:244
 msgid "Presets"
@@ -4747,6 +4897,10 @@ msgstr "优先选择特定流媒体协议。按 Enter 添加。"
 #: src/components/streamers/edit/streamer-meta-form.tsx:192
 msgid "Priority"
 msgstr "优先级"
+
+#: src/components/notifications/browser-channel-dialog.tsx:136
+msgid "Priority Filter"
+msgstr "优先级过滤器"
 
 #. placeholder {0}: status.exited.code ?? 0
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:598
@@ -4807,7 +4961,7 @@ msgstr "协议设置"
 msgid "Proxy"
 msgstr "代理"
 
-#: src/components/config/global/network-system-card.tsx:274
+#: src/components/config/global/network-system-card.tsx:321
 #: src/components/config/shared/proxy-settings-card.tsx:240
 msgid "Proxy Configuration"
 msgstr "代理配置"
@@ -4897,12 +5051,17 @@ msgid "Read Timeout (ms)"
 msgstr "读取超时 (ms)"
 
 #: src/components/config/engines/engine-card.tsx:146
+#: src/routes/_authed/_dashboard/notifications/index.tsx:280
 msgid "Ready"
 msgstr "就绪"
 
 #: src/routes/_authed/_dashboard/player/index.tsx:375
 msgid "Ready to Watch"
 msgstr "准备观看"
+
+#: src/components/notifications/browser-channel-dialog.tsx:86
+msgid "Real-time"
+msgstr "实时"
 
 #: src/components/logging/log-viewer.tsx:336
 msgid "Real-Time Logs"
@@ -4923,6 +5082,11 @@ msgstr "当直播结束时接收通知。"
 #: src/components/notifications/subscription-manager.tsx:134
 msgid "Receive a notification when a streamer goes live."
 msgstr "当主播开播时接收通知。"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:201
+#: src/routes/_authed/_dashboard/notifications/events.tsx:230
+msgid "Recent notification events persisted by the backend"
+msgstr "后端持久化的最近通知事件"
 
 #: src/components/streamers/edit/recent-sessions-list.tsx:35
 msgid "Recent Sessions"
@@ -4945,10 +5109,25 @@ msgstr "录制弹幕"
 msgid "Recording"
 msgstr "录制"
 
+#. placeholder {0}: error || 'Unknown error'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:510
+msgid "Recording failed: {0}"
+msgstr "录制失败：{0}"
+
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:246
 msgid "Recording Filters"
 msgstr "录制过滤器"
+
+#. placeholder {0}: streamer || 'unknown streamer'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:508
+msgid "Recording finished for {0}"
+msgstr "{0} 的录制已结束"
+
+#. placeholder {0}: streamer || 'unknown streamer'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:506
+msgid "Recording started for {0}"
+msgstr "{0} 的录制已开始"
 
 #: src/components/streamers/card/use-streamer-status.tsx:220
 msgid "Recording will start when schedule allows"
@@ -4959,6 +5138,7 @@ msgid "Recordings"
 msgstr "录制内容"
 
 #: src/components/config/shared/network-settings-card.tsx:193
+#: src/routes/_authed/_dashboard/notifications/events.tsx:306
 #: src/routes/_authed/_dashboard/system/health.tsx:147
 msgid "Refresh"
 msgstr "刷新"
@@ -5118,7 +5298,7 @@ msgstr "继续"
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
-#: src/components/config/global/network-system-card.tsx:188
+#: src/components/config/global/network-system-card.tsx:189
 msgid "Retention Period"
 msgstr "保留期限"
 
@@ -5510,6 +5690,10 @@ msgstr "敏感"
 msgid "Separate multiple paths with commas."
 msgstr "用英文逗号分隔多个路径。"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:278
+msgid "Server not configured"
+msgstr "服务器未配置"
+
 #: src/components/config/global/pipeline-config-card.tsx:257
 #: src/components/config/shared-config-editor.tsx:482
 #: src/components/pipeline/outputs/output-card.tsx:201
@@ -5545,7 +5729,7 @@ msgstr "录制会话详情"
 msgid "Session Duration"
 msgstr "录制时长"
 
-#: src/components/config/global/network-system-card.tsx:238
+#: src/components/config/global/network-system-card.tsx:285
 msgid "Session Gap"
 msgstr "会话间隔"
 
@@ -5566,7 +5750,7 @@ msgstr "会话未运行"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/components/config/global/network-system-card.tsx:230
+#: src/components/config/global/network-system-card.tsx:277
 msgid "Session Merging Gap"
 msgstr "会话合并间隔"
 
@@ -5626,12 +5810,16 @@ msgstr "共享的处理管道工具"
 msgid "Show password"
 msgstr "显示密码"
 
+#: src/components/notifications/browser-channel-dialog.tsx:95
+msgid "Shows notifications while the application tab is open by polling recent events."
+msgstr "在应用标签页打开时，通过轮询最近事件来显示通知。"
+
 #: src/routes/_public/login.tsx:251
 msgid "Sign In"
 msgstr "登录"
 
-#: src/components/sidebar/menu.tsx:123
-#: src/components/sidebar/menu.tsx:130
+#: src/components/sidebar/menu.tsx:144
+#: src/components/sidebar/menu.tsx:151
 msgid "Sign out"
 msgstr "退出登录"
 
@@ -5834,8 +6022,8 @@ msgstr "主播"
 msgid "STREAMER"
 msgstr "主播"
 
-#: src/components/config/global/network-system-card.tsx:57
-#: src/components/config/global/network-system-card.tsx:65
+#: src/components/config/global/network-system-card.tsx:58
+#: src/components/config/global/network-system-card.tsx:66
 msgid "Streamer Check"
 msgstr "主播检查"
 
@@ -5960,7 +6148,7 @@ msgstr "切换主题"
 msgid "Sync"
 msgstr "同步"
 
-#: src/components/sidebar/navbar.tsx:33
+#: src/components/sidebar/navbar.tsx:34
 #: src/routes/_authed/_dashboard/config/theme.tsx:202
 msgid "System"
 msgstr "系统"
@@ -6090,7 +6278,7 @@ msgstr "模板"
 #: src/components/config/global/backup-restore-card.tsx:337
 #: src/components/config/global/backup-restore-card.tsx:342
 #: src/components/config/global/backup-restore-card.tsx:347
-#: src/components/sidebar/navbar.tsx:37
+#: src/components/sidebar/navbar.tsx:38
 #: src/routes/_authed/_dashboard/config/route.tsx:60
 msgid "Templates"
 msgstr "模板"
@@ -6105,7 +6293,7 @@ msgstr "暂时暂停"
 msgid "Test Notification"
 msgstr "测试通知"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:55
+#: src/routes/_authed/_dashboard/notifications/index.tsx:231
 msgid "Test notification sent"
 msgstr "测试通知已发送"
 
@@ -6133,7 +6321,7 @@ msgstr "本次会话期间直播标题始终未变化。"
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
-#: src/components/sidebar/navbar.tsx:38
+#: src/components/sidebar/navbar.tsx:39
 #: src/routes/_authed/_dashboard/config/route.tsx:78
 msgid "Theme"
 msgstr "主题"
@@ -6383,6 +6571,10 @@ msgstr "当视频和弹幕可用时触发"
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:340
+msgid "Try adjusting your filters or limit"
+msgstr "尝试调整过滤器或限制"
+
 #: src/components/pipeline/workflows/step-library.tsx:429
 #: src/components/pipeline/workflows/step-library.tsx:567
 msgid "Try adjusting your search or filters"
@@ -6409,6 +6601,7 @@ msgid "Try again"
 msgstr "重试"
 
 #: src/components/default-catch-boundary.tsx:42
+#: src/routes/_authed/_dashboard/notifications/events.tsx:216
 #: src/routes/_authed/_dashboard/system/health.tsx:110
 msgid "Try Again"
 msgstr "重试"
@@ -6469,6 +6662,10 @@ msgstr "未知"
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:153
 msgid "Unknown Engine ID: {engineId}"
 msgstr "未知引擎 ID：{engineId}"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:211
+msgid "Unknown error"
+msgstr "未知错误"
 
 #: src/components/pipeline/outputs/output-card.tsx:77
 msgid "Unknown File"
@@ -6692,6 +6889,7 @@ msgstr "查看详细日志与输出"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:164
 #: src/components/sessions/session-card.tsx:271
 #: src/routes/_authed/_dashboard/dashboard.tsx:171
+#: src/routes/_authed/_dashboard/notifications/events.tsx:435
 msgid "View Details"
 msgstr "查看详情"
 
@@ -6718,6 +6916,35 @@ msgstr "观看"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:714
 msgid "Web Optimize"
 msgstr "网页优化"
+
+#: src/components/notifications/browser-channel-dialog.tsx:117
+#: src/routes/_authed/_dashboard/notifications/index.tsx:434
+msgid "Web Push"
+msgstr "Web 推送"
+
+#: src/components/notifications/browser-channel-dialog.tsx:193
+msgid "Web Push allows receiving notifications even when you close the browser. It requires browser permission and valid server keys."
+msgstr "Web 推送允许你在关闭浏览器时也能接收通知。它需要浏览器权限和有效的服务器密钥。"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:170
+msgid "Web Push disabled for this browser"
+msgstr "已为此浏览器禁用 Web 推送"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:211
+msgid "Web Push enabled for this browser"
+msgstr "已为此浏览器启用 Web 推送"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:154
+msgid "Web Push is not configured on the server"
+msgstr "服务器未配置 Web 推送"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:149
+msgid "Web Push is not supported in this browser"
+msgstr "此浏览器不支持 Web 推送"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:139
+msgid "Web Push priority updated"
+msgstr "Web 推送优先级已更新"
 
 #: src/components/notifications/channel-card.tsx:80
 #: src/components/notifications/forms/discord-form.tsx:33
@@ -6782,7 +7009,7 @@ msgid "workflows"
 msgstr "工作流"
 
 #: src/components/pipeline/workflows/step-library.tsx:263
-#: src/components/sidebar/navbar.tsx:44
+#: src/components/sidebar/navbar.tsx:45
 #: src/lib/menu-list.ts:79
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:155
 msgid "Workflows"

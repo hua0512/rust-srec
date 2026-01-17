@@ -45,6 +45,7 @@ use crate::downloader::{
 use crate::logging::LoggingConfig;
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
 use crate::monitor::{MonitorEvent, MonitorEventBroadcaster, StreamMonitor};
+use crate::notification::web_push::WebPushService;
 use crate::notification::{NotificationService, NotificationServiceConfig};
 use crate::pipeline::{PipelineEvent, PipelineManager, PipelineManagerConfig};
 use crate::scheduler::Scheduler;
@@ -95,6 +96,8 @@ pub struct ServiceContainer {
     pub notification_service: Arc<NotificationService>,
     /// Notification repository.
     pub notification_repository: Arc<dyn NotificationRepository>,
+    /// Web push service for browser notifications (VAPID), if configured.
+    pub web_push_service: Option<Arc<WebPushService>>,
     /// Metrics collector.
     pub metrics_collector: Arc<MetricsCollector>,
     /// Health checker.
@@ -177,11 +180,31 @@ impl ServiceContainer {
             pool.clone(),
         );
 
+        // Create notification service with default config (also used for credential events).
+        let notification_repository = Arc::new(SqlxNotificationRepository::new(pool.clone()));
+        let web_push_service = WebPushService::from_env(pool.clone())
+            .unwrap_or_else(|e| {
+                warn!(error = %e, "Web push service disabled due to configuration error");
+                None
+            })
+            .map(Arc::new);
+
+        let mut notification_service = NotificationService::with_repository(
+            NotificationServiceConfig::default(),
+            notification_repository.clone(),
+        );
+        if let Some(web_push) = web_push_service.clone() {
+            notification_service = notification_service.with_web_push_service(web_push);
+        }
+        let notification_service = Arc::new(notification_service);
+        notification_service.start_web_push_worker();
+
         // Build credential refresh service (shared between StreamMonitor + API).
         let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
         let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone()));
         let mut credential_service =
             CredentialRefreshService::new(credential_resolver, credential_store);
+        credential_service.set_notification_service(Arc::clone(&notification_service));
         match BilibiliCredentialManager::new(reqwest::Client::new()) {
             Ok(manager) => credential_service.register_manager(Arc::new(manager)),
             Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
@@ -233,24 +256,25 @@ impl ServiceContainer {
         // Create danmu service with default config
         let danmu_service = Arc::new(DanmuService::new(DanmuServiceConfig::default()));
 
-        // Create notification service with default config
-        let notification_repository = Arc::new(SqlxNotificationRepository::new(pool.clone()));
-        let notification_service = Arc::new(NotificationService::with_repository(
-            NotificationServiceConfig::default(),
-            notification_repository.clone(),
-        ));
-
         // Create metrics collector
         let metrics_collector = Arc::new(MetricsCollector::new());
+        if let Some(web_push) = web_push_service.as_ref() {
+            web_push.set_metrics_collector(metrics_collector.clone());
+        }
 
         // Create health checker
         let health_checker = Arc::new(HealthChecker::new());
 
-        // Create database maintenance scheduler with default config
-        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
-            pool.clone(),
-            MaintenanceConfig::default(),
-        ));
+        // Create database maintenance scheduler (retention settings are user-configurable via global config)
+        let maintenance_config = MaintenanceConfig {
+            job_retention_days: global_config.job_history_retention_days.max(0),
+            notification_event_log_retention_days: global_config
+                .notification_event_log_retention_days
+                .max(0),
+            ..Default::default()
+        };
+        let maintenance_scheduler =
+            Arc::new(MaintenanceScheduler::new(pool.clone(), maintenance_config));
 
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
@@ -287,6 +311,7 @@ impl ServiceContainer {
             danmu_service,
             notification_service,
             notification_repository,
+            web_push_service,
             metrics_collector,
             health_checker,
             maintenance_scheduler,
@@ -407,22 +432,42 @@ impl ServiceContainer {
 
         // Create notification service with default config
         let notification_repository = Arc::new(SqlxNotificationRepository::new(pool.clone()));
-        let notification_service = Arc::new(NotificationService::with_repository(
+        let web_push_service = WebPushService::from_env(pool.clone())
+            .unwrap_or_else(|e| {
+                warn!(error = %e, "Web push service disabled due to configuration error");
+                None
+            })
+            .map(Arc::new);
+
+        let mut notification_service = NotificationService::with_repository(
             NotificationServiceConfig::default(),
             notification_repository.clone(),
-        ));
+        );
+        if let Some(web_push) = web_push_service.clone() {
+            notification_service = notification_service.with_web_push_service(web_push);
+        }
+        let notification_service = Arc::new(notification_service);
+        notification_service.start_web_push_worker();
 
         // Create metrics collector
         let metrics_collector = Arc::new(MetricsCollector::new());
+        if let Some(web_push) = web_push_service.as_ref() {
+            web_push.set_metrics_collector(metrics_collector.clone());
+        }
 
         // Create health checker
         let health_checker = Arc::new(HealthChecker::new());
 
-        // Create database maintenance scheduler with default config
-        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
-            pool.clone(),
-            MaintenanceConfig::default(),
-        ));
+        // Create database maintenance scheduler (retention settings are user-configurable via global config)
+        let maintenance_config = MaintenanceConfig {
+            job_retention_days: global_config.job_history_retention_days.max(0),
+            notification_event_log_retention_days: global_config
+                .notification_event_log_retention_days
+                .max(0),
+            ..Default::default()
+        };
+        let maintenance_scheduler =
+            Arc::new(MaintenanceScheduler::new(pool.clone(), maintenance_config));
 
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
@@ -459,6 +504,7 @@ impl ServiceContainer {
             danmu_service,
             notification_service,
             notification_repository,
+            web_push_service,
             metrics_collector,
             health_checker,
             maintenance_scheduler,
@@ -606,6 +652,10 @@ impl ServiceContainer {
             ))))
             .with_notification_repository(self.notification_repository.clone())
             .with_notification_service(self.notification_service.clone());
+
+        if let Some(web_push) = self.web_push_service.clone() {
+            state = state.with_web_push_service(web_push);
+        }
 
         // Wire logging config if available
         if let Some(logging_config) = self.logging_config.get().cloned() {

@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -19,6 +19,9 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::broadcast;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+use tokio::time::MissedTickBehavior;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -29,10 +32,11 @@ use super::channels::{
 };
 use super::events::canonicalize_subscription_event_name;
 use super::events::{NotificationEvent, NotificationPriority};
+use super::web_push::WebPushService;
 use crate::Result;
 use crate::database::models::{
     ChannelType, DiscordChannelSettings, EmailChannelSettings, NotificationChannelDbModel,
-    NotificationDeadLetterDbModel, WebhookChannelSettings,
+    NotificationDeadLetterDbModel, NotificationEventLogDbModel, WebhookChannelSettings,
 };
 use crate::database::repositories::NotificationRepository;
 use crate::downloader::DownloadManagerEvent;
@@ -44,6 +48,9 @@ use crate::pipeline::PipelineEvent;
 /// Dead letters are also persisted to the database; this is purely to prevent unbounded growth
 /// of the in-memory `dead_letters` map in long-running processes.
 const DEAD_LETTER_CLEANUP_INTERVAL_SECS: u64 = 60 * 60;
+const WEB_PUSH_QUEUE_CAPACITY: usize = 2048;
+const WEB_PUSH_BATCH_SIZE: usize = 64;
+const WEB_PUSH_FLUSH_INTERVAL_MS: u64 = 250;
 
 /// Configuration for the notification service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,6 +249,10 @@ struct ProcessingParams {
 pub struct NotificationService {
     config: NotificationServiceConfig,
     notification_repo: Option<Arc<dyn NotificationRepository>>,
+    web_push_service: Option<Arc<WebPushService>>,
+    web_push_tx: parking_lot::RwLock<Option<mpsc::Sender<WebPushQueuedEvent>>>,
+    web_push_worker_started: AtomicBool,
+    web_push_worker_handle: parking_lot::RwLock<Option<JoinHandle<()>>>,
     subscriptions_by_event: RwLock<HashMap<String, Vec<String>>>,
     channels: RwLock<Vec<Arc<RuntimeChannel>>>,
     channels_by_key: DashMap<String, Arc<RuntimeChannel>>,
@@ -254,6 +265,12 @@ pub struct NotificationService {
     next_dead_letter_id: Arc<AtomicU64>,
     event_tx: broadcast::Sender<NotificationEvent>,
     cancellation_token: CancellationToken,
+}
+
+#[derive(Debug, Clone)]
+struct WebPushQueuedEvent {
+    event: NotificationEvent,
+    event_log_id: Option<String>,
 }
 
 /// Public view of a configured notification channel instance.
@@ -294,12 +311,21 @@ impl NotificationService {
         service
     }
 
+    pub fn with_web_push_service(mut self, service: Arc<WebPushService>) -> Self {
+        self.web_push_service = Some(service);
+        self
+    }
+
     /// Create a new notification service with custom configuration.
     pub fn with_config(config: NotificationServiceConfig) -> Self {
         let (event_tx, _) = broadcast::channel(256);
 
         let service = Self {
             notification_repo: None,
+            web_push_service: None,
+            web_push_tx: parking_lot::RwLock::new(None),
+            web_push_worker_started: AtomicBool::new(false),
+            web_push_worker_handle: parking_lot::RwLock::new(None),
             subscriptions_by_event: RwLock::new(HashMap::new()),
             channels: RwLock::new(Vec::new()),
             channels_by_key: DashMap::new(),
@@ -318,6 +344,94 @@ impl NotificationService {
         service.init_channels();
 
         service
+    }
+
+    /// Start a background worker to process web push delivery from a bounded queue.
+    ///
+    /// This avoids spawning a new task per notification event and reduces DB load by
+    /// letting `WebPushService` reuse its internal subscription cache.
+    pub fn start_web_push_worker(self: &Arc<Self>) {
+        if self.web_push_service.is_none() {
+            return;
+        }
+        if self
+            .web_push_worker_started
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+
+        let (tx, mut rx) = mpsc::channel::<WebPushQueuedEvent>(WEB_PUSH_QUEUE_CAPACITY);
+        *self.web_push_tx.write() = Some(tx);
+
+        let service = Arc::clone(self);
+        let web_push = service
+            .web_push_service
+            .as_ref()
+            .expect("web_push_service checked above")
+            .clone();
+        let cancellation_token = service.cancellation_token.clone();
+
+        let handle = tokio::spawn(async move {
+            async fn flush_buffer(
+                web_push: &Arc<WebPushService>,
+                buffer: &mut Vec<WebPushQueuedEvent>,
+            ) {
+                let mut batch = std::mem::take(buffer);
+                for item in &batch {
+                    web_push
+                        .send_event(&item.event, item.event_log_id.as_deref())
+                        .await;
+                }
+                batch.clear();
+                *buffer = batch;
+            }
+
+            let mut buffer: Vec<WebPushQueuedEvent> = Vec::with_capacity(WEB_PUSH_BATCH_SIZE);
+            let mut ticker =
+                tokio::time::interval(Duration::from_millis(WEB_PUSH_FLUSH_INTERVAL_MS));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        debug!("Web push worker shutting down");
+                        while let Ok(item) = rx.try_recv() {
+                            buffer.push(item);
+                        }
+                        if !buffer.is_empty() {
+                            flush_buffer(&web_push, &mut buffer).await;
+                        }
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        if buffer.is_empty() {
+                            continue;
+                        }
+                        flush_buffer(&web_push, &mut buffer).await;
+                    }
+                    maybe = rx.recv() => {
+                        let Some(item) = maybe else {
+                            while let Ok(item) = rx.try_recv() {
+                                buffer.push(item);
+                            }
+                            if !buffer.is_empty() {
+                                flush_buffer(&web_push, &mut buffer).await;
+                            }
+                            break;
+                        };
+                        buffer.push(item);
+                        if buffer.len() < WEB_PUSH_BATCH_SIZE {
+                            continue;
+                        }
+                        flush_buffer(&web_push, &mut buffer).await;
+                    }
+                }
+            }
+        });
+
+        *service.web_push_worker_handle.write() = Some(handle);
     }
 
     /// Initialize channels from configuration.
@@ -770,6 +884,55 @@ impl NotificationService {
 
         // Broadcast the event internally
         let _ = self.event_tx.send(event.clone());
+
+        // Best-effort: persist event log for UI/debugging/audit.
+        let event_log_id = Uuid::new_v4().to_string();
+        if let Some(repo) = self.notification_repo.as_ref().cloned() {
+            let entry = NotificationEventLogDbModel {
+                id: event_log_id.clone(),
+                event_type: event.event_type().to_string(),
+                priority: event.priority().to_string(),
+                payload: serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()),
+                streamer_id: event.streamer_id().map(|s| s.to_string()),
+                created_at: event.timestamp().to_rfc3339(),
+            };
+            if let Err(e) = repo.add_event_log(&entry).await {
+                warn!(error = %e, "Failed to persist notification event log (non-fatal)");
+            }
+        }
+
+        // Best-effort: send web push notifications (independent of channel delivery).
+        if let Some(web_push) = self.web_push_service.as_ref().cloned() {
+            let queued = WebPushQueuedEvent {
+                event: event.clone(),
+                event_log_id: Some(event_log_id.clone()),
+            };
+
+            let send_result = self
+                .web_push_tx
+                .read()
+                .clone()
+                .map(|tx| tx.try_send(queued));
+
+            match send_result {
+                Some(Ok(())) => {}
+                Some(Err(err)) => {
+                    warn!(error = %err, "Web push queue full/closed; falling back to detached send");
+                    let event = event.clone();
+                    let event_log_id = event_log_id.clone();
+                    tokio::spawn(async move {
+                        web_push.send_event(&event, Some(&event_log_id)).await;
+                    });
+                }
+                None => {
+                    let event = event.clone();
+                    let event_log_id = event_log_id.clone();
+                    tokio::spawn(async move {
+                        web_push.send_event(&event, Some(&event_log_id)).await;
+                    });
+                }
+            }
+        }
 
         // Queue the notification
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -1583,6 +1746,23 @@ impl NotificationService {
         info!("Stopping notification service");
         self.cancellation_token.cancel();
 
+        // Close web push channel and wait briefly for the worker to flush queued events.
+        let tx = self.web_push_tx.write().take();
+        if let Some(tx) = tx {
+            drop(tx);
+        }
+        let handle = self.web_push_worker_handle.write().take();
+        if let Some(handle) = handle {
+            let mut handle = handle;
+            if tokio::time::timeout(Duration::from_secs(10), &mut handle)
+                .await
+                .is_err()
+            {
+                warn!("Web push worker did not shut down in time; aborting");
+                handle.abort();
+            }
+        }
+
         // Process any remaining notifications
         let pending_ids: Vec<u64> = self.pending_queue.iter().map(|e| *e.key()).collect();
         for id in pending_ids {
@@ -1940,6 +2120,21 @@ mod tests {
 
         async fn cleanup_old_dead_letters(&self, _retention_days: i32) -> Result<i32> {
             unimplemented!()
+        }
+
+        async fn add_event_log(&self, _entry: &NotificationEventLogDbModel) -> Result<()> {
+            Ok(())
+        }
+
+        async fn list_event_logs(
+            &self,
+            _event_type: Option<&str>,
+            _streamer_id: Option<&str>,
+            _search: Option<&str>,
+            _offset: i32,
+            _limit: i32,
+        ) -> Result<Vec<NotificationEventLogDbModel>> {
+            Ok(Vec::new())
         }
     }
 

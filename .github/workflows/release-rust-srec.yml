@@ -116,15 +116,32 @@ jobs:
           sudo apt-get install -y musl-tools musl-dev
       - name: Build
         if: "!contains(matrix.target, 'musl')"
-        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }}
+        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }} --bins
       - name: Build (musl static)
         if: contains(matrix.target, 'musl')
         env:
           CC: musl-gcc
-        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }} --features static-ssl
+        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }} --features static-ssl --bins
+      - name: Rename rust-srec-vapid binary
+        shell: bash
+        run: |
+          VAPID_ASSET_NAME="${{ matrix.asset_name }}"
+          VAPID_ASSET_NAME="${VAPID_ASSET_NAME/rust-srec-/rust-srec-vapid-}"
+          echo "VAPID_ASSET_NAME=$VAPID_ASSET_NAME" >> "$GITHUB_ENV"
+          if [[ "${{ matrix.os }}" == windows-* ]]; then
+            cp "target/${{ matrix.target }}/release/rust-srec-vapid.exe" "$VAPID_ASSET_NAME"
+          else
+            cp "target/${{ matrix.target }}/release/rust-srec-vapid" "$VAPID_ASSET_NAME"
+          fi
       - name: Rename binary
         shell: bash
         run: cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "${{ matrix.asset_name }}"
+      - name: Upload rust-srec-vapid binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.VAPID_ASSET_NAME }}
+          path: ${{ env.VAPID_ASSET_NAME }}
+          if-no-files-found: error
       - name: Upload binary
         uses: actions/upload-artifact@v6
         with:

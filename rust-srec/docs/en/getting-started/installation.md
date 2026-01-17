@@ -135,6 +135,8 @@ cp .env.example .env
 | `API_BIND_ADDRESS` | API bind address | `0.0.0.0` |
 | `OUTPUT_DIR` | Directory for recordings | `./output` |
 | `RUST_LOG` | Logging level | `info` |
+| `WEB_PUSH_VAPID_PUBLIC_KEY` | VAPID public key for browser push notifications | - |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | VAPID private key for browser push notifications | - |
 
 See [`.env.example`](https://github.com/hua0512/rust-srec/blob/main/rust-srec/.env.example) for all available options.
 

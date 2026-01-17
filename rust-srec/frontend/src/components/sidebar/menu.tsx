@@ -9,12 +9,14 @@ import { getMenuList } from '@/lib/menu-list';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CollapseMenuButton } from '@/components/sidebar/collapse-menu-button';
+import { useNotificationDot } from '@/hooks/use-notification-dot';
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
 } from '@/components/ui/tooltip';
+import { motion } from 'motion/react';
 
 interface MenuProps {
   isOpen: boolean | undefined;
@@ -27,6 +29,7 @@ interface MenuItemProps {
   icon: LucideIcon;
   isActive: boolean;
   isOpen: boolean | undefined;
+  showDot?: boolean;
 }
 
 const MenuItem = React.memo(function MenuItem({
@@ -35,6 +38,7 @@ const MenuItem = React.memo(function MenuItem({
   icon: Icon,
   isActive,
   isOpen,
+  showDot,
 }: MenuItemProps) {
   return (
     <div className="w-full">
@@ -57,11 +61,28 @@ const MenuItem = React.memo(function MenuItem({
               )}
               <span
                 className={cn(
-                  'transition-transform duration-200 group-hover:scale-110 shrink-0',
+                  'relative transition-transform duration-200 group-hover:scale-110 shrink-0',
                   isOpen === false ? '' : 'mr-4',
                 )}
               >
                 <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
+                {showDot && (
+                  <div className="absolute -top-1 -right-1 flex items-center justify-center">
+                    <motion.div
+                      animate={{
+                        scale: [1, 1.8, 1],
+                        opacity: [0.5, 0, 0.5],
+                      }}
+                      transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                      }}
+                      className="absolute h-3 w-3 rounded-full bg-red-500/60 blur-[1px]"
+                    />
+                    <div className="relative h-2 w-2 rounded-full bg-red-500 ring-2 ring-background shadow-[0_0_10px_rgba(239,68,68,0.6)]" />
+                  </div>
+                )}
               </span>
               <p
                 className={cn(
@@ -141,6 +162,8 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
   });
   const menuList = React.useMemo(() => getMenuList(pathname), [pathname]);
 
+  const { hasCriticalDot } = useNotificationDot();
+
   return (
     <ScrollArea className={cn('[&>div>div[style]]:!block', className)}>
       <nav className="mt-8 h-full w-full">
@@ -192,6 +215,7 @@ export function MenuComponent({ isOpen, className }: MenuProps) {
                             : active
                         }
                         isOpen={isOpen}
+                        showDot={href === '/notifications' && !!hasCriticalDot}
                       />
                     ) : (
                       <div className="w-full" key={menuIndex}>

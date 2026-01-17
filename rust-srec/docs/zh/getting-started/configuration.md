@@ -114,6 +114,13 @@ Rust-Srec 拥有强大的模块化流水线系统，可以在不同阶段添加�
 | `ACCESS_TOKEN_EXPIRATION_SECS` | JWT 访问令牌有效期 | `3600` (1h) |
 | `REFRESH_TOKEN_EXPIRATION_SECS` | JWT 刷新令牌有效期 | `604800` (7d) |
 
+### 浏览器通知 (Web Push / VAPID)
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `WEB_PUSH_VAPID_PUBLIC_KEY` | VAPID 公钥 (base64url, 无 padding)。留空/不设置则禁用。 | - |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | VAPID 私钥 (base64url, 无 padding)。留空/不设置则禁用。 | - |
+| `WEB_PUSH_VAPID_SUBJECT` | VAPID subject（例如 `mailto:admin@localhost`） | `mailto:admin@localhost` |
+
 ### 后端服务
 | 变量 | 说明 | 默认值 |
 |------|------|--------|

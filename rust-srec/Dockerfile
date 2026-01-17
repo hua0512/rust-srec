@@ -63,8 +63,8 @@ COPY crates ./crates
 COPY mesio-cli ./mesio-cli
 COPY strev-cli ./strev-cli
 
-# Build the release binary (only compiles our code, deps are cached)
-RUN cargo build --locked --release --bin rust-srec
+# Build the release binaries (only compiles our code, deps are cached)
+RUN cargo build --locked --release --bin rust-srec --bin rust-srec-vapid
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -127,6 +127,7 @@ WORKDIR /app
 
 # Copy the built binary from the builder stage
 COPY --from=builder /app/target/release/rust-srec /app/rust-srec
+COPY --from=builder /app/target/release/rust-srec-vapid /app/rust-srec-vapid
 
 # Expose the default port (adjust as needed)
 EXPOSE 8080

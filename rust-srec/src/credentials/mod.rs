@@ -28,4 +28,4 @@ pub use resolver::CredentialResolver;
 pub use service::CredentialRefreshService;
 pub use store::CredentialStore;
 pub use tracker::{DailyCheckTracker, RefreshFailureTracker};
-pub use types::{CredentialScope, CredentialSource};
+pub use types::{CredentialEvent, CredentialScope, CredentialSource};

@@ -1,19 +1,31 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
 };
+use base64::Engine as _;
+use url::Url;
 
 use crate::api::error::ApiError;
+use crate::api::jwt::Claims;
 use crate::api::server::AppState;
-use crate::database::models::notification::{ChannelType, NotificationChannelDbModel};
+use crate::database::models::notification::{
+    ChannelType, NotificationChannelDbModel, NotificationEventLogDbModel,
+};
+use crate::notification::NotificationPriority;
 use crate::notification::events::{NotificationEventTypeInfo, notification_event_types};
 use crate::notification::service::NotificationChannelInstance;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/event-types", get(list_event_types))
+        .route("/events", get(list_events))
+        // Web Push (VAPID) for browser notifications
+        .route("/web-push/public-key", get(get_web_push_public_key))
+        .route("/web-push/subscriptions", get(list_web_push_subscriptions))
+        .route("/web-push/subscribe", post(subscribe_web_push))
+        .route("/web-push/unsubscribe", post(unsubscribe_web_push))
         // Channels CRUD
         .route("/channels", get(list_channels).post(create_channel))
         .route(
@@ -51,6 +63,58 @@ pub struct UpdateSubscriptionsRequest {
     pub events: Vec<String>,
 }
 
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct ListEventsQuery {
+    /// Max number of events to return (default: 200, max: 1000).
+    pub limit: Option<i32>,
+    /// Row offset for pagination (default: 0).
+    pub offset: Option<i32>,
+    /// Filter by event type (e.g., "stream_online", "credential_refresh_failed").
+    pub event_type: Option<String>,
+    /// Filter by streamer ID.
+    pub streamer_id: Option<String>,
+    /// Search by streamer name (case-insensitive).
+    pub search: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct WebPushPublicKeyResponse {
+    pub public_key: String,
+}
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct WebPushSubscriptionKeys {
+    pub p256dh: String,
+    pub auth: String,
+}
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct WebPushSubscriptionJson {
+    pub endpoint: String,
+    pub keys: WebPushSubscriptionKeys,
+}
+
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct WebPushSubscriptionResponse {
+    pub id: String,
+    pub endpoint: String,
+    pub min_priority: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct SubscribeWebPushRequest {
+    pub subscription: WebPushSubscriptionJson,
+    /// Minimum priority to send ("low"|"normal"|"high"|"critical"), default: "critical".
+    pub min_priority: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+pub struct UnsubscribeWebPushRequest {
+    pub endpoint: String,
+}
+
 // Handlers
 
 #[utoipa::path(
@@ -64,6 +128,232 @@ pub struct UpdateSubscriptionsRequest {
 )]
 pub async fn list_event_types() -> Json<Vec<NotificationEventTypeInfo>> {
     Json(notification_event_types().to_vec())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/notifications/web-push/public-key",
+    tag = "notifications",
+    responses(
+        (status = 200, description = "VAPID public key (base64url)", body = WebPushPublicKeyResponse),
+        (status = 503, description = "Web push not configured", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_web_push_public_key(
+    State(state): State<AppState>,
+) -> Result<Json<WebPushPublicKeyResponse>, ApiError> {
+    let service = state
+        .web_push_service
+        .ok_or_else(|| ApiError::service_unavailable("Web push is not configured"))?;
+
+    Ok(Json(WebPushPublicKeyResponse {
+        public_key: service.vapid_public_key().to_string(),
+    }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/notifications/web-push/subscriptions",
+    tag = "notifications",
+    responses(
+        (status = 200, description = "List of web push subscriptions for the current user", body = Vec<WebPushSubscriptionResponse>),
+        (status = 503, description = "Web push not configured", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_web_push_subscriptions(
+    State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Claims>,
+) -> Result<Json<Vec<WebPushSubscriptionResponse>>, ApiError> {
+    let service = state
+        .web_push_service
+        .ok_or_else(|| ApiError::service_unavailable("Web push is not configured"))?;
+
+    let rows = service
+        .list_subscriptions_for_user(&claims.sub)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|r| WebPushSubscriptionResponse {
+                id: r.id,
+                endpoint: r.endpoint,
+                min_priority: r.min_priority,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            })
+            .collect(),
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/notifications/web-push/subscribe",
+    tag = "notifications",
+    request_body = SubscribeWebPushRequest,
+    responses(
+        (status = 200, description = "Web push subscription stored", body = WebPushSubscriptionResponse),
+        (status = 400, description = "Invalid request", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Web push not configured", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn subscribe_web_push(
+    State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Claims>,
+    Json(req): Json<SubscribeWebPushRequest>,
+) -> Result<Json<WebPushSubscriptionResponse>, ApiError> {
+    let service = state
+        .web_push_service
+        .ok_or_else(|| ApiError::service_unavailable("Web push is not configured"))?;
+
+    let endpoint = req.subscription.endpoint.trim();
+    if endpoint.is_empty() {
+        return Err(ApiError::bad_request("subscription.endpoint is required"));
+    }
+    let endpoint_url = Url::parse(endpoint)
+        .map_err(|e| ApiError::bad_request(format!("Invalid endpoint URL: {}", e)))?;
+    let host = endpoint_url
+        .host_str()
+        .ok_or_else(|| ApiError::bad_request("subscription.endpoint missing host"))?;
+    let is_localhost = matches!(host, "localhost" | "127.0.0.1" | "::1");
+    if endpoint_url.scheme() != "https" && !(endpoint_url.scheme() == "http" && is_localhost) {
+        return Err(ApiError::bad_request(
+            "subscription.endpoint must use https scheme (or http for localhost)",
+        ));
+    }
+
+    let p256dh_raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(req.subscription.keys.p256dh.as_bytes())
+        .map_err(|e| ApiError::bad_request(format!("Invalid subscription.keys.p256dh: {}", e)))?;
+    if p256dh_raw.len() != 65 {
+        return Err(ApiError::bad_request(
+            "subscription.keys.p256dh must decode to 65 bytes",
+        ));
+    }
+
+    let auth_raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(req.subscription.keys.auth.as_bytes())
+        .map_err(|e| ApiError::bad_request(format!("Invalid subscription.keys.auth: {}", e)))?;
+    if auth_raw.len() != 16 {
+        return Err(ApiError::bad_request(
+            "subscription.keys.auth must decode to 16 bytes",
+        ));
+    }
+
+    let min_priority = match req.min_priority.as_deref() {
+        None => NotificationPriority::Critical,
+        Some(value) => parse_priority(value).ok_or_else(|| {
+            ApiError::bad_request(format!(
+                "Invalid min_priority '{}'. Expected one of: low, normal, high, critical",
+                value
+            ))
+        })?,
+    };
+
+    let saved = service
+        .upsert_subscription(
+            &claims.sub,
+            endpoint,
+            &req.subscription.keys.p256dh,
+            &req.subscription.keys.auth,
+            min_priority,
+        )
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    Ok(Json(WebPushSubscriptionResponse {
+        id: saved.id,
+        endpoint: saved.endpoint,
+        min_priority: saved.min_priority,
+        created_at: saved.created_at,
+        updated_at: saved.updated_at,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/notifications/web-push/unsubscribe",
+    tag = "notifications",
+    request_body = UnsubscribeWebPushRequest,
+    responses(
+        (status = 200, description = "Web push subscription removed"),
+        (status = 503, description = "Web push not configured", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn unsubscribe_web_push(
+    State(state): State<AppState>,
+    axum::Extension(claims): axum::Extension<Claims>,
+    Json(req): Json<UnsubscribeWebPushRequest>,
+) -> Result<StatusCode, ApiError> {
+    let service = state
+        .web_push_service
+        .ok_or_else(|| ApiError::service_unavailable("Web push is not configured"))?;
+
+    let endpoint = req.endpoint.trim();
+    if endpoint.is_empty() {
+        return Err(ApiError::bad_request("endpoint is required"));
+    }
+
+    service
+        .unsubscribe(&claims.sub, endpoint)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    Ok(StatusCode::OK)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/notifications/events",
+    tag = "notifications",
+    params(
+        ("limit" = Option<i32>, Query, description = "Max events to return (default: 200, max: 1000)"),
+        ("offset" = Option<i32>, Query, description = "Row offset for pagination (default: 0)"),
+        ("event_type" = Option<String>, Query, description = "Filter by event type"),
+        ("streamer_id" = Option<String>, Query, description = "Filter by streamer id"),
+        ("search" = Option<String>, Query, description = "Search by streamer name (case-insensitive)")
+    ),
+    responses(
+        (status = 200, description = "List of events", body = Vec<crate::database::models::notification::NotificationEventLogDbModel>)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_events(
+    State(state): State<AppState>,
+    Query(q): Query<ListEventsQuery>,
+) -> Result<Json<Vec<NotificationEventLogDbModel>>, ApiError> {
+    let repo = state
+        .notification_repository
+        .ok_or_else(|| ApiError::service_unavailable("Notification repository not available"))?;
+
+    let limit = q.limit.unwrap_or(200);
+    let offset = q.offset.unwrap_or(0);
+    let entries = repo
+        .list_event_logs(
+            q.event_type.as_deref(),
+            q.streamer_id.as_deref(),
+            q.search.as_deref(),
+            offset,
+            limit,
+        )
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    Ok(Json(entries))
+}
+
+fn parse_priority(input: &str) -> Option<NotificationPriority> {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "low" => Some(NotificationPriority::Low),
+        "normal" => Some(NotificationPriority::Normal),
+        "high" => Some(NotificationPriority::High),
+        "critical" => Some(NotificationPriority::Critical),
+        _ => None,
+    }
 }
 
 #[utoipa::path(

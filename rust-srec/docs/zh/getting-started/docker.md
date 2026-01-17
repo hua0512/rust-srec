@@ -102,6 +102,25 @@ $env:SREC_LANG = "zh"; $env:RUST_SREC_DIR = "C:\rust-srec"; $env:VERSION = "dev"
 | `JWT_SECRET` | JWT 签名密钥 (**必需**) |
 | `SESSION_SECRET` | 前端会话加密密钥 (**必需**) |
 
+### 浏览器通知 (Web Push)
+
+如需启用浏览器推送通知，请生成 VAPID 密钥并配置到 `.env`：
+
+```bash
+docker run --rm ghcr.io/hua0512/rust-srec:latest /app/rust-srec-vapid
+# 或: npx --yes web-push generate-vapid-keys
+```
+
+| 变量 | 说明 |
+|------|------|
+| `WEB_PUSH_VAPID_PUBLIC_KEY` | VAPID 公钥 (base64url, 无 padding) |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | VAPID 私钥 (base64url, 无 padding) |
+| `WEB_PUSH_VAPID_SUBJECT` | VAPID subject（例如 `mailto:admin@localhost`） |
+
+::: tip 提示
+Web Push 需要 HTTPS（或 localhost）。
+:::
+
 ::: tip 完整参考
 有关所有可用环境变量及其说明的完整列表，请参阅 [环境变量参考](./configuration.md#environment-variables)。
 :::

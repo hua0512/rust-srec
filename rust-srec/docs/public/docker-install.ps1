@@ -144,6 +144,27 @@ function Install-RustSrec {
         $envContent = Get-Content ".env" -Raw -Encoding UTF8
         $envContent = $envContent -replace "JWT_SECRET=.*", "JWT_SECRET=$jwtSecret"
         $envContent = $envContent -replace "SESSION_SECRET=.*", "SESSION_SECRET=$sessionSecret"
+
+        # Optional: Web Push (VAPID) keys for browser notifications
+        if ($envContent -match "(?m)^WEB_PUSH_VAPID_PUBLIC_KEY=") {
+            $vapidChoice = Read-Host "Generate VAPID keys for browser notifications now? [y/N]"
+            if ($vapidChoice -match "^[Yy]$") {
+                Write-Info "Generating VAPID keys via rust-srec-vapid (Docker)..."
+                $vapidOutput = & docker run --rm "ghcr.io/hua0512/rust-srec:$($script:Version)" /app/rust-srec-vapid 2>$null
+                $joined = ($vapidOutput -join "`n")
+                $public = [regex]::Match($joined, "Public Key:\s*(\S+)").Groups[1].Value
+                $private = [regex]::Match($joined, "Private Key:\s*(\S+)").Groups[1].Value
+
+                if ($public -and $private) {
+                    $envContent = $envContent -replace "(?m)^WEB_PUSH_VAPID_PUBLIC_KEY=.*$", "WEB_PUSH_VAPID_PUBLIC_KEY=$public"
+                    $envContent = $envContent -replace "(?m)^WEB_PUSH_VAPID_PRIVATE_KEY=.*$", "WEB_PUSH_VAPID_PRIVATE_KEY=$private"
+                    Write-Success "VAPID keys generated and configured"
+                } else {
+                    Write-Warn "Failed to generate VAPID keys; configure WEB_PUSH_VAPID_* manually in .env"
+                    Write-Warn "You can also generate keys with: npx --yes web-push generate-vapid-keys"
+                }
+            }
+        }
         
         if ($script:Version -ne "latest") {
             Write-Info "Setting version to: $($script:Version)"

@@ -166,6 +166,42 @@ impl NotificationDeadLetterDbModel {
     }
 }
 
+/// Notification event log database model.
+///
+/// Stores a persistent history of notification events (independent of delivery success).
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct NotificationEventLogDbModel {
+    pub id: String,
+    pub event_type: String,
+    pub priority: String,
+    /// JSON blob of the event payload
+    pub payload: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub streamer_id: Option<String>,
+    /// ISO 8601 timestamp when the event occurred
+    pub created_at: String,
+}
+
+/// Web Push subscription database model.
+///
+/// Stores per-user browser push subscriptions (VAPID/Web Push).
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct WebPushSubscriptionDbModel {
+    pub id: String,
+    pub user_id: String,
+    pub endpoint: String,
+    pub p256dh: String,
+    pub auth: String,
+    /// Minimum priority to send (low|normal|high|critical).
+    pub min_priority: String,
+    pub created_at: String,
+    pub updated_at: String,
+    /// Optional next allowed attempt time (RFC3339). When set and in the future, delivery is skipped.
+    pub next_attempt_at: Option<String>,
+    /// Last time we received a 429 from the push service (RFC3339).
+    pub last_429_at: Option<String>,
+}
+
 /// System event names for notifications.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,

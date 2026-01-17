@@ -36,6 +36,7 @@
 pub mod channels;
 pub mod events;
 pub mod service;
+pub mod web_push;
 
 pub use channels::{ChannelConfig, DiscordConfig, EmailConfig, NotificationChannel, WebhookConfig};
 pub use events::{NotificationEvent, NotificationPriority};

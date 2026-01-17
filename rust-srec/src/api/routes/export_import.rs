@@ -23,7 +23,7 @@ use crate::database::models::{
 use crate::database::models::{JobPreset, PipelinePreset};
 
 /// Current schema version for exports.
-const EXPORT_SCHEMA_VERSION: &str = "0.1.3";
+const EXPORT_SCHEMA_VERSION: &str = "0.1.4";
 
 fn schema_version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
     fn parse_segment(segment: &str) -> Option<u32> {
@@ -50,6 +50,10 @@ fn schema_version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
 
 fn default_streamer_state() -> String {
     "NOT_LIVE".to_string()
+}
+
+fn default_notification_event_log_retention_days() -> i32 {
+    30
 }
 
 async fn revoke_all_refresh_tokens(
@@ -207,6 +211,8 @@ pub struct GlobalConfigExport {
     pub max_concurrent_cpu_jobs: i32,
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
+    #[serde(default = "default_notification_event_log_retention_days")]
+    pub notification_event_log_retention_days: i32,
     pub session_gap_time_secs: i64,
     pub pipeline: Option<serde_json::Value>,
     pub session_complete_pipeline: Option<serde_json::Value>,
@@ -596,6 +602,8 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             max_concurrent_cpu_jobs: global_config.max_concurrent_cpu_jobs,
             max_concurrent_io_jobs: global_config.max_concurrent_io_jobs,
             job_history_retention_days: global_config.job_history_retention_days,
+            notification_event_log_retention_days: global_config
+                .notification_event_log_retention_days,
             session_gap_time_secs: global_config.session_gap_time_secs,
             pipeline: global_config.pipeline.map(parse_db_config),
             session_complete_pipeline: global_config.session_complete_pipeline.map(parse_db_config),
@@ -793,6 +801,8 @@ pub async fn import_config(
     global.max_concurrent_cpu_jobs = config.global_config.max_concurrent_cpu_jobs;
     global.max_concurrent_io_jobs = config.global_config.max_concurrent_io_jobs;
     global.job_history_retention_days = config.global_config.job_history_retention_days;
+    global.notification_event_log_retention_days =
+        config.global_config.notification_event_log_retention_days;
     global.session_gap_time_secs = config.global_config.session_gap_time_secs;
     global.pipeline = config.global_config.pipeline.map(json_value_to_db_string);
     global.session_complete_pipeline = config
@@ -1903,6 +1913,7 @@ mod tests {
             max_concurrent_cpu_jobs: 0,
             max_concurrent_io_jobs: 0,
             job_history_retention_days: 0,
+            notification_event_log_retention_days: 0,
             session_gap_time_secs: 0,
             pipeline: None,
             session_complete_pipeline: None,

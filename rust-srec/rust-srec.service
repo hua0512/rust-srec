@@ -17,6 +17,10 @@ Environment=RUST_LOG=info
 Environment=DATABASE_URL=sqlite:///var/lib/rust-srec/rust-srec.db
 Environment=OUTPUT_DIR=/var/lib/rust-srec/output
 Environment=CONFIG_DIR=/etc/rust-srec
+# Browser Notifications (Web Push / VAPID) (optional)
+# Environment=WEB_PUSH_VAPID_PUBLIC_KEY=
+# Environment=WEB_PUSH_VAPID_PRIVATE_KEY=
+# Environment=WEB_PUSH_VAPID_SUBJECT=mailto:admin@localhost
 
 # Executable
 ExecStart=/opt/rust-srec/rust-srec --config /etc/rust-srec/config.toml

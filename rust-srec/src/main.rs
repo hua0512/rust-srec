@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use rust_srec::database;
 use rust_srec::logging::init_logging;
+use rust_srec::panic_hook;
 use rust_srec::services::ServiceContainer;
 use tracing::{error, info, warn};
 
@@ -22,6 +23,9 @@ async fn main() -> anyhow::Result<()> {
     let log_dir = std::env::var("LOG_DIR").unwrap_or_else(|_| "logs".to_string());
     let (logging_config, _guard) = init_logging(&log_dir)
         .map_err(|e| anyhow::anyhow!("Failed to initialize logging: {}", e))?;
+
+    // Ensure panics are captured by the application logs (and not just stderr).
+    panic_hook::install(&log_dir);
 
     info!("Starting rust-srec v{}", env!("CARGO_PKG_VERSION"));
 

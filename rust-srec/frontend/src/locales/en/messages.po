@@ -182,6 +182,7 @@ msgstr "Actions"
 #: src/components/notifications/forms/webhook-form.tsx:113
 #: src/components/streamers/edit/streamer-meta-form.tsx:224
 #: src/routes/_authed/_dashboard/config/language.tsx:96
+#: src/routes/_authed/_dashboard/notifications/index.tsx:408
 msgid "Active"
 msgstr "Active"
 
@@ -229,7 +230,7 @@ msgstr "Add argument template"
 msgid "Add at least one step"
 msgstr "Add at least one step"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:130
+#: src/routes/_authed/_dashboard/notifications/index.tsx:337
 msgid "Add Channel"
 msgstr "Add Channel"
 
@@ -370,6 +371,7 @@ msgstr "Album"
 msgid "Alerts when disk space is running low."
 msgstr "Alerts when disk space is running low."
 
+#: src/components/notifications/browser-channel-dialog.tsx:162
 #: src/components/pipeline/workflows/step-library.tsx:291
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:198
@@ -391,6 +393,10 @@ msgstr "All Platforms"
 #: src/routes/_authed/_dashboard/sessions/index.tsx:192
 msgid "All Time"
 msgstr "All Time"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:251
+msgid "All Types"
+msgstr "All Types"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:561
 msgid "Allowed Extensions"
@@ -638,6 +644,10 @@ msgstr "Back to Pipeline Jobs"
 msgid "Back to Sessions"
 msgstr "Back to Sessions"
 
+#: src/components/notifications/browser-channel-dialog.tsx:123
+msgid "Background"
+msgstr "Background"
+
 #: src/components/config/shared/network-settings-card.tsx:294
 msgid "Background refresh enabled"
 msgstr "Background refresh enabled"
@@ -650,7 +660,7 @@ msgstr "Backjump Threshold"
 msgid "Backoff Multiplier"
 msgstr "Backoff Multiplier"
 
-#: src/components/sidebar/navbar.tsx:34
+#: src/components/sidebar/navbar.tsx:35
 msgid "Backup"
 msgstr "Backup"
 
@@ -727,6 +737,10 @@ msgstr "Bitrate"
 msgid "Blocked"
 msgstr "Blocked"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:279
+msgid "Blocked by browser"
+msgstr "Blocked by browser"
+
 #: src/routes/_authed/_dashboard/config/theme.tsx:70
 msgid "Border Radius"
 msgstr "Border Radius"
@@ -734,6 +748,15 @@ msgstr "Border Radius"
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:159
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "Browse generated media artifacts from pipeline jobs"
+
+#: src/components/notifications/browser-channel-dialog.tsx:62
+#: src/routes/_authed/_dashboard/notifications/index.tsx:414
+msgid "Browser Notifications"
+msgstr "Browser Notifications"
+
+#: src/components/notifications/browser-channel-dialog.tsx:171
+msgid "Browser Status"
+msgstr "Browser Status"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:912
 msgid "Buffer Limits"
@@ -849,7 +872,7 @@ msgstr "Changing Password..."
 msgid "Channel created"
 msgstr "Channel created"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:44
+#: src/routes/_authed/_dashboard/notifications/index.tsx:220
 msgid "Channel deleted"
 msgstr "Channel deleted"
 
@@ -861,7 +884,7 @@ msgstr "Channel updated"
 msgid "channel1,channel2"
 msgstr "channel1,channel2"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:126
+#: src/routes/_authed/_dashboard/notifications/index.tsx:310
 msgid "channels"
 msgstr "channels"
 
@@ -950,6 +973,7 @@ msgid "Cloning..."
 msgstr "Cloning..."
 
 #: src/components/config/global/backup-restore-card.tsx:569
+#: src/components/notifications/browser-channel-dialog.tsx:205
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:686
 msgid "Close"
 msgstr "Close"
@@ -1083,6 +1107,10 @@ msgstr "Configure download engine parameters"
 msgid "Configure granular options for the selected engine."
 msgstr "Configure granular options for the selected engine."
 
+#: src/components/notifications/browser-channel-dialog.tsx:66
+msgid "Configure how you receive alerts in this browser and via system push notifications."
+msgstr "Configure how you receive alerts in this browser and via system push notifications."
+
 #: src/components/config/global/backup-restore-card.tsx:318
 msgid "Configure how you want to import data from the selected backup file."
 msgstr "Configure how you want to import data from the selected backup file."
@@ -1094,6 +1122,10 @@ msgstr "Configure proxy strategies and connection details."
 #: src/components/filters/FilterDialog.tsx:214
 msgid "Configure recording rules for this streamer."
 msgstr "Configure recording rules for this streamer."
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:445
+msgid "Configure Settings"
+msgstr "Configure Settings"
 
 #: src/components/pipeline/workflows/steps-list.tsx:163
 msgid "Configure Step"
@@ -1172,12 +1204,17 @@ msgstr "Cookies"
 msgid "Cookies Only"
 msgstr "Cookies Only"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:477
+msgid "Copied"
+msgstr "Copied"
+
 #: src/components/pipeline/outputs/output-card.tsx:139
 msgid "Copied!"
 msgstr "Copied!"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:101
+#: src/routes/_authed/_dashboard/notifications/events.tsx:483
 msgid "Copy"
 msgstr "Copy"
 
@@ -1231,10 +1268,6 @@ msgstr "CPU Usage"
 msgid "Create"
 msgstr "Create"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:198
-msgid "Create a channel to receive alerts about downloads, errors, and system events."
-msgstr "Create a channel to receive alerts about downloads, errors, and system events."
-
 #. placeholder {0}: presetToClone?.name
 #. placeholder {0}: templateToClone?.name
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:246
@@ -1256,7 +1289,6 @@ msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 
 #: src/components/notifications/channel-form.tsx:254
 #: src/components/notifications/channel-form.tsx:366
-#: src/routes/_authed/_dashboard/notifications/index.tsx:206
 msgid "Create Channel"
 msgstr "Create Channel"
 
@@ -1355,6 +1387,10 @@ msgstr "CRF (Constant Rate Factor)"
 #: src/components/notifications/subscription-manager.tsx:168
 msgid "Critical alert when the processing queue is full."
 msgstr "Critical alert when the processing queue is full."
+
+#: src/components/notifications/browser-channel-dialog.tsx:150
+msgid "Critical Only"
+msgstr "Critical Only"
 
 #: src/components/notifications/subscription-manager.tsx:162
 msgid "Critical system errors or streamer failures."
@@ -1528,7 +1564,7 @@ msgstr "Define sequences of processing steps for your recordings"
 msgid "Degraded"
 msgstr "Degraded"
 
-#: src/components/config/global/network-system-card.tsx:42
+#: src/components/config/global/network-system-card.tsx:43
 msgid "Delays, proxy, and retention policies."
 msgstr "Delays, proxy, and retention policies."
 
@@ -1673,6 +1709,10 @@ msgstr "Detailed health checks for internal services and resources."
 msgid "Detailed processor settings"
 msgstr "Detailed processor settings"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:421
+msgid "Details Ready"
+msgstr "Details Ready"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:440
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
@@ -1690,6 +1730,8 @@ msgid "Disable"
 msgstr "Disable"
 
 #: src/components/streamers/card/use-streamer-status.tsx:41
+#: src/routes/_authed/_dashboard/notifications/index.tsx:429
+#: src/routes/_authed/_dashboard/notifications/index.tsx:437
 #: src/routes/_authed/_dashboard/streamers/index.tsx:71
 msgid "Disabled"
 msgstr "Disabled"
@@ -1731,6 +1773,11 @@ msgstr "Download"
 msgid "Download Backup"
 msgstr "Download Backup"
 
+#. placeholder {0}: inner.path || inner.title || 'unknown'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:517
+msgid "Download completed: {0}"
+msgstr "Download completed: {0}"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:719
 msgid "Download Concurrency"
 msgstr "Download Concurrency"
@@ -1747,6 +1794,11 @@ msgstr "Download Engine"
 msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
+#. placeholder {0}: error || 'Unknown error'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:519
+msgid "Download failed: {0}"
+msgstr "Download failed: {0}"
+
 #: src/routes/_authed/_dashboard/dashboard.tsx:243
 #: src/routes/_authed/_dashboard/system/health.tsx:326
 msgid "Download Manager"
@@ -1755,6 +1807,11 @@ msgstr "Download Manager"
 #: src/components/config/shared/network-settings-card.tsx:320
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
+
+#. placeholder {0}: inner.title || streamer || 'unknown'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:515
+msgid "Download started: {0}"
+msgstr "Download started: {0}"
 
 #: src/components/streamers/edit/active-download-card.tsx:40
 msgid "Downloading"
@@ -1854,7 +1911,7 @@ msgstr "e.g., Standard Processing"
 #: src/components/notifications/channel-card.tsx:154
 #: src/components/pipeline/presets/preset-card.tsx:176
 #: src/components/pipeline/workflows/workflow-card.tsx:171
-#: src/components/sidebar/navbar.tsx:47
+#: src/components/sidebar/navbar.tsx:48
 #: src/components/streamers/card/stream-actions-menu.tsx:88
 msgid "Edit"
 msgstr "Edit"
@@ -1927,6 +1984,8 @@ msgstr "Enable translucent background blur effects."
 
 #: src/components/notifications/forms/discord-form.tsx:119
 #: src/components/notifications/forms/email-form.tsx:206
+#: src/routes/_authed/_dashboard/notifications/index.tsx:428
+#: src/routes/_authed/_dashboard/notifications/index.tsx:437
 msgid "Enabled"
 msgstr "Enabled"
 
@@ -2000,7 +2059,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/components/config/global/backup-restore-card.tsx:376
 #: src/components/config/global/backup-restore-card.tsx:381
 #: src/components/config/templates/template-editor.tsx:257
-#: src/components/sidebar/navbar.tsx:35
+#: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.tsx:66
 msgid "Engines"
 msgstr "Engines"
@@ -2094,6 +2153,15 @@ msgstr "ETA"
 msgid "Event Hooks"
 msgstr "Event Hooks"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:247
+msgid "Event Type"
+msgstr "Event Type"
+
+#: src/components/sidebar/navbar.tsx:32
+#: src/routes/_authed/_dashboard/notifications/index.tsx:315
+msgid "Events"
+msgstr "Events"
+
 #: src/components/filters/FilterCard.tsx:121
 #: src/components/filters/FilterCard.tsx:235
 #: src/components/filters/forms/CategoryFilterForm.tsx:52
@@ -2131,7 +2199,7 @@ msgstr "Execute shell commands on lifecycle events. Commands run in the system s
 msgid "Execution Settings"
 msgstr "Execution Settings"
 
-#: src/components/sidebar/navbar.tsx:40
+#: src/components/sidebar/navbar.tsx:41
 msgid "Executions"
 msgstr "Executions"
 
@@ -2252,6 +2320,10 @@ msgstr "Failed to clone preset: {0}"
 msgid "Failed to clone template: {0}"
 msgstr "Failed to clone template: {0}"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:479
+msgid "Failed to copy"
+msgstr "Failed to copy"
+
 #: src/components/notifications/channel-form.tsx:191
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
@@ -2283,7 +2355,7 @@ msgstr "Failed to create template: {0}"
 msgid "Failed to create workflow: {0}"
 msgstr "Failed to create workflow: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:48
+#: src/routes/_authed/_dashboard/notifications/index.tsx:224
 msgid "Failed to delete channel"
 msgstr "Failed to delete channel"
 
@@ -2322,6 +2394,14 @@ msgstr "Failed to delete streamer"
 msgid "Failed to delete workflow: {0}"
 msgstr "Failed to delete workflow: {0}"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:172
+msgid "Failed to disable Web Push"
+msgstr "Failed to disable Web Push"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:213
+msgid "Failed to enable Web Push"
+msgstr "Failed to enable Web Push"
+
 #: src/components/config/global/backup-restore-card.tsx:92
 msgid "Failed to export configuration"
 msgstr "Failed to export configuration"
@@ -2344,6 +2424,10 @@ msgstr "Failed to load engine: {0}"
 #: src/routes/_authed/_dashboard/config/engines/index.tsx:37
 msgid "Failed to load engines: {0}"
 msgstr "Failed to load engines: {0}"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:208
+msgid "Failed to load events"
+msgstr "Failed to load events"
 
 #. placeholder {0}: error.message
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:313
@@ -2400,7 +2484,7 @@ msgstr "Failed to retry steps"
 msgid "Failed to send input: {0}"
 msgstr "Failed to send input: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:58
+#: src/routes/_authed/_dashboard/notifications/index.tsx:234
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
@@ -2435,6 +2519,10 @@ msgstr "Failed to update platform: {0}"
 #: src/routes/_authed/_dashboard/pipeline/presets/$presetId.tsx:39
 msgid "Failed to update preset: {0}"
 msgstr "Failed to update preset: {0}"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:142
+msgid "Failed to update priority"
+msgstr "Failed to update priority"
 
 #: src/routes/_authed/_dashboard/config/global.tsx:133
 msgid "Failed to update settings"
@@ -2562,6 +2650,10 @@ msgstr "Filter Interactive Games"
 #: src/components/config/engines/forms/mesio-form.tsx:157
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "Filter repeated tags and detect stream replay loops"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:237
+msgid "Filter streamer..."
+msgstr "Filter streamer..."
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:73
 msgid "Filter Type"
@@ -2762,7 +2854,7 @@ msgid "Glass Mode"
 msgstr "Glass Mode"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
-#: src/components/sidebar/navbar.tsx:39
+#: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.tsx:48
 msgid "Global"
 msgstr "Global"
@@ -2845,7 +2937,7 @@ msgstr "Header Key"
 msgid "Header Value"
 msgstr "Header Value"
 
-#: src/components/sidebar/navbar.tsx:45
+#: src/components/sidebar/navbar.tsx:46
 msgid "Health"
 msgstr "Health"
 
@@ -2882,7 +2974,11 @@ msgstr "High quality H.265/HEVC compression (CRF 22). Smaller files but slower e
 msgid "High Quality MP3"
 msgstr "High Quality MP3"
 
-#: src/components/config/global/network-system-card.tsx:196
+#: src/components/notifications/browser-channel-dialog.tsx:154
+msgid "High+"
+msgstr "High+"
+
+#: src/components/config/global/network-system-card.tsx:197
 msgid "History Retention"
 msgstr "History Retention"
 
@@ -2899,7 +2995,7 @@ msgid "HLS Tuning"
 msgstr "HLS Tuning"
 
 #: src/components/default-catch-boundary.tsx:47
-#: src/components/sidebar/navbar.tsx:60
+#: src/components/sidebar/navbar.tsx:61
 msgid "Home"
 msgstr "Home"
 
@@ -3020,6 +3116,10 @@ msgstr "Importing..."
 msgid "In active"
 msgstr "In active"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:409
+msgid "Inactive"
+msgstr "Inactive"
+
 #: src/components/filters/FilterCard.tsx:113
 #: src/components/filters/FilterCard.tsx:237
 msgid "Include"
@@ -3087,6 +3187,10 @@ msgstr "Inspecting"
 msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
 msgstr "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:417
+msgid "Internal"
+msgstr "Internal"
+
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:224
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:331
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:108
@@ -3097,11 +3201,11 @@ msgstr "Interrupted"
 msgid "Interval (seconds)"
 msgstr "Interval (seconds)"
 
-#: src/components/config/global/network-system-card.tsx:69
+#: src/components/config/global/network-system-card.tsx:70
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 
-#: src/components/config/global/network-system-card.tsx:112
+#: src/components/config/global/network-system-card.tsx:113
 msgid "Interval between checks when a streamer is live to detect when the stream ends."
 msgstr "Interval between checks when a streamer is live to detect when the stream ends."
 
@@ -3153,7 +3257,7 @@ msgstr "Job Presets"
 msgid "Job retry initiated"
 msgstr "Job retry initiated"
 
-#: src/components/sidebar/navbar.tsx:41
+#: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:84
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:247
 msgid "Jobs"
@@ -3264,6 +3368,15 @@ msgstr "Live"
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
 msgstr "LIVE"
+
+#: src/components/notifications/browser-channel-dialog.tsx:80
+#: src/routes/_authed/_dashboard/notifications/index.tsx:424
+msgid "Live Polling"
+msgstr "Live Polling"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:76
+msgid "Live polling notifications enabled"
+msgstr "Live polling notifications enabled"
 
 #: src/routes/_authed/_dashboard/config/theme.tsx:89
 msgid "Live Preview"
@@ -3409,7 +3522,7 @@ msgstr "Manage storage paths and file formats."
 msgid "Manage Subscriptions"
 msgstr "Manage Subscriptions"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:120
+#: src/routes/_authed/_dashboard/notifications/index.tsx:304
 msgid "Manage where system notifications are sent"
 msgstr "Manage where system notifications are sent"
 
@@ -3531,7 +3644,7 @@ msgstr "Maximum compression to minimize storage usage, then delete original."
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 
-#: src/components/config/global/network-system-card.tsx:242
+#: src/components/config/global/network-system-card.tsx:289
 msgid "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
 msgstr "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
 
@@ -3729,11 +3842,11 @@ msgstr "Network"
 msgid "Network & Content"
 msgstr "Network & Content"
 
-#: src/components/config/global/network-system-card.tsx:41
+#: src/components/config/global/network-system-card.tsx:42
 msgid "Network & System"
 msgstr "Network & System"
 
-#: src/components/sidebar/navbar.tsx:46
+#: src/components/sidebar/navbar.tsx:47
 msgid "New"
 msgstr "New"
 
@@ -3818,6 +3931,10 @@ msgstr "No environment variables defined"
 msgid "No errors found. Max depth: {0}"
 msgstr "No errors found. Max depth: {0}"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:337
+msgid "No events found"
+msgstr "No events found"
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:662
 msgid "No Extension"
 msgstr "No Extension"
@@ -3874,10 +3991,6 @@ msgstr "No metadata tags added"
 #: src/routes/_authed/_dashboard/config/logging.tsx:315
 msgid "No modules configured"
 msgstr "No modules configured"
-
-#: src/routes/_authed/_dashboard/notifications/index.tsx:195
-msgid "No notification channels"
-msgstr "No notification channels"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:499
 msgid "No other steps available to depend on."
@@ -4001,6 +4114,10 @@ msgstr "None (Strip Audio)"
 msgid "Normal"
 msgstr "Normal"
 
+#: src/components/notifications/browser-channel-dialog.tsx:158
+msgid "Normal+"
+msgstr "Normal+"
+
 #: src/routes/_authed/_dashboard/dashboard.tsx:421
 msgid "Not available"
 msgstr "Not available"
@@ -4009,13 +4126,38 @@ msgstr "Not available"
 msgid "Not Found"
 msgstr "Not Found"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:277
+msgid "Not supported in this browser"
+msgstr "Not supported in this browser"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:316
+msgid "Notification Channels"
+msgstr "Notification Channels"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:198
+#: src/routes/_authed/_dashboard/notifications/events.tsx:228
+msgid "Notification Events"
+msgstr "Notification Events"
+
+#: src/components/config/global/network-system-card.tsx:231
+msgid "Notification Log Retention"
+msgstr "Notification Log Retention"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:188
+msgid "Notification permission not granted"
+msgstr "Notification permission not granted"
+
+#: src/components/config/global/network-system-card.tsx:239
+msgid "Notification Retention"
+msgstr "Notification Retention"
+
 #: src/routes/_authed/_dashboard/system/health.tsx:330
 msgid "Notification Service"
 msgstr "Notification Service"
 
 #: src/components/sidebar/navbar.tsx:31
 #: src/lib/menu-list.ts:123
-#: src/routes/_authed/_dashboard/notifications/index.tsx:117
+#: src/routes/_authed/_dashboard/notifications/index.tsx:301
 msgid "Notifications"
 msgstr "Notifications"
 
@@ -4032,13 +4174,17 @@ msgstr "Nth output: {output0}, {output1}..."
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
-#: src/components/config/global/network-system-card.tsx:154
+#: src/components/config/global/network-system-card.tsx:155
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 msgstr "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 
-#: src/components/config/global/network-system-card.tsx:200
+#: src/components/config/global/network-system-card.tsx:201
 msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
 msgstr "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
+
+#: src/components/config/global/network-system-card.tsx:243
+msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
+msgstr "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:42
 msgid "OAuth Token"
@@ -4057,16 +4203,16 @@ msgstr "Offline"
 msgid "OFFLINE"
 msgstr "OFFLINE"
 
-#: src/components/config/global/network-system-card.tsx:100
-#: src/components/config/global/network-system-card.tsx:108
+#: src/components/config/global/network-system-card.tsx:101
+#: src/components/config/global/network-system-card.tsx:109
 msgid "Offline Check"
 msgstr "Offline Check"
 
-#: src/components/config/global/network-system-card.tsx:150
+#: src/components/config/global/network-system-card.tsx:151
 msgid "Offline Detection"
 msgstr "Offline Detection"
 
-#: src/components/config/global/network-system-card.tsx:142
+#: src/components/config/global/network-system-card.tsx:143
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
 
@@ -4215,7 +4361,7 @@ msgid "Output Settings"
 msgstr "Output Settings"
 
 #: src/components/sessions/overview-tab.tsx:118
-#: src/components/sidebar/navbar.tsx:42
+#: src/components/sidebar/navbar.tsx:43
 #: src/lib/menu-list.ts:89
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:476
 msgid "Outputs"
@@ -4420,6 +4566,10 @@ msgstr "Perf"
 msgid "Performance"
 msgstr "Performance"
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:281
+msgid "Permission required"
+msgstr "Permission required"
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:217
 msgid "Phone & Code (2FA optional)"
 msgstr "Phone & Code (2FA optional)"
@@ -4551,7 +4701,7 @@ msgstr "platforms"
 
 #: src/components/config/global/backup-restore-card.tsx:388
 #: src/components/config/templates/template-editor.tsx:267
-#: src/components/sidebar/navbar.tsx:36
+#: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.tsx:54
 msgid "Platforms"
 msgstr "Platforms"
@@ -4560,7 +4710,7 @@ msgstr "Platforms"
 msgid "Play"
 msgstr "Play"
 
-#: src/components/sidebar/navbar.tsx:32
+#: src/components/sidebar/navbar.tsx:33
 #: src/lib/menu-list.ts:96
 msgid "Player"
 msgstr "Player"
@@ -4697,7 +4847,7 @@ msgstr "Preset updated successfully"
 msgid "presets"
 msgstr "presets"
 
-#: src/components/sidebar/navbar.tsx:43
+#: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:74
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:244
 msgid "Presets"
@@ -4747,6 +4897,10 @@ msgstr "Prioritize specific streaming protocols. Press Enter to add."
 #: src/components/streamers/edit/streamer-meta-form.tsx:192
 msgid "Priority"
 msgstr "Priority"
+
+#: src/components/notifications/browser-channel-dialog.tsx:136
+msgid "Priority Filter"
+msgstr "Priority Filter"
 
 #. placeholder {0}: status.exited.code ?? 0
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:598
@@ -4807,7 +4961,7 @@ msgstr "Protocol Settings"
 msgid "Proxy"
 msgstr "Proxy"
 
-#: src/components/config/global/network-system-card.tsx:274
+#: src/components/config/global/network-system-card.tsx:321
 #: src/components/config/shared/proxy-settings-card.tsx:240
 msgid "Proxy Configuration"
 msgstr "Proxy Configuration"
@@ -4897,12 +5051,17 @@ msgid "Read Timeout (ms)"
 msgstr "Read Timeout (ms)"
 
 #: src/components/config/engines/engine-card.tsx:146
+#: src/routes/_authed/_dashboard/notifications/index.tsx:280
 msgid "Ready"
 msgstr "Ready"
 
 #: src/routes/_authed/_dashboard/player/index.tsx:375
 msgid "Ready to Watch"
 msgstr "Ready to Watch"
+
+#: src/components/notifications/browser-channel-dialog.tsx:86
+msgid "Real-time"
+msgstr "Real-time"
 
 #: src/components/logging/log-viewer.tsx:336
 msgid "Real-Time Logs"
@@ -4923,6 +5082,11 @@ msgstr "Receive a notification when a stream ends."
 #: src/components/notifications/subscription-manager.tsx:134
 msgid "Receive a notification when a streamer goes live."
 msgstr "Receive a notification when a streamer goes live."
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:201
+#: src/routes/_authed/_dashboard/notifications/events.tsx:230
+msgid "Recent notification events persisted by the backend"
+msgstr "Recent notification events persisted by the backend"
 
 #: src/components/streamers/edit/recent-sessions-list.tsx:35
 msgid "Recent Sessions"
@@ -4945,10 +5109,25 @@ msgstr "Record Danmu"
 msgid "Recording"
 msgstr "Recording"
 
+#. placeholder {0}: error || 'Unknown error'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:510
+msgid "Recording failed: {0}"
+msgstr "Recording failed: {0}"
+
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:246
 msgid "Recording Filters"
 msgstr "Recording Filters"
+
+#. placeholder {0}: streamer || 'unknown streamer'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:508
+msgid "Recording finished for {0}"
+msgstr "Recording finished for {0}"
+
+#. placeholder {0}: streamer || 'unknown streamer'
+#: src/routes/_authed/_dashboard/notifications/events.tsx:506
+msgid "Recording started for {0}"
+msgstr "Recording started for {0}"
 
 #: src/components/streamers/card/use-streamer-status.tsx:220
 msgid "Recording will start when schedule allows"
@@ -4959,6 +5138,7 @@ msgid "Recordings"
 msgstr "Recordings"
 
 #: src/components/config/shared/network-settings-card.tsx:193
+#: src/routes/_authed/_dashboard/notifications/events.tsx:306
 #: src/routes/_authed/_dashboard/system/health.tsx:147
 msgid "Refresh"
 msgstr "Refresh"
@@ -5118,7 +5298,7 @@ msgstr "Resume"
 msgid "Resuming in"
 msgstr "Resuming in"
 
-#: src/components/config/global/network-system-card.tsx:188
+#: src/components/config/global/network-system-card.tsx:189
 msgid "Retention Period"
 msgstr "Retention Period"
 
@@ -5510,6 +5690,10 @@ msgstr "Sensitive"
 msgid "Separate multiple paths with commas."
 msgstr "Separate multiple paths with commas."
 
+#: src/routes/_authed/_dashboard/notifications/index.tsx:278
+msgid "Server not configured"
+msgstr "Server not configured"
+
 #: src/components/config/global/pipeline-config-card.tsx:257
 #: src/components/config/shared-config-editor.tsx:482
 #: src/components/pipeline/outputs/output-card.tsx:201
@@ -5545,7 +5729,7 @@ msgstr "Session Details"
 msgid "Session Duration"
 msgstr "Session Duration"
 
-#: src/components/config/global/network-system-card.tsx:238
+#: src/components/config/global/network-system-card.tsx:285
 msgid "Session Gap"
 msgstr "Session Gap"
 
@@ -5566,7 +5750,7 @@ msgstr "Session is not running"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/components/config/global/network-system-card.tsx:230
+#: src/components/config/global/network-system-card.tsx:277
 msgid "Session Merging Gap"
 msgstr "Session Merging Gap"
 
@@ -5626,12 +5810,16 @@ msgstr "Shared pipeline utilities"
 msgid "Show password"
 msgstr "Show password"
 
+#: src/components/notifications/browser-channel-dialog.tsx:95
+msgid "Shows notifications while the application tab is open by polling recent events."
+msgstr "Shows notifications while the application tab is open by polling recent events."
+
 #: src/routes/_public/login.tsx:251
 msgid "Sign In"
 msgstr "Sign In"
 
-#: src/components/sidebar/menu.tsx:123
-#: src/components/sidebar/menu.tsx:130
+#: src/components/sidebar/menu.tsx:144
+#: src/components/sidebar/menu.tsx:151
 msgid "Sign out"
 msgstr "Sign out"
 
@@ -5834,8 +6022,8 @@ msgstr "Streamer"
 msgid "STREAMER"
 msgstr "STREAMER"
 
-#: src/components/config/global/network-system-card.tsx:57
-#: src/components/config/global/network-system-card.tsx:65
+#: src/components/config/global/network-system-card.tsx:58
+#: src/components/config/global/network-system-card.tsx:66
 msgid "Streamer Check"
 msgstr "Streamer Check"
 
@@ -5960,7 +6148,7 @@ msgstr "Switch Theme"
 msgid "Sync"
 msgstr "Sync"
 
-#: src/components/sidebar/navbar.tsx:33
+#: src/components/sidebar/navbar.tsx:34
 #: src/routes/_authed/_dashboard/config/theme.tsx:202
 msgid "System"
 msgstr "System"
@@ -6090,7 +6278,7 @@ msgstr "templates"
 #: src/components/config/global/backup-restore-card.tsx:337
 #: src/components/config/global/backup-restore-card.tsx:342
 #: src/components/config/global/backup-restore-card.tsx:347
-#: src/components/sidebar/navbar.tsx:37
+#: src/components/sidebar/navbar.tsx:38
 #: src/routes/_authed/_dashboard/config/route.tsx:60
 msgid "Templates"
 msgstr "Templates"
@@ -6105,7 +6293,7 @@ msgstr "Temporarily Paused"
 msgid "Test Notification"
 msgstr "Test Notification"
 
-#: src/routes/_authed/_dashboard/notifications/index.tsx:55
+#: src/routes/_authed/_dashboard/notifications/index.tsx:231
 msgid "Test notification sent"
 msgstr "Test notification sent"
 
@@ -6133,7 +6321,7 @@ msgstr "The stream title remained constant throughout the session."
 msgid "The underlying tool used for downloading."
 msgstr "The underlying tool used for downloading."
 
-#: src/components/sidebar/navbar.tsx:38
+#: src/components/sidebar/navbar.tsx:39
 #: src/routes/_authed/_dashboard/config/route.tsx:78
 msgid "Theme"
 msgstr "Theme"
@@ -6383,6 +6571,10 @@ msgstr "Triggered when video and danmu are available"
 msgid "Trimming & Time"
 msgstr "Trimming & Time"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:340
+msgid "Try adjusting your filters or limit"
+msgstr "Try adjusting your filters or limit"
+
 #: src/components/pipeline/workflows/step-library.tsx:429
 #: src/components/pipeline/workflows/step-library.tsx:567
 msgid "Try adjusting your search or filters"
@@ -6409,6 +6601,7 @@ msgid "Try again"
 msgstr "Try again"
 
 #: src/components/default-catch-boundary.tsx:42
+#: src/routes/_authed/_dashboard/notifications/events.tsx:216
 #: src/routes/_authed/_dashboard/system/health.tsx:110
 msgid "Try Again"
 msgstr "Try Again"
@@ -6469,6 +6662,10 @@ msgstr "Unknown"
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:153
 msgid "Unknown Engine ID: {engineId}"
 msgstr "Unknown Engine ID: {engineId}"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:211
+msgid "Unknown error"
+msgstr "Unknown error"
 
 #: src/components/pipeline/outputs/output-card.tsx:77
 msgid "Unknown File"
@@ -6692,6 +6889,7 @@ msgstr "View Detailed Logs & Outputs"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:164
 #: src/components/sessions/session-card.tsx:271
 #: src/routes/_authed/_dashboard/dashboard.tsx:171
+#: src/routes/_authed/_dashboard/notifications/events.tsx:435
 msgid "View Details"
 msgstr "View Details"
 
@@ -6718,6 +6916,35 @@ msgstr "Watch"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:714
 msgid "Web Optimize"
 msgstr "Web Optimize"
+
+#: src/components/notifications/browser-channel-dialog.tsx:117
+#: src/routes/_authed/_dashboard/notifications/index.tsx:434
+msgid "Web Push"
+msgstr "Web Push"
+
+#: src/components/notifications/browser-channel-dialog.tsx:193
+msgid "Web Push allows receiving notifications even when you close the browser. It requires browser permission and valid server keys."
+msgstr "Web Push allows receiving notifications even when you close the browser. It requires browser permission and valid server keys."
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:170
+msgid "Web Push disabled for this browser"
+msgstr "Web Push disabled for this browser"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:211
+msgid "Web Push enabled for this browser"
+msgstr "Web Push enabled for this browser"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:154
+msgid "Web Push is not configured on the server"
+msgstr "Web Push is not configured on the server"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:149
+msgid "Web Push is not supported in this browser"
+msgstr "Web Push is not supported in this browser"
+
+#: src/routes/_authed/_dashboard/notifications/index.tsx:139
+msgid "Web Push priority updated"
+msgstr "Web Push priority updated"
 
 #: src/components/notifications/channel-card.tsx:80
 #: src/components/notifications/forms/discord-form.tsx:33
@@ -6782,7 +7009,7 @@ msgid "workflows"
 msgstr "workflows"
 
 #: src/components/pipeline/workflows/step-library.tsx:263
-#: src/components/sidebar/navbar.tsx:44
+#: src/components/sidebar/navbar.tsx:45
 #: src/lib/menu-list.ts:79
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:155
 msgid "Workflows"

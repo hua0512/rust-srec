@@ -147,6 +147,32 @@ main() {
         sed -i "s/SESSION_SECRET=.*/SESSION_SECRET=$SESSION_SECRET/" .env
     fi
     success "密钥已生成并配置"
+
+    # 可选：浏览器通知 (Web Push / VAPID) 密钥
+    if grep -q "^WEB_PUSH_VAPID_PUBLIC_KEY=" .env 2>/dev/null; then
+        read -p "是否现在生成浏览器通知所需的 VAPID 密钥? [y/N] " -n 1 -r < /dev/tty
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            info "正在通过 rust-srec-vapid (Docker) 生成 VAPID 密钥..."
+            VAPID_OUTPUT="$(docker run --rm "ghcr.io/hua0512/rust-srec:${VERSION}" /app/rust-srec-vapid 2>/dev/null || true)"
+            VAPID_PUBLIC_KEY="$(echo "$VAPID_OUTPUT" | awk -F': ' '/^Public Key:/{print $2}' | tail -n 1)"
+            VAPID_PRIVATE_KEY="$(echo "$VAPID_OUTPUT" | awk -F': ' '/^Private Key:/{print $2}' | tail -n 1)"
+
+            if [[ -n "$VAPID_PUBLIC_KEY" && -n "$VAPID_PRIVATE_KEY" ]]; then
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    sed -i '' "s/^WEB_PUSH_VAPID_PUBLIC_KEY=.*/WEB_PUSH_VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY/" .env
+                    sed -i '' "s/^WEB_PUSH_VAPID_PRIVATE_KEY=.*/WEB_PUSH_VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY/" .env
+                else
+                    sed -i "s/^WEB_PUSH_VAPID_PUBLIC_KEY=.*/WEB_PUSH_VAPID_PUBLIC_KEY=$VAPID_PUBLIC_KEY/" .env
+                    sed -i "s/^WEB_PUSH_VAPID_PRIVATE_KEY=.*/WEB_PUSH_VAPID_PRIVATE_KEY=$VAPID_PRIVATE_KEY/" .env
+                fi
+                success "VAPID 密钥已生成并配置"
+            else
+                warn "生成 VAPID 密钥失败；请在 .env 中手动配置 WEB_PUSH_VAPID_*"
+                warn "也可以使用: npx --yes web-push generate-vapid-keys"
+            fi
+        fi
+    fi
     
     # Set version if specified
     if [ "$VERSION" != "latest" ]; then

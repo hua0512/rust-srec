@@ -5,6 +5,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::credentials::CredentialEvent;
+
 /// Static metadata about a supported notification event type.
 #[derive(Debug, Clone, Copy, serde::Serialize, utoipa::ToSchema)]
 pub struct NotificationEventTypeInfo {
@@ -164,6 +166,48 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
         label: "System Shutdown",
         priority: NotificationPriority::Normal,
         aliases: &["system_shutdown", "system.shutdown", "SystemShutdown"],
+    },
+    // ========== Credential Events ==========
+    NotificationEventTypeInfo {
+        event_type: "credential_refreshed",
+        label: "Credential Refreshed",
+        priority: NotificationPriority::Normal,
+        aliases: &[
+            "credential_refreshed",
+            "credential.refreshed",
+            "CredentialRefreshed",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "credential_refresh_failed",
+        label: "Credential Refresh Failed",
+        priority: NotificationPriority::High,
+        aliases: &[
+            "credential_refresh_failed",
+            "credential.refresh_failed",
+            "credential.refresh.failed",
+            "CredentialRefreshFailed",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "credential_invalid",
+        label: "Credential Invalid",
+        priority: NotificationPriority::Critical,
+        aliases: &[
+            "credential_invalid",
+            "credential.invalid",
+            "CredentialInvalid",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "credential_expiring",
+        label: "Credential Expiring Soon",
+        priority: NotificationPriority::Normal,
+        aliases: &[
+            "credential_expiring",
+            "credential.expiring",
+            "CredentialExpiring",
+        ],
     },
 ];
 
@@ -395,6 +439,10 @@ pub enum NotificationEvent {
         reason: String,
         timestamp: DateTime<Utc>,
     },
+
+    // ========== Credential Events ==========
+    /// Credentials subsystem event (refresh, invalidation, etc.).
+    Credential { event: CredentialEvent },
 }
 
 impl NotificationEvent {
@@ -434,6 +482,9 @@ impl NotificationEvent {
             Self::PipelineQueueCritical { .. } => NotificationPriority::Critical,
             Self::SystemStartup { .. } => NotificationPriority::Normal,
             Self::SystemShutdown { .. } => NotificationPriority::Normal,
+
+            // Credential events
+            Self::Credential { event } => event.severity(),
         }
     }
 
@@ -460,6 +511,7 @@ impl NotificationEvent {
             Self::PipelineQueueCritical { .. } => "pipeline_queue_critical",
             Self::SystemStartup { .. } => "system_startup",
             Self::SystemShutdown { .. } => "system_shutdown",
+            Self::Credential { event } => event.event_name(),
         }
     }
 
@@ -541,6 +593,45 @@ impl NotificationEvent {
             Self::SystemShutdown { reason, .. } => {
                 format!("🛑 System shutting down: {}", reason)
             }
+            Self::Credential { event } => match event {
+                CredentialEvent::Refreshed {
+                    platform, scope, ..
+                } => format!(
+                    "🔐 {} credentials refreshed ({})",
+                    platform,
+                    scope.describe()
+                ),
+                CredentialEvent::RefreshFailed {
+                    platform,
+                    scope,
+                    requires_relogin,
+                    ..
+                } => {
+                    if *requires_relogin {
+                        format!(
+                            "🔐 {} refresh failed (re-login required) ({})",
+                            platform,
+                            scope.describe()
+                        )
+                    } else {
+                        format!("🔐 {} refresh failed ({})", platform, scope.describe())
+                    }
+                }
+                CredentialEvent::Invalid {
+                    platform, scope, ..
+                } => {
+                    format!("🔐 {} credentials invalid ({})", platform, scope.describe())
+                }
+                CredentialEvent::ExpiringSoon {
+                    platform, scope, ..
+                } => {
+                    format!(
+                        "🔐 {} credentials expiring soon ({})",
+                        platform,
+                        scope.describe()
+                    )
+                }
+            },
         }
     }
 
@@ -659,6 +750,7 @@ impl NotificationEvent {
             }
             Self::SystemStartup { .. } => "System initialized successfully".to_string(),
             Self::SystemShutdown { reason, .. } => reason.clone(),
+            Self::Credential { event } => event.to_message(),
         }
     }
 
@@ -685,6 +777,12 @@ impl NotificationEvent {
             | Self::PipelineQueueCritical { timestamp, .. }
             | Self::SystemStartup { timestamp, .. }
             | Self::SystemShutdown { timestamp, .. } => *timestamp,
+            Self::Credential { event } => match event {
+                CredentialEvent::Refreshed { timestamp, .. }
+                | CredentialEvent::RefreshFailed { timestamp, .. }
+                | CredentialEvent::Invalid { timestamp, .. }
+                | CredentialEvent::ExpiringSoon { timestamp, .. } => *timestamp,
+            },
         }
     }
 

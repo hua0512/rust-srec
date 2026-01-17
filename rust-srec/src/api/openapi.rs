@@ -179,6 +179,7 @@ pub struct MessageResponse {
         crate::api::routes::engines::test_engine,
         // Notification endpoints
         crate::api::routes::notifications::list_event_types,
+        crate::api::routes::notifications::list_events,
         crate::api::routes::notifications::list_instances,
         crate::api::routes::notifications::list_channels,
         crate::api::routes::notifications::get_channel,
@@ -273,8 +274,10 @@ pub struct MessageResponse {
             CreateChannelRequest,
             UpdateChannelRequest,
             UpdateSubscriptionsRequest,
+            crate::api::routes::notifications::ListEventsQuery,
             crate::database::models::notification::NotificationChannelDbModel,
             crate::database::models::notification::ChannelType,
+            crate::database::models::notification::NotificationEventLogDbModel,
             crate::notification::events::NotificationEventTypeInfo,
             crate::notification::service::NotificationChannelInstance,
             // Job preset schemas

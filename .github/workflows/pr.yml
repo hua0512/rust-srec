@@ -79,8 +79,24 @@ jobs:
         if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
 
+  check-changes:
+    name: Check Changed Files
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'rust-srec/frontend/**'
+
   frontend-lint:
     name: Frontend Lint
+    needs: check-changes
+    if: needs.check-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

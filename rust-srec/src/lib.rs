@@ -14,6 +14,7 @@ pub mod logging;
 pub mod metrics;
 pub mod monitor;
 pub mod notification;
+pub mod panic_hook;
 pub mod pipeline;
 pub mod scheduler;
 pub mod services;

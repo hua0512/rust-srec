@@ -160,6 +160,44 @@ impl PrometheusExporter {
             snapshot.memory_usage_bytes as f64,
         );
 
+        // Web Push metrics
+        self.write_counter(
+            &mut output,
+            "web_push_sent_total",
+            "Total Web Push deliveries (successful)",
+            snapshot.web_push_sent_total as f64,
+        );
+        self.write_counter(
+            &mut output,
+            "web_push_failed_total",
+            "Total Web Push delivery failures",
+            snapshot.web_push_failed_total as f64,
+        );
+        self.write_counter(
+            &mut output,
+            "web_push_throttled_total",
+            "Total Web Push throttling responses (HTTP 429)",
+            snapshot.web_push_throttled_total as f64,
+        );
+        self.write_counter(
+            &mut output,
+            "web_push_stale_deleted_total",
+            "Total stale Web Push subscriptions deleted (HTTP 404/410)",
+            snapshot.web_push_stale_deleted_total as f64,
+        );
+        self.write_counter(
+            &mut output,
+            "web_push_skipped_backoff_total",
+            "Total Web Push deliveries skipped due to persisted backoff",
+            snapshot.web_push_skipped_backoff_total as f64,
+        );
+        self.write_gauge(
+            &mut output,
+            "web_push_delivery_duration_avg_ms",
+            "Average Web Push delivery duration in milliseconds",
+            snapshot.web_push_delivery_duration_avg_ms,
+        );
+
         output
     }
 

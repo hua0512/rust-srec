@@ -3,7 +3,9 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-use crate::database::models::{NotificationChannelDbModel, NotificationDeadLetterDbModel};
+use crate::database::models::{
+    NotificationChannelDbModel, NotificationDeadLetterDbModel, NotificationEventLogDbModel,
+};
 use crate::{Error, Result};
 
 /// Notification repository trait.
@@ -36,6 +38,17 @@ pub trait NotificationRepository: Send + Sync {
     async fn get_dead_letter(&self, id: &str) -> Result<NotificationDeadLetterDbModel>;
     async fn delete_dead_letter(&self, id: &str) -> Result<()>;
     async fn cleanup_old_dead_letters(&self, retention_days: i32) -> Result<i32>;
+
+    // Event log
+    async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()>;
+    async fn list_event_logs(
+        &self,
+        event_type: Option<&str>,
+        streamer_id: Option<&str>,
+        search: Option<&str>,
+        offset: i32,
+        limit: i32,
+    ) -> Result<Vec<NotificationEventLogDbModel>>;
 }
 
 /// SQLx implementation of NotificationRepository.
@@ -255,5 +268,78 @@ impl NotificationRepository for SqlxNotificationRepository {
             .await?;
 
         Ok(result.rows_affected() as i32)
+    }
+
+    async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO notification_event_log (
+                id, event_type, priority, payload, streamer_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&entry.id)
+        .bind(&entry.event_type)
+        .bind(&entry.priority)
+        .bind(&entry.payload)
+        .bind(&entry.streamer_id)
+        .bind(&entry.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn list_event_logs(
+        &self,
+        event_type: Option<&str>,
+        streamer_id: Option<&str>,
+        search: Option<&str>,
+        offset: i32,
+        limit: i32,
+    ) -> Result<Vec<NotificationEventLogDbModel>> {
+        let limit = limit.clamp(1, 1000);
+        let offset = offset.max(0);
+
+        let mut query_str = "SELECT nel.* FROM notification_event_log nel".to_string();
+        let mut conditions = Vec::new();
+
+        if search.is_some() {
+            query_str.push_str(" LEFT JOIN streamers s ON nel.streamer_id = s.id");
+            conditions.push("(LOWER(s.name) LIKE LOWER(?) OR LOWER(nel.payload) LIKE LOWER(?))");
+        }
+
+        if event_type.is_some() {
+            conditions.push("nel.event_type = ?");
+        }
+
+        if streamer_id.is_some() {
+            conditions.push("nel.streamer_id = ?");
+        }
+
+        if !conditions.is_empty() {
+            query_str.push_str(" WHERE ");
+            query_str.push_str(&conditions.join(" AND "));
+        }
+
+        query_str.push_str(" ORDER BY nel.created_at DESC LIMIT ? OFFSET ?");
+
+        let mut query = sqlx::query_as::<_, NotificationEventLogDbModel>(&query_str);
+
+        if let Some(s) = search {
+            let search_pattern = format!("%{}%", s);
+            query = query.bind(search_pattern.clone());
+            query = query.bind(search_pattern);
+        }
+        if let Some(et) = event_type {
+            query = query.bind(et);
+        }
+        if let Some(sid) = streamer_id {
+            query = query.bind(sid);
+        }
+        query = query.bind(limit);
+        query = query.bind(offset);
+
+        let entries = query.fetch_all(&self.pool).await?;
+        Ok(entries)
     }
 }

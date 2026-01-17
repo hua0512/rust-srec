@@ -114,6 +114,13 @@ The following environment variables can be configured in your <a :href="withBase
 | `ACCESS_TOKEN_EXPIRATION_SECS` | JWT access token lifetime | `3600` (1h) |
 | `REFRESH_TOKEN_EXPIRATION_SECS` | JWT refresh token lifetime | `604800` (7d) |
 
+### Browser Notifications (Web Push / VAPID)
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `WEB_PUSH_VAPID_PUBLIC_KEY` | VAPID public key (base64url, unpadded). Leave empty/unset to disable. | - |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | VAPID private key (base64url, unpadded). Leave empty/unset to disable. | - |
+| `WEB_PUSH_VAPID_SUBJECT` | VAPID subject (e.g. `mailto:admin@localhost`) | `mailto:admin@localhost` |
+
 ### Backend Service
 | Variable | Description | Default |
 |----------|-------------|---------|

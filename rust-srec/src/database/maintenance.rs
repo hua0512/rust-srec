@@ -32,6 +32,8 @@ pub struct MaintenanceConfig {
     pub dead_letter_retention_days: i32,
     /// Monitor outbox delivered-row retention period in days (default: 1).
     pub monitor_outbox_delivered_retention_days: i32,
+    /// Notification event log retention period in days (default: 30).
+    pub notification_event_log_retention_days: i32,
     /// Interval between `PRAGMA optimize` runs (default: 7 days).
     pub optimize_interval: Duration,
     /// Interval between WAL checkpoints (default: 1 hour).
@@ -49,6 +51,7 @@ impl Default for MaintenanceConfig {
             job_retention_days: 30,
             dead_letter_retention_days: 7,
             monitor_outbox_delivered_retention_days: 1,
+            notification_event_log_retention_days: 30,
             optimize_interval: Duration::from_secs(7 * 24 * 60 * 60), // weekly
             wal_checkpoint_interval: Duration::from_secs(60 * 60),    // hourly
         }
@@ -160,6 +163,15 @@ impl MaintenanceScheduler {
             );
         }
 
+        // Cleanup old notification event logs.
+        let event_logs_deleted = self.cleanup_notification_event_logs().await?;
+        if event_logs_deleted > 0 {
+            tracing::info!(
+                "Cleaned up {} notification event log entries",
+                event_logs_deleted
+            );
+        }
+
         tracing::info!("Database maintenance completed");
         Ok(())
     }
@@ -174,6 +186,24 @@ impl MaintenanceScheduler {
         .to_rfc3339();
 
         MonitorOutboxOps::prune_delivered_before(&self.pool, &cutoff).await
+    }
+
+    async fn cleanup_notification_event_logs(&self) -> Result<i32, crate::Error> {
+        if self.config.notification_event_log_retention_days <= 0 {
+            return Ok(0);
+        }
+
+        let cutoff = (Utc::now()
+            - chrono::Duration::days(self.config.notification_event_log_retention_days as i64))
+        .to_rfc3339();
+
+        let result = sqlx::query("DELETE FROM notification_event_log WHERE created_at < ?")
+            .bind(&cutoff)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| crate::Error::Database(e.to_string()))?;
+
+        Ok(result.rows_affected() as i32)
     }
 
     async fn should_optimize(&self) -> Result<bool, crate::Error> {
@@ -391,5 +421,6 @@ mod tests {
         assert_eq!(config.job_retention_days, 30);
         assert_eq!(config.dead_letter_retention_days, 7);
         assert_eq!(config.vacuum_threshold_bytes, 100 * 1024 * 1024);
+        assert_eq!(config.notification_event_log_retention_days, 30);
     }
 }

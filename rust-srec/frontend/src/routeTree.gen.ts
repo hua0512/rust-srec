@@ -28,6 +28,7 @@ import { Route as AuthedDashboardSystemHealthRouteImport } from './routes/_authe
 import { Route as AuthedDashboardStreamersNewRouteImport } from './routes/_authed/_dashboard/streamers/new'
 import { Route as AuthedDashboardSessionsSessionIdRouteImport } from './routes/_authed/_dashboard/sessions/$sessionId'
 import { Route as AuthedDashboardPipelineOutputsRouteImport } from './routes/_authed/_dashboard/pipeline/outputs'
+import { Route as AuthedDashboardNotificationsEventsRouteImport } from './routes/_authed/_dashboard/notifications/events'
 import { Route as AuthedDashboardConfigThemeRouteImport } from './routes/_authed/_dashboard/config/theme'
 import { Route as AuthedDashboardConfigLoggingRouteImport } from './routes/_authed/_dashboard/config/logging'
 import { Route as AuthedDashboardConfigLanguageRouteImport } from './routes/_authed/_dashboard/config/language'
@@ -154,6 +155,12 @@ const AuthedDashboardPipelineOutputsRoute =
   AuthedDashboardPipelineOutputsRouteImport.update({
     id: '/pipeline/outputs',
     path: '/pipeline/outputs',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any)
+const AuthedDashboardNotificationsEventsRoute =
+  AuthedDashboardNotificationsEventsRouteImport.update({
+    id: '/notifications/events',
+    path: '/notifications/events',
     getParentRoute: () => AuthedDashboardRoute,
   } as any)
 const AuthedDashboardConfigThemeRoute =
@@ -314,6 +321,7 @@ export interface FileRoutesByFullPath {
   '/config/language': typeof AuthedDashboardConfigLanguageRoute
   '/config/logging': typeof AuthedDashboardConfigLoggingRoute
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
+  '/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
@@ -356,6 +364,7 @@ export interface FileRoutesByTo {
   '/config/language': typeof AuthedDashboardConfigLanguageRoute
   '/config/logging': typeof AuthedDashboardConfigLoggingRoute
   '/config/theme': typeof AuthedDashboardConfigThemeRoute
+  '/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
   '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
@@ -402,6 +411,7 @@ export interface FileRoutesById {
   '/_authed/_dashboard/config/language': typeof AuthedDashboardConfigLanguageRoute
   '/_authed/_dashboard/config/logging': typeof AuthedDashboardConfigLoggingRoute
   '/_authed/_dashboard/config/theme': typeof AuthedDashboardConfigThemeRoute
+  '/_authed/_dashboard/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
   '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/_authed/_dashboard/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/_authed/_dashboard/streamers/new': typeof AuthedDashboardStreamersNewRoute
@@ -446,6 +456,7 @@ export interface FileRouteTypes {
     | '/config/language'
     | '/config/logging'
     | '/config/theme'
+    | '/notifications/events'
     | '/pipeline/outputs'
     | '/sessions/$sessionId'
     | '/streamers/new'
@@ -488,6 +499,7 @@ export interface FileRouteTypes {
     | '/config/language'
     | '/config/logging'
     | '/config/theme'
+    | '/notifications/events'
     | '/pipeline/outputs'
     | '/sessions/$sessionId'
     | '/streamers/new'
@@ -533,6 +545,7 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/config/language'
     | '/_authed/_dashboard/config/logging'
     | '/_authed/_dashboard/config/theme'
+    | '/_authed/_dashboard/notifications/events'
     | '/_authed/_dashboard/pipeline/outputs'
     | '/_authed/_dashboard/sessions/$sessionId'
     | '/_authed/_dashboard/streamers/new'
@@ -704,6 +717,13 @@ declare module '@tanstack/react-router' {
       path: '/pipeline/outputs'
       fullPath: '/pipeline/outputs'
       preLoaderRoute: typeof AuthedDashboardPipelineOutputsRouteImport
+      parentRoute: typeof AuthedDashboardRoute
+    }
+    '/_authed/_dashboard/notifications/events': {
+      id: '/_authed/_dashboard/notifications/events'
+      path: '/notifications/events'
+      fullPath: '/notifications/events'
+      preLoaderRoute: typeof AuthedDashboardNotificationsEventsRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/config/theme': {
@@ -926,6 +946,7 @@ const AuthedDashboardConfigRouteRouteWithChildren =
 interface AuthedDashboardRouteChildren {
   AuthedDashboardConfigRouteRoute: typeof AuthedDashboardConfigRouteRouteWithChildren
   AuthedDashboardDashboardRoute: typeof AuthedDashboardDashboardRoute
+  AuthedDashboardNotificationsEventsRoute: typeof AuthedDashboardNotificationsEventsRoute
   AuthedDashboardPipelineOutputsRoute: typeof AuthedDashboardPipelineOutputsRoute
   AuthedDashboardSessionsSessionIdRoute: typeof AuthedDashboardSessionsSessionIdRoute
   AuthedDashboardStreamersNewRoute: typeof AuthedDashboardStreamersNewRoute
@@ -951,6 +972,8 @@ interface AuthedDashboardRouteChildren {
 const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardConfigRouteRoute: AuthedDashboardConfigRouteRouteWithChildren,
   AuthedDashboardDashboardRoute: AuthedDashboardDashboardRoute,
+  AuthedDashboardNotificationsEventsRoute:
+    AuthedDashboardNotificationsEventsRoute,
   AuthedDashboardPipelineOutputsRoute: AuthedDashboardPipelineOutputsRoute,
   AuthedDashboardSessionsSessionIdRoute: AuthedDashboardSessionsSessionIdRoute,
   AuthedDashboardStreamersNewRoute: AuthedDashboardStreamersNewRoute,

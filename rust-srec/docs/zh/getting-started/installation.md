@@ -140,6 +140,8 @@ cp .env.example .env
 | `API_BIND_ADDRESS` | API 绑定地址 | `0.0.0.0` |
 | `OUTPUT_DIR` | 录播文件目录 | `./output` |
 | `RUST_LOG` | 日志级别 | `info` |
+| `WEB_PUSH_VAPID_PUBLIC_KEY` | 用于浏览器推送通知的 VAPID 公钥 | - |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | 用于浏览器推送通知的 VAPID 私钥 | - |
 
 查看 [`.env.example`](https://github.com/hua0512/rust-srec/blob/main/rust-srec/.env.example) 获取所有可用选项。
 

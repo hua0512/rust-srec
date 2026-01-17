@@ -10,6 +10,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 /// Metrics collector for the streaming recorder system.
+#[derive(Debug)]
 pub struct MetricsCollector {
     // Download metrics
     active_downloads: AtomicU64,
@@ -34,6 +35,15 @@ pub struct MetricsCollector {
     disk_space_bytes: DashMap<String, AtomicU64>,
     memory_usage_bytes: AtomicU64,
 
+    // Web Push metrics
+    web_push_sent_total: AtomicU64,
+    web_push_failed_total: AtomicU64,
+    web_push_throttled_total: AtomicU64,
+    web_push_stale_deleted_total: AtomicU64,
+    web_push_skipped_backoff_total: AtomicU64,
+    web_push_delivery_duration_total_ms: AtomicU64,
+    web_push_delivery_count: AtomicU64,
+
     // Custom labels
     labels: RwLock<HashMap<String, String>>,
 }
@@ -57,6 +67,13 @@ impl MetricsCollector {
             config_cache_misses: AtomicU64::new(0),
             disk_space_bytes: DashMap::new(),
             memory_usage_bytes: AtomicU64::new(0),
+            web_push_sent_total: AtomicU64::new(0),
+            web_push_failed_total: AtomicU64::new(0),
+            web_push_throttled_total: AtomicU64::new(0),
+            web_push_stale_deleted_total: AtomicU64::new(0),
+            web_push_skipped_backoff_total: AtomicU64::new(0),
+            web_push_delivery_duration_total_ms: AtomicU64::new(0),
+            web_push_delivery_count: AtomicU64::new(0),
             labels: RwLock::new(HashMap::new()),
         }
     }
@@ -197,6 +214,34 @@ impl MetricsCollector {
         self.memory_usage_bytes.store(bytes, Ordering::Relaxed);
     }
 
+    // ========== Web Push Metrics ==========
+
+    pub fn record_web_push_sent(&self, duration_ms: u64) {
+        self.web_push_sent_total.fetch_add(1, Ordering::Relaxed);
+        self.web_push_delivery_count.fetch_add(1, Ordering::Relaxed);
+        self.web_push_delivery_duration_total_ms
+            .fetch_add(duration_ms, Ordering::Relaxed);
+    }
+
+    pub fn record_web_push_failed(&self) {
+        self.web_push_failed_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_web_push_throttled(&self) {
+        self.web_push_throttled_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_web_push_stale_deleted(&self) {
+        self.web_push_stale_deleted_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_web_push_skipped_backoff(&self) {
+        self.web_push_skipped_backoff_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
     // ========== Snapshot ==========
 
     /// Get a snapshot of all metrics.
@@ -240,7 +285,26 @@ impl MetricsCollector {
                 .map(|e| (e.key().clone(), e.value().load(Ordering::Relaxed)))
                 .collect(),
             memory_usage_bytes: self.memory_usage_bytes.load(Ordering::Relaxed),
+            web_push_sent_total: self.web_push_sent_total.load(Ordering::Relaxed),
+            web_push_failed_total: self.web_push_failed_total.load(Ordering::Relaxed),
+            web_push_throttled_total: self.web_push_throttled_total.load(Ordering::Relaxed),
+            web_push_stale_deleted_total: self.web_push_stale_deleted_total.load(Ordering::Relaxed),
+            web_push_skipped_backoff_total: self
+                .web_push_skipped_backoff_total
+                .load(Ordering::Relaxed),
+            web_push_delivery_duration_avg_ms: self.avg_web_push_duration_ms(),
         }
+    }
+
+    fn avg_web_push_duration_ms(&self) -> f64 {
+        let count = self.web_push_delivery_count.load(Ordering::Relaxed);
+        if count == 0 {
+            return 0.0;
+        }
+        let total = self
+            .web_push_delivery_duration_total_ms
+            .load(Ordering::Relaxed);
+        total as f64 / count as f64
     }
 
     fn avg_download_duration_ms(&self) -> f64 {
@@ -304,6 +368,14 @@ pub struct MetricsSnapshot {
     pub config_cache_misses: u64,
     pub disk_space_bytes: HashMap<String, u64>,
     pub memory_usage_bytes: u64,
+
+    // Web Push metrics
+    pub web_push_sent_total: u64,
+    pub web_push_failed_total: u64,
+    pub web_push_throttled_total: u64,
+    pub web_push_stale_deleted_total: u64,
+    pub web_push_skipped_backoff_total: u64,
+    pub web_push_delivery_duration_avg_ms: f64,
 }
 
 #[cfg(test)]

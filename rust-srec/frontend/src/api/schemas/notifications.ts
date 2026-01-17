@@ -87,6 +87,26 @@ export type NotificationEventTypeInfo = z.infer<
   typeof NotificationEventTypeInfoSchema
 >;
 
+export const NotificationEventLogSchema = z.object({
+  id: z.uuid(),
+  event_type: z.string(),
+  priority: z.string(),
+  payload: z.string(),
+  streamer_id: z.string().optional().nullable(),
+  created_at: z.string(),
+});
+
+export type NotificationEventLog = z.infer<typeof NotificationEventLogSchema>;
+
+export const WebPushSubscriptionSchema = z.object({
+  id: z.uuid(),
+  endpoint: z.string().url(),
+  min_priority: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type WebPushSubscription = z.infer<typeof WebPushSubscriptionSchema>;
+
 export const UpdateSubscriptionsRequestSchema = z.object({
   events: z.array(z.string()),
 });
