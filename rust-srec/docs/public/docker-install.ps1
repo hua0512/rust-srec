@@ -182,16 +182,31 @@ function Install-RustSrec {
         $response = Read-Host "Would you like to start Rust-Srec now? [y/N]"
         if ($response -match "^[Yy]$") {
             Write-Info "Starting Rust-Srec..."
-            try {
-                docker compose up -d
-            } catch {
-                docker-compose up -d
+            $startSuccess = $false
+            
+            # Try docker compose first (Docker Desktop v2+)
+            docker compose up -d 2>&1 | Out-Host
+            if ($LASTEXITCODE -eq 0) {
+                $startSuccess = $true
+            } else {
+                # Fallback to docker-compose (standalone)
+                docker-compose up -d 2>&1 | Out-Host
+                if ($LASTEXITCODE -eq 0) {
+                    $startSuccess = $true
+                }
             }
+            
             Write-Host ""
-            Write-Success "Rust-Srec is now running!"
-            Write-Host ""
-            Write-Host "Web Interface: http://localhost:15275" -ForegroundColor Cyan
-            Write-Host "API Docs:      http://localhost:12555/api/docs" -ForegroundColor Cyan
+            if ($startSuccess) {
+                Write-Success "Rust-Srec is now running!"
+                Write-Host ""
+                Write-Host "Web Interface: http://localhost:15275" -ForegroundColor Cyan
+                Write-Host "API Docs:      http://localhost:12555/api/docs" -ForegroundColor Cyan
+            } else {
+                Write-Err "Failed to start Rust-Srec. Please check that Docker is running and try again."
+                Write-Host ""
+                Write-Host "To start manually, run: docker compose up -d" -ForegroundColor Yellow
+            }
         } else {
             Write-Info "You can start Rust-Srec later with: docker compose up -d"
         }
