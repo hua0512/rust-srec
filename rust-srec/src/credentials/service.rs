@@ -276,6 +276,32 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
                 Ok(Some(new_creds.cookies))
             }
             Err(e) => {
+                if e.requires_relogin() {
+                    let reason = match &e {
+                        CredentialError::InvalidCredentials(r) => r.clone(),
+                        _ => e.to_string(),
+                    };
+
+                    // Cache an invalid status so we don't repeatedly attempt refresh within the day
+                    // when the platform indicates a manual re-login is required.
+                    self.daily_tracker.record_check(
+                        &source.scope,
+                        CredentialStatus::Invalid {
+                            reason: reason.clone(),
+                            error_code: None,
+                        },
+                    );
+
+                    // Best-effort: persist invalid status for hydration on restart.
+                    if let Err(store_err) = self
+                        .store
+                        .update_check_result(&source.scope, "invalid")
+                        .await
+                    {
+                        warn!(error = %store_err, "Failed to persist invalid check result (non-fatal)");
+                    }
+                }
+
                 let failure_count = self
                     .failure_tracker
                     .record_failure(&source.scope, &e.to_string());

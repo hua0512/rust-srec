@@ -39,6 +39,12 @@ pub enum CookieRefreshError {
     Parse(String),
     #[error("Crypto error: {0}")]
     Crypto(String),
+    #[error("API error {code} at {endpoint}: {message}")]
+    Api {
+        endpoint: &'static str,
+        code: i64,
+        message: String,
+    },
     #[error("Missing cookie: {0}")]
     MissingCookie(&'static str),
     #[error("Missing refresh token")]
@@ -289,10 +295,11 @@ pub async fn refresh_cookies(
             .get("message")
             .and_then(|m| m.as_str())
             .unwrap_or("Unknown error");
-        return Err(CookieRefreshError::RefreshFailed(format!(
-            "Refresh API error {}: {}",
-            code, message
-        )));
+        return Err(CookieRefreshError::Api {
+            endpoint: "cookie/refresh",
+            code,
+            message: message.to_string(),
+        });
     }
 
     let new_bili_jct = new_cookies_map.get("bili_jct").ok_or_else(|| {

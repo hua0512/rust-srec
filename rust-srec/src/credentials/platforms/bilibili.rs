@@ -22,13 +22,34 @@ pub use platforms_parser::extractor::platforms::bilibili::{
 
 // Import cookie refresh utilities from platforms crate
 use platforms_parser::extractor::platforms::bilibili::{
-    CookieStatus as PlatformsCookieStatus, check_cookie_status as platforms_check_status,
-    refresh_cookies as platforms_refresh, validate_cookies as platforms_validate,
+    CookieRefreshError as PlatformsCookieRefreshError, CookieStatus as PlatformsCookieStatus,
+    check_cookie_status as platforms_check_status, refresh_cookies as platforms_refresh,
+    validate_cookies as platforms_validate,
 };
 
 /// Bilibili credential manager.
 pub struct BilibiliCredentialManager {
     client: Client,
+}
+
+fn map_platform_refresh_error(err: PlatformsCookieRefreshError) -> CredentialError {
+    match err {
+        PlatformsCookieRefreshError::Network(e) => CredentialError::Network(e),
+        PlatformsCookieRefreshError::Parse(e) => CredentialError::ParseError(e),
+        PlatformsCookieRefreshError::Crypto(e) => CredentialError::CryptoError(e),
+        PlatformsCookieRefreshError::MissingCookie(name) => CredentialError::MissingCookie(name),
+        PlatformsCookieRefreshError::MissingRefreshToken => CredentialError::MissingRefreshToken,
+        PlatformsCookieRefreshError::Api { code, message, .. } => match code {
+            -101 => CredentialError::InvalidCredentials(message),
+            -111 => CredentialError::InvalidCredentials(message),
+            86095 => CredentialError::InvalidRefreshToken,
+            _ => {
+                CredentialError::RefreshFailed(format!("Bilibili API error {}: {}", code, message))
+            }
+        },
+        PlatformsCookieRefreshError::RefreshFailed(e) => CredentialError::RefreshFailed(e),
+        PlatformsCookieRefreshError::Internal(e) => CredentialError::Internal(e),
+    }
 }
 
 impl BilibiliCredentialManager {
@@ -67,7 +88,7 @@ impl CredentialManager for BilibiliCredentialManager {
 
         let result = platforms_check_status(&self.client, cookies)
             .await
-            .map_err(|e| CredentialError::RefreshFailed(e.to_string()))?;
+            .map_err(map_platform_refresh_error)?;
 
         match result {
             PlatformsCookieStatus::Valid => {
@@ -101,7 +122,7 @@ impl CredentialManager for BilibiliCredentialManager {
 
         let result = platforms_refresh(&self.client, &state.cookies, refresh_token)
             .await
-            .map_err(|e| CredentialError::RefreshFailed(e.to_string()))?;
+            .map_err(map_platform_refresh_error)?;
 
         debug!("Bilibili refresh completed successfully");
         Ok(RefreshedCredentials {
@@ -115,7 +136,7 @@ impl CredentialManager for BilibiliCredentialManager {
     async fn validate(&self, cookies: &str) -> Result<bool, CredentialError> {
         platforms_validate(&self.client, cookies)
             .await
-            .map_err(|e| CredentialError::RefreshFailed(e.to_string()))
+            .map_err(map_platform_refresh_error)
     }
 
     fn required_refresh_fields(&self) -> &'static [&'static str] {
