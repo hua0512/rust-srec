@@ -1,12 +1,8 @@
 import * as React from 'react';
 
-const MOBILE_BREAKPOINT = 768;
+const MOBILE_BREAKPOINT = 1024;
 
-/**
- * Hook to detect if the device is mobile.
- * Returns undefined during SSR, false/true after client hydration.
- */
-export function useIsMobile(): boolean | undefined {
+export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(
     undefined,
   );
@@ -21,5 +17,5 @@ export function useIsMobile(): boolean | undefined {
     return () => mql.removeEventListener('change', onChange);
   }, []);
 
-  return isMobile;
+  return !!isMobile;
 }

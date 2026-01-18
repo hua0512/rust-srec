@@ -200,13 +200,13 @@ msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:61
-msgid "Accent Color"
-msgstr "强调色"
-
 #: src/components/config/engines/forms/mesio-hls-form.tsx:258
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "接受无效证书（默认：关闭）"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:494
+msgid "Action"
+msgstr "操作"
 
 #: src/components/streamers/card/stream-actions-menu.tsx:42
 msgid "Actions"
@@ -214,7 +214,7 @@ msgstr "操作"
 
 #: src/components/notifications/forms/webhook-form.tsx:116
 #: src/components/streamers/edit/streamer-meta-form.tsx:226
-#: src/routes/_authed/_dashboard/config/language.tsx:102
+#: src/routes/_authed/_dashboard/config/language.tsx:106
 #: src/routes/_authed/_dashboard/notifications/index.tsx:410
 msgid "Active"
 msgstr "启用"
@@ -230,10 +230,6 @@ msgstr "正在录制"
 #: src/routes/_authed/_dashboard/dashboard.tsx:328
 msgid "Active Recordings"
 msgstr "正在录制"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:160
-msgid "Active Streams"
-msgstr "活跃流"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:405
 msgid "Adaptive Refresh (Default: On)"
@@ -369,7 +365,11 @@ msgstr "根据目标时长调整速率"
 msgid "Adjust sampling rate based on danmu traffic volume."
 msgstr "根据弹幕流量动态调整采样率。"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:73
+#: src/routes/_authed/_dashboard/config/theme.tsx:284
+msgid "Adjust sidebar style and behavior."
+msgstr "调整侧边栏样式和行为。"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:256
 msgid "Adjust the roundness of UI elements."
 msgstr "调整 UI 元素的圆角程度。"
 
@@ -470,10 +470,6 @@ msgstr "外观与样式"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:836
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:351
-msgid "Apply a blur effect to the background of cards and sidebars."
-msgstr "为卡片和侧边栏的背景应用模糊效果。"
 
 #: src/components/streamers/config/streamer-general-settings.tsx:204
 msgid "Apply template settings."
@@ -702,6 +698,7 @@ msgstr "回跳阈值"
 msgid "Backoff Multiplier"
 msgstr "退避倍率"
 
+#: src/components/layout/site-header.tsx:41
 #: src/components/sidebar/navbar.tsx:35
 msgid "Backup"
 msgstr "备份"
@@ -788,13 +785,17 @@ msgstr "已阻止"
 msgid "Blocked by browser"
 msgstr "被浏览器阻止"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:72
+#: src/routes/_authed/_dashboard/config/theme.tsx:255
 msgid "Border Radius"
 msgstr "圆角半径"
 
 #: src/components/notifications/forms/discord-form.tsx:62
 msgid "Bot Name"
 msgstr "机器人名称"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:237
+msgid "Brand Colors"
+msgstr "品牌颜色"
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:160
 msgid "Browse generated media artifacts from pipeline jobs"
@@ -905,6 +906,7 @@ msgstr "分类"
 msgid "Category"
 msgstr "分类"
 
+#: src/components/layout/site-header.tsx:34
 #: src/components/sidebar/navbar.tsx:28
 #: src/routes/_authed/change-password.tsx:123
 #: src/routes/_authed/change-password.tsx:270
@@ -996,6 +998,7 @@ msgid "Cleanup"
 msgstr "清理"
 
 #: src/components/logging/log-viewer.tsx:390
+#: src/routes/_authed/_dashboard/config/theme.tsx:229
 msgid "Clear"
 msgstr "清空"
 
@@ -1028,6 +1031,10 @@ msgstr "正在克隆..."
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:686
 msgid "Close"
 msgstr "关闭"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:327
+msgid "Collapsible"
+msgstr "折叠方式"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:128
 msgid "Comma-separated list of channels to exclude from proxy"
@@ -1109,6 +1116,7 @@ msgstr "压缩级别"
 msgid "Concurrency & Performance"
 msgstr "并发与性能"
 
+#: src/components/layout/site-header.tsx:32
 #: src/components/sidebar/navbar.tsx:26
 msgid "Config"
 msgstr "配置"
@@ -1512,6 +1520,10 @@ msgstr "自定义 Header"
 msgid "Custom Headers"
 msgstr "自定义请求头"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:218
+msgid "Custom imported theme is active."
+msgstr "自定义导入主题已激活。"
+
 #: src/components/config/engines/forms/streamlink-form.tsx:106
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Twitch 播放列表的自定义代理 URL"
@@ -1527,6 +1539,10 @@ msgstr "自定义 User-Agent 字符串（可选）"
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:81
 msgid "Customize specific engine settings for this template."
 msgstr "为此模板自定义特定的引擎设置。"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:94
+msgid "Customize the application theme and sidebar layout."
+msgstr "自定义应用主题和侧边栏布局。"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:405
 msgid "DAG Configuration"
@@ -1564,10 +1580,11 @@ msgstr "弹幕"
 msgid "Danmu Service"
 msgstr "弹幕服务"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:210
+#: src/routes/_authed/_dashboard/config/theme.tsx:118
 msgid "Dark"
 msgstr "深色"
 
+#: src/components/layout/site-header.tsx:28
 #: src/components/sidebar/navbar.tsx:22
 #: src/lib/menu-list.ts:46
 msgid "Dashboard"
@@ -1601,6 +1618,7 @@ msgstr "默认"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
+#: src/routes/_authed/_dashboard/config/theme.tsx:311
 msgid "Default"
 msgstr "默认"
 
@@ -1989,6 +2007,7 @@ msgstr "例如：标准处理"
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:116
 #: src/components/filters/FilterCard.tsx:305
+#: src/components/layout/site-header.tsx:54
 #: src/components/notifications/channel-card.tsx:154
 #: src/components/pipeline/presets/preset-card.tsx:176
 #: src/components/pipeline/workflows/workflow-card.tsx:170
@@ -2058,10 +2077,6 @@ msgstr "启用代理"
 #: src/components/config/global/file-config-card.tsx:36
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "启用弹幕/聊天消息与视频一起录制。"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:52
-msgid "Enable translucent background blur effects."
-msgstr "启用半透明背景模糊效果。"
 
 #: src/components/notifications/forms/discord-form.tsx:130
 #: src/components/notifications/forms/email-form.tsx:219
@@ -2140,6 +2155,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
 #: src/components/config/templates/template-editor.tsx:257
+#: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.tsx:68
 msgid "Engines"
@@ -2246,14 +2262,11 @@ msgstr "事件钩子"
 msgid "Event Type"
 msgstr "事件类型"
 
+#: src/components/layout/site-header.tsx:38
 #: src/components/sidebar/navbar.tsx:32
 #: src/routes/_authed/_dashboard/notifications/index.tsx:317
 msgid "Events"
 msgstr "事件"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:182
-msgid "Example Input"
-msgstr "示例输入"
 
 #: src/components/filters/FilterCard.tsx:121
 #: src/components/filters/FilterCard.tsx:235
@@ -2292,6 +2305,7 @@ msgstr "在生命周期事件上执行 Shell 命令。命令在系统 Shell 中�
 msgid "Execution Settings"
 msgstr "执行设置"
 
+#: src/components/layout/site-header.tsx:47
 #: src/components/sidebar/navbar.tsx:41
 msgid "Executions"
 msgstr "执行记录"
@@ -2780,6 +2794,10 @@ msgstr "过滤与行为"
 msgid "Filters"
 msgstr "过滤器"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:238
+msgid "Fine tune brand and surface colors."
+msgstr "微调品牌和表面颜色。"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:79
 msgid "First input file path"
 msgstr "第一个输入文件路径"
@@ -2803,6 +2821,10 @@ msgstr "修复 HLS 不连续性"
 #: src/components/config/shared/danmu-config-form.tsx:135
 msgid "Fixed Interval"
 msgstr "固定间隔"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:313
+msgid "Floating"
+msgstr "悬浮"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:296
 msgid "Flow & Dependencies"
@@ -2954,15 +2976,8 @@ msgstr "正在生成二维码..."
 msgid "Get Started"
 msgstr "开始使用"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:50
-msgid "Glass Mode"
-msgstr "玻璃模式"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:348
-msgid "Glassmorphism"
-msgstr "玻璃拟态"
-
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
+#: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.tsx:50
 msgid "Global"
@@ -3046,6 +3061,7 @@ msgstr "Header 键"
 msgid "Header Value"
 msgstr "Header 值"
 
+#: src/components/layout/site-header.tsx:52
 #: src/components/sidebar/navbar.tsx:46
 msgid "Health"
 msgstr "健康"
@@ -3107,6 +3123,7 @@ msgid "HLS Tuning"
 msgstr "HLS 调优"
 
 #: src/components/default-catch-boundary.tsx:47
+#: src/components/layout/site-header.tsx:80
 #: src/components/sidebar/navbar.tsx:61
 msgid "Home"
 msgstr "主页"
@@ -3175,6 +3192,10 @@ msgstr "i"
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:332
+msgid "Icon"
+msgstr "图标"
+
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:189
 msgid "ID"
 msgstr "ID"
@@ -3222,6 +3243,10 @@ msgstr "当“上传所有文件”启用时忽略。"
 #: src/routes/_authed/_dashboard/player/index.tsx:333
 msgid "Immersive Mode"
 msgstr "沉浸模式"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:178
+msgid "Import"
+msgstr "导入"
 
 #: src/components/config/global/backup-restore-card.tsx:259
 #: src/components/config/global/backup-restore-card.tsx:310
@@ -3289,6 +3314,10 @@ msgstr "内联"
 msgid "Inline: {stepName}"
 msgstr "内联：{stepName}"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:508
+msgid "Input"
+msgstr "输入"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:120
 msgid "Input Arguments"
 msgstr "输入参数"
@@ -3304,6 +3333,10 @@ msgstr "输入路径"
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:291
 msgid "Input Paths (comma separated)"
 msgstr "输入路径（逗号分隔）"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:315
+msgid "Inset"
+msgstr "嵌入"
 
 #: src/components/streamers/card/use-streamer-status.tsx:32
 #: src/components/streamers/card/use-streamer-status.tsx:180
@@ -3385,6 +3418,7 @@ msgstr "任务预设"
 msgid "Job retry initiated"
 msgstr "已开始重试处理任务"
 
+#: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:250
@@ -3462,11 +3496,15 @@ msgstr "启动处理流程"
 msgid "Leave empty for stream copy"
 msgstr "留空以进行流复制"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:376
+msgid "Left"
+msgstr "左侧"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:70
 msgid "libx264"
 msgstr "libx264"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:209
+#: src/routes/_authed/_dashboard/config/theme.tsx:117
 msgid "Light"
 msgstr "浅色"
 
@@ -3512,7 +3550,7 @@ msgstr "实时轮询"
 msgid "Live polling notifications enabled"
 msgstr "实时轮询通知已启用"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:91
+#: src/routes/_authed/_dashboard/config/theme.tsx:415
 msgid "Live Preview"
 msgstr "实时预览"
 
@@ -3611,6 +3649,7 @@ msgstr "登录 Telegram"
 msgid "Login Type"
 msgstr "登录类型"
 
+#: src/components/layout/site-header.tsx:33
 #: src/components/sidebar/navbar.tsx:27
 msgid "Logs"
 msgstr "日志"
@@ -3988,6 +4027,7 @@ msgstr "网络与内容"
 msgid "Network & System"
 msgstr "网络与系统"
 
+#: src/components/layout/site-header.tsx:53
 #: src/components/sidebar/navbar.tsx:47
 msgid "New"
 msgstr "新建"
@@ -4246,6 +4286,7 @@ msgid "No workflows yet"
 msgstr "暂无工作流"
 
 #: src/components/notifications/forms/webhook-form.tsx:252
+#: src/routes/_authed/_dashboard/config/theme.tsx:333
 #: src/routes/_authed/_dashboard/sessions/index.tsx:515
 msgid "None"
 msgstr "无"
@@ -4308,6 +4349,7 @@ msgstr "通知保留"
 msgid "Notification Service"
 msgstr "通知服务"
 
+#: src/components/layout/site-header.tsx:37
 #: src/components/sidebar/navbar.tsx:31
 #: src/lib/menu-list.ts:124
 #: src/routes/_authed/_dashboard/notifications/index.tsx:303
@@ -4347,6 +4389,10 @@ msgstr "在数据库中保留通知事件日志的天数。这会影响“通知
 msgid "OAuth Token"
 msgstr "OAuth 令牌"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:331
+msgid "Off Canvas"
+msgstr "侧滑"
+
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:237
 #: src/components/streamers/card/use-streamer-status.tsx:246
@@ -4380,6 +4426,10 @@ msgstr "卸载解密（默认：开）"
 #: src/components/config/engines/forms/mesio-form.tsx:223
 msgid "Offset Consistency Check"
 msgstr "偏移一致性检查"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:484
+msgid "OK"
+msgstr "正常"
 
 #: src/components/config/shared/event-hooks-form.tsx:152
 msgid "On Download Complete"
@@ -4517,6 +4567,7 @@ msgstr "输出文件名模式（可选）"
 msgid "Output Settings"
 msgstr "输出设置"
 
+#: src/components/layout/site-header.tsx:49
 #: src/components/sessions/overview-tab.tsx:119
 #: src/components/sidebar/navbar.tsx:43
 #: src/lib/menu-list.ts:90
@@ -4697,10 +4748,6 @@ msgstr "待处理"
 msgid "Pending Jobs"
 msgstr "待处理任务"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:173
-msgid "Pending Tasks"
-msgstr "待处理任务"
-
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:531
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:309
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:401
@@ -4742,7 +4789,12 @@ msgstr "需要权限"
 msgid "Phone & Code (2FA optional)"
 msgstr "手机号和验证码（可选两步验证）"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:161
+msgid "Pick a preset theme or import a custom one."
+msgstr "选择预设主题或导入自定义主题。"
+
 #: src/components/config/shared-config-editor.tsx:217
+#: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:440
@@ -4869,6 +4921,7 @@ msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:390
 #: src/components/config/templates/template-editor.tsx:267
+#: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.tsx:56
 msgid "Platforms"
@@ -4878,6 +4931,7 @@ msgstr "平台"
 msgid "Play"
 msgstr "播放"
 
+#: src/components/layout/site-header.tsx:39
 #: src/components/sidebar/navbar.tsx:33
 #: src/lib/menu-list.ts:97
 msgid "Player"
@@ -4930,6 +4984,10 @@ msgstr "连接池空闲超时（毫秒）"
 #: src/components/notifications/forms/email-form.tsx:60
 msgid "Port"
 msgstr "端口"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:372
+msgid "Position"
+msgstr "位置"
 
 #: src/components/sidebar/footer.tsx:8
 msgid "Powered by <0>Rust-srec</0>. WebUI version: 0.1.0"
@@ -5015,6 +5073,7 @@ msgstr "预设更新成功"
 msgid "presets"
 msgstr "预设"
 
+#: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:244
@@ -5045,13 +5104,13 @@ msgstr "预览不可用"
 msgid "Previous Title"
 msgstr "上一个标题"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:191
+#: src/routes/_authed/_dashboard/config/theme.tsx:488
+msgid "Primary"
+msgstr "主要"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:515
 msgid "Primary Action"
 msgstr "主要操作"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:63
-msgid "Primary color for buttons and interactions."
-msgstr "按钮和交互的主色。"
 
 #: src/components/streamers/config/stream-selection-input.tsx:118
 msgid "Prioritize specific CDN providers. Press Enter to add."
@@ -5191,6 +5250,10 @@ msgstr "快速分享"
 #: src/routes/_authed/_dashboard/system/health.tsx:198
 msgid "RAM utilization"
 msgstr "内存使用率"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:194
+msgid "Random"
+msgstr "随机"
 
 #: src/components/streamers/edit/active-download-card.tsx:85
 msgid "Ratio"
@@ -5431,6 +5494,7 @@ msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:357
+#: src/routes/_authed/_dashboard/config/theme.tsx:105
 msgid "Reset"
 msgstr "重置"
 
@@ -5517,9 +5581,9 @@ msgstr "处理管道步骤可复用的处理器配置"
 msgid "Review recorded streams and manage archives"
 msgstr "查看录制内容并管理归档"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:305
-msgid "Rounded"
-msgstr "圆角"
+#: src/routes/_authed/_dashboard/config/theme.tsx:377
+msgid "Right"
+msgstr "右侧"
 
 #: src/components/config/shared/proxy-settings-card.tsx:122
 msgid "Route traffic through an intermediate server"
@@ -5528,6 +5592,10 @@ msgstr "通过中间服务器转发流量"
 #: src/routes/_authed/_dashboard/streamers/index.tsx:405
 msgid "Rows per page"
 msgstr "每页行数"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:497
+msgid "Run"
+msgstr "运行"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:69
 msgid "Run a custom FFmpeg command. Edit the args to customize."
@@ -5593,6 +5661,7 @@ msgstr "主播上线时运行。"
 msgid "Rust regex syntax supported."
 msgstr "支持 Rust 正则语法。"
 
+#: src/components/layout/app-sidebar.tsx:54
 #: src/components/sidebar/sheet-menu.tsx:33
 #: src/components/sidebar/sidebar.tsx:75
 msgid "Rust-Srec"
@@ -5738,7 +5807,8 @@ msgstr "搜索工作流..."
 msgid "Second (00-59)"
 msgstr "秒 (00-59)"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:194
+#: src/routes/_authed/_dashboard/config/theme.tsx:501
+#: src/routes/_authed/_dashboard/config/theme.tsx:518
 msgid "Secondary"
 msgstr "次要"
 
@@ -5868,7 +5938,7 @@ msgstr "选择必须在此步骤运行前成功完成的步骤。"
 msgid "Select type"
 msgstr "选择类型"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:42
+#: src/routes/_authed/_dashboard/config/theme.tsx:112
 msgid "Select your preferred color scheme."
 msgstr "选择你偏好的配色方案。"
 
@@ -5968,6 +6038,7 @@ msgstr "录制预览"
 msgid "Session thumbnail"
 msgstr "会话缩略图"
 
+#: src/components/layout/site-header.tsx:29
 #: src/components/sidebar/navbar.tsx:23
 #: src/lib/menu-list.ts:64
 #: src/routes/_authed/_dashboard/sessions/index.tsx:295
@@ -5987,6 +6058,7 @@ msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
 #: src/components/config/engines/engine-editor.tsx:97
+#: src/components/layout/site-header.tsx:30
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:105
 #: src/routes/_authed/_dashboard/config/route.tsx:108
@@ -6001,13 +6073,13 @@ msgstr "设置已针对该平台优化。"
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:168
+msgid "Shadcn UI Theme Presets"
+msgstr "Shadcn UI 主题预设"
+
 #: src/routes/_authed/_dashboard/config/logging.tsx:65
 msgid "Shared pipeline utilities"
 msgstr "共享的处理管道工具"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:297
-msgid "Sharp"
-msgstr "直角"
 
 #: src/routes/_authed/change-password.tsx:166
 #: src/routes/_authed/change-password.tsx:208
@@ -6019,6 +6091,10 @@ msgstr "显示密码"
 #: src/components/notifications/browser-channel-dialog.tsx:97
 msgid "Shows notifications while the application tab is open by polling recent events."
 msgstr "在应用标签页打开时，通过轮询最近事件来显示通知。"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:283
+msgid "Sidebar Layout"
+msgstr "侧边栏布局"
 
 #: src/routes/_public/login.tsx:254
 msgid "Sign In"
@@ -6165,6 +6241,7 @@ msgstr "已开始"
 msgid "Starting tdl process..."
 msgstr "正在启动 tdl 进程..."
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:481
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:446
 #: src/routes/_authed/_dashboard/system/health.tsx:158
 #: src/routes/_authed/_dashboard/system/health.tsx:224
@@ -6287,6 +6364,7 @@ msgstr "主播更新成功"
 #: src/components/config/global/backup-restore-card.tsx:356
 #: src/components/config/global/backup-restore-card.tsx:361
 #: src/components/config/global/backup-restore-card.tsx:366
+#: src/components/layout/site-header.tsx:31
 #: src/components/sidebar/navbar.tsx:25
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.tsx:245
@@ -6352,13 +6430,13 @@ msgstr "支持占位符：{platform}, {streamer}, {title}, {streamer_id}, {sessi
 msgid "Suppress redundant headers to reduce player micro-stutter"
 msgstr "抑制冗余头部以减少播放器微卡顿"
 
-#: src/components/language-switcher.tsx:39
-#: src/components/language-switcher.tsx:45
+#: src/components/language-switcher.tsx:47
+#: src/components/language-switcher.tsx:53
 msgid "Switch language"
 msgstr "切换语言"
 
-#: src/components/sidebar/mode-toggle.tsx:87
-#: src/components/sidebar/mode-toggle.tsx:92
+#: src/components/sidebar/mode-toggle.tsx:36
+#: src/components/sidebar/mode-toggle.tsx:41
 msgid "Switch Theme"
 msgstr "切换主题"
 
@@ -6366,8 +6444,9 @@ msgstr "切换主题"
 msgid "Sync"
 msgstr "同步"
 
+#: src/components/layout/site-header.tsx:40
 #: src/components/sidebar/navbar.tsx:34
-#: src/routes/_authed/_dashboard/config/theme.tsx:211
+#: src/routes/_authed/_dashboard/config/theme.tsx:122
 msgid "System"
 msgstr "系统"
 
@@ -6496,6 +6575,7 @@ msgstr "模板"
 #: src/components/config/global/backup-restore-card.tsx:339
 #: src/components/config/global/backup-restore-card.tsx:344
 #: src/components/config/global/backup-restore-card.tsx:349
+#: src/components/layout/site-header.tsx:44
 #: src/components/sidebar/navbar.tsx:38
 #: src/routes/_authed/_dashboard/config/route.tsx:62
 msgid "Templates"
@@ -6539,14 +6619,20 @@ msgstr "本次会话期间直播标题始终未变化。"
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
+#: src/components/layout/site-header.tsx:45
 #: src/components/sidebar/navbar.tsx:39
 #: src/routes/_authed/_dashboard/config/route.tsx:80
+#: src/routes/_authed/_dashboard/config/theme.tsx:91
 msgid "Theme"
 msgstr "主题"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:41
+#: src/routes/_authed/_dashboard/config/theme.tsx:111
 msgid "Theme Mode"
 msgstr "主题模式"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:159
+msgid "Theme Preset"
+msgstr "主题预设"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:298
 msgid "This is a default preset. Description cannot be modified."
@@ -6853,7 +6939,7 @@ msgstr "Twitch 代理播放列表排除"
 msgid "Type"
 msgstr "类型"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:186
+#: src/routes/_authed/_dashboard/config/theme.tsx:510
 msgid "Type something..."
 msgstr "输入内容..."
 
@@ -7039,6 +7125,7 @@ msgstr "用户名"
 msgid "Username (Optional)"
 msgstr "用户名（可选）"
 
+#: src/components/layout/site-header.tsx:35
 #: src/components/sidebar/navbar.tsx:29
 msgid "Users"
 msgstr "用户"
@@ -7065,6 +7152,10 @@ msgstr "校验服务不可用"
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
 msgid "Value"
 msgstr "值"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:290
+msgid "Variant"
+msgstr "样式"
 
 #: src/components/config/global/file-config-card.tsx:86
 msgid "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, %S"
@@ -7249,6 +7340,7 @@ msgstr "工作流更新成功"
 msgid "workflows"
 msgstr "工作流"
 
+#: src/components/layout/site-header.tsx:51
 #: src/components/pipeline/workflows/step-library.tsx:263
 #: src/components/sidebar/navbar.tsx:45
 #: src/lib/menu-list.ts:80

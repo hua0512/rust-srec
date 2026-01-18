@@ -5,7 +5,9 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { Card } from '@/components/ui/card';
-import { activateAndPersistLocale, type Locale } from '@/i18n';
+import { dynamicActivate, Locale } from '@/integrations/lingui/i18n';
+import { updateLocale } from '@/server/functions/locale';
+import { useRouter } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_authed/_dashboard/config/language')({
   component: LanguageSettings,
@@ -13,6 +15,7 @@ export const Route = createFileRoute('/_authed/_dashboard/config/language')({
 
 function LanguageSettings() {
   const { i18n } = useLingui();
+  const router = useRouter();
 
   const locales: Array<{
     code: Locale;
@@ -37,8 +40,10 @@ function LanguageSettings() {
     },
   ];
 
-  const changeLocale = (locale: Locale) => {
-    activateAndPersistLocale(i18n, locale);
+  const changeLocale = async (locale: Locale) => {
+    await updateLocale({ data: locale });
+    await dynamicActivate(i18n, locale);
+    await router.invalidate();
   };
 
   return (
@@ -70,7 +75,6 @@ function LanguageSettings() {
                       : 'border-white/5 hover:border-primary/30',
                   )}
                 >
-                  {/* Glassmorphism Background Gradients */}
                   <div
                     className={cn(
                       'absolute inset-0 bg-gradient-to-br transition-opacity duration-500',

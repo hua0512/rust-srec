@@ -200,13 +200,13 @@ msgstr "Absolute path or 'ffmpeg' if in PATH"
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "Absolute path or 'streamlink' in PATH"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:61
-msgid "Accent Color"
-msgstr "Accent Color"
-
 #: src/components/config/engines/forms/mesio-hls-form.tsx:258
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "Accept Invalid Certs (Default: Off)"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:494
+msgid "Action"
+msgstr "Action"
 
 #: src/components/streamers/card/stream-actions-menu.tsx:42
 msgid "Actions"
@@ -214,7 +214,7 @@ msgstr "Actions"
 
 #: src/components/notifications/forms/webhook-form.tsx:116
 #: src/components/streamers/edit/streamer-meta-form.tsx:226
-#: src/routes/_authed/_dashboard/config/language.tsx:102
+#: src/routes/_authed/_dashboard/config/language.tsx:106
 #: src/routes/_authed/_dashboard/notifications/index.tsx:410
 msgid "Active"
 msgstr "Active"
@@ -230,10 +230,6 @@ msgstr "Active Download"
 #: src/routes/_authed/_dashboard/dashboard.tsx:328
 msgid "Active Recordings"
 msgstr "Active Recordings"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:160
-msgid "Active Streams"
-msgstr "Active Streams"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:405
 msgid "Adaptive Refresh (Default: On)"
@@ -369,7 +365,11 @@ msgstr "Adjust rate based on target duration"
 msgid "Adjust sampling rate based on danmu traffic volume."
 msgstr "Adjust sampling rate based on danmu traffic volume."
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:73
+#: src/routes/_authed/_dashboard/config/theme.tsx:284
+msgid "Adjust sidebar style and behavior."
+msgstr "Adjust sidebar style and behavior."
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:256
 msgid "Adjust the roundness of UI elements."
 msgstr "Adjust the roundness of UI elements."
 
@@ -470,10 +470,6 @@ msgstr "Appearance & style"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:836
 msgid "Appended before output filename"
 msgstr "Appended before output filename"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:351
-msgid "Apply a blur effect to the background of cards and sidebars."
-msgstr "Apply a blur effect to the background of cards and sidebars."
 
 #: src/components/streamers/config/streamer-general-settings.tsx:204
 msgid "Apply template settings."
@@ -702,6 +698,7 @@ msgstr "Backjump Threshold"
 msgid "Backoff Multiplier"
 msgstr "Backoff Multiplier"
 
+#: src/components/layout/site-header.tsx:41
 #: src/components/sidebar/navbar.tsx:35
 msgid "Backup"
 msgstr "Backup"
@@ -788,13 +785,17 @@ msgstr "Blocked"
 msgid "Blocked by browser"
 msgstr "Blocked by browser"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:72
+#: src/routes/_authed/_dashboard/config/theme.tsx:255
 msgid "Border Radius"
 msgstr "Border Radius"
 
 #: src/components/notifications/forms/discord-form.tsx:62
 msgid "Bot Name"
 msgstr "Bot Name"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:237
+msgid "Brand Colors"
+msgstr "Brand Colors"
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:160
 msgid "Browse generated media artifacts from pipeline jobs"
@@ -905,6 +906,7 @@ msgstr "Categories"
 msgid "Category"
 msgstr "Category"
 
+#: src/components/layout/site-header.tsx:34
 #: src/components/sidebar/navbar.tsx:28
 #: src/routes/_authed/change-password.tsx:123
 #: src/routes/_authed/change-password.tsx:270
@@ -996,6 +998,7 @@ msgid "Cleanup"
 msgstr "Cleanup"
 
 #: src/components/logging/log-viewer.tsx:390
+#: src/routes/_authed/_dashboard/config/theme.tsx:229
 msgid "Clear"
 msgstr "Clear"
 
@@ -1028,6 +1031,10 @@ msgstr "Cloning..."
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:686
 msgid "Close"
 msgstr "Close"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:327
+msgid "Collapsible"
+msgstr "Collapsible"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:128
 msgid "Comma-separated list of channels to exclude from proxy"
@@ -1109,6 +1116,7 @@ msgstr "Compression Level"
 msgid "Concurrency & Performance"
 msgstr "Concurrency & Performance"
 
+#: src/components/layout/site-header.tsx:32
 #: src/components/sidebar/navbar.tsx:26
 msgid "Config"
 msgstr "Config"
@@ -1512,6 +1520,10 @@ msgstr "Custom Header"
 msgid "Custom Headers"
 msgstr "Custom Headers"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:218
+msgid "Custom imported theme is active."
+msgstr "Custom imported theme is active."
+
 #: src/components/config/engines/forms/streamlink-form.tsx:106
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Custom proxy URL for Twitch playlists"
@@ -1527,6 +1539,10 @@ msgstr "Custom User-Agent string (Optional)"
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:81
 msgid "Customize specific engine settings for this template."
 msgstr "Customize specific engine settings for this template."
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:94
+msgid "Customize the application theme and sidebar layout."
+msgstr "Customize the application theme and sidebar layout."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:405
 msgid "DAG Configuration"
@@ -1564,10 +1580,11 @@ msgstr "Danmu"
 msgid "Danmu Service"
 msgstr "Danmu Service"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:210
+#: src/routes/_authed/_dashboard/config/theme.tsx:118
 msgid "Dark"
 msgstr "Dark"
 
+#: src/components/layout/site-header.tsx:28
 #: src/components/sidebar/navbar.tsx:22
 #: src/lib/menu-list.ts:46
 msgid "Dashboard"
@@ -1601,6 +1618,7 @@ msgstr "default"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
+#: src/routes/_authed/_dashboard/config/theme.tsx:311
 msgid "Default"
 msgstr "Default"
 
@@ -1989,6 +2007,7 @@ msgstr "e.g., Standard Processing"
 #: src/components/config/platforms/platform-card.tsx:89
 #: src/components/config/templates/template-card.tsx:116
 #: src/components/filters/FilterCard.tsx:305
+#: src/components/layout/site-header.tsx:54
 #: src/components/notifications/channel-card.tsx:154
 #: src/components/pipeline/presets/preset-card.tsx:176
 #: src/components/pipeline/workflows/workflow-card.tsx:170
@@ -2058,10 +2077,6 @@ msgstr "Enable Proxy"
 #: src/components/config/global/file-config-card.tsx:36
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "Enable recording of danmu/chat messages along with the video."
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:52
-msgid "Enable translucent background blur effects."
-msgstr "Enable translucent background blur effects."
 
 #: src/components/notifications/forms/discord-form.tsx:130
 #: src/components/notifications/forms/email-form.tsx:219
@@ -2140,6 +2155,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
 #: src/components/config/templates/template-editor.tsx:257
+#: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.tsx:68
 msgid "Engines"
@@ -2246,14 +2262,11 @@ msgstr "Event Hooks"
 msgid "Event Type"
 msgstr "Event Type"
 
+#: src/components/layout/site-header.tsx:38
 #: src/components/sidebar/navbar.tsx:32
 #: src/routes/_authed/_dashboard/notifications/index.tsx:317
 msgid "Events"
 msgstr "Events"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:182
-msgid "Example Input"
-msgstr "Example Input"
 
 #: src/components/filters/FilterCard.tsx:121
 #: src/components/filters/FilterCard.tsx:235
@@ -2292,6 +2305,7 @@ msgstr "Execute shell commands on lifecycle events. Commands run in the system s
 msgid "Execution Settings"
 msgstr "Execution Settings"
 
+#: src/components/layout/site-header.tsx:47
 #: src/components/sidebar/navbar.tsx:41
 msgid "Executions"
 msgstr "Executions"
@@ -2780,6 +2794,10 @@ msgstr "Filtering & Behavior"
 msgid "Filters"
 msgstr "Filters"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:238
+msgid "Fine tune brand and surface colors."
+msgstr "Fine tune brand and surface colors."
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:79
 msgid "First input file path"
 msgstr "First input file path"
@@ -2803,6 +2821,10 @@ msgstr "Fix HLS Discontinuities"
 #: src/components/config/shared/danmu-config-form.tsx:135
 msgid "Fixed Interval"
 msgstr "Fixed Interval"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:313
+msgid "Floating"
+msgstr "Floating"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:296
 msgid "Flow & Dependencies"
@@ -2954,15 +2976,8 @@ msgstr "Generating QR code..."
 msgid "Get Started"
 msgstr "Get Started"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:50
-msgid "Glass Mode"
-msgstr "Glass Mode"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:348
-msgid "Glassmorphism"
-msgstr "Glassmorphism"
-
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
+#: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.tsx:50
 msgid "Global"
@@ -3046,6 +3061,7 @@ msgstr "Header Key"
 msgid "Header Value"
 msgstr "Header Value"
 
+#: src/components/layout/site-header.tsx:52
 #: src/components/sidebar/navbar.tsx:46
 msgid "Health"
 msgstr "Health"
@@ -3107,6 +3123,7 @@ msgid "HLS Tuning"
 msgstr "HLS Tuning"
 
 #: src/components/default-catch-boundary.tsx:47
+#: src/components/layout/site-header.tsx:80
 #: src/components/sidebar/navbar.tsx:61
 msgid "Home"
 msgstr "Home"
@@ -3175,6 +3192,10 @@ msgstr "i"
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:332
+msgid "Icon"
+msgstr "Icon"
+
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:189
 msgid "ID"
 msgstr "ID"
@@ -3222,6 +3243,10 @@ msgstr "Ignored when \"Upload All Files\" is enabled."
 #: src/routes/_authed/_dashboard/player/index.tsx:333
 msgid "Immersive Mode"
 msgstr "Immersive Mode"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:178
+msgid "Import"
+msgstr "Import"
 
 #: src/components/config/global/backup-restore-card.tsx:259
 #: src/components/config/global/backup-restore-card.tsx:310
@@ -3289,6 +3314,10 @@ msgstr "inline"
 msgid "Inline: {stepName}"
 msgstr "Inline: {stepName}"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:508
+msgid "Input"
+msgstr "Input"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:120
 msgid "Input Arguments"
 msgstr "Input Arguments"
@@ -3304,6 +3333,10 @@ msgstr "Input Path"
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:291
 msgid "Input Paths (comma separated)"
 msgstr "Input Paths (comma separated)"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:315
+msgid "Inset"
+msgstr "Inset"
 
 #: src/components/streamers/card/use-streamer-status.tsx:32
 #: src/components/streamers/card/use-streamer-status.tsx:180
@@ -3385,6 +3418,7 @@ msgstr "Job Presets"
 msgid "Job retry initiated"
 msgstr "Job retry initiated"
 
+#: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:250
@@ -3462,11 +3496,15 @@ msgstr "Launch Pipeline"
 msgid "Leave empty for stream copy"
 msgstr "Leave empty for stream copy"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:376
+msgid "Left"
+msgstr "Left"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:70
 msgid "libx264"
 msgstr "libx264"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:209
+#: src/routes/_authed/_dashboard/config/theme.tsx:117
 msgid "Light"
 msgstr "Light"
 
@@ -3512,7 +3550,7 @@ msgstr "Live Polling"
 msgid "Live polling notifications enabled"
 msgstr "Live polling notifications enabled"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:91
+#: src/routes/_authed/_dashboard/config/theme.tsx:415
 msgid "Live Preview"
 msgstr "Live Preview"
 
@@ -3611,6 +3649,7 @@ msgstr "Login to Telegram"
 msgid "Login Type"
 msgstr "Login Type"
 
+#: src/components/layout/site-header.tsx:33
 #: src/components/sidebar/navbar.tsx:27
 msgid "Logs"
 msgstr "Logs"
@@ -3988,6 +4027,7 @@ msgstr "Network & Content"
 msgid "Network & System"
 msgstr "Network & System"
 
+#: src/components/layout/site-header.tsx:53
 #: src/components/sidebar/navbar.tsx:47
 msgid "New"
 msgstr "New"
@@ -4246,6 +4286,7 @@ msgid "No workflows yet"
 msgstr "No workflows yet"
 
 #: src/components/notifications/forms/webhook-form.tsx:252
+#: src/routes/_authed/_dashboard/config/theme.tsx:333
 #: src/routes/_authed/_dashboard/sessions/index.tsx:515
 msgid "None"
 msgstr "None"
@@ -4308,6 +4349,7 @@ msgstr "Notification Retention"
 msgid "Notification Service"
 msgstr "Notification Service"
 
+#: src/components/layout/site-header.tsx:37
 #: src/components/sidebar/navbar.tsx:31
 #: src/lib/menu-list.ts:124
 #: src/routes/_authed/_dashboard/notifications/index.tsx:303
@@ -4347,6 +4389,10 @@ msgstr "Number of days to keep the notification event log in the database. This 
 msgid "OAuth Token"
 msgstr "OAuth Token"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:331
+msgid "Off Canvas"
+msgstr "Off Canvas"
+
 #: src/components/streamers/card/use-streamer-status.tsx:30
 #: src/components/streamers/card/use-streamer-status.tsx:237
 #: src/components/streamers/card/use-streamer-status.tsx:246
@@ -4380,6 +4426,10 @@ msgstr "Offload Decryption (Default: On)"
 #: src/components/config/engines/forms/mesio-form.tsx:223
 msgid "Offset Consistency Check"
 msgstr "Offset Consistency Check"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:484
+msgid "OK"
+msgstr "OK"
 
 #: src/components/config/shared/event-hooks-form.tsx:152
 msgid "On Download Complete"
@@ -4517,6 +4567,7 @@ msgstr "Output Pattern (Optional)"
 msgid "Output Settings"
 msgstr "Output Settings"
 
+#: src/components/layout/site-header.tsx:49
 #: src/components/sessions/overview-tab.tsx:119
 #: src/components/sidebar/navbar.tsx:43
 #: src/lib/menu-list.ts:90
@@ -4697,10 +4748,6 @@ msgstr "Pending"
 msgid "Pending Jobs"
 msgstr "Pending Jobs"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:173
-msgid "Pending Tasks"
-msgstr "Pending Tasks"
-
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:531
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:309
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:401
@@ -4742,7 +4789,12 @@ msgstr "Permission required"
 msgid "Phone & Code (2FA optional)"
 msgstr "Phone & Code (2FA optional)"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:161
+msgid "Pick a preset theme or import a custom one."
+msgstr "Pick a preset theme or import a custom one."
+
 #: src/components/config/shared-config-editor.tsx:217
+#: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:440
@@ -4869,6 +4921,7 @@ msgstr "platforms"
 
 #: src/components/config/global/backup-restore-card.tsx:390
 #: src/components/config/templates/template-editor.tsx:267
+#: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.tsx:56
 msgid "Platforms"
@@ -4878,6 +4931,7 @@ msgstr "Platforms"
 msgid "Play"
 msgstr "Play"
 
+#: src/components/layout/site-header.tsx:39
 #: src/components/sidebar/navbar.tsx:33
 #: src/lib/menu-list.ts:97
 msgid "Player"
@@ -4930,6 +4984,10 @@ msgstr "Pool Idle Timeout (ms)"
 #: src/components/notifications/forms/email-form.tsx:60
 msgid "Port"
 msgstr "Port"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:372
+msgid "Position"
+msgstr "Position"
 
 #: src/components/sidebar/footer.tsx:8
 msgid "Powered by <0>Rust-srec</0>. WebUI version: 0.1.0"
@@ -5015,6 +5073,7 @@ msgstr "Preset updated successfully"
 msgid "presets"
 msgstr "presets"
 
+#: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
 #: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:244
@@ -5045,13 +5104,13 @@ msgstr "Preview Unavailable"
 msgid "Previous Title"
 msgstr "Previous Title"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:191
+#: src/routes/_authed/_dashboard/config/theme.tsx:488
+msgid "Primary"
+msgstr "Primary"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:515
 msgid "Primary Action"
 msgstr "Primary Action"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:63
-msgid "Primary color for buttons and interactions."
-msgstr "Primary color for buttons and interactions."
 
 #: src/components/streamers/config/stream-selection-input.tsx:118
 msgid "Prioritize specific CDN providers. Press Enter to add."
@@ -5191,6 +5250,10 @@ msgstr "Quick Share"
 #: src/routes/_authed/_dashboard/system/health.tsx:198
 msgid "RAM utilization"
 msgstr "RAM utilization"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:194
+msgid "Random"
+msgstr "Random"
 
 #: src/components/streamers/edit/active-download-card.tsx:85
 msgid "Ratio"
@@ -5431,6 +5494,7 @@ msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
 #: src/routes/_authed/_dashboard/config/logging.tsx:357
+#: src/routes/_authed/_dashboard/config/theme.tsx:105
 msgid "Reset"
 msgstr "Reset"
 
@@ -5517,9 +5581,9 @@ msgstr "Reusable processor configurations for pipeline steps"
 msgid "Review recorded streams and manage archives"
 msgstr "Review recorded streams and manage archives"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:305
-msgid "Rounded"
-msgstr "Rounded"
+#: src/routes/_authed/_dashboard/config/theme.tsx:377
+msgid "Right"
+msgstr "Right"
 
 #: src/components/config/shared/proxy-settings-card.tsx:122
 msgid "Route traffic through an intermediate server"
@@ -5528,6 +5592,10 @@ msgstr "Route traffic through an intermediate server"
 #: src/routes/_authed/_dashboard/streamers/index.tsx:405
 msgid "Rows per page"
 msgstr "Rows per page"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:497
+msgid "Run"
+msgstr "Run"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:69
 msgid "Run a custom FFmpeg command. Edit the args to customize."
@@ -5593,6 +5661,7 @@ msgstr "Runs when the streamer goes online."
 msgid "Rust regex syntax supported."
 msgstr "Rust regex syntax supported."
 
+#: src/components/layout/app-sidebar.tsx:54
 #: src/components/sidebar/sheet-menu.tsx:33
 #: src/components/sidebar/sidebar.tsx:75
 msgid "Rust-Srec"
@@ -5738,7 +5807,8 @@ msgstr "Search workflows..."
 msgid "Second (00-59)"
 msgstr "Second (00-59)"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:194
+#: src/routes/_authed/_dashboard/config/theme.tsx:501
+#: src/routes/_authed/_dashboard/config/theme.tsx:518
 msgid "Secondary"
 msgstr "Secondary"
 
@@ -5868,7 +5938,7 @@ msgstr "Select the steps that must complete successfully before this step runs."
 msgid "Select type"
 msgstr "Select type"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:42
+#: src/routes/_authed/_dashboard/config/theme.tsx:112
 msgid "Select your preferred color scheme."
 msgstr "Select your preferred color scheme."
 
@@ -5968,6 +6038,7 @@ msgstr "Session Preview"
 msgid "Session thumbnail"
 msgstr "Session thumbnail"
 
+#: src/components/layout/site-header.tsx:29
 #: src/components/sidebar/navbar.tsx:23
 #: src/lib/menu-list.ts:64
 #: src/routes/_authed/_dashboard/sessions/index.tsx:295
@@ -5987,6 +6058,7 @@ msgid "Set up a new download tool configuration"
 msgstr "Set up a new download tool configuration"
 
 #: src/components/config/engines/engine-editor.tsx:97
+#: src/components/layout/site-header.tsx:30
 #: src/components/sidebar/navbar.tsx:24
 #: src/lib/menu-list.ts:105
 #: src/routes/_authed/_dashboard/config/route.tsx:108
@@ -6001,13 +6073,13 @@ msgstr "Settings have been optimized for this platform."
 msgid "Settings updated successfully"
 msgstr "Settings updated successfully"
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:168
+msgid "Shadcn UI Theme Presets"
+msgstr "Shadcn UI Theme Presets"
+
 #: src/routes/_authed/_dashboard/config/logging.tsx:65
 msgid "Shared pipeline utilities"
 msgstr "Shared pipeline utilities"
-
-#: src/routes/_authed/_dashboard/config/theme.tsx:297
-msgid "Sharp"
-msgstr "Sharp"
 
 #: src/routes/_authed/change-password.tsx:166
 #: src/routes/_authed/change-password.tsx:208
@@ -6019,6 +6091,10 @@ msgstr "Show password"
 #: src/components/notifications/browser-channel-dialog.tsx:97
 msgid "Shows notifications while the application tab is open by polling recent events."
 msgstr "Shows notifications while the application tab is open by polling recent events."
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:283
+msgid "Sidebar Layout"
+msgstr "Sidebar Layout"
 
 #: src/routes/_public/login.tsx:254
 msgid "Sign In"
@@ -6165,6 +6241,7 @@ msgstr "Started"
 msgid "Starting tdl process..."
 msgstr "Starting tdl process..."
 
+#: src/routes/_authed/_dashboard/config/theme.tsx:481
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:446
 #: src/routes/_authed/_dashboard/system/health.tsx:158
 #: src/routes/_authed/_dashboard/system/health.tsx:224
@@ -6287,6 +6364,7 @@ msgstr "Streamer updated successfully"
 #: src/components/config/global/backup-restore-card.tsx:356
 #: src/components/config/global/backup-restore-card.tsx:361
 #: src/components/config/global/backup-restore-card.tsx:366
+#: src/components/layout/site-header.tsx:31
 #: src/components/sidebar/navbar.tsx:25
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.tsx:245
@@ -6352,13 +6430,13 @@ msgstr "Supports placeholders: {platform}, {streamer}, {title}, {streamer_id}, {
 msgid "Suppress redundant headers to reduce player micro-stutter"
 msgstr "Suppress redundant headers to reduce player micro-stutter"
 
-#: src/components/language-switcher.tsx:39
-#: src/components/language-switcher.tsx:45
+#: src/components/language-switcher.tsx:47
+#: src/components/language-switcher.tsx:53
 msgid "Switch language"
 msgstr "Switch language"
 
-#: src/components/sidebar/mode-toggle.tsx:87
-#: src/components/sidebar/mode-toggle.tsx:92
+#: src/components/sidebar/mode-toggle.tsx:36
+#: src/components/sidebar/mode-toggle.tsx:41
 msgid "Switch Theme"
 msgstr "Switch Theme"
 
@@ -6366,8 +6444,9 @@ msgstr "Switch Theme"
 msgid "Sync"
 msgstr "Sync"
 
+#: src/components/layout/site-header.tsx:40
 #: src/components/sidebar/navbar.tsx:34
-#: src/routes/_authed/_dashboard/config/theme.tsx:211
+#: src/routes/_authed/_dashboard/config/theme.tsx:122
 msgid "System"
 msgstr "System"
 
@@ -6496,6 +6575,7 @@ msgstr "templates"
 #: src/components/config/global/backup-restore-card.tsx:339
 #: src/components/config/global/backup-restore-card.tsx:344
 #: src/components/config/global/backup-restore-card.tsx:349
+#: src/components/layout/site-header.tsx:44
 #: src/components/sidebar/navbar.tsx:38
 #: src/routes/_authed/_dashboard/config/route.tsx:62
 msgid "Templates"
@@ -6539,14 +6619,20 @@ msgstr "The stream title remained constant throughout the session."
 msgid "The underlying tool used for downloading."
 msgstr "The underlying tool used for downloading."
 
+#: src/components/layout/site-header.tsx:45
 #: src/components/sidebar/navbar.tsx:39
 #: src/routes/_authed/_dashboard/config/route.tsx:80
+#: src/routes/_authed/_dashboard/config/theme.tsx:91
 msgid "Theme"
 msgstr "Theme"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:41
+#: src/routes/_authed/_dashboard/config/theme.tsx:111
 msgid "Theme Mode"
 msgstr "Theme Mode"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:159
+msgid "Theme Preset"
+msgstr "Theme Preset"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:298
 msgid "This is a default preset. Description cannot be modified."
@@ -6853,7 +6939,7 @@ msgstr "Twitch Proxy Playlist Exclude"
 msgid "Type"
 msgstr "Type"
 
-#: src/routes/_authed/_dashboard/config/theme.tsx:186
+#: src/routes/_authed/_dashboard/config/theme.tsx:510
 msgid "Type something..."
 msgstr "Type something..."
 
@@ -7039,6 +7125,7 @@ msgstr "Username"
 msgid "Username (Optional)"
 msgstr "Username (Optional)"
 
+#: src/components/layout/site-header.tsx:35
 #: src/components/sidebar/navbar.tsx:29
 msgid "Users"
 msgstr "Users"
@@ -7065,6 +7152,10 @@ msgstr "Validation service unavailable"
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
 msgid "Value"
 msgstr "Value"
+
+#: src/routes/_authed/_dashboard/config/theme.tsx:290
+msgid "Variant"
+msgstr "Variant"
 
 #: src/components/config/global/file-config-card.tsx:86
 msgid "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, %S"
@@ -7249,6 +7340,7 @@ msgstr "Workflow updated successfully"
 msgid "workflows"
 msgstr "workflows"
 
+#: src/components/layout/site-header.tsx:51
 #: src/components/pipeline/workflows/step-library.tsx:263
 #: src/components/sidebar/navbar.tsx:45
 #: src/lib/menu-list.ts:80
