@@ -20,6 +20,13 @@ use crate::{Error, Result};
 
 type BeforeRootJobsHook = Box<dyn FnOnce(&str) + Send>;
 
+/// Optional metadata associated with a DAG execution.
+#[derive(Debug, Clone, Default)]
+pub struct DagExecutionMetadata {
+    pub segment_index: Option<u32>,
+    pub segment_source: Option<String>,
+}
+
 /// Notification emitted when a DAG reaches a terminal state.
 #[derive(Debug, Clone)]
 pub struct DagCompletionInfo {
@@ -155,6 +162,7 @@ impl DagScheduler {
             session_title,
             platform,
             None,
+            None,
         )
         .await
     }
@@ -171,14 +179,19 @@ impl DagScheduler {
         streamer_name: Option<String>,
         session_title: Option<String>,
         platform: Option<String>,
+        metadata: Option<DagExecutionMetadata>,
         before_root_jobs: Option<BeforeRootJobsHook>,
     ) -> Result<DagCreationResult> {
         // 1. Validate DAG structure
         dag_definition.validate()?;
 
         // 2. Create DAG execution record
-        let dag_exec =
+        let mut dag_exec =
             DagExecutionDbModel::new(&dag_definition, streamer_id.clone(), session_id.clone());
+        if let Some(meta) = metadata {
+            dag_exec.segment_index = meta.segment_index.map(i64::from);
+            dag_exec.segment_source = meta.segment_source;
+        }
         let dag_id = dag_exec.id.clone();
 
         self.dag_repository.create_dag(&dag_exec).await?;

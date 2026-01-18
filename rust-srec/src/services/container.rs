@@ -126,6 +126,8 @@ pub struct ServiceContainer {
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
+    /// Handle to the scheduler background task for graceful shutdown.
+    scheduler_task_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl ServiceContainer {
@@ -322,6 +324,7 @@ impl ServiceContainer {
             cancellation_token,
             logging_config: std::sync::OnceLock::new(),
             discarded_segment_keys: Arc::new(DashMap::new()),
+            scheduler_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
         })
     }
 
@@ -515,6 +518,7 @@ impl ServiceContainer {
             cancellation_token,
             logging_config: std::sync::OnceLock::new(),
             discarded_segment_keys: Arc::new(DashMap::new()),
+            scheduler_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
         })
     }
 
@@ -586,12 +590,15 @@ impl ServiceContainer {
 
         // Run scheduler in background task
         let scheduler = self.scheduler.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let mut guard = scheduler.write().await;
             if let Err(e) = guard.run().await {
                 tracing::error!("Scheduler error: {}", e);
             }
         });
+
+        // Store the handle for graceful shutdown
+        *self.scheduler_task_handle.lock().await = Some(handle);
 
         info!("Scheduler started");
     }
@@ -1225,19 +1232,41 @@ impl ServiceContainer {
                                         // - stop downloads promptly
                                         // - end session and bypass resume hysteresis
                                         if matches!(control, crate::danmu::DanmuControlEvent::StreamClosed { .. }) {
-                                            if let Some(download_info) = download_manager.get_download_by_streamer(streamer_id)
-                                            && let Err(e) = download_manager
-                                                .stop_download_with_reason(
-                                                    &download_info.id,
-                                                    crate::downloader::DownloadStopCause::DanmuStreamClosed,
-                                                )
-                                                .await
-                                        {
-                                            warn!(
-                                                "Failed to stop download {} after danmu stream closed (streamer={}): {}",
-                                                download_info.id, streamer_id, e
+                                            debug!(
+                                                session_id = %session_id,
+                                                streamer_id = %streamer_id,
+                                                "Danmu stream closed; forcing end-of-stream handling"
                                             );
-                                        }
+
+                                            if let Some(download_info) =
+                                                download_manager.get_download_by_streamer(streamer_id)
+                                            {
+                                                match download_manager
+                                                    .stop_download_with_reason(
+                                                        &download_info.id,
+                                                        crate::downloader::DownloadStopCause::DanmuStreamClosed,
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(()) => info!(
+                                                        session_id = %session_id,
+                                                        streamer_id = %streamer_id,
+                                                        download_id = %download_info.id,
+                                                        "Stopped download after danmu stream closed"
+                                                    ),
+                                                    Err(e) => warn!(
+                                                        "Failed to stop download {} after danmu stream closed (streamer={}): {}",
+                                                        download_info.id, streamer_id, e
+                                                    ),
+                                                }
+                                            } else {
+                                                debug!(
+                                                    session_id = %session_id,
+                                                    streamer_id = %streamer_id,
+                                                    "No active download found to stop after danmu stream closed"
+                                                );
+                                            }
+
                                             stream_monitor.mark_session_hard_ended(streamer_id, session_id);
                                             if let Some(streamer) = streamer_manager.get_streamer(streamer_id) {
                                                 if let Err(e) = stream_monitor
@@ -2056,18 +2085,27 @@ impl ServiceContainer {
         self.pipeline_manager.stop().await;
         info!("Pipeline manager stopped");
 
-        // Stop scheduler (cancellation already triggered via linked token above)
+        // Stop scheduler - wait for it to complete its shutdown sequence
+        // (cancellation already triggered via linked token above)
         info!("Stopping scheduler...");
 
-        // Wait for background tasks with timeout
-        let shutdown_result = tokio::time::timeout(timeout, async {
-            // Give background tasks time to clean up
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        })
-        .await;
-
-        if shutdown_result.is_err() {
-            warn!("Shutdown timeout reached, forcing shutdown");
+        // Wait for the scheduler task to complete with timeout
+        // The scheduler's run() loop will exit on cancellation and call its own shutdown()
+        // which waits for all actors to stop gracefully
+        if let Some(handle) = self.scheduler_task_handle.lock().await.take() {
+            match tokio::time::timeout(timeout, handle).await {
+                Ok(Ok(())) => {
+                    info!("Scheduler stopped gracefully");
+                }
+                Ok(Err(e)) => {
+                    warn!("Scheduler task panicked: {}", e);
+                }
+                Err(_) => {
+                    warn!("Scheduler shutdown timed out");
+                }
+            }
+        } else {
+            debug!("No scheduler task handle to wait for");
         }
 
         // Close database pool

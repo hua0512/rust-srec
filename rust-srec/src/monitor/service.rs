@@ -277,6 +277,11 @@ impl<
     /// This suppresses session resumption by `session_gap` for this specific session ID.
     /// Entries are automatically pruned after `HARD_ENDED_MAX_AGE` to prevent memory leaks.
     pub fn mark_session_hard_ended(&self, streamer_id: &str, session_id: &str) {
+        debug!(
+            streamer_id = %streamer_id,
+            session_id = %session_id,
+            "Marked session as hard-ended"
+        );
         self.hard_ended_sessions.insert(
             streamer_id.to_string(),
             (session_id.to_string(), Instant::now()),

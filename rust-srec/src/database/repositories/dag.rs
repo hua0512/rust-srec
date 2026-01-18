@@ -149,11 +149,11 @@ impl DagRepository for SqlxDagRepository {
         sqlx::query(
             r#"
             INSERT INTO dag_execution (
-                id, dag_definition, status, streamer_id, session_id,
+                id, dag_definition, status, streamer_id, session_id, segment_index, segment_source,
                 created_at, updated_at, completed_at, error,
                 total_steps, completed_steps, failed_steps
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&dag.id)
@@ -161,6 +161,8 @@ impl DagRepository for SqlxDagRepository {
         .bind(&dag.status)
         .bind(&dag.streamer_id)
         .bind(&dag.session_id)
+        .bind(dag.segment_index)
+        .bind(&dag.segment_source)
         .bind(&dag.created_at)
         .bind(&dag.updated_at)
         .bind(&dag.completed_at)
@@ -988,6 +990,8 @@ mod tests {
                 status TEXT NOT NULL DEFAULT 'PENDING',
                 streamer_id TEXT,
                 session_id TEXT,
+                segment_index INTEGER,
+                segment_source TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 completed_at TEXT,
