@@ -565,13 +565,25 @@ impl DagScheduler {
         self.job_repository.create_job(&job_db).await?;
 
         // Update step execution with job ID and PROCESSING status
-        self.dag_repository
+        if let Err(e) = self
+            .dag_repository
             .update_step_status_with_job(
                 step_execution_id,
                 DagStepStatus::Processing.as_str(),
                 &job_id,
             )
-            .await?;
+            .await
+        {
+            // Best-effort: avoid leaking an orphaned job if we failed to attach it to the DAG step.
+            if let Err(delete_err) = self.job_repository.delete_job(&job_id).await {
+                warn!(
+                    job_id = %job_id,
+                    error = %delete_err,
+                    "Failed to delete orphaned DAG job after step update failure"
+                );
+            }
+            return Err(e);
+        }
 
         // Create in-memory Job and enqueue
         let job = Job {
@@ -624,7 +636,7 @@ impl DagScheduler {
     }
 
     /// Cancel a DAG execution.
-    pub async fn cancel_dag(&self, dag_id: &str) -> Result<u64> {
+    pub async fn cancel_dag_with_completion(&self, dag_id: &str) -> Result<DagJobFailedUpdate> {
         let dag = self.dag_repository.get_dag(dag_id).await?;
 
         if dag.get_status().map(|s| s.is_terminal()).unwrap_or(false) {
@@ -640,11 +652,41 @@ impl DagScheduler {
             .await?;
 
         // Cancel any processing jobs
+        let mut cancelled_count = 0u64;
         for job_id in &cancelled {
-            let _ = self.job_queue.cancel_job(job_id).await;
+            if self.job_queue.cancel_job(job_id).await.is_ok() {
+                cancelled_count += 1;
+            }
         }
 
-        Ok(cancelled.len() as u64)
+        let updated_dag = self.dag_repository.get_dag(dag_id).await.ok();
+        let completion = if let Some(dag) = updated_dag
+            && dag.get_status().map(|s| s.is_terminal()).unwrap_or(false)
+        {
+            let leaf_outputs = self.collect_leaf_outputs(&dag).await.unwrap_or_default();
+            Some(DagCompletionInfo {
+                dag_id: dag.id.clone(),
+                streamer_id: dag.streamer_id.clone(),
+                session_id: dag.session_id.clone(),
+                succeeded: false,
+                leaf_outputs,
+            })
+        } else {
+            None
+        };
+
+        Ok(DagJobFailedUpdate {
+            cancelled_count,
+            completion,
+        })
+    }
+
+    /// Cancel a DAG execution.
+    pub async fn cancel_dag(&self, dag_id: &str) -> Result<u64> {
+        Ok(self
+            .cancel_dag_with_completion(dag_id)
+            .await?
+            .cancelled_count)
     }
 
     /// Reset a failed DAG execution so it can be retried.

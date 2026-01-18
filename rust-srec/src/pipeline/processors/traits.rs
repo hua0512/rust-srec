@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use crate::Result;
 use crate::pipeline::job_queue::JobLogEntry;
@@ -88,6 +89,7 @@ pub struct ProcessorContext {
     pub job_id: String,
     pub progress: ProgressReporter,
     pub log_tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+    pub cancellation_token: CancellationToken,
 }
 
 impl ProcessorContext {
@@ -98,6 +100,7 @@ impl ProcessorContext {
             job_id: job_id.clone(),
             progress: ProgressReporter::noop(job_id),
             log_tx,
+            cancellation_token: CancellationToken::new(),
         }
     }
 
@@ -105,11 +108,13 @@ impl ProcessorContext {
         job_id: impl Into<String>,
         progress: ProgressReporter,
         log_tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+        cancellation_token: CancellationToken,
     ) -> Self {
         Self {
             job_id: job_id.into(),
             progress,
             log_tx,
+            cancellation_token,
         }
     }
 

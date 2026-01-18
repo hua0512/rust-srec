@@ -1895,9 +1895,9 @@ pub async fn retry_dag(
         .await
         .map_err(ApiError::from)?;
 
-    // Check if DAG has failed steps
-    if dag.failed_steps == 0 {
-        return Err(ApiError::bad_request("DAG has no failed steps to retry"));
+    // Retry is only meaningful for failed DAGs.
+    if dag.status != "FAILED" {
+        return Err(ApiError::bad_request("DAG is not in FAILED status"));
     }
 
     // Get all steps
@@ -1906,11 +1906,17 @@ pub async fn retry_dag(
         .await
         .map_err(ApiError::from)?;
 
-    // Find failed steps
-    let failed_steps: Vec<_> = steps.iter().filter(|s| s.status == "FAILED").collect();
+    // Find retryable steps (failed steps + cancelled steps with an existing job).
+    // Cancelled steps with a job_id typically represent fail-fast cancelled in-flight work.
+    let retryable_steps: Vec<_> = steps
+        .iter()
+        .filter(|s| matches!(s.status.as_str(), "FAILED" | "CANCELLED") && s.job_id.is_some())
+        .collect();
 
-    if failed_steps.is_empty() {
-        return Err(ApiError::bad_request("No failed steps found to retry"));
+    if retryable_steps.is_empty() {
+        return Err(ApiError::bad_request(
+            "No failed or cancelled steps found to retry",
+        ));
     }
 
     // Prepare DAG for retry so downstream steps can be scheduled again.
@@ -1919,29 +1925,30 @@ pub async fn retry_dag(
         .await
         .map_err(ApiError::from)?;
 
-    // Retry each failed job
+    // Retry each job (FAILED or INTERRUPTED -> PENDING).
     let mut job_ids = Vec::new();
-    for step in &failed_steps {
-        if let Some(job_id) = &step.job_id {
-            match pipeline_manager.retry_job(job_id).await {
-                Ok(job) => {
-                    job_ids.push(job.id);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to retry job {}: {}", job_id, e);
-                }
+    for step in &retryable_steps {
+        let Some(job_id) = &step.job_id else {
+            continue;
+        };
+        match pipeline_manager.retry_job(job_id).await {
+            Ok(job) => {
+                job_ids.push(job.id);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to retry job {}: {}", job_id, e);
             }
         }
     }
 
     let retried_steps = job_ids.len();
-    let message = if retried_steps == failed_steps.len() {
-        format!("Successfully retried {} failed steps", retried_steps)
+    let message = if retried_steps == retryable_steps.len() {
+        format!("Successfully retried {} steps", retried_steps)
     } else {
         format!(
-            "Retried {} of {} failed steps",
+            "Retried {} of {} steps",
             retried_steps,
-            failed_steps.len()
+            retryable_steps.len()
         )
     };
 
@@ -2117,10 +2124,13 @@ pub async fn retry_all_failed_dags(
             .await
             .map_err(ApiError::from)?;
 
-        // Find failed steps
-        let failed_steps: Vec<_> = steps.iter().filter(|s| s.status == "FAILED").collect();
+        // Find retryable steps (failed + cancelled with a job).
+        let retryable_steps: Vec<_> = steps
+            .iter()
+            .filter(|s| matches!(s.status.as_str(), "FAILED" | "CANCELLED") && s.job_id.is_some())
+            .collect();
 
-        if failed_steps.is_empty() {
+        if retryable_steps.is_empty() {
             // DAG is failed but no steps are failed? (Reset anyway if it's in a failed state)
             if dag.status == "FAILED" {
                 let _ = dag_scheduler.reset_dag_for_retry(&dag.id).await;
@@ -2135,8 +2145,8 @@ pub async fn retry_all_failed_dags(
             continue;
         }
 
-        // Retry each failed job
-        for step in failed_steps {
+        // Retry each job (FAILED or INTERRUPTED -> PENDING).
+        for step in retryable_steps {
             if let Some(job_id) = &step.job_id {
                 let _ = pipeline_manager.retry_job(job_id).await;
             }
@@ -2170,11 +2180,12 @@ pub async fn cancel_dag(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    let dag_scheduler = pipeline_manager
+    // Preserve service-unavailable semantics if DAG support isn't configured.
+    pipeline_manager
         .dag_scheduler()
         .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
-    let cancelled_steps = dag_scheduler
+    let cancelled_steps = pipeline_manager
         .cancel_dag(&dag_id)
         .await
         .map_err(ApiError::from)?;

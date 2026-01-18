@@ -26,9 +26,11 @@ pub trait JobRepository: Send + Sync {
     async fn create_job(&self, job: &JobDbModel) -> Result<()>;
     async fn update_job_status(&self, id: &str, status: &str) -> Result<()>;
     /// Mark a job as FAILED and set error/completed_at.
-    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<()>;
+    /// Returns the number of rows updated (0 means the job was already in a terminal state).
+    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64>;
     /// Mark a job as INTERRUPTED and set completed_at.
-    async fn mark_job_interrupted(&self, id: &str) -> Result<()>;
+    /// Returns the number of rows updated (0 means the job was already in a terminal state).
+    async fn mark_job_interrupted(&self, id: &str) -> Result<u64>;
     /// Reset a job for retry (PENDING, clear started/completed/error, increment retry_count).
     async fn reset_job_for_retry(&self, id: &str) -> Result<()>;
     /// Count pending jobs, optionally filtered by job types.
@@ -58,6 +60,9 @@ pub trait JobRepository: Send + Sync {
     async fn update_job_execution_info(&self, id: &str, execution_info: &str) -> Result<()>;
     async fn update_job_state(&self, id: &str, state: &str) -> Result<()>;
     async fn update_job(&self, job: &JobDbModel) -> Result<()>;
+    /// Update a job only if its current status matches `expected_status`.
+    /// Returns the number of rows updated.
+    async fn update_job_if_status(&self, job: &JobDbModel, expected_status: &str) -> Result<u64>;
     async fn reset_interrupted_jobs(&self) -> Result<i32>;
     /// Reset processing jobs to pending (for recovery on startup).
     async fn reset_processing_jobs(&self) -> Result<i32>;
@@ -223,11 +228,11 @@ impl JobRepository for SqlxJobRepository {
         Ok(())
     }
 
-    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<()> {
+    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64> {
         retry_on_sqlite_busy("mark_job_failed", || async {
             let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query(
-                "UPDATE job SET status = 'FAILED', completed_at = ?, updated_at = ?, error = ? WHERE id = ?",
+            let res = sqlx::query(
+                "UPDATE job SET status = 'FAILED', completed_at = ?, updated_at = ?, error = ? WHERE id = ? AND status IN ('PENDING', 'PROCESSING')",
             )
             .bind(&now)
             .bind(&now)
@@ -235,23 +240,23 @@ impl JobRepository for SqlxJobRepository {
             .bind(id)
             .execute(&self.pool)
             .await?;
-            Ok(())
+            Ok(res.rows_affected())
         })
         .await
     }
 
-    async fn mark_job_interrupted(&self, id: &str) -> Result<()> {
+    async fn mark_job_interrupted(&self, id: &str) -> Result<u64> {
         retry_on_sqlite_busy("mark_job_interrupted", || async {
             let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query(
-                "UPDATE job SET status = 'INTERRUPTED', completed_at = ?, updated_at = ? WHERE id = ?",
+            let res = sqlx::query(
+                "UPDATE job SET status = 'INTERRUPTED', completed_at = ?, updated_at = ? WHERE id = ? AND status IN ('PENDING', 'PROCESSING')",
             )
             .bind(&now)
             .bind(&now)
             .bind(id)
             .execute(&self.pool)
             .await?;
-            Ok(())
+            Ok(res.rows_affected())
         })
         .await
     }
@@ -260,7 +265,7 @@ impl JobRepository for SqlxJobRepository {
         retry_on_sqlite_busy("reset_job_for_retry", || async {
             let now = chrono::Utc::now().to_rfc3339();
             let res = sqlx::query(
-                "UPDATE job SET status = 'PENDING', started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ? AND status = 'FAILED'",
+                "UPDATE job SET status = 'PENDING', started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ? AND status IN ('FAILED', 'INTERRUPTED')",
             )
             .bind(&now)
             .bind(id)
@@ -518,6 +523,60 @@ impl JobRepository for SqlxJobRepository {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    async fn update_job_if_status(&self, job: &JobDbModel, expected_status: &str) -> Result<u64> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let res = sqlx::query(
+            r#"
+            UPDATE job SET
+                job_type = ?,
+                status = ?,
+                config = ?,
+                state = ?,
+                updated_at = ?,
+                input = ?,
+                outputs = ?,
+                priority = ?,
+                streamer_id = ?,
+                session_id = ?,
+                started_at = ?,
+                completed_at = ?,
+                error = ?,
+                retry_count = ?,
+                pipeline_id = ?,
+                execution_info = ?,
+                duration_secs = ?,
+                queue_wait_secs = ?,
+                dag_step_execution_id = ?
+            WHERE id = ? AND status = ?
+            "#,
+        )
+        .bind(&job.job_type)
+        .bind(&job.status)
+        .bind(&job.config)
+        .bind(&job.state)
+        .bind(&now)
+        .bind(&job.input)
+        .bind(&job.outputs)
+        .bind(job.priority)
+        .bind(&job.streamer_id)
+        .bind(&job.session_id)
+        .bind(&job.started_at)
+        .bind(&job.completed_at)
+        .bind(&job.error)
+        .bind(job.retry_count)
+        .bind(&job.pipeline_id)
+        .bind(&job.execution_info)
+        .bind(job.duration_secs)
+        .bind(job.queue_wait_secs)
+        .bind(&job.dag_step_execution_id)
+        .bind(&job.id)
+        .bind(expected_status)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(res.rows_affected())
     }
 
     async fn reset_interrupted_jobs(&self) -> Result<i32> {

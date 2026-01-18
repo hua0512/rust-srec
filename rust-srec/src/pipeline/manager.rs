@@ -1357,6 +1357,25 @@ where
         .await
     }
 
+    /// Cancel a DAG execution.
+    ///
+    /// This also notifies the paired/session coordinators so session-complete orchestration
+    /// can't get stuck waiting for a cancelled DAG to finish.
+    pub async fn cancel_dag(&self, dag_id: &str) -> Result<u64> {
+        let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
+            crate::Error::Validation(
+                "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+            )
+        })?;
+
+        let update = dag_scheduler.cancel_dag_with_completion(dag_id).await?;
+        if let Some(completion) = update.completion {
+            self.handle_dag_completion(completion).await;
+        }
+
+        Ok(update.cancelled_count)
+    }
+
     async fn create_dag_pipeline_internal(
         &self,
         session_id: &str,
@@ -1456,13 +1475,13 @@ where
             }
 
             // Find workflow steps that need expansion
-            let workflow_steps: Vec<(usize, String, Vec<String>)> = dag
+            let workflow_steps: Vec<(usize, String)> = dag
                 .steps
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, step)| {
                     if let PipelineStep::Workflow { name } = &step.step {
-                        Some((idx, name.clone(), step.depends_on.clone()))
+                        Some((idx, name.clone()))
                     } else {
                         None
                     }
@@ -1474,20 +1493,14 @@ where
             }
 
             // Process each workflow step
-            for (_, workflow_name, _) in workflow_steps.iter().rev() {
-                // Process in reverse to maintain index validity
-                let workflow_step_idx = dag
-                    .steps
-                    .iter()
-                    .position(|s| matches!(&s.step, PipelineStep::Workflow { name } if name == workflow_name))
-                    .unwrap();
-
+            for (workflow_step_idx, workflow_name) in workflow_steps.into_iter().rev() {
+                // Process in reverse to maintain index validity.
                 let workflow_step = &dag.steps[workflow_step_idx];
                 let workflow_step_id = workflow_step.id.clone();
                 let workflow_step_deps = workflow_step.depends_on.clone();
 
                 // Look up the workflow
-                let workflow_dag = self.lookup_workflow(workflow_name).await?;
+                let workflow_dag = self.lookup_workflow(&workflow_name).await?;
 
                 // Find workflow's root and leaf steps
                 let root_step_ids: HashSet<String> = workflow_dag
@@ -2658,9 +2671,11 @@ impl Default for PipelineManager {
 mod tests {
     use super::*;
     use crate::database::models::{
-        DanmuStatisticsDbModel, LiveSessionDbModel, OutputFilters, SessionFilters,
+        DanmuStatisticsDbModel, LiveSessionDbModel, OutputFilters, PipelinePreset, SessionFilters,
     };
+    use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
     use async_trait::async_trait;
+    use std::collections::HashMap;
     use std::sync::Mutex;
 
     struct TestSessionRepository {
@@ -2818,6 +2833,114 @@ mod tests {
         manager.set_worker_concurrency(1, 3);
         assert_eq!(manager.cpu_pool.desired_max_workers(), 1);
         assert_eq!(manager.io_pool.desired_max_workers(), 3);
+    }
+
+    struct TestPipelinePresetRepository {
+        preset: PipelinePreset,
+    }
+
+    #[async_trait]
+    impl PipelinePresetRepository for TestPipelinePresetRepository {
+        async fn list_pipeline_presets(&self) -> Result<Vec<PipelinePreset>> {
+            Ok(vec![])
+        }
+
+        async fn list_pipeline_presets_filtered(
+            &self,
+            _filters: &PipelinePresetFilters,
+            _pagination: &Pagination,
+        ) -> Result<(Vec<PipelinePreset>, u64)> {
+            Ok((vec![], 0))
+        }
+
+        async fn get_pipeline_preset(&self, _id: &str) -> Result<Option<PipelinePreset>> {
+            Ok(None)
+        }
+
+        async fn get_pipeline_preset_by_name(&self, name: &str) -> Result<Option<PipelinePreset>> {
+            if name == self.preset.name {
+                Ok(Some(self.preset.clone()))
+            } else {
+                Ok(None)
+            }
+        }
+
+        async fn create_pipeline_preset(&self, _preset: &PipelinePreset) -> Result<()> {
+            Ok(())
+        }
+
+        async fn update_pipeline_preset(&self, _preset: &PipelinePreset) -> Result<()> {
+            Ok(())
+        }
+
+        async fn delete_pipeline_preset(&self, _id: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_expand_workflows_with_duplicate_names() {
+        let workflow_dag = DagPipelineDefinition::new(
+            "wf",
+            vec![
+                DagStep::new("A", PipelineStep::inline("noop", serde_json::json!({}))),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::inline("noop", serde_json::json!({})),
+                    vec!["A".to_string()],
+                ),
+            ],
+        );
+        let repo = Arc::new(TestPipelinePresetRepository {
+            preset: PipelinePreset::new("wf", workflow_dag),
+        });
+
+        let manager: PipelineManager = PipelineManager::new().with_pipeline_preset_repository(repo);
+
+        let parent = DagPipelineDefinition::new(
+            "parent",
+            vec![
+                DagStep {
+                    id: "W1".to_string(),
+                    step: PipelineStep::Workflow {
+                        name: "wf".to_string(),
+                    },
+                    depends_on: vec![],
+                },
+                DagStep {
+                    id: "W2".to_string(),
+                    step: PipelineStep::Workflow {
+                        name: "wf".to_string(),
+                    },
+                    depends_on: vec!["W1".to_string()],
+                },
+                DagStep::with_dependencies(
+                    "Z",
+                    PipelineStep::inline("noop", serde_json::json!({})),
+                    vec!["W2".to_string()],
+                ),
+            ],
+        );
+
+        let expanded = manager.expand_workflows_in_dag(parent).await.unwrap();
+
+        let mut deps_by_id: HashMap<String, Vec<String>> = HashMap::new();
+        for step in &expanded.steps {
+            deps_by_id.insert(step.id.clone(), step.depends_on.clone());
+        }
+
+        assert!(!deps_by_id.contains_key("W1"));
+        assert!(!deps_by_id.contains_key("W2"));
+
+        assert_eq!(deps_by_id.get("W1__A").unwrap(), &Vec::<String>::new());
+        assert_eq!(deps_by_id.get("W1__B").unwrap(), &vec!["W1__A".to_string()]);
+
+        // W2 depends on the *leaf* of W1 after expansion.
+        assert_eq!(deps_by_id.get("W2__A").unwrap(), &vec!["W1__B".to_string()]);
+        assert_eq!(deps_by_id.get("W2__B").unwrap(), &vec!["W2__A".to_string()]);
+
+        // Z depends on the *leaf* of W2 after expansion.
+        assert_eq!(deps_by_id.get("Z").unwrap(), &vec!["W2__B".to_string()]);
     }
 
     #[tokio::test]
