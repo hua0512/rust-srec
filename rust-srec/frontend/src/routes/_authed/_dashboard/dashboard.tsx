@@ -20,7 +20,8 @@ import {
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { type I18n } from '@lingui/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -78,44 +79,48 @@ function Dashboard() {
     refetchInterval: 5000,
   });
 
+  const { i18n } = useLingui();
+
   const activeStreamers = useMemo(() => streamers?.items || [], [streamers]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteStreamer({ data: id }),
     onSuccess: () => {
-      toast.success(t`Streamer deleted`);
+      toast.success(i18n._(msg`Streamer deleted`));
       queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to delete streamer`);
+      toast.error(error.message || i18n._(msg`Failed to delete streamer`));
     },
   });
 
   const checkMutation = useMutation({
     mutationFn: (id: string) => checkStreamer({ data: id }),
-    onSuccess: () => toast.success(t`Check triggered`),
+    onSuccess: () => toast.success(i18n._(msg`Check triggered`)),
     onError: (error: any) =>
-      toast.error(error.message || t`Failed to trigger check`),
+      toast.error(error.message || i18n._(msg`Failed to trigger check`)),
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       updateStreamer({ data: { id, data: { enabled } } }),
     onSuccess: () => {
-      toast.success(t`Streamer updated`);
+      toast.success(i18n._(msg`Streamer updated`));
       queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
     onError: (error: any) =>
-      toast.error(error.message || t`Failed to update streamer`),
+      toast.error(error.message || i18n._(msg`Failed to update streamer`)),
   });
 
   const handleDelete = useCallback(
     (id: string) => {
-      if (confirm(t`Are you sure you want to delete this streamer?`)) {
+      if (
+        confirm(i18n._(msg`Are you sure you want to delete this streamer?`))
+      ) {
         deleteMutation.mutate(id);
       }
     },
-    [deleteMutation],
+    [deleteMutation, i18n],
   );
 
   const handleToggle = useCallback(
@@ -218,7 +223,7 @@ function Dashboard() {
                           />
                         </div>
                         <span className="text-2xl font-bold capitalize bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
-                          {getStatusLabel(health.status)}
+                          {getStatusLabel(health.status, i18n)}
                         </span>
                       </div>
                       <p className="text-xs font-medium text-muted-foreground/70 mt-3 flex items-center gap-2">
@@ -234,19 +239,19 @@ function Dashboard() {
 
                 {/* Key Components */}
                 <ComponentStatusCard
-                  name={t`Database`}
+                  name={i18n._(msg`Database`)}
                   component={dbComponent}
                   icon={HardDrive}
                   mounted={mounted}
                 />
                 <ComponentStatusCard
-                  name={t`Download Manager`}
+                  name={i18n._(msg`Download Manager`)}
                   component={downloadMgrComponent}
                   icon={Activity}
                   mounted={mounted}
                 />
                 <ComponentStatusCard
-                  name={t`Disk`}
+                  name={i18n._(msg`Disk`)}
                   component={diskComponent}
                   icon={HardDrive}
                   mounted={mounted}
@@ -484,7 +489,7 @@ const ComponentStatusCard = memo(
                 component.message &&
                 component.message.length < 30
                   ? component.message
-                  : getStatusLabel(component.status)}
+                  : getStatusLabel(component.status, i18n)}
               </div>
             </div>
             {component.last_check && (
@@ -587,16 +592,16 @@ const StatCard = memo(
 
 StatCard.displayName = 'StatCard';
 
-function getStatusLabel(status: string) {
+function getStatusLabel(status: string, i18n: I18n) {
   switch (status.toLowerCase()) {
     case 'healthy':
-      return t`Healthy`;
+      return i18n._(msg`Healthy`);
     case 'degraded':
-      return t`Degraded`;
+      return i18n._(msg`Degraded`);
     case 'unhealthy':
-      return t`Unhealthy`;
+      return i18n._(msg`Unhealthy`);
     case 'unknown':
-      return t`Unknown`;
+      return i18n._(msg`Unknown`);
     default:
       return status;
   }

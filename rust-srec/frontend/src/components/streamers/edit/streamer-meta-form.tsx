@@ -26,7 +26,8 @@ import { Button } from '@/components/ui/button';
 import { Link as RouterLink } from '@tanstack/react-router';
 import { ArrowLeft, User, Link, Sparkles, Loader2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { motion } from 'motion/react';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -59,6 +60,7 @@ export function StreamerMetaForm({
   isAutofilling = false,
   children,
 }: StreamerMetaFormProps) {
+  const { i18n } = useLingui();
   const url = useWatch({
     control: form.control,
     name: 'url',
@@ -141,7 +143,7 @@ export function StreamerMetaForm({
                       <div className="flex gap-2">
                         <Input
                           {...field}
-                          placeholder={t`e.g. My Favorite Streamer`}
+                          placeholder={i18n._(msg`e.g. My Favorite Streamer`)}
                           className="h-11 bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all"
                           disabled={fieldsDisabled}
                         />
@@ -194,7 +196,7 @@ export function StreamerMetaForm({
                 <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger className="h-11 bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all">
-                      <SelectValue placeholder={t`Select priority`} />
+                      <SelectValue placeholder={i18n._(msg`Select priority`)} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>

@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { toast } from 'sonner';
 import { z } from 'zod';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Save } from 'lucide-react';
 import { useForm, useFormContext } from 'react-hook-form';
@@ -73,6 +74,7 @@ function GlobalConfigPage() {
 
 function SaveButton({ isPending }: { isPending: boolean }) {
   const { formState } = useFormContext();
+  const { i18n } = useLingui();
 
   if (!formState.isDirty) return null;
 
@@ -85,7 +87,7 @@ function SaveButton({ isPending }: { isPending: boolean }) {
         className="shadow-2xl shadow-primary/40 hover:shadow-primary/50 transition-all hover:scale-105 active:scale-95 rounded-full px-8 h-14 bg-gradient-to-r from-primary to-primary/90 text-base font-semibold"
       >
         <Save className="w-5 h-5 mr-2" />
-        {isPending ? t`Saving...` : t`Save Changes`}
+        {isPending ? i18n._(msg`Saving...`) : i18n._(msg`Save Changes`)}
       </Button>
     </div>
   );
@@ -94,7 +96,6 @@ function SaveButton({ isPending }: { isPending: boolean }) {
 const CardSkeleton = () => (
   <Skeleton className="h-[400px] rounded-xl border-border/40 bg-muted/60" />
 );
-
 function GlobalConfigForm({
   config,
 }: {
@@ -102,6 +103,7 @@ function GlobalConfigForm({
 }) {
   type GlobalConfigFormValues = z.infer<typeof GlobalConfigFormSchema>;
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
 
   const defaultValues = useMemo(
     () => ({
@@ -126,11 +128,11 @@ function GlobalConfigForm({
   const updateMutation = useMutation({
     mutationFn: (data: GlobalConfigFormValues) => updateGlobalConfig({ data }),
     onSuccess: () => {
-      toast.success(t`Settings updated successfully`);
+      toast.success(i18n._(msg`Settings updated successfully`));
       queryClient.invalidateQueries({ queryKey: ['config', 'global'] });
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to update settings`);
+      toast.error(error.message || i18n._(msg`Failed to update settings`));
     },
   });
 

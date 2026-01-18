@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import type { I18n } from '@lingui/core';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
   Bell,
@@ -125,6 +127,7 @@ function getPriorityStyles(priority: string) {
 }
 
 function NotificationEventsPage() {
+  const { i18n } = useLingui();
   const [eventType, setEventType] = useState<string>('all');
   const [streamerId, setStreamerId] = useState<string>('');
   const [limit, setLimit] = useState<string>('200');
@@ -208,7 +211,7 @@ function NotificationEventsPage() {
             <Trans>Failed to load events</Trans>
           </div>
           <div className="text-muted-foreground">
-            {(error as any)?.message || t`Unknown error`}
+            {(error as any)?.message || i18n._(msg`Unknown error`)}
           </div>
           <div className="mt-3">
             <Button variant="outline" onClick={() => refetch()}>
@@ -234,7 +237,7 @@ function NotificationEventsPage() {
             <SearchInput
               defaultValue={streamerId}
               onSearch={setStreamerId}
-              placeholder={t`Filter streamer...`}
+              placeholder={i18n._(msg`Filter streamer...`)}
               className="md:w-56 min-w-[200px]"
             />
 
@@ -244,7 +247,7 @@ function NotificationEventsPage() {
               <Select value={eventType} onValueChange={setEventType}>
                 <SelectTrigger className="h-7 border-none bg-transparent hover:bg-background/50 transition-colors rounded-full text-xs font-medium px-3 gap-1.5 focus:ring-0 shadow-none">
                   <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-                  <SelectValue placeholder={t`Event Type`} />
+                  <SelectValue placeholder={i18n._(msg`Event Type`)} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
@@ -410,7 +413,7 @@ function NotificationEventsPage() {
                       </div>
                     )}
                     <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                      {formatSummary(e.payload, e.event_type)}
+                      {formatSummary(e.payload, e.event_type, i18n)}
                     </p>
                   </div>
 
@@ -474,9 +477,9 @@ function NotificationEventsPage() {
                   navigator.clipboard.writeText(
                     prettyJson(selectedPayload?.payload),
                   );
-                  toast.success(t`Copied`);
+                  toast.success(i18n._(msg`Copied`));
                 } catch {
-                  toast.error(t`Failed to copy`);
+                  toast.error(i18n._(msg`Failed to copy`));
                 }
               }}
             >
@@ -489,7 +492,7 @@ function NotificationEventsPage() {
   );
 }
 
-function formatSummary(payload: string, eventType: string): string {
+function formatSummary(payload: string, eventType: string, i18n: I18n): string {
   try {
     const parsed = JSON.parse(payload);
     const variant = Object.keys(parsed)[0];
@@ -503,20 +506,28 @@ function formatSummary(payload: string, eventType: string): string {
 
     if (eventType.toLowerCase().includes('recording')) {
       if (variant === 'Started')
-        return t`Recording started for ${streamer || 'unknown streamer'}`;
+        return i18n._(
+          msg`Recording started for ${streamer || 'unknown streamer'}`,
+        );
       if (variant === 'Finished')
-        return t`Recording finished for ${streamer || 'unknown streamer'}`;
+        return i18n._(
+          msg`Recording finished for ${streamer || 'unknown streamer'}`,
+        );
       if (variant === 'Failed')
-        return t`Recording failed: ${error || 'Unknown error'}`;
+        return i18n._(msg`Recording failed: ${error || 'Unknown error'}`);
     }
 
     if (eventType.toLowerCase().includes('download')) {
       if (variant === 'Started')
-        return t`Download started: ${inner.title || streamer || 'unknown'}`;
+        return i18n._(
+          msg`Download started: ${inner.title || streamer || 'unknown'}`,
+        );
       if (variant === 'Finished')
-        return t`Download completed: ${inner.path || inner.title || 'unknown'}`;
+        return i18n._(
+          msg`Download completed: ${inner.path || inner.title || 'unknown'}`,
+        );
       if (variant === 'Failed')
-        return t`Download failed: ${error || 'Unknown error'}`;
+        return i18n._(msg`Download failed: ${error || 'Unknown error'}`);
     }
 
     if (error) return error;

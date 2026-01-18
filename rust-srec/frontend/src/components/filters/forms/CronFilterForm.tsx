@@ -8,9 +8,12 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Trans } from '@lingui/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
 
 export function CronFilterForm() {
+  const { i18n } = useLingui();
   const { control } = useFormContext();
 
   return (
@@ -25,7 +28,7 @@ export function CronFilterForm() {
             </FormLabel>
             <FormControl>
               <Input
-                placeholder="* * * * * *"
+                placeholder={i18n._(msg`* * * * * *`)}
                 {...field}
                 className="font-mono"
               />
@@ -48,7 +51,7 @@ export function CronFilterForm() {
               <Trans>Timezone</Trans>
             </FormLabel>
             <FormControl>
-              <Input placeholder="UTC" {...field} />
+              <Input placeholder={i18n._(msg`UTC`)} {...field} />
             </FormControl>
             <FormDescription>
               <Trans>IANA Timezone (e.g. Asia/Shanghai, UTC).</Trans>

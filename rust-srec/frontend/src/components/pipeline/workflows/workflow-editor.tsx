@@ -15,8 +15,9 @@ import {
 } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
 
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -67,6 +68,7 @@ export function WorkflowEditor({
   onSubmit,
   isUpdating,
 }: WorkflowEditorProps) {
+  const { i18n } = useLingui();
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -164,7 +166,7 @@ export function WorkflowEditor({
   const handleValidate = async () => {
     const data = form.getValues();
     if (data.steps.length === 0) {
-      toast.error(t`Pipeline must have at least one step`);
+      toast.error(i18n._(msg`Pipeline must have at least one step`));
       return;
     }
 
@@ -178,12 +180,14 @@ export function WorkflowEditor({
       });
 
       if (result.valid) {
-        toast.success(t`Pipeline is valid`, {
-          description: t`No errors found. Max depth: ${result.max_depth}`,
+        toast.success(i18n._(msg`Pipeline is valid`), {
+          description: i18n._(
+            msg`No errors found. Max depth: ${result.max_depth}`,
+          ),
           icon: <CheckCircle2 className="h-4 w-4 text-green-500" />,
         });
       } else {
-        toast.error(t`Validation Failed`, {
+        toast.error(i18n._(msg`Validation Failed`), {
           description: (
             <div className="space-y-1 mt-1">
               {result.errors.map((e, i) => (
@@ -209,7 +213,7 @@ export function WorkflowEditor({
       }
     } catch (error) {
       console.error(error);
-      toast.error(t`Validation service unavailable`);
+      toast.error(i18n._(msg`Validation service unavailable`));
     } finally {
       setIsValidating(false);
     }
@@ -306,7 +310,7 @@ export function WorkflowEditor({
                         </FormLabel>
                         <FormControl>
                           <Input
-                            placeholder={t`e.g., Standard Processing`}
+                            placeholder={i18n._(msg`e.g., Standard Processing`)}
                             className="bg-muted/30 border-border/40 focus:bg-background/50 transition-colors"
                             {...field}
                           />
@@ -326,7 +330,9 @@ export function WorkflowEditor({
                         </FormLabel>
                         <FormControl>
                           <Textarea
-                            placeholder={t`Describe what this workflow does...`}
+                            placeholder={i18n._(
+                              msg`Describe what this workflow does...`,
+                            )}
                             className="resize-none bg-muted/30 border-border/40 focus:bg-background/50 transition-colors min-h-[120px]"
                             {...field}
                           />

@@ -17,7 +17,8 @@ import { Button } from '@/components/ui/button';
 import { Plus, Workflow, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { WorkflowCard } from '@/components/pipeline/workflows/workflow-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -53,6 +54,7 @@ const PAGE_SIZES = [12, 24, 48, 96];
 function WorkflowsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [pageSize, setPageSize] = useState(24);
@@ -109,11 +111,11 @@ function WorkflowsPage() {
   const deleteMutation = useMutation({
     mutationFn: deletePipelinePreset,
     onSuccess: () => {
-      toast.success(t`Workflow deleted successfully`);
+      toast.success(i18n._(msg`Workflow deleted successfully`));
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'workflows'] });
     },
     onError: (error) =>
-      toast.error(t`Failed to delete workflow: ${error.message}`),
+      toast.error(i18n._(msg`Failed to delete workflow: ${error.message}`)),
   });
 
   const handleDelete = (id: string) => {
@@ -164,7 +166,7 @@ function WorkflowsPage() {
             <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder={t`Search workflows...`}
+                placeholder={i18n._(msg`Search workflows...`)}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 h-9"

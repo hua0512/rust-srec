@@ -39,7 +39,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { plural } from '@lingui/core/macro';
+import { t, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { PipelinePreset } from '@/server/functions/pipeline';
 import {
@@ -146,10 +146,9 @@ export function WorkflowCard({
           </CardTitle>
           <div className="flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
-              {plural(steps.length, {
-                one: '# step',
-                other: '# steps',
-              })}
+              {t(
+                i18n,
+              )`${plural(steps.length, { one: '# step', other: '# steps' })}`}
             </span>
           </div>
         </div>

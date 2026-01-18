@@ -31,7 +31,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { type I18n } from '@lingui/core';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
 
@@ -242,7 +243,7 @@ function SystemHealthPage() {
                         className="hover:bg-white/5 transition-colors border-white/5"
                       >
                         <TableCell className="font-medium">
-                          {formatComponentName(component.name)}
+                          {formatComponentName(component.name, i18n)}
                           <div className="text-xs text-muted-foreground font-mono mt-0.5">
                             {component.name}
                           </div>
@@ -320,15 +321,15 @@ function formatUptime(seconds: number): string {
   return `${minutes}m`;
 }
 
-function formatComponentName(name: string): string {
-  if (name.startsWith('disk:')) return t`Disk Space`;
-  if (name === 'database') return t`Database`;
-  if (name === 'download_manager') return t`Download Manager`;
-  if (name === 'pipeline_manager') return t`Pipeline Manager`;
-  if (name === 'danmu_service') return t`Danmu Service`;
-  if (name === 'scheduler') return t`Scheduler`;
-  if (name === 'notification_service') return t`Notification Service`;
-  if (name === 'maintenance_scheduler') return t`Maintenance`;
+function formatComponentName(name: string, i18n: I18n): string {
+  if (name.startsWith('disk:')) return i18n._(msg`Disk Space`);
+  if (name === 'database') return i18n._(msg`Database`);
+  if (name === 'download_manager') return i18n._(msg`Download Manager`);
+  if (name === 'pipeline_manager') return i18n._(msg`Pipeline Manager`);
+  if (name === 'danmu_service') return i18n._(msg`Danmu Service`);
+  if (name === 'scheduler') return i18n._(msg`Scheduler`);
+  if (name === 'notification_service') return i18n._(msg`Notification Service`);
+  if (name === 'maintenance_scheduler') return i18n._(msg`Maintenance`);
   return name
     .split('_')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))

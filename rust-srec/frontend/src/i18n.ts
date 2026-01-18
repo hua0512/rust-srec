@@ -1,18 +1,31 @@
-import { i18n } from '@lingui/core';
+import { setupI18n, type I18n } from '@lingui/core';
 import { useEffect, useState } from 'react';
 import { messages as enMessages } from './locales/en/messages';
 import { messages as zhCNMessages } from './locales/zh-CN/messages';
 
-// Load messages for all locales
-i18n.load({
-  en: enMessages,
-  'zh-CN': zhCNMessages,
-});
-
 export const locales = ['en', 'zh-CN'] as const;
 export type Locale = (typeof locales)[number];
-
 export const defaultLocale: Locale = 'en';
+
+export const localeStorageKey = 'app-locale';
+
+/**
+ * Create and configure a fresh i18n instance.
+ * Essential for SSR to prevent locale leakage between requests.
+ */
+export function createI18nInstance() {
+  const instance = setupI18n();
+  instance.load({
+    en: enMessages,
+    'zh-CN': zhCNMessages,
+  });
+  instance.activate(defaultLocale);
+  return instance;
+}
+
+// Keep a global instance for simple client-side usage if needed,
+// but preferred way is to use the instance from context.
+export const i18n = createI18nInstance();
 
 /**
  * Detect locale from browser settings.
@@ -22,8 +35,11 @@ function detectClientLocale(): Locale {
   if (typeof window === 'undefined') return defaultLocale;
 
   // 1. Check saved preference
-  const saved = localStorage.getItem('locale');
+  const preferred = localStorage.getItem(localeStorageKey);
+  const legacy = preferred ? null : localStorage.getItem('locale');
+  const saved = preferred ?? legacy;
   if (saved && locales.includes(saved as Locale)) {
+    if (legacy) localStorage.setItem(localeStorageKey, saved);
     console.log(`[i18n] Client: Using saved locale preference: ${saved}`);
     return saved as Locale;
   }
@@ -88,29 +104,38 @@ export function parseAcceptLanguage(
   return defaultLocale;
 }
 
-// Activate default locale at module level (SSR-safe)
-// The actual locale will be set by activateLocale() on both server and client
-i18n.activate(defaultLocale);
-
 /**
- * Activate a specific locale.
+ * Activate a specific locale on a specific i18n instance.
  */
-export function activateLocale(locale: Locale): void {
-  if (i18n.locale !== locale) {
+export function activateLocale(instance: I18n, locale: Locale): void {
+  if (instance.locale !== locale) {
     console.log(`[i18n] Activating locale: ${locale}`);
-    i18n.activate(locale);
+    instance.activate(locale);
+  }
+
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = locale;
   }
 }
 
+export function persistLocale(locale: Locale): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(localeStorageKey, locale);
+}
+
+export function activateAndPersistLocale(instance: I18n, locale: Locale): void {
+  activateLocale(instance, locale);
+  persistLocale(locale);
+}
+
 /**
- * Initialize locale on the client side.
- * Call this early in the app to switch to the user's preferred locale.
+ * Initialize locale on the client side for a specific instance.
  */
-export function initializeLocale(): Locale {
+export function initializeLocale(instance: I18n): Locale {
   if (typeof window === 'undefined') return defaultLocale;
 
   const locale = detectClientLocale();
-  activateLocale(locale);
+  activateAndPersistLocale(instance, locale);
   return locale;
 }
 
@@ -122,15 +147,15 @@ export function initializeLocale(): Locale {
  * components can choose not to render i18n-dependent content until
  * the locale is properly set up on the client.
  */
-export function useInitLocale(): boolean {
+export function useInitLocale(instance: I18n): boolean {
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    initializeLocale();
+    initializeLocale(instance);
     setIsInitialized(true);
-  }, []);
+  }, [instance]);
 
   return isInitialized;
 }
 
-export { i18n };
+// Final exports are already handled as 'export const' or 'export function'

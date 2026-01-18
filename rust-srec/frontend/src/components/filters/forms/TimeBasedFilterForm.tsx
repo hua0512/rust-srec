@@ -8,7 +8,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Trans } from '@lingui/macro';
+import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 
 const DAYS = [

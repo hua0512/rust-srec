@@ -28,8 +28,9 @@ import { KeywordFilterForm } from './forms/KeywordFilterForm';
 import { CronFilterForm } from './forms/CronFilterForm';
 import { RegexFilterForm } from './forms/RegexFilterForm';
 import { useEffect } from 'react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 
 // Union of all possible configs for the form state
 const FormSchema = CreateFilterRequestSchema;
@@ -51,6 +52,7 @@ export function FilterDialog({
   onOpenChange,
   filterToEdit,
 }: FilterDialogProps) {
+  const { i18n } = useLingui();
   const queryClient = useQueryClient();
   const isEditing = !!filterToEdit;
 
@@ -141,14 +143,14 @@ export function FilterDialog({
     mutationFn: (data: z.infer<typeof CreateFilterRequestSchema>) =>
       createFilter({ data: { streamerId, data } }),
     onSuccess: () => {
-      toast.success(t`Filter created successfully`);
+      toast.success(i18n._(msg`Filter created successfully`));
       queryClient.invalidateQueries({
         queryKey: ['streamers', streamerId, 'filters'],
       });
       onOpenChange(false);
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to create filter`);
+      toast.error(error.message || i18n._(msg`Failed to create filter`));
     },
   });
 
@@ -156,14 +158,14 @@ export function FilterDialog({
     mutationFn: (data: z.infer<typeof CreateFilterRequestSchema>) =>
       updateFilter({ data: { streamerId, filterId: filterToEdit!.id, data } }),
     onSuccess: () => {
-      toast.success(t`Filter updated successfully`);
+      toast.success(i18n._(msg`Filter updated successfully`));
       queryClient.invalidateQueries({
         queryKey: ['streamers', streamerId, 'filters'],
       });
       onOpenChange(false);
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to update filter`);
+      toast.error(error.message || i18n._(msg`Failed to update filter`));
     },
   });
 

@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { EngineEditor } from '@/components/config/engines/engine-editor';
 import { useQuery } from '@tanstack/react-query';
 import { getEngine } from '@/server/functions';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -18,6 +19,7 @@ export const Route = createFileRoute(
 function EditEnginePage() {
   const { engineId } = Route.useParams();
   const navigate = useNavigate();
+  const { i18n } = useLingui();
 
   const {
     data: engine,
@@ -61,7 +63,7 @@ function EditEnginePage() {
       <EngineEditor
         engine={engine}
         onSuccess={() => {
-          toast.success(t`Engine updated successfully`);
+          toast.success(i18n._(msg`Engine updated successfully`));
           navigate({ to: '/config/engines' });
         }}
       />

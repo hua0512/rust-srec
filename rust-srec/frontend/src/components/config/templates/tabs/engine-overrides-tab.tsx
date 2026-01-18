@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Plus, Server } from 'lucide-react';
 import { listEngines } from '@/server/functions';
 import { EngineOverrideCard } from './engine-override-card';
@@ -34,6 +35,7 @@ interface EngineOverridesTabProps {
 }
 
 export function EngineOverridesTab({ form }: EngineOverridesTabProps) {
+  const { i18n } = useLingui();
   const [open, setOpen] = useState(false);
 
   // Fetch available engines
@@ -92,7 +94,7 @@ export function EngineOverridesTab({ form }: EngineOverridesTabProps) {
             </PopoverTrigger>
             <PopoverContent className="w-[300px] p-0" align="end">
               <Command>
-                <CommandInput placeholder={t`Search engines...`} />
+                <CommandInput placeholder={i18n._(msg`Search engines...`)} />
                 <CommandList>
                   <CommandEmpty>
                     <Trans>No engines found.</Trans>

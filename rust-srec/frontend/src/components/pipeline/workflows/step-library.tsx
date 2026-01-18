@@ -11,7 +11,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useInView } from 'react-intersection-observer';
@@ -267,7 +267,7 @@ export const StepLibrary = memo(function StepLibrary({
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
               <Input
-                placeholder={t`Search by name or description...`}
+                placeholder={i18n._(msg`Search by name or description...`)}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 h-11 bg-background border-border/50 focus:border-primary/50 focus:ring-primary/20 transition-all rounded-xl shadow-sm"

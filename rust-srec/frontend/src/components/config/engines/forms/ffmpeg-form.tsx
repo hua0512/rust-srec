@@ -19,8 +19,9 @@ import {
   ArrowRightFromLine,
   ArrowLeftFromLine,
 } from 'lucide-react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 
 interface FfmpegFormProps {
   control: Control<any>;
@@ -28,6 +29,7 @@ interface FfmpegFormProps {
 }
 
 export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
+  const { i18n } = useLingui();
   return (
     <div className="space-y-6">
       <div className="grid gap-6 md:grid-cols-2">
@@ -43,7 +45,7 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
               <FormControl>
                 <Input
                   {...field}
-                  placeholder={t`/usr/bin/ffmpeg or ffmpeg`}
+                  placeholder={i18n._(msg`/usr/bin/ffmpeg or ffmpeg`)}
                   className="bg-background/50"
                 />
               </FormControl>
@@ -96,7 +98,7 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
             <FormControl>
               <Input
                 {...field}
-                placeholder={t`Mozilla/5.0...`}
+                placeholder={i18n._(msg`Mozilla/5.0...`)}
                 className="bg-background/50"
               />
             </FormControl>
@@ -128,7 +130,7 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
                     <ListInput
                       value={field.value}
                       onChange={field.onChange}
-                      placeholder={t`-reconnect 1`}
+                      placeholder={i18n._(msg`-reconnect 1`)}
                       className="bg-background/50"
                     />
                   </FormControl>
@@ -159,7 +161,7 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
                     <ListInput
                       value={field.value}
                       onChange={field.onChange}
-                      placeholder={t`-c copy`}
+                      placeholder={i18n._(msg`-c copy`)}
                       className="bg-background/50"
                     />
                   </FormControl>

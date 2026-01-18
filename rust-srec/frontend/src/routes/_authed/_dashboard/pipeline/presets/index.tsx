@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Plus, Settings2, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
-import { t, msg } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { PresetCard } from '@/components/pipeline/presets/preset-card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -165,17 +165,17 @@ function PresetsPage() {
   const deleteMutation = useMutation({
     mutationFn: deleteJobPreset,
     onSuccess: () => {
-      toast.success(t`Preset deleted successfully`);
+      toast.success(i18n._(msg`Preset deleted successfully`));
       queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
     },
     onError: (error) =>
-      toast.error(t`Failed to delete preset: ${error.message}`),
+      toast.error(i18n._(msg`Failed to delete preset: ${error.message}`)),
   });
 
   const cloneMutation = useMutation({
     mutationFn: cloneJobPreset,
     onSuccess: (cloned) => {
-      toast.success(t`Preset cloned successfully`);
+      toast.success(i18n._(msg`Preset cloned successfully`));
       queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
       setCloneDialogOpen(false);
       setPresetToClone(null);
@@ -187,7 +187,7 @@ function PresetsPage() {
       });
     },
     onError: (error) =>
-      toast.error(t`Failed to clone preset: ${error.message}`),
+      toast.error(i18n._(msg`Failed to clone preset: ${error.message}`)),
   });
 
   const handleDelete = (id: string) => {
@@ -251,7 +251,7 @@ function PresetsPage() {
             <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder={t`Search presets...`}
+                placeholder={i18n._(msg`Search presets...`)}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 h-9"
@@ -490,7 +490,7 @@ function PresetsPage() {
                   id="clone-name"
                   value={cloneName}
                   onChange={(e) => setCloneName(e.target.value)}
-                  placeholder={t`Enter a unique name`}
+                  placeholder={i18n._(msg`Enter a unique name`)}
                 />
               </div>
             </div>

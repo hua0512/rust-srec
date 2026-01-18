@@ -21,7 +21,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 
 interface PipelineConfigCardProps {
   control: Control<any>;
@@ -145,6 +146,7 @@ PipelineSection.displayName = 'PipelineSection';
 
 export const PipelineConfigCard = memo(
   ({ control }: PipelineConfigCardProps) => {
+    const { i18n } = useLingui();
     return (
       <div className="space-y-6">
         <SettingsCard
@@ -287,8 +289,10 @@ export const PipelineConfigCard = memo(
                   <PipelineSection
                     control={control}
                     name="pipeline"
-                    title={t`Per-segment Pipeline`}
-                    description={t`Runs for each recorded segment immediately after it's finished.`}
+                    title={i18n._(msg`Per-segment Pipeline`)}
+                    description={i18n._(
+                      msg`Runs for each recorded segment immediately after it's finished.`,
+                    )}
                     icon={Layers}
                     alertColor="bg-blue-500/5 border-blue-500/20 text-blue-600 dark:text-blue-400"
                     dagName="global_pipeline"
@@ -302,8 +306,10 @@ export const PipelineConfigCard = memo(
                   <PipelineSection
                     control={control}
                     name="paired_segment_pipeline"
-                    title={t`Paired Segment Pipeline`}
-                    description={t`Runs when both video and danmu segments are available. Requires "Record Danmu" to be enabled.`}
+                    title={i18n._(msg`Paired Segment Pipeline`)}
+                    description={i18n._(
+                      msg`Runs when both video and danmu segments are available. Requires "Record Danmu" to be enabled.`,
+                    )}
                     icon={Combine}
                     alertColor="bg-orange-500/5 border-orange-500/20 text-orange-600 dark:text-orange-400"
                     dagName="global_paired_pipeline"
@@ -317,8 +323,10 @@ export const PipelineConfigCard = memo(
                   <PipelineSection
                     control={control}
                     name="session_complete_pipeline"
-                    title={t`Session Complete Pipeline`}
-                    description={t`Runs once after the entire session ends and all segment pipelines have completed.`}
+                    title={i18n._(msg`Session Complete Pipeline`)}
+                    description={i18n._(
+                      msg`Runs once after the entire session ends and all segment pipelines have completed.`,
+                    )}
                     icon={Clock}
                     alertColor="bg-indigo-500/5 border-indigo-500/20 text-indigo-600 dark:text-indigo-400"
                     dagName="global_session_pipeline"

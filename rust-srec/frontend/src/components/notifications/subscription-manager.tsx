@@ -22,7 +22,8 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { NotificationChannel } from '@/api/schemas';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import {
   Loader2,
   BellRing,
@@ -128,48 +129,52 @@ const getEventIcon = (eventType: string) => {
   }
 };
 
-const getEventDescription = (eventType: string) => {
+const getEventDescription = (eventType: string, i18n: any) => {
   switch (eventType) {
     case 'stream_online':
-      return t`Receive a notification when a streamer goes live.`;
+      return i18n._(msg`Receive a notification when a streamer goes live.`);
     case 'stream_offline':
-      return t`Receive a notification when a stream ends.`;
+      return i18n._(msg`Receive a notification when a stream ends.`);
     case 'download_started':
-      return t`Triggered when a new download recording begins.`;
+      return i18n._(msg`Triggered when a new download recording begins.`);
     case 'download_completed':
-      return t`Triggered when a download successfully completes.`;
+      return i18n._(msg`Triggered when a download successfully completes.`);
     case 'download_error':
-      return t`Triggered when a download fails with an error.`;
+      return i18n._(msg`Triggered when a download fails with an error.`);
     case 'segment_started':
-      return t`Triggered when a new file segment is created.`;
+      return i18n._(msg`Triggered when a new file segment is created.`);
     case 'segment_completed':
-      return t`Triggered when a file segment is finished.`;
+      return i18n._(msg`Triggered when a file segment is finished.`);
     case 'download_cancelled':
-      return t`Triggered when a download is manually cancelled.`;
+      return i18n._(msg`Triggered when a download is manually cancelled.`);
     case 'download_rejected':
-      return t`Triggered when a download is rejected (e.g., circuit breaker).`;
+      return i18n._(
+        msg`Triggered when a download is rejected (e.g., circuit breaker).`,
+      );
     case 'config_updated':
-      return t`Triggered when streamer configuration is dynamically updated.`;
+      return i18n._(
+        msg`Triggered when streamer configuration is dynamically updated.`,
+      );
     case 'pipeline_started':
-      return t`Triggered when a post-processing pipeline job starts.`;
+      return i18n._(msg`Triggered when a post-processing pipeline job starts.`);
     case 'pipeline_completed':
-      return t`Triggered when a pipeline job finishes successfully.`;
+      return i18n._(msg`Triggered when a pipeline job finishes successfully.`);
     case 'pipeline_failed':
-      return t`Triggered when a pipeline job fails.`;
+      return i18n._(msg`Triggered when a pipeline job fails.`);
     case 'pipeline_cancelled':
-      return t`Triggered when a pipeline job is cancelled.`;
+      return i18n._(msg`Triggered when a pipeline job is cancelled.`);
     case 'fatal_error':
-      return t`Critical system errors or streamer failures.`;
+      return i18n._(msg`Critical system errors or streamer failures.`);
     case 'out_of_space':
-      return t`Alerts when disk space is running low.`;
+      return i18n._(msg`Alerts when disk space is running low.`);
     case 'pipeline_queue_warning':
-      return t`Warning when the processing queue gets too long.`;
+      return i18n._(msg`Warning when the processing queue gets too long.`);
     case 'pipeline_queue_critical':
-      return t`Critical alert when the processing queue is full.`;
+      return i18n._(msg`Critical alert when the processing queue is full.`);
     case 'system_startup':
-      return t`Triggered when the application starts up.`;
+      return i18n._(msg`Triggered when the application starts up.`);
     case 'system_shutdown':
-      return t`Triggered when the application shuts down.`;
+      return i18n._(msg`Triggered when the application shuts down.`);
     default:
       return '';
   }
@@ -181,6 +186,7 @@ export function SubscriptionManager({
   onOpenChange,
 }: SubscriptionManagerProps) {
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -214,14 +220,14 @@ export function SubscriptionManager({
     mutationFn: (events: string[]) =>
       updateSubscriptions({ data: { id: channel!.id, events } }),
     onSuccess: () => {
-      toast.success(t`Subscriptions updated`);
+      toast.success(i18n._(msg`Subscriptions updated`));
       queryClient.invalidateQueries({
         queryKey: ['subscriptions', channel?.id],
       });
       onOpenChange(false);
     },
     onError: (err: any) => {
-      toast.error(err.message || t`Failed to update subscriptions`);
+      toast.error(err.message || i18n._(msg`Failed to update subscriptions`));
     },
   });
 
@@ -324,7 +330,7 @@ export function SubscriptionManager({
               <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder={t`Search events...`}
+                  placeholder={i18n._(msg`Search events...`)}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9 bg-muted/40 border-primary/10 transition-colors focus:bg-background h-9"
@@ -410,7 +416,7 @@ export function SubscriptionManager({
                             {type.event_type}
                           </p>
                           <p className="text-xs text-muted-foreground/60 leading-relaxed">
-                            {getEventDescription(type.event_type)}
+                            {getEventDescription(type.event_type, i18n)}
                           </p>
                         </div>
                       </motion.div>

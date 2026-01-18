@@ -5,8 +5,9 @@ import {
   useLocation,
   redirect,
 } from '@tanstack/react-router';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import {
   Settings,
   Globe,
@@ -42,55 +43,56 @@ interface SidebarItem {
 
 function ConfigLayout() {
   const { pathname } = useLocation();
+  const { i18n } = useLingui();
 
   const sidebarItems: SidebarItem[] = [
     {
-      title: t`Global`,
+      title: i18n._(msg`Global`),
       href: '/config/global',
       icon: Globe,
-      description: t`System-wide preferences`,
+      description: i18n._(msg`System-wide preferences`),
     },
     {
-      title: t`Platforms`,
+      title: i18n._(msg`Platforms`),
       href: '/config/platforms',
       icon: Share2,
-      description: t`Streaming services`,
+      description: i18n._(msg`Streaming services`),
     },
     {
-      title: t`Templates`,
+      title: i18n._(msg`Templates`),
       href: '/config/templates',
       icon: LayoutTemplate,
-      description: t`Job configurations`,
+      description: i18n._(msg`Job configurations`),
     },
     {
-      title: t`Engines`,
+      title: i18n._(msg`Engines`),
       href: '/config/engines',
       icon: Cpu,
-      description: t`Processing nodes`,
+      description: i18n._(msg`Processing nodes`),
     },
     {
-      title: t`Logging`,
+      title: i18n._(msg`Logging`),
       href: '/config/logging',
       icon: Terminal,
-      description: t`Log levels & modules`,
+      description: i18n._(msg`Log levels & modules`),
     },
     {
-      title: t`Theme`,
+      title: i18n._(msg`Theme`),
       href: '/config/theme',
       icon: Palette,
-      description: t`Appearance & style`,
+      description: i18n._(msg`Appearance & style`),
     },
     {
-      title: t`Backup & Restore`,
+      title: i18n._(msg`Backup & Restore`),
       href: '/config/backup',
       icon: Archive,
-      description: t`Backup & Restore`,
+      description: i18n._(msg`Backup & Restore`),
     },
     {
-      title: t`Language`,
+      title: i18n._(msg`Language`),
       href: '/config/language',
       icon: Languages,
-      description: t`Choose your display language`,
+      description: i18n._(msg`Choose your display language`),
     },
   ];
 

@@ -3,16 +3,15 @@ import { StreamerSchema } from '../../api/schemas';
 import { z } from 'zod';
 import { CardHeader } from '../ui/card';
 import { cn } from '../../lib/utils';
-import { useDownloadStore } from '../../store/downloads';
 import { useShallow } from 'zustand/react/shallow';
-import { useStore } from '@/hooks/use-store';
 import { ProgressIndicator } from './progress-indicator';
 import { StatusBadge } from './card/stream-status-badge';
 import { useStreamerStatus } from './card/use-streamer-status';
 import { StreamActionsMenu } from './card/stream-actions-menu';
 import { StreamAvatarInfo } from './card/stream-avatar-info';
-
 import { DashboardCard } from '../dashboard/dashboard-card';
+import { useStore } from 'zustand';
+import { useDownloadStore } from '@/store/downloads';
 
 interface StreamerCardProps {
   streamer: z.infer<typeof StreamerSchema>;

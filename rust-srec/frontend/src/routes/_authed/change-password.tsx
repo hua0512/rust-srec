@@ -16,7 +16,8 @@ import {
 } from '../../components/ui/form';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { useState, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
@@ -29,6 +30,7 @@ import { changePassword } from '../../server/functions';
 function ChangePasswordPage() {
   const { user } = Route.useRouteContext();
   const mustChangePassword = !!user?.mustChangePassword;
+  const { i18n } = useLingui();
   const router = useRouter();
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -61,13 +63,15 @@ function ChangePasswordPage() {
 
       // Session is cleared after password change (all tokens revoked)
       toast.success(
-        t`Password changed successfully. Please login with your new password.`,
+        i18n._(
+          msg`Password changed successfully. Please login with your new password.`,
+        ),
       );
 
       await router.invalidate();
       router.navigate({ to: '/login', replace: true });
     } catch (error: any) {
-      toast.error(error?.message || t`Failed to change password`);
+      toast.error(error?.message || i18n._(msg`Failed to change password`));
     }
   };
 
@@ -137,7 +141,7 @@ function ChangePasswordPage() {
                       <div className="relative">
                         <Input
                           type={showCurrentPassword ? 'text' : 'password'}
-                          placeholder={t`Current password`}
+                          placeholder={i18n._(msg`Current password`)}
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
                         />
@@ -181,7 +185,7 @@ function ChangePasswordPage() {
                       <div className="relative">
                         <Input
                           type={showNewPassword ? 'text' : 'password'}
-                          placeholder={t`New password (min 8 chars)`}
+                          placeholder={i18n._(msg`New password (min 8 chars)`)}
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
                         />
@@ -223,7 +227,7 @@ function ChangePasswordPage() {
                       <div className="relative">
                         <Input
                           type={showConfirmPassword ? 'text' : 'password'}
-                          placeholder={t`Confirm new password`}
+                          placeholder={i18n._(msg`Confirm new password`)}
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
                         />

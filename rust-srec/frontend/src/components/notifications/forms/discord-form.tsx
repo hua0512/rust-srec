@@ -7,6 +7,8 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { Globe, User } from 'lucide-react';
 import {
   Select,
@@ -20,6 +22,7 @@ import { IconInput } from '@/components/ui/icon-input';
 import { SwitchCard } from '@/components/ui/switch-card';
 
 export function DiscordForm() {
+  const { i18n } = useLingui();
   const form = useFormContext();
 
   return (
@@ -35,7 +38,7 @@ export function DiscordForm() {
             <FormControl>
               <IconInput
                 icon={Globe}
-                placeholder="https://discord.com/api/webhooks/..."
+                placeholder={i18n._(msg`https://discord.com/api/webhooks/...`)}
                 className="bg-background/50"
                 {...field}
               />
@@ -56,7 +59,7 @@ export function DiscordForm() {
               <FormControl>
                 <IconInput
                   icon={User}
-                  placeholder="Bot Name"
+                  placeholder={i18n._(msg`Bot Name`)}
                   className="bg-background/50"
                   {...field}
                 />
@@ -75,7 +78,7 @@ export function DiscordForm() {
               </FormLabel>
               <FormControl>
                 <Input
-                  placeholder="https://..."
+                  placeholder={i18n._(msg`https://...`)}
                   {...field}
                   className="bg-background/50"
                 />
@@ -101,10 +104,18 @@ export function DiscordForm() {
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="Low">Low</SelectItem>
-                  <SelectItem value="Normal">Normal</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                  <SelectItem value="Critical">Critical</SelectItem>
+                  <SelectItem value="Low">
+                    <Trans>Low</Trans>
+                  </SelectItem>
+                  <SelectItem value="Normal">
+                    <Trans>Normal</Trans>
+                  </SelectItem>
+                  <SelectItem value="High">
+                    <Trans>High</Trans>
+                  </SelectItem>
+                  <SelectItem value="Critical">
+                    <Trans>Critical</Trans>
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <FormMessage />

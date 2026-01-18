@@ -2,8 +2,9 @@ import { useForm, useWatch, type Control } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Form,
@@ -116,6 +117,7 @@ function EngineForm({
   engineId,
   onSuccess,
 }: EngineFormProps) {
+  const { i18n } = useLingui();
   const queryClient = useQueryClient();
 
   const form = useForm<z.infer<typeof CreateEngineRequestSchema>>({
@@ -189,7 +191,7 @@ function EngineForm({
                   <FormControl>
                     <Input
                       className="h-10 bg-background/50 border-input/50 focus:border-primary/50 transition-colors"
-                      placeholder={t`e.g. High Quality Streamlink`}
+                      placeholder={i18n._(msg`e.g. High Quality Streamlink`)}
                       {...field}
                     />
                   </FormControl>
@@ -235,7 +237,7 @@ function EngineForm({
                   >
                     <FormControl>
                       <SelectTrigger className="h-10 bg-background/50 border-input/50 focus:border-primary/50 transition-colors">
-                        <SelectValue placeholder={t`Select type`} />
+                        <SelectValue placeholder={i18n._(msg`Select type`)} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -296,7 +298,9 @@ function EngineForm({
                 ) : (
                   <Save className="w-5 h-5 mr-2" />
                 )}
-                {isEdit ? t`Save Changes` : t`Create Engine`}
+                {isEdit
+                  ? i18n._(msg`Save Changes`)
+                  : i18n._(msg`Create Engine`)}
               </Button>
             </motion.div>
           )}
@@ -309,6 +313,7 @@ function EngineForm({
 }
 
 export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
+  const { i18n } = useLingui();
   const isEdit = !!engine;
 
   const defaultValues = isEdit
@@ -345,7 +350,7 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
             </Link>
             <div>
               <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-                {isEdit ? t`Edit Engine` : t`Create Engine`}
+                {isEdit ? i18n._(msg`Edit Engine`) : i18n._(msg`Create Engine`)}
               </h1>
               <p className="text-muted-foreground text-sm font-medium">
                 {isEdit ? (

@@ -172,7 +172,7 @@ struct WsConnectionState {
     #[allow(dead_code)]
     reconnect_count: Arc<AtomicU32>,
     /// Message receiver
-    message_rx: mpsc::Receiver<DanmuItem>,
+    message_rx: Arc<Mutex<mpsc::Receiver<DanmuItem>>>,
     /// Task handles
     tasks: Vec<JoinHandle<()>>,
     /// Shutdown sender
@@ -241,13 +241,14 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
     ) -> Result<(
         Arc<AtomicBool>,
         Arc<AtomicU32>,
-        mpsc::Receiver<DanmuItem>,
+        Arc<Mutex<mpsc::Receiver<DanmuItem>>>,
         mpsc::Sender<()>,
         Vec<JoinHandle<()>>,
     )> {
         let is_connected = Arc::new(AtomicBool::new(false));
         let reconnect_count = Arc::new(AtomicU32::new(0));
         let (message_tx, message_rx) = mpsc::channel(100);
+        let message_rx = Arc::new(Mutex::new(message_rx));
         let (response_tx, mut response_rx) = mpsc::channel::<Message>(100);
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
 
@@ -559,11 +560,20 @@ impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
             return Err(DanmakuError::connection("Connection not found"));
         };
 
-        let mut state = state_arc.lock().await;
-        match tokio::time::timeout(Duration::from_millis(100), state.message_rx.recv()).await {
+        let message_rx = {
+            let state = state_arc.lock().await;
+            state.message_rx.clone()
+        };
+
+        let next = tokio::time::timeout(Duration::from_millis(100), async move {
+            let mut rx = message_rx.lock().await;
+            rx.recv().await
+        })
+        .await;
+
+        match next {
             Ok(Some(msg)) => Ok(Some(msg)),
             Ok(None) => {
-                drop(state);
                 let _ = self.connections.write().await.remove(&connection.id);
                 Err(DanmakuError::connection("Channel closed"))
             }

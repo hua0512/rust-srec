@@ -22,6 +22,7 @@ type RefreshOutcome = {
 };
 
 const RECENT_ROTATION_TTL_MS = 60_000;
+const MAX_MAP_SIZE = 1000;
 const inFlightRefreshByRefreshToken = new Map<
   string,
   Promise<RefreshOutcome | null>
@@ -30,6 +31,30 @@ const recentRotationByOldRefreshToken = new Map<
   string,
   { outcome: RefreshOutcome; expiresAt: number }
 >();
+
+/**
+ * Periodically clean up the rotation map to prevent memory leaks on long-running servers.
+ */
+function cleanupRotationMap() {
+  if (recentRotationByOldRefreshToken.size > MAX_MAP_SIZE) {
+    const now = Date.now();
+    for (const [key, value] of recentRotationByOldRefreshToken.entries()) {
+      if (now > value.expiresAt) {
+        recentRotationByOldRefreshToken.delete(key);
+      }
+    }
+  }
+
+  // If still too large, clear oldest (approximate via iterator)
+  if (recentRotationByOldRefreshToken.size > MAX_MAP_SIZE) {
+    const keysToDelete = Array.from(
+      recentRotationByOldRefreshToken.keys(),
+    ).slice(0, recentRotationByOldRefreshToken.size - MAX_MAP_SIZE);
+    for (const key of keysToDelete) {
+      recentRotationByOldRefreshToken.delete(key);
+    }
+  }
+}
 
 function getRecentRotation(refreshToken: string): RefreshOutcome | null {
   const entry = recentRotationByOldRefreshToken.get(refreshToken);
@@ -71,6 +96,7 @@ async function applyOutcomeToSession({
   await session.update(userData);
 
   if (outcome.refreshToken !== oldRefreshToken) {
+    cleanupRotationMap();
     recentRotationByOldRefreshToken.set(oldRefreshToken, {
       outcome,
       expiresAt: Date.now() + RECENT_ROTATION_TTL_MS,

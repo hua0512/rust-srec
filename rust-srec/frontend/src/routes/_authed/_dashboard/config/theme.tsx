@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -125,6 +127,7 @@ function Section({
 }
 
 function ThemePreview() {
+  const { i18n } = useLingui();
   return (
     <Card className="overflow-hidden border-2 shadow-xl bg-background/50 backdrop-blur-xl">
       <div className="border-b bg-muted/30 p-4 flex items-center gap-2">
@@ -154,7 +157,7 @@ function ThemePreview() {
             <div className="space-y-1">
               <div className="text-2xl font-bold">1,234</div>
               <div className="text-xs text-muted-foreground">
-                Active Streams
+                <Trans>Active Streams</Trans>
               </div>
             </div>
           </Card>
@@ -166,23 +169,29 @@ function ThemePreview() {
             </div>
             <div className="space-y-1">
               <div className="text-2xl font-bold">56</div>
-              <div className="text-xs text-muted-foreground">Pending Tasks</div>
+              <div className="text-xs text-muted-foreground">
+                <Trans>Pending Tasks</Trans>
+              </div>
             </div>
           </Card>
         </div>
 
         <div className="space-y-4 p-4 rounded-xl border bg-muted/10">
           <div className="space-y-2">
-            <Label>Example Input</Label>
+            <Label>
+              <Trans>Example Input</Trans>
+            </Label>
             <input
               className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              placeholder="Type something..."
+              placeholder={i18n._(msg`Type something...`)}
             />
           </div>
           <div className="flex gap-2">
-            <Button className="w-full">Primary Action</Button>
+            <Button className="w-full">
+              <Trans>Primary Action</Trans>
+            </Button>
             <Button variant="secondary" className="w-full">
-              Secondary
+              <Trans>Secondary</Trans>
             </Button>
           </div>
         </div>
@@ -284,13 +293,17 @@ function ThemeRadiusSelector() {
     <div className="space-y-4">
       <div className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground space-x-2">
-          <span>Sharp</span>
+          <span>
+            <Trans>Sharp</Trans>
+          </span>
           <span className="text-xs font-mono opacity-50">0px</span>
         </span>
         <span className="font-mono font-medium">{radius}rem</span>
         <span className="text-muted-foreground space-x-2">
           <span className="text-xs font-mono opacity-50">16px</span>
-          <span>Rounded</span>
+          <span>
+            <Trans>Rounded</Trans>
+          </span>
         </span>
       </div>
       <div className="relative pt-2">
@@ -331,7 +344,9 @@ function ThemeGlassSelector() {
   return (
     <div className="flex items-center justify-between rounded-xl border-2 p-4 transition-all hover:bg-muted/50 border-muted">
       <div className="space-y-0.5">
-        <Label className="text-base">Glassmorphism</Label>
+        <Label className="text-base">
+          <Trans>Glassmorphism</Trans>
+        </Label>
         <p className="text-xs text-muted-foreground">
           <Trans>
             Apply a blur effect to the background of cards and sidebars.

@@ -2,8 +2,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJobPreset, updateJobPreset } from '@/server/functions/job';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { PresetEditor } from '@/components/pipeline/presets/preset-editor';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -17,6 +18,7 @@ function EditPresetPage() {
   const { presetId } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
 
   const {
     data: preset,
@@ -30,13 +32,13 @@ function EditPresetPage() {
   const updateMutation = useMutation({
     mutationFn: updateJobPreset,
     onSuccess: () => {
-      toast.success(t`Preset updated successfully`);
+      toast.success(i18n._(msg`Preset updated successfully`));
       queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
       queryClient.invalidateQueries({ queryKey: ['job', 'preset', presetId] });
       navigate({ to: '/pipeline/presets' });
     },
     onError: (error) =>
-      toast.error(t`Failed to update preset: ${error.message}`),
+      toast.error(i18n._(msg`Failed to update preset: ${error.message}`)),
   });
 
   const onSubmit = (data: any) => {
@@ -69,7 +71,7 @@ function EditPresetPage() {
           <Trans>Error loading preset</Trans>
         </h3>
         <p className="text-muted-foreground mt-2">
-          {error?.message || t`Preset not found`}
+          {error?.message || i18n._(msg`Preset not found`)}
         </p>
       </div>
     );

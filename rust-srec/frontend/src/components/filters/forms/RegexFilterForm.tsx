@@ -9,9 +9,12 @@ import {
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Trans } from '@lingui/macro';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 
 export function RegexFilterForm() {
+  const { i18n } = useLingui();
   const { control } = useFormContext();
 
   return (
@@ -27,7 +30,7 @@ export function RegexFilterForm() {
             <FormControl>
               <Textarea
                 {...field}
-                placeholder="^Started.*"
+                placeholder={i18n._(msg`^Started.*`)}
                 className="font-mono"
               />
             </FormControl>

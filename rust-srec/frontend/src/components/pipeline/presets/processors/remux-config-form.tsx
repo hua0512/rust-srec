@@ -173,7 +173,9 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                       >
                         <FormControl>
                           <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                            <SelectValue placeholder="Select codec" />
+                            <SelectValue
+                              placeholder={i18n._(msg`Select codec`)}
+                            />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -211,7 +213,9 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                         >
                           <FormControl>
                             <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                              <SelectValue placeholder="Select preset" />
+                              <SelectValue
+                                placeholder={i18n._(msg`Select preset`)}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -256,7 +260,9 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                         >
                           <FormControl>
                             <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                              <SelectValue placeholder="Select codec" />
+                              <SelectValue
+                                placeholder={i18n._(msg`Select codec`)}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>

@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createTemplate } from '@/server/functions';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import {
   TemplateEditor,
   TemplateFormValues,
@@ -17,6 +18,7 @@ export const Route = createFileRoute(
 function CreateTemplatePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
 
   const createMutation = useMutation({
     mutationFn: (data: TemplateFormValues) => {
@@ -24,12 +26,12 @@ function CreateTemplatePage() {
       return createTemplate({ data: data });
     },
     onSuccess: () => {
-      toast.success(t`Template created successfully`);
+      toast.success(i18n._(msg`Template created successfully`));
       queryClient.invalidateQueries({ queryKey: ['templates'] });
       navigate({ to: '/config/templates' });
     },
     onError: (error) =>
-      toast.error(t`Failed to create template: ${error.message}`),
+      toast.error(i18n._(msg`Failed to create template: ${error.message}`)),
   });
 
   const onSubmit = (data: TemplateFormValues) => {

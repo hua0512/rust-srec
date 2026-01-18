@@ -18,7 +18,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
 
 interface BrowserChannelDialogProps {
@@ -48,6 +49,7 @@ export function BrowserChannelDialog({
   browserNotificationsEnabled,
   onBrowserNotificationsToggle,
 }: BrowserChannelDialogProps) {
+  const { i18n } = useLingui();
   const isWebPushReady = webPushSupported && webPushPermission === 'granted';
 
   return (
@@ -144,22 +146,18 @@ export function BrowserChannelDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem
-                      value="critical"
-                      className="text-[10px]"
-                    >{t`Critical Only`}</SelectItem>
-                    <SelectItem
-                      value="high"
-                      className="text-[10px]"
-                    >{t`High+`}</SelectItem>
-                    <SelectItem
-                      value="normal"
-                      className="text-[10px]"
-                    >{t`Normal+`}</SelectItem>
-                    <SelectItem
-                      value="low"
-                      className="text-[10px]"
-                    >{t`All`}</SelectItem>
+                    <SelectItem value="critical" className="text-[10px]">
+                      {i18n._(msg`Critical Only`)}
+                    </SelectItem>
+                    <SelectItem value="high" className="text-[10px]">
+                      {i18n._(msg`High+`)}
+                    </SelectItem>
+                    <SelectItem value="normal" className="text-[10px]">
+                      {i18n._(msg`Normal+`)}
+                    </SelectItem>
+                    <SelectItem value="low" className="text-[10px]">
+                      {i18n._(msg`All`)}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>

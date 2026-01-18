@@ -2,8 +2,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPlatformConfig, updatePlatformConfig } from '@/server/functions';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import {
   PlatformEditor,
   EditPlatformFormValues,
@@ -20,6 +21,7 @@ function EditPlatformPage() {
   const { platformId } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
 
   const {
     data: platform,
@@ -39,7 +41,7 @@ function EditPlatformPage() {
         },
       }),
     onSuccess: () => {
-      toast.success(t`Platform configuration updated successfully`);
+      toast.success(i18n._(msg`Platform configuration updated successfully`));
       queryClient.invalidateQueries({ queryKey: ['config', 'platforms'] });
       queryClient.invalidateQueries({
         queryKey: ['config', 'platform', platformId],
@@ -47,7 +49,7 @@ function EditPlatformPage() {
       navigate({ to: '/config/platforms' });
     },
     onError: (error) =>
-      toast.error(t`Failed to update platform: ${error.message}`),
+      toast.error(i18n._(msg`Failed to update platform: ${error.message}`)),
   });
 
   const onSubmit = (data: EditPlatformFormValues) => {
@@ -79,7 +81,7 @@ function EditPlatformPage() {
           <Trans>Error loading platform</Trans>
         </h3>
         <p className="text-muted-foreground mt-2">
-          {error?.message || t`Platform not found`}
+          {error?.message || i18n._(msg`Platform not found`)}
         </p>
       </div>
     );

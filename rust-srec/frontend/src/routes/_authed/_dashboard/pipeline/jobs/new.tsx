@@ -3,8 +3,9 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
+import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import {
@@ -44,13 +45,13 @@ import { PipelineWorkflowEditor } from '@/components/pipeline/workflows/pipeline
 import { DagStepDefinition } from '@/api/schemas';
 
 const createPipelineSchema = z.object({
-  name: z.string().min(1, t`Pipeline name is required`),
-  session_id: z.string().min(1, t`Session ID is required`),
-  streamer_id: z.string().min(1, t`Streamer ID is required`),
+  name: z.string().min(1, msg`Pipeline name is required`),
+  session_id: z.string().min(1, msg`Session ID is required`),
+  streamer_id: z.string().min(1, msg`Streamer ID is required`),
   input_paths: z
     .array(z.string())
-    .min(1, t`At least one input path is required`),
-  steps: z.array(z.any()).min(1, t`Add at least one step`),
+    .min(1, msg`At least one input path is required`),
+  steps: z.array(z.any()).min(1, msg`Add at least one step`),
 });
 
 type CreatePipelineForm = z.infer<typeof createPipelineSchema>;
@@ -62,6 +63,7 @@ export const Route = createFileRoute('/_authed/_dashboard/pipeline/jobs/new')({
 function CreatePipelineJobPage() {
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
 
   const form = useForm<CreatePipelineForm>({
     resolver: zodResolver(createPipelineSchema),
@@ -98,12 +100,12 @@ function CreatePipelineJobPage() {
       return createPipelineJob({ data: formattedPayload });
     },
     onSuccess: () => {
-      toast.success(t`Pipeline job created successfully`);
+      toast.success(i18n._(msg`Pipeline job created successfully`));
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
       navigate({ to: '/pipeline/jobs' });
     },
     onError: (error: any) => {
-      toast.error(error?.message || t`Failed to create pipeline job`);
+      toast.error(error?.message || i18n._(msg`Failed to create pipeline job`));
     },
   });
 
@@ -203,7 +205,7 @@ function CreatePipelineJobPage() {
                         </FormLabel>
                         <FormControl>
                           <Input
-                            placeholder={t`My Archiving Workflow`}
+                            placeholder={i18n._(msg`My Archiving Workflow`)}
                             {...field}
                             className="bg-background/50 border-white/10 focus:ring-primary/20"
                           />
@@ -228,7 +230,9 @@ function CreatePipelineJobPage() {
                         >
                           <FormControl>
                             <SelectTrigger className="bg-background/50 border-white/10">
-                              <SelectValue placeholder={t`Select a streamer`} />
+                              <SelectValue
+                                placeholder={i18n._(msg`Select a streamer`)}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent className="backdrop-blur-xl bg-background/90">
@@ -259,7 +263,9 @@ function CreatePipelineJobPage() {
                         >
                           <FormControl>
                             <SelectTrigger className="bg-background/50 border-white/10">
-                              <SelectValue placeholder={t`Select a session`} />
+                              <SelectValue
+                                placeholder={i18n._(msg`Select a session`)}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent className="backdrop-blur-xl bg-background/90">
@@ -286,7 +292,7 @@ function CreatePipelineJobPage() {
                         </FormLabel>
                         <FormControl>
                           <Input
-                            placeholder={t`C:\path1.flv,C:\path2.flv`}
+                            placeholder={i18n._(msg`C:\path1.flv,C:\path2.flv`)}
                             value={field.value.join(',')}
                             onChange={(e) =>
                               field.onChange(

@@ -5,6 +5,7 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { Card } from '@/components/ui/card';
+import { activateAndPersistLocale, type Locale } from '@/i18n';
 
 export const Route = createFileRoute('/_authed/_dashboard/config/language')({
   component: LanguageSettings,
@@ -13,7 +14,13 @@ export const Route = createFileRoute('/_authed/_dashboard/config/language')({
 function LanguageSettings() {
   const { i18n } = useLingui();
 
-  const locales = [
+  const locales: Array<{
+    code: Locale;
+    name: string;
+    nativeName: string;
+    flag: string;
+    description: string;
+  }> = [
     {
       code: 'en',
       name: 'English',
@@ -30,9 +37,8 @@ function LanguageSettings() {
     },
   ];
 
-  const changeLocale = (locale: string) => {
-    i18n.activate(locale);
-    localStorage.setItem('locale', locale);
+  const changeLocale = (locale: Locale) => {
+    activateAndPersistLocale(i18n, locale);
   };
 
   return (

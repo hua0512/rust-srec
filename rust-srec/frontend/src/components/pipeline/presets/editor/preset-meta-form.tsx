@@ -40,7 +40,7 @@ import {
   Type,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { motion } from 'motion/react';
 import {
   isDefaultPreset,
@@ -158,7 +158,7 @@ export function PresetMetaForm({
                             {selectedOption.label}
                           </span>
                         ) : (
-                          <SelectValue placeholder={t`Select type`} />
+                          <SelectValue placeholder={i18n._(msg`Select type`)} />
                         )}
                       </div>
                     </SelectTrigger>
@@ -217,7 +217,7 @@ export function PresetMetaForm({
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder={t`e.g. Remux to H.264`}
+                      placeholder={i18n._(msg`e.g. Remux to H.264`)}
                       className="h-11 bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all"
                     />
                   </FormControl>
@@ -250,7 +250,9 @@ export function PresetMetaForm({
                               {selectedCategoryName}
                             </span>
                           ) : (
-                            <SelectValue placeholder={t`Select category`} />
+                            <SelectValue
+                              placeholder={i18n._(msg`Select category`)}
+                            />
                           )}
                         </SelectTrigger>
                       </FormControl>
@@ -283,8 +285,8 @@ export function PresetMetaForm({
                         disabled={isDefault}
                         placeholder={
                           isDefault
-                            ? t`Description is managed by the system`
-                            : t`Optional description for this preset`
+                            ? i18n._(msg`Description is managed by the system`)
+                            : i18n._(msg`Optional description for this preset`)
                         }
                         className={`min-h-[80px] bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all resize-none ${
                           isDefault ? 'opacity-70 cursor-not-allowed' : ''

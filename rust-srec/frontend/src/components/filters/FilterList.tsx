@@ -1,7 +1,7 @@
 import { FilterSchema } from '../../api/schemas';
 import { z } from 'zod';
 import { FilterCard } from './FilterCard';
-import { Trans } from '@lingui/macro';
+import { Trans } from '@lingui/react/macro';
 import { FilterX } from 'lucide-react';
 
 type Filter = z.infer<typeof FilterSchema>;

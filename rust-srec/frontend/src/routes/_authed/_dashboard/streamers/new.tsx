@@ -2,8 +2,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { createStreamer } from '@/server/functions';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { StreamerForm } from '@/components/streamers/streamer-form';
 import { StreamerFormValues } from '@/api/schemas';
 
@@ -13,15 +14,16 @@ export const Route = createFileRoute('/_authed/_dashboard/streamers/new')({
 
 function CreateStreamerPage() {
   const navigate = useNavigate();
+  const { i18n } = useLingui();
 
   const createMutation = useMutation({
     mutationFn: (data: any) => createStreamer({ data }),
     onSuccess: () => {
-      toast.success(t`Streamer created successfully`);
+      toast.success(i18n._(msg`Streamer created successfully`));
       navigate({ to: '/streamers' });
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to create streamer`);
+      toast.error(error.message || i18n._(msg`Failed to create streamer`));
     },
   });
 

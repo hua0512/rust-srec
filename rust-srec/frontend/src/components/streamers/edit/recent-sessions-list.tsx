@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 
 interface RecentSessionsListProps {
   sessions: any[];
@@ -98,7 +99,8 @@ export const RecentSessionsList = memo(function RecentSessionsList({
                   <span>
                     {session.total_size_bytes
                       ? (session.total_size_bytes / 1024 / 1024).toFixed(1) +
-                        ' MB'
+                        ' ' +
+                        i18n._(msg`MB`)
                       : '-'}
                   </span>
                 </div>

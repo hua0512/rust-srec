@@ -21,7 +21,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import {
   Pagination,
@@ -183,17 +183,17 @@ function SessionsPage() {
   }, [totalPages, currentPage]);
 
   const statusFilters = [
-    { value: 'all', label: t`All`, icon: Filter },
-    { value: 'active', label: t`Live`, icon: Activity },
-    { value: 'completed', label: t`Done`, icon: CheckCircle2 },
+    { value: 'all', label: i18n._(msg`All`), icon: Filter },
+    { value: 'active', label: i18n._(msg`Live`), icon: Activity },
+    { value: 'completed', label: i18n._(msg`Done`), icon: CheckCircle2 },
   ];
 
   const timeFilters = [
-    { value: 'all', label: t`All Time` },
-    { value: 'today', label: t`Today` },
-    { value: 'yesterday', label: t`Yesterday` },
-    { value: 'week', label: t`Week` },
-    { value: 'month', label: t`Month` },
+    { value: 'all', label: i18n._(msg`All Time`) },
+    { value: 'today', label: i18n._(msg`Today`) },
+    { value: 'yesterday', label: i18n._(msg`Yesterday`) },
+    { value: 'week', label: i18n._(msg`Week`) },
+    { value: 'month', label: i18n._(msg`Month`) },
   ];
 
   const hasActiveFilters =
@@ -258,7 +258,7 @@ function SessionsPage() {
     if (
       !window.confirm(
         i18n._(
-          t`Are you sure you want to delete ${selectedIds.size} sessions? This action cannot be undone.`,
+          msg`Are you sure you want to delete ${selectedIds.size} sessions? This action cannot be undone.`,
         ),
       )
     ) {
@@ -268,13 +268,15 @@ function SessionsPage() {
     setIsDeleting(true);
     try {
       const result = await deleteSessions({ data: Array.from(selectedIds) });
-      toast.success(i18n._(t`Successfully deleted ${result.deleted} sessions`));
+      toast.success(
+        i18n._(msg`Successfully deleted ${result.deleted} sessions`),
+      );
       setSelectedIds(new Set());
       setSelectionMode(false);
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
     } catch (error) {
       console.error('Failed to delete sessions:', error);
-      toast.error(i18n._(t`Failed to delete sessions`));
+      toast.error(i18n._(msg`Failed to delete sessions`));
     } finally {
       setIsDeleting(false);
     }
@@ -300,7 +302,7 @@ function SessionsPage() {
               onSearch={(val) =>
                 updateSearch({ search: val || undefined, page: 1 })
               }
-              placeholder={t`Search sessions...`}
+              placeholder={i18n._(msg`Search sessions...`)}
               className="md:w-56 min-w-[200px]"
             />
 
@@ -361,7 +363,7 @@ function SessionsPage() {
                         ? dateRange.to
                           ? `${format(dateRange.from, 'MMM dd')} - ${format(dateRange.to, 'MMM dd')} `
                           : format(dateRange.from, 'MMM dd')
-                        : t`Custom`}
+                        : i18n._(msg`Custom`)}
                     </span>
                   </button>
                 </PopoverTrigger>

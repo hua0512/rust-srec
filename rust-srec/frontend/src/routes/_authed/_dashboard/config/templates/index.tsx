@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import { listTemplates, cloneTemplate } from '@/server/functions';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TemplateCard } from '@/components/config/templates/template-card';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +34,7 @@ export const Route = createFileRoute('/_authed/_dashboard/config/templates/')({
 function TemplatesConfigPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
@@ -60,7 +62,7 @@ function TemplatesConfigPage() {
   const cloneMutation = useMutation({
     mutationFn: cloneTemplate,
     onSuccess: (cloned) => {
-      toast.success(t`Template cloned successfully`);
+      toast.success(i18n._(msg`Template cloned successfully`));
       queryClient.invalidateQueries({ queryKey: ['templates'] });
       setCloneDialogOpen(false);
       setTemplateToClone(null);
@@ -71,7 +73,7 @@ function TemplatesConfigPage() {
       });
     },
     onError: (error) =>
-      toast.error(t`Failed to clone template: ${error.message}`),
+      toast.error(i18n._(msg`Failed to clone template: ${error.message}`)),
   });
 
   const filteredTemplates = useMemo(() => {
@@ -120,7 +122,7 @@ function TemplatesConfigPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder={t`Search templates...`}
+            placeholder={i18n._(msg`Search templates...`)}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 h-9"
@@ -257,7 +259,7 @@ function TemplatesConfigPage() {
                 id="clone-name"
                 value={cloneName}
                 onChange={(e) => setCloneName(e.target.value)}
-                placeholder={t`Enter a unique name`}
+                placeholder={i18n._(msg`Enter a unique name`)}
               />
             </div>
           </div>

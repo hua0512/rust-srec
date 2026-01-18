@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Globe, Lock, User, Monitor, ShieldCheck, Shield } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import {
@@ -46,6 +47,7 @@ export function ProxyConfigSettings({
   onChange,
   outputFormat = 'json',
 }: ProxyConfigSettingsProps) {
+  const { i18n } = useLingui();
   const [parsedConfig, setParsedConfig] = useState<ProxyConfig>({
     enabled: false,
     use_system_proxy: false,
@@ -178,7 +180,7 @@ export function ProxyConfigSettings({
                     </Label>
                     <Input
                       id="proxy-username"
-                      placeholder={t`Optional`}
+                      placeholder={i18n._(msg`Optional`)}
                       value={parsedConfig.username || ''}
                       onChange={(e) =>
                         handleChange({ username: e.target.value })
@@ -197,7 +199,7 @@ export function ProxyConfigSettings({
                     <Input
                       id="proxy-password"
                       type="password"
-                      placeholder={t`Optional`}
+                      placeholder={i18n._(msg`Optional`)}
                       value={parsedConfig.password || ''}
                       onChange={(e) =>
                         handleChange({ password: e.target.value })

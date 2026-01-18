@@ -8,6 +8,8 @@ import {
 } from '@/components/ui/form';
 import { TagInput } from '@/components/ui/tag-input';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { Globe, Hash, User, Shield, Mail } from 'lucide-react';
 import {
   Select,
@@ -21,6 +23,7 @@ import { IconInput } from '@/components/ui/icon-input';
 import { SwitchCard } from '@/components/ui/switch-card';
 
 export function EmailForm() {
+  const { i18n } = useLingui();
   const form = useFormContext();
 
   return (
@@ -38,7 +41,7 @@ export function EmailForm() {
                 <FormControl>
                   <IconInput
                     icon={Globe}
-                    placeholder="smtp.gmail.com"
+                    placeholder={i18n._(msg`smtp.gmail.com`)}
                     className="bg-background/50"
                     {...field}
                   />
@@ -60,7 +63,7 @@ export function EmailForm() {
                 <IconInput
                   icon={Hash}
                   type="number"
-                  placeholder="587"
+                  placeholder={i18n._(msg`587`)}
                   className="bg-background/50"
                   {...field}
                   onChange={(e) => field.onChange(e.target.valueAsNumber)}
@@ -84,6 +87,7 @@ export function EmailForm() {
               <FormControl>
                 <IconInput
                   icon={User}
+                  placeholder={i18n._(msg`Username`)}
                   className="bg-background/50"
                   {...field}
                 />
@@ -104,6 +108,7 @@ export function EmailForm() {
                 <IconInput
                   icon={Shield}
                   type="password"
+                  placeholder={i18n._(msg`Password`)}
                   className="bg-background/50"
                   {...field}
                 />
@@ -125,7 +130,7 @@ export function EmailForm() {
             <FormControl>
               <IconInput
                 icon={Mail}
-                placeholder="notifier@example.com"
+                placeholder={i18n._(msg`notifier@example.com`)}
                 className="bg-background/50"
                 {...field}
               />
@@ -148,7 +153,7 @@ export function EmailForm() {
                 {...field}
                 value={field.value || []}
                 onChange={field.onChange}
-                placeholder="Add email and press Enter"
+                placeholder={i18n._(msg`Add email and press Enter`)}
                 className="bg-background/50"
               />
             </FormControl>
@@ -176,10 +181,18 @@ export function EmailForm() {
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="Low">Low</SelectItem>
-                  <SelectItem value="Normal">Normal</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                  <SelectItem value="Critical">Critical</SelectItem>
+                  <SelectItem value="Low">
+                    <Trans>Low</Trans>
+                  </SelectItem>
+                  <SelectItem value="Normal">
+                    <Trans>Normal</Trans>
+                  </SelectItem>
+                  <SelectItem value="High">
+                    <Trans>High</Trans>
+                  </SelectItem>
+                  <SelectItem value="Critical">
+                    <Trans>Critical</Trans>
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <FormMessage />

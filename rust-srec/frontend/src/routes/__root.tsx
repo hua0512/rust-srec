@@ -112,13 +112,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // On first render (both SSR and hydration), activate the server-detected locale
   // This ensures server and client render with the same locale during hydration
   if (!initializedRef.current && serverLocale) {
-    activateLocale(serverLocale);
+    activateLocale(i18n, serverLocale);
     initializedRef.current = true;
   }
 
   // After hydration, switch to client-detected locale (which may differ if user has localStorage preference)
   useEffect(() => {
-    initializeLocale();
+    initializeLocale(i18n);
     useSidebar.persist.rehydrate();
     useThemeStore.persist.rehydrate();
   }, []);

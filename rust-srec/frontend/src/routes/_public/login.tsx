@@ -16,7 +16,8 @@ import {
 } from '../../components/ui/form';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { useState, useCallback, memo } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { loginFn } from '@/server/functions';
@@ -59,6 +60,7 @@ const LoginBackground = memo(() => (
 LoginBackground.displayName = 'LoginBackground';
 
 function LoginPage() {
+  const { i18n } = useLingui();
   const router = useRouter();
   const search = Route.useSearch();
 
@@ -67,12 +69,12 @@ function LoginPage() {
       await router.invalidate();
 
       if (mustChangePassword) {
-        toast.warning(t`Password change required`);
+        toast.warning(i18n._(msg`Password change required`));
         router.navigate({ to: '/change-password', replace: true });
         return;
       }
 
-      toast.success(t`Logged in successfully`);
+      toast.success(i18n._(msg`Logged in successfully`));
 
       const isValidRedirect =
         search.redirect &&
@@ -133,6 +135,7 @@ function LoginPage() {
 
 const LoginForm = memo(
   ({ onSuccess }: { onSuccess: (mustChangePassword: boolean) => void }) => {
+    const { i18n } = useLingui();
     const [showPassword, setShowPassword] = useState(false);
 
     const form = useForm<LoginFormValues>({
@@ -157,7 +160,7 @@ const LoginForm = memo(
         onSuccess(!!response.mustChangePassword);
       } catch (error: unknown) {
         const errorMessage =
-          error instanceof Error ? error.message : t`Login failed`;
+          error instanceof Error ? error.message : i18n._(msg`Login failed`);
         toast.error(errorMessage);
       }
     };
@@ -179,7 +182,7 @@ const LoginForm = memo(
                 </FormLabel>
                 <FormControl>
                   <Input
-                    placeholder={t`name@example.com`}
+                    placeholder={i18n._(msg`name@example.com`)}
                     {...field}
                     className="bg-background/50 lg:bg-background"
                     autoComplete="username"

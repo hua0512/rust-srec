@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Loader2, CheckCircle2, XCircle, Smartphone } from 'lucide-react';
 
@@ -39,6 +40,7 @@ export function BilibiliQrLoginDialog({
   scope,
   onSuccess,
 }: BilibiliQrLoginDialogProps) {
+  const { i18n } = useLingui();
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [authCode, setAuthCode] = useState<string | null>(null);
   const [status, setStatus] = useState<QrStatus>('loading');
@@ -171,7 +173,9 @@ export function BilibiliQrLoginDialog({
         return (
           <div className="flex flex-col items-center gap-4 py-8">
             <XCircle className="h-12 w-12 text-red-500" />
-            <p className="text-red-600">{message || t`An error occurred`}</p>
+            <p className="text-red-600">
+              {message || i18n._(msg`An error occurred`)}
+            </p>
             <Button onClick={generateQr} variant="outline">
               <Trans>Try again</Trans>
             </Button>

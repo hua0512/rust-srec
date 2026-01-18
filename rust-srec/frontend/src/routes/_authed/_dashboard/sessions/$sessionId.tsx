@@ -25,7 +25,8 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { getMediaUrl } from '@/lib/url';
@@ -128,6 +129,8 @@ function SessionDetailPage() {
     }
   };
 
+  const { i18n } = useLingui();
+
   if (isSessionLoading) {
     return (
       <div className="min-h-screen p-4 md:p-10 max-w-7xl mx-auto space-y-8 bg-background">
@@ -159,7 +162,7 @@ function SessionDetailPage() {
               <Trans>Error Loading Session</Trans>
             </CardTitle>
             <CardDescription>
-              {error?.message || t`Session not found`}
+              {error?.message || i18n._(msg`Session not found`)}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center pb-6">

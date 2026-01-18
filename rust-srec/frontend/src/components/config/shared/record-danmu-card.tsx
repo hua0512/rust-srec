@@ -15,7 +15,8 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Tv } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
 
@@ -26,6 +27,7 @@ interface RecordDanmuCardProps {
 
 export const RecordDanmuCard = memo(
   ({ form, basePath }: RecordDanmuCardProps) => {
+    const { i18n } = useLingui();
     return (
       <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
         <CardHeader>
@@ -76,7 +78,9 @@ export const RecordDanmuCard = memo(
                   >
                     <FormControl>
                       <SelectTrigger className="w-[180px] bg-background">
-                        <SelectValue placeholder={t`Select behavior`} />
+                        <SelectValue
+                          placeholder={i18n._(msg`Select behavior`)}
+                        />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
