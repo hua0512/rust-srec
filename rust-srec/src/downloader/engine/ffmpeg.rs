@@ -102,6 +102,12 @@ impl FfmpegEngine {
         // 7. Extra output arguments from config
         args.extend(self.config.output_args.clone());
 
+        // 8. File size limit if configured
+        // After that size download will be stopped
+        if config.max_segment_size_bytes > 0 {
+            args.extend(["-fs".to_string(), config.max_segment_size_bytes.to_string()]);
+        }
+
         // Segment options if splitting is enabled
         if config.max_segment_duration_secs > 0 {
             args.extend([
@@ -411,8 +417,11 @@ impl DownloadEngine for FfmpegEngine {
                                     let _ = event_tx.send(SegmentEvent::Progress(progress)).await;
                                 }
 
-                                // Log all stderr output at debug level for troubleshooting
-                                debug!("FFmpeg stderr for {}: {}", streamer_id, line);
+                                // Log stderr output at debug level for troubleshooting
+                                // Skip progress lines (already sent as Progress events)
+                                if !line.starts_with("frame=") {
+                                    debug!("FFmpeg stderr for {}: {}", streamer_id, line);
+                                }
 
                                 // Check for errors
                                 if line.contains("Error") || line.contains("error") {
