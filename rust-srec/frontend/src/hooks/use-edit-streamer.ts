@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useLingui } from '@lingui/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -24,6 +25,7 @@ interface UseEditStreamerProps {
 }
 
 export function useEditStreamer({ id, streamer }: UseEditStreamerProps) {
+  const { i18n } = useLingui();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [isAutofilling, setIsAutofilling] = useState(false);
@@ -71,13 +73,13 @@ export function useEditStreamer({ id, streamer }: UseEditStreamerProps) {
     mutationFn: (data: z.infer<typeof UpdateStreamerSchema>) =>
       updateStreamer({ data: { id, data } }),
     onSuccess: () => {
-      toast.success(t`Streamer updated successfully`);
+      toast.success(i18n._(msg`Streamer updated successfully`));
       queryClient.invalidateQueries({ queryKey: ['streamers'] });
       queryClient.invalidateQueries({ queryKey: ['streamer', id] });
       navigate({ to: '/streamers' });
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to update streamer`);
+      toast.error(error.message || i18n._(msg`Failed to update streamer`));
     },
   });
 
@@ -85,11 +87,11 @@ export function useEditStreamer({ id, streamer }: UseEditStreamerProps) {
     mutationFn: (filterId: string) =>
       deleteFilter({ data: { streamerId: id, filterId } }),
     onSuccess: () => {
-      toast.success(t`Filter deleted successfully`);
+      toast.success(i18n._(msg`Filter deleted successfully`));
       queryClient.invalidateQueries({ queryKey: ['streamers', id, 'filters'] });
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to delete filter`);
+      toast.error(error.message || i18n._(msg`Failed to delete filter`));
     },
   });
 
@@ -108,15 +110,15 @@ export function useEditStreamer({ id, streamer }: UseEditStreamerProps) {
           shouldDirty: true,
           shouldValidate: true,
         });
-        toast.success(t`Name autofilled successfully`);
+        toast.success(i18n._(msg`Name autofilled successfully`));
       } else if (response.error) {
         toast.error(response.error);
       } else {
-        toast.error(t`Failed to extract name from URL`);
+        toast.error(i18n._(msg`Failed to extract name from URL`));
       }
     } catch (error: any) {
       console.error('Failed to autofill name:', error);
-      toast.error(error.message || t`Failed to autofill name`);
+      toast.error(error.message || i18n._(msg`Failed to autofill name`));
     } finally {
       setIsAutofilling(false);
     }
@@ -141,10 +143,13 @@ export function useEditStreamer({ id, streamer }: UseEditStreamerProps) {
     [updateMutation],
   );
 
-  const onInvalid = useCallback((errors: any) => {
-    console.error('Form validation errors:', errors);
-    toast.error(t`Please fix validation errors`);
-  }, []);
+  const onInvalid = useCallback(
+    (errors: any) => {
+      console.error('Form validation errors:', errors);
+      toast.error(i18n._(msg`Please fix validation errors`));
+    },
+    [i18n],
+  );
 
   const deleteFilterCallback = useCallback(
     (filterId: string) => deleteFilterMutation.mutate(filterId),

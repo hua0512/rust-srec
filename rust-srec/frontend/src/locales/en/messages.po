@@ -2385,7 +2385,7 @@ msgid "Failed steps retry initiated"
 msgstr "Failed steps retry initiated"
 
 #: src/components/streamers/streamer-form.tsx:124
-#: src/hooks/use-edit-streamer.ts:119
+#: src/hooks/use-edit-streamer.ts:121
 msgid "Failed to autofill name"
 msgstr "Failed to autofill name"
 
@@ -2456,7 +2456,7 @@ msgstr "Failed to create workflow: {0}"
 msgid "Failed to delete channel"
 msgstr "Failed to delete channel"
 
-#: src/hooks/use-edit-streamer.ts:92
+#: src/hooks/use-edit-streamer.ts:94
 msgid "Failed to delete filter"
 msgstr "Failed to delete filter"
 
@@ -2504,7 +2504,7 @@ msgid "Failed to export configuration"
 msgstr "Failed to export configuration"
 
 #: src/components/streamers/streamer-form.tsx:120
-#: src/hooks/use-edit-streamer.ts:115
+#: src/hooks/use-edit-streamer.ts:117
 msgid "Failed to extract name from URL"
 msgstr "Failed to extract name from URL"
 
@@ -2629,7 +2629,7 @@ msgstr "Failed to update priority"
 msgid "Failed to update settings"
 msgstr "Failed to update settings"
 
-#: src/hooks/use-edit-streamer.ts:80
+#: src/hooks/use-edit-streamer.ts:82
 #: src/routes/_authed/_dashboard/dashboard.tsx:112
 #: src/routes/_authed/_dashboard/streamers/index.tsx:205
 msgid "Failed to update streamer"
@@ -2740,7 +2740,7 @@ msgstr "Filter by title keywords"
 msgid "Filter created successfully"
 msgstr "Filter created successfully"
 
-#: src/hooks/use-edit-streamer.ts:88
+#: src/hooks/use-edit-streamer.ts:90
 msgid "Filter deleted successfully"
 msgstr "Filter deleted successfully"
 
@@ -3956,7 +3956,7 @@ msgid "Name"
 msgstr "Name"
 
 #: src/components/streamers/streamer-form.tsx:116
-#: src/hooks/use-edit-streamer.ts:111
+#: src/hooks/use-edit-streamer.ts:113
 msgid "Name autofilled successfully"
 msgstr "Name autofilled successfully"
 
@@ -4899,7 +4899,7 @@ msgstr "Please enter at least one URL"
 msgid "Please enter your new password details"
 msgstr "Please enter your new password details"
 
-#: src/hooks/use-edit-streamer.ts:146
+#: src/hooks/use-edit-streamer.ts:149
 msgid "Please fix validation errors"
 msgstr "Please fix validation errors"
 
@@ -6280,7 +6280,7 @@ msgstr "Streamer pagination"
 msgid "Streamer updated"
 msgstr "Streamer updated"
 
-#: src/hooks/use-edit-streamer.ts:74
+#: src/hooks/use-edit-streamer.ts:76
 msgid "Streamer updated successfully"
 msgstr "Streamer updated successfully"
 

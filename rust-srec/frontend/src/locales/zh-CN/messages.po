@@ -2385,7 +2385,7 @@ msgid "Failed steps retry initiated"
 msgstr "已开始重试失败的步骤"
 
 #: src/components/streamers/streamer-form.tsx:124
-#: src/hooks/use-edit-streamer.ts:119
+#: src/hooks/use-edit-streamer.ts:121
 msgid "Failed to autofill name"
 msgstr "自动填充名称失败"
 
@@ -2456,7 +2456,7 @@ msgstr "创建工作流失败：{0}"
 msgid "Failed to delete channel"
 msgstr "删除渠道失败"
 
-#: src/hooks/use-edit-streamer.ts:92
+#: src/hooks/use-edit-streamer.ts:94
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
@@ -2504,7 +2504,7 @@ msgid "Failed to export configuration"
 msgstr "导出配置失败"
 
 #: src/components/streamers/streamer-form.tsx:120
-#: src/hooks/use-edit-streamer.ts:115
+#: src/hooks/use-edit-streamer.ts:117
 msgid "Failed to extract name from URL"
 msgstr "从 URL 提取名称失败"
 
@@ -2629,7 +2629,7 @@ msgstr "更新优先级失败"
 msgid "Failed to update settings"
 msgstr "更新设置失败"
 
-#: src/hooks/use-edit-streamer.ts:80
+#: src/hooks/use-edit-streamer.ts:82
 #: src/routes/_authed/_dashboard/dashboard.tsx:112
 #: src/routes/_authed/_dashboard/streamers/index.tsx:205
 msgid "Failed to update streamer"
@@ -2740,7 +2740,7 @@ msgstr "按标题关键字过滤"
 msgid "Filter created successfully"
 msgstr "过滤器创建成功"
 
-#: src/hooks/use-edit-streamer.ts:88
+#: src/hooks/use-edit-streamer.ts:90
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
@@ -3956,7 +3956,7 @@ msgid "Name"
 msgstr "名称"
 
 #: src/components/streamers/streamer-form.tsx:116
-#: src/hooks/use-edit-streamer.ts:111
+#: src/hooks/use-edit-streamer.ts:113
 msgid "Name autofilled successfully"
 msgstr "名称自动填充成功"
 
@@ -4899,7 +4899,7 @@ msgstr "请至少输入一个 URL"
 msgid "Please enter your new password details"
 msgstr "请输入你的新密码信息"
 
-#: src/hooks/use-edit-streamer.ts:146
+#: src/hooks/use-edit-streamer.ts:149
 msgid "Please fix validation errors"
 msgstr "请修正校验错误"
 
@@ -6280,7 +6280,7 @@ msgstr "主播分页"
 msgid "Streamer updated"
 msgstr "主播已更新"
 
-#: src/hooks/use-edit-streamer.ts:74
+#: src/hooks/use-edit-streamer.ts:76
 msgid "Streamer updated successfully"
 msgstr "主播更新成功"
 
