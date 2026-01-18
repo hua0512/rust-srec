@@ -243,7 +243,67 @@ impl DouyuInteractiveGameResponse {
 pub struct DouyuH5PlayResponse {
     pub error: i32,
     pub msg: String,
+    #[serde(default, deserialize_with = "deserialize_data_or_empty_string")]
     pub data: Option<DouyuH5PlayData>,
+}
+
+/// Custom deserializer that handles the case where `data` is an empty string ""
+/// instead of null or a valid object (Douyu API returns "" on error responses)
+fn deserialize_data_or_empty_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<DouyuH5PlayData>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+
+    struct DataOrEmptyStringVisitor;
+
+    impl<'de> Visitor<'de> for DataOrEmptyStringVisitor {
+        type Value = Option<DouyuH5PlayData>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("DouyuH5PlayData object, null, or empty string")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if v.is_empty() {
+                Ok(None)
+            } else {
+                Err(de::Error::custom(format!(
+                    "expected empty string or object for data, got non-empty string: {}",
+                    v
+                )))
+            }
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::MapAccess<'de>,
+        {
+            // Delegate to the normal DouyuH5PlayData deserialization
+            DouyuH5PlayData::deserialize(de::value::MapAccessDeserializer::new(map)).map(Some)
+        }
+    }
+
+    deserializer.deserialize_any(DataOrEmptyStringVisitor)
 }
 
 #[derive(Debug, Deserialize)]
