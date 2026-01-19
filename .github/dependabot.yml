@@ -1,23 +1,13 @@
 # Basic `dependabot.yml` file with
-# minimum configuration for three package managers
+# minimal configuration for the repo's package managers
 
 version: 2
 updates:
-  # Enable version updates for npm
   - package-ecosystem: "cargo"
-    # Look for `package.json` and `lock` files in the `root` directory
+    # Rust workspace dependencies
     directory: "/"
-    # Check the npm registry for updates every day (weekdays)
     schedule:
       interval: "daily"
-
-  # Enable version updates for Docker
-  - package-ecosystem: "docker"
-    # Look for a `Dockerfile` in the `root` directory
-    directory: "/"
-    # Check for updates once a week
-    schedule:
-      interval: "weekly"
 
   # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"
@@ -27,8 +17,25 @@ updates:
     schedule:
       interval: "weekly"
 
-  # Enable version updates for frontend npm
+  # Frontend (pnpm via npm ecosystem)
   - package-ecosystem: "npm"
+    directory: "/rust-srec/frontend"
+    schedule:
+      interval: "weekly"
+
+  # Docs site (npm)
+  - package-ecosystem: "npm"
+    directory: "/rust-srec/docs"
+    schedule:
+      interval: "weekly"
+
+  # Container images
+  - package-ecosystem: "docker"
+    directory: "/rust-srec"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
     directory: "/rust-srec/frontend"
     schedule:
       interval: "weekly"
