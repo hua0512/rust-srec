@@ -899,7 +899,7 @@ pub async fn get_job(
     Ok(Json(job_to_response(&job, streamer_name)))
 }
 
-/// Retry a failed job.
+/// Retry a failed or interrupted job.
 ///
 /// # Endpoint
 ///
@@ -925,7 +925,7 @@ pub async fn get_job(
 /// # Errors
 ///
 /// - `404 Not Found` - Job with the specified ID does not exist
-/// - `409 Conflict` - Job is not in "failed" status
+/// - `409 Conflict` - Job is not in a retryable terminal status ("failed" or "interrupted")
 ///
 #[utoipa::path(
     post,

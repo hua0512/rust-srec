@@ -1280,7 +1280,7 @@ impl JobQueue {
         Ok(jobs)
     }
 
-    /// Retry a failed job.
+    /// Retry a failed or interrupted job.
     /// Returns error if job is not in a retryable terminal status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
         if let Some(repo) = &self.job_repository {

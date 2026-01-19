@@ -16,7 +16,7 @@ use super::coordination::{
 use super::dag_scheduler::{
     DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagScheduler,
 };
-use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
+use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, JobStatus, QueueDepthStatus};
 use super::processors::{
     AssBurnInProcessor, AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor,
     DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor, MetadataProcessor,
@@ -26,6 +26,7 @@ use super::progress::JobProgressSnapshot;
 use super::purge::{JobPurgeService, PurgeConfig};
 use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
+use crate::Error;
 use crate::Result;
 use crate::config::ConfigService;
 use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
@@ -2701,6 +2702,45 @@ where
     /// Retry a failed job.
     /// Delegates to JobQueue.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
+        // If this is a DAG step job, retrying the underlying job is not enough: the parent DAG
+        // must be reset to a non-terminal state and the step execution must be marked active
+        // again so downstream steps can be scheduled when the job completes.
+        let job_snapshot = self
+            .job_queue
+            .get_job(id)
+            .await?
+            .ok_or_else(|| Error::not_found("Job", id))?;
+
+        if job_snapshot.status != JobStatus::Failed && job_snapshot.status != JobStatus::Interrupted
+        {
+            return Err(Error::InvalidStateTransition {
+                from: job_snapshot.status.as_str().to_string(),
+                to: "PENDING".to_string(),
+            });
+        }
+
+        if let Some(step_exec_id) = job_snapshot.dag_step_execution_id.as_deref() {
+            let Some(dag_scheduler) = &self.dag_scheduler else {
+                return Err(Error::Validation(
+                    "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+                ));
+            };
+
+            let dag_id = match job_snapshot.pipeline_id.as_deref() {
+                Some(existing_dag_id) => existing_dag_id.to_string(),
+                None => dag_scheduler.get_step_execution(step_exec_id).await?.dag_id,
+            };
+
+            let dag = dag_scheduler.get_dag_status(&dag_id).await?;
+            if matches!(
+                dag.get_status(),
+                Some(crate::database::models::DagExecutionStatus::Failed)
+                    | Some(crate::database::models::DagExecutionStatus::Interrupted)
+            ) {
+                dag_scheduler.reset_dag_for_retry(&dag_id).await?;
+            }
+        }
+
         let job = self.job_queue.retry_job(id).await?;
 
         // Emit event for the retried job
@@ -3170,6 +3210,406 @@ mod tests {
         }
     }
 
+    struct TestJobRepository {
+        jobs: Mutex<HashMap<String, crate::database::models::JobDbModel>>,
+    }
+
+    impl TestJobRepository {
+        fn new() -> Self {
+            Self {
+                jobs: Mutex::new(HashMap::new()),
+            }
+        }
+
+        fn insert(&self, job: crate::database::models::JobDbModel) {
+            self.jobs
+                .lock()
+                .expect("lock poisoned")
+                .insert(job.id.clone(), job);
+        }
+    }
+
+    #[async_trait]
+    impl crate::database::repositories::JobRepository for TestJobRepository {
+        async fn get_job(&self, id: &str) -> Result<crate::database::models::JobDbModel> {
+            self.jobs
+                .lock()
+                .expect("lock poisoned")
+                .get(id)
+                .cloned()
+                .ok_or_else(|| crate::Error::not_found("Job", id))
+        }
+
+        async fn list_pending_jobs(&self, _job_type: &str) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_jobs_by_status(&self, _status: &str) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_recent_jobs(&self, _limit: i32) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn create_job(&self, job: &crate::database::models::JobDbModel) -> Result<()> {
+            self.insert(job.clone());
+            Ok(())
+        }
+
+        async fn update_job_status(&self, _id: &str, _status: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn mark_job_failed(&self, _id: &str, _error: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn mark_job_interrupted(&self, _id: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_job_for_retry(&self, id: &str) -> Result<()> {
+            let now = chrono::Utc::now().to_rfc3339();
+            let mut jobs = self.jobs.lock().expect("lock poisoned");
+            let job = jobs
+                .get_mut(id)
+                .ok_or_else(|| crate::Error::not_found("Job", id))?;
+
+            match job.status.as_str() {
+                "FAILED" | "INTERRUPTED" => {
+                    job.status = "PENDING".to_string();
+                    job.started_at = None;
+                    job.completed_at = None;
+                    job.error = None;
+                    job.retry_count += 1;
+                    job.updated_at = now;
+                    Ok(())
+                }
+                other => Err(crate::Error::InvalidStateTransition {
+                    from: other.to_ascii_uppercase(),
+                    to: "PENDING".to_string(),
+                }),
+            }
+        }
+
+        async fn count_pending_jobs(&self, _job_types: Option<&[String]>) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn upsert_job_execution_progress(
+            &self,
+            _progress: &crate::database::models::JobExecutionProgressDbModel,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job_execution_progress(
+            &self,
+            _job_id: &str,
+        ) -> Result<Option<crate::database::models::JobExecutionProgressDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn claim_next_pending_job(
+            &self,
+            _job_types: Option<&[String]>,
+        ) -> Result<Option<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job_execution_info(&self, _id: &str) -> Result<Option<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_execution_info(&self, _id: &str, _execution_info: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_state(&self, _id: &str, _state: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job(&self, _job: &crate::database::models::JobDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_if_status(
+            &self,
+            _job: &crate::database::models::JobDbModel,
+            _expected_status: &str,
+        ) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_interrupted_jobs(&self) -> Result<i32> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_processing_jobs(&self) -> Result<i32> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn cleanup_old_jobs(&self, _retention_days: i32) -> Result<i32> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_job(&self, _id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn purge_jobs_older_than(&self, _days: u32, _batch_size: u32) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_purgeable_jobs(&self, _days: u32, _limit: u32) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn add_execution_log(
+            &self,
+            _log: &crate::database::models::JobExecutionLogDbModel,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn add_execution_logs(
+            &self,
+            _logs: &[crate::database::models::JobExecutionLogDbModel],
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_execution_logs(
+            &self,
+            _job_id: &str,
+        ) -> Result<Vec<crate::database::models::JobExecutionLogDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_execution_logs(
+            &self,
+            _job_id: &str,
+            _pagination: &crate::database::models::Pagination,
+        ) -> Result<(Vec<crate::database::models::JobExecutionLogDbModel>, u64)> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_execution_logs_for_job(&self, _job_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_jobs_filtered(
+            &self,
+            _filters: &crate::database::models::JobFilters,
+            _pagination: &crate::database::models::Pagination,
+        ) -> Result<(Vec<crate::database::models::JobDbModel>, u64)> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_jobs_page_filtered(
+            &self,
+            _filters: &crate::database::models::JobFilters,
+            _pagination: &crate::database::models::Pagination,
+        ) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job_counts_by_status(&self) -> Result<crate::database::models::JobCounts> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_avg_processing_time(&self) -> Result<Option<f64>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn cancel_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_jobs_by_pipeline(
+            &self,
+            _pipeline_id: &str,
+        ) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+    }
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct TestDagRepositoryForRetry {
+        dags: Mutex<HashMap<String, DagExecutionDbModel>>,
+        reset_calls: AtomicUsize,
+    }
+
+    impl TestDagRepositoryForRetry {
+        fn new() -> Self {
+            Self {
+                dags: Mutex::new(HashMap::new()),
+                reset_calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn insert(&self, dag: DagExecutionDbModel) {
+            self.dags
+                .lock()
+                .expect("lock poisoned")
+                .insert(dag.id.clone(), dag);
+        }
+
+        fn reset_calls(&self) -> usize {
+            self.reset_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl DagRepository for TestDagRepositoryForRetry {
+        async fn create_dag(&self, _dag: &DagExecutionDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel> {
+            self.dags
+                .lock()
+                .expect("lock poisoned")
+                .get(id)
+                .cloned()
+                .ok_or_else(|| crate::Error::not_found("DAG execution", id))
+        }
+
+        async fn update_dag_status(
+            &self,
+            _id: &str,
+            _status: &str,
+            _error: Option<&str>,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn increment_dag_completed(&self, _dag_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn increment_dag_failed(&self, _dag_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_dags(
+            &self,
+            _status: Option<&str>,
+            _session_id: Option<&str>,
+            _limit: u32,
+            _offset: u32,
+        ) -> Result<Vec<DagExecutionDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn count_dags(&self, _status: Option<&str>, _session_id: Option<&str>) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_dag(&self, _id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn create_step(&self, _step: &crate::database::models::DagStepExecutionDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn create_steps(&self, _steps: &[crate::database::models::DagStepExecutionDbModel]) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_step(&self, _id: &str) -> Result<crate::database::models::DagStepExecutionDbModel> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_step_by_dag_and_step_id(
+            &self,
+            _dag_id: &str,
+            _step_id: &str,
+        ) -> Result<crate::database::models::DagStepExecutionDbModel> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_steps_by_dag(
+            &self,
+            _dag_id: &str,
+        ) -> Result<Vec<crate::database::models::DagStepExecutionDbModel>> {
+            Ok(Vec::new())
+        }
+
+        async fn update_step(&self, _step: &crate::database::models::DagStepExecutionDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_step_status(&self, _id: &str, _status: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_step_status_with_job(
+            &self,
+            _id: &str,
+            _status: &str,
+            _job_id: &str,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn complete_step_and_check_dependents(
+            &self,
+            _step_id: &str,
+            _outputs: &[String],
+        ) -> Result<Vec<crate::database::models::ReadyStep>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn fail_dag_and_cancel_steps(&self, _dag_id: &str, _error: &str) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
+            self.reset_calls.fetch_add(1, Ordering::SeqCst);
+            let mut dags = self.dags.lock().expect("lock poisoned");
+            let dag = dags
+                .get_mut(dag_id)
+                .ok_or_else(|| crate::Error::not_found("DAG execution", dag_id))?;
+            dag.status = crate::database::models::DagExecutionStatus::Processing
+                .as_str()
+                .to_string();
+            dag.completed_at = None;
+            dag.error = None;
+            Ok(())
+        }
+
+        async fn get_dependency_outputs(&self, _dag_id: &str, _step_ids: &[String]) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn check_all_dependencies_complete(&self, _dag_id: &str, _step_id: &str) -> Result<bool> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_dag_stats(&self, _dag_id: &str) -> Result<crate::database::models::DagExecutionStats> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_processing_job_ids(&self, _dag_id: &str) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_pending_root_steps(
+            &self,
+            _dag_id: &str,
+        ) -> Result<Vec<crate::database::models::DagStepExecutionDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+    }
+
     #[async_trait]
     impl DagRepository for TestDagRepository {
         async fn create_dag(&self, _dag: &DagExecutionDbModel) -> Result<()> {
@@ -3355,6 +3795,59 @@ mod tests {
         let manager: PipelineManager = PipelineManager::new();
         assert_eq!(manager.queue_depth(), 0);
         assert_eq!(manager.queue_status(), QueueDepthStatus::Normal);
+    }
+
+    #[tokio::test]
+    async fn test_retry_job_resets_failed_dag_when_job_is_dag_step() {
+        let job_repo = Arc::new(TestJobRepository::new());
+        let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
+
+        let dag_def = crate::database::models::DagPipelineDefinition::new(
+            "test",
+            vec![crate::database::models::DagStep::new(
+                "step-a",
+                crate::database::models::PipelineStep::Inline {
+                    processor: "remux".to_string(),
+                    config: serde_json::json!({}),
+                },
+            )],
+        );
+
+        let mut dag = DagExecutionDbModel::new(&dag_def, None, None);
+        dag.status = crate::database::models::DagExecutionStatus::Failed
+            .as_str()
+            .to_string();
+        let dag_id = dag.id.clone();
+        dag_repo.insert(dag);
+
+        let mut job = crate::database::models::JobDbModel::new_pipeline_step(
+            "remux",
+            serde_json::to_string(&vec!["/in.flv".to_string()]).unwrap(),
+            "[]",
+            0,
+            None,
+            None,
+        );
+        job.pipeline_id = Some(dag_id.clone());
+        job.dag_step_execution_id = Some("step-exec-1".to_string());
+        job.status = "FAILED".to_string();
+        job.error = Some("boom".to_string());
+        job.completed_at = Some(chrono::Utc::now().to_rfc3339());
+        let job_id = job.id.clone();
+        job_repo.insert(job);
+
+        let mut config = PipelineManagerConfig::default();
+        config.purge.retention_days = 0;
+
+        let manager: PipelineManager = PipelineManager::with_repository(config, job_repo)
+            .with_dag_repository(dag_repo.clone());
+
+        let retried = manager.retry_job(&job_id).await.unwrap();
+        assert_eq!(retried.status, crate::pipeline::job_queue::JobStatus::Pending);
+        assert_eq!(retried.retry_count, 1);
+        assert!(retried.error.is_none());
+
+        assert_eq!(dag_repo.reset_calls(), 1);
     }
 
     #[test]

@@ -648,6 +648,14 @@ impl DagScheduler {
         self.dag_repository.get_steps_by_dag(dag_id).await
     }
 
+    /// Get a single DAG step execution by ID.
+    pub async fn get_step_execution(
+        &self,
+        dag_step_execution_id: &str,
+    ) -> Result<DagStepExecutionDbModel> {
+        self.dag_repository.get_step(dag_step_execution_id).await
+    }
+
     /// Cancel a DAG execution.
     pub async fn cancel_dag_with_completion(&self, dag_id: &str) -> Result<DagJobFailedUpdate> {
         let dag = self.dag_repository.get_dag(dag_id).await?;
