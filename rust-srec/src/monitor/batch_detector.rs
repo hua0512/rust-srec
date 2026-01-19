@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use tracing::{debug, warn};
+use tracing::{trace, warn};
 
 use crate::Result;
 use crate::streamer::StreamerMetadata;
@@ -140,10 +140,11 @@ impl BatchDetector {
         platform_id: &str,
         streamers: Vec<StreamerMetadata>,
     ) -> Result<BatchResult> {
-        debug!(
-            "Batch checking {} streamers on platform {}",
-            streamers.len(),
-            platform_id
+        trace!(
+            platform_id = %platform_id,
+            streamers = streamers.len(),
+            max_batch_size = self.max_batch_size,
+            "batch check start"
         );
 
         let mut result = BatchResult::new();
@@ -153,7 +154,7 @@ impl BatchDetector {
             // Acquire rate limit token
             let wait_time = self.rate_limiter.acquire(platform_id).await;
             if !wait_time.is_zero() {
-                debug!("Rate limited for {:?}", wait_time);
+                trace!(platform_id = %platform_id, wait = ?wait_time, "rate limited");
             }
 
             // Perform batch check with retries
@@ -175,10 +176,11 @@ impl BatchDetector {
             }
         }
 
-        debug!(
-            "Batch check complete: {} success, {} failures",
-            result.success_count(),
-            result.failure_count()
+        trace!(
+            platform_id = %platform_id,
+            success = result.success_count(),
+            failures = result.failure_count(),
+            "batch check complete"
         );
 
         Ok(result)

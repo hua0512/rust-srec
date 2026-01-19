@@ -208,10 +208,7 @@ impl StreamDetector {
                 "cdn".to_string(),
                 serde_json::Value::String(config.preferred_cdns[0].clone()),
             );
-            debug!(
-                "Injecting preferred CDN '{}' into platform extras",
-                config.preferred_cdns[0]
-            );
+            trace!(cdn = %config.preferred_cdns[0], "injecting cdn into platform extras");
         }
 
         // Inject preferred quality if configured and not already set
@@ -395,7 +392,7 @@ impl StreamDetector {
             // Use config-based selection if provided, otherwise use default selector
             let selector = match selection_config {
                 Some(config) => {
-                    debug!("Applying stream selection with config: {:?}", config);
+                    debug!(config = ?config, "stream selection config");
                     StreamSelector::with_config(config.clone())
                 }
                 None => StreamSelector::new(),
@@ -403,16 +400,13 @@ impl StreamDetector {
 
             let candidates = selector.sort_candidates(&media_info.streams);
             let selected_stream = if let Some(stream) = candidates.first() {
-                debug!(
-                    "Selected best stream candidate: {} ({})",
-                    stream.quality, stream.url
-                );
+                debug!(quality = %stream.quality, url = %stream.url, "selected stream candidate");
                 (*stream).clone()
             } else if let Some(stream) = media_info.streams.first() {
                 // Fallback: if no candidates match selection criteria, take the first available stream
                 debug!(
-                    "No streams match selection criteria, using first of {} streams",
-                    media_info.streams.len()
+                    streams = media_info.streams.len(),
+                    "stream selection fallback (no candidates matched criteria)"
                 );
                 stream.clone()
             } else {
@@ -439,21 +433,20 @@ impl StreamDetector {
             let mut resolved_stream = None;
             for candidate in resolution_slice {
                 let mut stream = (*candidate).clone();
-                debug!(
-                    "Resolving true stream URL for candidate: {} ({})",
-                    stream.quality, stream.url
-                );
+                trace!(quality = %stream.quality, url = %stream.url, "resolving stream url");
 
                 match extractor.get_url(&mut stream).await {
                     Ok(_) => {
-                        debug!("Successfully resolved stream URL: {}", stream.url);
+                        trace!(url = %stream.url, "resolved stream url");
                         resolved_stream = Some(stream);
                         break;
                     }
                     Err(e) => {
-                        warn!(
-                            "Failed to resolve stream URL for candidate {} ({}): {}",
-                            candidate.quality, streamer.name, e
+                        error!(
+                            streamer_name = %streamer.name,
+                            quality = %candidate.quality,
+                            error = %e,
+                            "failed to resolve stream url for candidate"
                         );
                         // Continue to next candidate
                     }
