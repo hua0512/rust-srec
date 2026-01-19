@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorFactory;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::Result;
 use crate::domain::ProxyConfig;
