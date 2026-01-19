@@ -145,6 +145,162 @@ impl MediaInfo {
     pub fn from_value(value: serde_json::Value) -> Result<Self, serde_json::Error> {
         serde_json::from_value(value)
     }
+
+    /// Returns a beautifully formatted string representation of the MediaInfo.
+    ///
+    /// This method creates a visually appealing display with box-drawing characters,
+    /// organized sections, and proper formatting for all fields.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use platforms_parser::media::media_info::MediaInfo;
+    ///
+    /// let media = MediaInfo::builder("https://example.com", "Sample Stream", "Sample Artist")
+    ///     .is_live(true)
+    ///     .build();
+    ///
+    /// println!("{}", media.pretty_print());
+    /// ```
+    pub fn pretty_print(&self) -> String {
+        use std::fmt::Write;
+
+        let mut output = String::new();
+        let width = 60;
+        let border_top = format!("╔{}╗", "═".repeat(width));
+        let border_bottom = format!("╚{}╝", "═".repeat(width));
+        let separator = format!("╠{}╣", "═".repeat(width));
+        let thin_separator = format!("╟{}╢", "─".repeat(width));
+
+        // Helper to format a line with proper padding
+        let format_line = |label: &str, value: &str| -> String {
+            let content = format!("  {} {}", label, value);
+            let padding = width.saturating_sub(content.len());
+            format!("║{}{}║", content, " ".repeat(padding))
+        };
+
+        let format_title = |title: &str| -> String {
+            let padding_total = width.saturating_sub(title.len());
+            let left_pad = padding_total / 2;
+            let right_pad = padding_total - left_pad;
+            format!(
+                "║{}{}{}║",
+                " ".repeat(left_pad),
+                title,
+                " ".repeat(right_pad)
+            )
+        };
+
+        let empty_line = format!("║{}║", " ".repeat(width));
+
+        // Header
+        let _ = writeln!(output, "{}", border_top);
+        let _ = writeln!(output, "{}", format_title("📺 MEDIA INFO"));
+        let _ = writeln!(output, "{}", separator);
+
+        // Basic Info Section
+        let _ = writeln!(output, "{}", format_line("🎬 Title:", &self.title));
+        let _ = writeln!(output, "{}", format_line("👤 Artist:", &self.artist));
+        let _ = writeln!(output, "{}", format_line("🌐 Site:", &self.site_url));
+
+        // Live Status
+        let live_status = if self.is_live {
+            "🟢 LIVE"
+        } else {
+            "⚫ Offline"
+        };
+        let _ = writeln!(output, "{}", format_line("📡 Status:", live_status));
+
+        // Category (if present)
+        if let Some(ref categories) = self.category {
+            if !categories.is_empty() {
+                let category_str = categories.join(", ");
+                let _ = writeln!(output, "{}", format_line("🏷️  Category:", &category_str));
+            }
+        }
+
+        // Live Start Time (if present)
+        if let Some(ref start_time) = self.live_start_time {
+            let time_str = start_time.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            let _ = writeln!(output, "{}", format_line("⏰ Started:", &time_str));
+        }
+
+        // Cover URL (if present)
+        if let Some(ref cover) = self.cover_url {
+            let display_url = if cover.len() > 40 {
+                format!("{}...", &cover[..40])
+            } else {
+                cover.clone()
+            };
+            let _ = writeln!(output, "{}", format_line("🖼️  Cover:", &display_url));
+        }
+
+        // Artist URL (if present)
+        if let Some(ref artist_url) = self.artist_url {
+            let display_url = if artist_url.len() > 40 {
+                format!("{}...", &artist_url[..40])
+            } else {
+                artist_url.clone()
+            };
+            let _ = writeln!(output, "{}", format_line("🔗 Profile:", &display_url));
+        }
+
+        // Streams Section
+        if !self.streams.is_empty() {
+            let _ = writeln!(output, "{}", thin_separator);
+            let _ = writeln!(output, "{}", format_title("📡 STREAMS"));
+            let _ = writeln!(output, "{}", empty_line);
+
+            for (i, stream) in self.streams.iter().enumerate() {
+                let _ = writeln!(output, "{}", stream.pretty_print(i + 1, width));
+            }
+        }
+
+        // Headers Section (if present)
+        if let Some(ref headers) = self.headers {
+            if !headers.is_empty() {
+                let _ = writeln!(output, "{}", thin_separator);
+                let _ = writeln!(output, "{}", format_title("📋 HEADERS"));
+                let _ = writeln!(output, "{}", empty_line);
+
+                for (key, value) in headers.iter() {
+                    let display_value = if value.len() > 35 {
+                        format!("{}...", &value[..35])
+                    } else {
+                        value.clone()
+                    };
+                    let line = format!("  {}: {}", key, display_value);
+                    let padding = width.saturating_sub(line.len());
+                    let _ = writeln!(output, "║{}{}║", line, " ".repeat(padding));
+                }
+            }
+        }
+
+        // Extras Section (if present)
+        if let Some(ref extras) = self.extras {
+            if !extras.is_empty() {
+                let _ = writeln!(output, "{}", thin_separator);
+                let _ = writeln!(output, "{}", format_title("📦 EXTRAS"));
+                let _ = writeln!(output, "{}", empty_line);
+
+                for (key, value) in extras.iter() {
+                    let display_value = if value.len() > 35 {
+                        format!("{}...", &value[..35])
+                    } else {
+                        value.clone()
+                    };
+                    let line = format!("  {}: {}", key, display_value);
+                    let padding = width.saturating_sub(line.len());
+                    let _ = writeln!(output, "║{}{}║", line, " ".repeat(padding));
+                }
+            }
+        }
+
+        // Footer
+        let _ = write!(output, "{}", border_bottom);
+
+        output
+    }
 }
 
 impl MediaInfoBuilder {

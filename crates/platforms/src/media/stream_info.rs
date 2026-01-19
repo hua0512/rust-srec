@@ -65,6 +65,9 @@ pub struct StreamInfo {
     pub codec: String,
     pub fps: f64,
     pub is_headers_needed: bool,
+    /// Indicates if this stream contains only audio (no video)
+    #[serde(default)]
+    pub is_audio_only: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +82,7 @@ pub struct StreamInfoBuilder {
     codec: String,
     fps: f64,
     is_headers_needed: bool,
+    is_audio_only: bool,
 }
 
 impl StreamInfo {
@@ -114,6 +118,86 @@ impl StreamInfo {
     pub fn from_value(value: serde_json::Value) -> Result<Self, serde_json::Error> {
         serde_json::from_value(value)
     }
+
+    /// Returns a beautifully formatted multi-line string representation of the StreamInfo.
+    ///
+    /// # Arguments
+    /// * `index` - The 1-based index of this stream in a list
+    /// * `width` - The desired width for padding (use 0 for no padding)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use platforms_parser::media::{StreamInfo, StreamFormat, formats::MediaFormat};
+    ///
+    /// let stream = StreamInfo::builder("https://example.com/stream.m3u8", StreamFormat::Hls, MediaFormat::Ts)
+    ///     .quality("1080p")
+    ///     .bitrate(5_000_000)
+    ///     .codec("h264")
+    ///     .fps(30.0)
+    ///     .build();
+    ///
+    /// println!("{}", stream.pretty_print(1, 60));
+    /// ```
+    pub fn pretty_print(&self, index: usize, width: usize) -> String {
+        use std::fmt::Write;
+
+        let mut output = String::new();
+
+        // Stream header with markers
+        let audio_marker = if self.is_audio_only { " 🔊" } else { "" };
+        let priority_marker = if self.priority > 0 {
+            format!(" [P:{}]", self.priority)
+        } else {
+            String::new()
+        };
+        let stream_header = format!(
+            "  Stream #{}: {} | {}{}{}",
+            index, self.quality, self.stream_format, audio_marker, priority_marker
+        );
+        if width > 0 {
+            let padding = width.saturating_sub(stream_header.len());
+            let _ = writeln!(output, "║{}{}║", stream_header, " ".repeat(padding));
+        } else {
+            let _ = writeln!(output, "{}", stream_header);
+        }
+
+        // Details line
+        let codec_display = if self.codec.is_empty() {
+            "N/A"
+        } else {
+            &self.codec
+        };
+        let details = format!(
+            "    └─ Format: {} | Codec: {} | {}fps | {}kbps",
+            self.media_format,
+            codec_display,
+            self.fps as u32,
+            self.bitrate / 1000
+        );
+        if width > 0 {
+            let details_padding = width.saturating_sub(details.len());
+            let _ = writeln!(output, "║{}{}║", details, " ".repeat(details_padding));
+        } else {
+            let _ = writeln!(output, "{}", details);
+        }
+
+        // URL line (truncated if too long)
+        let url_display = if self.url.len() > 50 {
+            format!("{}...", &self.url[..50])
+        } else {
+            self.url.clone()
+        };
+        let url_line = format!("    └─ URL: {}", url_display);
+        if width > 0 {
+            let url_padding = width.saturating_sub(url_line.len());
+            let _ = write!(output, "║{}{}║", url_line, " ".repeat(url_padding));
+        } else {
+            let _ = write!(output, "{}", url_line);
+        }
+
+        output
+    }
 }
 
 impl StreamInfoBuilder {
@@ -133,6 +217,7 @@ impl StreamInfoBuilder {
             codec: String::new(),
             fps: 0.0,
             is_headers_needed: false,
+            is_audio_only: false,
         }
     }
 
@@ -181,6 +266,11 @@ impl StreamInfoBuilder {
         self
     }
 
+    pub fn is_audio_only(mut self, is_audio_only: bool) -> Self {
+        self.is_audio_only = is_audio_only;
+        self
+    }
+
     pub fn build(self) -> StreamInfo {
         StreamInfo {
             url: self.url,
@@ -193,6 +283,7 @@ impl StreamInfoBuilder {
             codec: self.codec,
             fps: self.fps,
             is_headers_needed: self.is_headers_needed,
+            is_audio_only: self.is_audio_only,
         }
     }
 }

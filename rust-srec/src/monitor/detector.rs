@@ -609,6 +609,7 @@ mod tests {
             codec: "h264".to_string(),
             fps: 30.0,
             is_headers_needed: false,
+            is_audio_only: false,
         }
     }
 
