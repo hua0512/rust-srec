@@ -1925,18 +1925,62 @@ pub async fn retry_dag(
         .await
         .map_err(ApiError::from)?;
 
-    // Retry each job (FAILED or INTERRUPTED -> PENDING).
+    // Retry each job (FAILED or INTERRUPTED -> PENDING). If a step's job has already completed
+    // (e.g. it finished after fail-fast cancelled the DAG), reconcile it by marking the step
+    // completed using the job outputs so downstream steps can be scheduled.
     let mut job_ids = Vec::new();
+    let mut reconciled_steps = 0usize;
     for step in &retryable_steps {
         let Some(job_id) = &step.job_id else {
             continue;
         };
-        match pipeline_manager.retry_job(job_id).await {
-            Ok(job) => {
-                job_ids.push(job.id);
+
+        let job = match pipeline_manager.get_job(job_id).await {
+            Ok(Some(job)) => job,
+            Ok(None) => {
+                tracing::warn!("Failed to retry job {}: job not found", job_id);
+                continue;
             }
             Err(e) => {
-                tracing::warn!("Failed to retry job {}: {}", job_id, e);
+                tracing::warn!("Failed to load job {} for DAG retry: {}", job_id, e);
+                continue;
+            }
+        };
+
+        match job.status {
+            QueueJobStatus::Failed | QueueJobStatus::Interrupted => {
+                match pipeline_manager.retry_job(job_id).await {
+                    Ok(job) => job_ids.push(job.id),
+                    Err(e) => tracing::warn!("Failed to retry job {}: {}", job_id, e),
+                }
+            }
+            QueueJobStatus::Completed => {
+                if let Err(e) = dag_scheduler
+                    .on_job_completed(
+                        &step.id,
+                        &job.outputs,
+                        job.streamer_name.as_deref(),
+                        job.session_title.as_deref(),
+                        job.platform.as_deref(),
+                    )
+                    .await
+                {
+                    tracing::warn!(
+                        "Failed to reconcile completed job {} for DAG step {}: {}",
+                        job_id,
+                        step.id,
+                        e
+                    );
+                } else {
+                    reconciled_steps += 1;
+                }
+            }
+            _ => {
+                tracing::debug!(
+                    "Skipping DAG retry for job {} in status {:?}",
+                    job_id,
+                    job.status
+                );
             }
         }
     }
@@ -1946,9 +1990,10 @@ pub async fn retry_dag(
         format!("Successfully retried {} steps", retried_steps)
     } else {
         format!(
-            "Retried {} of {} steps",
+            "Retried {} of {} steps (reconciled {} already-completed steps)",
             retried_steps,
-            retryable_steps.len()
+            retryable_steps.len(),
+            reconciled_steps
         )
     };
 
@@ -2145,10 +2190,32 @@ pub async fn retry_all_failed_dags(
             continue;
         }
 
-        // Retry each job (FAILED or INTERRUPTED -> PENDING).
+        // Retry each job (FAILED or INTERRUPTED -> PENDING). If a step's job already completed
+        // after fail-fast, reconcile the step completion using the job outputs.
         for step in retryable_steps {
-            if let Some(job_id) = &step.job_id {
-                let _ = pipeline_manager.retry_job(job_id).await;
+            if let (Some(job_id), Ok(Some(job))) = (
+                &step.job_id,
+                pipeline_manager
+                    .get_job(step.job_id.as_ref().unwrap())
+                    .await,
+            ) {
+                match job.status {
+                    QueueJobStatus::Failed | QueueJobStatus::Interrupted => {
+                        let _ = pipeline_manager.retry_job(job_id).await;
+                    }
+                    QueueJobStatus::Completed => {
+                        let _ = dag_scheduler
+                            .on_job_completed(
+                                &step.id,
+                                &job.outputs,
+                                job.streamer_name.as_deref(),
+                                job.session_title.as_deref(),
+                                job.platform.as_deref(),
+                            )
+                            .await;
+                    }
+                    _ => {}
+                }
             }
         }
         retried_count += 1;
