@@ -1,5 +1,5 @@
 import { parse, serialize } from 'cookie-es';
-import { defaultLocale, isLocaleValid, Locale, localeStorageKey } from './i18n';
+import { defaultLocale, getPreferredLocale, isLocaleValid, Locale, localeStorageKey } from './i18n';
 
 export function getLocaleFromRequest(request: Request) {
   const headers = request.headers;
@@ -28,11 +28,12 @@ export function getLocaleFromRequest(request: Request) {
     return { locale: savedLocale as Locale };
   }
 
-  const acceptedLanguage = headers.get('accept-language')?.split(',')[0] ?? '';
-  if (acceptedLanguage) {
-    const preferred = acceptedLanguage.split('-')[0];
-    if (isLocaleValid(preferred)) {
-      return { locale: preferred as Locale };
+  const acceptedLanguages = headers.get('accept-language')?.split(',') ?? [];
+  for (const lang of acceptedLanguages) {
+    const tag = lang.split(';')[0].trim();
+    const preferred = getPreferredLocale(tag);
+    if (preferred) {
+      return { locale: preferred };
     }
   }
 

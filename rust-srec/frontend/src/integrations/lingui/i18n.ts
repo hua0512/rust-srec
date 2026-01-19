@@ -11,6 +11,30 @@ export function isLocaleValid(locale: string): locale is Locale {
 }
 
 /**
+ * Map base languages to supported locales.
+ */
+export const languageToLocaleMap: Record<string, Locale> = {
+  en: 'en',
+  zh: 'zh-CN',
+};
+
+/**
+ * Get the best matching locale for a given language tag.
+ */
+export function getPreferredLocale(languageTag: string): Locale | null {
+  if (isLocaleValid(languageTag)) {
+    return languageTag;
+  }
+
+  const baseLang = languageTag.split('-')[0].toLowerCase();
+  if (baseLang in languageToLocaleMap) {
+    return languageToLocaleMap[baseLang];
+  }
+
+  return null;
+}
+
+/**
  * Dynamically load and activate a locale.
  */
 export async function dynamicActivate(i18n: I18n, locale: Locale) {
