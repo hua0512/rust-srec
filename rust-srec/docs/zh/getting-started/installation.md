@@ -203,8 +203,8 @@ cd rust-srec
 **2. 启动前端（开发模式）：**
 ```bash
 cd rust-srec/frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 **3. 访问应用程序：**

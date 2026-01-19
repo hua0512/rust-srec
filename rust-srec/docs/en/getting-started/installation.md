@@ -198,8 +198,8 @@ cd rust-srec
 **2. Start the Frontend (Development):**
 ```bash
 cd rust-srec/frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 **3. Access the Application:**

@@ -2,6 +2,7 @@
   "name": "frontend",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.28.1",
   "scripts": {
     "dev": "vite dev --port 15275",
     "build": "vite build",
@@ -49,6 +50,7 @@
     "cmdk": "^1.1.1",
     "cookie-es": "^2.0.0",
     "date-fns": "^4.1.0",
+    "framer-motion": "^12.26.2",
     "hls.js": "^1.6.15",
     "ky": "^1.14.0",
     "lucide-react": "^0.562.0",
