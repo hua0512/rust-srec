@@ -700,7 +700,7 @@ impl<'a> DouyinRequest<'a> {
             .as_ref()
             .ok_or_else(|| ExtractorError::ValidationError("Stream is not live".to_string()))?;
         let streams = self.extract_streams(stream_url)?;
-        let mut extras = self.config.extractor.get_platform_headers_map();
+        let mut extras = FxHashMap::default();
         extras.insert("id_str".to_string(), self.id_str.clone().unwrap());
 
         Ok(MediaInfo::new(
@@ -811,7 +811,7 @@ impl<'a> DouyinRequest<'a> {
             StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
                 .quality(quality_name.to_string())
                 .bitrate(bitrate as u64)
-                .priority(10)
+                .priority(100)
                 .extras_opt(extras)
                 .codec(codec)
                 .fps(fps as f64)
@@ -863,6 +863,7 @@ impl<'a> DouyinRequest<'a> {
                     &codec,
                     fps,
                     extras.as_ref(),
+                    sdk_key,
                     &mut streams,
                 );
             }
@@ -876,6 +877,7 @@ impl<'a> DouyinRequest<'a> {
                 &codec,
                 fps,
                 extras.as_ref(),
+                sdk_key,
                 &mut streams,
             );
         }
@@ -904,6 +906,7 @@ impl<'a> DouyinRequest<'a> {
 
         if let Some(pull_data) = double_screen_pull_data {
             stream_data = &pull_data.stream_data;
+            debug!("stream_data: {:#?}", stream_data);
             // Use owned qualities from pull_data
             return self.extract_streams_with_owned_qualities(
                 stream_data,
@@ -978,7 +981,7 @@ impl<'a> DouyinRequest<'a> {
             StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
                 .quality(quality_name.to_string())
                 .bitrate(bitrate as u64)
-                .priority(10)
+                .priority(100)
                 .extras_opt(extras)
                 .codec(codec)
                 .fps(fps as f64)
@@ -1032,6 +1035,7 @@ impl<'a> DouyinRequest<'a> {
                     &codec,
                     fps,
                     extras.as_ref(),
+                    sdk_key,
                     &mut streams,
                 );
             }
@@ -1045,6 +1049,7 @@ impl<'a> DouyinRequest<'a> {
                 &codec,
                 fps,
                 extras.as_ref(),
+                sdk_key,
                 &mut streams,
             );
         }
@@ -1063,17 +1068,25 @@ impl<'a> DouyinRequest<'a> {
         codec: &str,
         fps: i32,
         extras: Option<&serde_json::Value>,
+        sdk_key: &str,
         streams: &mut Vec<StreamInfo>,
     ) {
         if !url.is_empty() {
+            // Set higher priority for origin quality streams
+            let priority = if sdk_key == "origin" { 100 } else { 0 };
+            // Mark audio-only streams
+            let is_audio_only = sdk_key == "ao";
+
             streams.push(
                 StreamInfo::builder(url.to_string(), format, media_format)
                     .quality(quality_name.to_string())
                     .bitrate(bitrate)
+                    .priority(priority)
                     .extras_opt(extras.cloned())
                     .codec(codec.to_string())
                     .fps(fps as f64)
                     .is_headers_needed(true)
+                    .is_audio_only(is_audio_only)
                     .build(),
             );
         }
@@ -1142,7 +1155,11 @@ mod tests {
         let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
         let media_info = config.extract().await;
 
-        println!("{media_info:?}");
+        if let Ok(media_info) = media_info {
+            println!("{}", media_info.pretty_print());
+        } else {
+            println!("{:?}", media_info);
+        }
     }
 
     #[test]
