@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorFactory;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use crate::Result;
 use crate::domain::ProxyConfig;
@@ -258,11 +258,11 @@ impl StreamDetector {
         platform_extras: Option<serde_json::Value>,
         proxy_config: &ProxyConfig,
     ) -> Result<LiveStatus> {
-        debug!(
-            "Checking status for streamer: {} ({}) with platform_extras: {}",
-            streamer.name,
-            streamer.url,
-            platform_extras.is_some()
+        trace!(
+            streamer_name = %streamer.name,
+            streamer_url = %streamer.url,
+            platform_extras = platform_extras.is_some(),
+            "detector check"
         );
 
         // Merge CDN preference from selection_config into platform_extras
@@ -314,7 +314,12 @@ impl StreamDetector {
             }
             // Non-fatal - streamer is just offline
             Err(ExtractorError::NoStreamsFound) => {
-                debug!("No streams found for: {}", streamer.name);
+                trace!(
+                    streamer_name = %streamer.name,
+                    streamer_url = %streamer.url,
+                    reason = "no_streams",
+                    "status=OFFLINE"
+                );
                 return Ok(LiveStatus::Offline);
             }
             Err(ExtractorError::JsError(msg)) => {
@@ -336,13 +341,14 @@ impl StreamDetector {
             }
         };
 
-        debug!(
-            "Media info for {}: title='{}', is_live={}, streams={}, has_headers={}",
-            streamer.name,
-            media_info.title,
-            media_info.is_live,
-            media_info.streams.len(),
-            media_info.headers.is_some()
+        trace!(
+            streamer_name = %streamer.name,
+            streamer_url = %streamer.url,
+            title = %media_info.title,
+            is_live = media_info.is_live,
+            streams = media_info.streams.len(),
+            has_headers = media_info.headers.is_some(),
+            "media info"
         );
 
         // debug!("Media info: {:#?}", media_info);
@@ -376,11 +382,12 @@ impl StreamDetector {
             });
 
             if let Some(headers) = &media_headers {
-                debug!(
-                    "Extracted {} media headers for {}: {:?}",
-                    headers.len(),
-                    streamer.name,
-                    headers.keys().collect::<Vec<_>>()
+                trace!(
+                    streamer_name = %streamer.name,
+                    streamer_url = %streamer.url,
+                    count = headers.len(),
+                    keys = ?headers.keys().collect::<Vec<_>>(),
+                    "media headers extracted"
                 );
             }
 
@@ -467,14 +474,15 @@ impl StreamDetector {
             let streams = vec![selected_stream];
 
             debug!(
-                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {}, media_headers: {}, extras: {:?})",
-                streamer.name,
-                media_info.title,
-                category,
-                viewer_count,
-                streams.len(),
-                media_headers.as_ref().map(|h| h.len()).unwrap_or(0),
-                media_extras.as_ref().map(|e| e.len()).unwrap_or(0)
+                streamer_name = %streamer.name,
+                streamer_url = %streamer.url,
+                title = %media_info.title,
+                category = ?category,
+                viewers = ?viewer_count,
+                streams = streams.len(),
+                media_headers = media_headers.as_ref().map(|h| h.len()).unwrap_or(0),
+                extras = media_extras.as_ref().map(|e| e.len()).unwrap_or(0),
+                "status=LIVE"
             );
 
             Ok(LiveStatus::Live {
@@ -488,7 +496,11 @@ impl StreamDetector {
                 media_extras,
             })
         } else {
-            debug!("Streamer {} is OFFLINE", streamer.name);
+            trace!(
+                streamer_name = %streamer.name,
+                streamer_url = %streamer.url,
+                "status=OFFLINE"
+            );
             Ok(LiveStatus::Offline)
         }
     }

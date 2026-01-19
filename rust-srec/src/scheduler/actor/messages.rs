@@ -362,37 +362,32 @@ impl HysteresisState {
         new_state: StreamerState,
         threshold: u32,
     ) -> bool {
-        tracing::debug!(
-            "HysteresisState::should_emit: prev={:?}, new={:?}, was_live={}, offline_count={}, threshold={}",
-            prev_state,
-            new_state,
-            self.was_live,
-            self.offline_count,
-            threshold
+        tracing::trace!(
+            prev = ?prev_state,
+            new = ?new_state,
+            was_live = self.was_live,
+            offline_count = self.offline_count,
+            threshold,
+            "hysteresis evaluate"
         );
 
         match (prev_state, new_state) {
             // Live → Live: No state change, suppress redundant event
             (StreamerState::Live, StreamerState::Live) => {
-                tracing::debug!("HysteresisState: Live → Live, suppressing redundant event");
+                tracing::trace!("hysteresis suppress (no change)");
                 false
             }
 
             // NotLive → NotLive (never live): Suppress redundant Offline processing.
             // We still schedule checks, but avoid unnecessary monitor writes/events.
             (StreamerState::NotLive, StreamerState::NotLive) if !self.was_live => {
-                tracing::debug!(
-                    "HysteresisState: NotLive → NotLive (never was live), suppressing redundant event"
-                );
+                tracing::trace!("hysteresis suppress (redundant offline)");
                 false
             }
 
             // Any → Live: Going live, always emit
             (_, StreamerState::Live) => {
-                tracing::debug!(
-                    "HysteresisState: {:?} → Live, setting was_live=true, resetting offline_count, emitting",
-                    prev_state
-                );
+                tracing::debug!(prev = ?prev_state, "hysteresis emit (live)");
                 self.was_live = true;
                 self.offline_count = 0;
                 true
@@ -400,23 +395,23 @@ impl HysteresisState {
 
             // Was live, now NotLive: Apply grace period
             (_, StreamerState::NotLive) if self.was_live => {
-                self.offline_count += 1;
+                self.offline_count = self.offline_count.saturating_add(1);
 
                 if self.offline_count >= threshold {
                     // Grace period over - emit and reset
                     tracing::debug!(
-                        "HysteresisState: grace period threshold reached ({}/{}), emitting offline event and resetting",
-                        self.offline_count,
-                        threshold
+                        offline_count = self.offline_count,
+                        threshold,
+                        "hysteresis emit (offline confirmed)"
                     );
                     self.reset();
                     true
                 } else {
                     // Still in grace period - suppress event
-                    tracing::debug!(
-                        "HysteresisState: in grace period, suppressing offline event ({}/{})",
-                        self.offline_count,
-                        threshold
+                    tracing::trace!(
+                        offline_count = self.offline_count,
+                        threshold,
+                        "hysteresis suppress (grace period)"
                     );
                     false
                 }
@@ -424,20 +419,13 @@ impl HysteresisState {
 
             // Never was live, now NotLive: No hysteresis needed, emit
             (_, StreamerState::NotLive) => {
-                tracing::debug!(
-                    "HysteresisState: {:?} → NotLive (never was live), emitting immediately",
-                    prev_state
-                );
+                tracing::debug!(prev = ?prev_state, "hysteresis emit (offline)");
                 true
             }
 
             // All other transitions (Error, OutOfSchedule, etc.): emit
             _ => {
-                tracing::debug!(
-                    "HysteresisState: {:?} → {:?}, emitting (non-standard transition)",
-                    prev_state,
-                    new_state
-                );
+                tracing::debug!(prev = ?prev_state, new = ?new_state, "hysteresis emit");
                 true
             }
         }
@@ -449,10 +437,10 @@ impl HysteresisState {
     /// - Offline is confirmed (threshold reached)
     /// - You intentionally want to forget recent live state
     pub fn reset(&mut self) {
-        tracing::debug!(
-            "HysteresisState::reset: was_live={} → false, offline_count={} → 0",
-            self.was_live,
-            self.offline_count
+        tracing::trace!(
+            was_live = self.was_live,
+            offline_count = self.offline_count,
+            "hysteresis reset"
         );
         self.was_live = false;
         self.offline_count = 0;
@@ -464,19 +452,21 @@ impl HysteresisState {
     /// signal and we want to start the post-live short polling window immediately.
     pub fn mark_offline_observed(&mut self) {
         if !self.was_live {
-            tracing::debug!(
-                "HysteresisState::mark_offline_observed: was_live=false, offline_count stays {}",
-                self.offline_count
+            tracing::trace!(
+                was_live = false,
+                offline_count = self.offline_count,
+                "hysteresis mark_offline_observed (ignored)"
             );
             return;
         }
 
         let prev = self.offline_count;
         self.offline_count = self.offline_count.saturating_add(1);
-        tracing::debug!(
-            "HysteresisState::mark_offline_observed: was_live=true, offline_count={} → {}",
-            prev,
-            self.offline_count
+        tracing::trace!(
+            was_live = true,
+            offline_count_prev = prev,
+            offline_count = self.offline_count,
+            "hysteresis mark_offline_observed"
         );
     }
 
@@ -486,10 +476,10 @@ impl HysteresisState {
     /// - Download starts (we know they're live)
     /// - External confirmation of live status
     pub fn mark_live(&mut self) {
-        tracing::debug!(
-            "HysteresisState::mark_live: was_live={} → true, offline_count={} → 0",
-            self.was_live,
-            self.offline_count
+        tracing::trace!(
+            was_live_prev = self.was_live,
+            offline_count_prev = self.offline_count,
+            "hysteresis mark_live"
         );
         self.was_live = true;
         self.offline_count = 0;

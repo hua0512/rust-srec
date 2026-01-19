@@ -366,7 +366,7 @@ impl StreamerActor {
 
                 // Self-scheduled check timer
                 _ = check_timer => {
-                    debug!("StreamerActor {} check timer fired", self.id);
+                    trace!(streamer_id = %self.id, "check timer fired");
                     if let Err(e) = self.initiate_check().await {
                         warn!("StreamerActor {} check failed: {}", self.id, e);
                         self.metrics.record_error();
@@ -474,8 +474,6 @@ impl StreamerActor {
     /// If on a batch-capable platform, delegates to the PlatformActor.
     /// Otherwise, performs the check directly.
     async fn initiate_check(&mut self) -> Result<(), ActorError> {
-        debug!("StreamerActor {} initiating check", self.id);
-
         // Respect temporary backoff (disabled_until) without removing the actor.
         // This prevents "dead stop" monitoring where the scheduler removes actors
         // for temporary errors and never respawns them.
@@ -490,11 +488,21 @@ impl StreamerActor {
 
             self.state.next_check = Some(Instant::now() + remaining);
             debug!(
-                "StreamerActor {} skipping check due to backoff; next check in {:?}",
-                self.id, remaining
+                streamer_id = %self.id,
+                streamer_name = %metadata.name,
+                remaining = ?remaining,
+                "status check skipped (backoff)"
             );
             return Ok(());
         }
+
+        debug!(
+            streamer_id = %self.id,
+            streamer_name = %metadata.name,
+            streamer_url = %metadata.url,
+            batch = self.uses_batch_detection(),
+            "status check start"
+        );
 
         if self.uses_batch_detection() {
             // Delegate to platform actor for batch detection
@@ -541,8 +549,6 @@ impl StreamerActor {
     /// This method connects to the actual monitoring infrastructure via the
     /// StatusChecker trait, which abstracts the status checking operation.
     async fn perform_check(&mut self) -> Result<(), ActorError> {
-        debug!("StreamerActor {} performing status check", self.id);
-
         // If we're currently Live and no check is scheduled, any timer-driven check is the
         // "live watchdog" (used only to avoid getting stuck when DownloadEnded is missed).
         // For watchdog checks, failures should not mutate DB error/backoff state because the
@@ -591,10 +597,11 @@ impl StreamerActor {
                 }
 
                 debug!(
-                    "StreamerActor {} check complete, state: {:?}, next check in {:?}",
-                    self.id,
-                    self.state.streamer_state,
-                    self.state.time_until_next_check()
+                    streamer_id = %self.id,
+                    streamer_name = %metadata.name,
+                    state = ?self.state.streamer_state,
+                    next_check_in = ?self.state.time_until_next_check(),
+                    "status check complete"
                 );
 
                 Ok(())

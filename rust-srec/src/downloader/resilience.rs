@@ -68,9 +68,7 @@ impl EngineKey {
     }
 
     pub fn is_override(&self) -> bool {
-        self.config_id
-            .as_ref()
-            .is_some_and(|id| id.contains('#'))
+        self.config_id.as_ref().is_some_and(|id| id.contains('#'))
     }
 }
 
@@ -186,7 +184,8 @@ impl CircuitBreaker {
     }
 
     fn touch(&self) {
-        self.last_used_unix.store(Self::unix_now(), Ordering::Relaxed);
+        self.last_used_unix
+            .store(Self::unix_now(), Ordering::Relaxed);
     }
 
     pub fn last_used_unix(&self) -> u64 {
@@ -387,7 +386,10 @@ impl CircuitBreakerManager {
         // Second: cap the number of override breakers (best-effort LRU by last_used_unix).
         let mut overrides: Vec<(u64, EngineKey)> = breakers
             .iter()
-            .filter_map(|(key, breaker)| key.is_override().then_some((breaker.last_used_unix(), key.clone())))
+            .filter_map(|(key, breaker)| {
+                key.is_override()
+                    .then_some((breaker.last_used_unix(), key.clone()))
+            })
             .collect();
 
         if overrides.len() <= Self::OVERRIDE_BREAKER_MAX {

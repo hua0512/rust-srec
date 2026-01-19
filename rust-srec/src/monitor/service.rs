@@ -13,7 +13,7 @@ use tokio::sync::OnceCell;
 use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 use tokio_util::time::DelayQueue;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::credentials::CredentialRefreshService;
 use crate::database::ImmediateTransaction;
@@ -413,7 +413,12 @@ impl<
     /// only one will perform the actual HTTP check and others will wait
     /// for and share the result.
     pub async fn check_streamer(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
-        debug!("Checking status for streamer: {}", streamer.id);
+        trace!(
+            streamer_id = %streamer.id,
+            streamer_name = %streamer.name,
+            streamer_url = %streamer.url,
+            "monitor status check"
+        );
 
         // Correctness guard: if the streamer was disabled via API, we should not perform checks.
         // This avoids wasted network calls and prevents races where in-flight checks could
@@ -911,7 +916,11 @@ impl<
         streamer: &StreamerMetadata,
         session_id: Option<String>,
     ) -> Result<()> {
-        debug!("Streamer {} is OFFLINE", streamer.name);
+        trace!(
+            streamer_id = %streamer.id,
+            streamer_name = %streamer.name,
+            "status=OFFLINE (monitor)"
+        );
 
         // Check if we have accumulated errors that should be cleared on successful check
         let has_errors = streamer.consecutive_error_count > 0 || streamer.disabled_until.is_some();
