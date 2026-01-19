@@ -212,11 +212,11 @@ impl MediaInfo {
         let _ = writeln!(output, "{}", format_line("📡 Status:", live_status));
 
         // Category (if present)
-        if let Some(ref categories) = self.category {
-            if !categories.is_empty() {
-                let category_str = categories.join(", ");
-                let _ = writeln!(output, "{}", format_line("🏷️  Category:", &category_str));
-            }
+        if let Some(ref categories) = self.category
+            && !categories.is_empty()
+        {
+            let category_str = categories.join(", ");
+            let _ = writeln!(output, "{}", format_line("🏷️  Category:", &category_str));
         }
 
         // Live Start Time (if present)
@@ -257,42 +257,42 @@ impl MediaInfo {
         }
 
         // Headers Section (if present)
-        if let Some(ref headers) = self.headers {
-            if !headers.is_empty() {
-                let _ = writeln!(output, "{}", thin_separator);
-                let _ = writeln!(output, "{}", format_title("📋 HEADERS"));
-                let _ = writeln!(output, "{}", empty_line);
+        if let Some(ref headers) = self.headers
+            && !headers.is_empty()
+        {
+            let _ = writeln!(output, "{}", thin_separator);
+            let _ = writeln!(output, "{}", format_title("📋 HEADERS"));
+            let _ = writeln!(output, "{}", empty_line);
 
-                for (key, value) in headers.iter() {
-                    let display_value = if value.len() > 35 {
-                        format!("{}...", &value[..35])
-                    } else {
-                        value.clone()
-                    };
-                    let line = format!("  {}: {}", key, display_value);
-                    let padding = width.saturating_sub(line.len());
-                    let _ = writeln!(output, "║{}{}║", line, " ".repeat(padding));
-                }
+            for (key, value) in headers.iter() {
+                let display_value = if value.len() > 35 {
+                    format!("{}...", &value[..35])
+                } else {
+                    value.clone()
+                };
+                let line = format!("  {}: {}", key, display_value);
+                let padding = width.saturating_sub(line.len());
+                let _ = writeln!(output, "║{}{}║", line, " ".repeat(padding));
             }
         }
 
         // Extras Section (if present)
-        if let Some(ref extras) = self.extras {
-            if !extras.is_empty() {
-                let _ = writeln!(output, "{}", thin_separator);
-                let _ = writeln!(output, "{}", format_title("📦 EXTRAS"));
-                let _ = writeln!(output, "{}", empty_line);
+        if let Some(ref extras) = self.extras
+            && !extras.is_empty()
+        {
+            let _ = writeln!(output, "{}", thin_separator);
+            let _ = writeln!(output, "{}", format_title("📦 EXTRAS"));
+            let _ = writeln!(output, "{}", empty_line);
 
-                for (key, value) in extras.iter() {
-                    let display_value = if value.len() > 35 {
-                        format!("{}...", &value[..35])
-                    } else {
-                        value.clone()
-                    };
-                    let line = format!("  {}: {}", key, display_value);
-                    let padding = width.saturating_sub(line.len());
-                    let _ = writeln!(output, "║{}{}║", line, " ".repeat(padding));
-                }
+            for (key, value) in extras.iter() {
+                let display_value = if value.len() > 35 {
+                    format!("{}...", &value[..35])
+                } else {
+                    value.clone()
+                };
+                let line = format!("  {}: {}", key, display_value);
+                let padding = width.saturating_sub(line.len());
+                let _ = writeln!(output, "║{}{}║", line, " ".repeat(padding));
             }
         }
 

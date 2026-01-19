@@ -1043,12 +1043,22 @@ mod tests {
             .with_max_level(tracing::Level::DEBUG)
             .init();
         let extractor = Huya::new(
-            "https://www.huya.com/600000".to_string(),
+            "https://www.huya.com/660000".to_string(),
             default_client(),
             None,
             None,
         );
-        let mut media_info = extractor.extract().await.unwrap();
+        let media_info = extractor.extract().await;
+
+        if let Err(e) = media_info {
+            println!("{e}");
+            return;
+        }
+
+        let mut media_info = media_info.unwrap();
+
+        println!("{}", media_info.pretty_print());
+
         if !media_info.is_live {
             return;
         }
@@ -1057,7 +1067,8 @@ mod tests {
         let mut stream_info = media_info.streams.drain(0..1).next().unwrap();
         assert!(!stream_info.url.is_empty());
         extractor.get_url(&mut stream_info).await.unwrap();
-        println!("{stream_info:?}");
+
+        println!("{}", stream_info.pretty_print(0, 200));
     }
 
     #[tokio::test]

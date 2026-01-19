@@ -3063,8 +3063,8 @@ impl Default for PipelineManager {
 mod tests {
     use super::*;
     use crate::database::models::{
-        DagExecutionDbModel, DanmuStatisticsDbModel, LiveSessionDbModel, OutputFilters,
-        PipelinePreset, SessionFilters,
+        DagExecutionDbModel, DagStepExecutionDbModel, DanmuStatisticsDbModel, JobDbModel,
+        JobExecutionLogDbModel, LiveSessionDbModel, OutputFilters, PipelinePreset, SessionFilters,
     };
     use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
     use async_trait::async_trait;
@@ -3211,7 +3211,7 @@ mod tests {
     }
 
     struct TestJobRepository {
-        jobs: Mutex<HashMap<String, crate::database::models::JobDbModel>>,
+        jobs: Mutex<HashMap<String, JobDbModel>>,
     }
 
     impl TestJobRepository {
@@ -3221,7 +3221,7 @@ mod tests {
             }
         }
 
-        fn insert(&self, job: crate::database::models::JobDbModel) {
+        fn insert(&self, job: JobDbModel) {
             self.jobs
                 .lock()
                 .expect("lock poisoned")
@@ -3231,7 +3231,7 @@ mod tests {
 
     #[async_trait]
     impl crate::database::repositories::JobRepository for TestJobRepository {
-        async fn get_job(&self, id: &str) -> Result<crate::database::models::JobDbModel> {
+        async fn get_job(&self, id: &str) -> Result<JobDbModel> {
             self.jobs
                 .lock()
                 .expect("lock poisoned")
@@ -3240,19 +3240,19 @@ mod tests {
                 .ok_or_else(|| crate::Error::not_found("Job", id))
         }
 
-        async fn list_pending_jobs(&self, _job_type: &str) -> Result<Vec<crate::database::models::JobDbModel>> {
+        async fn list_pending_jobs(&self, _job_type: &str) -> Result<Vec<JobDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn list_jobs_by_status(&self, _status: &str) -> Result<Vec<crate::database::models::JobDbModel>> {
+        async fn list_jobs_by_status(&self, _status: &str) -> Result<Vec<JobDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn list_recent_jobs(&self, _limit: i32) -> Result<Vec<crate::database::models::JobDbModel>> {
+        async fn list_recent_jobs(&self, _limit: i32) -> Result<Vec<JobDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn create_job(&self, job: &crate::database::models::JobDbModel) -> Result<()> {
+        async fn create_job(&self, job: &JobDbModel) -> Result<()> {
             self.insert(job.clone());
             Ok(())
         }
@@ -3314,7 +3314,7 @@ mod tests {
         async fn claim_next_pending_job(
             &self,
             _job_types: Option<&[String]>,
-        ) -> Result<Option<crate::database::models::JobDbModel>> {
+        ) -> Result<Option<JobDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3330,13 +3330,13 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn update_job(&self, _job: &crate::database::models::JobDbModel) -> Result<()> {
+        async fn update_job(&self, _job: &JobDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
         async fn update_job_if_status(
             &self,
-            _job: &crate::database::models::JobDbModel,
+            _job: &JobDbModel,
             _expected_status: &str,
         ) -> Result<u64> {
             unimplemented!("not needed for these tests")
@@ -3366,24 +3366,15 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn add_execution_log(
-            &self,
-            _log: &crate::database::models::JobExecutionLogDbModel,
-        ) -> Result<()> {
+        async fn add_execution_log(&self, _log: &JobExecutionLogDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn add_execution_logs(
-            &self,
-            _logs: &[crate::database::models::JobExecutionLogDbModel],
-        ) -> Result<()> {
+        async fn add_execution_logs(&self, _logs: &[JobExecutionLogDbModel]) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn get_execution_logs(
-            &self,
-            _job_id: &str,
-        ) -> Result<Vec<crate::database::models::JobExecutionLogDbModel>> {
+        async fn get_execution_logs(&self, _job_id: &str) -> Result<Vec<JobExecutionLogDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3391,7 +3382,7 @@ mod tests {
             &self,
             _job_id: &str,
             _pagination: &crate::database::models::Pagination,
-        ) -> Result<(Vec<crate::database::models::JobExecutionLogDbModel>, u64)> {
+        ) -> Result<(Vec<JobExecutionLogDbModel>, u64)> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3403,7 +3394,7 @@ mod tests {
             &self,
             _filters: &crate::database::models::JobFilters,
             _pagination: &crate::database::models::Pagination,
-        ) -> Result<(Vec<crate::database::models::JobDbModel>, u64)> {
+        ) -> Result<(Vec<JobDbModel>, u64)> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3411,7 +3402,7 @@ mod tests {
             &self,
             _filters: &crate::database::models::JobFilters,
             _pagination: &crate::database::models::Pagination,
-        ) -> Result<Vec<crate::database::models::JobDbModel>> {
+        ) -> Result<Vec<JobDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3427,10 +3418,7 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn get_jobs_by_pipeline(
-            &self,
-            _pipeline_id: &str,
-        ) -> Result<Vec<crate::database::models::JobDbModel>> {
+        async fn get_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<Vec<JobDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3508,7 +3496,11 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn count_dags(&self, _status: Option<&str>, _session_id: Option<&str>) -> Result<u64> {
+        async fn count_dags(
+            &self,
+            _status: Option<&str>,
+            _session_id: Option<&str>,
+        ) -> Result<u64> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3516,15 +3508,15 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn create_step(&self, _step: &crate::database::models::DagStepExecutionDbModel) -> Result<()> {
+        async fn create_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn create_steps(&self, _steps: &[crate::database::models::DagStepExecutionDbModel]) -> Result<()> {
+        async fn create_steps(&self, _steps: &[DagStepExecutionDbModel]) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn get_step(&self, _id: &str) -> Result<crate::database::models::DagStepExecutionDbModel> {
+        async fn get_step(&self, _id: &str) -> Result<DagStepExecutionDbModel> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3532,18 +3524,15 @@ mod tests {
             &self,
             _dag_id: &str,
             _step_id: &str,
-        ) -> Result<crate::database::models::DagStepExecutionDbModel> {
+        ) -> Result<DagStepExecutionDbModel> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn get_steps_by_dag(
-            &self,
-            _dag_id: &str,
-        ) -> Result<Vec<crate::database::models::DagStepExecutionDbModel>> {
+        async fn get_steps_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
             Ok(Vec::new())
         }
 
-        async fn update_step(&self, _step: &crate::database::models::DagStepExecutionDbModel) -> Result<()> {
+        async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3568,7 +3557,11 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn fail_dag_and_cancel_steps(&self, _dag_id: &str, _error: &str) -> Result<Vec<String>> {
+        async fn fail_dag_and_cancel_steps(
+            &self,
+            _dag_id: &str,
+            _error: &str,
+        ) -> Result<Vec<String>> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3586,15 +3579,26 @@ mod tests {
             Ok(())
         }
 
-        async fn get_dependency_outputs(&self, _dag_id: &str, _step_ids: &[String]) -> Result<Vec<String>> {
+        async fn get_dependency_outputs(
+            &self,
+            _dag_id: &str,
+            _step_ids: &[String],
+        ) -> Result<Vec<String>> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn check_all_dependencies_complete(&self, _dag_id: &str, _step_id: &str) -> Result<bool> {
+        async fn check_all_dependencies_complete(
+            &self,
+            _dag_id: &str,
+            _step_id: &str,
+        ) -> Result<bool> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn get_dag_stats(&self, _dag_id: &str) -> Result<crate::database::models::DagExecutionStats> {
+        async fn get_dag_stats(
+            &self,
+            _dag_id: &str,
+        ) -> Result<crate::database::models::DagExecutionStats> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3605,7 +3609,7 @@ mod tests {
         async fn get_pending_root_steps(
             &self,
             _dag_id: &str,
-        ) -> Result<Vec<crate::database::models::DagStepExecutionDbModel>> {
+        ) -> Result<Vec<DagStepExecutionDbModel>> {
             unimplemented!("not needed for these tests")
         }
     }
@@ -3664,24 +3668,15 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn create_step(
-            &self,
-            _step: &crate::database::models::DagStepExecutionDbModel,
-        ) -> Result<()> {
+        async fn create_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn create_steps(
-            &self,
-            _steps: &[crate::database::models::DagStepExecutionDbModel],
-        ) -> Result<()> {
+        async fn create_steps(&self, _steps: &[DagStepExecutionDbModel]) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn get_step(
-            &self,
-            _id: &str,
-        ) -> Result<crate::database::models::DagStepExecutionDbModel> {
+        async fn get_step(&self, _id: &str) -> Result<DagStepExecutionDbModel> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3689,21 +3684,15 @@ mod tests {
             &self,
             _dag_id: &str,
             _step_id: &str,
-        ) -> Result<crate::database::models::DagStepExecutionDbModel> {
+        ) -> Result<DagStepExecutionDbModel> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn get_steps_by_dag(
-            &self,
-            _dag_id: &str,
-        ) -> Result<Vec<crate::database::models::DagStepExecutionDbModel>> {
+        async fn get_steps_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
-        async fn update_step(
-            &self,
-            _step: &crate::database::models::DagStepExecutionDbModel,
-        ) -> Result<()> {
+        async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3770,7 +3759,7 @@ mod tests {
         async fn get_pending_root_steps(
             &self,
             _dag_id: &str,
-        ) -> Result<Vec<crate::database::models::DagStepExecutionDbModel>> {
+        ) -> Result<Vec<DagStepExecutionDbModel>> {
             unimplemented!("not needed for these tests")
         }
     }
@@ -3820,7 +3809,7 @@ mod tests {
         let dag_id = dag.id.clone();
         dag_repo.insert(dag);
 
-        let mut job = crate::database::models::JobDbModel::new_pipeline_step(
+        let mut job = JobDbModel::new_pipeline_step(
             "remux",
             serde_json::to_string(&vec!["/in.flv".to_string()]).unwrap(),
             "[]",
@@ -3843,7 +3832,10 @@ mod tests {
             .with_dag_repository(dag_repo.clone());
 
         let retried = manager.retry_job(&job_id).await.unwrap();
-        assert_eq!(retried.status, crate::pipeline::job_queue::JobStatus::Pending);
+        assert_eq!(
+            retried.status,
+            crate::pipeline::job_queue::JobStatus::Pending
+        );
         assert_eq!(retried.retry_count, 1);
         assert!(retried.error.is_none());
 
