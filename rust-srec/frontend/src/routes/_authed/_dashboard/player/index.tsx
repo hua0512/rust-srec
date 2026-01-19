@@ -28,6 +28,8 @@ import {
 } from '@/components/ui/dialog';
 import { Maximize2, Minimize2, Video, Plus, Loader2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -61,6 +63,7 @@ interface PlayerInstance {
 }
 
 function PlayerPage() {
+  const { i18n } = useLingui();
   const [players, setPlayers] = useState<PlayerInstance[]>([]);
   const [isImmersive, setIsImmersive] = useState(false);
   const [isAddStreamOpen, setIsAddStreamOpen] = useState(false);
@@ -95,7 +98,7 @@ function PlayerPage() {
     onSettled: () => setIsParsing(false),
     onSuccess: (response, variables) => {
       if (players.some((p) => p.title === variables.url)) {
-        toast.warning('This stream is already active');
+        toast.warning(i18n._(msg`This stream is already active`));
         return;
       }
 
@@ -115,17 +118,19 @@ function PlayerPage() {
             volume: 0.5,
           };
           setPlayers((prev) => [...prev, newPlayer]);
-          toast.success('Stream parsed successfully');
+          toast.success(i18n._(msg`Stream parsed successfully`));
         } else {
-          toast.error('No playable stream found in response');
+          toast.error(i18n._(msg`No playable stream found in response`));
         }
       } else {
-        toast.error(response.error || 'Failed to parse URL');
+        toast.error(response.error || i18n._(msg`Failed to parse URL`));
       }
     },
     onError: (error) => {
       toast.error(
-        `Parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        i18n._(
+          msg`Parse error: ${error instanceof Error ? error.message : i18n._(msg`Unknown error`)}`,
+        ),
       );
     },
   });
@@ -177,19 +182,24 @@ function PlayerPage() {
 
       if (newPlayers.length > 0) {
         setPlayers((prev) => [...prev, ...newPlayers]);
-        toast.success(`${newPlayers.length} stream(s) added successfully`);
+        toast.success(
+          i18n._(msg`${newPlayers.length} stream(s) added successfully`),
+        );
       }
 
       if (skippedCount > 0) {
-        toast.warning(`Skipped ${skippedCount} duplicate stream(s)`);
+        toast.warning(i18n._(msg`Skipped ${skippedCount} duplicate stream(s)`));
       } else if (newPlayers.length === 0 && responses.length > 0) {
         // Nothing added and not just because of duplicates (e.g. all failed)
-        if (skippedCount === 0) toast.error('No playable streams found');
+        if (skippedCount === 0)
+          toast.error(i18n._(msg`No playable streams found`));
       }
     },
     onError: (error) => {
       toast.error(
-        `Batch parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        i18n._(
+          msg`Batch parse error: ${error instanceof Error ? error.message : i18n._(msg`Unknown error`)}`,
+        ),
       );
     },
   });

@@ -130,10 +130,6 @@ impl FlvDownloader {
         };
 
         let config_snapshot = self.config_snapshot();
-        info!(
-            "Starting FLV download for {}, processing_enabled: {}",
-            config_snapshot.streamer_id, config_snapshot.enable_processing
-        );
 
         // Route based on enable_processing flag AND engine config
         if config_snapshot.enable_processing && self.engine_config.fix_flv {
@@ -156,10 +152,7 @@ impl FlvDownloader {
     ) -> Result<DownloadStats> {
         let config = self.config_snapshot();
         let streamer_id = config.streamer_id.clone();
-        info!(
-            "Starting FLV download with pipeline processing for {}",
-            streamer_id
-        );
+        info!(streamer_id = %streamer_id, "Starting FLV download with pipeline processing");
 
         // Build pipeline and common configs
         let pipeline_config = config.build_pipeline_config();
@@ -173,8 +166,8 @@ impl FlvDownloader {
             cfg
         };
 
-        // Create StreamerContext with cancellation token
-        let context = StreamerContext::new(token.clone());
+        // Create StreamerContext with streamer name and cancellation token
+        let context = StreamerContext::with_name(&streamer_id, token.clone());
 
         // Create FlvPipeline using PipelineProvider::with_config
         let pipeline_provider =

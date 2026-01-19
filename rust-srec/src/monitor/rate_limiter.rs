@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
-use tracing::debug;
+use tracing::{debug, trace};
 
 /// Configuration for a rate limiter.
 #[derive(Debug, Clone)]
@@ -231,9 +231,10 @@ impl RateLimiterManager {
 
             // Phase 2: Wait without holding the lock
             // If cancelled here, no state is corrupted
-            debug!(
-                "Rate limited for {}, waiting {:?}",
-                platform_id, wait_duration
+            trace!(
+                platform_id = %platform_id,
+                wait = ?wait_duration,
+                "rate limited"
             );
             tokio::time::sleep(wait_duration).await;
             total_wait += wait_duration;

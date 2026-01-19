@@ -6,25 +6,26 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { Clock, Tag, Calendar, Regex } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 
 const FILTER_TYPES = [
   {
     value: 'KEYWORD',
-    label: t`Keyword`,
+    label: msg`Keyword`,
     icon: Tag,
-    description: t`Filter by title keywords`,
+    description: msg`Filter by title keywords`,
     color: 'text-emerald-500',
     bg: 'bg-emerald-500/10',
     border: 'peer-data-[state=checked]:border-emerald-500',
   },
   {
     value: 'TIME_BASED',
-    label: t`Time Based`,
+    label: msg`Time Based`,
     icon: Clock,
-    description: t`Schedule recording times`,
+    description: msg`Schedule recording times`,
     color: 'text-blue-500',
     bg: 'bg-blue-500/10',
     border: 'peer-data-[state=checked]:border-blue-500',
@@ -42,18 +43,18 @@ const FILTER_TYPES = [
   */
   {
     value: 'CRON',
-    label: t`Cron`,
+    label: msg`Cron`,
     icon: Calendar,
-    description: t`Advanced scheduling`,
+    description: msg`Advanced scheduling`,
     color: 'text-orange-500',
     bg: 'bg-orange-500/10',
     border: 'peer-data-[state=checked]:border-orange-500',
   },
   {
     value: 'REGEX',
-    label: t`Regex`,
+    label: msg`Regex`,
     icon: Regex,
-    description: t`Complex patterns`,
+    description: msg`Complex patterns`,
     color: 'text-pink-500',
     bg: 'bg-pink-500/10',
     border: 'peer-data-[state=checked]:border-pink-500',
@@ -61,6 +62,7 @@ const FILTER_TYPES = [
 ];
 
 export function FilterTypeSelector() {
+  const { i18n } = useLingui();
   const { control } = useFormContext();
 
   return (
@@ -97,10 +99,10 @@ export function FilterTypeSelector() {
                   </div>
                   <div className="space-y-1">
                     <div className="font-semibold text-sm leading-none">
-                      {type.label}
+                      {i18n._(type.label)}
                     </div>
                     <div className="text-xs text-muted-foreground line-clamp-1">
-                      {type.description}
+                      {i18n._(type.description)}
                     </div>
                   </div>
                   {isSelected && (

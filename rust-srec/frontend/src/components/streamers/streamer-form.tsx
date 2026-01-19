@@ -11,7 +11,8 @@ import {
 } from '@/server/functions';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Form } from '@/components/ui/form';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
@@ -41,6 +42,7 @@ export function StreamerForm({
   isSubmitting,
   title,
 }: StreamerFormProps) {
+  const { i18n } = useLingui();
   const navigate = useNavigate();
   const [stage, setStage] = useState<1 | 2>(1);
   const [detectingPlatform, setDetectingPlatform] = useState(false);
@@ -111,15 +113,15 @@ export function StreamerForm({
           shouldDirty: true,
           shouldValidate: true,
         });
-        toast.success(t`Name autofilled successfully`);
+        toast.success(i18n._(msg`Name autofilled successfully`));
       } else if (response.error) {
         toast.error(response.error);
       } else {
-        toast.error(t`Failed to extract name from URL`);
+        toast.error(i18n._(msg`Failed to extract name from URL`));
       }
     } catch (error: any) {
       console.error('Failed to autofill name:', error);
-      toast.error(error.message || t`Failed to autofill name`);
+      toast.error(error.message || i18n._(msg`Failed to autofill name`));
     } finally {
       setIsAutofilling(false);
     }
@@ -147,7 +149,9 @@ export function StreamerForm({
 
       if (configs.length === 0) {
         toast.error(
-          t`No platform configurations found. Please create one first.`,
+          i18n._(
+            msg`No platform configurations found. Please create one first.`,
+          ),
         );
         return;
       }
@@ -172,7 +176,9 @@ export function StreamerForm({
       const configs = allPlatforms || [];
       if (configs.length === 0) {
         toast.error(
-          t`No platform configurations found. Please create one first.`,
+          i18n._(
+            msg`No platform configurations found. Please create one first.`,
+          ),
         );
         return;
       }

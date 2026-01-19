@@ -34,7 +34,7 @@ import { SessionSchema } from '@/api/schemas';
 import { z } from 'zod';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { formatBytes, formatDuration } from '@/lib/format';
 import { cn, getProxiedUrl } from '@/lib/utils';
 import { motion } from 'motion/react';
@@ -73,7 +73,7 @@ export const SessionCard = memo(
       if (
         !window.confirm(
           i18n._(
-            t`Are you sure you want to delete this session? This action cannot be undone.`,
+            msg`Are you sure you want to delete this session? This action cannot be undone.`,
           ),
         )
       ) {
@@ -82,19 +82,19 @@ export const SessionCard = memo(
 
       try {
         await deleteSession({ data: session.id });
-        toast.success(t`Session deleted successfully`);
+        toast.success(i18n._(msg`Session deleted successfully`));
         queryClient.invalidateQueries({ queryKey: ['sessions'] });
         router.invalidate();
       } catch (error) {
         console.error('Failed to delete session:', error);
-        toast.error(t`Failed to delete session`);
+        toast.error(i18n._(msg`Failed to delete session`));
       }
     };
 
     const duration = session.duration_secs
       ? formatDuration(session.duration_secs)
       : isLive
-        ? t`Ongoing`
+        ? i18n._(msg`Ongoing`)
         : '-';
 
     return (

@@ -222,7 +222,7 @@ impl HlsDownloader {
         let hls_pipeline_config = config.build_hls_pipeline_config();
 
         // Create StreamerContext with cancellation token
-        let context = StreamerContext::new(token.clone());
+        let context = StreamerContext::with_name(&streamer_id, token.clone());
 
         // Create HlsPipeline using PipelineProvider::with_config
         let pipeline_provider =

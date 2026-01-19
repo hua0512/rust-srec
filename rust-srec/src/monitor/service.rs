@@ -13,7 +13,7 @@ use tokio::sync::OnceCell;
 use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 use tokio_util::time::DelayQueue;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::credentials::CredentialRefreshService;
 use crate::database::ImmediateTransaction;
@@ -277,6 +277,11 @@ impl<
     /// This suppresses session resumption by `session_gap` for this specific session ID.
     /// Entries are automatically pruned after `HARD_ENDED_MAX_AGE` to prevent memory leaks.
     pub fn mark_session_hard_ended(&self, streamer_id: &str, session_id: &str) {
+        debug!(
+            streamer_id = %streamer_id,
+            session_id = %session_id,
+            "Marked session as hard-ended"
+        );
         self.hard_ended_sessions.insert(
             streamer_id.to_string(),
             (session_id.to_string(), Instant::now()),
@@ -408,7 +413,12 @@ impl<
     /// only one will perform the actual HTTP check and others will wait
     /// for and share the result.
     pub async fn check_streamer(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
-        debug!("Checking status for streamer: {}", streamer.id);
+        trace!(
+            streamer_id = %streamer.id,
+            streamer_name = %streamer.name,
+            streamer_url = %streamer.url,
+            "monitor status check"
+        );
 
         // Correctness guard: if the streamer was disabled via API, we should not perform checks.
         // This avoids wasted network calls and prevents races where in-flight checks could
@@ -417,8 +427,8 @@ impl<
             && fresh.state == StreamerState::Disabled
         {
             debug!(
-                "Streamer {} is disabled; skipping status check",
-                streamer.id
+                streamer_id = %streamer.id,
+                "streamer disabled; skipping status check"
             );
             return Ok(LiveStatus::Offline);
         }
@@ -453,7 +463,12 @@ impl<
                 // Acquire rate limit token
                 let wait_time = rate_limiter.acquire(platform_id).await;
                 if !wait_time.is_zero() {
-                    debug!("Rate limited for {:?}", wait_time);
+                    debug!(
+                        platform_id = %platform_id,
+                        streamer_id = %streamer_id_owned,
+                        wait = ?wait_time,
+                        "rate limited"
+                    );
                 }
 
                 let check = async {
@@ -719,14 +734,24 @@ impl<
             media_extras,
         } = details;
         info!(
-            "Streamer {} is LIVE: {} ({} streams available, {} media headers)",
-            streamer.name,
-            title,
-            streams.len(),
-            media_headers.as_ref().map_or(0, |h| h.len())
+            streamer_id = %streamer.id,
+            streamer_name = %streamer.name,
+            streamer_url = %streamer.url,
+            title = %title,
+            streams = streams.len(),
+            media_headers = media_headers.as_ref().map_or(0, |h| h.len()),
+            "status=LIVE (monitor)"
         );
 
         let now = chrono::Utc::now();
+
+        // Load config before acquiring an IMMEDIATE transaction; this avoids holding a write lock
+        // while doing unrelated reads.
+        let merged_config = self
+            .config_service
+            .get_config_for_streamer(&streamer.id)
+            .await?;
+        let gap_secs = merged_config.session_gap_time_secs;
 
         // Transaction: (session create/resume + streamer state update + outbox event).
         // If anything fails, the database remains consistent and no event is emitted.
@@ -734,12 +759,6 @@ impl<
         let mut tx = self.begin_immediate().await?;
 
         // Logic for session management (creation or resumption)
-        let merged_config = self
-            .config_service
-            .get_config_for_streamer(&streamer.id)
-            .await?;
-        let gap_secs = merged_config.session_gap_time_secs;
-
         // Check for last session
         let last_session = SessionTxOps::get_last_session(&mut tx, &streamer.id).await?;
 
@@ -904,14 +923,23 @@ impl<
         streamer: &StreamerMetadata,
         session_id: Option<String>,
     ) -> Result<()> {
-        debug!("Streamer {} is OFFLINE", streamer.name);
+        trace!(
+            streamer_id = %streamer.id,
+            streamer_name = %streamer.name,
+            "status=OFFLINE (monitor)"
+        );
 
         // Check if we have accumulated errors that should be cleared on successful check
         let has_errors = streamer.consecutive_error_count > 0 || streamer.disabled_until.is_some();
 
         if streamer.state == StreamerState::Live {
             // Live -> Offline transition: end session and update state
-            info!("Streamer {} went offline", streamer.name);
+            info!(
+                streamer_id = %streamer.id,
+                streamer_name = %streamer.name,
+                streamer_url = %streamer.url,
+                "status=OFFLINE (monitor)"
+            );
 
             let now = chrono::Utc::now();
 
@@ -1024,8 +1052,11 @@ impl<
         }
 
         debug!(
-            "Streamer {} filtered ({:?}), setting state to {:?}",
-            streamer.name, reason, new_state
+            streamer_id = %streamer.id,
+            streamer_name = %streamer.name,
+            reason = ?reason,
+            new_state = ?new_state,
+            "filtered; updating state"
         );
 
         let now = chrono::Utc::now();
@@ -1062,8 +1093,12 @@ impl<
         reason: &str,
     ) -> Result<()> {
         warn!(
-            "Fatal error for streamer {}: {} - setting state to {:?}",
-            streamer.name, reason, new_state
+            streamer_id = %streamer.id,
+            streamer_name = %streamer.name,
+            streamer_url = %streamer.url,
+            reason = %reason,
+            new_state = ?new_state,
+            "fatal; updating state"
         );
 
         let now = chrono::Utc::now();
@@ -1104,7 +1139,13 @@ impl<
 
     /// Handle an error during status check.
     pub async fn handle_error(&self, streamer: &StreamerMetadata, error: &str) -> Result<()> {
-        warn!("Error checking streamer {}: {}", streamer.name, error);
+        warn!(
+            streamer_id = %streamer.id,
+            streamer_name = %streamer.name,
+            streamer_url = %streamer.url,
+            error = %error,
+            "status check failed"
+        );
 
         // If the user disabled the streamer, don't mutate error/backoff state or emit error events.
         // Disable is a user intent override, and we don't want in-flight checks to keep writing DB.
@@ -1112,8 +1153,9 @@ impl<
             && fresh.state == StreamerState::Disabled
         {
             debug!(
-                "Skipping error handling for disabled streamer {}: {}",
-                streamer.id, error
+                streamer_id = %streamer.id,
+                error = %error,
+                "skipping error handling for disabled streamer"
             );
             return Ok(());
         }
@@ -1132,8 +1174,11 @@ impl<
 
         if let Some(until) = disabled_until {
             info!(
-                "Streamer {} disabled until {} due to {} consecutive errors",
-                streamer.id, until, new_error_count
+                streamer_id = %streamer.id,
+                streamer_name = %streamer.name,
+                until = %until,
+                consecutive_errors = new_error_count,
+                "temporarily disabled (error backoff)"
             );
         }
 
@@ -1175,8 +1220,8 @@ impl<
             && fresh.state == StreamerState::Disabled
         {
             debug!(
-                "Skipping circuit breaker backoff for disabled streamer {}",
-                streamer.id
+                streamer_id = %streamer.id,
+                "skipping circuit breaker backoff for disabled streamer"
             );
             return Ok(());
         }
@@ -1185,8 +1230,11 @@ impl<
         let disabled_until = now + chrono::Duration::seconds(retry_after_secs as i64);
 
         info!(
-            "Streamer {} blocked by circuit breaker, disabled until {} ({}s)",
-            streamer.name, disabled_until, retry_after_secs
+            streamer_id = %streamer.id,
+            streamer_name = %streamer.name,
+            disabled_until = %disabled_until,
+            retry_after_secs,
+            "temporarily disabled (circuit breaker)"
         );
 
         let mut tx = self.begin_immediate().await?;
@@ -1357,6 +1405,7 @@ mod tests {
                 codec: "h264".to_string(),
                 fps: 30.0,
                 is_headers_needed: false,
+                is_audio_only: false,
             }],
             media_headers: None,
             media_extras: None,

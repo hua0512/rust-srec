@@ -5,8 +5,9 @@ import {
   updatePipelinePreset,
 } from '@/server/functions/pipeline';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { WorkflowEditor } from '@/components/pipeline/workflows/workflow-editor';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { DagStepDefinition } from '@/api/schemas';
@@ -21,6 +22,7 @@ function EditWorkflowPage() {
   const { workflowId } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
 
   const {
     data: workflow,
@@ -34,7 +36,7 @@ function EditWorkflowPage() {
   const updateMutation = useMutation({
     mutationFn: updatePipelinePreset,
     onSuccess: () => {
-      toast.success(t`Workflow updated successfully`);
+      toast.success(i18n._(msg`Workflow updated successfully`));
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'workflows'] });
       queryClient.invalidateQueries({
         queryKey: ['pipeline', 'workflow', workflowId],
@@ -43,7 +45,7 @@ function EditWorkflowPage() {
     },
     onError: (error) => {
       console.error('Failed to update workflow:', error);
-      toast.error(t`Failed to update workflow: ${error.message}`);
+      toast.error(i18n._(msg`Failed to update workflow: ${error.message}`));
     },
   });
 
@@ -88,7 +90,7 @@ function EditWorkflowPage() {
           <Trans>Error loading workflow</Trans>
         </h3>
         <p className="text-muted-foreground mt-2">
-          {error?.message || t`Workflow not found`}
+          {error?.message || i18n._(msg`Workflow not found`)}
         </p>
       </div>
     );

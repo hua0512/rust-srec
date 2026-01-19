@@ -15,7 +15,8 @@ import {
   FileUp,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -57,6 +58,7 @@ interface ImportResult {
 }
 
 export function BackupRestoreCard() {
+  const { i18n } = useLingui();
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -86,10 +88,10 @@ export function BackupRestoreCard() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast.success(t`Configuration exported successfully`);
+      toast.success(i18n._(msg`Configuration exported successfully`));
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to export configuration`);
+      toast.error(error.message || i18n._(msg`Failed to export configuration`));
     },
   });
 
@@ -112,10 +114,10 @@ export function BackupRestoreCard() {
       queryClient.invalidateQueries({ queryKey: ['engines'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
 
-      toast.success(t`Configuration imported successfully`);
+      toast.success(i18n._(msg`Configuration imported successfully`));
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to import configuration`);
+      toast.error(error.message || i18n._(msg`Failed to import configuration`));
       // Don't close dialog on error so user can try again
     },
   });
@@ -124,7 +126,7 @@ export function BackupRestoreCard() {
     const file = event.target.files?.[0];
     if (file) {
       if (!file.name.endsWith('.json')) {
-        toast.error(t`Please select a JSON file`);
+        toast.error(i18n._(msg`Please select a JSON file`));
         return;
       }
       setSelectedFile(file);
@@ -173,9 +175,9 @@ export function BackupRestoreCard() {
     };
 
     const labels = {
-      create: t`Created`,
-      update: t`Updated`,
-      delete: t`Deleted`,
+      create: i18n._(msg`Created`),
+      update: i18n._(msg`Updated`),
+      delete: i18n._(msg`Deleted`),
     };
 
     return (
@@ -334,75 +336,75 @@ export function BackupRestoreCard() {
                 <div className="grid gap-2 max-h-[60vh] overflow-y-auto pr-1">
                   {/* Templates */}
                   <StatItem
-                    label={t`Templates`}
+                    label={i18n._(msg`Templates`)}
                     count={importResult.stats.templates_created}
                     type="create"
                   />
                   <StatItem
-                    label={t`Templates`}
+                    label={i18n._(msg`Templates`)}
                     count={importResult.stats.templates_updated}
                     type="update"
                   />
                   <StatItem
-                    label={t`Templates`}
+                    label={i18n._(msg`Templates`)}
                     count={importResult.stats.templates_deleted}
                     type="delete"
                   />
 
                   {/* Streamers */}
                   <StatItem
-                    label={t`Streamers`}
+                    label={i18n._(msg`Streamers`)}
                     count={importResult.stats.streamers_created}
                     type="create"
                   />
                   <StatItem
-                    label={t`Streamers`}
+                    label={i18n._(msg`Streamers`)}
                     count={importResult.stats.streamers_updated}
                     type="update"
                   />
                   <StatItem
-                    label={t`Streamers`}
+                    label={i18n._(msg`Streamers`)}
                     count={importResult.stats.streamers_deleted}
                     type="delete"
                   />
 
                   {/* Engines */}
                   <StatItem
-                    label={t`Engines`}
+                    label={i18n._(msg`Engines`)}
                     count={importResult.stats.engines_created}
                     type="create"
                   />
                   <StatItem
-                    label={t`Engines`}
+                    label={i18n._(msg`Engines`)}
                     count={importResult.stats.engines_updated}
                     type="update"
                   />
                   <StatItem
-                    label={t`Engines`}
+                    label={i18n._(msg`Engines`)}
                     count={importResult.stats.engines_deleted}
                     type="delete"
                   />
 
                   {/* Platforms */}
                   <StatItem
-                    label={t`Platforms`}
+                    label={i18n._(msg`Platforms`)}
                     count={importResult.stats.platforms_updated}
                     type="update"
                   />
 
                   {/* Channels */}
                   <StatItem
-                    label={t`Channels`}
+                    label={i18n._(msg`Channels`)}
                     count={importResult.stats.channels_created}
                     type="create"
                   />
                   <StatItem
-                    label={t`Channels`}
+                    label={i18n._(msg`Channels`)}
                     count={importResult.stats.channels_updated}
                     type="update"
                   />
                   <StatItem
-                    label={t`Channels`}
+                    label={i18n._(msg`Channels`)}
                     count={importResult.stats.channels_deleted}
                     type="delete"
                   />

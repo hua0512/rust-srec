@@ -2,8 +2,9 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getTemplate, updateTemplate } from '@/server/functions';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import {
   TemplateEditor,
   TemplateFormValues,
@@ -20,6 +21,7 @@ function EditTemplatePage() {
   const { templateId } = Route.useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
 
   const {
     data: template,
@@ -34,13 +36,13 @@ function EditTemplatePage() {
     mutationFn: (data: TemplateFormValues) =>
       updateTemplate({ data: { id: templateId, data } }),
     onSuccess: () => {
-      toast.success(t`Template updated successfully`);
+      toast.success(i18n._(msg`Template updated successfully`));
       queryClient.invalidateQueries({ queryKey: ['templates'] });
       queryClient.invalidateQueries({ queryKey: ['template', templateId] });
       navigate({ to: '/config/templates' });
     },
     onError: (error) =>
-      toast.error(t`Failed to update template: ${error.message}`),
+      toast.error(i18n._(msg`Failed to update template: ${error.message}`)),
   });
 
   const onSubmit = (data: TemplateFormValues) => {
@@ -71,7 +73,7 @@ function EditTemplatePage() {
           <Trans>Error loading template</Trans>
         </h3>
         <p className="text-muted-foreground mt-2">
-          {error?.message || t`Template not found`}
+          {error?.message || i18n._(msg`Template not found`)}
         </p>
       </div>
     );

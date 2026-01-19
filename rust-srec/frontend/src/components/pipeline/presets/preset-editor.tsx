@@ -3,24 +3,25 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { JobPresetSchema } from '@/api/schemas';
 import { Form } from '@/components/ui/form';
-import { t } from '@lingui/core/macro';
-import { useEffect } from 'react';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import { PresetMetaForm } from './editor/preset-meta-form';
 import { PresetConfigForm } from './editor/preset-config-form';
 import { PresetSaveFab } from './editor/preset-save-fab';
 import { getProcessorDefinition } from './processors/registry';
 
-const PresetFormSchema = z.object({
-  id: z.string().min(1, t`ID is required`),
-  name: z.string().min(1, t`Name is required`),
+const BasePresetFormSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
   description: z.string().optional(),
   category: z.string().optional(),
-  processor: z.string().min(1, t`Processor is required`),
+  processor: z.string().min(1),
   config: z.any(),
 });
 
-type PresetFormValues = z.infer<typeof PresetFormSchema>;
+type PresetFormValues = z.infer<typeof BasePresetFormSchema>;
 
 interface PresetEditorProps {
   initialData?: z.infer<typeof JobPresetSchema> | null;
@@ -35,6 +36,21 @@ export function PresetEditor({
   onSubmit,
   title,
 }: PresetEditorProps) {
+  const { i18n } = useLingui();
+
+  const PresetFormSchema = useMemo(
+    () =>
+      z.object({
+        id: z.string().min(1, i18n._(msg`ID is required`)),
+        name: z.string().min(1, i18n._(msg`Name is required`)),
+        description: z.string().optional(),
+        category: z.string().optional(),
+        processor: z.string().min(1, i18n._(msg`Processor is required`)),
+        config: z.any(),
+      }),
+    [i18n],
+  );
+
   const form = useForm<PresetFormValues>({
     resolver: zodResolver(PresetFormSchema),
     defaultValues: {
@@ -71,7 +87,7 @@ export function PresetEditor({
     if (definition) {
       const parsed = definition.schema.safeParse(values.config ?? {});
       if (!parsed.success) {
-        toast.error(t`Fix configuration errors before saving`);
+        toast.error(i18n._(msg`Fix configuration errors before saving`));
 
         for (const issue of parsed.error.issues) {
           const fieldPath = issue.path.length

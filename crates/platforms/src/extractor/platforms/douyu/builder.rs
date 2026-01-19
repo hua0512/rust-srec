@@ -27,7 +27,7 @@ use crate::{
 pub static URL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:https?://)?(?:www\.)?douyu\.com/(\d+)").unwrap());
 
-const RID_REGEX_STR: &str = r#"room_id\s*=\s*(\d+)"#;
+const RID_REGEX_STR: &str = r#"roomID\s*:\s*(\d+)"#;
 const ROOM_STATUS_REGEX_STR: &str = r#"\$ROOM\.show_status\s*=\s*(\d+)"#;
 const VIDEO_LOOP_REGEX_STR: &str = r#"videoLoop":\s*(\d+)"#;
 static RID_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(RID_REGEX_STR).unwrap());
@@ -232,6 +232,14 @@ impl Douyu {
                         rid,
                         e
                     );
+
+                    // Don't retry if the error indicates room doesn't exist (not transient)
+                    if let ExtractorError::ValidationError(msg) = &e
+                        && (msg.contains("没有开放") || msg.contains("不存在"))
+                    {
+                        return Err(e);
+                    }
+
                     last_error = Some(e);
                 }
             }
@@ -251,10 +259,36 @@ impl Douyu {
         let response = self.extractor.get(&url).send().await?;
 
         let body = response.text().await.map_err(ExtractorError::from)?;
+
+        // Handle empty response body (room doesn't exist)
+        if body.is_empty() {
+            return Err(ExtractorError::ValidationError(
+                "Betard API returned empty response (room may not exist)".to_string(),
+            ));
+        }
+
+        // Handle HTML error response (room doesn't exist or is closed)
+        // The API returns HTML instead of JSON when the room is not available
+        if body.trim_start().starts_with('<') {
+            // Try to extract error message from HTML
+            let error_msg = if body.contains("该房间目前没有开放") {
+                "房间目前没有开放"
+            } else if body.contains("房间不存在") {
+                "房间不存在"
+            } else {
+                "Betard API returned HTML instead of JSON"
+            };
+            return Err(ExtractorError::ValidationError(error_msg.to_string()));
+        }
+
         // debug!("betard body : {}", body);
         // std::fs::write("betard.json", body.clone()).unwrap();
         let betard_info: DouyuBetardResponse = serde_json::from_str(&body).map_err(|e| {
-            ExtractorError::ValidationError(format!("Failed to parse betard response: {}", e))
+            ExtractorError::ValidationError(format!(
+                "Failed to parse betard response: {} - body: {}",
+                e,
+                &body[..body.len().min(200)]
+            ))
         })?;
 
         Ok(betard_info)
@@ -1287,7 +1321,7 @@ mod tests {
             .try_init()
             .unwrap();
 
-        let url = "https://www.douyu.com/9263298";
+        let url = "https://www.douyu.com/309763";
 
         let extractor = Douyu::new(url.to_string(), default_client(), None, None);
         let media_info = extractor.extract().await.unwrap();

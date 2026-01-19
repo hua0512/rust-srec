@@ -14,7 +14,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Plus, Bell, Settings2, ListOrdered, Monitor } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { ChannelCard } from '@/components/notifications/channel-card';
 import { ChannelForm } from '@/components/notifications/channel-form';
@@ -45,6 +46,7 @@ export const Route = createFileRoute('/_authed/_dashboard/notifications/')({
 
 function NotificationsPage() {
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingChannel, setEditingChannel] =
     useState<NotificationChannel | null>(null);
@@ -73,7 +75,7 @@ function NotificationsPage() {
     setBrowserNotificationsEnabled(enabled);
     setBrowserNotificationsEnabledState(enabled);
     if (enabled) {
-      toast.success(t`Live polling notifications enabled`);
+      toast.success(i18n._(msg`Live polling notifications enabled`));
     }
   };
 
@@ -136,22 +138,22 @@ function NotificationsPage() {
           queryClient.invalidateQueries({
             queryKey: ['web-push', 'subscriptions'],
           });
-          toast.success(t`Web Push priority updated`);
+          toast.success(i18n._(msg`Web Push priority updated`));
         }
       } catch (e: any) {
-        toast.error(e?.message || t`Failed to update priority`);
+        toast.error(e?.message || i18n._(msg`Failed to update priority`));
       }
     }
   };
 
   const toggleWebPush = async (checked: boolean) => {
     if (!webPushSupported) {
-      toast.error(t`Web Push is not supported in this browser`);
+      toast.error(i18n._(msg`Web Push is not supported in this browser`));
       return;
     }
 
     if (webPushKeyQuery.isError) {
-      toast.error(t`Web Push is not configured on the server`);
+      toast.error(i18n._(msg`Web Push is not configured on the server`));
       return;
     }
 
@@ -167,9 +169,9 @@ function NotificationsPage() {
         queryClient.invalidateQueries({
           queryKey: ['web-push', 'subscriptions'],
         });
-        toast.message(t`Web Push disabled for this browser`);
+        toast.message(i18n._(msg`Web Push disabled for this browser`));
       } catch (e: any) {
-        toast.error(e?.message || t`Failed to disable Web Push`);
+        toast.error(e?.message || i18n._(msg`Failed to disable Web Push`));
       }
       return;
     }
@@ -185,7 +187,7 @@ function NotificationsPage() {
     }
     setWebPushPermission(permission);
     if (permission !== 'granted') {
-      toast.error(t`Notification permission not granted`);
+      toast.error(i18n._(msg`Notification permission not granted`));
       return;
     }
 
@@ -208,30 +210,30 @@ function NotificationsPage() {
       queryClient.invalidateQueries({
         queryKey: ['web-push', 'subscriptions'],
       });
-      toast.success(t`Web Push enabled for this browser`);
+      toast.success(i18n._(msg`Web Push enabled for this browser`));
     } catch (e: any) {
-      toast.error(e?.message || t`Failed to enable Web Push`);
+      toast.error(e?.message || i18n._(msg`Failed to enable Web Push`));
     }
   };
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteChannel({ data: id }),
     onSuccess: () => {
-      toast.success(t`Channel deleted`);
+      toast.success(i18n._(msg`Channel deleted`));
       queryClient.invalidateQueries({ queryKey: ['notification-channels'] });
     },
     onError: (err: any) => {
-      toast.error(err.message || t`Failed to delete channel`);
+      toast.error(err.message || i18n._(msg`Failed to delete channel`));
     },
   });
 
   const testMutation = useMutation({
     mutationFn: (id: string) => testChannel({ data: id }),
     onSuccess: () => {
-      toast.success(t`Test notification sent`);
+      toast.success(i18n._(msg`Test notification sent`));
     },
     onError: (err: any) => {
-      toast.error(err.message || t`Failed to send test notification`);
+      toast.error(err.message || i18n._(msg`Failed to send test notification`));
     },
   });
 
@@ -274,12 +276,12 @@ function NotificationsPage() {
   };
 
   const webPushStatusText = useMemo(() => {
-    if (!webPushSupported) return t`Not supported in this browser`;
-    if (webPushKeyQuery.isError) return t`Server not configured`;
-    if (webPushPermission === 'denied') return t`Blocked by browser`;
-    if (webPushPermission === 'granted') return t`Ready`;
-    return t`Permission required`;
-  }, [webPushKeyQuery.isError, webPushPermission, webPushSupported]);
+    if (!webPushSupported) return i18n._(msg`Not supported in this browser`);
+    if (webPushKeyQuery.isError) return i18n._(msg`Server not configured`);
+    if (webPushPermission === 'denied') return i18n._(msg`Blocked by browser`);
+    if (webPushPermission === 'granted') return i18n._(msg`Ready`);
+    return i18n._(msg`Permission required`);
+  }, [i18n, webPushKeyQuery.isError, webPushPermission, webPushSupported]);
 
   return (
     <motion.div
@@ -405,8 +407,8 @@ function NotificationsPage() {
                         )}
                       >
                         {browserNotificationsEnabled || webPushEnabled
-                          ? t`Active`
-                          : t`Inactive`}
+                          ? i18n._(msg`Active`)
+                          : i18n._(msg`Inactive`)}
                       </Badge>
                     </div>
                     <div className="space-y-1">
@@ -423,10 +425,10 @@ function NotificationsPage() {
                         <span className="text-[9px] uppercase tracking-wider opacity-50">
                           <Trans>Live Polling</Trans>
                         </span>
-                        <span className="text-[11px] font-medium text-foreground/80">
+                        <span className="text-base font-medium tracking-tight group-hover:text-primary transition-colors duration-300">
                           {browserNotificationsEnabled
-                            ? t`Enabled`
-                            : t`Disabled`}
+                            ? i18n._(msg`Enabled`)
+                            : i18n._(msg`Disabled`)}
                         </span>
                       </div>
                       <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
@@ -434,7 +436,9 @@ function NotificationsPage() {
                           <Trans>Web Push</Trans>
                         </span>
                         <span className="text-[11px] font-medium text-foreground/80">
-                          {webPushEnabled ? t`Enabled` : t`Disabled`}
+                          {webPushEnabled
+                            ? i18n._(msg`Enabled`)
+                            : i18n._(msg`Disabled`)}
                         </span>
                       </div>
                     </div>

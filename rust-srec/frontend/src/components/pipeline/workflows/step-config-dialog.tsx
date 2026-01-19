@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
@@ -428,7 +428,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                         id="step-id"
                         value={idValue}
                         onChange={(e) => setIdValue(e.target.value)}
-                        placeholder={t`e.g., process-video`}
+                        placeholder={i18n._(msg`e.g., process-video`)}
                         className="pl-7 bg-background/50 font-mono text-sm"
                       />
                     </div>

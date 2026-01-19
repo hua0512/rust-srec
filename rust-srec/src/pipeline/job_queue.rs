@@ -882,9 +882,9 @@ impl JobQueue {
                 // Update cache
                 self.jobs_cache.insert(job.id.clone(), job.clone());
 
-                // Create cancellation token for this job
-                self.cancellation_tokens
-                    .insert(job.id.clone(), CancellationToken::new());
+                // Create cancellation token for this job (do not overwrite an existing token,
+                // e.g. if a cancellation raced with dequeue).
+                self.cancellation_tokens.entry(job.id.clone()).or_default();
 
                 return Ok(Some(job));
             }
@@ -930,8 +930,7 @@ impl JobQueue {
                 let job = job_ref.clone();
                 drop(job_ref);
 
-                self.cancellation_tokens
-                    .insert(job_id, CancellationToken::new());
+                self.cancellation_tokens.entry(job.id.clone()).or_default();
                 return Ok(Some(job));
             }
         }
@@ -968,14 +967,23 @@ impl JobQueue {
 
     /// Mark a job as completed.
     pub async fn complete(&self, job_id: &str, result: JobResult) -> Result<()> {
-        // Update database if repository is available
+        let mut transitioned = false;
+
+        // Update database if repository is available.
         if let Some(repo) = &self.job_repository {
             let mut db_job = repo.get_job(job_id).await?;
+
+            // Only allow PROCESSING -> COMPLETED to avoid overwriting INTERRUPTED jobs.
+            // (Cancellation is expected to win races.)
+            if db_job.status != DbJobStatus::Processing.as_str() {
+                self.finalize_interrupted_job(job_id);
+                return Ok(());
+            }
+
             db_job.mark_completed();
             if !result.outputs.is_empty() {
                 db_job.set_outputs(&result.outputs);
             }
-            // Persist the processing duration
             db_job.duration_secs = Some(result.duration_secs);
 
             // Persist detailed logs to job_execution_logs and keep only a capped summary in execution_info.
@@ -1004,32 +1012,46 @@ impl JobQueue {
                 let wait_secs = (started_dt - created).num_milliseconds() as f64 / 1000.0;
                 db_job.queue_wait_secs = Some(wait_secs.max(0.0));
             }
-            repo.update_job(&db_job).await?;
+
+            let updated = repo
+                .update_job_if_status(&db_job, DbJobStatus::Processing.as_str())
+                .await?;
+            if updated == 0 {
+                self.finalize_interrupted_job(job_id);
+                return Ok(());
+            }
+
+            transitioned = true;
         }
 
-        // Update cache
+        // Update cache (in-memory mode or best-effort visibility).
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            job.status = JobStatus::Completed;
-            job.completed_at = Some(Utc::now());
-            job.outputs = result.outputs;
-            job.duration_secs = Some(result.duration_secs);
+            if job.status != JobStatus::Interrupted {
+                transitioned |= matches!(job.status, JobStatus::Pending | JobStatus::Processing);
+                job.status = JobStatus::Completed;
+                job.completed_at = Some(Utc::now());
+                job.outputs = result.outputs;
+                job.duration_secs = Some(result.duration_secs);
 
-            // Update cached execution info if logs are present
-            if !result.logs.is_empty() {
-                let mut exec_info = job.execution_info.clone().unwrap_or_default();
-                update_log_summary(&mut exec_info, &result.logs);
-                extend_logs_capped(&mut exec_info, &result.logs);
-                job.execution_info = Some(exec_info);
-            }
+                // Update cached execution info if logs are present
+                if !result.logs.is_empty() {
+                    let mut exec_info = job.execution_info.clone().unwrap_or_default();
+                    update_log_summary(&mut exec_info, &result.logs);
+                    extend_logs_capped(&mut exec_info, &result.logs);
+                    job.execution_info = Some(exec_info);
+                }
 
-            // Calculate queue wait time
-            if let (Some(created), Some(started)) = (Some(job.created_at), job.started_at) {
-                let wait_secs = (started - created).num_milliseconds() as f64 / 1000.0;
-                job.queue_wait_secs = Some(wait_secs.max(0.0));
+                // Calculate queue wait time
+                if let (Some(created), Some(started)) = (Some(job.created_at), job.started_at) {
+                    let wait_secs = (started - created).num_milliseconds() as f64 / 1000.0;
+                    job.queue_wait_secs = Some(wait_secs.max(0.0));
+                }
             }
+        } else if self.job_repository.is_none() {
+            return Err(Error::not_found("Job", job_id));
         }
 
-        // Remove cancellation token
+        // Cleanup in-memory tracking for this job.
         let _ = self.cancellation_tokens.remove(job_id);
         let _ = self.persisted_log_cursor.remove(job_id);
         self.progress_cache.remove(job_id);
@@ -1040,8 +1062,11 @@ impl JobQueue {
             self.jobs_cache.remove(job_id);
         }
 
-        self.depth.fetch_sub(1, Ordering::SeqCst);
-        info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
+        if transitioned {
+            self.decrement_depth(1);
+            info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
+        }
+
         Ok(())
     }
     /// Mark a job as failed.
@@ -1255,8 +1280,8 @@ impl JobQueue {
         Ok(jobs)
     }
 
-    /// Retry a failed job.
-    /// Returns error if job is not in Failed status.
+    /// Retry a failed or interrupted job.
+    /// Returns error if job is not in a retryable terminal status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
         if let Some(repo) = &self.job_repository {
             repo.reset_job_for_retry(id).await?;
@@ -1279,7 +1304,7 @@ impl JobQueue {
             .get_mut(id)
             .ok_or_else(|| Error::not_found("Job", id))?;
 
-        if cached_job.status != JobStatus::Failed {
+        if cached_job.status != JobStatus::Failed && cached_job.status != JobStatus::Interrupted {
             return Err(Error::InvalidStateTransition {
                 from: cached_job.status.as_str().to_string(),
                 to: "PENDING".to_string(),
@@ -1320,17 +1345,28 @@ impl JobQueue {
             });
         }
 
-        // Signal cancellation for processing jobs
-        if job.status == JobStatus::Processing
+        let is_processing = job.status == JobStatus::Processing;
+
+        // Signal cancellation for processing jobs (ensure a token exists, since cancellation can
+        // race with the dequeue path that creates tokens).
+        if is_processing {
+            let token = self.cancellation_tokens.entry(id.to_string()).or_default();
+            token.cancel();
+        } else if job.status == JobStatus::Interrupted
             && let Some(token) = self.cancellation_tokens.get(id)
         {
+            // Best-effort: if an interrupted job still has a token (e.g. worker hasn't finalized
+            // yet), ensure it's cancelled.
             token.cancel();
         }
 
         // Update database if repository is available
-        if let Some(repo) = &self.job_repository {
-            repo.mark_job_interrupted(id).await?;
-        }
+        let updated = if let Some(repo) = &self.job_repository {
+            repo.mark_job_interrupted(id).await?
+        } else {
+            // In-memory mode: treat as updated if we were cancelling an active job.
+            matches!(job.status, JobStatus::Pending | JobStatus::Processing) as u64
+        };
 
         // Update cache and get the updated job
         let cancelled_job = {
@@ -1347,18 +1383,21 @@ impl JobQueue {
             }
         };
 
-        // Remove cancellation token
-        let _ = self.cancellation_tokens.remove(id);
-        let _ = self.persisted_log_cursor.remove(id);
-        self.progress_cache.remove(id);
+        // For in-flight jobs, keep the cancellation token/log cursor until the worker observes
+        // cancellation and drains logs, then finalizes the job via `finalize_interrupted_job`.
+        let keep_tracking = is_processing || self.cancellation_tokens.contains_key(id);
+        if !keep_tracking {
+            let _ = self.cancellation_tokens.remove(id);
+            let _ = self.persisted_log_cursor.remove(id);
+            self.progress_cache.remove(id);
+        }
 
         if self.job_repository.is_some() {
             self.jobs_cache.remove(id);
         }
 
-        // Decrement depth only for pending jobs (processing jobs already counted)
-        if job.status == JobStatus::Pending {
-            self.depth.fetch_sub(1, Ordering::SeqCst);
+        if updated > 0 {
+            self.decrement_depth(1);
         }
 
         info!("Job {} cancelled", id);
@@ -1433,6 +1472,7 @@ impl JobQueue {
     /// Returns the list of cancelled jobs.
     pub async fn cancel_pipeline(&self, pipeline_id: &str) -> Result<Vec<Job>> {
         let mut cancelled_jobs = Vec::new();
+        let mut db_cancelled: Option<u64> = None;
 
         // If we have a repository, cancel in database first
         if let Some(repo) = &self.job_repository {
@@ -1441,6 +1481,7 @@ impl JobQueue {
 
             // Cancel in database
             let count = repo.cancel_jobs_by_pipeline(pipeline_id).await?;
+            db_cancelled = Some(count);
             info!(
                 "Cancelled {} jobs in pipeline {} (database)",
                 count, pipeline_id
@@ -1470,19 +1511,20 @@ impl JobQueue {
 
         let mut depth_reduction = 0usize;
         for id in &ids {
+            let mut keep_tracking = self.cancellation_tokens.contains_key(id);
             if let Some(mut job) = self.jobs_cache.get_mut(id) {
                 if job.pipeline_id.as_deref() != Some(pipeline_id) {
                     continue;
                 }
 
-                if job.status == JobStatus::Pending {
+                if matches!(job.status, JobStatus::Pending | JobStatus::Processing) {
                     depth_reduction += 1;
                 }
 
-                if job.status == JobStatus::Processing
-                    && let Some(token) = self.cancellation_tokens.get(id)
-                {
+                if job.status == JobStatus::Processing {
+                    let token = self.cancellation_tokens.entry(id.to_string()).or_default();
                     token.cancel();
+                    keep_tracking = true;
                 }
 
                 job.status = JobStatus::Interrupted;
@@ -1493,17 +1535,20 @@ impl JobQueue {
                 }
             }
 
-            let _ = self.cancellation_tokens.remove(id);
-            let _ = self.persisted_log_cursor.remove(id);
-            self.progress_cache.remove(id);
+            if !keep_tracking {
+                let _ = self.cancellation_tokens.remove(id);
+                let _ = self.persisted_log_cursor.remove(id);
+                self.progress_cache.remove(id);
+            }
 
             if self.job_repository.is_some() {
                 self.jobs_cache.remove(id);
             }
         }
 
-        if depth_reduction > 0 {
-            self.depth.fetch_sub(depth_reduction, Ordering::SeqCst);
+        let reduction = db_cancelled.map(|v| v as usize).unwrap_or(depth_reduction);
+        if reduction > 0 {
+            self.decrement_depth(reduction);
         }
 
         info!(
@@ -1517,6 +1562,20 @@ impl JobQueue {
     /// Get the cancellation token for a job.
     pub async fn get_cancellation_token(&self, job_id: &str) -> Option<CancellationToken> {
         self.cancellation_tokens.get(job_id).map(|t| t.clone())
+    }
+
+    /// Finalize a cancelled/interrupted job by cleaning up in-memory tracking.
+    ///
+    /// This is intended to be called by workers after they observe cancellation, so we don't
+    /// drop log/progress state while the log collector might still be draining.
+    pub fn finalize_interrupted_job(&self, job_id: &str) {
+        let _ = self.cancellation_tokens.remove(job_id);
+        let _ = self.persisted_log_cursor.remove(job_id);
+        self.progress_cache.remove(job_id);
+
+        if self.job_repository.is_some() {
+            self.jobs_cache.remove(job_id);
+        }
     }
 
     /// Recover jobs from database on startup.
@@ -1662,7 +1721,7 @@ impl JobQueue {
 
         // Adjust queue depth to account for the original job completing.
         // The split jobs are enqueued and already increment depth.
-        self.depth.fetch_sub(1, Ordering::SeqCst);
+        self.decrement_depth(1);
 
         info!(
             "Split job {} into {} jobs for single-input processing",
@@ -1796,6 +1855,17 @@ impl JobQueue {
         self.depth.load(Ordering::SeqCst)
     }
 
+    fn decrement_depth(&self, by: usize) {
+        if by == 0 {
+            return;
+        }
+        let _ = self
+            .depth
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                Some(current.saturating_sub(by))
+            });
+    }
+
     /// Get the queue depth status.
     pub fn depth_status(&self) -> QueueDepthStatus {
         let depth = self.depth();
@@ -1833,10 +1903,16 @@ impl JobQueue {
         update_cache_logs: bool,
     ) -> Result<()> {
         let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
+        let mut transitioned = false;
 
         // Update database if repository is available
         if let Some(repo) = &self.job_repository {
-            repo.mark_job_failed(job_id, error).await?;
+            let updated = repo.mark_job_failed(job_id, error).await?;
+            if updated == 0 {
+                self.finalize_interrupted_job(job_id);
+                return Ok(());
+            }
+            transitioned = true;
 
             let exec_info_str = repo.get_job_execution_info(job_id).await?;
             let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
@@ -1872,26 +1948,31 @@ impl JobQueue {
 
         // Update cache
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            job.status = JobStatus::Failed;
-            job.completed_at = Some(Utc::now());
-            job.error = Some(error.to_string());
+            if job.status != JobStatus::Interrupted {
+                transitioned |= matches!(job.status, JobStatus::Pending | JobStatus::Processing);
+                job.status = JobStatus::Failed;
+                job.completed_at = Some(Utc::now());
+                job.error = Some(error.to_string());
 
-            if update_cache_logs {
-                let exec_info = job
-                    .execution_info
-                    .get_or_insert_with(JobExecutionInfo::default);
-                if let Some(name) = processor_name {
-                    exec_info.current_processor = Some(name.to_string());
+                if update_cache_logs {
+                    let exec_info = job
+                        .execution_info
+                        .get_or_insert_with(JobExecutionInfo::default);
+                    if let Some(name) = processor_name {
+                        exec_info.current_processor = Some(name.to_string());
+                    }
+                    if let Some(step) = step_number {
+                        exec_info.current_step = Some(step);
+                    }
+                    if let Some(total) = total_steps {
+                        exec_info.total_steps = Some(total);
+                    }
+                    extend_logs_capped(exec_info, std::slice::from_ref(&log_entry));
+                    update_log_summary(exec_info, std::slice::from_ref(&log_entry));
                 }
-                if let Some(step) = step_number {
-                    exec_info.current_step = Some(step);
-                }
-                if let Some(total) = total_steps {
-                    exec_info.total_steps = Some(total);
-                }
-                extend_logs_capped(exec_info, std::slice::from_ref(&log_entry));
-                update_log_summary(exec_info, std::slice::from_ref(&log_entry));
             }
+        } else if self.job_repository.is_none() {
+            return Err(Error::not_found("Job", job_id));
         }
 
         // Remove cancellation token
@@ -1903,7 +1984,9 @@ impl JobQueue {
             self.jobs_cache.remove(job_id);
         }
 
-        self.depth.fetch_sub(1, Ordering::SeqCst);
+        if transitioned {
+            self.decrement_depth(1);
+        }
         Ok(())
     }
 
@@ -2332,6 +2415,82 @@ mod tests {
             }
             other => panic!("Expected InvalidStateTransition, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn test_retry_job_resets_interrupted_to_pending() {
+        let queue = JobQueue::new();
+
+        let job = Job::new(
+            "remux",
+            vec!["/input.flv".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job.id.clone();
+        queue.enqueue(job).await.unwrap();
+
+        queue.cancel_job(&job_id).await.unwrap();
+        assert_eq!(queue.depth(), 0);
+
+        let cancelled = queue.get_job(&job_id).await.unwrap().unwrap();
+        assert_eq!(cancelled.status, JobStatus::Interrupted);
+        assert!(cancelled.completed_at.is_some());
+
+        let retried = queue.retry_job(&job_id).await.unwrap();
+        assert_eq!(retried.status, JobStatus::Pending);
+        assert_eq!(retried.retry_count, 1);
+        assert!(retried.started_at.is_none());
+        assert!(retried.completed_at.is_none());
+        assert_eq!(queue.depth(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_processing_job_is_idempotent_and_not_overridden() {
+        let queue = JobQueue::new();
+
+        let job = Job::new(
+            "remux",
+            vec!["/input.flv".to_string()],
+            vec!["/output.mp4".to_string()],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job.id.clone();
+        queue.enqueue(job).await.unwrap();
+        assert_eq!(queue.depth(), 1);
+
+        let processing = queue.dequeue(None).await.unwrap().unwrap();
+        assert_eq!(processing.id, job_id);
+        assert_eq!(processing.status, JobStatus::Processing);
+        assert_eq!(queue.depth(), 1);
+
+        queue.cancel_job(&job_id).await.unwrap();
+        assert_eq!(queue.depth(), 0);
+
+        // These should be no-ops and must not overwrite INTERRUPTED.
+        queue
+            .complete(
+                &job_id,
+                JobResult {
+                    outputs: vec!["/final.mp4".to_string()],
+                    duration_secs: 1.0,
+                    metadata: None,
+                    logs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        queue.fail(&job_id, "should be ignored").await.unwrap();
+
+        let cancelled = queue.get_job(&job_id).await.unwrap().unwrap();
+        assert_eq!(cancelled.status, JobStatus::Interrupted);
+        assert_eq!(queue.depth(), 0);
+
+        // Idempotent cancel.
+        queue.cancel_job(&job_id).await.unwrap();
+        assert_eq!(queue.depth(), 0);
     }
 
     // ========================================================================

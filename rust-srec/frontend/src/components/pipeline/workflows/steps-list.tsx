@@ -4,7 +4,7 @@ import { X, Workflow, GripVertical, Settings, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { getStepColor, getStepIcon } from '@/components/pipeline/constants';
 import { listJobPresets } from '@/server/functions/job';
@@ -100,7 +100,7 @@ export const StepsList = memo(
                         {isInline && (
                           <div
                             className="absolute -top-1 -right-1 h-3.5 w-3.5 sm:h-4 sm:w-4 rounded-full bg-background border border-current flex items-center justify-center"
-                            title={t`Custom Config`}
+                            title={i18n._(msg`Custom Config`)}
                           >
                             <Settings className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
                           </div>
@@ -124,7 +124,7 @@ export const StepsList = memo(
                                   i18n,
                                 )
                               : isInline
-                                ? t`Inline: ${stepName}`
+                                ? i18n._(msg`Inline: ${stepName}`)
                                 : stepName}
                           </span>
                         </div>
@@ -142,7 +142,9 @@ export const StepsList = memo(
                               <div className="flex items-center gap-1 opacity-60">
                                 <ArrowRight className="h-2 w-2 sm:h-2.5 sm:w-2.5" />
                                 <span className="text-[8px] sm:text-[9px] font-mono leading-none truncate max-w-[100px] sm:max-w-none">
-                                  {t`AFTER: ${dagStep.depends_on.join(', ')}`}
+                                  {i18n._(
+                                    msg`AFTER: ${dagStep.depends_on.join(', ')}`,
+                                  )}
                                 </span>
                               </div>
                             )}
@@ -160,7 +162,7 @@ export const StepsList = memo(
                               e.stopPropagation();
                               onEdit?.(index);
                             }}
-                            title={t`Configure Step`}
+                            title={i18n._(msg`Configure Step`)}
                           >
                             <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           </Button>

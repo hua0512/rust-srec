@@ -13,7 +13,8 @@ import {
   Play,
   Bell,
 } from 'lucide-react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { type I18n } from '@lingui/core';
 
 type Submenu = {
   href: string;
@@ -35,14 +36,14 @@ type Group = {
   menus: Menu[];
 };
 
-export function getMenuList(_pathname: string): Group[] {
+export function getMenuList(_pathname: string, i18n: I18n): Group[] {
   return [
     {
       groupLabel: '',
       menus: [
         {
           href: '/dashboard',
-          label: t`Dashboard`,
+          label: i18n._(msg`Dashboard`),
           icon: LayoutGrid,
           submenus: [],
         },
@@ -54,46 +55,46 @@ export function getMenuList(_pathname: string): Group[] {
       menus: [
         {
           href: '/streamers',
-          label: t`Streamers`,
+          label: i18n._(msg`Streamers`),
           icon: Users,
           submenus: [],
         },
         {
           href: '/sessions',
-          label: t`Sessions`,
+          label: i18n._(msg`Sessions`),
           icon: Film,
           submenus: [],
         },
         {
           href: '/pipeline',
-          label: t`Pipeline`,
+          label: i18n._(msg`Pipeline`),
           icon: Workflow,
           submenus: [
             {
               href: '/pipeline/presets',
-              label: t`Presets`,
+              label: i18n._(msg`Presets`),
               icon: Settings2,
             },
             {
               href: '/pipeline/workflows',
-              label: t`Workflows`,
+              label: i18n._(msg`Workflows`),
               icon: GitBranch,
             },
             {
               href: '/pipeline/jobs',
-              label: t`Jobs`,
+              label: i18n._(msg`Jobs`),
               icon: ListTodo,
             },
             {
               href: '/pipeline/outputs',
-              label: t`Outputs`,
+              label: i18n._(msg`Outputs`),
               icon: FileVideo,
             },
           ],
         },
         {
           href: '/player',
-          label: t`Player`,
+          label: i18n._(msg`Player`),
           icon: Play,
           submenus: [],
         },
@@ -101,11 +102,11 @@ export function getMenuList(_pathname: string): Group[] {
     },
 
     {
-      groupLabel: t`Settings`,
+      groupLabel: i18n._(msg`Settings`),
       menus: [
         {
           href: '/system/health',
-          label: t`System Health`,
+          label: i18n._(msg`System Health`),
           icon: Activity,
         },
         // {
@@ -115,12 +116,12 @@ export function getMenuList(_pathname: string): Group[] {
         // },
         {
           href: '/config',
-          label: t`Configuration`,
+          label: i18n._(msg`Configuration`),
           icon: Settings,
         },
         {
           href: '/notifications',
-          label: t`Notifications`,
+          label: i18n._(msg`Notifications`),
           icon: Bell,
         },
       ],

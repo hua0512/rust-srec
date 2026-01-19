@@ -11,7 +11,7 @@ import {
   getPipelinePresetName,
 } from '@/components/pipeline/presets/default-presets-i18n';
 import { getProcessorDefinition } from '../../presets/processors/registry';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 
 export type StepNodeData = {
   step: DagStepDefinition['step'];
@@ -116,11 +116,11 @@ export function StepNode({ data }: NodeProps<StepNode>) {
             )}
           >
             {step.type === 'inline'
-              ? i18n._(t`inline`)
+              ? i18n._(msg`inline`)
               : step.type === 'preset'
-                ? i18n._(t`preset`)
+                ? i18n._(msg`preset`)
                 : step.type === 'workflow'
-                  ? i18n._(t`workflow`)
+                  ? i18n._(msg`workflow`)
                   : (step as { type: string }).type}
           </span>
         </div>

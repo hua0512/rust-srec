@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
-use tracing::debug;
+use tracing::{debug, trace};
 
 /// Strategy for selecting among multiple sources
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -429,7 +429,7 @@ impl SourceManager {
             health.score > 20
         };
 
-        debug!(
+        trace!(
             url = url,
             success = success,
             response_time_ms = time_ms,

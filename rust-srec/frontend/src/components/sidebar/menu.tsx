@@ -3,6 +3,7 @@ import * as React from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
 import { Ellipsis, LogOut, LucideIcon } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 
 import { cn } from '@/lib/utils';
 import { getMenuList } from '@/lib/menu-list';
@@ -157,10 +158,14 @@ const SignOutButton = React.memo(function SignOutButton({
 });
 
 export function MenuComponent({ isOpen, className }: MenuProps) {
+  const { i18n } = useLingui();
   const pathname = useLocation({
     select: (location) => location.pathname,
   });
-  const menuList = React.useMemo(() => getMenuList(pathname), [pathname]);
+  const menuList = React.useMemo(
+    () => getMenuList(pathname, i18n),
+    [pathname, i18n],
+  );
 
   const { hasCriticalDot } = useNotificationDot();
 

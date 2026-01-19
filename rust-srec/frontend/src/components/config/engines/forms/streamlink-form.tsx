@@ -12,8 +12,9 @@ import { ListInput } from '@/components/ui/list-input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Terminal, Settings, Command } from 'lucide-react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 
 interface StreamlinkFormProps {
   control: Control<any>;
@@ -24,6 +25,7 @@ export function StreamlinkForm({
   control,
   basePath = 'config',
 }: StreamlinkFormProps) {
+  const { i18n } = useLingui();
   return (
     <div className="space-y-6">
       <div className="grid gap-6 md:grid-cols-2">
@@ -39,7 +41,7 @@ export function StreamlinkForm({
               <FormControl>
                 <Input
                   {...field}
-                  placeholder={t`streamlink`}
+                  placeholder={i18n._(msg`streamlink`)}
                   className="bg-background/50"
                 />
               </FormControl>
@@ -62,7 +64,7 @@ export function StreamlinkForm({
               <FormControl>
                 <Input
                   {...field}
-                  placeholder={t`best`}
+                  placeholder={i18n._(msg`best`)}
                   className="bg-background/50"
                 />
               </FormControl>
@@ -96,7 +98,7 @@ export function StreamlinkForm({
                 <FormControl>
                   <Input
                     {...field}
-                    placeholder={t`https://lb-eu.cdn-perfprod.com`}
+                    placeholder={i18n._(msg`https://lb-eu.cdn-perfprod.com`)}
                     className="bg-background/50"
                   />
                 </FormControl>
@@ -118,7 +120,7 @@ export function StreamlinkForm({
                 <FormControl>
                   <Input
                     {...field}
-                    placeholder={t`channel1,channel2`}
+                    placeholder={i18n._(msg`channel1,channel2`)}
                     className="bg-background/50"
                   />
                 </FormControl>
@@ -151,7 +153,7 @@ export function StreamlinkForm({
                   <ListInput
                     value={field.value}
                     onChange={field.onChange}
-                    placeholder={t`--hls-live-edge 3`}
+                    placeholder={i18n._(msg`--hls-live-edge 3`)}
                     className="bg-background/50"
                   />
                 </FormControl>

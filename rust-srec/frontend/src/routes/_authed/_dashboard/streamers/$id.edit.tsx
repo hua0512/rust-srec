@@ -26,8 +26,7 @@ const StreamerSaveFab = lazy(() =>
   })),
 );
 
-import { type Download } from '@/store/downloads';
-import { useDownloadStore } from '@/store/downloads';
+import { useDownloadStore, type Download } from '@/store/downloads';
 import { useShallow } from 'zustand/react/shallow';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';

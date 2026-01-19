@@ -11,7 +11,8 @@ import { Trans } from '@lingui/react/macro';
 import { Shield } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { memo } from 'react';
 
 interface LimitsCardProps {
@@ -20,6 +21,7 @@ interface LimitsCardProps {
 }
 
 export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
+  const { i18n } = useLingui();
   return (
     <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
       <CardHeader className="pb-3">
@@ -55,7 +57,7 @@ export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
                   value={field.value ?? null}
                   onChange={field.onChange}
                   unitType="duration"
-                  placeholder={t`Global Default`}
+                  placeholder={i18n._(msg`Global Default`)}
                   className="bg-background"
                 />
               </FormControl>
@@ -83,7 +85,7 @@ export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
                   value={field.value ?? null}
                   onChange={field.onChange}
                   unitType="size"
-                  placeholder={t`Global Default`}
+                  placeholder={i18n._(msg`Global Default`)}
                   className="bg-background"
                 />
               </FormControl>
@@ -109,7 +111,7 @@ export const LimitsCard = memo(({ form, basePath }: LimitsCardProps) => {
                   value={field.value ?? null}
                   onChange={field.onChange}
                   unitType="size"
-                  placeholder={t`Global Default`}
+                  placeholder={i18n._(msg`Global Default`)}
                   className="bg-background"
                 />
               </FormControl>

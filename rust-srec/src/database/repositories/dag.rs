@@ -149,11 +149,11 @@ impl DagRepository for SqlxDagRepository {
         sqlx::query(
             r#"
             INSERT INTO dag_execution (
-                id, dag_definition, status, streamer_id, session_id,
+                id, dag_definition, status, streamer_id, session_id, segment_index, segment_source,
                 created_at, updated_at, completed_at, error,
                 total_steps, completed_steps, failed_steps
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&dag.id)
@@ -161,6 +161,8 @@ impl DagRepository for SqlxDagRepository {
         .bind(&dag.status)
         .bind(&dag.streamer_id)
         .bind(&dag.session_id)
+        .bind(dag.segment_index)
+        .bind(&dag.segment_source)
         .bind(&dag.created_at)
         .bind(&dag.updated_at)
         .bind(&dag.completed_at)
@@ -459,8 +461,19 @@ impl DagRepository for SqlxDagRepository {
     ) -> Result<()> {
         retry_on_sqlite_busy("update_step_status_with_job", || async {
             let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query(
-                "UPDATE dag_step_execution SET status = ?, job_id = ?, updated_at = ? WHERE id = ?",
+            let updated = sqlx::query(
+                r#"
+                UPDATE dag_step_execution
+                SET status = ?, job_id = ?, updated_at = ?
+                WHERE id = ?
+                  AND job_id IS NULL
+                  AND status IN ('PENDING', 'BLOCKED')
+                  AND (
+                    SELECT status
+                    FROM dag_execution
+                    WHERE id = dag_step_execution.dag_id
+                  ) NOT IN ('COMPLETED', 'FAILED', 'INTERRUPTED')
+                "#,
             )
             .bind(status)
             .bind(job_id)
@@ -468,6 +481,42 @@ impl DagRepository for SqlxDagRepository {
             .bind(id)
             .execute(&self.pool)
             .await?;
+
+            if updated.rows_affected() == 0 {
+                #[derive(sqlx::FromRow)]
+                struct StepStatusRow {
+                    status: String,
+                    job_id: Option<String>,
+                    dag_id: String,
+                }
+
+                let step = sqlx::query_as::<_, StepStatusRow>(
+                    "SELECT status, job_id, dag_id FROM dag_step_execution WHERE id = ?",
+                )
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await?;
+
+                let Some(step) = step else {
+                    return Err(Error::not_found("DAG step execution", id));
+                };
+
+                let dag_status: Option<String> =
+                    sqlx::query_scalar("SELECT status FROM dag_execution WHERE id = ?")
+                        .bind(&step.dag_id)
+                        .fetch_optional(&self.pool)
+                        .await?;
+
+                return Err(Error::InvalidStateTransition {
+                    from: format!(
+                        "step_status={}, step_job_id={}, dag_status={}",
+                        step.status,
+                        step.job_id.as_deref().unwrap_or("NULL"),
+                        dag_status.as_deref().unwrap_or("UNKNOWN")
+                    ),
+                    to: format!("{}(job_id={})", status, job_id),
+                });
+            }
             Ok(())
         })
         .await
@@ -516,12 +565,14 @@ impl DagRepository for SqlxDagRepository {
                 merged
             }
 
-            // 1. Mark step as completed with outputs
-            sqlx::query(
+            // 1. Mark step as completed with outputs.
+            // Guard against duplicate completion (idempotency) and against completing cancelled steps.
+            let completed = sqlx::query(
                 r#"
                 UPDATE dag_step_execution
                 SET status = 'COMPLETED', outputs = ?, updated_at = ?
                 WHERE id = ?
+                  AND status IN ('PENDING', 'PROCESSING')
                 "#,
             )
             .bind(&outputs_json)
@@ -529,6 +580,11 @@ impl DagRepository for SqlxDagRepository {
             .bind(step_id)
             .execute(&mut *tx)
             .await?;
+
+            if completed.rows_affected() == 0 {
+                tx.commit().await?;
+                return Ok(Vec::new());
+            }
 
             // 2. Get the completed step info
             let completed_step = sqlx::query_as::<_, DagStepExecutionDbModel>(
@@ -697,6 +753,20 @@ impl DagRepository for SqlxDagRepository {
             .execute(&mut *tx)
             .await?;
 
+            // 2b. Mark in-flight steps as CANCELLED too (fail-fast). We keep the job_id for
+            // observability and for best-effort cancellation by the caller.
+            sqlx::query(
+                r#"
+                UPDATE dag_step_execution
+                SET status = 'CANCELLED', updated_at = ?
+                WHERE dag_id = ? AND status = 'PROCESSING'
+                "#,
+            )
+            .bind(&now)
+            .bind(dag_id)
+            .execute(&mut *tx)
+            .await?;
+
             // 3. Mark the DAG as FAILED
             sqlx::query(
                 r#"
@@ -727,7 +797,9 @@ impl DagRepository for SqlxDagRepository {
             sqlx::query(
                 r#"
                 UPDATE dag_step_execution
-                SET status = 'BLOCKED', job_id = NULL, outputs = NULL, updated_at = ?
+                SET status = CASE WHEN job_id IS NULL THEN 'BLOCKED' ELSE 'PROCESSING' END,
+                    outputs = NULL,
+                    updated_at = ?
                 WHERE dag_id = ? AND status = 'CANCELLED'
                 "#,
             )
@@ -918,6 +990,8 @@ mod tests {
                 status TEXT NOT NULL DEFAULT 'PENDING',
                 streamer_id TEXT,
                 session_id TEXT,
+                segment_index INTEGER,
+                segment_source TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 completed_at TEXT,
@@ -1113,6 +1187,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_complete_step_is_idempotent() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool);
+
+        // Create DAG: A -> B
+        let dag_def = DagPipelineDefinition::new(
+            "test-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+            ],
+        );
+
+        let dag = DagExecutionDbModel::new(&dag_def, None, None);
+        let dag_id = dag.id.clone();
+        repo.create_dag(&dag).await.unwrap();
+
+        let step_a = DagStepExecutionDbModel::new(&dag_id, "A", &[]);
+        let step_a_id = step_a.id.clone();
+        let step_b = DagStepExecutionDbModel::new(&dag_id, "B", &["A".to_string()]);
+
+        repo.create_steps(&[step_a, step_b]).await.unwrap();
+
+        let ready = repo
+            .complete_step_and_check_dependents(&step_a_id, &["/output/a.mp4".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].step.step_id, "B");
+
+        // Duplicate completion should be a no-op (no double increment, no re-ready).
+        let ready2 = repo
+            .complete_step_and_check_dependents(&step_a_id, &["/output/a.mp4".to_string()])
+            .await
+            .unwrap();
+        assert!(ready2.is_empty());
+
+        let dag = repo.get_dag(&dag_id).await.unwrap();
+        assert_eq!(dag.completed_steps, 1);
+
+        let step_b = repo
+            .get_step_by_dag_and_step_id(&dag_id, "B")
+            .await
+            .unwrap();
+        assert_eq!(step_b.status, "PENDING");
+    }
+
+    #[tokio::test]
     async fn test_fail_dag_and_cancel_steps() {
         let pool = setup_test_pool().await;
         let repo = SqlxDagRepository::new(pool);
@@ -1167,6 +1293,52 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(step_c.status, "CANCELLED");
+    }
+
+    #[tokio::test]
+    async fn test_fail_dag_cancels_processing_steps() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool);
+
+        // Create DAG: A -> B
+        let dag_def = DagPipelineDefinition::new(
+            "test-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+            ],
+        );
+
+        let dag = DagExecutionDbModel::new(&dag_def, None, None);
+        let dag_id = dag.id.clone();
+        repo.create_dag(&dag).await.unwrap();
+
+        let step_a = DagStepExecutionDbModel::new(&dag_id, "A", &[]);
+        let step_b = DagStepExecutionDbModel::new(&dag_id, "B", &["A".to_string()]);
+        let step_b_id = step_b.id.clone();
+
+        repo.create_steps(&[step_a, step_b]).await.unwrap();
+
+        // Simulate an in-flight job for step B.
+        repo.update_step_status_with_job(&step_b_id, "PROCESSING", "job-b")
+            .await
+            .unwrap();
+
+        let cancelled = repo
+            .fail_dag_and_cancel_steps(&dag_id, "fail-fast")
+            .await
+            .unwrap();
+        assert_eq!(cancelled, vec!["job-b".to_string()]);
+
+        let step_b = repo
+            .get_step_by_dag_and_step_id(&dag_id, "B")
+            .await
+            .unwrap();
+        assert_eq!(step_b.status, "CANCELLED");
     }
 
     #[tokio::test]

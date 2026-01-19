@@ -61,7 +61,7 @@ export function DanmakuFactoryConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      placeholder="DanmakuFactory"
+                      placeholder={i18n._(msg`DanmakuFactory`)}
                       {...field}
                     />
                   </FormControl>

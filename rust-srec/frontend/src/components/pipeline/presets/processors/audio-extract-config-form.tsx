@@ -1,4 +1,6 @@
-import { Trans } from '@lingui/macro';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import {
   FormField,
   FormItem,
@@ -29,6 +31,7 @@ export function AudioExtractConfigForm({
   control,
   pathPrefix,
 }: ProcessorConfigFormProps<AudioExtractConfig>) {
+  const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
 
   const containerVariants = {
@@ -93,7 +96,9 @@ export function AudioExtractConfigForm({
                       >
                         <FormControl>
                           <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                            <SelectValue placeholder="Copy (Stream Copy)" />
+                            <SelectValue
+                              placeholder={i18n._(msg`Copy (Stream Copy)`)}
+                            />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -122,7 +127,7 @@ export function AudioExtractConfigForm({
                       <FormControl>
                         <Input
                           className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                          placeholder="128k"
+                          placeholder={i18n._(msg`128k`)}
                           {...field}
                         />
                       </FormControl>
@@ -162,7 +167,7 @@ export function AudioExtractConfigForm({
                         <Input
                           className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
                           type="number"
-                          placeholder="44100"
+                          placeholder={i18n._(msg`44100`)}
                           {...field}
                           onChange={(e) =>
                             field.onChange(
@@ -192,7 +197,7 @@ export function AudioExtractConfigForm({
                           type="number"
                           min={1}
                           max={8}
-                          placeholder="2"
+                          placeholder={i18n._(msg`2`)}
                           {...field}
                           onChange={(e) =>
                             field.onChange(

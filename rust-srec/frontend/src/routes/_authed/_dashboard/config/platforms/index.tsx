@@ -9,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { AlertCircle, Globe, Search } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { useState, useEffect, useMemo } from 'react';
 
 export const Route = createFileRoute('/_authed/_dashboard/config/platforms/')({
@@ -18,6 +19,7 @@ export const Route = createFileRoute('/_authed/_dashboard/config/platforms/')({
 
 function PlatformsConfigPage() {
   const navigate = useNavigate();
+  const { i18n } = useLingui();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -71,7 +73,7 @@ function PlatformsConfigPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder={t`Search platforms...`}
+            placeholder={i18n._(msg`Search platforms...`)}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9 h-9 bg-muted/50 border-muted-foreground/20 focus:bg-background transition-colors"

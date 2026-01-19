@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
@@ -65,6 +65,10 @@ impl EngineKey {
             engine_type,
             config_id: Some(config_id),
         }
+    }
+
+    pub fn is_override(&self) -> bool {
+        self.config_id.as_ref().is_some_and(|id| id.contains('#'))
     }
 }
 
@@ -167,9 +171,27 @@ pub struct CircuitBreaker {
     /// Required failures in half-open state to reopen circuit.
     /// This allows for transient errors without immediately reopening.
     half_open_failure_threshold: u32,
+    /// Last time this breaker was used (unix epoch seconds).
+    last_used_unix: AtomicU64,
 }
 
 impl CircuitBreaker {
+    fn unix_now() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_secs()
+    }
+
+    fn touch(&self) {
+        self.last_used_unix
+            .store(Self::unix_now(), Ordering::Relaxed);
+    }
+
+    pub fn last_used_unix(&self) -> u64 {
+        self.last_used_unix.load(Ordering::Relaxed)
+    }
+
     /// Create a new circuit breaker.
     pub fn new(failure_threshold: u32, cooldown_secs: u64) -> Self {
         Self {
@@ -184,11 +206,13 @@ impl CircuitBreaker {
             // Allow 2 failures in half-open state before reopening
             // This prevents transient network errors from immediately blocking recovery
             half_open_failure_threshold: 2,
+            last_used_unix: AtomicU64::new(Self::unix_now()),
         }
     }
 
     /// Get the current state.
     pub fn state(&self) -> CircuitState {
+        self.touch();
         self.check_state_transition();
         *self.state.read()
     }
@@ -204,6 +228,7 @@ impl CircuitBreaker {
 
     /// Record a successful operation.
     pub fn record_success(&self) {
+        self.touch();
         let state = *self.state.read();
 
         match state {
@@ -230,6 +255,7 @@ impl CircuitBreaker {
 
     /// Record a failed operation.
     pub fn record_failure(&self) {
+        self.touch();
         let state = *self.state.read();
 
         match state {
@@ -273,6 +299,7 @@ impl CircuitBreaker {
 
     /// Reset the circuit breaker to closed state.
     pub fn reset(&self) {
+        self.touch();
         *self.state.write() = CircuitState::Closed;
         self.failure_count.store(0, Ordering::SeqCst);
         self.half_open_successes.store(0, Ordering::SeqCst);
@@ -311,15 +338,68 @@ pub struct CircuitBreakerManager {
     breakers: RwLock<HashMap<EngineKey, Arc<CircuitBreaker>>>,
     failure_threshold: u32,
     cooldown_secs: u64,
+    last_override_cleanup_unix: AtomicU64,
 }
 
 impl CircuitBreakerManager {
+    const OVERRIDE_BREAKER_MAX: usize = 256;
+    const OVERRIDE_BREAKER_TTL_SECS: u64 = 6 * 60 * 60;
+    const OVERRIDE_BREAKER_CLEANUP_INTERVAL_SECS: u64 = 5 * 60;
+
     /// Create a new circuit breaker manager.
     pub fn new(failure_threshold: u32, cooldown_secs: u64) -> Self {
         Self {
             breakers: RwLock::new(HashMap::new()),
             failure_threshold,
             cooldown_secs,
+            last_override_cleanup_unix: AtomicU64::new(0),
+        }
+    }
+
+    fn maybe_cleanup_override_breakers_locked(
+        &self,
+        breakers: &mut HashMap<EngineKey, Arc<CircuitBreaker>>,
+    ) {
+        let now = CircuitBreaker::unix_now();
+        let last = self.last_override_cleanup_unix.load(Ordering::Relaxed);
+        if now.saturating_sub(last) < Self::OVERRIDE_BREAKER_CLEANUP_INTERVAL_SECS {
+            return;
+        }
+
+        if self
+            .last_override_cleanup_unix
+            .compare_exchange(last, now, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+
+        // First: remove stale override breakers.
+        let cutoff = now.saturating_sub(Self::OVERRIDE_BREAKER_TTL_SECS);
+        breakers.retain(|key, breaker| {
+            if !key.is_override() {
+                return true;
+            }
+            breaker.last_used_unix() >= cutoff
+        });
+
+        // Second: cap the number of override breakers (best-effort LRU by last_used_unix).
+        let mut overrides: Vec<(u64, EngineKey)> = breakers
+            .iter()
+            .filter_map(|(key, breaker)| {
+                key.is_override()
+                    .then_some((breaker.last_used_unix(), key.clone()))
+            })
+            .collect();
+
+        if overrides.len() <= Self::OVERRIDE_BREAKER_MAX {
+            return;
+        }
+
+        overrides.sort_by_key(|(last_used, _)| *last_used);
+        let remove_count = overrides.len().saturating_sub(Self::OVERRIDE_BREAKER_MAX);
+        for (_, key) in overrides.into_iter().take(remove_count) {
+            breakers.remove(&key);
         }
     }
 
@@ -333,6 +413,7 @@ impl CircuitBreakerManager {
         }
 
         let mut breakers = self.breakers.write();
+        self.maybe_cleanup_override_breakers_locked(&mut breakers);
         breakers
             .entry(key.clone())
             .or_insert_with(|| {

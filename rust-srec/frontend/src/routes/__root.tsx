@@ -1,77 +1,48 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router';
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import {
+  HeadContent,
+  Outlet,
+  Scripts,
+  createRootRouteWithContext,
+} from '@tanstack/react-router';
+import { useLingui } from '@lingui/react';
+import { type I18n } from '@lingui/core';
 
 import appCss from '../styles.css?url';
 import { NotFound } from '@/components/not-found';
 import { createServerFn } from '@tanstack/react-start';
-import { getRequestHeader } from '@tanstack/react-start/server';
+import { QueryClient } from '@tanstack/react-query';
+import { ThemeProvider } from '@/components/providers/theme-provider';
+import { Toaster } from '@/components/ui/sonner';
+import { TanStackDevtools } from '@tanstack/react-devtools';
+import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools';
+import TanStackQueryDevtools from '../integrations/tanstack-query/dev-tools';
 
-// Lazy load devtools to prevent hydration mismatch (client-only component)
-const TanStackRouterDevtools =
-  process.env.NODE_ENV === 'production'
-    ? () => null
-    : lazy(() =>
-        import('@tanstack/react-router-devtools').then((res) => ({
-          default: res.TanStackRouterDevtools,
-        })),
-      );
-
-const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
-  // Use ensureValidToken to validate the session and refresh if needed
-  // This prevents users with expired tokens from appearing authenticated
+export const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
   const { ensureValidToken } = await import('@/server/tokenRefresh');
   return await ensureValidToken();
 });
 
-// Detect locale on the server from Accept-Language header
-const detectServerLocale = createServerFn({ method: 'GET' }).handler(
-  async () => {
-    const { parseAcceptLanguage, defaultLocale } = await import('../i18n');
-    try {
-      const acceptLanguage = getRequestHeader('accept-language');
-      return parseAcceptLanguage(acceptLanguage);
-    } catch {
-      return defaultLocale;
-    }
-  },
-);
+interface MyRouterContext {
+  queryClient: QueryClient;
+  i18n: I18n;
+}
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<MyRouterContext>()({
   beforeLoad: async () => {
-    const [user, serverLocale] = await Promise.all([
-      fetchUser(),
-      detectServerLocale(),
-    ]);
-    console.log(
-      `[Root] beforeLoad context: user=${user ? user.username : 'guest'}, locale=${serverLocale}`,
-    );
+    const user = await fetchUser();
     return {
       user,
-      serverLocale,
     };
   },
   head: () => ({
     meta: [
-      {
-        charSet: 'utf-8',
-      },
-      {
-        name: 'viewport',
-        content: 'width=device-width, initial-scale=1',
-      },
-      {
-        title: 'Rust-Srec',
-      },
+      { charSet: 'utf-8' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      { title: 'Rust-Srec' },
     ],
     links: [
-      {
-        rel: 'stylesheet',
-        href: appCss,
-      },
-      {
-        rel: 'preconnect',
-        href: 'https://fonts.googleapis.com',
-      },
+      { rel: 'stylesheet', href: appCss },
+      { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
       {
         rel: 'preconnect',
         href: 'https://fonts.gstatic.com',
@@ -83,66 +54,41 @@ export const Route = createRootRoute({
       },
     ],
   }),
-  shellComponent: RootDocument,
+  component: RootComponent,
   notFoundComponent: () => <NotFound />,
 });
 
-import { I18nProvider } from '@lingui/react';
-import { i18n, activateLocale, initializeLocale, type Locale } from '../i18n';
-import { ThemeProvider } from '../components/theme-provider';
-import { useSidebar } from '../store/sidebar';
-import { useThemeStore } from '../stores/theme-store';
-import { Toaster } from '../components/ui/sonner';
-
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useRouteContext } from '@tanstack/react-router';
-
-// Export a shared QueryClient so beforeLoad hooks can use ensureQueryData
-export const queryClient = new QueryClient();
+function RootComponent() {
+  return (
+    <RootDocument>
+      <Outlet />
+    </RootDocument>
+  );
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
-  // Get the server-detected locale from route context
-  const { serverLocale } = useRouteContext({ from: '__root__' }) as {
-    serverLocale?: Locale;
-  };
-
-  // Track if we've done initial activation
-  const initializedRef = useRef(false);
-
-  // On first render (both SSR and hydration), activate the server-detected locale
-  // This ensures server and client render with the same locale during hydration
-  if (!initializedRef.current && serverLocale) {
-    activateLocale(serverLocale);
-    initializedRef.current = true;
-  }
-
-  // After hydration, switch to client-detected locale (which may differ if user has localStorage preference)
-  useEffect(() => {
-    initializeLocale();
-    useSidebar.persist.rehydrate();
-    useThemeStore.persist.rehydrate();
-  }, []);
+  const { i18n } = useLingui();
 
   return (
-    // suppressHydrationWarning is required for next-themes which adds className on client
-    <html lang={serverLocale || i18n.locale} suppressHydrationWarning>
+    <html lang={i18n.locale} suppressHydrationWarning>
       <head>
         <link rel="icon" type="image/svg+xml" href="/stream-rec.svg"></link>
         <HeadContent />
       </head>
       <body>
-        <QueryClientProvider client={queryClient}>
-          <I18nProvider i18n={i18n}>
-            <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
-              {children}
-              <Toaster position="top-right" />
-              <Suspense>
-                <TanStackRouterDevtools position="bottom-right" />
-              </Suspense>
-              <Scripts />
-            </ThemeProvider>
-          </I18nProvider>
-        </QueryClientProvider>
+        <ThemeProvider>{children}</ThemeProvider>
+        <TanStackDevtools
+          config={{ position: 'bottom-right' }}
+          plugins={[
+            {
+              name: 'Tanstack Router',
+              render: <TanStackRouterDevtoolsPanel />,
+            },
+            TanStackQueryDevtools,
+          ]}
+        />
+        <Toaster position="top-right" />
+        <Scripts />
       </body>
     </html>
   );

@@ -8,7 +8,8 @@ import {
 } from '@/components/ui/form';
 
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Clock } from 'lucide-react';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import { UseFormReturn } from 'react-hook-form';
@@ -20,6 +21,7 @@ interface GeneralTabProps {
 }
 
 export function GeneralTab({ form, basePath }: GeneralTabProps) {
+  const { i18n } = useLingui();
   return (
     <div className="grid gap-6">
       {/* Timing & Delays Card */}
@@ -54,7 +56,7 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
                       field.onChange(v !== null ? Math.round(v * 1000) : null)
                     }
                     unitType="duration"
-                    placeholder={t`Global Default`}
+                    placeholder={i18n._(msg`Global Default`)}
                     className="bg-background"
                   />
                 </FormControl>
@@ -86,7 +88,7 @@ export function GeneralTab({ form, basePath }: GeneralTabProps) {
                       field.onChange(v !== null ? Math.round(v * 1000) : null)
                     }
                     unitType="duration"
-                    placeholder={t`Global Default`}
+                    placeholder={i18n._(msg`Global Default`)}
                     className="bg-background"
                   />
                 </FormControl>

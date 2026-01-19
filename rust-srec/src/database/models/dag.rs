@@ -29,6 +29,10 @@ pub struct DagExecutionDbModel {
     pub streamer_id: Option<String>,
     /// Associated session ID.
     pub session_id: Option<String>,
+    /// Segment index when this DAG is tied to a specific session segment.
+    pub segment_index: Option<i64>,
+    /// Segment source ("video", "danmu", or "paired") for segment-related DAGs.
+    pub segment_source: Option<String>,
     /// ISO 8601 timestamp when the DAG was created.
     pub created_at: String,
     /// ISO 8601 timestamp when the DAG was last updated.
@@ -70,6 +74,8 @@ impl DagExecutionDbModel {
             status: DagExecutionStatus::Pending.as_str().to_string(),
             streamer_id,
             session_id,
+            segment_index: None,
+            segment_source: None,
             created_at: now.clone(),
             updated_at: now,
             completed_at: None,

@@ -17,7 +17,8 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Link, User, Sparkles, Loader2 } from 'lucide-react';
 import { PlatformConfig, Template } from '@/api/schemas';
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,7 @@ export function StreamerGeneralSettings({
   onAutofillName,
   isAutofilling = false,
 }: StreamerGeneralSettingsProps) {
+  const { i18n } = useLingui();
   const url = useWatch({
     control: form.control,
     name: 'url',
@@ -67,7 +69,7 @@ export function StreamerGeneralSettings({
                 <div className="relative">
                   <Link className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="https://twitch.tv/..."
+                    placeholder={i18n._(msg`https://twitch.tv/...`)}
                     {...field}
                     className="bg-background/50 font-mono text-sm pl-9"
                   />
@@ -94,7 +96,7 @@ export function StreamerGeneralSettings({
                   <div className="relative flex-1">
                     <User className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder={t`e.g. My Favorite Streamer`}
+                      placeholder={i18n._(msg`e.g. My Favorite Streamer`)}
                       {...field}
                       className="bg-background/50 pl-9"
                     />
@@ -149,7 +151,7 @@ export function StreamerGeneralSettings({
               >
                 <FormControl>
                   <SelectTrigger className="bg-background/50">
-                    <SelectValue placeholder={t`Select config`} />
+                    <SelectValue placeholder={i18n._(msg`Select config`)} />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
@@ -184,7 +186,7 @@ export function StreamerGeneralSettings({
               >
                 <FormControl>
                   <SelectTrigger className="bg-background/50">
-                    <SelectValue placeholder={t`Select template`} />
+                    <SelectValue placeholder={i18n._(msg`Select template`)} />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
@@ -219,7 +221,7 @@ export function StreamerGeneralSettings({
               <Select onValueChange={field.onChange} value={field.value}>
                 <FormControl>
                   <SelectTrigger className="bg-background/50">
-                    <SelectValue placeholder={t`Select priority`} />
+                    <SelectValue placeholder={i18n._(msg`Select priority`)} />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>

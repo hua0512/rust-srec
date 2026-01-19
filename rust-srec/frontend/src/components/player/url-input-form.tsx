@@ -15,7 +15,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Play, Settings2, ChevronDown } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -25,18 +26,22 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 
-const singleUrlSchema = z.object({
-  url: z.url(t`Please enter a valid URL`).min(1, t`URL is required`),
-  cookies: z.string().optional(),
-});
+const getSingleUrlSchema = (i18n: any) =>
+  z.object({
+    url: z
+      .url(i18n._(msg`Please enter a valid URL`))
+      .min(1, i18n._(msg`URL is required`)),
+    cookies: z.string().optional(),
+  });
 
-const batchUrlSchema = z.object({
-  urls: z.string().min(1, t`Please enter at least one URL`),
-  cookies: z.string().optional(),
-});
+const getBatchUrlSchema = (i18n: any) =>
+  z.object({
+    urls: z.string().min(1, i18n._(msg`Please enter at least one URL`)),
+    cookies: z.string().optional(),
+  });
 
-type SingleUrlFormValues = z.infer<typeof singleUrlSchema>;
-type BatchUrlFormValues = z.infer<typeof batchUrlSchema>;
+type SingleUrlFormValues = z.infer<ReturnType<typeof getSingleUrlSchema>>;
+type BatchUrlFormValues = z.infer<ReturnType<typeof getBatchUrlSchema>>;
 
 export interface UrlInputFormProps {
   onSubmitSingle: (data: { url: string; cookies?: string }) => void;
@@ -49,11 +54,12 @@ export function UrlInputForm({
   onSubmitBatch,
   isLoading = false,
 }: UrlInputFormProps) {
+  const { i18n } = useLingui();
   const [mode, setMode] = useState<'single' | 'batch'>('single');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const singleForm = useForm<SingleUrlFormValues>({
-    resolver: zodResolver(singleUrlSchema),
+    resolver: zodResolver(getSingleUrlSchema(i18n)),
     defaultValues: {
       url: '',
       cookies: '',
@@ -61,7 +67,7 @@ export function UrlInputForm({
   });
 
   const batchForm = useForm<BatchUrlFormValues>({
-    resolver: zodResolver(batchUrlSchema),
+    resolver: zodResolver(getBatchUrlSchema(i18n)),
     defaultValues: {
       urls: '',
       cookies: '',

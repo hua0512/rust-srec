@@ -17,7 +17,8 @@ import {
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -75,6 +76,7 @@ const PAGE_SIZES = [12, 24, 48, 96];
 function PipelineJobsPage() {
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
 
   // Read state from URL search params
   const { q, status, page, size } = Route.useSearch();
@@ -100,14 +102,26 @@ function PipelineJobsPage() {
   const STATUS_FILTERS = useMemo(
     () =>
       [
-        { value: null, label: t`All`, icon: ListTodo },
-        { value: 'PENDING', label: t`Pending`, icon: Clock },
-        { value: 'PROCESSING', label: t`Processing`, icon: RefreshCw },
-        { value: 'COMPLETED', label: t`Completed`, icon: CheckCircle2 },
-        { value: 'FAILED', label: t`Failed`, icon: XCircle },
-        { value: 'INTERRUPTED', label: t`Interrupted`, icon: AlertCircle },
+        { value: null, label: i18n._(msg`All`), icon: ListTodo },
+        { value: 'PENDING', label: i18n._(msg`Pending`), icon: Clock },
+        {
+          value: 'PROCESSING',
+          label: i18n._(msg`Processing`),
+          icon: RefreshCw,
+        },
+        {
+          value: 'COMPLETED',
+          label: i18n._(msg`Completed`),
+          icon: CheckCircle2,
+        },
+        { value: 'FAILED', label: i18n._(msg`Failed`), icon: XCircle },
+        {
+          value: 'INTERRUPTED',
+          label: i18n._(msg`Interrupted`),
+          icon: AlertCircle,
+        },
       ] as const,
-    [],
+    [i18n],
   );
 
   // Helper to update search params
@@ -240,17 +254,19 @@ function PipelineJobsPage() {
   const cancelPipelineMutation = useMutation({
     mutationFn: (pipelineId: string) => cancelPipeline({ data: pipelineId }),
     onSuccess: (result: any) => {
-      toast.success(t`Cancelled ${result.cancelled_steps} steps in pipeline`);
+      toast.success(
+        i18n._(msg`Cancelled ${result.cancelled_steps} steps in pipeline`),
+      );
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
     onError: (error: any) => {
       // Handle case where DAG is already in terminal state (completed/failed)
       if (error?.body?.message?.includes('terminal state')) {
-        toast.info(t`Pipeline is already completed or cancelled`);
+        toast.info(i18n._(msg`Pipeline is already completed or cancelled`));
         queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
       } else {
-        toast.error(t`Failed to cancel pipeline`);
+        toast.error(i18n._(msg`Failed to cancel pipeline`));
       }
     },
   });
@@ -258,11 +274,11 @@ function PipelineJobsPage() {
   const deletePipelineMutation = useMutation({
     mutationFn: (pipelineId: string) => deletePipeline({ data: pipelineId }),
     onSuccess: () => {
-      toast.success(t`Pipeline deleted successfully`);
+      toast.success(i18n._(msg`Pipeline deleted successfully`));
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
-    onError: () => toast.error(t`Failed to delete pipeline`),
+    onError: () => toast.error(i18n._(msg`Failed to delete pipeline`)),
   });
 
   const retryAllFailedMutation = useMutation({
@@ -272,7 +288,8 @@ function PipelineJobsPage() {
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
-    onError: () => toast.error(t`Failed to retry all failed pipelines`),
+    onError: () =>
+      toast.error(i18n._(msg`Failed to retry all failed pipelines`)),
   });
 
   const handleViewDetails = useCallback(
@@ -342,7 +359,7 @@ function PipelineJobsPage() {
               <div className="relative flex-1 sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder={t`Search jobs...`}
+                  placeholder={i18n._(msg`Search jobs...`)}
                   value={localSearchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   className="pl-9 h-9"

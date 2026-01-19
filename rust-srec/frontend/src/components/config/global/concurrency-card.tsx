@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/select';
 import { Cpu } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
 import { listEngines } from '@/server/functions';
 
@@ -29,6 +30,7 @@ export interface ConcurrencyCardProps {
 }
 
 export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
+  const { i18n } = useLingui();
   const { data: enginesData, isLoading: enginesLoading } = useQuery({
     queryKey: ['engines'],
     queryFn: () => listEngines(),
@@ -139,7 +141,9 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
               >
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder={t`Select a default engine`} />
+                    <SelectValue
+                      placeholder={i18n._(msg`Select a default engine`)}
+                    />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>

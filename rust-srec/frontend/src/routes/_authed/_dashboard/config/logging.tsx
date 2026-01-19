@@ -1,8 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import type { I18n } from '@lingui/core';
 import { getLoggingConfig, updateLoggingFilter } from '@/server/functions';
 import {
   parseFilterDirective,
@@ -51,19 +53,19 @@ export const Route = createFileRoute('/_authed/_dashboard/config/logging')({
 });
 
 /** i18n module descriptions */
-function getModuleDescription(name: string): string {
+function getModuleDescription(name: string, i18n: I18n): string {
   const descriptions: Record<string, string> = {
-    rust_srec: t`Main application`,
-    mesio_engine: t`Download engine (mesio)`,
-    flv: t`FLV parser`,
-    flv_fix: t`FLV stream fixing pipeline`,
-    hls: t`HLS parser`,
-    hls_fix: t`HLS stream fixing pipeline`,
-    platforms_parser: t`Platform URL extractors`,
-    pipeline_common: t`Shared pipeline utilities`,
-    sqlx: t`Database queries`,
-    reqwest: t`HTTP requests`,
-    tower_http: t`HTTP middleware`,
+    rust_srec: i18n._(msg`Main application`),
+    mesio_engine: i18n._(msg`Download engine (mesio)`),
+    flv: i18n._(msg`FLV parser`),
+    flv_fix: i18n._(msg`FLV stream fixing pipeline`),
+    hls: i18n._(msg`HLS parser`),
+    hls_fix: i18n._(msg`HLS stream fixing pipeline`),
+    platforms_parser: i18n._(msg`Platform URL extractors`),
+    pipeline_common: i18n._(msg`Shared pipeline utilities`),
+    sqlx: i18n._(msg`Database queries`),
+    reqwest: i18n._(msg`HTTP requests`),
+    tower_http: i18n._(msg`HTTP middleware`),
   };
   return descriptions[name] || name;
 }
@@ -122,6 +124,7 @@ const PREDEFINED_MODULES = [
 
 function LoggingConfigPage() {
   const queryClient = useQueryClient();
+  const { i18n } = useLingui();
   const [filters, setFilters] = useState<ModuleFilter[]>([]);
   const [isDirty, setIsDirty] = useState(false);
 
@@ -147,12 +150,14 @@ function LoggingConfigPage() {
   const updateMutation = useMutation({
     mutationFn: (filter: string) => updateLoggingFilter({ data: { filter } }),
     onSuccess: () => {
-      toast.success(t`Logging configuration updated`);
+      toast.success(i18n._(msg`Logging configuration updated`));
       queryClient.invalidateQueries({ queryKey: ['logging', 'config'] });
       setIsDirty(false);
     },
     onError: (error: any) => {
-      toast.error(error.message || t`Failed to update logging configuration`);
+      toast.error(
+        error.message || i18n._(msg`Failed to update logging configuration`),
+      );
     },
   });
 
@@ -222,7 +227,7 @@ function LoggingConfigPage() {
                 <Select onValueChange={handleAddModule}>
                   <SelectTrigger className="w-full sm:w-[200px]">
                     <Plus className="w-4 h-4 mr-2" />
-                    <SelectValue placeholder={t`Add module...`} />
+                    <SelectValue placeholder={i18n._(msg`Add module...`)} />
                   </SelectTrigger>
                   <SelectContent>
                     {availableModules.map((module) => (
@@ -266,7 +271,7 @@ function LoggingConfigPage() {
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 truncate">
-                      {getModuleDescription(filter.module)}
+                      {getModuleDescription(filter.module, i18n)}
                     </p>
                   </div>
 
@@ -327,7 +332,7 @@ function LoggingConfigPage() {
                   <Trans>Current Filter Directive</Trans>
                 </p>
                 <code className="text-xs text-primary break-all">
-                  {serializeFilterDirective(filters) || t`(empty)`}
+                  {serializeFilterDirective(filters) || i18n._(msg`(empty)`)}
                 </code>
               </div>
             )}
@@ -358,7 +363,9 @@ function LoggingConfigPage() {
             className="shadow-2xl shadow-primary/40 hover:shadow-primary/50 transition-all hover:scale-105 active:scale-95 rounded-full px-8 h-14 bg-gradient-to-r from-primary to-primary/90 text-base font-semibold"
           >
             <Save className="w-5 h-5 mr-2" />
-            {updateMutation.isPending ? t`Saving...` : t`Save Changes`}
+            {updateMutation.isPending
+              ? i18n._(msg`Saving...`)
+              : i18n._(msg`Save Changes`)}
           </Button>
         </div>
       )}

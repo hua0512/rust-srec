@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion } from 'motion/react';
 import { cn, getProxiedUrl } from '@/lib/utils';
@@ -35,6 +35,7 @@ export function OverviewTab({
   onPlay,
   token,
 }: OverviewTabProps) {
+  const { i18n } = useLingui();
   const thumbnailUrl = getMediaUrl(session.thumbnail_url, token);
 
   // Find first playable output (not thumbnail or danmu)
@@ -149,7 +150,7 @@ export function OverviewTab({
                   <>
                     <img
                       src={thumbnailUrl}
-                      alt={t`Session thumbnail`}
+                      alt={i18n._(msg`Session thumbnail`)}
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
@@ -215,13 +216,13 @@ export function OverviewTab({
 
                 <div className="grid grid-cols-2 gap-4">
                   <TimeBlock
-                    label={t`Started`}
+                    label={i18n._(msg`Started`)}
                     date={session.start_time}
                     icon={Calendar}
                     delay={0}
                   />
                   <TimeBlock
-                    label={t`Ended`}
+                    label={i18n._(msg`Ended`)}
                     date={session.end_time}
                     icon={Timer}
                     delay={0.1}

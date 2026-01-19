@@ -17,7 +17,8 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { FolderOpen } from 'lucide-react';
 import { UseFormReturn } from 'react-hook-form';
 import { EngineConfig } from '@/api/schemas';
@@ -30,6 +31,7 @@ interface OutputSettingsCardProps {
 
 export const OutputSettingsCard = memo(
   ({ form, basePath, engines }: OutputSettingsCardProps) => {
+    const { i18n } = useLingui();
     return (
       <Card className="border-border/50 shadow-sm hover:shadow-md transition-all">
         <CardHeader className="pb-3">
@@ -125,7 +127,9 @@ export const OutputSettingsCard = memo(
                   >
                     <FormControl>
                       <SelectTrigger className="bg-background">
-                        <SelectValue placeholder={t`Select a format`} />
+                        <SelectValue
+                          placeholder={i18n._(msg`Select a format`)}
+                        />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -164,7 +168,9 @@ export const OutputSettingsCard = memo(
                   >
                     <FormControl>
                       <SelectTrigger className="bg-background">
-                        <SelectValue placeholder={t`Select an engine`} />
+                        <SelectValue
+                          placeholder={i18n._(msg`Select an engine`)}
+                        />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>

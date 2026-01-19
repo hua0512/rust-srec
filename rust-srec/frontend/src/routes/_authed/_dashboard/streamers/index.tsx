@@ -29,7 +29,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { StreamerCard } from '@/components/streamers/streamer-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -59,16 +60,17 @@ export const Route = createFileRoute('/_authed/_dashboard/streamers/')({
 const PAGE_SIZES = [12, 24, 48, 96];
 
 function StreamersPage() {
+  const { i18n } = useLingui();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   // State filters defined inside the component to ensure they are re-translated when locale changes
   const STATE_FILTERS = [
-    { value: 'all', label: t`All`, icon: Users },
-    { value: 'LIVE', label: t`Live`, icon: Wifi },
-    { value: 'NOT_LIVE', label: t`Offline`, icon: WifiOff },
-    { value: 'ERROR', label: t`Error`, icon: AlertTriangle },
-    { value: 'DISABLED', label: t`Disabled`, icon: Ban },
+    { value: 'all', label: i18n._(msg`All`), icon: Users },
+    { value: 'LIVE', label: i18n._(msg`Live`), icon: Wifi },
+    { value: 'NOT_LIVE', label: i18n._(msg`Offline`), icon: WifiOff },
+    { value: 'ERROR', label: i18n._(msg`Error`), icon: AlertTriangle },
+    { value: 'DISABLED', label: i18n._(msg`Disabled`), icon: Ban },
   ];
 
   // State
@@ -178,33 +180,33 @@ function StreamersPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteStreamer({ data: id }),
     onSuccess: () => {
-      toast.success(t`Streamer deleted`);
+      toast.success(i18n._(msg`Streamer deleted`));
       queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
     onError: (error: any) =>
-      toast.error(error.message || t`Failed to delete streamer`),
+      toast.error(error.message || i18n._(msg`Failed to delete streamer`)),
   });
 
   const checkMutation = useMutation({
     mutationFn: (id: string) => checkStreamer({ data: id }),
-    onSuccess: () => toast.success(t`Check triggered`),
+    onSuccess: () => toast.success(i18n._(msg`Check triggered`)),
     onError: (error: any) =>
-      toast.error(error.message || t`Failed to trigger check`),
+      toast.error(error.message || i18n._(msg`Failed to trigger check`)),
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       updateStreamer({ data: { id, data: { enabled } } }),
     onSuccess: () => {
-      toast.success(t`Streamer updated`);
+      toast.success(i18n._(msg`Streamer updated`));
       queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
     onError: (error: any) =>
-      toast.error(error.message || t`Failed to update streamer`),
+      toast.error(error.message || i18n._(msg`Failed to update streamer`)),
   });
 
   const handleDelete = (id: string) => {
-    if (confirm(t`Are you sure you want to delete this streamer?`)) {
+    if (confirm(i18n._(msg`Are you sure you want to delete this streamer?`))) {
       deleteMutation.mutate(id);
     }
   };
@@ -248,7 +250,7 @@ function StreamersPage() {
             <div className="relative flex-1 md:w-56 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder={t`Search streamers...`}
+                placeholder={i18n._(msg`Search streamers...`)}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 h-9"
@@ -261,7 +263,7 @@ function StreamersPage() {
                 <div className="flex items-center gap-2 truncate">
                   <Radio className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <span className="truncate">
-                    <SelectValue placeholder={t`Platform`} />
+                    <SelectValue placeholder={i18n._(msg`Platform`)} />
                   </span>
                 </div>
               </SelectTrigger>
@@ -424,13 +426,13 @@ function StreamersPage() {
 
             <Pagination
               className="w-auto mx-0"
-              aria-label={t`Streamer pagination`}
+              aria-label={i18n._(msg`Streamer pagination`)}
             >
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
                     onClick={() => page > 1 && setPage((p) => p - 1)}
-                    aria-label={t`Go to previous page`}
+                    aria-label={i18n._(msg`Go to previous page`)}
                     aria-disabled={page === 1}
                     tabIndex={page === 1 ? -1 : 0}
                     className={
@@ -450,7 +452,7 @@ function StreamersPage() {
                       <PaginationLink
                         isActive={page === p}
                         onClick={() => setPage(p)}
-                        aria-label={t`Go to page ${p}`}
+                        aria-label={i18n._(msg`Go to page ${p}`)}
                         aria-current={page === p ? 'page' : undefined}
                         className="cursor-pointer"
                       >
@@ -462,7 +464,7 @@ function StreamersPage() {
                 <PaginationItem>
                   <PaginationNext
                     onClick={() => page < totalPages && setPage((p) => p + 1)}
-                    aria-label={t`Go to next page`}
+                    aria-label={i18n._(msg`Go to next page`)}
                     aria-disabled={page === totalPages}
                     tabIndex={page === totalPages ? -1 : 0}
                     className={

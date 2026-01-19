@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GraphViewport, GlassNode } from './graph-shared';
 import { useLingui } from '@lingui/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { getJobPresetName } from './presets/default-presets-i18n';
 import { getProcessorDefinition } from './presets/processors/registry';
@@ -385,17 +385,17 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                   >
                     {i18n._(
                       node.status === 'BLOCKED'
-                        ? t`Blocked`
+                        ? msg`Blocked`
                         : node.status === 'PENDING'
-                          ? t`Pending`
+                          ? msg`Pending`
                           : node.status === 'PROCESSING'
-                            ? t`Processing`
+                            ? msg`Processing`
                             : node.status === 'COMPLETED'
-                              ? t`Completed`
+                              ? msg`Completed`
                               : node.status === 'FAILED'
-                                ? t`Failed`
+                                ? msg`Failed`
                                 : node.status === 'CANCELLED'
-                                  ? t`Cancelled`
+                                  ? msg`Cancelled`
                                   : node.status,
                     )}
                   </span>

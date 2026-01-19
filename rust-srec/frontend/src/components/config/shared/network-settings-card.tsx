@@ -17,7 +17,8 @@ import {
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import {
   Cookie,
   Network,
@@ -65,6 +66,7 @@ export const NetworkSettingsCard = memo(
     credentialPlatformNameHint,
     streamerId,
   }: NetworkSettingsCardProps) => {
+    const { i18n } = useLingui();
     const queryClient = useQueryClient();
     const [qrDialogOpen, setQrDialogOpen] = useState(false);
 
@@ -128,16 +130,18 @@ export const NetworkSettingsCard = memo(
       },
       onSuccess: (data) => {
         if (data.refreshed) {
-          toast.success(t`Credentials refreshed successfully`);
+          toast.success(i18n._(msg`Credentials refreshed successfully`));
           queryClient.invalidateQueries({ queryKey: credentialSourceQueryKey });
         } else if (data.requires_relogin) {
-          toast.error(t`Refresh failed: Manual login required`);
+          toast.error(i18n._(msg`Refresh failed: Manual login required`));
         } else {
-          toast.info(t`No refresh needed or not supported`);
+          toast.info(i18n._(msg`No refresh needed or not supported`));
         }
       },
       onError: (error: any) => {
-        toast.error(error.message || t`Failed to refresh credentials`);
+        toast.error(
+          error.message || i18n._(msg`Failed to refresh credentials`),
+        );
       },
     });
 
@@ -350,7 +354,7 @@ export const NetworkSettingsCard = memo(
                       : ['streamer', scope.id];
                 queryClient.invalidateQueries({ queryKey: mainQueryKey });
               }
-              toast.success(t`Credentials saved successfully`);
+              toast.success(i18n._(msg`Credentials saved successfully`));
             }}
           />
         )}

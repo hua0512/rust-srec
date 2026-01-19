@@ -16,6 +16,8 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import { Button } from '@/components/ui/button';
 import {
   Globe,
@@ -37,6 +39,7 @@ import { SwitchCard } from '@/components/ui/switch-card';
 import { CardHeaderWithIcon } from '@/components/ui/card-header-with-icon';
 
 export const WebhookForm = memo(function WebhookForm() {
+  const { i18n } = useLingui();
   const form = useFormContext();
   const authType = useWatch({
     control: form.control,
@@ -69,7 +72,7 @@ export const WebhookForm = memo(function WebhookForm() {
                 <FormControl>
                   <IconInput
                     icon={Globe}
-                    placeholder="https://api.example.com/webhook"
+                    placeholder={i18n._(msg`https://api.example.com/webhook`)}
                     {...field}
                   />
                 </FormControl>
@@ -149,10 +152,18 @@ export const WebhookForm = memo(function WebhookForm() {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="Low">Low</SelectItem>
-                    <SelectItem value="Normal">Normal</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                    <SelectItem value="Critical">Critical</SelectItem>
+                    <SelectItem value="Low">
+                      <Trans>Low</Trans>
+                    </SelectItem>
+                    <SelectItem value="Normal">
+                      <Trans>Normal</Trans>
+                    </SelectItem>
+                    <SelectItem value="High">
+                      <Trans>High</Trans>
+                    </SelectItem>
+                    <SelectItem value="Critical">
+                      <Trans>Critical</Trans>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <FormDescription className="text-xs">
@@ -277,7 +288,7 @@ export const WebhookForm = memo(function WebhookForm() {
                         <IconInput
                           icon={Key}
                           type="password"
-                          placeholder="ey..."
+                          placeholder={i18n._(msg`ey...`)}
                           {...field}
                         />
                       </FormControl>
@@ -306,7 +317,11 @@ export const WebhookForm = memo(function WebhookForm() {
                           <Trans>Username</Trans>
                         </FormLabel>
                         <FormControl>
-                          <IconInput icon={User} {...field} />
+                          <IconInput
+                            icon={User}
+                            placeholder={i18n._(msg`Username`)}
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -321,7 +336,12 @@ export const WebhookForm = memo(function WebhookForm() {
                           <Trans>Password</Trans>
                         </FormLabel>
                         <FormControl>
-                          <IconInput icon={Lock} type="password" {...field} />
+                          <IconInput
+                            icon={Lock}
+                            type="password"
+                            placeholder={i18n._(msg`Password`)}
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -351,7 +371,7 @@ export const WebhookForm = memo(function WebhookForm() {
                         <FormControl>
                           <IconInput
                             icon={Type}
-                            placeholder="X-Auth-Key"
+                            placeholder={i18n._(msg`X-Auth-Key`)}
                             {...field}
                           />
                         </FormControl>
@@ -371,7 +391,7 @@ export const WebhookForm = memo(function WebhookForm() {
                           <IconInput
                             icon={Shield}
                             type="password"
-                            placeholder="secret"
+                            placeholder={i18n._(msg`secret`)}
                             {...field}
                           />
                         </FormControl>
@@ -424,7 +444,7 @@ export const WebhookForm = memo(function WebhookForm() {
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormControl>
-                        <Input {...field} placeholder="Key" />
+                        <Input {...field} placeholder={i18n._(msg`Key`)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -436,7 +456,7 @@ export const WebhookForm = memo(function WebhookForm() {
                   render={({ field }) => (
                     <FormItem className="flex-1">
                       <FormControl>
-                        <Input {...field} placeholder="Value" />
+                        <Input {...field} placeholder={i18n._(msg`Value`)} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

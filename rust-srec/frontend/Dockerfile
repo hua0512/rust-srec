@@ -4,16 +4,18 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copy package files
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 # Install dependencies
-RUN npm ci
+RUN corepack enable
+RUN corepack prepare pnpm@10.28.1 --activate
+RUN pnpm install --frozen-lockfile
 
 # Copy source files
 COPY . .
 
 # Build the application
-RUN npm run build
+RUN pnpm run build
 
 # Runtime stage
 FROM node:22-alpine

@@ -120,7 +120,12 @@ impl StreamSelector {
 
         // If no streams match criteria, fall back to all streams
         let candidates = if filtered.is_empty() {
-            debug!("No streams match selection criteria, using all streams");
+            debug!(
+                available = streams.len(),
+                min_bitrate = self.config.min_bitrate,
+                max_bitrate = self.config.max_bitrate,
+                "stream selection fallback (no candidates matched criteria)"
+            );
             streams.iter().collect()
         } else {
             filtered
@@ -297,6 +302,7 @@ mod tests {
             codec: "h264".to_string(),
             fps: 30.0,
             is_headers_needed: false,
+            is_audio_only: false,
         }
     }
 

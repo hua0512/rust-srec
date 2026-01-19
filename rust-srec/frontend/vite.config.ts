@@ -11,6 +11,7 @@ import oxlintPlugin from 'vite-plugin-oxlint';
 
 export default defineConfig(() => ({
   plugins: [
+    lingui(),
     devtools(),
     nitro(),
     // this is the plugin that enables path aliases
@@ -18,13 +19,12 @@ export default defineConfig(() => ({
       projects: ['./tsconfig.json'],
     }),
     tailwindcss(),
-    tanstackStart(),
+    tanstackStart({}),
     viteReact({
       babel: {
         plugins: ['macros'],
       },
     }),
-    lingui(),
     oxlintPlugin(),
   ],
   server: {

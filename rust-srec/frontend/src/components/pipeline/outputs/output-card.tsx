@@ -26,7 +26,7 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 
 interface MediaOutput {
   id: string;
@@ -69,12 +69,12 @@ export function OutputCard({ output }: OutputCardProps) {
   const handleCopyPath = () => {
     navigator.clipboard.writeText(output.file_path);
     setCopied(true);
-    toast.success(t`File path copied to clipboard`);
+    toast.success(i18n._(msg`File path copied to clipboard`));
     setTimeout(() => setCopied(false), 2000);
   };
 
   const filename =
-    output.file_path.split(/[\\/]/).pop() || i18n._(t`Unknown File`);
+    output.file_path.split(/[\\/]/).pop() || i18n._(msg`Unknown File`);
   const formatLower = output.format.toLowerCase();
   const colorClass =
     FORMAT_COLORS[formatLower] ||
@@ -151,7 +151,7 @@ export function OutputCard({ output }: OutputCardProps) {
                   ),
                 );
                 navigator.clipboard.writeText(dir);
-                toast.success(t`Directory path copied`);
+                toast.success(i18n._(msg`Directory path copied`));
               }}
             >
               <FolderOpen className="mr-2 h-4 w-4" />{' '}

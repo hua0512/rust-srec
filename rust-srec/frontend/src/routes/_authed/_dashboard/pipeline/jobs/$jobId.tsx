@@ -26,8 +26,9 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
-import { Trans, useLingui } from '@lingui/react/macro';
-import { t, plural } from '@lingui/core/macro';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg, t, plural } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { motion } from 'motion/react';
@@ -185,29 +186,29 @@ function JobDetailsPage() {
   const retryMutation = useMutation({
     mutationFn: (id: string) => retryPipelineJob({ data: id }),
     onSuccess: () => {
-      toast.success(t`Job retry initiated`);
+      toast.success(i18n._(msg`Job retry initiated`));
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'job', jobId] });
     },
-    onError: () => toast.error(t`Failed to retry job`),
+    onError: () => toast.error(i18n._(msg`Failed to retry job`)),
   });
 
   const cancelMutation = useMutation({
     mutationFn: (id: string) => cancelPipelineJob({ data: id }),
     onSuccess: () => {
-      toast.success(t`Job cancelled`);
+      toast.success(i18n._(msg`Job cancelled`));
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'job', jobId] });
     },
-    onError: () => toast.error(t`Failed to cancel job`),
+    onError: () => toast.error(i18n._(msg`Failed to cancel job`)),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => cancelPipelineJob({ data: id }),
     onSuccess: () => {
-      toast.success(t`Job deleted`);
+      toast.success(i18n._(msg`Job deleted`));
       // Redirect to jobs list on deletion since the job no longer exists
       window.history.back();
     },
-    onError: () => toast.error(t`Failed to delete job`),
+    onError: () => toast.error(i18n._(msg`Failed to delete job`)),
   });
 
   if (isLoading) {
@@ -241,7 +242,7 @@ function JobDetailsPage() {
               <Trans>Error Loading Job</Trans>
             </CardTitle>
             <CardDescription>
-              {error?.message || t`Job not found`}
+              {error?.message || i18n._(msg`Job not found`)}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center pb-6">
@@ -320,15 +321,15 @@ function JobDetailsPage() {
                   >
                     {i18n._(
                       job.status === 'PENDING'
-                        ? t`Pending`
+                        ? msg`Pending`
                         : job.status === 'PROCESSING'
-                          ? t`Processing`
+                          ? msg`Processing`
                           : job.status === 'COMPLETED'
-                            ? t`Completed`
+                            ? msg`Completed`
                             : job.status === 'FAILED'
-                              ? t`Failed`
+                              ? msg`Failed`
                               : job.status === 'INTERRUPTED'
-                                ? t`Interrupted`
+                                ? msg`Interrupted`
                                 : job.status,
                     )}
                   </Badge>
@@ -390,7 +391,7 @@ function JobDetailsPage() {
                   onClick={() => {
                     if (
                       confirm(
-                        i18n._(t`Are you sure you want to delete this job?`),
+                        i18n._(msg`Are you sure you want to delete this job?`),
                       )
                     ) {
                       deleteMutation.mutate(job.id);
@@ -423,20 +424,20 @@ function JobDetailsPage() {
                 </CardHeader>
                 <CardContent className="p-6 grid md:grid-cols-2 gap-8">
                   <InfoGroup
-                    label={t`Session ID`}
+                    label={i18n._(msg`Session ID`)}
                     value={job.session_id}
                     icon={<Hash className="h-4 w-4" />}
                     mono
                   />
                   <InfoGroup
-                    label={t`Streamer ID`}
+                    label={i18n._(msg`Streamer ID`)}
                     value={job.streamer_id}
                     icon={<Cpu className="h-4 w-4" />}
                     mono
                   />
                   {job.pipeline_id && (
                     <InfoGroup
-                      label={t`Pipeline`}
+                      label={i18n._(msg`Pipeline`)}
                       value={
                         <Link
                           to="/pipeline/executions/$pipelineId"
@@ -450,7 +451,7 @@ function JobDetailsPage() {
                     />
                   )}
                   <InfoGroup
-                    label={t`Resources`}
+                    label={i18n._(msg`Resources`)}
                     value={
                       <div className="flex gap-2">
                         {job.execution_info?.input_size_bytes && (
@@ -603,7 +604,7 @@ function JobDetailsPage() {
                         <div className="text-xl font-bold tracking-tight font-mono">
                           {progressSnapshot.speed_bytes_per_sec
                             ? `${(progressSnapshot.speed_bytes_per_sec / 1024 / 1024).toFixed(2)} ` +
-                              i18n._(t`MB/s`)
+                              i18n._(msg`MB/s`)
                             : '-'}
                         </div>
                       </div>
@@ -623,12 +624,12 @@ function JobDetailsPage() {
                 <Separator className="bg-border/50" />
                 <div className="space-y-6">
                   <TimelineItem
-                    label={t`Created`}
+                    label={i18n._(msg`Created`)}
                     time={i18n.date(job.created_at, { timeStyle: 'medium' })}
                     active
                   />
                   <TimelineItem
-                    label={t`Started`}
+                    label={i18n._(msg`Started`)}
                     time={
                       job.started_at
                         ? i18n.date(job.started_at, { timeStyle: 'medium' })
@@ -637,7 +638,7 @@ function JobDetailsPage() {
                     active={!!job.started_at}
                   />
                   <TimelineItem
-                    label={t`Completed`}
+                    label={i18n._(msg`Completed`)}
                     time={
                       job.completed_at
                         ? i18n.date(job.completed_at, { timeStyle: 'medium' })
@@ -700,10 +701,9 @@ function JobDetailsPage() {
                           variant="outline"
                           className="text-[10px] border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors"
                         >
-                          {plural(job.execution_info.log_error_count, {
-                            one: '# Error',
-                            other: '# Errors',
-                          })}
+                          {t(
+                            i18n,
+                          )`${plural(job.execution_info.log_error_count, { one: '# Error', other: '# Errors' })}`}
                         </Badge>
                       )}
                       {(job.execution_info.log_warn_count ?? 0) > 0 && (
@@ -711,22 +711,24 @@ function JobDetailsPage() {
                           variant="outline"
                           className="text-[10px] border-yellow-500/30 text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors"
                         >
-                          {plural(job.execution_info.log_warn_count, {
-                            one: '# Warning',
-                            other: '# Warnings',
-                          })}
+                          {t(
+                            i18n,
+                          )`${plural(job.execution_info.log_warn_count, { one: '# Warning', other: '# Warnings' })}`}
                         </Badge>
                       )}
                       <Badge
                         variant="outline"
                         className="text-[10px] border-zinc-700 text-zinc-500 bg-zinc-900"
                       >
-                        {job.execution_info.log_lines_total
-                          ? plural(job.execution_info.log_lines_total, {
-                              one: '# Line',
-                              other: '# Lines',
-                            })
-                          : i18n._(t`Total`) + ` ${totalLogs}`}
+                        {job.execution_info.log_lines_total ? (
+                          t(
+                            i18n,
+                          )`${plural(job.execution_info.log_lines_total, { one: '# Line', other: '# Lines' })}`
+                        ) : (
+                          <>
+                            {i18n._(msg`Total`)} {totalLogs}
+                          </>
+                        )}
                       </Badge>
                     </div>
                   </div>

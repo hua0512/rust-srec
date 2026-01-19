@@ -16,12 +16,15 @@ import { z } from 'zod';
 import { useFormContext } from 'react-hook-form';
 import { PlusCircle, Trash2, Tags, Mic2, Settings2 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 
 type MetadataConfig = z.infer<typeof MetadataConfigSchema>;
 
 // Helper component for key-value pairs
 function CustomMetadataFields({ basePath }: { basePath: string }) {
   const { watch, setValue } = useFormContext();
+  const { i18n } = useLingui();
 
   const custom = (watch((basePath ? `${basePath}.custom` : 'custom') as any) ||
     {}) as Record<string, string>;
@@ -66,13 +69,13 @@ function CustomMetadataFields({ basePath }: { basePath: string }) {
         {entries.map(([key, value], index) => (
           <div key={index} className="flex gap-2 items-center group">
             <Input
-              placeholder="Key"
+              placeholder={i18n._(msg`Key`)}
               defaultValue={key}
               onBlur={(e) => updateEntryKey(key, e.target.value, value)}
               className="w-1/3 bg-background/50 border-border/50 focus:bg-background h-9 text-sm"
             />
             <Input
-              placeholder="Value"
+              placeholder={i18n._(msg`Value`)}
               value={value}
               onChange={(e) => updateEntryValue(key, e.target.value)}
               className="flex-1 bg-background/50 border-border/50 focus:bg-background h-9 text-sm"
@@ -112,6 +115,7 @@ export function MetadataConfigForm({
   control,
   pathPrefix,
 }: ProcessorConfigFormProps<MetadataConfig>) {
+  const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
 
   const containerVariants = {
@@ -148,6 +152,7 @@ export function MetadataConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
+                      placeholder={i18n._(msg`Artist`)}
                       {...field}
                     />
                   </FormControl>
@@ -166,6 +171,7 @@ export function MetadataConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
+                      placeholder={i18n._(msg`Title`)}
                       {...field}
                     />
                   </FormControl>
@@ -202,7 +208,7 @@ export function MetadataConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
-                      placeholder="YYYY-MM-DD"
+                      placeholder={i18n._(msg`YYYY-MM-DD`)}
                       {...field}
                     />
                   </FormControl>

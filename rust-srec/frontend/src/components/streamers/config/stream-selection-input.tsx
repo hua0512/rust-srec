@@ -7,7 +7,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { TagInput } from '@/components/ui/tag-input';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Filter, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -28,6 +29,7 @@ export function StreamSelectionInput({
   value = {},
   onChange,
 }: StreamSelectionInputProps) {
+  const { i18n } = useLingui();
   const updateField = <K extends keyof StreamSelectionConfig>(
     field: K,
     fieldValue: StreamSelectionConfig[K],
@@ -69,7 +71,7 @@ export function StreamSelectionInput({
                 <TagInput
                   value={value.preferred_qualities || []}
                   onChange={(tags) => updateField('preferred_qualities', tags)}
-                  placeholder="e.g. 1080p, source, 原画"
+                  placeholder={i18n._(msg`e.g. 1080p, source, 原画`)}
                   className="bg-background"
                 />
               </FormControl>
@@ -89,7 +91,7 @@ export function StreamSelectionInput({
                 <TagInput
                   value={value.preferred_formats || []}
                   onChange={(tags) => updateField('preferred_formats', tags)}
-                  placeholder="e.g. flv, hls"
+                  placeholder={i18n._(msg`e.g. flv, hls`)}
                   className="bg-background"
                 />
               </FormControl>
@@ -108,7 +110,7 @@ export function StreamSelectionInput({
                 <TagInput
                   value={value.preferred_cdns || []}
                   onChange={(tags) => updateField('preferred_cdns', tags)}
-                  placeholder="e.g. aliyun, akamaized"
+                  placeholder={i18n._(msg`e.g. aliyun, akamaized`)}
                   className="bg-background"
                 />
               </FormControl>
@@ -149,7 +151,7 @@ export function StreamSelectionInput({
                     e.target.value ? Number(e.target.value) : undefined,
                   )
                 }
-                placeholder={t`No limit`}
+                placeholder={i18n._(msg`No limit`)}
                 className="bg-background"
               />
             </FormControl>
@@ -173,7 +175,7 @@ export function StreamSelectionInput({
                     e.target.value ? Number(e.target.value) : undefined,
                   )
                 }
-                placeholder={t`No limit`}
+                placeholder={i18n._(msg`No limit`)}
                 className="bg-background"
               />
             </FormControl>

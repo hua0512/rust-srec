@@ -203,19 +203,14 @@ impl FlvDownloader {
                 const TAG_TYPE_SCRIPT: u8 = 18;
 
                 let first_byte = first_chunk[0];
-                let is_valid_flv = if first_chunk.len() >= 3 && first_chunk[0..3] == FLV_SIGNATURE {
-                    // Standard FLV header
-                    debug!(url = %url, "FLV header signature detected");
+                let is_header = first_chunk.len() >= 3 && first_chunk[0..3] == FLV_SIGNATURE;
+                let is_valid_flv = if is_header {
                     true
                 } else {
                     // Check if first byte is a valid FLV tag type (for mid-stream CDN joins)
                     // The lower 5 bits contain the tag type (ignore filter bit)
                     let tag_type = first_byte & 0x1F;
-                    let is_valid_tag = tag_type == TAG_TYPE_AUDIO || tag_type == TAG_TYPE_VIDEO || tag_type == TAG_TYPE_SCRIPT;
-                    if is_valid_tag {
-                        debug!(url = %url, tag_type = tag_type, "FLV tag type detected (mid-stream join)");
-                    }
-                    is_valid_tag
+                    tag_type == TAG_TYPE_AUDIO || tag_type == TAG_TYPE_VIDEO || tag_type == TAG_TYPE_SCRIPT
                 };
 
                 if !is_valid_flv {
@@ -236,14 +231,19 @@ impl FlvDownloader {
                         preview = %preview,
                         first_byte = format!("0x{:02X}", first_byte),
                         is_text = is_text,
-                        "Invalid FLV content: expected FLV signature or valid tag type but got different data"
+                        "Invalid FLV content: expected FLV signature or valid tag type"
                     );
                     return Err(DownloadError::FlvError(
                         format!("Invalid FLV content: expected FLV signature or valid tag type: 0x{:02X}", first_byte)
                     ));
                 }
 
-                debug!(url = %url, "FLV content validated, starting stream");
+                // Log validation result once (header vs mid-stream)
+                debug!(
+                    url = %url,
+                    is_header = is_header,
+                    "FLV content validated, starting stream"
+                );
 
                 let (tx, rx) = mpsc::channel(2);
 

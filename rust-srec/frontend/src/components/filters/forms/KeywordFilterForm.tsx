@@ -7,10 +7,13 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Trans } from '@lingui/macro';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { TagInput } from '@/components/ui/tag-input';
+import { msg } from '@lingui/core/macro';
 
 export function KeywordFilterForm() {
+  const { i18n } = useLingui();
   const { control } = useFormContext();
 
   return (
@@ -26,7 +29,7 @@ export function KeywordFilterForm() {
             <FormControl>
               <TagInput
                 {...field}
-                placeholder="Enter keywords to include..."
+                placeholder={i18n._(msg`Enter keywords to include...`)}
                 value={field.value || []}
                 onChange={(newValue) => field.onChange(newValue)}
               />
@@ -53,7 +56,7 @@ export function KeywordFilterForm() {
             <FormControl>
               <TagInput
                 {...field}
-                placeholder="Enter keywords to exclude..."
+                placeholder={i18n._(msg`Enter keywords to exclude...`)}
                 value={field.value || []}
                 onChange={(newValue) => field.onChange(newValue)}
               />

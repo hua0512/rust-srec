@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::handle::{ActorHandle, ActorMetadata, DEFAULT_MAILBOX_CAPACITY};
 use super::messages::{
@@ -286,9 +286,10 @@ impl PlatformActor {
         loop {
             // Check if timer needs to be reset due to config change
             if self.timer_needs_reset {
-                debug!(
-                    "PlatformActor {} resetting batch timer to {:?}",
-                    self.platform_id, self.batch_window
+                trace!(
+                    platform_id = %self.platform_id,
+                    batch_window = ?self.batch_window,
+                    "resetting batch timer"
                 );
                 batch_timer = tokio::time::interval(self.batch_window);
                 batch_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -303,9 +304,9 @@ impl PlatformActor {
                 self.metrics.record_message(start.elapsed());
 
                 if should_stop {
-                    debug!(
-                        "PlatformActor {} received stop signal from priority channel",
-                        self.platform_id
+                    trace!(
+                        platform_id = %self.platform_id,
+                        "received stop signal (priority)"
                     );
                     break;
                 }
@@ -324,7 +325,10 @@ impl PlatformActor {
                     self.metrics.record_message(start.elapsed());
 
                     if should_stop {
-                        debug!("PlatformActor {} received stop signal from priority channel", self.platform_id);
+                        trace!(
+                            platform_id = %self.platform_id,
+                            "received stop signal (priority)"
+                        );
                         break;
                     }
                 }
@@ -336,15 +340,17 @@ impl PlatformActor {
                     self.metrics.record_message(start.elapsed());
 
                     if should_stop {
-                        debug!("PlatformActor {} received stop signal", self.platform_id);
+                        trace!(platform_id = %self.platform_id, "received stop signal");
                         break;
                     }
 
                     // Check if we should execute batch early (max size reached)
                     if self.pending_requests.len() >= self.max_batch_size {
-                        debug!(
-                            "PlatformActor {} batch size limit reached, executing early",
-                            self.platform_id
+                        trace!(
+                            platform_id = %self.platform_id,
+                            pending = self.pending_requests.len(),
+                            max_batch_size = self.max_batch_size,
+                            "batch size limit reached; executing early"
                         );
                         if let Err(e) = self.execute_batch().await {
                             warn!("PlatformActor {} batch execution failed: {}", self.platform_id, e);
@@ -355,10 +361,10 @@ impl PlatformActor {
 
                 // Batch timer - execute pending requests
                 _ = batch_timer.tick(), if !self.pending_requests.is_empty() => {
-                    debug!(
-                        "PlatformActor {} batch timer fired with {} pending requests",
-                        self.platform_id,
-                        self.pending_requests.len()
+                    trace!(
+                        platform_id = %self.platform_id,
+                        pending = self.pending_requests.len(),
+                        "batch timer fired"
                     );
                     if let Err(e) = self.execute_batch().await {
                         warn!("PlatformActor {} batch execution failed: {}", self.platform_id, e);
@@ -432,9 +438,10 @@ impl PlatformActor {
         streamer_id: String,
         reply: oneshot::Sender<()>,
     ) -> Result<(), ActorError> {
-        debug!(
-            "PlatformActor {} received check request for {}",
-            self.platform_id, streamer_id
+        trace!(
+            platform_id = %self.platform_id,
+            streamer_id = %streamer_id,
+            "received check request"
         );
 
         // Queue the request
@@ -448,7 +455,7 @@ impl PlatformActor {
 
     /// Handle ConfigUpdate message - apply new configuration.
     async fn handle_config_update(&mut self, config: PlatformConfig) -> Result<(), ActorError> {
-        debug!("PlatformActor {} received ConfigUpdate", self.platform_id);
+        trace!(platform_id = %self.platform_id, "received ConfigUpdate");
 
         let old_config = std::mem::replace(&mut self.config, config);
 
@@ -480,10 +487,7 @@ impl PlatformActor {
 
         // Execute any pending batch before stopping
         if !self.pending_requests.is_empty() {
-            debug!(
-                "PlatformActor {} executing final batch before stop",
-                self.platform_id
-            );
+            debug!(platform_id = %self.platform_id, "executing final batch before stop");
             if let Err(e) = self.execute_batch().await {
                 warn!(
                     "PlatformActor {} final batch execution failed: {}",
@@ -497,7 +501,7 @@ impl PlatformActor {
 
     /// Handle GetState message - return current state via oneshot channel.
     async fn handle_get_state(&self, reply: oneshot::Sender<PlatformActorState>) {
-        debug!("PlatformActor {} received GetState", self.platform_id);
+        trace!(platform_id = %self.platform_id, "received GetState");
 
         // Send state, ignore if receiver dropped
         let _ = reply.send(self.state.clone());
@@ -521,8 +525,9 @@ impl PlatformActor {
 
         let batch_size = requests.len();
         debug!(
-            "PlatformActor {} executing batch of {} requests",
-            self.platform_id, batch_size
+            platform_id = %self.platform_id,
+            batch_size,
+            "batch check start"
         );
 
         // Collect streamer IDs for the batch
@@ -535,6 +540,7 @@ impl PlatformActor {
 
         // Execute the batch API call
         let results = self.perform_batch_check(&streamer_ids).await?;
+        let results_len = results.len();
 
         // Distribute results to StreamerActors
         self.distribute_results(results).await;
@@ -543,9 +549,11 @@ impl PlatformActor {
         self.state.record_batch(true);
 
         debug!(
-            "PlatformActor {} batch complete, success rate: {:.2}%",
-            self.platform_id,
-            self.state.success_rate * 100.0
+            platform_id = %self.platform_id,
+            batch_size,
+            results = results_len,
+            success_rate = self.state.success_rate * 100.0,
+            "batch check complete"
         );
 
         Ok(())
@@ -559,12 +567,6 @@ impl PlatformActor {
         &self,
         streamer_ids: &[String],
     ) -> Result<Vec<BatchDetectionResult>, ActorError> {
-        debug!(
-            "PlatformActor {} performing batch check for {} streamers",
-            self.platform_id,
-            streamer_ids.len()
-        );
-
         // Collect streamer metadata for the batch
         let streamers: Vec<StreamerMetadata> = streamer_ids
             .iter()
@@ -574,11 +576,11 @@ impl PlatformActor {
         // If we don't have metadata for all streamers, fall back to simulated results
         // for those without metadata (backwards compatibility)
         if streamers.len() < streamer_ids.len() {
-            debug!(
-                "PlatformActor {} has metadata for {}/{} streamers, using fallback for rest",
-                self.platform_id,
-                streamers.len(),
-                streamer_ids.len()
+            trace!(
+                platform_id = %self.platform_id,
+                have = streamers.len(),
+                want = streamer_ids.len(),
+                "missing streamer metadata for batch; using fallback results"
             );
         }
 
@@ -616,18 +618,13 @@ impl PlatformActor {
                     }
                 }
 
-                debug!(
-                    "PlatformActor {} batch check complete, {} results",
-                    self.platform_id,
-                    results.len()
-                );
-
                 Ok(results)
             }
             Err(e) => {
                 warn!(
-                    "PlatformActor {} batch check failed: {}",
-                    self.platform_id, e
+                    platform_id = %self.platform_id,
+                    error = %e,
+                    "batch check failed"
                 );
 
                 if e.transient {
@@ -649,14 +646,17 @@ impl PlatformActor {
 
                 if let Err(e) = handle.send(msg).await {
                     warn!(
-                        "PlatformActor {} failed to send result to {}: {:?}",
-                        self.platform_id, streamer_id, e
+                        platform_id = %self.platform_id,
+                        streamer_id = %streamer_id,
+                        error = ?e,
+                        "failed to send batch result"
                     );
                 }
             } else {
-                debug!(
-                    "PlatformActor {} has no handle for streamer {}, result dropped",
-                    self.platform_id, streamer_id
+                trace!(
+                    platform_id = %self.platform_id,
+                    streamer_id = %streamer_id,
+                    "batch result dropped (no streamer handle)"
                 );
             }
         }

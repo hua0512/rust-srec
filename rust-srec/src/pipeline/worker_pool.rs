@@ -480,15 +480,38 @@ impl WorkerPool {
                                 }
                             });
 
+                            let job_cancellation_token =
+                                match job_queue.get_cancellation_token(&job_id).await {
+                                    Some(token) => token,
+                                    None => {
+                                        warn!(
+                                            job_id = %job_id,
+                                            "Missing cancellation token for processing job"
+                                        );
+                                        CancellationToken::new()
+                                    }
+                                };
+
                             let ctx = ProcessorContext::new(
                                 job_id.clone(),
                                 job_queue.progress_reporter(&job_id),
                                 log_tx,
+                                job_cancellation_token.clone(),
                             );
 
-                            let result =
-                                tokio::time::timeout(job_timeout, processor.process(&input, &ctx))
-                                    .await;
+                            let result = {
+                                let timed = tokio::time::timeout(
+                                    job_timeout,
+                                    processor.process(&input, &ctx),
+                                );
+                                tokio::pin!(timed);
+
+                                tokio::select! {
+                                    biased;
+                                    _ = job_cancellation_token.cancelled() => None,
+                                    res = &mut timed => Some(res),
+                                }
+                            };
 
                             // Drop ctx to close the log channel
                             drop(ctx);
@@ -497,7 +520,18 @@ impl WorkerPool {
                             let _ = log_collector.await;
 
                             match result {
-                                Ok(Ok(output)) => {
+                                None => {
+                                    info!(job_id = %job_id, "Job cancelled while processing");
+                                }
+                                Some(Ok(Ok(output))) => {
+                                    if job_cancellation_token.is_cancelled() {
+                                        info!(
+                                            job_id = %job_id,
+                                            "Job finished after cancellation; skipping completion"
+                                        );
+                                    }
+
+                                    if !job_cancellation_token.is_cancelled() {
                                     // Track partial outputs for observability
                                     if !output.items_produced.is_empty()
                                         && let Err(e) = job_queue
@@ -583,8 +617,17 @@ impl WorkerPool {
                                             },
                                         )
                                         .await;
+                                    }
                                 }
-                                Ok(Err(e)) => {
+                                Some(Ok(Err(e))) => {
+                                    if job_cancellation_token.is_cancelled() {
+                                        info!(
+                                            job_id = %job_id,
+                                            "Job failed after cancellation; skipping failure handling"
+                                        );
+                                    }
+
+                                    if !job_cancellation_token.is_cancelled() {
                                     // Check if this is a DAG job for fail-fast handling
                                     let error = e.to_string();
                                     if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
@@ -648,10 +691,19 @@ impl WorkerPool {
                                         if let Ok(outputs) = partial_outputs
                                             && !outputs.is_empty() {
                                                 cleanup_partial_outputs(&outputs).await;
-                                            }
+                                        }
+                                    }
                                     }
                                 }
-                                Err(_) => {
+                                Some(Err(_)) => {
+                                    if job_cancellation_token.is_cancelled() {
+                                        info!(
+                                            job_id = %job_id,
+                                            "Job timed out after cancellation; skipping timeout handling"
+                                        );
+                                    }
+
+                                    if !job_cancellation_token.is_cancelled() {
                                     // Check if this is a DAG job for fail-fast handling
                                     if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
                                         // First mark job as failed
@@ -716,7 +768,12 @@ impl WorkerPool {
                                                 cleanup_partial_outputs(&outputs).await;
                                             }
                                     }
+                                    }
                                 }
+                            }
+
+                            if job_cancellation_token.is_cancelled() {
+                                job_queue.finalize_interrupted_job(&job_id);
                             }
 
                             active_workers.fetch_sub(1, Ordering::SeqCst);
@@ -883,6 +940,36 @@ async fn cleanup_partial_outputs(outputs: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::time::Duration;
+
+    use crate::pipeline::{Job, JobStatus, ProcessorOutput, ProcessorType};
+
+    struct SleepProcessor;
+
+    #[async_trait]
+    impl Processor for SleepProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["sleep"]
+        }
+
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+            Ok(ProcessorOutput::default())
+        }
+
+        fn name(&self) -> &'static str {
+            "sleep"
+        }
+    }
 
     #[test]
     fn test_worker_pool_config_default() {
@@ -902,5 +989,61 @@ mod tests {
         let pool = WorkerPool::new(WorkerType::Cpu);
         assert_eq!(pool.worker_type(), WorkerType::Cpu);
         assert!(pool.is_running());
+    }
+
+    #[tokio::test]
+    async fn test_cancel_processing_job_releases_worker() {
+        let job_queue = Arc::new(JobQueue::new());
+        let pool = WorkerPool::with_config(
+            WorkerType::Cpu,
+            WorkerPoolConfig {
+                max_workers: 1,
+                job_timeout_secs: 3600,
+                poll_interval_ms: 10,
+                adaptive: AdaptiveWorkerPoolConfig::default(),
+            },
+        );
+
+        pool.start(job_queue.clone(), vec![Arc::new(SleepProcessor)]);
+
+        let job = Job::new(
+            "sleep",
+            vec!["/input".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job_queue.enqueue(job).await.unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(job) = job_queue.get_job(&job_id).await.unwrap()
+                    && job.status == JobStatus::Processing
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("job should start processing");
+
+        job_queue.cancel_job(&job_id).await.unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if pool.active_count() == 0 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("worker should stop processing cancelled job");
+
+        let job = job_queue.get_job(&job_id).await.unwrap().unwrap();
+        assert_eq!(job.status, JobStatus::Interrupted);
+
+        pool.stop().await;
     }
 }

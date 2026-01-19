@@ -37,11 +37,11 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { t, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { type DagSummary } from '@/api/schemas';
 
 import { formatRelativeTime } from '@/lib/date-utils';
-import { plural } from '@lingui/core/macro';
 import { STATUS_CONFIG } from '@/components/pipeline/status-config';
 
 interface PipelineSummaryCardProps {
@@ -266,20 +266,18 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 border">
             <Layers className="h-3 w-3 text-muted-foreground" />
             <span className="text-[10px] font-medium">
-              {plural(pipeline.total_steps, {
-                one: '# step',
-                other: '# steps',
-              })}
+              {t(
+                i18n,
+              )`${plural(pipeline.total_steps, { one: '# step', other: '# steps' })}`}
             </span>
           </div>
           {pipeline.completed_steps > 0 && (
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 border border-green-500/20">
               <CheckCircle2 className="h-3 w-3 text-green-500" />
               <span className="text-[10px] font-medium text-green-600 dark:text-green-400">
-                {plural(pipeline.completed_steps, {
-                  one: '# done',
-                  other: '# done',
-                })}
+                {t(
+                  i18n,
+                )`${plural(pipeline.completed_steps, { one: '# done', other: '# done' })}`}
               </span>
             </div>
           )}
@@ -287,10 +285,9 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/10 border border-red-500/20">
               <XCircle className="h-3 w-3 text-red-500" />
               <span className="text-[10px] font-medium text-red-600 dark:text-red-400">
-                {plural(pipeline.failed_steps, {
-                  one: '# failed',
-                  other: '# failed',
-                })}
+                {t(
+                  i18n,
+                )`${plural(pipeline.failed_steps, { one: '# failed', other: '# failed' })}`}
               </span>
             </div>
           )}
@@ -316,10 +313,9 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
 
       <CardFooter className="relative pt-0 text-[10px] text-muted-foreground flex justify-between items-center z-10 border-t border-border/20 mt-auto px-6 py-3 bg-muted/5">
         <span className="font-mono opacity-50">
-          {plural(pipeline.total_steps, {
-            one: '# step',
-            other: '# steps',
-          })}
+          {t(
+            i18n,
+          )`${plural(pipeline.total_steps, { one: '# step', other: '# steps' })}`}
         </span>
         <span className="font-mono opacity-50">
           {(pipeline.progress_percent || 0).toFixed(1)}%

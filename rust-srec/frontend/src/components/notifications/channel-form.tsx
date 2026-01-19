@@ -33,7 +33,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createChannel, updateChannel } from '@/server/functions/notifications';
 import { toast } from 'sonner';
@@ -53,6 +54,7 @@ interface ChannelFormProps {
 type FormData = ChannelFormData;
 
 export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
+  const { i18n } = useLingui();
   const queryClient = useQueryClient();
   const isEditing = !!channel;
 
@@ -183,24 +185,24 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   const createMutation = useMutation({
     mutationFn: (data: any) => createChannel({ data }),
     onSuccess: () => {
-      toast.success(t`Channel created`);
+      toast.success(i18n._(msg`Channel created`));
       queryClient.invalidateQueries({ queryKey: ['notification-channels'] });
       onOpenChange(false);
     },
     onError: (err: any) =>
-      toast.error(err.message || t`Failed to create channel`),
+      toast.error(err.message || i18n._(msg`Failed to create channel`)),
   });
 
   const updateMutation = useMutation({
     mutationFn: (data: any) =>
       updateChannel({ data: { id: channel!.id, data } }),
     onSuccess: () => {
-      toast.success(t`Channel updated`);
+      toast.success(i18n._(msg`Channel updated`));
       queryClient.invalidateQueries({ queryKey: ['notification-channels'] });
       onOpenChange(false);
     },
     onError: (err: any) =>
-      toast.error(err.message || t`Failed to update channel`),
+      toast.error(err.message || i18n._(msg`Failed to update channel`)),
   });
 
   const onSubmit = (data: FormData) => {
@@ -251,7 +253,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto bg-background/95 backdrop-blur-xl border-border/50">
         <DialogHeader className="pb-4 border-b border-border/40">
           <DialogTitle className="text-xl font-semibold tracking-tight">
-            {isEditing ? t`Edit Channel` : t`Create Channel`}
+            {isEditing
+              ? i18n._(msg`Edit Channel`)
+              : i18n._(msg`Create Channel`)}
           </DialogTitle>
           <DialogDescription>
             <Trans>Configure where and how you receive notifications.</Trans>
@@ -278,7 +282,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                         <div className="relative">
                           <Box className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                           <Input
-                            placeholder="My Channel"
+                            placeholder={i18n._(msg`My Channel`)}
                             {...field}
                             className="pl-9 bg-muted/30 border-primary/10"
                           />
@@ -301,7 +305,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                         onValueChange={(val) => {
                           if (val === 'Discord' || val === 'Email') {
                             toast.warning(
-                              t`${val} channel support is coming soon!`,
+                              i18n._(
+                                msg`${val} channel support is coming soon!`,
+                              ),
                             );
                             return;
                           }
@@ -312,7 +318,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                       >
                         <FormControl>
                           <SelectTrigger className="bg-muted/30 border-primary/10">
-                            <SelectValue placeholder="Select type" />
+                            <SelectValue
+                              placeholder={i18n._(msg`Select type`)}
+                            />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -363,7 +371,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                 className="bg-primary text-primary-foreground shadow-lg shadow-primary/20"
               >
                 {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {isEditing ? t`Update Channel` : t`Create Channel`}
+                {isEditing
+                  ? i18n._(msg`Update Channel`)
+                  : i18n._(msg`Create Channel`)}
               </Button>
             </DialogFooter>
           </form>

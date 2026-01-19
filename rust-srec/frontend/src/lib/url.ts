@@ -43,9 +43,12 @@ export function buildWebSocketUrl(accessToken: string): string {
     const url = new URL(apiBaseUrl);
     const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     wsUrl = `${wsProtocol}//${url.host}${url.pathname}`;
-  } else {
+  } else if (typeof window !== 'undefined') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     wsUrl = `${protocol}//${window.location.host}${apiBaseUrl}`;
+  } else {
+    // Fallback for SSR if no full URL is provided
+    wsUrl = `ws://localhost:12555${apiBaseUrl}`;
   }
 
   const basePath = wsUrl.replace(/\/$/, '');

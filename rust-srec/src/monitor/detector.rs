@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorFactory;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::Result;
 use crate::domain::ProxyConfig;
@@ -208,10 +208,7 @@ impl StreamDetector {
                 "cdn".to_string(),
                 serde_json::Value::String(config.preferred_cdns[0].clone()),
             );
-            debug!(
-                "Injecting preferred CDN '{}' into platform extras",
-                config.preferred_cdns[0]
-            );
+            trace!(cdn = %config.preferred_cdns[0], "injecting cdn into platform extras");
         }
 
         // Inject preferred quality if configured and not already set
@@ -258,11 +255,11 @@ impl StreamDetector {
         platform_extras: Option<serde_json::Value>,
         proxy_config: &ProxyConfig,
     ) -> Result<LiveStatus> {
-        debug!(
-            "Checking status for streamer: {} ({}) with platform_extras: {}",
-            streamer.name,
-            streamer.url,
-            platform_extras.is_some()
+        trace!(
+            streamer_name = %streamer.name,
+            streamer_url = %streamer.url,
+            platform_extras = platform_extras.is_some(),
+            "detector check"
         );
 
         // Merge CDN preference from selection_config into platform_extras
@@ -314,7 +311,12 @@ impl StreamDetector {
             }
             // Non-fatal - streamer is just offline
             Err(ExtractorError::NoStreamsFound) => {
-                debug!("No streams found for: {}", streamer.name);
+                trace!(
+                    streamer_name = %streamer.name,
+                    streamer_url = %streamer.url,
+                    reason = "no_streams",
+                    "status=OFFLINE"
+                );
                 return Ok(LiveStatus::Offline);
             }
             Err(ExtractorError::JsError(msg)) => {
@@ -336,13 +338,14 @@ impl StreamDetector {
             }
         };
 
-        debug!(
-            "Media info for {}: title='{}', is_live={}, streams={}, has_headers={}",
-            streamer.name,
-            media_info.title,
-            media_info.is_live,
-            media_info.streams.len(),
-            media_info.headers.is_some()
+        trace!(
+            streamer_name = %streamer.name,
+            streamer_url = %streamer.url,
+            title = %media_info.title,
+            is_live = media_info.is_live,
+            streams = media_info.streams.len(),
+            has_headers = media_info.headers.is_some(),
+            "media info"
         );
 
         // debug!("Media info: {:#?}", media_info);
@@ -376,11 +379,12 @@ impl StreamDetector {
             });
 
             if let Some(headers) = &media_headers {
-                debug!(
-                    "Extracted {} media headers for {}: {:?}",
-                    headers.len(),
-                    streamer.name,
-                    headers.keys().collect::<Vec<_>>()
+                trace!(
+                    streamer_name = %streamer.name,
+                    streamer_url = %streamer.url,
+                    count = headers.len(),
+                    keys = ?headers.keys().collect::<Vec<_>>(),
+                    "media headers extracted"
                 );
             }
 
@@ -388,7 +392,7 @@ impl StreamDetector {
             // Use config-based selection if provided, otherwise use default selector
             let selector = match selection_config {
                 Some(config) => {
-                    debug!("Applying stream selection with config: {:?}", config);
+                    debug!(config = ?config, "stream selection config");
                     StreamSelector::with_config(config.clone())
                 }
                 None => StreamSelector::new(),
@@ -396,16 +400,13 @@ impl StreamDetector {
 
             let candidates = selector.sort_candidates(&media_info.streams);
             let selected_stream = if let Some(stream) = candidates.first() {
-                debug!(
-                    "Selected best stream candidate: {} ({})",
-                    stream.quality, stream.url
-                );
+                debug!(quality = %stream.quality, url = %stream.url, "selected stream candidate");
                 (*stream).clone()
             } else if let Some(stream) = media_info.streams.first() {
                 // Fallback: if no candidates match selection criteria, take the first available stream
                 debug!(
-                    "No streams match selection criteria, using first of {} streams",
-                    media_info.streams.len()
+                    streams = media_info.streams.len(),
+                    "stream selection fallback (no candidates matched criteria)"
                 );
                 stream.clone()
             } else {
@@ -432,21 +433,20 @@ impl StreamDetector {
             let mut resolved_stream = None;
             for candidate in resolution_slice {
                 let mut stream = (*candidate).clone();
-                debug!(
-                    "Resolving true stream URL for candidate: {} ({})",
-                    stream.quality, stream.url
-                );
+                trace!(quality = %stream.quality, url = %stream.url, "resolving stream url");
 
                 match extractor.get_url(&mut stream).await {
                     Ok(_) => {
-                        debug!("Successfully resolved stream URL: {}", stream.url);
+                        trace!(url = %stream.url, "resolved stream url");
                         resolved_stream = Some(stream);
                         break;
                     }
                     Err(e) => {
-                        warn!(
-                            "Failed to resolve stream URL for candidate {} ({}): {}",
-                            candidate.quality, streamer.name, e
+                        error!(
+                            streamer_name = %streamer.name,
+                            quality = %candidate.quality,
+                            error = %e,
+                            "failed to resolve stream url for candidate"
                         );
                         // Continue to next candidate
                     }
@@ -467,14 +467,15 @@ impl StreamDetector {
             let streams = vec![selected_stream];
 
             debug!(
-                "Streamer {} is LIVE: {} (category: {:?}, viewers: {:?}, streams: {}, media_headers: {}, extras: {:?})",
-                streamer.name,
-                media_info.title,
-                category,
-                viewer_count,
-                streams.len(),
-                media_headers.as_ref().map(|h| h.len()).unwrap_or(0),
-                media_extras.as_ref().map(|e| e.len()).unwrap_or(0)
+                streamer_name = %streamer.name,
+                streamer_url = %streamer.url,
+                title = %media_info.title,
+                category = ?category,
+                viewers = ?viewer_count,
+                streams = streams.len(),
+                media_headers = media_headers.as_ref().map(|h| h.len()).unwrap_or(0),
+                extras = media_extras.as_ref().map(|e| e.len()).unwrap_or(0),
+                "status=LIVE"
             );
 
             Ok(LiveStatus::Live {
@@ -488,7 +489,11 @@ impl StreamDetector {
                 media_extras,
             })
         } else {
-            debug!("Streamer {} is OFFLINE", streamer.name);
+            trace!(
+                streamer_name = %streamer.name,
+                streamer_url = %streamer.url,
+                "status=OFFLINE"
+            );
             Ok(LiveStatus::Offline)
         }
     }
@@ -604,6 +609,7 @@ mod tests {
             codec: "h264".to_string(),
             fps: 30.0,
             is_headers_needed: false,
+            is_audio_only: false,
         }
     }
 

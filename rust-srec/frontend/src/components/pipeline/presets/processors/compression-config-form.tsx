@@ -1,4 +1,6 @@
-import { Trans } from '@lingui/macro';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import {
   FormField,
   FormItem,
@@ -28,6 +30,7 @@ export function CompressionConfigForm({
   control,
   pathPrefix,
 }: ProcessorConfigFormProps<CompressionConfig>) {
+  const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
 
   const containerVariants = {
@@ -66,7 +69,7 @@ export function CompressionConfigForm({
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                        <SelectValue placeholder="Select format" />
+                        <SelectValue placeholder={i18n._(msg`Select format`)} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>

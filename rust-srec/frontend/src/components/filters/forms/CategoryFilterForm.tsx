@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/form';
 import { TagInput } from '@/components/ui/tag-input';
 import { Switch } from '@/components/ui/switch';
-import { Trans } from '@lingui/macro';
+import { Trans } from '@lingui/react/macro';
 
 export function CategoryFilterForm() {
   const { control } = useFormContext();

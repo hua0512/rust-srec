@@ -46,6 +46,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const setConnectionStatus = useDownloadStore(
     (state) => state.setConnectionStatus,
   );
+  const connectionStatus = useDownloadStore((state) => state.connectionStatus);
   const clearAll = useDownloadStore((state) => state.clearAll);
 
   const handleMessage = useCallback(
@@ -142,6 +143,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
   const connect = useCallback(() => {
     if (!accessToken || !isAuthenticated) return;
+    if (typeof window === 'undefined') return;
     if (isConnectingRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
@@ -240,7 +242,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
   return (
     <WebSocketContext.Provider
-      value={{ isConnected: !!wsRef.current, subscribe, unsubscribe }}
+      value={{
+        isConnected: connectionStatus === 'connected',
+        subscribe,
+        unsubscribe,
+      }}
     >
       {children}
     </WebSocketContext.Provider>

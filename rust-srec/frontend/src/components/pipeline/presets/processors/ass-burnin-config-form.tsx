@@ -1,4 +1,6 @@
-import { Trans } from '@lingui/macro';
+import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
+import { msg } from '@lingui/core/macro';
 import {
   FormField,
   FormItem,
@@ -28,6 +30,7 @@ export function AssBurninConfigForm({
   control,
   pathPrefix,
 }: ProcessorConfigFormProps<AssBurninConfig>) {
+  const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
 
   const containerVariants = {
@@ -64,7 +67,7 @@ export function AssBurninConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      placeholder="libx264"
+                      placeholder={i18n._(msg`libx264`)}
                       {...field}
                     />
                   </FormControl>
@@ -84,7 +87,7 @@ export function AssBurninConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      placeholder="copy"
+                      placeholder={i18n._(msg`copy`)}
                       {...field}
                     />
                   </FormControl>
@@ -130,7 +133,7 @@ export function AssBurninConfigForm({
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:ring-primary/20 rounded-lg">
-                        <SelectValue placeholder="veryfast" />
+                        <SelectValue placeholder={i18n._(msg`veryfast`)} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -176,7 +179,9 @@ export function AssBurninConfigForm({
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:ring-primary/20 rounded-lg">
-                        <SelectValue placeholder="Select strategy" />
+                        <SelectValue
+                          placeholder={i18n._(msg`Select strategy`)}
+                        />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -239,7 +244,7 @@ export function AssBurninConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      placeholder="ffmpeg"
+                      placeholder={i18n._(msg`ffmpeg`)}
                       {...field}
                     />
                   </FormControl>
@@ -259,7 +264,7 @@ export function AssBurninConfigForm({
                   <FormControl>
                     <Input
                       className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      placeholder="/usr/share/fonts"
+                      placeholder={i18n._(msg`/usr/share/fonts`)}
                       {...field}
                     />
                   </FormControl>

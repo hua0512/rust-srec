@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import {
   decodeWsMessage,
@@ -133,6 +134,7 @@ function getLevelBadgeColor(level: LogLevel): string {
 type FilterLevel = 'all' | 'trace' | 'debug' | 'info' | 'warn' | 'error';
 
 export function LogViewer() {
+  const { i18n } = useLingui();
   const [logs, setLogs] = useState<DisplayLogEvent[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -395,7 +397,7 @@ export function LogViewer() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder={t`Search logs...`}
+                placeholder={i18n._(msg`Search logs...`)}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -424,7 +426,9 @@ export function LogViewer() {
               size="icon"
               onClick={() => setAutoScroll(!autoScroll)}
               title={
-                autoScroll ? t`Auto-scroll enabled` : t`Auto-scroll disabled`
+                autoScroll
+                  ? i18n._(msg`Auto-scroll enabled`)
+                  : i18n._(msg`Auto-scroll disabled`)
               }
             >
               <ArrowDown className="w-4 h-4" />

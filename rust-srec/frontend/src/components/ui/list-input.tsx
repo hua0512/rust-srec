@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, X } from 'lucide-react';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 
 interface ListInputProps {
   value?: string[];
@@ -17,6 +18,7 @@ export function ListInput({
   placeholder,
   className,
 }: ListInputProps) {
+  const { i18n } = useLingui();
   const [newItem, setNewItem] = useState('');
 
   const handleAdd = () => {
@@ -44,7 +46,7 @@ export function ListInput({
           value={newItem}
           onChange={(e) => setNewItem(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder || t`Add item...`}
+          placeholder={placeholder || i18n._(msg`Add item...`)}
           className={className || 'flex-grow'}
         />
         <Button

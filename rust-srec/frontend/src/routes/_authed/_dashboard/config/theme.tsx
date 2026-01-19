@@ -1,102 +1,434 @@
+import React from 'react';
 import { createFileRoute } from '@tanstack/react-router';
+import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { motion } from 'motion/react';
-import { useTheme } from '@/components/theme-provider';
 import {
-  Check,
+  Layout,
+  Palette,
+  Settings,
+  Upload,
+  RotateCcw,
   Monitor,
   Moon,
   Sun,
-  Palette,
-  LayoutTemplate,
-  RotateCcw,
-  Sparkles,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Trans } from '@lingui/react/macro';
+
+import { ColorPicker } from '@/components/color-picker';
+import { ImportModal } from '@/components/layout/themes/import-modal';
+import { ThemePresetPicker } from '@/components/layout/themes/theme-preset-picker';
+import { useTheme } from '@/components/providers/theme-provider';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Slider } from '@/components/ui/slider';
 import { Card } from '@/components/ui/card';
-import { ThemeColor, useThemeStore } from '@/stores/theme-store';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
+import { useSidebar } from '@/components/ui/sidebar';
+import { baseColors, radiusOptions } from '@/config/theme-customizer-constants';
+import { colorThemes } from '@/config/theme-data';
+import { useSidebarConfig } from '@/hooks/use-sidebar-config';
+import { useCircularTransition } from '@/hooks/use-circular-transition';
+import { cn } from '@/lib/utils';
+import { useThemeSettings } from '@/store/theme-settings';
+import type { ImportedTheme } from '@/types/theme-customizer';
+import { useShallow } from 'zustand/react/shallow';
 
 export const Route = createFileRoute('/_authed/_dashboard/config/theme')({
   component: ConfigTheme,
 });
 
 function ConfigTheme() {
+  const { i18n } = useLingui();
+  const { theme, setTheme } = useTheme();
+  const { startTransition } = useCircularTransition();
+  const { config: sidebarConfig, updateConfig: updateSidebarConfig } =
+    useSidebarConfig();
+  const { toggleSidebar, state: sidebarState, isMobile } = useSidebar();
+  const themeSettings = useThemeSettings(
+    useShallow((state) => ({
+      base: state.base,
+      preset: state.preset,
+      radius: state.radius,
+      overrides: state.overrides,
+      importedTheme: state.importedTheme,
+      setPreset: state.setPreset,
+      setRadius: state.setRadius,
+      setOverride: state.setOverride,
+      setImportedTheme: state.setImportedTheme,
+      reset: state.reset,
+    })),
+  );
+
+  const [importModalOpen, setImportModalOpen] = React.useState(false);
+
+  const handleReset = () => {
+    themeSettings.reset();
+
+    updateSidebarConfig({
+      variant: 'sidebar',
+      collapsible: 'icon',
+      side: 'left',
+    });
+  };
+
+  const handleImport = (themeData: ImportedTheme) => {
+    themeSettings.setImportedTheme(themeData);
+  };
+
   return (
-    <div className="flex flex-col xl:flex-row gap-8 min-h-[calc(100vh-8rem)]">
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.4 }}
-        className="flex-1 space-y-8 max-w-2xl"
-      >
-        <div className="grid gap-8">
-          {/* Theme Mode */}
-          <Section
-            title={<Trans>Theme Mode</Trans>}
-            description={<Trans>Select your preferred color scheme.</Trans>}
-            icon={Monitor}
-          >
-            <ThemeModeSelector />
-          </Section>
-
-          {/* Glass Mode */}
-          <Section
-            title={<Trans>Glass Mode</Trans>}
-            description={
-              <Trans>Enable translucent background blur effects.</Trans>
-            }
-            icon={Sparkles}
-          >
-            <ThemeGlassSelector />
-          </Section>
-
-          {/* Accent Color */}
-          <Section
-            title={<Trans>Accent Color</Trans>}
-            description={
-              <Trans>Primary color for buttons and interactions.</Trans>
-            }
-            icon={Palette}
-          >
-            <ThemeColorSelector />
-          </Section>
-
-          {/* Radius */}
-          <Section
-            title={<Trans>Border Radius</Trans>}
-            description={<Trans>Adjust the roundness of UI elements.</Trans>}
-            icon={LayoutTemplate}
-          >
-            <ThemeRadiusSelector />
-          </Section>
-        </div>
-      </motion.div>
-
-      {/* Live Preview Panel */}
-      <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-        className="flex-1 xl:max-w-md 2xl:max-w-lg hidden lg:block"
-      >
-        <div className="sticky top-24 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              <Trans>Live Preview</Trans>
-            </h2>
+    <>
+      <div className="flex flex-col xl:flex-row gap-8 min-h-[calc(100vh-8rem)] px-4 md:px-0">
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.4 }}
+          className="flex-1 space-y-8 max-w-2xl w-full mx-auto"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold">
+                <Trans>Theme</Trans>
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                <Trans>
+                  Customize the application theme and sidebar layout.
+                </Trans>
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={handleReset}
+              className="cursor-pointer"
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              <Trans>Reset</Trans>
+            </Button>
           </div>
-          <ThemePreview />
-        </div>
-      </motion.div>
-    </div>
+
+          <div className="grid gap-8">
+            <Section
+              title={<Trans>Theme Mode</Trans>}
+              description={<Trans>Select your preferred color scheme.</Trans>}
+              icon={Monitor}
+            >
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { value: 'light', icon: Sun, label: <Trans>Light</Trans> },
+                  { value: 'dark', icon: Moon, label: <Trans>Dark</Trans> },
+                  {
+                    value: 'system',
+                    icon: Monitor,
+                    label: <Trans>System</Trans>,
+                  },
+                ].map(({ value, icon: Icon, label }) => (
+                  <div
+                    key={value}
+                    role="button"
+                    onClick={(event) => {
+                      if (theme === value) return;
+                      startTransition(
+                        { x: event.clientX, y: event.clientY },
+                        () => {
+                          setTheme(value as 'light' | 'dark' | 'system');
+                        },
+                      );
+                    }}
+                    className={cn(
+                      'flex flex-col items-center justify-between rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50',
+                      theme === value
+                        ? 'border-primary bg-primary/5'
+                        : 'border-muted bg-transparent',
+                    )}
+                  >
+                    <Icon
+                      className={cn(
+                        'w-6 h-6 mb-3',
+                        theme === value
+                          ? 'text-primary'
+                          : 'text-muted-foreground',
+                      )}
+                    />
+                    <span className="text-sm font-medium">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+
+            <Section
+              title={<Trans>Theme Preset</Trans>}
+              description={
+                <Trans>Pick a preset theme or import a custom one.</Trans>
+              }
+              icon={Palette}
+            >
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <Label className="text-sm font-medium">
+                    <Trans>Shadcn UI Theme Presets</Trans>
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setImportModalOpen(true)}
+                      className="cursor-pointer"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      <Trans>Import</Trans>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        const randomTheme =
+                          colorThemes[
+                            Math.floor(Math.random() * colorThemes.length)
+                          ];
+                        themeSettings.setImportedTheme(null);
+                        themeSettings.setPreset(randomTheme.value);
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <Settings className="h-4 w-4 mr-2" />
+                      <Trans>Random</Trans>
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border bg-card p-4">
+                  <ThemePresetPicker
+                    themes={colorThemes}
+                    value={
+                      themeSettings.base === 'preset'
+                        ? themeSettings.preset
+                        : null
+                    }
+                    onValueChange={(value) => {
+                      themeSettings.setImportedTheme(null);
+                      themeSettings.setPreset(value);
+                    }}
+                  />
+                </div>
+
+                {themeSettings.base === 'imported' &&
+                themeSettings.importedTheme ? (
+                  <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
+                    <p className="text-sm text-muted-foreground">
+                      <Trans>Custom imported theme is active.</Trans>
+                    </p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        themeSettings.setImportedTheme(null);
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <Trans>Clear</Trans>
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </Section>
+
+            <Section
+              title={<Trans>Brand Colors</Trans>}
+              description={<Trans>Fine tune brand and surface colors.</Trans>}
+              icon={Palette}
+            >
+              <div className="grid sm:grid-cols-2 gap-4">
+                {baseColors.map((color) => (
+                  <ColorPicker
+                    key={color.cssVar}
+                    label={color.name}
+                    cssVar={color.cssVar}
+                    value={themeSettings.overrides[color.cssVar.slice(2)] || ''}
+                    onChange={themeSettings.setOverride}
+                  />
+                ))}
+              </div>
+            </Section>
+
+            <Section
+              title={<Trans>Border Radius</Trans>}
+              description={<Trans>Adjust the roundness of UI elements.</Trans>}
+              icon={Layout}
+            >
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {radiusOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={cn(
+                      'relative cursor-pointer rounded-md p-3 border transition-colors',
+                      themeSettings.radius === option.value
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-border/60',
+                    )}
+                    onClick={() => {
+                      themeSettings.setRadius(option.value);
+                    }}
+                  >
+                    <div className="text-center">
+                      <div className="text-xs font-medium">{option.name}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </Section>
+
+            <Section
+              title={<Trans>Sidebar Layout</Trans>}
+              description={<Trans>Adjust sidebar style and behavior.</Trans>}
+              icon={Layout}
+            >
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    <Trans>Variant</Trans>
+                  </Label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {['sidebar', 'floating', 'inset'].map((value) => (
+                      <div
+                        key={value}
+                        role="button"
+                        onClick={() =>
+                          updateSidebarConfig({
+                            variant: value as 'sidebar' | 'floating' | 'inset',
+                          })
+                        }
+                        className={cn(
+                          'rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 text-center',
+                          sidebarConfig.variant === value
+                            ? 'border-primary bg-primary/5'
+                            : 'border-muted bg-transparent',
+                        )}
+                      >
+                        <div className="text-sm font-medium capitalize">
+                          {value === 'sidebar' ? (
+                            <Trans>Default</Trans>
+                          ) : value === 'floating' ? (
+                            <Trans>Floating</Trans>
+                          ) : (
+                            <Trans>Inset</Trans>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    <Trans>Collapsible</Trans>
+                  </Label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { value: 'offcanvas', label: <Trans>Off Canvas</Trans> },
+                      { value: 'icon', label: <Trans>Icon</Trans> },
+                      { value: 'none', label: <Trans>None</Trans> },
+                    ].map((option) => (
+                      <div
+                        key={option.value}
+                        role="button"
+                        onClick={() => {
+                          updateSidebarConfig({
+                            collapsible: option.value as
+                              | 'offcanvas'
+                              | 'icon'
+                              | 'none',
+                          });
+                          if (
+                            option.value === 'icon' &&
+                            !isMobile &&
+                            sidebarState === 'expanded'
+                          ) {
+                            toggleSidebar();
+                          }
+                        }}
+                        className={cn(
+                          'rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 text-center',
+                          sidebarConfig.collapsible === option.value
+                            ? 'border-primary bg-primary/5'
+                            : 'border-muted bg-transparent',
+                        )}
+                      >
+                        <div className="text-sm font-medium">
+                          {option.label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    <Trans>Position</Trans>
+                  </Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { value: 'left', label: <Trans>Left</Trans> },
+                      { value: 'right', label: <Trans>Right</Trans> },
+                    ].map((option) => (
+                      <div
+                        key={option.value}
+                        role="button"
+                        onClick={() =>
+                          updateSidebarConfig({
+                            side: option.value as 'left' | 'right',
+                          })
+                        }
+                        className={cn(
+                          'rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 text-center',
+                          sidebarConfig.side === option.value
+                            ? 'border-primary bg-primary/5'
+                            : 'border-muted bg-transparent',
+                        )}
+                      >
+                        <div className="text-sm font-medium">
+                          {option.label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Section>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+          className="flex-1 xl:max-w-md 2xl:max-w-lg hidden lg:block"
+        >
+          <div className="sticky top-24 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                <Trans>Live Preview</Trans>
+              </h2>
+            </div>
+            <ThemePreview i18n={i18n} />
+          </div>
+        </motion.div>
+      </div>
+
+      <ImportModal
+        open={importModalOpen}
+        onOpenChange={setImportModalOpen}
+        onImport={handleImport}
+      />
+    </>
   );
 }
 
-// Reuseable Section Component
 function Section({
   title,
   description,
@@ -105,7 +437,7 @@ function Section({
 }: {
   title: React.ReactNode;
   description: React.ReactNode;
-  icon: any;
+  icon: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
 }) {
   return (
@@ -119,12 +451,16 @@ function Section({
           <p className="text-sm text-muted-foreground">{description}</p>
         </div>
       </div>
-      <div className="pl-0 sm:pl-[3.25rem]">{children}</div>
+      <div className="pl-0 sm:pl-[3.25rem] w-full">{children}</div>
     </div>
   );
 }
 
-function ThemePreview() {
+function ThemePreview({
+  i18n,
+}: {
+  i18n: ReturnType<typeof useLingui>['i18n'];
+}) {
   return (
     <Card className="overflow-hidden border-2 shadow-xl bg-background/50 backdrop-blur-xl">
       <div className="border-b bg-muted/30 p-4 flex items-center gap-2">
@@ -134,211 +470,55 @@ function ThemePreview() {
           <div className="w-3 h-3 rounded-full bg-emerald-500/50" />
         </div>
         <div className="ml-4 h-6 w-full max-w-[200px] rounded-md bg-background/50 text-[10px] flex items-center px-3 text-muted-foreground font-mono">
-          dashboard.example.com
+          dashboard.rust-srec.local
         </div>
       </div>
       <div className="p-6 space-y-6">
-        <div className="space-y-2">
-          <div className="h-2 w-1/3 rounded-full bg-primary/20" />
-          <div className="h-8 w-3/4 rounded-md bg-muted animate-pulse" />
-        </div>
-
         <div className="grid grid-cols-2 gap-4">
           <Card className="bg-card shadow-sm border p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                <Monitor className="w-4 h-4" />
-              </div>
-              <span className="text-xs text-muted-foreground">+24%</span>
-            </div>
             <div className="space-y-1">
-              <div className="text-2xl font-bold">1,234</div>
               <div className="text-xs text-muted-foreground">
-                Active Streams
+                <Trans>Status</Trans>
+              </div>
+              <div className="text-2xl font-bold">
+                <Trans>OK</Trans>
               </div>
             </div>
+            <Button size="sm" className="w-full">
+              <Trans>Primary</Trans>
+            </Button>
           </Card>
           <Card className="bg-card shadow-sm border p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-secondary-foreground">
-                <RotateCcw className="w-4 h-4" />
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">
+                <Trans>Action</Trans>
+              </div>
+              <div className="text-2xl font-bold">
+                <Trans>Run</Trans>
               </div>
             </div>
-            <div className="space-y-1">
-              <div className="text-2xl font-bold">56</div>
-              <div className="text-xs text-muted-foreground">Pending Tasks</div>
-            </div>
+            <Button size="sm" variant="secondary" className="w-full">
+              <Trans>Secondary</Trans>
+            </Button>
           </Card>
         </div>
 
-        <div className="space-y-4 p-4 rounded-xl border bg-muted/10">
-          <div className="space-y-2">
-            <Label>Example Input</Label>
-            <input
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              placeholder="Type something..."
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button className="w-full">Primary Action</Button>
-            <Button variant="secondary" className="w-full">
-              Secondary
-            </Button>
-          </div>
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground">
+            <Trans>Input</Trans>
+          </Label>
+          <Input placeholder={i18n._(msg`Type something...`)} />
+        </div>
+
+        <div className="flex gap-2">
+          <Button className="w-full">
+            <Trans>Primary Action</Trans>
+          </Button>
+          <Button variant="secondary" className="w-full">
+            <Trans>Secondary</Trans>
+          </Button>
         </div>
       </div>
     </Card>
-  );
-}
-
-function ThemeModeSelector() {
-  const { theme, setTheme } = useTheme();
-
-  return (
-    <div className="grid grid-cols-3 gap-3">
-      {[
-        { value: 'light', icon: Sun, label: <Trans>Light</Trans> },
-        { value: 'dark', icon: Moon, label: <Trans>Dark</Trans> },
-        { value: 'system', icon: Monitor, label: <Trans>System</Trans> },
-      ].map(({ value, icon: Icon, label }) => (
-        <div
-          key={value}
-          role="button"
-          onClick={() => setTheme(value)}
-          className={cn(
-            'flex flex-col items-center justify-between rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50',
-            theme === value
-              ? 'border-primary bg-primary/5'
-              : 'border-muted bg-transparent',
-          )}
-        >
-          <Icon
-            className={cn(
-              'w-6 h-6 mb-3',
-              theme === value ? 'text-primary' : 'text-muted-foreground',
-            )}
-          />
-          <span className="text-sm font-medium">{label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ThemeColorSelector() {
-  const { themeColor, setThemeColor } = useThemeStore();
-  const colors: { name: ThemeColor; class: string }[] = [
-    { name: 'zinc', class: 'bg-zinc-900 dark:bg-zinc-100' },
-    { name: 'slate', class: 'bg-slate-500' },
-    { name: 'stone', class: 'bg-stone-500' },
-    { name: 'gray', class: 'bg-gray-500' },
-    { name: 'neutral', class: 'bg-neutral-500' },
-    { name: 'red', class: 'bg-red-500' },
-    { name: 'rose', class: 'bg-rose-500' },
-    { name: 'orange', class: 'bg-orange-500' },
-    { name: 'green', class: 'bg-green-500' },
-    { name: 'blue', class: 'bg-blue-500' },
-    { name: 'yellow', class: 'bg-yellow-500' },
-    { name: 'violet', class: 'bg-violet-500' },
-    { name: 'teal', class: 'bg-teal-500' },
-    { name: 'cyan', class: 'bg-cyan-500' },
-    { name: 'indigo', class: 'bg-indigo-500' },
-    { name: 'pink', class: 'bg-pink-500' },
-    { name: 'purple', class: 'bg-purple-500' },
-    { name: 'fuchsia', class: 'bg-fuchsia-500' },
-    { name: 'emerald', class: 'bg-emerald-500' },
-    { name: 'sky', class: 'bg-sky-500' },
-    { name: 'lime', class: 'bg-lime-500' },
-    { name: 'amber', class: 'bg-amber-500' },
-  ];
-
-  return (
-    <div className="flex flex-wrap gap-3">
-      {colors.map((color) => (
-        <button
-          key={color.name}
-          onClick={() => setThemeColor(color.name)}
-          className={cn(
-            'group relative flex items-center justify-center w-10 h-10 rounded-full transition-all hover:scale-110 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
-            themeColor === color.name &&
-              'ring-2 ring-primary ring-offset-2 scale-110',
-          )}
-        >
-          <span
-            className={cn('w-8 h-8 rounded-full shadow-sm', color.class)}
-          ></span>
-          {themeColor === color.name && (
-            <Check className="absolute w-4 h-4 text-white mix-blend-difference" />
-          )}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ThemeRadiusSelector() {
-  const { radius, setRadius } = useThemeStore();
-  const radii = [0, 0.3, 0.5, 0.625, 0.75, 1.0];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground space-x-2">
-          <span>Sharp</span>
-          <span className="text-xs font-mono opacity-50">0px</span>
-        </span>
-        <span className="font-mono font-medium">{radius}rem</span>
-        <span className="text-muted-foreground space-x-2">
-          <span className="text-xs font-mono opacity-50">16px</span>
-          <span>Rounded</span>
-        </span>
-      </div>
-      <div className="relative pt-2">
-        <Slider
-          defaultValue={[radius]}
-          min={0}
-          max={1.0}
-          step={0.1}
-          // Slider doesn't handle arbitrary steps easily if not linear, but radii are roughly linear.
-          // Let's use buttons for precision as before, or a slider that snaps.
-          // Actually buttons are better for specific tailwind radii.
-          className="hidden" // Hiding slider for now, using buttons below.
-        />
-        <div className="flex justify-between gap-2 p-1 bg-muted/30 rounded-lg border">
-          {radii.map((r) => (
-            <button
-              key={r}
-              onClick={() => setRadius(r as any)}
-              className={cn(
-                'flex-1 py-1.5 rounded-md text-xs font-medium transition-all',
-                radius === r
-                  ? 'bg-background text-foreground shadow-sm ring-1 ring-black/5 dark:ring-white/10'
-                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
-              )}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ThemeGlassSelector() {
-  const { isGlassEnabled, setIsGlassEnabled } = useThemeStore();
-
-  return (
-    <div className="flex items-center justify-between rounded-xl border-2 p-4 transition-all hover:bg-muted/50 border-muted">
-      <div className="space-y-0.5">
-        <Label className="text-base">Glassmorphism</Label>
-        <p className="text-xs text-muted-foreground">
-          <Trans>
-            Apply a blur effect to the background of cards and sidebars.
-          </Trans>
-        </p>
-      </div>
-      <Switch checked={isGlassEnabled} onCheckedChange={setIsGlassEnabled} />
-    </div>
   );
 }

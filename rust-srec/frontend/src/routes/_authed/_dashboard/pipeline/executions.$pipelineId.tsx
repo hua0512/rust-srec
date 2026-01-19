@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { t, plural } from '@lingui/core/macro';
+import { msg, t, plural } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -76,24 +76,26 @@ function PipelineExecutionPage() {
   const retryMutation = useMutation({
     mutationFn: (id: string) => retryDagSteps({ data: id }),
     onSuccess: () => {
-      toast.success(t`Failed steps retry initiated`);
+      toast.success(i18n._(msg`Failed steps retry initiated`));
       queryClient.invalidateQueries({
         queryKey: ['pipeline', 'executions', pipelineId],
       });
     },
-    onError: () => toast.error(t`Failed to retry steps`),
+    onError: () => toast.error(i18n._(msg`Failed to retry steps`)),
   });
 
   const cancelMutation = useMutation({
     mutationFn: (pipelineId: string) => cancelDag({ data: pipelineId }),
     onSuccess: (result) => {
-      toast.success(t`Cancelled ${result.cancelled_steps} steps in pipeline`);
+      toast.success(
+        i18n._(msg`Cancelled ${result.cancelled_steps} steps in pipeline`),
+      );
       queryClient.invalidateQueries({
         queryKey: ['pipeline', 'executions', pipelineId],
       });
       queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
-    onError: () => toast.error(t`Failed to cancel pipeline`),
+    onError: () => toast.error(i18n._(msg`Failed to cancel pipeline`)),
   });
 
   if (isLoading || !dag) {
@@ -213,15 +215,15 @@ function PipelineExecutionPage() {
                       )}
                       {i18n._(
                         overallStatus === 'PENDING'
-                          ? t`Pending`
+                          ? msg`Pending`
                           : overallStatus === 'PROCESSING'
-                            ? t`Processing`
+                            ? msg`Processing`
                             : overallStatus === 'COMPLETED'
-                              ? t`Completed`
+                              ? msg`Completed`
                               : overallStatus === 'FAILED'
-                                ? t`Failed`
+                                ? msg`Failed`
                                 : overallStatus === 'INTERRUPTED'
-                                  ? t`Interrupted`
+                                  ? msg`Interrupted`
                                   : overallStatus,
                       )}
                     </Badge>
@@ -279,25 +281,25 @@ function PipelineExecutionPage() {
         >
           <StatsCard
             icon={<Timer className="h-5 w-5 text-blue-400" />}
-            label={t`Progress`}
+            label={i18n._(msg`Progress`)}
             value={`${(dag.progress_percent || 0).toFixed(1)}%`}
             delay={0.1}
           />
           <StatsCard
             icon={<Layers className="h-5 w-5 text-purple-400" />}
-            label={t`Total Steps`}
+            label={i18n._(msg`Total Steps`)}
             value={dag.total_steps}
             delay={0.2}
           />
           <StatsCard
             icon={<CheckCircle2 className="h-5 w-5 text-emerald-400" />}
-            label={t`Completed`}
+            label={i18n._(msg`Completed`)}
             value={dag.completed_steps}
             delay={0.3}
           />
           <StatsCard
             icon={<Calendar className="h-5 w-5 text-orange-400" />}
-            label={t`Started`}
+            label={i18n._(msg`Started`)}
             value={i18n.date(dag.created_at, { timeStyle: 'short' })}
             subtext={i18n.date(dag.created_at, { dateStyle: 'medium' })}
             delay={0.4}
@@ -452,16 +454,16 @@ function StepCard({
                 >
                   {i18n._(
                     step.status === 'PENDING'
-                      ? t`Pending`
+                      ? msg`Pending`
                       : step.status === 'PROCESSING'
-                        ? t`Processing`
+                        ? msg`Processing`
                         : step.status === 'COMPLETED'
-                          ? t`Completed`
+                          ? msg`Completed`
                           : step.status === 'FAILED'
-                            ? t`Failed`
+                            ? msg`Failed`
                             : step.status === 'CANCELLED'
-                              ? t`Cancelled`
-                              : step.status,
+                              ? msg`Cancelled`
+                              : ({ id: step.status } as any),
                   )}
                 </span>
                 {isCompleted && (
@@ -480,10 +482,9 @@ function StepCard({
                   {step.outputs.length}
                 </span>
                 <span className="text-xs opacity-60 font-medium">
-                  {plural(step.outputs.length, {
-                    one: 'file',
-                    other: 'files',
-                  })}
+                  {t(
+                    i18n,
+                  )`${plural(step.outputs.length, { one: 'file', other: 'files' })}`}
                 </span>
               </div>
             </div>

@@ -6,7 +6,7 @@ import { ProcessorConfigManager } from '../processors/processor-config-manager';
 import { motion } from 'motion/react';
 import { UseFormReturn } from 'react-hook-form';
 import { toast } from 'sonner';
-import { t } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import {
   Card,
@@ -29,7 +29,7 @@ export function PresetConfigForm({
   const loadTemplate = (templateKey: keyof typeof PRESET_TEMPLATES) => {
     const template = PRESET_TEMPLATES[templateKey];
     form.setValue('config', template.value);
-    toast.info(t`Loaded template: ${i18n._(template.label)}`);
+    toast.info(i18n._(msg`Loaded template: ${i18n._(template.label)}`));
   };
 
   return (

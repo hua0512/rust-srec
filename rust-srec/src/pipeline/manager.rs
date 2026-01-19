@@ -13,9 +13,10 @@ use super::coordination::{
     PairedSegmentCoordinator, PairedSegmentOutputs, SessionCompleteCoordinator, SessionOutputs,
     SourceType,
 };
-use super::dag_scheduler::DagCompletionInfo;
-use super::dag_scheduler::{DagCreationResult, DagScheduler};
-use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
+use super::dag_scheduler::{
+    DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagScheduler,
+};
+use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, JobStatus, QueueDepthStatus};
 use super::processors::{
     AssBurnInProcessor, AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor,
     DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor, MetadataProcessor,
@@ -25,6 +26,7 @@ use super::progress::JobProgressSnapshot;
 use super::purge::{JobPurgeService, PurgeConfig};
 use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
+use crate::Error;
 use crate::Result;
 use crate::config::ConfigService;
 use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
@@ -78,6 +80,7 @@ const SESSION_COMPLETE_CLEANUP_INTERVAL_SECS: u64 = 10 * 60;
 // an event that may never re-run `try_trigger_session_complete`.
 const SESSION_COMPLETE_RETRY_INTERVAL_SECS: u64 = 5;
 const PAIRED_SEGMENT_TTL_SECS: u64 = 6 * 60 * 60;
+const DAG_COMPLETION_DEDUP_TTL_SECS: u64 = 60 * 60;
 
 fn parse_trailing_u32(value: &str) -> Option<u32> {
     let bytes = value.as_bytes();
@@ -240,6 +243,8 @@ pub struct PipelineManager<
     dag_segment_contexts: DashMap<String, SegmentDagContext>,
     /// DAG execution -> paired-segment DAG context mapping (for gating session-complete).
     paired_dag_contexts: DashMap<String, PairedDagContext>,
+    /// DAG execution IDs already processed by `handle_dag_completion` (best-effort dedupe).
+    handled_dag_completions: DashMap<String, std::time::Instant>,
 
     /// DAG repository for DAG pipeline persistence.
     dag_repository: Option<Arc<dyn DagRepository>>,
@@ -351,6 +356,7 @@ where
             paired_segment_pipelines: DashMap::new(),
             dag_segment_contexts: DashMap::new(),
             paired_dag_contexts: DashMap::new(),
+            handled_dag_completions: DashMap::new(),
             dag_repository: None,
             job_repository: None,
             dag_scheduler: None,
@@ -425,6 +431,7 @@ where
             paired_segment_pipelines: DashMap::new(),
             dag_segment_contexts: DashMap::new(),
             paired_dag_contexts: DashMap::new(),
+            handled_dag_completions: DashMap::new(),
             dag_repository: None,
             job_repository: Some(job_repository),
             dag_scheduler: None,
@@ -631,6 +638,10 @@ where
                                 true
                             }
                         });
+
+                        cleanup_manager.handled_dag_completions.retain(|_, ts| {
+                            now.duration_since(*ts).as_secs() <= DAG_COMPLETION_DEDUP_TTL_SECS
+                        });
                     }
                 }
             }
@@ -703,6 +714,17 @@ where
     }
 
     async fn handle_dag_completion(&self, completion: DagCompletionInfo) {
+        let dag_id = completion.dag_id.clone();
+
+        debug!(
+            dag_id = %completion.dag_id,
+            streamer_id = ?completion.streamer_id,
+            session_id = ?completion.session_id,
+            succeeded = completion.succeeded,
+            leaf_outputs = %completion.leaf_outputs.len(),
+            "DAG completion received"
+        );
+
         if let Some(session_id) = completion.session_id.as_deref()
             && let Some(mut entry) = self.session_complete_pipelines.get_mut(session_id)
         {
@@ -714,7 +736,16 @@ where
             entry.last_seen = std::time::Instant::now();
         }
 
-        if let Some((_, ctx)) = self.dag_segment_contexts.remove(&completion.dag_id) {
+        if self
+            .handled_dag_completions
+            .insert(dag_id.clone(), std::time::Instant::now())
+            .is_some()
+        {
+            trace!(dag_id = %dag_id, "Ignoring duplicate DAG completion");
+            return;
+        }
+
+        if let Some((_, ctx)) = self.dag_segment_contexts.remove(&dag_id) {
             if let Some(session_id) = completion.session_id.as_deref()
                 && session_id != ctx.session_id
             {
@@ -734,6 +765,16 @@ where
                     .collect();
 
                 let paired_enabled = self.paired_segment_pipelines.contains_key(&ctx.session_id);
+                debug!(
+                    dag_id = %dag_id,
+                    session_id = %ctx.session_id,
+                    streamer_id = %ctx.streamer_id,
+                    segment_index = %ctx.segment_index,
+                    source = ?ctx.source,
+                    leaf_outputs = %leaf_outputs.len(),
+                    paired_enabled = %paired_enabled,
+                    "Processing successful DAG completion with segment context"
+                );
                 if paired_enabled {
                     self.session_complete_coordinator.on_dag_complete(
                         &ctx.session_id,
@@ -768,6 +809,14 @@ where
                     );
                 }
             } else {
+                warn!(
+                    dag_id = %dag_id,
+                    session_id = %ctx.session_id,
+                    streamer_id = %ctx.streamer_id,
+                    segment_index = %ctx.segment_index,
+                    source = ?ctx.source,
+                    "DAG failed for segment context"
+                );
                 self.session_complete_coordinator
                     .on_dag_failed(&ctx.session_id, ctx.source);
             }
@@ -776,7 +825,7 @@ where
             return;
         }
 
-        if let Some((_, ctx)) = self.paired_dag_contexts.remove(&completion.dag_id) {
+        if let Some((_, ctx)) = self.paired_dag_contexts.remove(&dag_id) {
             if let Some(session_id) = completion.session_id.as_deref()
                 && session_id != ctx.session_id
             {
@@ -814,10 +863,206 @@ where
             return;
         }
 
-        trace!(
-            dag_id = %completion.dag_id,
+        if self.handle_dag_completion_without_context(completion).await {
+            return;
+        }
+
+        let _ = self.handled_dag_completions.remove(&dag_id);
+        debug!(
+            dag_id = %dag_id,
             "Ignoring DAG completion without segment context"
         );
+    }
+
+    async fn handle_dag_completion_without_context(&self, completion: DagCompletionInfo) -> bool {
+        let Some(session_id) = completion.session_id.as_deref() else {
+            return false;
+        };
+
+        let tracking_session_complete = self.session_complete_pipelines.contains_key(session_id);
+        let paired_enabled = self.paired_segment_pipelines.contains_key(session_id);
+        if !tracking_session_complete && !paired_enabled {
+            return false;
+        }
+
+        let Some(repo) = &self.dag_repository else {
+            trace!(
+                dag_id = %completion.dag_id,
+                session_id = %session_id,
+                "DAG repository not configured; cannot recover completion context"
+            );
+            return false;
+        };
+
+        let dag = match repo.get_dag(&completion.dag_id).await {
+            Ok(dag) => dag,
+            Err(e) => {
+                warn!(
+                    dag_id = %completion.dag_id,
+                    error = %e,
+                    "Failed to load DAG execution for completion recovery"
+                );
+                return false;
+            }
+        };
+
+        if let Some(db_session_id) = dag.session_id.as_deref()
+            && db_session_id != session_id
+        {
+            warn!(
+                dag_id = %completion.dag_id,
+                completion_session_id = %session_id,
+                db_session_id = %db_session_id,
+                "DAG completion session_id mismatch (db vs completion)"
+            );
+        }
+
+        let Some(segment_source) = dag.segment_source.as_deref() else {
+            trace!(
+                dag_id = %completion.dag_id,
+                session_id = %session_id,
+                "DAG completion has no segment metadata; ignoring"
+            );
+            return false;
+        };
+
+        match segment_source {
+            "video" | "danmu" => {
+                let Some(raw_index) = dag.segment_index else {
+                    warn!(
+                        dag_id = %completion.dag_id,
+                        session_id = %session_id,
+                        segment_source = %segment_source,
+                        "DAG completion missing segment_index metadata"
+                    );
+                    return false;
+                };
+                let Ok(segment_index) = u32::try_from(raw_index) else {
+                    warn!(
+                        dag_id = %completion.dag_id,
+                        session_id = %session_id,
+                        segment_source = %segment_source,
+                        segment_index = %raw_index,
+                        "DAG completion has invalid segment_index metadata"
+                    );
+                    return false;
+                };
+
+                let source = match segment_source {
+                    "video" => SourceType::Video,
+                    "danmu" => SourceType::Danmu,
+                    _ => unreachable!("match guards ensure only video/danmu"),
+                };
+
+                if completion.succeeded {
+                    let leaf_outputs: Vec<PathBuf> = completion
+                        .leaf_outputs
+                        .into_iter()
+                        .map(PathBuf::from)
+                        .collect();
+
+                    if paired_enabled {
+                        if tracking_session_complete {
+                            self.session_complete_coordinator.on_dag_complete(
+                                session_id,
+                                segment_index,
+                                leaf_outputs.clone(),
+                                source,
+                            );
+                        }
+
+                        let streamer_id = dag
+                            .streamer_id
+                            .as_deref()
+                            .or(completion.streamer_id.as_deref());
+
+                        if let Some(streamer_id) = streamer_id {
+                            let paired = match source {
+                                SourceType::Video => {
+                                    self.paired_segment_coordinator.on_video_ready(
+                                        session_id,
+                                        streamer_id,
+                                        segment_index,
+                                        leaf_outputs,
+                                    )
+                                }
+                                SourceType::Danmu => {
+                                    self.paired_segment_coordinator.on_danmu_ready(
+                                        session_id,
+                                        streamer_id,
+                                        segment_index,
+                                        leaf_outputs,
+                                    )
+                                }
+                            };
+
+                            if let Some(ready) = paired {
+                                self.try_trigger_paired_segment(ready).await;
+                            }
+                        } else {
+                            warn!(
+                                dag_id = %completion.dag_id,
+                                session_id = %session_id,
+                                segment_index = %segment_index,
+                                segment_source = %segment_source,
+                                "Missing streamer_id for paired-segment coordination"
+                            );
+                        }
+                    } else if tracking_session_complete {
+                        self.session_complete_coordinator.on_dag_complete(
+                            session_id,
+                            segment_index,
+                            leaf_outputs,
+                            source,
+                        );
+                    }
+                } else if tracking_session_complete {
+                    self.session_complete_coordinator
+                        .on_dag_failed(session_id, source);
+                }
+
+                if tracking_session_complete {
+                    self.try_trigger_session_complete(session_id).await;
+                }
+
+                true
+            }
+            "paired" => {
+                if !tracking_session_complete {
+                    return false;
+                }
+
+                if completion.succeeded {
+                    trace!(
+                        dag_id = %completion.dag_id,
+                        session_id = %session_id,
+                        "Paired-segment DAG completed (recovered context)"
+                    );
+                    self.session_complete_coordinator
+                        .on_paired_dag_complete(session_id);
+                } else {
+                    trace!(
+                        dag_id = %completion.dag_id,
+                        session_id = %session_id,
+                        "Paired-segment DAG failed (recovered context)"
+                    );
+                    self.session_complete_coordinator
+                        .on_paired_dag_failed(session_id);
+                }
+
+                self.try_trigger_session_complete(session_id).await;
+                true
+            }
+            other => {
+                trace!(
+                    dag_id = %completion.dag_id,
+                    session_id = %session_id,
+                    segment_source = %other,
+                    "Unknown DAG segment_source; ignoring"
+                );
+                false
+            }
+        }
     }
 
     async fn try_trigger_session_complete(&self, session_id: &str) {
@@ -839,6 +1084,24 @@ where
             return;
         };
 
+        debug!(
+            session_id = %session_id,
+            video_outputs = %outputs.video_outputs.len(),
+            danmu_outputs = %outputs.danmu_outputs.len(),
+            "try_trigger returned outputs, attempting to retrieve pipeline definition"
+        );
+
+        let pipeline_keys: Vec<_> = self
+            .session_complete_pipelines
+            .iter()
+            .map(|e| e.key().clone())
+            .collect();
+        debug!(
+            session_id = %session_id,
+            tracked_sessions = ?pipeline_keys,
+            "Current session_complete_pipelines keys before remove"
+        );
+
         let Some((_, pipeline_entry)) = self.session_complete_pipelines.remove(session_id) else {
             warn!(
                 session_id = %session_id,
@@ -846,6 +1109,13 @@ where
             );
             return;
         };
+
+        debug!(
+            session_id = %session_id,
+            pipeline_name = %pipeline_entry.definition.name,
+            pipeline_steps = %pipeline_entry.definition.steps.len(),
+            "Pipeline definition retrieved, calling run_session_complete_pipeline"
+        );
 
         self.run_session_complete_pipeline(outputs, pipeline_entry.definition)
             .await;
@@ -866,7 +1136,7 @@ where
                 if session.end_time.is_some() {
                     true
                 } else {
-                    trace!(
+                    debug!(
                         session_id = %session_id,
                         "Session not ended yet; delaying session-complete pipeline trigger"
                     );
@@ -889,6 +1159,14 @@ where
         outputs: SessionOutputs,
         pipeline_def: DagPipelineDefinition,
     ) {
+        debug!(
+            session_id = %outputs.session_id,
+            streamer_id = %outputs.streamer_id,
+            pipeline_name = %pipeline_def.name,
+            pipeline_steps = %pipeline_def.steps.len(),
+            "Entered run_session_complete_pipeline"
+        );
+
         // Skip if pipeline has no steps configured
         if pipeline_def.is_empty() {
             debug!(
@@ -1131,6 +1409,13 @@ where
                 created_at: std::time::Instant::now(),
             };
             Some(Box::new(move |dag_id: &str| {
+                debug!(
+                    dag_id = %dag_id,
+                    session_id = %ctx.session_id,
+                    streamer_id = %ctx.streamer_id,
+                    segment_index = %ctx.segment_index,
+                    "Tracking paired-segment DAG context"
+                );
                 contexts.insert(dag_id.to_string(), ctx);
             }) as BeforeRootJobsHook)
         } else {
@@ -1144,6 +1429,10 @@ where
                 input_paths,
                 pipeline_def,
                 before_root_jobs,
+                Some(DagExecutionMetadata {
+                    segment_index: Some(outputs.segment_index),
+                    segment_source: Some("paired".to_string()),
+                }),
             )
             .await
         {
@@ -1353,8 +1642,28 @@ where
             input_paths,
             dag_definition,
             None,
+            None,
         )
         .await
+    }
+
+    /// Cancel a DAG execution.
+    ///
+    /// This also notifies the paired/session coordinators so session-complete orchestration
+    /// can't get stuck waiting for a cancelled DAG to finish.
+    pub async fn cancel_dag(&self, dag_id: &str) -> Result<u64> {
+        let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
+            crate::Error::Validation(
+                "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+            )
+        })?;
+
+        let update = dag_scheduler.cancel_dag_with_completion(dag_id).await?;
+        if let Some(completion) = update.completion {
+            self.handle_dag_completion(completion).await;
+        }
+
+        Ok(update.cancelled_count)
     }
 
     async fn create_dag_pipeline_internal(
@@ -1364,6 +1673,7 @@ where
         input_paths: Vec<String>,
         dag_definition: DagPipelineDefinition,
         before_root_jobs: Option<BeforeRootJobsHook>,
+        metadata: Option<DagExecutionMetadata>,
     ) -> Result<DagCreationResult> {
         let dag_scheduler = self.dag_scheduler.as_ref().ok_or_else(|| {
             crate::Error::Validation(
@@ -1396,6 +1706,7 @@ where
                 streamer_name.clone(),
                 session_title.clone(),
                 platform.clone(),
+                metadata,
                 before_root_jobs,
             )
             .await?;
@@ -1456,13 +1767,13 @@ where
             }
 
             // Find workflow steps that need expansion
-            let workflow_steps: Vec<(usize, String, Vec<String>)> = dag
+            let workflow_steps: Vec<(usize, String)> = dag
                 .steps
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, step)| {
                     if let PipelineStep::Workflow { name } = &step.step {
-                        Some((idx, name.clone(), step.depends_on.clone()))
+                        Some((idx, name.clone()))
                     } else {
                         None
                     }
@@ -1474,20 +1785,14 @@ where
             }
 
             // Process each workflow step
-            for (_, workflow_name, _) in workflow_steps.iter().rev() {
-                // Process in reverse to maintain index validity
-                let workflow_step_idx = dag
-                    .steps
-                    .iter()
-                    .position(|s| matches!(&s.step, PipelineStep::Workflow { name } if name == workflow_name))
-                    .unwrap();
-
+            for (workflow_step_idx, workflow_name) in workflow_steps.into_iter().rev() {
+                // Process in reverse to maintain index validity.
                 let workflow_step = &dag.steps[workflow_step_idx];
                 let workflow_step_id = workflow_step.id.clone();
                 let workflow_step_deps = workflow_step.depends_on.clone();
 
                 // Look up the workflow
-                let workflow_dag = self.lookup_workflow(workflow_name).await?;
+                let workflow_dag = self.lookup_workflow(&workflow_name).await?;
 
                 // Find workflow's root and leaf steps
                 let root_step_ids: HashSet<String> = workflow_dag
@@ -1748,6 +2053,14 @@ where
                             created_at: std::time::Instant::now(),
                         };
                         Some(Box::new(move |dag_id: &str| {
+                            debug!(
+                                dag_id = %dag_id,
+                                session_id = %ctx.session_id,
+                                streamer_id = %ctx.streamer_id,
+                                segment_index = %ctx.segment_index,
+                                source = ?ctx.source,
+                                "Tracking per-segment DAG context"
+                            );
                             contexts.insert(dag_id.to_string(), ctx);
                         }) as Box<dyn FnOnce(&str) + Send>)
                     } else {
@@ -1761,6 +2074,10 @@ where
                             vec![segment_path.clone()],
                             dag,
                             before_root_jobs,
+                            Some(DagExecutionMetadata {
+                                segment_index: Some(segment_index),
+                                segment_source: Some("video".to_string()),
+                            }),
                         )
                         .await
                     {
@@ -1845,6 +2162,35 @@ where
                         .on_video_complete(&session_id);
                     self.try_trigger_session_complete(&session_id).await;
                 }
+            }
+            DownloadManagerEvent::DownloadCancelled {
+                streamer_id,
+                session_id,
+                cause,
+                ..
+            } => {
+                info!(
+                    streamer_id = %streamer_id,
+                    session_id = %session_id,
+                    cause = %cause.as_str(),
+                    "Download cancelled"
+                );
+
+                // Do not treat DownloadCancelled as stream completion for session-complete purposes.
+                //
+                // On mesio (and other engines), cancellation is a *stop request*; the final segment
+                // may still be flushing and `SegmentCompleted`/`DownloadCompleted` can arrive later.
+                // Marking video complete here can trigger the session-complete pipeline before the
+                // final video output is recorded, resulting in missing `.flv` inputs/outputs.
+                if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
+                    entry.last_seen = std::time::Instant::now();
+                }
+                debug!(
+                    streamer_id = %streamer_id,
+                    session_id = %session_id,
+                    cause = %cause.as_str(),
+                    "Download cancellation observed; waiting for DownloadCompleted before marking video complete"
+                );
             }
             _ => {}
         }
@@ -1979,8 +2325,16 @@ where
                 // Only process if we're tracking this session for session-complete coordination.
                 // If no session_complete_pipeline is configured, init_session was never called
                 // and we don't need to track danmu completion.
-                if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
-                    entry.last_seen = std::time::Instant::now();
+                let tracking_session_complete = {
+                    if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
+                        entry.last_seen = std::time::Instant::now();
+                        true
+                    } else {
+                        false
+                    }
+                };
+
+                if tracking_session_complete {
                     self.session_complete_coordinator
                         .on_danmu_complete(&session_id);
                     self.try_trigger_session_complete(&session_id).await;
@@ -2090,6 +2444,14 @@ where
                             created_at: std::time::Instant::now(),
                         };
                         Some(Box::new(move |dag_id: &str| {
+                            debug!(
+                                dag_id = %dag_id,
+                                session_id = %ctx.session_id,
+                                streamer_id = %ctx.streamer_id,
+                                segment_index = %ctx.segment_index,
+                                source = ?ctx.source,
+                                "Tracking per-segment DAG context"
+                            );
                             contexts.insert(dag_id.to_string(), ctx);
                         }) as Box<dyn FnOnce(&str) + Send>)
                     } else {
@@ -2103,6 +2465,10 @@ where
                             vec![segment_path.clone()],
                             dag,
                             before_root_jobs,
+                            Some(DagExecutionMetadata {
+                                segment_index: Some(segment_index),
+                                segment_source: Some("danmu".to_string()),
+                            }),
                         )
                         .await
                     {
@@ -2336,6 +2702,45 @@ where
     /// Retry a failed job.
     /// Delegates to JobQueue.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
+        // If this is a DAG step job, retrying the underlying job is not enough: the parent DAG
+        // must be reset to a non-terminal state and the step execution must be marked active
+        // again so downstream steps can be scheduled when the job completes.
+        let job_snapshot = self
+            .job_queue
+            .get_job(id)
+            .await?
+            .ok_or_else(|| Error::not_found("Job", id))?;
+
+        if job_snapshot.status != JobStatus::Failed && job_snapshot.status != JobStatus::Interrupted
+        {
+            return Err(Error::InvalidStateTransition {
+                from: job_snapshot.status.as_str().to_string(),
+                to: "PENDING".to_string(),
+            });
+        }
+
+        if let Some(step_exec_id) = job_snapshot.dag_step_execution_id.as_deref() {
+            let Some(dag_scheduler) = &self.dag_scheduler else {
+                return Err(Error::Validation(
+                    "DAG scheduler not configured. Call with_dag_repository() first.".to_string(),
+                ));
+            };
+
+            let dag_id = match job_snapshot.pipeline_id.as_deref() {
+                Some(existing_dag_id) => existing_dag_id.to_string(),
+                None => dag_scheduler.get_step_execution(step_exec_id).await?.dag_id,
+            };
+
+            let dag = dag_scheduler.get_dag_status(&dag_id).await?;
+            if matches!(
+                dag.get_status(),
+                Some(crate::database::models::DagExecutionStatus::Failed)
+                    | Some(crate::database::models::DagExecutionStatus::Interrupted)
+            ) {
+                dag_scheduler.reset_dag_for_retry(&dag_id).await?;
+            }
+        }
+
         let job = self.job_queue.retry_job(id).await?;
 
         // Emit event for the retried job
@@ -2658,9 +3063,12 @@ impl Default for PipelineManager {
 mod tests {
     use super::*;
     use crate::database::models::{
-        DanmuStatisticsDbModel, LiveSessionDbModel, OutputFilters, SessionFilters,
+        DagExecutionDbModel, DagStepExecutionDbModel, DanmuStatisticsDbModel, JobDbModel,
+        JobExecutionLogDbModel, LiveSessionDbModel, OutputFilters, PipelinePreset, SessionFilters,
     };
+    use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
     use async_trait::async_trait;
+    use std::collections::HashMap;
     use std::sync::Mutex;
 
     struct TestSessionRepository {
@@ -2783,6 +3191,579 @@ mod tests {
         }
     }
 
+    struct TestDagRepository {
+        dags: Mutex<HashMap<String, DagExecutionDbModel>>,
+    }
+
+    impl TestDagRepository {
+        fn new() -> Self {
+            Self {
+                dags: Mutex::new(HashMap::new()),
+            }
+        }
+
+        fn insert(&self, dag: DagExecutionDbModel) {
+            self.dags
+                .lock()
+                .expect("lock poisoned")
+                .insert(dag.id.clone(), dag);
+        }
+    }
+
+    struct TestJobRepository {
+        jobs: Mutex<HashMap<String, JobDbModel>>,
+    }
+
+    impl TestJobRepository {
+        fn new() -> Self {
+            Self {
+                jobs: Mutex::new(HashMap::new()),
+            }
+        }
+
+        fn insert(&self, job: JobDbModel) {
+            self.jobs
+                .lock()
+                .expect("lock poisoned")
+                .insert(job.id.clone(), job);
+        }
+    }
+
+    #[async_trait]
+    impl crate::database::repositories::JobRepository for TestJobRepository {
+        async fn get_job(&self, id: &str) -> Result<JobDbModel> {
+            self.jobs
+                .lock()
+                .expect("lock poisoned")
+                .get(id)
+                .cloned()
+                .ok_or_else(|| crate::Error::not_found("Job", id))
+        }
+
+        async fn list_pending_jobs(&self, _job_type: &str) -> Result<Vec<JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_jobs_by_status(&self, _status: &str) -> Result<Vec<JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_recent_jobs(&self, _limit: i32) -> Result<Vec<JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn create_job(&self, job: &JobDbModel) -> Result<()> {
+            self.insert(job.clone());
+            Ok(())
+        }
+
+        async fn update_job_status(&self, _id: &str, _status: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn mark_job_failed(&self, _id: &str, _error: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn mark_job_interrupted(&self, _id: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_job_for_retry(&self, id: &str) -> Result<()> {
+            let now = chrono::Utc::now().to_rfc3339();
+            let mut jobs = self.jobs.lock().expect("lock poisoned");
+            let job = jobs
+                .get_mut(id)
+                .ok_or_else(|| crate::Error::not_found("Job", id))?;
+
+            match job.status.as_str() {
+                "FAILED" | "INTERRUPTED" => {
+                    job.status = "PENDING".to_string();
+                    job.started_at = None;
+                    job.completed_at = None;
+                    job.error = None;
+                    job.retry_count += 1;
+                    job.updated_at = now;
+                    Ok(())
+                }
+                other => Err(crate::Error::InvalidStateTransition {
+                    from: other.to_ascii_uppercase(),
+                    to: "PENDING".to_string(),
+                }),
+            }
+        }
+
+        async fn count_pending_jobs(&self, _job_types: Option<&[String]>) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn upsert_job_execution_progress(
+            &self,
+            _progress: &crate::database::models::JobExecutionProgressDbModel,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job_execution_progress(
+            &self,
+            _job_id: &str,
+        ) -> Result<Option<crate::database::models::JobExecutionProgressDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn claim_next_pending_job(
+            &self,
+            _job_types: Option<&[String]>,
+        ) -> Result<Option<JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job_execution_info(&self, _id: &str) -> Result<Option<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_execution_info(&self, _id: &str, _execution_info: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_state(&self, _id: &str, _state: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job(&self, _job: &JobDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_if_status(
+            &self,
+            _job: &JobDbModel,
+            _expected_status: &str,
+        ) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_interrupted_jobs(&self) -> Result<i32> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_processing_jobs(&self) -> Result<i32> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn cleanup_old_jobs(&self, _retention_days: i32) -> Result<i32> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_job(&self, _id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn purge_jobs_older_than(&self, _days: u32, _batch_size: u32) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_purgeable_jobs(&self, _days: u32, _limit: u32) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn add_execution_log(&self, _log: &JobExecutionLogDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn add_execution_logs(&self, _logs: &[JobExecutionLogDbModel]) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_execution_logs(&self, _job_id: &str) -> Result<Vec<JobExecutionLogDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_execution_logs(
+            &self,
+            _job_id: &str,
+            _pagination: &crate::database::models::Pagination,
+        ) -> Result<(Vec<JobExecutionLogDbModel>, u64)> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_execution_logs_for_job(&self, _job_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_jobs_filtered(
+            &self,
+            _filters: &crate::database::models::JobFilters,
+            _pagination: &crate::database::models::Pagination,
+        ) -> Result<(Vec<JobDbModel>, u64)> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_jobs_page_filtered(
+            &self,
+            _filters: &crate::database::models::JobFilters,
+            _pagination: &crate::database::models::Pagination,
+        ) -> Result<Vec<JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job_counts_by_status(&self) -> Result<crate::database::models::JobCounts> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_avg_processing_time(&self) -> Result<Option<f64>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn cancel_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<Vec<JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+    }
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct TestDagRepositoryForRetry {
+        dags: Mutex<HashMap<String, DagExecutionDbModel>>,
+        reset_calls: AtomicUsize,
+    }
+
+    impl TestDagRepositoryForRetry {
+        fn new() -> Self {
+            Self {
+                dags: Mutex::new(HashMap::new()),
+                reset_calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn insert(&self, dag: DagExecutionDbModel) {
+            self.dags
+                .lock()
+                .expect("lock poisoned")
+                .insert(dag.id.clone(), dag);
+        }
+
+        fn reset_calls(&self) -> usize {
+            self.reset_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl DagRepository for TestDagRepositoryForRetry {
+        async fn create_dag(&self, _dag: &DagExecutionDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel> {
+            self.dags
+                .lock()
+                .expect("lock poisoned")
+                .get(id)
+                .cloned()
+                .ok_or_else(|| crate::Error::not_found("DAG execution", id))
+        }
+
+        async fn update_dag_status(
+            &self,
+            _id: &str,
+            _status: &str,
+            _error: Option<&str>,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn increment_dag_completed(&self, _dag_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn increment_dag_failed(&self, _dag_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_dags(
+            &self,
+            _status: Option<&str>,
+            _session_id: Option<&str>,
+            _limit: u32,
+            _offset: u32,
+        ) -> Result<Vec<DagExecutionDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn count_dags(
+            &self,
+            _status: Option<&str>,
+            _session_id: Option<&str>,
+        ) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_dag(&self, _id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn create_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn create_steps(&self, _steps: &[DagStepExecutionDbModel]) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_step(&self, _id: &str) -> Result<DagStepExecutionDbModel> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_step_by_dag_and_step_id(
+            &self,
+            _dag_id: &str,
+            _step_id: &str,
+        ) -> Result<DagStepExecutionDbModel> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_steps_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
+            Ok(Vec::new())
+        }
+
+        async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_step_status(&self, _id: &str, _status: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_step_status_with_job(
+            &self,
+            _id: &str,
+            _status: &str,
+            _job_id: &str,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn complete_step_and_check_dependents(
+            &self,
+            _step_id: &str,
+            _outputs: &[String],
+        ) -> Result<Vec<crate::database::models::ReadyStep>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn fail_dag_and_cancel_steps(
+            &self,
+            _dag_id: &str,
+            _error: &str,
+        ) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
+            self.reset_calls.fetch_add(1, Ordering::SeqCst);
+            let mut dags = self.dags.lock().expect("lock poisoned");
+            let dag = dags
+                .get_mut(dag_id)
+                .ok_or_else(|| crate::Error::not_found("DAG execution", dag_id))?;
+            dag.status = crate::database::models::DagExecutionStatus::Processing
+                .as_str()
+                .to_string();
+            dag.completed_at = None;
+            dag.error = None;
+            Ok(())
+        }
+
+        async fn get_dependency_outputs(
+            &self,
+            _dag_id: &str,
+            _step_ids: &[String],
+        ) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn check_all_dependencies_complete(
+            &self,
+            _dag_id: &str,
+            _step_id: &str,
+        ) -> Result<bool> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_dag_stats(
+            &self,
+            _dag_id: &str,
+        ) -> Result<crate::database::models::DagExecutionStats> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_processing_job_ids(&self, _dag_id: &str) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_pending_root_steps(
+            &self,
+            _dag_id: &str,
+        ) -> Result<Vec<DagStepExecutionDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+    }
+
+    #[async_trait]
+    impl DagRepository for TestDagRepository {
+        async fn create_dag(&self, _dag: &DagExecutionDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel> {
+            self.dags
+                .lock()
+                .expect("lock poisoned")
+                .get(id)
+                .cloned()
+                .ok_or_else(|| crate::Error::not_found("DAG execution", id))
+        }
+
+        async fn update_dag_status(
+            &self,
+            _id: &str,
+            _status: &str,
+            _error: Option<&str>,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn increment_dag_completed(&self, _dag_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn increment_dag_failed(&self, _dag_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_dags(
+            &self,
+            _status: Option<&str>,
+            _session_id: Option<&str>,
+            _limit: u32,
+            _offset: u32,
+        ) -> Result<Vec<DagExecutionDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn count_dags(
+            &self,
+            _status: Option<&str>,
+            _session_id: Option<&str>,
+        ) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_dag(&self, _id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn create_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn create_steps(&self, _steps: &[DagStepExecutionDbModel]) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_step(&self, _id: &str) -> Result<DagStepExecutionDbModel> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_step_by_dag_and_step_id(
+            &self,
+            _dag_id: &str,
+            _step_id: &str,
+        ) -> Result<DagStepExecutionDbModel> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_steps_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_step_status(&self, _id: &str, _status: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_step_status_with_job(
+            &self,
+            _id: &str,
+            _status: &str,
+            _job_id: &str,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn complete_step_and_check_dependents(
+            &self,
+            _step_id: &str,
+            _outputs: &[String],
+        ) -> Result<Vec<crate::database::models::ReadyStep>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn fail_dag_and_cancel_steps(
+            &self,
+            _dag_id: &str,
+            _error: &str,
+        ) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_dag_for_retry(&self, _dag_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_dependency_outputs(
+            &self,
+            _dag_id: &str,
+            _step_ids: &[String],
+        ) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn check_all_dependencies_complete(
+            &self,
+            _dag_id: &str,
+            _step_id: &str,
+        ) -> Result<bool> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_dag_stats(
+            &self,
+            _dag_id: &str,
+        ) -> Result<crate::database::models::DagExecutionStats> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_processing_job_ids(&self, _dag_id: &str) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_pending_root_steps(
+            &self,
+            _dag_id: &str,
+        ) -> Result<Vec<DagStepExecutionDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+    }
+
     #[test]
     fn test_pipeline_manager_config_default() {
         let config = PipelineManagerConfig::default();
@@ -2805,6 +3786,62 @@ mod tests {
         assert_eq!(manager.queue_status(), QueueDepthStatus::Normal);
     }
 
+    #[tokio::test]
+    async fn test_retry_job_resets_failed_dag_when_job_is_dag_step() {
+        let job_repo = Arc::new(TestJobRepository::new());
+        let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
+
+        let dag_def = crate::database::models::DagPipelineDefinition::new(
+            "test",
+            vec![crate::database::models::DagStep::new(
+                "step-a",
+                crate::database::models::PipelineStep::Inline {
+                    processor: "remux".to_string(),
+                    config: serde_json::json!({}),
+                },
+            )],
+        );
+
+        let mut dag = DagExecutionDbModel::new(&dag_def, None, None);
+        dag.status = crate::database::models::DagExecutionStatus::Failed
+            .as_str()
+            .to_string();
+        let dag_id = dag.id.clone();
+        dag_repo.insert(dag);
+
+        let mut job = JobDbModel::new_pipeline_step(
+            "remux",
+            serde_json::to_string(&vec!["/in.flv".to_string()]).unwrap(),
+            "[]",
+            0,
+            None,
+            None,
+        );
+        job.pipeline_id = Some(dag_id.clone());
+        job.dag_step_execution_id = Some("step-exec-1".to_string());
+        job.status = "FAILED".to_string();
+        job.error = Some("boom".to_string());
+        job.completed_at = Some(chrono::Utc::now().to_rfc3339());
+        let job_id = job.id.clone();
+        job_repo.insert(job);
+
+        let mut config = PipelineManagerConfig::default();
+        config.purge.retention_days = 0;
+
+        let manager: PipelineManager = PipelineManager::with_repository(config, job_repo)
+            .with_dag_repository(dag_repo.clone());
+
+        let retried = manager.retry_job(&job_id).await.unwrap();
+        assert_eq!(
+            retried.status,
+            crate::pipeline::job_queue::JobStatus::Pending
+        );
+        assert_eq!(retried.retry_count, 1);
+        assert!(retried.error.is_none());
+
+        assert_eq!(dag_repo.reset_calls(), 1);
+    }
+
     #[test]
     fn test_set_worker_concurrency_clamps_to_max_workers() {
         let manager: PipelineManager = PipelineManager::new();
@@ -2818,6 +3855,114 @@ mod tests {
         manager.set_worker_concurrency(1, 3);
         assert_eq!(manager.cpu_pool.desired_max_workers(), 1);
         assert_eq!(manager.io_pool.desired_max_workers(), 3);
+    }
+
+    struct TestPipelinePresetRepository {
+        preset: PipelinePreset,
+    }
+
+    #[async_trait]
+    impl PipelinePresetRepository for TestPipelinePresetRepository {
+        async fn list_pipeline_presets(&self) -> Result<Vec<PipelinePreset>> {
+            Ok(vec![])
+        }
+
+        async fn list_pipeline_presets_filtered(
+            &self,
+            _filters: &PipelinePresetFilters,
+            _pagination: &Pagination,
+        ) -> Result<(Vec<PipelinePreset>, u64)> {
+            Ok((vec![], 0))
+        }
+
+        async fn get_pipeline_preset(&self, _id: &str) -> Result<Option<PipelinePreset>> {
+            Ok(None)
+        }
+
+        async fn get_pipeline_preset_by_name(&self, name: &str) -> Result<Option<PipelinePreset>> {
+            if name == self.preset.name {
+                Ok(Some(self.preset.clone()))
+            } else {
+                Ok(None)
+            }
+        }
+
+        async fn create_pipeline_preset(&self, _preset: &PipelinePreset) -> Result<()> {
+            Ok(())
+        }
+
+        async fn update_pipeline_preset(&self, _preset: &PipelinePreset) -> Result<()> {
+            Ok(())
+        }
+
+        async fn delete_pipeline_preset(&self, _id: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_expand_workflows_with_duplicate_names() {
+        let workflow_dag = DagPipelineDefinition::new(
+            "wf",
+            vec![
+                DagStep::new("A", PipelineStep::inline("noop", serde_json::json!({}))),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::inline("noop", serde_json::json!({})),
+                    vec!["A".to_string()],
+                ),
+            ],
+        );
+        let repo = Arc::new(TestPipelinePresetRepository {
+            preset: PipelinePreset::new("wf", workflow_dag),
+        });
+
+        let manager: PipelineManager = PipelineManager::new().with_pipeline_preset_repository(repo);
+
+        let parent = DagPipelineDefinition::new(
+            "parent",
+            vec![
+                DagStep {
+                    id: "W1".to_string(),
+                    step: PipelineStep::Workflow {
+                        name: "wf".to_string(),
+                    },
+                    depends_on: vec![],
+                },
+                DagStep {
+                    id: "W2".to_string(),
+                    step: PipelineStep::Workflow {
+                        name: "wf".to_string(),
+                    },
+                    depends_on: vec!["W1".to_string()],
+                },
+                DagStep::with_dependencies(
+                    "Z",
+                    PipelineStep::inline("noop", serde_json::json!({})),
+                    vec!["W2".to_string()],
+                ),
+            ],
+        );
+
+        let expanded = manager.expand_workflows_in_dag(parent).await.unwrap();
+
+        let mut deps_by_id: HashMap<String, Vec<String>> = HashMap::new();
+        for step in &expanded.steps {
+            deps_by_id.insert(step.id.clone(), step.depends_on.clone());
+        }
+
+        assert!(!deps_by_id.contains_key("W1"));
+        assert!(!deps_by_id.contains_key("W2"));
+
+        assert_eq!(deps_by_id.get("W1__A").unwrap(), &Vec::<String>::new());
+        assert_eq!(deps_by_id.get("W1__B").unwrap(), &vec!["W1__A".to_string()]);
+
+        // W2 depends on the *leaf* of W1 after expansion.
+        assert_eq!(deps_by_id.get("W2__A").unwrap(), &vec!["W1__B".to_string()]);
+        assert_eq!(deps_by_id.get("W2__B").unwrap(), &vec!["W2__A".to_string()]);
+
+        // Z depends on the *leaf* of W2 after expansion.
+        assert_eq!(deps_by_id.get("Z").unwrap(), &vec!["W2__B".to_string()]);
     }
 
     #[tokio::test]
@@ -3200,5 +4345,200 @@ mod tests {
             0
         );
         assert!(!manager.session_complete_pipelines.contains_key(&session_id));
+    }
+
+    #[tokio::test]
+    async fn test_session_complete_recovers_segment_dag_completion_without_context() {
+        let session_repo = Arc::new(TestSessionRepository::new(Some(
+            chrono::Utc::now().to_rfc3339(),
+        )));
+        let dag_repo = Arc::new(TestDagRepository::new());
+        let manager: PipelineManager = PipelineManager::new()
+            .with_session_repository(session_repo)
+            .with_dag_repository(dag_repo.clone());
+
+        let session_id = "session-1".to_string();
+        let streamer_id = "streamer-1".to_string();
+
+        manager.session_complete_pipelines.insert(
+            session_id.clone(),
+            SessionCompletePipelineEntry {
+                last_seen: std::time::Instant::now(),
+                definition: DagPipelineDefinition::new("empty", vec![]),
+            },
+        );
+
+        manager
+            .session_complete_coordinator
+            .init_session(&session_id, &streamer_id, false);
+        manager
+            .session_complete_coordinator
+            .on_dag_started(&session_id, SourceType::Video);
+        manager
+            .session_complete_coordinator
+            .on_video_complete(&session_id);
+
+        let dag_def = DagPipelineDefinition::new(
+            "test-dag",
+            vec![DagStep::new("A", PipelineStep::preset("remux"))],
+        );
+        let mut dag = DagExecutionDbModel::new(
+            &dag_def,
+            Some(streamer_id.clone()),
+            Some(session_id.clone()),
+        );
+        dag.segment_index = Some(0);
+        dag.segment_source = Some("video".to_string());
+        let dag_id = dag.id.clone();
+        dag_repo.insert(dag);
+
+        manager
+            .handle_dag_completion(DagCompletionInfo {
+                dag_id,
+                streamer_id: Some(streamer_id),
+                session_id: Some(session_id.clone()),
+                succeeded: true,
+                leaf_outputs: vec!["/out.mp4".to_string()],
+            })
+            .await;
+
+        assert_eq!(
+            manager.session_complete_coordinator.active_session_count(),
+            0
+        );
+        assert!(!manager.session_complete_pipelines.contains_key(&session_id));
+    }
+
+    #[tokio::test]
+    async fn test_session_complete_recovers_paired_dag_completion_without_context() {
+        let session_repo = Arc::new(TestSessionRepository::new(Some(
+            chrono::Utc::now().to_rfc3339(),
+        )));
+        let dag_repo = Arc::new(TestDagRepository::new());
+        let manager: PipelineManager = PipelineManager::new()
+            .with_session_repository(session_repo)
+            .with_dag_repository(dag_repo.clone());
+
+        let session_id = "session-1".to_string();
+        let streamer_id = "streamer-1".to_string();
+
+        manager.session_complete_pipelines.insert(
+            session_id.clone(),
+            SessionCompletePipelineEntry {
+                last_seen: std::time::Instant::now(),
+                definition: DagPipelineDefinition::new("empty", vec![]),
+            },
+        );
+
+        manager
+            .session_complete_coordinator
+            .init_session(&session_id, &streamer_id, false);
+        manager.session_complete_coordinator.on_raw_segment(
+            &session_id,
+            0,
+            PathBuf::from("/seg0.mp4"),
+            SourceType::Video,
+        );
+        manager
+            .session_complete_coordinator
+            .on_video_complete(&session_id);
+        manager
+            .session_complete_coordinator
+            .on_paired_dag_started(&session_id);
+
+        let dag_def = DagPipelineDefinition::new(
+            "paired-dag",
+            vec![DagStep::new("A", PipelineStep::preset("remux"))],
+        );
+        let mut dag = DagExecutionDbModel::new(
+            &dag_def,
+            Some(streamer_id.clone()),
+            Some(session_id.clone()),
+        );
+        dag.segment_index = Some(0);
+        dag.segment_source = Some("paired".to_string());
+        let dag_id = dag.id.clone();
+        dag_repo.insert(dag);
+
+        manager
+            .handle_dag_completion(DagCompletionInfo {
+                dag_id,
+                streamer_id: Some(streamer_id),
+                session_id: Some(session_id.clone()),
+                succeeded: true,
+                leaf_outputs: Vec::new(),
+            })
+            .await;
+
+        assert_eq!(
+            manager.session_complete_coordinator.active_session_count(),
+            0
+        );
+        assert!(!manager.session_complete_pipelines.contains_key(&session_id));
+    }
+
+    #[tokio::test]
+    async fn test_paired_segment_recovers_segment_dag_completion_without_context() {
+        let dag_repo = Arc::new(TestDagRepository::new());
+        let manager: PipelineManager = PipelineManager::new().with_dag_repository(dag_repo.clone());
+
+        let session_id = "session-1".to_string();
+        let streamer_id = "streamer-1".to_string();
+
+        manager.paired_segment_pipelines.insert(
+            session_id.clone(),
+            PairedSegmentPipelineEntry {
+                last_seen: std::time::Instant::now(),
+                definition: DagPipelineDefinition::new("empty", vec![]),
+            },
+        );
+
+        let dag_def = DagPipelineDefinition::new(
+            "segment-dag",
+            vec![DagStep::new("A", PipelineStep::preset("remux"))],
+        );
+
+        let mut video_dag = DagExecutionDbModel::new(
+            &dag_def,
+            Some(streamer_id.clone()),
+            Some(session_id.clone()),
+        );
+        video_dag.segment_index = Some(0);
+        video_dag.segment_source = Some("video".to_string());
+        let video_dag_id = video_dag.id.clone();
+        dag_repo.insert(video_dag);
+
+        manager
+            .handle_dag_completion(DagCompletionInfo {
+                dag_id: video_dag_id,
+                streamer_id: Some(streamer_id.clone()),
+                session_id: Some(session_id.clone()),
+                succeeded: true,
+                leaf_outputs: vec!["/v.mp4".to_string()],
+            })
+            .await;
+        assert_eq!(manager.paired_segment_coordinator.active_pair_count(), 1);
+
+        let mut danmu_dag = DagExecutionDbModel::new(
+            &dag_def,
+            Some(streamer_id.clone()),
+            Some(session_id.clone()),
+        );
+        danmu_dag.segment_index = Some(0);
+        danmu_dag.segment_source = Some("danmu".to_string());
+        let danmu_dag_id = danmu_dag.id.clone();
+        dag_repo.insert(danmu_dag);
+
+        manager
+            .handle_dag_completion(DagCompletionInfo {
+                dag_id: danmu_dag_id,
+                streamer_id: Some(streamer_id),
+                session_id: Some(session_id.clone()),
+                succeeded: true,
+                leaf_outputs: vec!["/d.ass".to_string()],
+            })
+            .await;
+        assert_eq!(manager.paired_segment_coordinator.active_pair_count(), 0);
+        assert!(manager.paired_segment_pipelines.contains_key(&session_id));
     }
 }

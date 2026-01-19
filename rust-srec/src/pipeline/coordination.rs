@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 /// Source type for segment outputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,7 +164,7 @@ impl PairedSegmentCoordinator {
 
         let key = SegmentKey::new(session_id, segment_index);
         let now = Instant::now();
-        {
+        let (ready_after_update, video_ready, danmu_ready, video_outputs_len, danmu_outputs_len) = {
             let mut entry = self.segments.entry(key.clone()).or_insert_with(|| {
                 PairedSegmentState::new(
                     session_id.to_string(),
@@ -189,19 +189,42 @@ impl PairedSegmentCoordinator {
                 SourceType::Video => entry.video_outputs = Some(outputs),
                 SourceType::Danmu => entry.danmu_outputs = Some(outputs),
             }
-        }
+            (
+                entry.is_ready(),
+                entry.video_outputs.is_some(),
+                entry.danmu_outputs.is_some(),
+                entry.video_outputs.as_ref().map(Vec::len).unwrap_or(0),
+                entry.danmu_outputs.as_ref().map(Vec::len).unwrap_or(0),
+            )
+        };
 
-        let ready = self
-            .segments
-            .get(&key)
-            .map(|v| v.is_ready())
-            .unwrap_or(false);
+        debug!(
+            session_id = %session_id,
+            streamer_id = %streamer_id,
+            segment_index = %segment_index,
+            source = ?source,
+            ready = %ready_after_update,
+            video_ready = %video_ready,
+            danmu_ready = %danmu_ready,
+            video_outputs = %video_outputs_len,
+            danmu_outputs = %danmu_outputs_len,
+            "Paired-segment state updated"
+        );
 
-        if !ready {
+        if !ready_after_update {
             return None;
         }
 
         let (_, state) = self.segments.remove(&key)?;
+
+        debug!(
+            session_id = %state.session_id,
+            streamer_id = %state.streamer_id,
+            segment_index = %state.segment_index,
+            video_outputs = %state.video_outputs.as_ref().map(Vec::len).unwrap_or(0),
+            danmu_outputs = %state.danmu_outputs.as_ref().map(Vec::len).unwrap_or(0),
+            "Paired-segment outputs ready"
+        );
 
         Some(PairedSegmentOutputs {
             session_id: state.session_id,
@@ -687,15 +710,52 @@ impl SessionCompleteCoordinator {
         // Check if ready without holding the lock
         if let Some(session) = self.sessions.get(session_id) {
             if !session.is_ready() {
+                let video_ready = session.video_complete && session.pending_video_dags == 0;
+                let danmu_required = session.danmu_expected && session.danmu_observed;
+                let danmu_ready =
+                    !danmu_required || (session.danmu_complete && session.pending_danmu_dags == 0);
+                let paired_ready = session.pending_paired_dags == 0;
+                debug!(
+                    session_id = %session_id,
+                    streamer_id = %session.streamer_id,
+                    video_complete = %session.video_complete,
+                    pending_video_dags = %session.pending_video_dags,
+                    danmu_expected = %session.danmu_expected,
+                    danmu_observed = %session.danmu_observed,
+                    danmu_complete = %session.danmu_complete,
+                    pending_danmu_dags = %session.pending_danmu_dags,
+                    pending_paired_dags = %session.pending_paired_dags,
+                    video_outputs = %session.video_outputs.len(),
+                    danmu_outputs = %session.danmu_outputs.len(),
+                    video_ready = %video_ready,
+                    danmu_required = %danmu_required,
+                    danmu_ready = %danmu_ready,
+                    paired_ready = %paired_ready,
+                    "Session not ready for session-complete trigger"
+                );
                 return None;
             }
             // Don't remove session state if outputs are still empty.
             // Completion events can be observed before the last SegmentCompleted/DAG completion is
             // fully processed; removing early would make the session pipeline untriggerable.
             if session.video_outputs.is_empty() && session.danmu_outputs.is_empty() {
+                debug!(
+                    session_id = %session_id,
+                    streamer_id = %session.streamer_id,
+                    video_complete = %session.video_complete,
+                    danmu_complete = %session.danmu_complete,
+                    pending_video_dags = %session.pending_video_dags,
+                    pending_danmu_dags = %session.pending_danmu_dags,
+                    pending_paired_dags = %session.pending_paired_dags,
+                    "Session ready but outputs are still empty; delaying session-complete trigger"
+                );
                 return None;
             }
         } else {
+            trace!(
+                session_id = %session_id,
+                "try_trigger called for unknown session"
+            );
             return None;
         }
 
