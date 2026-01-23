@@ -152,6 +152,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     setConnectionStatus('connecting');
 
     const wsUrl = buildWebSocketUrl(accessToken);
+    if (import.meta.env.DEV) {
+      console.debug('[WS] Connecting to', wsUrl);
+    }
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
 
@@ -170,7 +173,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     ws.onmessage = handleMessage;
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (import.meta.env.DEV) {
+        console.debug('[WS] Close', {
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+        });
+      }
       console.debug('[WS] Disconnected');
       isConnectingRef.current = false;
       setConnectionStatus('disconnected');
@@ -181,8 +191,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    ws.onerror = () => {
-      console.error('[WS] Connection error');
+    ws.onerror = (event) => {
+      if (import.meta.env.DEV) {
+        console.error('[WS] Connection error', event);
+      } else {
+        console.error('[WS] Connection error');
+      }
       isConnectingRef.current = false;
       setConnectionStatus('error');
     };

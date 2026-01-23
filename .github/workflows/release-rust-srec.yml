@@ -18,6 +18,60 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  changes:
+    name: Detect Desktop Changes
+    runs-on: ubuntu-latest
+    outputs:
+      desktop_changed: ${{ steps.diff.outputs.desktop_changed }}
+      base_tag: ${{ steps.diff.outputs.base_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes since previous tag
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+
+          CURRENT_TAG="${GITHUB_REF_NAME:-}"
+          if [[ -z "$CURRENT_TAG" || "$CURRENT_TAG" == "" ]]; then
+            # workflow_dispatch on a branch; compare against latest v* tag.
+            CURRENT_TAG=""
+          fi
+
+          if [[ -n "${{ inputs.version || '' }}" ]]; then
+            # Manual release path. We still diff against the latest v* tag.
+            CURRENT_TAG=""
+          fi
+
+          BASE_TAG=""
+          if [[ -n "$CURRENT_TAG" ]]; then
+            BASE_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -v "^${CURRENT_TAG}$" | head -n 1 || true)
+          else
+            BASE_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n 1 || true)
+          fi
+
+          echo "base_tag=$BASE_TAG" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "$BASE_TAG" ]]; then
+            # First release (or no tags). Always build desktop.
+            echo "desktop_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Diff base: $BASE_TAG"
+          CHANGED=$(git diff --name-only "$BASE_TAG...HEAD")
+
+          if echo "$CHANGED" | grep -Eq '^(rust-srec/src-tauri/|rust-srec/frontend/|rust-srec/src/|crates/|Cargo\.(toml|lock)$)'; then
+            echo "desktop_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "desktop_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   check-and-test:
     name: Check and Test
     runs-on: ubuntu-latest
@@ -152,6 +206,68 @@ jobs:
         if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
 
+  desktop:
+    name: Desktop
+    needs: [check-and-test, changes]
+    if: needs.changes.outputs.desktop_changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ''
+          - os: ubuntu-22.04
+            args: ''
+          - os: macos-15-intel
+            args: '--target x86_64-apple-darwin'
+          - os: macos-latest
+            args: '--target aarch64-apple-darwin'
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust-srec/src-tauri
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ contains(matrix.args, '--target') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: ./.github/actions/setup-protoc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci
+
+      - name: Install dependencies (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: rust-srec/frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm -C ../../frontend install --frozen-lockfile
+
+      - name: Build desktop bundles
+        run: cargo tauri build --ci ${{ matrix.args }}
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v6
+        with:
+          name: rust-srec-desktop-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}-${{ runner.os }}-${{ runner.arch }}
+          path: rust-srec/src-tauri/target/release/bundle
+          if-no-files-found: error
+
   docker-build:
     name: Build Docker
     needs: check-and-test
@@ -275,7 +391,12 @@ jobs:
 
   release:
     name: Release
-    needs: [build, docker-merge]
+    needs: [build, desktop, docker-merge]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      needs.docker-merge.result == 'success' &&
+      (needs.desktop.result == 'success' || needs.desktop.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -284,6 +405,7 @@ jobs:
         with:
           path: artifacts
           pattern: rust-srec-*
+          merge-multiple: true
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:

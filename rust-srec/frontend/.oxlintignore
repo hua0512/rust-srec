@@ -1,1 +1,5 @@
 src/routeTree.gen.ts
+dist/**
+dist-desktop/**
+.output/**
+node_modules/**

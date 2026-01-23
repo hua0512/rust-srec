@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
@@ -65,15 +64,13 @@ impl StreamlinkEngine {
 
     /// Detect streamlink version.
     fn detect_version(path: &str) -> Option<String> {
-        std::process::Command::new(path)
-            .arg("--version")
-            .output()
-            .ok()
-            .and_then(|output| {
-                String::from_utf8(output.stdout)
-                    .ok()
-                    .map(|s| s.trim().to_string())
-            })
+        let mut cmd = process_utils::std_command(path);
+        cmd.arg("--version");
+        cmd.output().ok().and_then(|output| {
+            String::from_utf8(output.stdout)
+                .ok()
+                .map(|s| s.trim().to_string())
+        })
     }
 
     /// Build streamlink command arguments.
@@ -249,10 +246,12 @@ impl DownloadEngine for StreamlinkEngine {
         );
 
         // Spawn streamlink process
-        let mut streamlink = Command::new(&self.config.binary_path)
+        let mut streamlink_command = process_utils::tokio_command(&self.config.binary_path);
+        streamlink_command
             .args(&streamlink_args)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut streamlink = streamlink_command
             .spawn()
             .map_err(|e| crate::Error::Other(format!("Failed to spawn streamlink: {}", e)))?;
 
@@ -264,12 +263,14 @@ impl DownloadEngine for StreamlinkEngine {
         })?;
 
         // Spawn ffmpeg process with stdin piped
-        let mut ffmpeg = Command::new(&self.ffmpeg_path)
+        let mut ffmpeg_command = process_utils::tokio_command(&self.ffmpeg_path);
+        ffmpeg_command
             .args(&ffmpeg_args)
             .env("LC_ALL", "C")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut ffmpeg = ffmpeg_command
             .spawn()
             .map_err(|e| crate::Error::Other(format!("Failed to spawn ffmpeg: {}", e)))?;
 

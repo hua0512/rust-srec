@@ -1107,7 +1107,6 @@ pub async fn extract_metadata(
     Json(request): Json<ExtractMetadataRequest>,
 ) -> ApiResult<Json<ExtractMetadataResponse>> {
     use crate::domain::value_objects::StreamerUrl;
-    use tokio::process::Command;
 
     // Validate URL format
     let url = match StreamerUrl::new(&request.url) {
@@ -1135,16 +1134,14 @@ pub async fn extract_metadata(
     // the external `streamlink` CLI can handle it and suggest the `streamlink`
     // pseudo-platform.
     if platform_name.is_none() {
-        let can_handle = Command::new(
+        let mut cmd = process_utils::tokio_command(
             std::env::var("STREAMLINK_PATH").unwrap_or_else(|_| "streamlink".to_string()),
-        )
-        .arg("--can-handle-url-no-redirect")
-        .arg(&request.url)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .is_ok_and(|s| s.success());
+        );
+        cmd.arg("--can-handle-url-no-redirect")
+            .arg(&request.url)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        let can_handle = cmd.status().await.is_ok_and(|s| s.success());
         if can_handle {
             platform_name = Some("streamlink".to_string());
         }

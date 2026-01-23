@@ -73,6 +73,7 @@ parking_lot = { workspace = true }
 byteorder = { workspace = true }
 brotli = { workspace = true }
 openssl = { workspace = true, optional = true, features = ["vendored"] }
+process-utils = { path = "../process-utils" }
 
 # Protocol Buffers
 prost = { workspace = true }

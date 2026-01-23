@@ -9,7 +9,7 @@
  */
 
 import type { ClientSessionData, SessionData } from '../utils/session';
-import { sanitizeClientSession, isValidSession } from '../utils/session';
+import { sanitizeClientSession, isValidSession, useAppSession } from '../utils/session';
 import { BASE_URL } from '../utils/env';
 
 type RefreshOutcome = {
@@ -115,7 +115,6 @@ async function applyOutcomeToSession({
  * @returns The new access token if successful, null if refresh failed
  */
 export async function refreshAuthTokenGlobal(): Promise<string | null> {
-  const { useAppSession } = await import('../utils/session');
   const session = await useAppSession();
   const currentData = session.data;
   if (!isValidSession(currentData)) {
@@ -291,7 +290,6 @@ async function performRefresh({
  * @returns ClientSessionData if authenticated, null if not authenticated
  */
 export async function ensureValidToken(): Promise<ClientSessionData | null> {
-  const { useAppSession } = await import('../utils/session');
   const session = await useAppSession();
   const token = session.data.token;
   const username = session.data.username;
@@ -326,7 +324,6 @@ export async function ensureValidToken(): Promise<ClientSessionData | null> {
     }
 
     // Re-read session to get updated data
-    const { useAppSession } = await import('../utils/session');
     const updatedSession = await useAppSession();
     const updatedData = updatedSession.data;
 

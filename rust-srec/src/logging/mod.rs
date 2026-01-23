@@ -306,7 +306,10 @@ pub fn init_logging(log_dir: &str) -> crate::Result<(Arc<LoggingConfig>, WorkerG
                 .with_timer(LocalTimer),
         ) // File output with local time
         .with(broadcast_layer)
-        .init();
+        .try_init()
+        .map_err(|e| {
+            crate::Error::Other(format!("Failed to set global default subscriber: {}", e))
+        })?;
 
     let config = Arc::new(LoggingConfig::new(filter_handle, log_tx, log_path));
 

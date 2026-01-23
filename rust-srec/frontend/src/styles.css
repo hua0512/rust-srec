@@ -1,6 +1,10 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* Tailwind v4: ensure desktop build (Vite root=frontend/desktop) still scans frontend sources. */
+@source './**/*.{ts,tsx,js,jsx}';
+@source '../desktop/**/*.{ts,tsx,js,jsx,html}';
+
 @custom-variant dark (&:is(.dark *));
 
 body {

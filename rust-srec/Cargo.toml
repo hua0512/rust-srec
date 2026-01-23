@@ -51,6 +51,7 @@ hls = { path = "../crates/hls" }
 hls-fix = { path = "../crates/hls-fix" }
 mesio = { path = "../crates/mesio", package = "mesio-engine" }
 platforms-parser = { path = "../crates/platforms" }
+process-utils = { path = "../crates/process-utils" }
 thiserror = { workspace = true }
 dotenvy = { workspace = true }
 rand = { workspace = true }

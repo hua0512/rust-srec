@@ -6,7 +6,6 @@ use pipeline_common::expand_filename_template;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
-use tokio::process::Command;
 use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
@@ -42,15 +41,13 @@ impl FfmpegEngine {
 
     /// Detect ffmpeg version.
     fn detect_version(path: &str) -> Option<String> {
-        std::process::Command::new(path)
-            .arg("-version")
-            .output()
-            .ok()
-            .and_then(|output| {
-                String::from_utf8(output.stdout)
-                    .ok()
-                    .and_then(|s| s.lines().next().map(|l| l.to_string()))
-            })
+        let mut cmd = process_utils::std_command(path);
+        cmd.arg("-version");
+        cmd.output().ok().and_then(|output| {
+            String::from_utf8(output.stdout)
+                .ok()
+                .and_then(|s| s.lines().next().map(|l| l.to_string()))
+        })
     }
 
     /// Build ffmpeg command arguments.
@@ -191,12 +188,14 @@ impl DownloadEngine for FfmpegEngine {
         );
 
         // Spawn ffmpeg process
-        let mut child = Command::new(&self.config.binary_path)
+        let mut command = process_utils::tokio_command(&self.config.binary_path);
+        command
             .args(&args)
             .env("LC_ALL", "C") // Force consistent output
             .stdin(Stdio::piped()) // allow graceful stop via 'q'
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command
             .spawn()
             .map_err(|e| crate::Error::Other(format!("Failed to spawn ffmpeg: {}", e)))?;
 

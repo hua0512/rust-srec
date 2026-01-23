@@ -13,6 +13,7 @@ use tokio::process::Command;
 use tracing::{debug, warn};
 
 use super::traits::ProcessorContext;
+use process_utils::NoWindowExt;
 
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 const MAX_LOG_ENTRIES: usize = 2000;
@@ -143,6 +144,8 @@ pub async fn run_command_with_logs(
     log_tx: Option<tokio::sync::mpsc::Sender<JobLogEntry>>,
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
+
+    command.no_window();
 
     // Ensure pipes are set up
     command.stdout(Stdio::piped());
@@ -456,6 +459,8 @@ pub async fn run_ffmpeg_with_progress(
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
+    command.no_window();
+
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
@@ -570,6 +575,8 @@ pub async fn run_rclone_with_progress(
     log_tx: Option<tokio::sync::mpsc::Sender<JobLogEntry>>,
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
+
+    command.no_window();
 
     command.stdout(Stdio::null());
     command.stderr(Stdio::piped());

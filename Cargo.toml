@@ -5,6 +5,7 @@ members = [
     "mesio-cli",
     "strev-cli",
     "rust-srec",
+    "rust-srec/src-tauri",
     "crates/flv",
     "crates/flv-fix",
     "crates/hls",
@@ -20,6 +21,7 @@ members = [
     "crates/platforms",
     "crates/tars-codec",
     "crates/pipeline-common",
+    "crates/process-utils",
     "crates/ts",
 ]
 
@@ -28,15 +30,6 @@ authors = ["hua0512"]
 repository = "https://github.com/hua0512/rust-srec"
 license = "MIT OR Apache-2.0"
 edition = "2024"
-
-[profile.release]
-lto = true
-codegen-units = 1
-strip = true
-opt-level = 3
-panic = "abort"   # Removes panic unwinding code
-debug = false
-
 
 [workspace.dependencies]
 bytes = "1.11.0"
@@ -104,7 +97,26 @@ memchr = "2.7.6"
 criterion = "0.8.1"
 
 [profile.dev]
-debug = true
+incremental = true
+strip = false
+lto = false
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 0
+incremental = true
+
+[profile.dev.build-override]
+opt-level = 0
+incremental = true
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
+panic = "abort"   # Removes panic unwinding code
+debug = false

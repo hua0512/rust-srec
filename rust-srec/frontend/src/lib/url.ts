@@ -6,6 +6,8 @@
  * @param token The authentication token to append as a query parameter.
  * @returns The fully constructed URL, or null if the path is invalid.
  */
+import { getBaseUrl } from '@/utils/env';
+
 export function getMediaUrl(
   path: string | null | undefined,
   token?: string,
@@ -33,9 +35,14 @@ export function getMediaUrl(
 
 /**
  * Build the WebSocket URL with JWT token as query parameter.
+ * @param accessToken - JWT access token
+ * @param endpoint - WebSocket endpoint path (default: /downloads/ws)
  */
-export function buildWebSocketUrl(accessToken: string): string {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+export function buildWebSocketUrl(
+  accessToken: string,
+  endpoint: string = '/downloads/ws',
+): string {
+  const apiBaseUrl = getBaseUrl();
 
   let wsUrl: string;
 
@@ -52,5 +59,6 @@ export function buildWebSocketUrl(accessToken: string): string {
   }
 
   const basePath = wsUrl.replace(/\/$/, '');
-  return `${basePath}/downloads/ws?token=${accessToken}`;
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  return `${basePath}${path}?token=${accessToken}`;
 }

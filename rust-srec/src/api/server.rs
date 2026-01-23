@@ -1,7 +1,9 @@
 //! API server setup and configuration.
 
 use axum::Router;
-use axum::extract::Request;
+use axum::extract::{DefaultBodyLimit, Request};
+use axum::serve::ListenerExt;
+use dashmap::DashMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 use std::time::Instant;
@@ -126,6 +128,8 @@ pub struct AppState {
     pub web_push_service: Option<Arc<WebPushService>>,
     /// Logging configuration for dynamic log level changes
     pub logging_config: Option<Arc<crate::logging::LoggingConfig>>,
+    /// Single-use download tokens for log archives.
+    pub logging_download_tokens: Arc<DashMap<String, chrono::DateTime<chrono::Utc>>>,
     /// Shared HTTP client for parsing/resolving URLs
     pub http_client: Option<reqwest::Client>,
     /// Optional credential refresh service for API-triggered refresh and cookie resolution.
@@ -167,6 +171,7 @@ impl AppState {
             notification_service: None,
             web_push_service: None,
             logging_config: None,
+            logging_download_tokens: Arc::new(DashMap::new()),
             http_client: Some(Self::build_http_client()),
             credential_service: None,
         }
@@ -196,6 +201,7 @@ impl AppState {
             notification_service: None,
             web_push_service: None,
             logging_config: None,
+            logging_download_tokens: Arc::new(DashMap::new()),
             http_client: Some(Self::build_http_client()),
             credential_service: None,
         }
@@ -229,6 +235,7 @@ impl AppState {
             notification_service: None,
             web_push_service: None,
             logging_config: None,
+            logging_download_tokens: Arc::new(DashMap::new()),
             http_client: Some(Self::build_http_client()),
             credential_service: None,
         }
@@ -369,6 +376,8 @@ impl ApiServer {
     fn build_router(&self) -> Router {
         let mut router = routes::create_router(self.state.clone());
 
+        router = router.layer(DefaultBodyLimit::max(self.config.body_limit));
+
         // Add CORS if enabled
         if self.config.enable_cors {
             let cors = CorsLayer::new()
@@ -396,7 +405,7 @@ impl ApiServer {
                         return;
                     }
                     let mut on_request =
-                        tower_http::trace::DefaultOnRequest::new().level(tracing::Level::INFO);
+                        tower_http::trace::DefaultOnRequest::new().level(tracing::Level::DEBUG);
                     use tower_http::trace::OnRequest;
                     on_request.on_request(req, span);
                 })
@@ -405,8 +414,12 @@ impl ApiServer {
                         if span.is_disabled() {
                             return;
                         }
-                        let on_response =
-                            tower_http::trace::DefaultOnResponse::new().level(tracing::Level::INFO);
+                        let level = if latency >= Duration::from_millis(200) {
+                            tracing::Level::INFO
+                        } else {
+                            tracing::Level::DEBUG
+                        };
+                        let on_response = tower_http::trace::DefaultOnResponse::new().level(level);
                         use tower_http::trace::OnResponse;
                         on_response.on_response(res, latency, span);
                     },
@@ -428,19 +441,31 @@ impl ApiServer {
         router
     }
 
-    /// Start the server.
-    pub async fn run(&self) -> Result<()> {
+    /// Bind a TCP listener for the configured address and return the resolved local address.
+    ///
+    /// This is useful when binding to port `0` (ephemeral port), where the actual port is only
+    /// known after binding.
+    pub async fn bind(&self) -> Result<(TcpListener, SocketAddr)> {
         let addr: SocketAddr = format!("{}:{}", self.config.bind_address, self.config.port)
             .parse()
             .map_err(|e| crate::error::Error::ApiError(format!("Invalid address: {}", e)))?;
 
-        let router = self.build_router();
         let listener = TcpListener::bind(addr).await?;
+        let local_addr = listener.local_addr()?;
+        Ok((listener, local_addr))
+    }
 
-        tracing::info!("API server listening on http://{}", addr);
+    /// Start the server using an already-bound listener.
+    pub async fn run_with_listener(&self, listener: TcpListener) -> Result<()> {
+        let router = self.build_router();
+
+        let listener = listener.tap_io(|tcp_stream| {
+            if let Err(err) = tcp_stream.set_nodelay(true) {
+                tracing::trace!(error = %err, "failed to set TCP_NODELAY on incoming connection");
+            }
+        });
 
         let cancel_token = self.cancel_token.clone();
-
         axum::serve(listener, router)
             .with_graceful_shutdown(async move {
                 cancel_token.cancelled().await;
@@ -450,6 +475,13 @@ impl ApiServer {
             .map_err(|e| crate::error::Error::ApiError(format!("Server error: {}", e)))?;
 
         Ok(())
+    }
+
+    /// Start the server.
+    pub async fn run(&self) -> Result<()> {
+        let (listener, local_addr) = self.bind().await?;
+        tracing::info!("API server listening on http://{}", local_addr);
+        self.run_with_listener(listener).await
     }
 
     /// Shutdown the server.
