@@ -25,6 +25,8 @@ CREATE TABLE global_config (
     max_concurrent_cpu_jobs INTEGER NOT NULL DEFAULT 0,
     max_concurrent_io_jobs INTEGER NOT NULL DEFAULT 8,
     job_history_retention_days INTEGER NOT NULL DEFAULT 30,
+    -- Notification event log retention (days)
+    notification_event_log_retention_days INTEGER NOT NULL DEFAULT 30,
     session_gap_time_secs INTEGER NOT NULL DEFAULT 3600,
     pipeline TEXT,
     log_filter_directive TEXT NOT NULL DEFAULT 'rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info',
@@ -82,8 +84,8 @@ CREATE TABLE template_config (
     pipeline TEXT,
     session_complete_pipeline TEXT,
     paired_segment_pipeline TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00')
 );
 
 -- ============================================
@@ -96,11 +98,21 @@ CREATE TABLE template_config (
 CREATE TABLE streamers (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
-    url TEXT NOT NULL UNIQUE,
+    url TEXT NOT NULL COLLATE NOCASE UNIQUE,
     platform_config_id TEXT NOT NULL,
     template_config_id TEXT,
-    state TEXT NOT NULL,
-    priority TEXT NOT NULL DEFAULT 'NORMAL',
+    state TEXT NOT NULL CHECK (state IN (
+        'NOT_LIVE',
+        'LIVE',
+        'OUT_OF_SCHEDULE',
+        'OUT_OF_SPACE',
+        'FATAL_ERROR',
+        'CANCELLED',
+        'NOT_FOUND',
+        'INSPECTING_LIVE',
+        'TEMPORAL_DISABLED'
+    )),
+    priority TEXT NOT NULL DEFAULT 'NORMAL' CHECK (priority IN ('HIGH', 'NORMAL', 'LOW')),
     last_live_time TEXT,
     streamer_specific_config TEXT,
     consecutive_error_count INTEGER DEFAULT 0,
@@ -108,8 +120,8 @@ CREATE TABLE streamers (
     last_error TEXT,
     disabled_until TEXT,
     avatar TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
     FOREIGN KEY (platform_config_id) REFERENCES platform_config(id),
     FOREIGN KEY (template_config_id) REFERENCES template_config(id)
 );
@@ -177,13 +189,13 @@ CREATE TABLE danmu_statistics (
 -- Events are inserted in the same transaction as state/session updates and
 -- published asynchronously after commit.
 CREATE TABLE monitor_event_outbox (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY,
     streamer_id TEXT NOT NULL,
     event_type TEXT NOT NULL,
     payload TEXT NOT NULL,
     created_at TEXT NOT NULL,
     delivered_at TEXT,
-    attempts INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     last_error TEXT,
     FOREIGN KEY (streamer_id) REFERENCES streamers(id) ON DELETE CASCADE
 );
@@ -197,20 +209,20 @@ CREATE TABLE monitor_event_outbox (
 CREATE TABLE job (
     id TEXT PRIMARY KEY,
     job_type TEXT NOT NULL,
-    status TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'INTERRUPTED')),
     config TEXT NOT NULL,
     state TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     input TEXT,                              -- Input path or source for the job
     outputs TEXT,                            -- Output paths (JSON array)
-    priority INTEGER NOT NULL DEFAULT 0,     -- Job priority (higher = more urgent)
+    priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),     -- Job priority (higher = more urgent)
     streamer_id TEXT,                        -- Associated streamer ID
     session_id TEXT,                         -- Associated session ID
     started_at TEXT,                         -- When job started processing
     completed_at TEXT,                       -- When job completed
     error TEXT,                              -- Error message if failed
-    retry_count INTEGER NOT NULL DEFAULT 0,  -- Number of retry attempts
+    retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),  -- Number of retry attempts
     pipeline_id TEXT,                        -- Pipeline ID to group related jobs
     execution_info TEXT,                     -- JSON blob for detailed execution logs/result
     duration_secs REAL,                      -- Processing duration in seconds (from processor)
@@ -252,8 +264,8 @@ CREATE TABLE job_presets (
     category TEXT,    -- Category for organizing presets
     processor TEXT NOT NULL,
     config TEXT NOT NULL, -- JSON
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00')
 );
 
 -- Pipeline Presets: Reusable pipeline configurations
@@ -265,8 +277,8 @@ CREATE TABLE pipeline_presets (
     -- JSON-serialized DAG pipeline definition (DagPipelineDefinition)
     dag_definition TEXT,
     pipeline_type TEXT NOT NULL DEFAULT 'dag',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00')
 );
 
 -- ============================================
@@ -279,11 +291,14 @@ CREATE TABLE dag_execution (
     -- JSON-serialized DAG pipeline definition (DagPipelineDefinition)
     dag_definition TEXT NOT NULL,
     -- Execution status: PENDING, PROCESSING, COMPLETED, FAILED, INTERRUPTED
-    status TEXT NOT NULL DEFAULT 'PENDING',
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'INTERRUPTED')),
     -- Associated streamer ID
     streamer_id TEXT,
     -- Associated session ID
     session_id TEXT,
+    -- Optional per-segment metadata for restart recovery
+    segment_index INTEGER,
+    segment_source TEXT,
     -- ISO 8601 timestamp when the DAG was created
     created_at TEXT NOT NULL,
     -- ISO 8601 timestamp when the DAG was last updated
@@ -310,7 +325,7 @@ CREATE TABLE dag_step_execution (
     -- Associated job ID (NULL until job is created)
     job_id TEXT,
     -- Step status: BLOCKED, PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
-    status TEXT NOT NULL DEFAULT 'BLOCKED',
+    status TEXT NOT NULL DEFAULT 'BLOCKED' CHECK (status IN ('BLOCKED', 'PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED')),
     -- JSON array of step IDs this step depends on
     depends_on_step_ids TEXT NOT NULL DEFAULT '[]',
     -- JSON array of output paths produced by this step
@@ -335,22 +350,6 @@ CREATE TABLE engine_configuration (
     name TEXT NOT NULL UNIQUE,
     engine_type TEXT NOT NULL,
     config TEXT NOT NULL
-);
-
--- ============================================
--- UPLOAD AND CLOUD TABLES
--- ============================================
-
-CREATE TABLE upload_record (
-    id TEXT PRIMARY KEY,
-    media_output_id TEXT NOT NULL,
-    platform TEXT NOT NULL,
-    remote_path TEXT NOT NULL,
-    status TEXT NOT NULL,
-    metadata TEXT,
-    created_at TEXT NOT NULL,
-    completed_at TEXT,
-    FOREIGN KEY (media_output_id) REFERENCES media_outputs(id) ON DELETE CASCADE
 );
 
 -- ============================================
@@ -381,14 +380,6 @@ CREATE TABLE refresh_tokens (
     revoked_at TEXT,
     device_info TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE api_key (
-    id TEXT PRIMARY KEY,
-    key_hash TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    role TEXT NOT NULL,
-    created_at TEXT NOT NULL
 );
 
 -- ============================================
@@ -423,6 +414,33 @@ CREATE TABLE notification_dead_letter (
     FOREIGN KEY (channel_id) REFERENCES notification_channel(id) ON DELETE CASCADE
 );
 
+-- Persistent notification event log for UI/debugging/audit.
+CREATE TABLE notification_event_log (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    priority TEXT NOT NULL CHECK (priority IN ('low', 'normal', 'high', 'critical')),
+    payload TEXT NOT NULL,
+    streamer_id TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (streamer_id) REFERENCES streamers(id) ON DELETE SET NULL
+);
+
+-- Web Push subscriptions for browser push notifications.
+CREATE TABLE web_push_subscription (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    -- Minimum priority to send (low|normal|high|critical)
+    min_priority TEXT NOT NULL DEFAULT 'critical' CHECK (min_priority IN ('low', 'normal', 'high', 'critical')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
+    next_attempt_at TEXT,
+    last_429_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- ============================================
 -- INDEXES
 -- ============================================
@@ -433,8 +451,6 @@ CREATE INDEX idx_streamer_template_config_id ON streamers(template_config_id);
 CREATE INDEX idx_streamer_state ON streamers(state);
 CREATE INDEX idx_streamer_priority_state ON streamers(priority, state);
 CREATE INDEX idx_streamer_priority ON streamers(priority);
--- Case-insensitive unique index on URL to prevent duplicate streamers
-CREATE UNIQUE INDEX idx_streamers_url_unique ON streamers (url COLLATE NOCASE);
 
 -- Index for the filter table
 CREATE INDEX idx_filter_streamer_id ON filters(streamer_id);
@@ -445,25 +461,39 @@ CREATE INDEX idx_live_session_danmu_statistics_id ON live_sessions(danmu_statist
 CREATE INDEX idx_live_session_streamer_time ON live_sessions(streamer_id, start_time DESC);
 
 -- Indexes for the media_output table
-CREATE INDEX idx_media_output_session_id ON media_outputs(session_id);
+CREATE INDEX idx_media_output_session_created_at ON media_outputs(session_id, created_at);
 CREATE INDEX idx_media_output_parent_media_output_id ON media_outputs(parent_media_output_id);
 CREATE INDEX idx_media_output_file_type ON media_outputs(file_type);
 
--- Index for the upload_record table
-CREATE INDEX idx_upload_record_media_output_id ON upload_record(media_output_id);
-
 -- Index for the notification_subscription table
-CREATE INDEX idx_notification_subscription_channel_id ON notification_subscription(channel_id);
+CREATE INDEX idx_notification_subscription_event_name ON notification_subscription(event_name, channel_id);
+
+-- Indexes for notification_event_log
+CREATE INDEX idx_notification_event_log_created_at ON notification_event_log(created_at);
+CREATE INDEX idx_notification_event_log_event_type ON notification_event_log(event_type);
+CREATE INDEX idx_notification_event_log_streamer_id ON notification_event_log(streamer_id);
+
+-- Indexes for web_push_subscription
+CREATE INDEX idx_web_push_subscription_user_updated_at
+    ON web_push_subscription(user_id, updated_at DESC);
+
+-- Index for finding subscriptions ready to retry
+CREATE INDEX idx_web_push_subscription_next_attempt_at
+    ON web_push_subscription(next_attempt_at)
+    WHERE next_attempt_at IS NOT NULL;
+
+-- Index for tracking recent rate limit issues
+CREATE INDEX idx_web_push_subscription_last_429_at
+    ON web_push_subscription(last_429_at)
+    WHERE last_429_at IS NOT NULL;
 
 -- Indexes for the job table
-CREATE INDEX idx_job_status_type ON job(status, job_type);
--- Hot path index for atomic "claim next pending job" dequeue (ORDER BY priority DESC, created_at DESC)
-CREATE INDEX idx_job_pending_claim_order ON job(status, job_type, priority DESC, created_at DESC);
+CREATE INDEX idx_job_status_created_at ON job(status, created_at DESC);
+CREATE INDEX idx_job_priority_created_at ON job(priority DESC, created_at DESC);
 CREATE INDEX idx_job_updated_at ON job(updated_at);
 CREATE INDEX idx_job_created_at ON job(created_at);
 CREATE INDEX idx_job_streamer_id ON job(streamer_id);
 CREATE INDEX idx_job_session_id ON job(session_id);
-CREATE INDEX idx_job_priority ON job(priority DESC);
 CREATE INDEX idx_job_started_at ON job(started_at);
 CREATE INDEX idx_job_completed_at ON job(completed_at);
 CREATE INDEX idx_job_pipeline_id ON job(pipeline_id);
@@ -472,47 +502,46 @@ CREATE INDEX idx_jobs_completed_at_status ON job(completed_at) WHERE status IN (
 -- Job table index for DAG reference
 CREATE INDEX idx_job_dag_step ON job(dag_step_execution_id);
 
+-- Hot-path pending-queue indexes (partial, reduces write amplification)
+CREATE INDEX idx_job_pending_priority_created_at
+    ON job(priority DESC, created_at DESC)
+    WHERE status = 'PENDING';
+
+CREATE INDEX idx_job_pending_type_priority_created_at
+    ON job(job_type, priority DESC, created_at DESC)
+    WHERE status = 'PENDING';
+
 -- DAG execution indexes
-CREATE INDEX idx_dag_execution_status ON dag_execution(status);
-CREATE INDEX idx_dag_execution_session ON dag_execution(session_id);
-CREATE INDEX idx_dag_execution_streamer ON dag_execution(streamer_id);
-CREATE INDEX idx_dag_execution_created_at ON dag_execution(created_at);
+CREATE INDEX idx_dag_execution_status_created_at ON dag_execution(status, created_at DESC);
+CREATE INDEX idx_dag_execution_session_created_at ON dag_execution(session_id, created_at DESC);
+CREATE INDEX idx_dag_execution_streamer_created_at ON dag_execution(streamer_id, created_at DESC);
 
 -- DAG step execution indexes
-CREATE INDEX idx_dag_step_dag_id ON dag_step_execution(dag_id);
 CREATE INDEX idx_dag_step_job_id ON dag_step_execution(job_id);
-CREATE INDEX idx_dag_step_status ON dag_step_execution(status);
 -- Index for finding blocked steps that might be ready
 CREATE INDEX idx_dag_step_dag_status ON dag_step_execution(dag_id, status);
 
 -- Index for the job_execution_logs table
-CREATE INDEX idx_job_execution_logs_job_id ON job_execution_logs(job_id);
-
--- Speed up paged reads ordered by created_at.
-CREATE INDEX IF NOT EXISTS idx_job_execution_logs_job_id_created_at
+CREATE INDEX idx_job_execution_logs_job_id_created_at
     ON job_execution_logs(job_id, created_at);
 
 -- Indexes for the notification_dead_letter table
-CREATE INDEX idx_dead_letter_channel ON notification_dead_letter(channel_id);
-CREATE INDEX idx_dead_letter_created ON notification_dead_letter(created_at);
+CREATE INDEX idx_dead_letter_created_at ON notification_dead_letter(created_at DESC);
+CREATE INDEX idx_dead_letter_channel_created_at
+    ON notification_dead_letter(channel_id, created_at DESC);
 
 -- Indexes for the users table
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_is_active ON users(is_active);
 
 -- Indexes for the refresh_tokens table
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
-CREATE INDEX idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
 CREATE INDEX idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
 
 -- Indexes for job_presets
-CREATE INDEX idx_job_presets_name ON job_presets(name);
 CREATE INDEX idx_job_presets_processor ON job_presets(processor);
 CREATE INDEX idx_job_presets_category ON job_presets(category);
 
 -- Indexes for pipeline_presets
-CREATE INDEX idx_pipeline_presets_name ON pipeline_presets(name);
 
 -- Index for monitor_event_outbox
 CREATE INDEX monitor_event_outbox_undelivered
@@ -546,8 +575,8 @@ VALUES (
     '["admin", "user"]',
     TRUE,
     TRUE,
-    datetime('now'),
-    datetime('now')
+    (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
+    (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00')
 );
 
 -- Seed supported platforms
@@ -564,6 +593,18 @@ INSERT INTO platform_config (id, platform_name, fetch_delay_ms, download_delay_m
 ('platform-twitcasting', 'twitcasting', NULL, NULL),
 ('platform-twitch', 'twitch', NULL, NULL),
 ('platform-weibo', 'weibo', NULL, NULL);
+
+-- Add a pseudo-platform for Streamlink-based extraction fallback.
+INSERT INTO platform_config (id, platform_name, download_engine, platform_specific_config)
+VALUES (
+    'platform-streamlink',
+    'streamlink',
+    'default-streamlink',
+    '{"streamlink":{}}'
+)
+ON CONFLICT(platform_name) DO UPDATE SET
+    download_engine = COALESCE(platform_config.download_engine, excluded.download_engine),
+    platform_specific_config = COALESCE(platform_config.platform_specific_config, excluded.platform_specific_config);
 
 -- Seed default engines
 INSERT INTO engine_configuration (id, name, engine_type, config) VALUES
@@ -591,6 +632,7 @@ INSERT INTO global_config (
     max_concurrent_cpu_jobs,
     max_concurrent_io_jobs,
     job_history_retention_days,
+    notification_event_log_retention_days,
     session_gap_time_secs,
     log_filter_directive
 ) VALUES (
@@ -611,6 +653,7 @@ INSERT INTO global_config (
     'default-mesio',
     0,                       -- Auto
     8,
+    30,
     30,
     3600,                    -- 1 hour
     'rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info'

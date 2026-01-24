@@ -153,7 +153,7 @@ impl Extractor {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use reqwest::Client;
     /// # use platforms_parser::extractor::platform_extractor::Extractor;
     /// # let mut extractor = Extractor::new("Platform".to_string(), "https://example.com".to_string(), Client::new());
@@ -171,7 +171,7 @@ impl Extractor {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use rustc_hash::FxHashMap;
     /// # use reqwest::Client;
     /// # use platforms_parser::extractor::platform_extractor::Extractor;
@@ -194,7 +194,7 @@ impl Extractor {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// # use reqwest::Client;
     /// # use platforms_parser::extractor::platform_extractor::Extractor;
     /// # let mut extractor = Extractor::new("Platform".to_string(), "https://example.com".to_string(), Client::new());

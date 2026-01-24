@@ -127,14 +127,16 @@ impl StreamerRepository for SqlxStreamerRepository {
 
     async fn list_active_streamers(&self) -> Result<Vec<StreamerDbModel>> {
         // Active streamers are those not in CANCELLED, FATAL_ERROR, or NOT_FOUND states
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
         let streamers = sqlx::query_as::<_, StreamerDbModel>(
             r#"
             SELECT * FROM streamers 
             WHERE state NOT IN ('CANCELLED', 'FATAL_ERROR', 'NOT_FOUND')
-            AND (disabled_until IS NULL OR disabled_until < datetime('now'))
+            AND (disabled_until IS NULL OR disabled_until < ?)
             ORDER BY priority DESC, name
             "#,
         )
+        .bind(&now)
         .fetch_all(&self.pool)
         .await?;
         Ok(streamers)

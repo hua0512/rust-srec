@@ -856,6 +856,7 @@ impl Douyu {
         cdn.starts_with("scdn")
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn create_media_info(
         &self,
         title: &str,

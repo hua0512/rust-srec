@@ -78,23 +78,27 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
     }
 
     async fn find_active_by_user(&self, user_id: &str) -> Result<Vec<RefreshTokenDbModel>> {
+        // Keep comparisons consistent with our stored timestamp format.
+        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+
         let tokens = sqlx::query_as::<_, RefreshTokenDbModel>(
             r#"
-            SELECT * FROM refresh_tokens 
-            WHERE user_id = ? 
-              AND revoked_at IS NULL 
-              AND expires_at > datetime('now')
+            SELECT * FROM refresh_tokens
+            WHERE user_id = ?
+              AND revoked_at IS NULL
+              AND expires_at > ?
             ORDER BY created_at DESC
             "#,
         )
         .bind(user_id)
+        .bind(&now)
         .fetch_all(&self.pool)
         .await?;
         Ok(tokens)
     }
 
     async fn revoke(&self, id: &str) -> Result<()> {
-        let now = Utc::now().to_rfc3339();
+        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
         sqlx::query("UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?")
             .bind(&now)
             .bind(id)
@@ -104,7 +108,7 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
     }
 
     async fn revoke_all_for_user(&self, user_id: &str) -> Result<()> {
-        let now = Utc::now().to_rfc3339();
+        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
         sqlx::query(
             "UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
         )
@@ -116,22 +120,28 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
     }
 
     async fn cleanup_expired(&self) -> Result<u64> {
-        let result = sqlx::query("DELETE FROM refresh_tokens WHERE expires_at < datetime('now')")
+        // Keep comparisons consistent with our stored timestamp format.
+        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        let result = sqlx::query("DELETE FROM refresh_tokens WHERE expires_at < ?")
+            .bind(&now)
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected())
     }
 
     async fn count_active_by_user(&self, user_id: &str) -> Result<i64> {
+        // Keep comparisons consistent with our stored timestamp format.
+        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
         let result: (i64,) = sqlx::query_as(
             r#"
-            SELECT COUNT(*) FROM refresh_tokens 
-            WHERE user_id = ? 
-              AND revoked_at IS NULL 
-              AND expires_at > datetime('now')
+            SELECT COUNT(*) FROM refresh_tokens
+            WHERE user_id = ?
+              AND revoked_at IS NULL
+              AND expires_at > ?
             "#,
         )
         .bind(user_id)
+        .bind(&now)
         .fetch_one(&self.pool)
         .await?;
         Ok(result.0)
