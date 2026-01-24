@@ -35,7 +35,7 @@ edition = "2024"
 bytes = "1.11.0"
 tokio = { version = "1.49.0", features = ["full"] }
 tokio-util = { version = "0.7.18", features = ["full"] }
-reqwest = { version = "0.12.26", default-features = false, features = ["json", "stream", "rustls-tls", "gzip", "deflate"] }
+reqwest = { version = "0.12.26", default-features = false, features = ["json", "stream", "rustls-tls-webpki-roots-no-provider", "gzip", "deflate"] }
 serde = { version = "1.0.217", features = ["derive", "rc"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
@@ -79,7 +79,6 @@ mockall = "0.14.0"
 proptest = "1.4"
 rstest = "0.26.1"
 itertools = "0.14.0"
-rquickjs = { version = "0.11.0", features = ["full-async"] }
 tokio-tungstenite = { version = "0.28.0", default-features = false, features = ["connect"] }
 m3u8-rs = "6.0.0"
 md-5 = "0.10.6"
@@ -88,6 +87,7 @@ base64 = "0.22.1"
 byteorder = "1.5"
 brotli = "8.0"
 openssl = { version = "0.10", features = ["vendored"] }
+native-tls = "0.2.14"
 rustls = { version = "0.23.36", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
 rustls-platform-verifier = "0.6.2"
 libsm = "0.6.0"

@@ -95,13 +95,24 @@ struct DecodedPacket {
 }
 
 /// Bilibili Danmu Protocol Implementation
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct BilibiliDanmuProtocol {
     client: Client,
     /// Optional cookies for authenticated sessions
     cookies: Option<String>,
     uid: Option<u64>,
     connection_cookies: Option<String>,
+}
+
+impl Default for BilibiliDanmuProtocol {
+    fn default() -> Self {
+        Self {
+            client: default_client(),
+            cookies: None,
+            uid: None,
+            connection_cookies: None,
+        }
+    }
 }
 
 impl BilibiliDanmuProtocol {

@@ -8,7 +8,7 @@ use bytes::Bytes;
 use flv::{data::FlvData, parser_async::FlvDecoderStream};
 use futures::StreamExt;
 use humansize::{BINARY, format_size};
-use reqwest::{Client, Response, StatusCode, Url};
+use reqwest::{Response, StatusCode, Url};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -21,7 +21,7 @@ use crate::bytes_stream::BytesStreamReader;
 use crate::{
     DownloadError,
     cache::{CacheKey, CacheManager, CacheMetadata, CacheResourceType, CacheStatus},
-    downloader::create_client,
+    downloader::create_client_pool,
     media_protocol::BoxMediaStream,
     source::{ContentSource, SourceManager},
 };
@@ -32,7 +32,7 @@ use crate::{Cacheable, Download, MultiSource, ProtocolBase, RawDownload, RawResu
 
 /// FLV Downloader for streaming FLV content from URLs
 pub struct FlvDownloader {
-    client: Client,
+    clients: Arc<crate::downloader::ClientPool>,
     config: FlvProtocolConfig,
 }
 
@@ -44,8 +44,8 @@ impl FlvDownloader {
 
     /// Create a new FlvDownloader with custom configuration
     pub fn with_config(config: FlvProtocolConfig) -> Result<Self, DownloadError> {
-        let client = create_client(&config.base)?;
-        Ok(Self { client, config })
+        let clients = Arc::new(create_client_pool(&config.base)?);
+        Ok(Self { clients, config })
     }
 
     /// Download a stream from a URL string and return an FLV data stream
@@ -79,10 +79,8 @@ impl FlvDownloader {
         info!(url = %url, "Starting FLV download request");
         debug!(url = %url, params = ?self.config.base.params, "Sending FLV download request");
 
-        debug!(client = ?self.client);
-
-        let response = self
-            .client
+        let client = self.clients.client_for_url(url);
+        let response = client
             .get(url.clone())
             .query(&self.config.base.params)
             .send()
@@ -340,7 +338,8 @@ impl FlvDownloader {
         url: &Url,
         metadata: &CacheMetadata,
     ) -> Result<Option<Response>, DownloadError> {
-        let mut req = self.client.get(url.clone());
+        let client = self.clients.client_for_url(url);
+        let mut req = client.get(url.clone());
 
         if let Some(etag) = &metadata.etag {
             req = req.header("If-None-Match", etag);
@@ -427,8 +426,8 @@ impl FlvDownloader {
         info!(url = %url, "Starting FLV download (not in cache)");
 
         // Start the request
-        let response = self
-            .client
+        let client = self.clients.client_for_url(&url);
+        let response = client
             .get(url.clone())
             .query(&self.config.base.params)
             .send()
@@ -516,8 +515,8 @@ impl FlvDownloader {
         };
 
         // Start the request with range
-        let response = self
-            .client
+        let client = self.clients.client_for_url(&url);
+        let response = client
             .get(url.clone())
             .header("Range", range_header)
             .query(&self.config.base.params)
@@ -624,8 +623,8 @@ impl FlvDownloader {
         };
 
         // Start the request with range
-        let response = self
-            .client
+        let client = self.clients.client_for_url(&url);
+        let response = client
             .get(url.clone())
             .header("Range", range_header)
             .query(&self.config.base.params)

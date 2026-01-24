@@ -1,0 +1,77 @@
+{
+	debug
+}
+
+(cloudflare_tls) {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_AUTH_TOKEN}
+	}
+}
+
+(standard_headers) {
+	header {
+		# Enable HSTS
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		# Disable X-Powered-By
+		-X-Powered-By
+		# Prevent MIME sniffing
+		X-Content-Type-Options nosniff
+		# Prevent clickjacking
+		X-Frame-Options DENY
+		# Referrer policy
+		#Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
+(common_settings) {
+	import cloudflare_tls
+	import standard_headers
+	encode gzip zstd
+}
+
+hua0512.com, www.hua0512.com {
+	import common_settings
+	log {
+		output stderr
+	}
+
+	file_server
+	reverse_proxy http://127.0.0.1:15275
+}
+
+# beszel
+stats.hua0512.com {
+	import common_settings
+	reverse_proxy http://127.0.0.1:12323
+}
+
+# rust-srec (API + Frontend)
+rec.hua0512.com {
+	import common_settings
+
+	# Route API requests to rust-srec backend
+	handle /api/* {
+		reverse_proxy http://127.0.0.1:12555
+	}
+
+	# Serve frontend for all other routes
+	reverse_proxy http://127.0.0.1:15275
+}
+
+# alist
+alist.hua0512.com {
+	import common_settings
+	reverse_proxy http://127.0.0.1:5244
+}
+
+# newapi
+ai.hua0512.com {
+	import common_settings
+	reverse_proxy http://127.0.0.1:12444
+}
+
+# bot
+maibot.hua0512.com {
+	import common_settings
+	reverse_proxy http://127.0.0.1:12223
+}

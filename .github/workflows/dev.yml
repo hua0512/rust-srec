@@ -69,11 +69,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci
-      - name: Run tests
-        run: cargo nextest run --locked --workspace
-      - name: Run doctests
+      - name: Run tests (all features)
         if: matrix.os == 'ubuntu-latest'
-        run: cargo test --locked --workspace --doc
+        run: cargo nextest run --locked --workspace --all-features
+      - name: Run tests
+        if: matrix.os != 'ubuntu-latest'
+        run: cargo nextest run --locked --workspace
+      - name: Run doctests (all features)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --locked --workspace --doc --all-features
       - name: sccache stats
         if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
@@ -174,12 +178,12 @@ jobs:
 
       - name: Build release
         if: "!contains(matrix.target, 'musl')"
-        run: cargo build --locked --release --target ${{ matrix.target }} -p mesio -p strev -p rust-srec --bins
+        run: cargo build --locked --release --target ${{ matrix.target }} -p mesio -p strev -p rust-srec --bins --features mesio/tls-native-fallback,strev/tls-native-fallback,rust-srec/tls-native-fallback
       - name: Build mesio release (musl)
         if: contains(matrix.target, 'musl')
         env:
           CC: musl-gcc
-        run: cargo build -p mesio --locked --release --target ${{ matrix.target }}
+        run: cargo build -p mesio --locked --release --target ${{ matrix.target }} --features static-ssl
 
       - name: Build strev release (static)
         if: contains(matrix.target, 'musl')

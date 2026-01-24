@@ -864,7 +864,13 @@ impl Douyu {
         avatar_url: Option<String>,
         is_live: bool,
         streams: Vec<StreamInfo>,
+        rid: Option<u64>,
     ) -> MediaInfo {
+        let extras = rid.map(|r| {
+            let mut map = FxHashMap::default();
+            map.insert("rid".to_string(), r.to_string());
+            map
+        });
         MediaInfo::new(
             self.extractor.url.clone(),
             title.to_string(),
@@ -874,7 +880,7 @@ impl Douyu {
             is_live,
             streams,
             Some(self.extractor.get_platform_headers_map()),
-            None,
+            extras,
         )
     }
 
@@ -893,7 +899,7 @@ impl Douyu {
         }
 
         if response.contains("房间已被关闭") {
-            return Ok(self.create_media_info("Douyu", "", None, None, false, vec![]));
+            return Ok(self.create_media_info("Douyu", "", None, None, false, vec![], None));
         }
 
         let rid = match self.extract_rid(&response) {
@@ -946,6 +952,7 @@ impl Douyu {
                 avatar_url,
                 false,
                 vec![],
+                Some(rid),
             ));
         }
 
@@ -1011,6 +1018,7 @@ impl Douyu {
                 avatar_url,
                 false,
                 vec![],
+                Some(rid),
             ));
         }
 
@@ -1029,6 +1037,7 @@ impl Douyu {
                         avatar_url,
                         false,
                         vec![],
+                        Some(rid),
                     ));
                 }
                 Ok(false) => {
@@ -1044,7 +1053,15 @@ impl Douyu {
         // streamer is live
         let streams = self.get_streams_with_stable_auth(rid, is_vip).await?;
 
-        Ok(self.create_media_info(&title, &artist, cover_url, avatar_url, true, streams))
+        Ok(self.create_media_info(
+            &title,
+            &artist,
+            cover_url,
+            avatar_url,
+            true,
+            streams,
+            Some(rid),
+        ))
     }
 
     /// Gets streams using stable server-side authentication

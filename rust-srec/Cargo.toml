@@ -26,6 +26,7 @@ reqwest = { workspace = true }
 sqlx = { workspace = true }
 url = { workspace = true }
 base64 = { workspace = true }
+rustls = { workspace = true }
 aes-gcm = "0.10"
 hkdf = "0.12"
 p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
@@ -92,4 +93,7 @@ m3u8-rs = { workspace = true }
 
 [features]
 default = []
-static-ssl = ["platforms-parser/static-ssl"]
+static-ssl = ["platforms-parser/static-ssl", "mesio/static-ssl"]
+
+# Opt-in: enable native-tls fallback for legacy endpoints (e.g. Douyu CDN / danmu).
+tls-native-fallback = ["platforms-parser/tls-native-fallback", "mesio/tls-native-fallback"]

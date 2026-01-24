@@ -38,13 +38,13 @@ jobs:
         with:
           shared-key: ci
       - name: Check
-        run: cargo check -p strev --locked
+        run: cargo check -p strev --locked --all-features
       - name: Clippy
-        run: cargo clippy -p strev --locked -- -D warnings
+        run: cargo clippy -p strev --locked --all-features -- -D warnings
       - name: Test
-        run: cargo nextest run -p strev --locked
+        run: cargo nextest run -p strev --locked --all-features
       - name: Doctests
-        run: cargo test -p strev --locked --doc
+        run: cargo test -p strev --locked --doc --all-features
       - name: sccache stats
         if: always()
         run: sccache --show-stats || true
@@ -116,7 +116,7 @@ jobs:
           sudo apt-get install -y musl-tools musl-dev
       - name: Build
         if: "!contains(matrix.target, 'musl')"
-        run: cargo build -p strev --locked --release --target ${{ matrix.target }}
+        run: cargo build -p strev --locked --release --target ${{ matrix.target }} --features tls-native-fallback
       - name: Build (musl static)
         if: contains(matrix.target, 'musl')
         env:

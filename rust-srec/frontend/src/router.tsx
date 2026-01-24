@@ -4,7 +4,6 @@ import { routeTree } from './routeTree.gen';
 import { DefaultCatchBoundary } from './components/default-catch-boundary';
 import { NotFound } from './components/not-found';
 import * as TanstackQuery from './integrations/tanstack-query/root-provider';
-import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query';
 import { createI18nInstance } from './integrations/lingui/i18n';
 import { routerWithLingui } from './integrations/lingui/router-plugin';
 import { getGlobalStartContext } from '@tanstack/react-start';
@@ -35,11 +34,6 @@ export function getRouter() {
       ),
     },
   );
-
-  setupRouterSsrQueryIntegration({
-    router,
-    queryClient: rqContext.queryClient,
-  });
 
   return router;
 }

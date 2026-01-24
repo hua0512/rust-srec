@@ -92,13 +92,13 @@ jobs:
         with:
           shared-key: ci
       - name: Check
-        run: cargo check -p rust-srec --locked
+        run: cargo check -p rust-srec --locked --all-features
       - name: Clippy
-        run: cargo clippy -p rust-srec --locked -- -D warnings
+        run: cargo clippy -p rust-srec --locked --all-features -- -D warnings
       - name: Test
-        run: cargo nextest run -p rust-srec --locked
+        run: cargo nextest run -p rust-srec --locked --all-features
       - name: Doctests
-        run: cargo test -p rust-srec --locked --doc
+        run: cargo test -p rust-srec --locked --doc --all-features
       - name: sccache stats
         if: always()
         run: sccache --show-stats || true
@@ -170,7 +170,7 @@ jobs:
           sudo apt-get install -y musl-tools musl-dev
       - name: Build
         if: "!contains(matrix.target, 'musl')"
-        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }} --bins
+        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }} --bins --features tls-native-fallback
       - name: Build (musl static)
         if: contains(matrix.target, 'musl')
         env:

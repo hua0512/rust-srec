@@ -1,8 +1,9 @@
 use super::factory::ExtractorFactory;
 use reqwest::Client;
-use rustls::{ClientConfig, crypto::ring};
+use rustls::{ClientConfig, crypto::aws_lc_rs};
 use rustls_platform_verifier::BuilderVerifierExt;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use tracing::debug;
 
 pub(crate) const DEFAULT_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
 pub(crate) const DEFAULT_MOBILE_UA: &str = "Mozilla/5.0 (iPhone17,1; CPU iPhone OS 18_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Mohegan Sun/4.7.4";
@@ -25,7 +26,14 @@ pub fn create_client(proxy_config: Option<ProxyConfig>) -> Client {
 }
 
 pub fn create_client_builder(proxy_config: Option<ProxyConfig>) -> reqwest::ClientBuilder {
-    let provider = Arc::new(ring::default_provider());
+    static PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
+    PROVIDER_INSTALLED.get_or_init(|| {
+        if let Err(e) = aws_lc_rs::default_provider().install_default() {
+            debug!(existing_provider = ?e, "rustls CryptoProvider already installed");
+        }
+    });
+
+    let provider = Arc::new(aws_lc_rs::default_provider());
     let tls_config = ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .expect("Failed to configure default TLS protocol versions")

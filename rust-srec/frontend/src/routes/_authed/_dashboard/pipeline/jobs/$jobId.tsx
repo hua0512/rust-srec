@@ -32,7 +32,7 @@ import { msg, t, plural } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { motion } from 'motion/react';
-import { useInView } from 'react-intersection-observer';
+import { useInView } from '@/lib/hooks/use-in-view';
 import { cn } from '@/lib/utils';
 import {
   ArrowLeft,

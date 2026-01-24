@@ -37,13 +37,13 @@ jobs:
         with:
           shared-key: ci
       - name: Check
-        run: cargo check -p mesio --locked
+        run: cargo check -p mesio --locked --all-features
       - name: Clippy
-        run: cargo clippy -p mesio --locked -- -D warnings
+        run: cargo clippy -p mesio --locked --all-features -- -D warnings
       - name: Test
-        run: cargo nextest run -p mesio --locked
+        run: cargo nextest run -p mesio --locked --all-features
       - name: Doctests
-        run: cargo test -p mesio --locked --doc
+        run: cargo test -p mesio --locked --doc --all-features
       - name: sccache stats
         if: always()
         run: sccache --show-stats || true
@@ -114,12 +114,12 @@ jobs:
           sudo apt-get install -y musl-tools musl-dev
       - name: Build
         if: "!contains(matrix.target, 'musl')"
-        run: cargo build -p mesio --locked --release --target ${{ matrix.target }}
+        run: cargo build -p mesio --locked --release --target ${{ matrix.target }} --features tls-native-fallback
       - name: Build (musl)
         if: contains(matrix.target, 'musl')
         env:
           CC: musl-gcc
-        run: cargo build -p mesio --locked --release --target ${{ matrix.target }}
+        run: cargo build -p mesio --locked --release --target ${{ matrix.target }} --features static-ssl
       - name: Rename binary
         shell: bash
         run: cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "${{ matrix.asset_name }}"

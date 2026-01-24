@@ -192,9 +192,9 @@ mod tests {
 
     /// Helper to create a minimal DecryptionService for testing
     fn create_test_decryption_service(config: Arc<HlsConfig>) -> Arc<DecryptionService> {
-        let http_client = reqwest::Client::new();
+        let clients = Arc::new(crate::downloader::create_client_pool(&config.base).unwrap());
         let key_fetcher = Arc::new(KeyFetcher::new(
-            http_client,
+            clients,
             config.clone(),
             CancellationToken::new(),
         ));

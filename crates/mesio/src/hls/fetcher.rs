@@ -1,12 +1,12 @@
 // HLS Segment Fetcher: Handles the raw download of individual media segments with retry logic.
 
 use crate::cache::{CacheMetadata, CacheResourceType};
+use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
 use crate::{CacheManager, cache::CacheKey};
 use async_trait::async_trait;
 use bytes::Bytes;
-use reqwest::Client;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -182,7 +182,7 @@ pub trait SegmentDownloader: Send + Sync {
 }
 
 pub struct SegmentFetcher {
-    http_client: Client,
+    clients: Arc<ClientPool>,
     config: Arc<HlsConfig>,
     cache_service: Option<Arc<CacheManager>>,
     http2_stats: Arc<Http2Stats>,
@@ -193,13 +193,13 @@ pub struct SegmentFetcher {
 
 impl SegmentFetcher {
     pub fn new(
-        http_client: Client,
+        clients: Arc<ClientPool>,
         config: Arc<HlsConfig>,
         cache_service: Option<Arc<CacheManager>>,
         token: CancellationToken,
     ) -> Self {
         Self {
-            http_client,
+            clients,
             config,
             cache_service,
             http2_stats: Arc::new(Http2Stats::new()),
@@ -210,27 +210,27 @@ impl SegmentFetcher {
 
     /// Create a new fetcher with a shared HTTP/2 stats tracker
     pub fn with_stats(
-        http_client: Client,
+        clients: Arc<ClientPool>,
         config: Arc<HlsConfig>,
         cache_service: Option<Arc<CacheManager>>,
         http2_stats: Arc<Http2Stats>,
         token: CancellationToken,
     ) -> Self {
-        let mut fetcher = Self::new(http_client, config, cache_service, token);
+        let mut fetcher = Self::new(clients, config, cache_service, token);
         fetcher.http2_stats = http2_stats;
         fetcher
     }
 
     /// Create a new fetcher with shared HTTP/2 stats and performance metrics   
     pub fn with_metrics(
-        http_client: Client,
+        clients: Arc<ClientPool>,
         config: Arc<HlsConfig>,
         cache_service: Option<Arc<CacheManager>>,
         http2_stats: Arc<Http2Stats>,
         performance_metrics: Arc<super::metrics::PerformanceMetrics>,
         token: CancellationToken,
     ) -> Self {
-        let mut fetcher = Self::with_stats(http_client, config, cache_service, http2_stats, token);
+        let mut fetcher = Self::with_stats(clients, config, cache_service, http2_stats, token);
         fetcher.performance_metrics = Some(performance_metrics);
         fetcher
     }
@@ -259,8 +259,8 @@ impl SegmentFetcher {
             }
 
             attempts += 1;
-            let mut request_builder = self
-                .http_client
+            let client = self.clients.client_for_url(segment_url);
+            let mut request_builder = client
                 .get(segment_url.clone())
                 .query(&self.config.base.params);
             if let Some(range) = byte_range {
