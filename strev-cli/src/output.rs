@@ -284,14 +284,14 @@ impl OutputManager {
             self.colorize(&media_info.is_live.to_string(), &Color::Cyan, false)
         ));
 
-        if let Some(ref categories) = media_info.category {
-            if !categories.is_empty() {
-                output.push_str(&format!(
-                    "  {}: {}\n",
-                    self.colorize("Category", &Color::Yellow, false),
-                    self.colorize(&categories.join(", "), &Color::Cyan, false)
-                ));
-            }
+        if let Some(ref categories) = media_info.category
+            && !categories.is_empty()
+        {
+            output.push_str(&format!(
+                "  {}: {}\n",
+                self.colorize("Category", &Color::Yellow, false),
+                self.colorize(&categories.join(", "), &Color::Cyan, false)
+            ));
         }
 
         if let Some(ref start_time) = media_info.live_start_time {
@@ -473,13 +473,13 @@ impl OutputManager {
             },
         ];
 
-        if let Some(ref categories) = media_info.category {
-            if !categories.is_empty() {
-                rows.push(TableRow {
-                    property: "Category",
-                    value: Cow::Owned(categories.join(", ")),
-                });
-            }
+        if let Some(ref categories) = media_info.category
+            && !categories.is_empty()
+        {
+            rows.push(TableRow {
+                property: "Category",
+                value: Cow::Owned(categories.join(", ")),
+            });
         }
 
         if let Some(ref start_time) = media_info.live_start_time {
@@ -572,13 +572,13 @@ impl OutputManager {
             ));
             output.push_str(&format!("is_live,{}\n", media_info.is_live));
 
-            if let Some(ref categories) = media_info.category {
-                if !categories.is_empty() {
-                    output.push_str(&format!(
-                        "category,\"{}\"\n",
-                        Self::escape_csv(&categories.join(", "))
-                    ));
-                }
+            if let Some(ref categories) = media_info.category
+                && !categories.is_empty()
+            {
+                output.push_str(&format!(
+                    "category,\"{}\"\n",
+                    Self::escape_csv(&categories.join(", "))
+                ));
             }
 
             if let Some(ref start_time) = media_info.live_start_time {
