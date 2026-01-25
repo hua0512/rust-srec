@@ -21,34 +21,47 @@ COPY crates ./crates
 COPY mesio-cli ./mesio-cli
 COPY strev-cli ./strev-cli
 
-RUN cargo chef prepare --recipe-path recipe.json
+# Limit the recipe to the backend binary.
+# This avoids pulling in unrelated workspace members (e.g. the Tauri desktop crate).
+RUN cargo chef prepare --recipe-path recipe.json --bin rust-srec
 
 # =============================================================================
 # Stage 2: Cacher - Build dependencies only (highly cacheable)
 # =============================================================================
 FROM chef AS cacher
 
-# Install build dependencies including protoc
-RUN apt-get update && apt-get install -y \
-    protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
+# Install build dependencies including protoc.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        protobuf-compiler \
+        pkg-config \
+        libssl-dev \
+        ; \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY --from=planner /app/recipe.json recipe.json
 
 # Build only dependencies - this layer is cached if recipe.json unchanged
-RUN cargo chef cook --release --locked --recipe-path recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json \
+    --package rust-srec --bin rust-srec --features tls-native-fallback
 
 # =============================================================================
 # Stage 3: Builder - Build the actual application
 # =============================================================================
 FROM chef AS builder
 
-# Install build dependencies including protoc
-RUN apt-get update && apt-get install -y \
-    protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
+# Install build dependencies including protoc.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        protobuf-compiler \
+        pkg-config \
+        libssl-dev \
+        ; \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -63,8 +76,9 @@ COPY crates ./crates
 COPY mesio-cli ./mesio-cli
 COPY strev-cli ./strev-cli
 
-# Build the release binaries (only compiles our code, deps are cached)
-RUN cargo build --locked --release --bin rust-srec --bin rust-srec-vapid
+# Build the release binary (only compiles our code, deps are cached)
+# Enable native-tls fallback for legacy TLS endpoints (e.g. Douyu CDN/danmu).
+RUN cargo build --locked --release --features tls-native-fallback -p rust-srec --bin rust-srec
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -73,6 +87,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
+    libssl3 \
     locales \
     python3 \
     python3-pip \
@@ -127,7 +142,6 @@ WORKDIR /app
 
 # Copy the built binary from the builder stage
 COPY --from=builder /app/target/release/rust-srec /app/rust-srec
-COPY --from=builder /app/target/release/rust-srec-vapid /app/rust-srec-vapid
 
 # Expose the default port (adjust as needed)
 EXPOSE 8080

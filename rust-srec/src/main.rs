@@ -3,23 +3,13 @@
 //! A production-ready streaming recorder with support for multiple platforms,
 //! danmu collection, post-processing pipelines, and notifications.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-use rust_srec::database;
 use rust_srec::logging::init_logging;
 use rust_srec::panic_hook;
 use rust_srec::services::ServiceContainer;
+use rust_srec::{database, utils::http_client::install_rustls_provider};
 use tracing::{error, info, warn};
-
-fn install_rustls_provider() {
-    static PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
-    PROVIDER_INSTALLED.get_or_init(|| {
-        if let Err(e) = rustls::crypto::aws_lc_rs::default_provider().install_default() {
-            // Safe to ignore: can happen if another crate installed it first.
-            tracing::debug!(error = ?e, "rustls CryptoProvider already installed");
-        }
-    });
-}
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

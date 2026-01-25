@@ -87,6 +87,7 @@ pub struct WebhookChannel {
 impl WebhookChannel {
     /// Create a new Webhook channel.
     pub fn new(config: WebhookConfig) -> Self {
+        crate::utils::http_client::install_rustls_provider();
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(config.timeout_secs))
             .build()

@@ -359,8 +359,7 @@ impl TimingState {
             let ideal_next_ts = last_video.timestamp_ms + self.video_frame_interval;
 
             new_delta = ideal_next_ts as i64 - current as i64;
-        } else if let Some(last_audio) =
-            self.last_audio_tag.as_ref().filter(|_| tag.is_audio_tag())
+        } else if let Some(last_audio) = self.last_audio_tag.as_ref().filter(|_| tag.is_audio_tag())
         {
             let ideal_next_ts = last_audio.timestamp_ms + self.audio_sample_interval;
             new_delta = ideal_next_ts as i64 - current as i64;
