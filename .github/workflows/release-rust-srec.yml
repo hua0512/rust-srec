@@ -268,7 +268,11 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: rust-srec-desktop-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}-${{ runner.os }}-${{ runner.arch }}
-          path: rust-srec/src-tauri/target/release/bundle
+          path: |
+            target/release/bundle
+            target/*/release/bundle
+            rust-srec/src-tauri/target/release/bundle
+            rust-srec/src-tauri/target/*/release/bundle
           if-no-files-found: error
 
   docker-build:
