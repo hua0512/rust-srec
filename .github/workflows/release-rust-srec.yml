@@ -264,15 +264,43 @@ jobs:
       - name: Build desktop bundles
         run: cargo tauri build --ci ${{ matrix.args }}
 
-      - name: Create portable Windows zip
+      - name: Collect desktop artifacts (macOS/Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$GITHUB_WORKSPACE/release-assets"
+
+          find "$GITHUB_WORKSPACE/target" \
+            -type f \
+            -path '*/release/bundle/*' \
+            \( \
+              -name '*.dmg' -o \
+              -name '*.msi' -o \
+              -name '*-setup.exe' -o \
+              -name '*.deb' -o \
+              -name '*.rpm' -o \
+              -name '*.AppImage' \
+            \) \
+            -print \
+            -exec cp -v '{}' "$GITHUB_WORKSPACE/release-assets/" ';'
+
+          test -n "$(ls -A "$GITHUB_WORKSPACE/release-assets")"
+
+      - name: Collect desktop artifacts (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
 
+          $root = $env:GITHUB_WORKSPACE
+          $outDir = Join-Path $root 'release-assets'
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
           $candidateReleaseDirs = @(
-            'target/release',
-            '../../target/release'
+            (Join-Path $root 'target/release'),
+            (Join-Path $root 'rust-srec/src-tauri/target/release')
           )
 
           $exe = $null
@@ -286,76 +314,54 @@ jobs:
           if (-not $exe) {
             foreach ($dir in $candidateReleaseDirs) {
               if (-not (Test-Path $dir)) { continue }
-              $exe = Get-ChildItem $dir -Filter '*.exe' |
+              $exe = Get-ChildItem $dir -Filter '*.exe' -File |
                 Where-Object { $_.Name -notlike '*setup*' } |
                 Select-Object -First 1 -ExpandProperty FullName
               if ($exe) { break }
             }
           }
           if (-not $exe) {
-            throw "No desktop .exe found under target/release or ../../target/release"
+            throw "No desktop .exe found under known target dirs"
           }
 
-          $staging = 'portable/rust-srec'
+          $staging = Join-Path $root 'portable/rust-srec'
           New-Item -ItemType Directory -Force -Path $staging | Out-Null
           Copy-Item $exe -Destination $staging -Force
 
-          $resources = $null
           foreach ($dir in $candidateReleaseDirs) {
             $candidate = Join-Path $dir 'resources'
             if (Test-Path $candidate) {
-              $resources = $candidate
+              Copy-Item $candidate -Destination $staging -Recurse -Force
               break
             }
           }
-          if ($resources) {
-            Copy-Item $resources -Destination $staging -Recurse -Force
-          }
 
           $zipName = "rust-srec-desktop-portable-$($env:GITHUB_REF_NAME)-$($env:RUNNER_OS)-$($env:RUNNER_ARCH).zip"
-          Compress-Archive -Path 'portable/*' -DestinationPath $zipName -Force
-          "PORTABLE_ZIP=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $zipPath = Join-Path $outDir $zipName
+          Compress-Archive -Path (Join-Path $root 'portable/*') -DestinationPath $zipPath -Force
 
-      - name: Upload portable zip
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v6
-        with:
-          name: rust-srec-desktop-portable-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}-${{ runner.os }}-${{ runner.arch }}
-          path: ${{ env.PORTABLE_ZIP }}
-          if-no-files-found: error
+          Get-ChildItem (Join-Path $root 'target') -Recurse -File |
+            Where-Object {
+              $_.FullName -match '\\release\\bundle\\' -and (
+                $_.Name -like '*.msi' -or
+                $_.Name -like '*-setup.exe' -or
+                $_.Name -like '*.dmg' -or
+                $_.Name -like '*.deb' -or
+                $_.Name -like '*.rpm' -or
+                $_.Name -like '*.AppImage'
+              )
+            } |
+            ForEach-Object { Copy-Item $_.FullName -Destination $outDir -Force }
 
-      - name: Upload bundles
+          if (-not (Get-ChildItem $outDir -File | Select-Object -First 1)) {
+            throw "No desktop artifacts collected in $outDir"
+          }
+
+      - name: Upload desktop artifacts
         uses: actions/upload-artifact@v6
         with:
           name: rust-srec-desktop-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}-${{ runner.os }}-${{ runner.arch }}
-          path: |
-            ../../target/release/bundle/**/*.dmg
-            ../../target/release/bundle/**/*.msi
-            ../../target/release/bundle/**/*-setup.exe
-            ../../target/release/bundle/**/*.deb
-            ../../target/release/bundle/**/*.rpm
-            ../../target/release/bundle/**/*.AppImage
-
-            ../../target/*/release/bundle/**/*.dmg
-            ../../target/*/release/bundle/**/*.msi
-            ../../target/*/release/bundle/**/*-setup.exe
-            ../../target/*/release/bundle/**/*.deb
-            ../../target/*/release/bundle/**/*.rpm
-            ../../target/*/release/bundle/**/*.AppImage
-
-            target/release/bundle/**/*.dmg
-            target/release/bundle/**/*.msi
-            target/release/bundle/**/*-setup.exe
-            target/release/bundle/**/*.deb
-            target/release/bundle/**/*.rpm
-            target/release/bundle/**/*.AppImage
-
-            target/*/release/bundle/**/*.dmg
-            target/*/release/bundle/**/*.msi
-            target/*/release/bundle/**/*-setup.exe
-            target/*/release/bundle/**/*.deb
-            target/*/release/bundle/**/*.rpm
-            target/*/release/bundle/**/*.AppImage
+          path: release-assets/*
           if-no-files-found: error
 
   docker-build:
