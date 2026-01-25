@@ -264,6 +264,42 @@ jobs:
       - name: Build desktop bundles
         run: cargo tauri build --ci ${{ matrix.args }}
 
+      - name: Create portable Windows zip
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $exe = Join-Path 'target/release' 'rust-srec.exe'
+          if (-not (Test-Path $exe)) {
+            $exe = Get-ChildItem 'target/release' -Filter '*.exe' |
+              Where-Object { $_.Name -notlike '*setup*' } |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $exe) {
+            throw "No desktop .exe found under target/release"
+          }
+
+          $staging = 'portable/rust-srec'
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          Copy-Item $exe -Destination $staging -Force
+
+          if (Test-Path 'target/release/resources') {
+            Copy-Item 'target/release/resources' -Destination $staging -Recurse -Force
+          }
+
+          $zipName = "rust-srec-desktop-portable-$($env:GITHUB_REF_NAME)-$($env:RUNNER_OS)-$($env:RUNNER_ARCH).zip"
+          Compress-Archive -Path 'portable/*' -DestinationPath $zipName -Force
+          "PORTABLE_ZIP=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload portable zip
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: rust-srec-desktop-portable-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ env.PORTABLE_ZIP }}
+          if-no-files-found: error
+
       - name: Upload bundles
         uses: actions/upload-artifact@v6
         with:
