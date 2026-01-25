@@ -73,7 +73,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
-    "@lingui/cli": "^5.7.0",
+    "@lingui/cli": "^5.8.0",
     "@lingui/macro": "^5.7.0",
     "@lingui/vite-plugin": "^5.7.0",
     "@tanstack/devtools-vite": "^0.4.1",
