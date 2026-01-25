@@ -84,8 +84,9 @@ CREATE TABLE template_config (
     pipeline TEXT,
     session_complete_pipeline TEXT,
     paired_segment_pipeline TEXT,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00')
+    -- Milliseconds since Unix epoch (UTC)
+    created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
 );
 
 -- ============================================
@@ -113,15 +114,15 @@ CREATE TABLE streamers (
         'TEMPORAL_DISABLED'
     )),
     priority TEXT NOT NULL DEFAULT 'NORMAL' CHECK (priority IN ('HIGH', 'NORMAL', 'LOW')),
-    last_live_time TEXT,
+    last_live_time INTEGER,
     streamer_specific_config TEXT,
     consecutive_error_count INTEGER DEFAULT 0,
     -- Last recorded error message
     last_error TEXT,
-    disabled_until TEXT,
+    disabled_until INTEGER,
     avatar TEXT,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
+    created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
     FOREIGN KEY (platform_config_id) REFERENCES platform_config(id),
     FOREIGN KEY (template_config_id) REFERENCES template_config(id)
 );
@@ -143,8 +144,8 @@ CREATE TABLE filters (
 CREATE TABLE live_sessions (
     id TEXT PRIMARY KEY NOT NULL,
     streamer_id TEXT NOT NULL,
-    start_time TEXT NOT NULL,
-    end_time TEXT,
+    start_time INTEGER NOT NULL,
+    end_time INTEGER,
     titles TEXT,
     danmu_statistics_id TEXT,
     total_size_bytes BIGINT NOT NULL DEFAULT 0,
@@ -165,7 +166,7 @@ CREATE TABLE media_outputs (
     file_path TEXT NOT NULL,
     file_type TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
     FOREIGN KEY (session_id) REFERENCES live_sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (parent_media_output_id) REFERENCES media_outputs(id) ON DELETE SET NULL
 );
@@ -193,8 +194,8 @@ CREATE TABLE monitor_event_outbox (
     streamer_id TEXT NOT NULL,
     event_type TEXT NOT NULL,
     payload TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    delivered_at TEXT,
+    created_at INTEGER NOT NULL,
+    delivered_at INTEGER,
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     last_error TEXT,
     FOREIGN KEY (streamer_id) REFERENCES streamers(id) ON DELETE CASCADE
@@ -212,15 +213,15 @@ CREATE TABLE job (
     status TEXT NOT NULL CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'INTERRUPTED')),
     config TEXT NOT NULL,
     state TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     input TEXT,                              -- Input path or source for the job
     outputs TEXT,                            -- Output paths (JSON array)
     priority INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),     -- Job priority (higher = more urgent)
     streamer_id TEXT,                        -- Associated streamer ID
     session_id TEXT,                         -- Associated session ID
-    started_at TEXT,                         -- When job started processing
-    completed_at TEXT,                       -- When job completed
+    started_at INTEGER,                      -- When job started processing
+    completed_at INTEGER,                    -- When job completed
     error TEXT,                              -- Error message if failed
     retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),  -- Number of retry attempts
     pipeline_id TEXT,                        -- Pipeline ID to group related jobs
@@ -235,7 +236,7 @@ CREATE TABLE job_execution_logs (
     id TEXT PRIMARY KEY,
     job_id TEXT NOT NULL,
     entry TEXT NOT NULL,
-    created_at TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
     level TEXT,
     message TEXT,
     FOREIGN KEY (job_id) REFERENCES job(id) ON DELETE CASCADE
@@ -248,11 +249,21 @@ CREATE TABLE job_execution_progress (
     job_id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL,
     progress TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
     FOREIGN KEY (job_id) REFERENCES job(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_job_execution_progress_updated_at ON job_execution_progress(updated_at);
+
+-- Keep frequently-updated rows consistent.
+CREATE TRIGGER trg_job_execution_progress_touch_updated_at
+AFTER UPDATE ON job_execution_progress
+FOR EACH ROW
+BEGIN
+    UPDATE job_execution_progress
+    SET updated_at = (unixepoch('now') * 1000)
+    WHERE job_id = NEW.job_id;
+END;
 
 -- Job Presets: Reusable named job configurations
 -- Used in pipeline steps referencing a preset name
@@ -264,8 +275,8 @@ CREATE TABLE job_presets (
     category TEXT,    -- Category for organizing presets
     processor TEXT NOT NULL,
     config TEXT NOT NULL, -- JSON
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00')
+    created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
 );
 
 -- Pipeline Presets: Reusable pipeline configurations
@@ -277,8 +288,8 @@ CREATE TABLE pipeline_presets (
     -- JSON-serialized DAG pipeline definition (DagPipelineDefinition)
     dag_definition TEXT,
     pipeline_type TEXT NOT NULL DEFAULT 'dag',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00')
+    created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
 );
 
 -- ============================================
@@ -300,11 +311,11 @@ CREATE TABLE dag_execution (
     segment_index INTEGER,
     segment_source TEXT,
     -- ISO 8601 timestamp when the DAG was created
-    created_at TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
     -- ISO 8601 timestamp when the DAG was last updated
-    updated_at TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
     -- ISO 8601 timestamp when the DAG completed (success or failure)
-    completed_at TEXT,
+    completed_at INTEGER,
     -- Error message if the DAG failed
     error TEXT,
     -- Total number of steps in the DAG
@@ -331,9 +342,9 @@ CREATE TABLE dag_step_execution (
     -- JSON array of output paths produced by this step
     outputs TEXT,
     -- ISO 8601 timestamp when the step was created
-    created_at TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
     -- ISO 8601 timestamp when the step was last updated
-    updated_at TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
     -- Foreign key constraints
     FOREIGN KEY (dag_id) REFERENCES dag_execution(id) ON DELETE CASCADE,
     FOREIGN KEY (job_id) REFERENCES job(id) ON DELETE SET NULL,
@@ -365,9 +376,9 @@ CREATE TABLE users (
     roles TEXT NOT NULL DEFAULT '["user"]',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
-    last_login_at TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    last_login_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
 );
 
 -- Refresh tokens table: Stores refresh tokens for JWT authentication
@@ -375,9 +386,9 @@ CREATE TABLE refresh_tokens (
     id TEXT PRIMARY KEY NOT NULL,
     user_id TEXT NOT NULL,
     token_hash TEXT NOT NULL UNIQUE,
-    expires_at TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    revoked_at TEXT,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    revoked_at INTEGER,
     device_info TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -408,9 +419,9 @@ CREATE TABLE notification_dead_letter (
     event_payload TEXT NOT NULL,
     error_message TEXT NOT NULL,
     retry_count INTEGER NOT NULL DEFAULT 0,
-    first_attempt_at TEXT NOT NULL,
-    last_attempt_at TEXT NOT NULL,
-    created_at TEXT NOT NULL,
+    first_attempt_at INTEGER NOT NULL,
+    last_attempt_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
     FOREIGN KEY (channel_id) REFERENCES notification_channel(id) ON DELETE CASCADE
 );
 
@@ -421,7 +432,7 @@ CREATE TABLE notification_event_log (
     priority TEXT NOT NULL CHECK (priority IN ('low', 'normal', 'high', 'critical')),
     payload TEXT NOT NULL,
     streamer_id TEXT,
-    created_at TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
     FOREIGN KEY (streamer_id) REFERENCES streamers(id) ON DELETE SET NULL
 );
 
@@ -434,10 +445,10 @@ CREATE TABLE web_push_subscription (
     auth TEXT NOT NULL,
     -- Minimum priority to send (low|normal|high|critical)
     min_priority TEXT NOT NULL DEFAULT 'critical' CHECK (min_priority IN ('low', 'normal', 'high', 'critical')),
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
-    next_attempt_at TEXT,
-    last_429_at TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    next_attempt_at INTEGER,
+    last_429_at INTEGER,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -575,8 +586,8 @@ VALUES (
     '["admin", "user"]',
     TRUE,
     TRUE,
-    (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00'),
-    (strftime('%Y-%m-%dT%H:%M:%f','now') || '+00:00')
+    (unixepoch('now') * 1000),
+    (unixepoch('now') * 1000)
 );
 
 -- Seed supported platforms
@@ -675,8 +686,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'remux',
     'remux',
     '{"video_codec":"copy","audio_codec":"copy","format":"mp4","faststart":true,"overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Remux to MKV: Copy streams to Matroska container
@@ -687,8 +698,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'remux',
     'remux',
     '{"video_codec":"copy","audio_codec":"copy","format":"mkv","faststart":false,"overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -703,8 +714,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'compression',
     'remux',
     '{"video_codec":"h264","audio_codec":"aac","audio_bitrate":"128k","preset":"veryfast","crf":23,"format":"mp4","faststart":true,"overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- High quality H.265/HEVC compression: Best compression ratio
@@ -715,8 +726,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'compression',
     'remux',
     '{"video_codec":"h265","audio_codec":"aac","audio_bitrate":"192k","preset":"medium","crf":22,"format":"mp4","faststart":true,"overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -731,8 +742,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'thumbnail',
     'thumbnail',
     '{"timestamp_secs":10,"width":320,"quality":2}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- HD thumbnail: 640px width for higher quality previews
@@ -743,8 +754,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'thumbnail',
     'thumbnail',
     '{"timestamp_secs":10,"width":640,"quality":2}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Full HD thumbnail: 1280px width for modern displays and video players
@@ -755,8 +766,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'thumbnail',
     'thumbnail',
     '{"timestamp_secs":10,"width":1280,"quality":2}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Max quality thumbnail: 1920px width for full 1080p preservation
@@ -767,8 +778,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'thumbnail',
     'thumbnail',
     '{"timestamp_secs":10,"width":1920,"quality":1}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Native resolution thumbnail: preserves original stream resolution
@@ -779,8 +790,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'thumbnail',
     'thumbnail',
     '{"timestamp_secs":10,"preserve_resolution":true,"quality":1}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -795,8 +806,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'audio',
     'audio_extract',
     '{"format":"mp3","bitrate":"192k","overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Extract audio to AAC (high quality)
@@ -807,8 +818,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'audio',
     'audio_extract',
     '{"format":"aac","bitrate":"256k","overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -823,8 +834,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'archive',
     'compression',
     '{"format":"zip","compression_level":6,"overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -839,8 +850,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'cleanup',
     'delete',
     '{"max_retries":3,"retry_delay_ms":100}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -855,8 +866,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'file_ops',
     'copy_move',
     '{"operation":"copy","create_dirs":true,"verify_integrity":true,"overwrite":false}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Move file to another location
@@ -867,8 +878,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'file_ops',
     'copy_move',
     '{"operation":"move","create_dirs":true,"verify_integrity":true,"overwrite":false}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -883,8 +894,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'upload',
     'rclone',
     '{"operation":"copy","remote":"remote:","remote_path":"/uploads/{streamer}/{date}","delete_after":false,"bandwidth_limit":null}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Upload and delete source
@@ -895,8 +906,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'upload',
     'rclone',
     '{"operation":"move","remote":"remote:","remote_path":"/uploads/{streamer}/{date}","delete_after":true,"bandwidth_limit":null}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -911,8 +922,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'metadata',
     'metadata',
     '{"title":"{title}","artist":"{streamer}","date":"{date}","comment":"Recorded by rust-srec"}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -927,8 +938,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'custom',
     'execute',
     '{"command":"echo {input}"}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Custom FFmpeg command template
@@ -939,8 +950,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'custom',
     'execute',
     '{"command":"ffmpeg -i \"{input}\" -c copy \"{output}\""}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -955,8 +966,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'danmu',
     'danmaku_factory',
     '{"overwrite":true,"verify_output_exists":true,"prefer_manifest":true,"passthrough_inputs":true,"delete_source_xml_on_success":false}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Burn ASS subtitles into video frames (ffmpeg subtitles filter)
@@ -967,8 +978,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'subtitle',
     'ass_burnin',
     '{"match_strategy":"manifest","require_ass":true,"passthrough_inputs":true,"exclude_ass_from_passthrough":true,"output_extension":"mp4","video_codec":"libx264","audio_codec":"copy","crf":23,"preset":"veryfast","overwrite":true,"delete_source_videos_on_success":false,"delete_source_ass_on_success":false}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -983,8 +994,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'remux',
     'remux',
     '{"video_codec":"copy","audio_codec":"copy","format":"mp4","faststart":true,"overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- H.264 medium compression for archival
@@ -995,8 +1006,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'compression',
     'remux',
     '{"video_codec":"h264","audio_codec":"aac","audio_bitrate":"128k","preset":"medium","crf":23,"format":"mp4","faststart":true,"overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- High-quality MP3 audio extraction
@@ -1007,8 +1018,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'audio',
     'audio_extract',
     '{"format":"mp3","bitrate":"320k","overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Thumbnail at 30 seconds (preview)
@@ -1019,8 +1030,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'thumbnail',
     'thumbnail',
     '{"timestamp_secs":30,"width":480,"quality":2}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- HEVC maximum compression (space saver)
@@ -1031,8 +1042,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'compression',
     'remux',
     '{"video_codec":"h265","audio_codec":"aac","audio_bitrate":"96k","preset":"slow","crf":28,"format":"mp4","faststart":true,"overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Ultrafast H.264 encoding (quick share)
@@ -1043,8 +1054,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'compression',
     'remux',
     '{"video_codec":"h264","audio_codec":"aac","audio_bitrate":"128k","preset":"ultrafast","crf":26,"format":"mp4","faststart":true,"overwrite":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Remux Clean: Remux to MP4 and delete original file on success
@@ -1055,8 +1066,8 @@ INSERT INTO job_presets (id, name, description, category, processor, config, cre
     'remux',
     'remux',
     '{"video_codec":"copy","audio_codec":"copy","format":"mp4","faststart":true,"overwrite":true,"remove_input_on_success":true}',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -1076,8 +1087,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Archive to Cloud: Compress -> Upload -> Delete (sequential, each depends on previous)
@@ -1094,8 +1105,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- High Quality Archive: Compress + Thumbnail (parallel) -> Upload (fan-in)
@@ -1112,8 +1123,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Podcast Extraction: Audio extraction -> Upload (sequential)
@@ -1129,8 +1140,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Quick Share: Compress + Thumbnail (parallel for speed)
@@ -1146,8 +1157,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Space Saver: Compress -> Delete (sequential)
@@ -1163,8 +1174,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Full Processing: Remux -> (Thumbnail + Metadata parallel) -> Upload
@@ -1183,8 +1194,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Local Archive: Remux + Thumbnail (parallel) -> Move
@@ -1201,8 +1212,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- ============================================
@@ -1225,8 +1236,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Multi-Output: Generate multiple thumbnails at different timestamps
@@ -1244,8 +1255,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Podcast + Video: Extract audio for podcast while also processing video
@@ -1263,8 +1274,8 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
 
 -- Stream Archive: Remux (delete original) -> Thumbnail (native) -> Upload+Delete (move)
@@ -1390,6 +1401,6 @@ INSERT INTO pipeline_presets (id, name, description, dag_definition, pipeline_ty
         ]
     }',
     'dag',
-    datetime('now'),
-    datetime('now')
+    unixepoch('now') * 1000,
+    unixepoch('now') * 1000
 );
