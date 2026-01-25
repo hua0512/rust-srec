@@ -300,6 +300,23 @@ jobs:
           mkdir -p /tmp/digests/backend
           digest="${{ steps.build-backend.outputs.digest }}"
           touch "/tmp/digests/backend/${digest#sha256:}"
+
+      - name: Build and push vapid
+        id: build-vapid
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: rust-srec/Dockerfile.vapid
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/rust-srec-vapid,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}-vapid
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}-vapid
+
+      - name: Export digest vapid
+        run: |
+          mkdir -p /tmp/digests/vapid
+          digest="${{ steps.build-vapid.outputs.digest }}"
+          touch "/tmp/digests/vapid/${digest#sha256:}"
       
       - name: Build and push frontend
         id: build-frontend
@@ -355,6 +372,12 @@ jobs:
         run: |
           docker buildx imagetools create -t ghcr.io/${{ github.repository_owner }}/rust-srec:dev \
             $(printf 'ghcr.io/${{ github.repository_owner }}/rust-srec@sha256:%s ' *)
+
+      - name: Create manifest list and push vapid
+        working-directory: /tmp/digests/vapid
+        run: |
+          docker buildx imagetools create -t ghcr.io/${{ github.repository_owner }}/rust-srec-vapid:dev \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/rust-srec-vapid@sha256:%s ' *)
       
       - name: Create manifest list and push frontend
         working-directory: /tmp/digests/frontend

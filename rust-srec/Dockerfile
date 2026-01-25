@@ -44,6 +44,10 @@ WORKDIR /app
 
 COPY --from=planner /app/recipe.json recipe.json
 
+# Build scripts in this workspace compile protobufs; ensure proto files are available
+# during dependency cooking.
+COPY --from=planner /app/rust-srec/proto rust-srec/proto
+
 # Build only dependencies - this layer is cached if recipe.json unchanged.
 # We intentionally allow Cargo.lock updates here, then propagate the generated
 # lockfile into the builder stage to keep the final build consistent.
@@ -81,9 +85,13 @@ COPY strev-cli ./strev-cli
 # Use the lockfile produced by the cacher stage (may include target/feature-specific deps).
 COPY --from=cacher /app/Cargo.lock Cargo.lock
 
-# Build the release binary (only compiles our code, deps are cached)
+# Build the release binary (only compiles our code, deps are cached).
+# We first allow Cargo.lock to be updated (if needed for this target/feature set),
+# then immediately re-run with --locked to ensure it is stable.
 # Enable native-tls fallback for legacy TLS endpoints (e.g. Douyu CDN/danmu).
-RUN cargo build --locked --release --features tls-native-fallback -p rust-srec --bin rust-srec
+RUN set -eux; \
+    cargo build --release --features tls-native-fallback -p rust-srec --bin rust-srec; \
+    cargo build --locked --release --features tls-native-fallback -p rust-srec --bin rust-srec
 
 # Runtime stage
 FROM debian:bookworm-slim

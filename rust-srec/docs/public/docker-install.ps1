@@ -150,7 +150,7 @@ function Install-RustSrec {
             $vapidChoice = Read-Host "Generate VAPID keys for browser notifications now? [y/N]"
             if ($vapidChoice -match "^[Yy]$") {
                 Write-Info "Generating VAPID keys via rust-srec-vapid (Docker)..."
-                $vapidOutput = & docker run --rm "ghcr.io/hua0512/rust-srec:$($script:Version)" /app/rust-srec-vapid 2>$null
+                $vapidOutput = & docker run --rm "ghcr.io/hua0512/rust-srec-vapid:$($script:Version)" 2>$null
                 $joined = ($vapidOutput -join "`n")
                 $public = [regex]::Match($joined, "Public Key:\s*(\S+)").Groups[1].Value
                 $private = [regex]::Match($joined, "Private Key:\s*(\S+)").Groups[1].Value
