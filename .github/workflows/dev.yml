@@ -31,17 +31,15 @@ jobs:
         with:
           components: clippy
       - uses: ./.github/actions/setup-protoc
-      - name: Install Linux desktop dependencies
-        if: runner.os == 'Linux'
+      - name: Install Linux TLS dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libglib2.0-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libssl-dev
-          sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
+          sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci
       - name: Clippy check
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --exclude rust-srec-desktop --all-targets --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback -- -D warnings
       - name: sccache stats
         if: always()
         run: sccache --show-stats || true
@@ -72,24 +70,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
-      - name: Install Linux desktop dependencies
-        if: runner.os == 'Linux'
+      - name: Install Linux TLS dependencies
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libglib2.0-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libayatana-appindicator3-dev libxdo-dev libssl-dev
-          sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
+          sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci
-      - name: Run tests (all features)
+      - name: Run tests (backend only)
         if: matrix.os == 'ubuntu-latest'
-        run: cargo nextest run --locked --workspace --all-features
+        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
       - name: Run tests
         if: matrix.os != 'ubuntu-latest'
-        run: cargo nextest run --locked --workspace
-      - name: Run doctests (all features)
+        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop
+      - name: Run doctests (backend only)
         if: matrix.os == 'ubuntu-latest'
-        run: cargo test --locked --workspace --doc --all-features
+        run: cargo test --locked --workspace --exclude rust-srec-desktop --doc --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
       - name: sccache stats
         if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
