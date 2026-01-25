@@ -540,5 +540,14 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: |
+            artifacts/rust-srec-*
+            artifacts/**/*.exe
+            artifacts/**/*.dmg
+            artifacts/**/*.msi
+            artifacts/**/*-setup.exe
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.AppImage
+            artifacts/**/*.zip
           generate_release_notes: true
