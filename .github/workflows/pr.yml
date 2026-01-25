@@ -164,7 +164,7 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm -C rust-srec/frontend install --frozen-lockfile
 
-      - uses: tauri-apps/tauri-action@v1
+      - uses: tauri-apps/tauri-action@action-v0.6.1
         with:
           projectPath: rust-srec/src-tauri
           args: --no-bundle

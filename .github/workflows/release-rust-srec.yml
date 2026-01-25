@@ -3,7 +3,7 @@ name: rust-srec Release
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "rust-srec-v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       version:
@@ -50,9 +50,9 @@ jobs:
 
           BASE_TAG=""
           if [[ -n "$CURRENT_TAG" ]]; then
-            BASE_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -v "^${CURRENT_TAG}$" | head -n 1 || true)
+            BASE_TAG=$(git tag --list 'rust-srec-v*' --sort=-v:refname | grep -v "^${CURRENT_TAG}$" | head -n 1 || true)
           else
-            BASE_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n 1 || true)
+            BASE_TAG=$(git tag --list 'rust-srec-v*' --sort=-v:refname | head -n 1 || true)
           fi
 
           echo "base_tag=$BASE_TAG" >> "$GITHUB_OUTPUT"
@@ -384,11 +384,21 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          VERSION_INPUT="${{ inputs.version }}"
+          if [ -n "$VERSION_INPUT" ]; then
+            RAW="$VERSION_INPUT"
           else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+            RAW="${GITHUB_REF_NAME}"
           fi
+
+          # Git tags are prefixed as rust-srec-vX.Y.Z; docker tags stay at vX.Y.Z.
+          case "$RAW" in
+            rust-srec-v*) VERSION_TAG="${RAW#rust-srec-}" ;;
+            v*) VERSION_TAG="$RAW" ;;
+            *) VERSION_TAG="v$RAW" ;;
+          esac
+
+          echo "version=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Create manifest list and push backend
         working-directory: /tmp/digests/backend
