@@ -95,7 +95,7 @@ export function BrowserNotificationListener() {
 
     const candidates = events
       .filter((e) => isCritical(e.priority))
-      .map((e) => ({ e, t: Date.parse(e.created_at) }))
+      .map((e) => ({ e, t: e.created_at }))
       .filter((x) => Number.isFinite(x.t) && x.t > baseline)
       .sort((a, b) => a.t - b.t);
 

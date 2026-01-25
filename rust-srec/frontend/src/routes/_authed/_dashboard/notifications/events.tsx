@@ -5,7 +5,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import type { I18n } from '@lingui/core';
-import { formatDistanceToNow, parseISO } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import {
   Bell,
   RefreshCw,
@@ -170,8 +170,7 @@ function NotificationEventsPage() {
     const maxCritical = events.reduce((max, e) => {
       const p = (e.priority ?? '').toString().trim().toLowerCase();
       if (p !== 'critical') return max;
-      const ts = Date.parse(e.created_at);
-      return Number.isFinite(ts) ? Math.max(max, ts) : max;
+      return Math.max(max, e.created_at);
     }, 0);
     if (maxCritical <= 0) return;
     const prev = getLastSeenCriticalMs();
@@ -349,11 +348,11 @@ function NotificationEventsPage() {
             {(events ?? []).map((e) => {
               const when = (() => {
                 try {
-                  return formatDistanceToNow(parseISO(e.created_at), {
+                  return formatDistanceToNow(e.created_at, {
                     addSuffix: true,
                   });
                 } catch {
-                  return e.created_at;
+                  return String(e.created_at);
                 }
               })();
 
