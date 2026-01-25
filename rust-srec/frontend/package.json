@@ -56,7 +56,7 @@
     "hls.js": "^1.6.15",
     "ky": "^1.14.0",
     "lucide-react": "^0.563.0",
-    "motion": "^12.23.26",
+    "motion": "^12.29.0",
     "mpegts.js": "^1.8.0",
     "nitro": "latest",
     "protobufjs": "^8.0.0",
