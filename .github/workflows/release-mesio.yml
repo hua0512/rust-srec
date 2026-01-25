@@ -41,7 +41,7 @@ jobs:
       - name: Clippy
         run: cargo clippy -p mesio --locked --features tls-native-fallback -- -D warnings
       - name: Test
-        run: cargo nextest run -p mesio --locked --features tls-native-fallback
+        run: cargo nextest run -p mesio --locked --features tls-native-fallback --no-tests=pass
       - name: Doctests
         run: cargo test -p mesio --locked --doc --features tls-native-fallback
       - name: sccache stats

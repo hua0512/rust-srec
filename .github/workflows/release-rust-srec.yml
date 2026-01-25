@@ -256,7 +256,7 @@ jobs:
           cache-dependency-path: rust-srec/frontend/pnpm-lock.yaml
 
       - name: Install frontend dependencies
-        run: pnpm -C ../../frontend install --frozen-lockfile
+        run: pnpm -C ../frontend install --frozen-lockfile
 
       - name: Build desktop bundles
         run: cargo tauri build --ci ${{ matrix.args }}

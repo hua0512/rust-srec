@@ -42,7 +42,7 @@ jobs:
       - name: Clippy
         run: cargo clippy -p strev --locked --features tls-native-fallback -- -D warnings
       - name: Test
-        run: cargo nextest run -p strev --locked --features tls-native-fallback
+        run: cargo nextest run -p strev --locked --features tls-native-fallback --no-tests=pass
       - name: Doctests
         run: cargo test -p strev --locked --doc --features tls-native-fallback
       - name: sccache stats
