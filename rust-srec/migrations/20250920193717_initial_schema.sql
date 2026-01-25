@@ -94,7 +94,7 @@ CREATE TABLE template_config (
 -- ============================================
 
 -- `streamers` table: The central entity representing a content creator to be monitored.
--- States: NOT_LIVE, LIVE, OUT_OF_SCHEDULE, OUT_OF_SPACE, FATAL_ERROR, CANCELLED, NOT_FOUND, INSPECTING_LIVE, TEMPORAL_DISABLED
+-- States: NOT_LIVE, LIVE, OUT_OF_SCHEDULE, OUT_OF_SPACE, FATAL_ERROR, CANCELLED, NOT_FOUND, INSPECTING_LIVE, TEMPORAL_DISABLED, ERROR, DISABLED
 -- Priority: HIGH (VIP, never miss), NORMAL (standard), LOW (background/archive)
 CREATE TABLE streamers (
     id TEXT PRIMARY KEY NOT NULL,
@@ -111,7 +111,9 @@ CREATE TABLE streamers (
         'CANCELLED',
         'NOT_FOUND',
         'INSPECTING_LIVE',
-        'TEMPORAL_DISABLED'
+        'TEMPORAL_DISABLED',
+        'ERROR',
+        'DISABLED'
     )),
     priority TEXT NOT NULL DEFAULT 'NORMAL' CHECK (priority IN ('HIGH', 'NORMAL', 'LOW')),
     last_live_time INTEGER,

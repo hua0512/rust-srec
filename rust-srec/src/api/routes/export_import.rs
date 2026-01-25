@@ -9,7 +9,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ use crate::database::models::{
 use crate::database::models::{JobPreset, PipelinePreset};
 
 /// Current schema version for exports.
-const EXPORT_SCHEMA_VERSION: &str = "0.1.4";
+const EXPORT_SCHEMA_VERSION: &str = "0.1.5";
 
 fn schema_version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
     fn parse_segment(segment: &str) -> Option<u32> {
@@ -57,6 +57,21 @@ fn parse_timestamp_ms_str(value: &str) -> Result<i64, String> {
 
     if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
         return Ok(dt.with_timezone(&Utc).timestamp_millis());
+    }
+
+    // Accept common legacy/SQLite-ish formats.
+    // Note: if the timestamp has no timezone, we assume UTC.
+    if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%:z") {
+        return Ok(dt.with_timezone(&Utc).timestamp_millis());
+    }
+    if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f%:z") {
+        return Ok(dt.with_timezone(&Utc).timestamp_millis());
+    }
+    if let Ok(naive) = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S") {
+        return Ok(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc).timestamp_millis());
+    }
+    if let Ok(naive) = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f") {
+        return Ok(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc).timestamp_millis());
     }
 
     if let Ok(ms) = value.parse::<i64>() {
