@@ -233,8 +233,7 @@ impl Processor<FlvData> for TimeConsistencyOperator {
                             && self.continuity_mode == ContinuityMode::Reset
                         {
                             // use the first timestamp as the delta
-                            self.state.timestamp_offset =
-                                -(self.state.first_timestamp_in_segment.unwrap() as i64);
+                            self.state.timestamp_offset = -(tag.timestamp_ms as i64);
                         }
                     }
                     self.state.new_segment = false;
@@ -248,7 +247,9 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 
                     trace!(
                         "{} Adjusted timestamp: {}ms -> {}ms",
-                        self.context.name, original_timestamp, corrected
+                        self.context.name,
+                        original_timestamp,
+                        corrected
                     );
                 }
 
@@ -281,7 +282,7 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 mod tests {
 
     use crate::test_utils::{create_audio_tag, create_test_header, create_video_tag};
-    use pipeline_common::{CancellationToken, StreamerContext, init_test_tracing};
+    use pipeline_common::{init_test_tracing, CancellationToken, StreamerContext};
 
     use super::*;
 
