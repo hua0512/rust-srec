@@ -255,6 +255,9 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: rust-srec/frontend/pnpm-lock.yaml
 
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
       - name: Install frontend dependencies
         run: pnpm -C ../frontend install --frozen-lockfile
 
