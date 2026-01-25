@@ -73,7 +73,7 @@ json-patch = "4.1"
 chrono-tz = "0.10"
 cron = "0.15"
 dotenvy = "0.15"
-sysinfo = { version = "0.37" }
+sysinfo = { version = "0.38" }
 tracing-appender = "0.2"
 mockall = "0.14.0"
 proptest = "1.4"
