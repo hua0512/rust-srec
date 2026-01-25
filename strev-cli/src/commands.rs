@@ -460,35 +460,39 @@ impl CommandExecutor {
                 .iter()
                 .enumerate()
                 .map(|(i, stream)| {
+                    let audio_marker = if stream.is_audio_only { " 🔊" } else { "" };
                     if let Some(extras) = &stream.extras {
                         if let Some(cdn) = extras.get("cdn").and_then(|v| v.as_str()) {
                             format!(
-                                "{}: {} - {}/{} ({}) [{}]",
+                                "{}: {} - {}/{} ({}){} [{}]",
                                 i + 1,
                                 stream.quality,
                                 stream.stream_format,
                                 stream.media_format,
                                 stream.codec,
+                                audio_marker,
                                 cdn
                             )
                         } else {
                             format!(
-                                "{}: {} - {}/{} ({})",
+                                "{}: {} - {}/{} ({}){}",
                                 i + 1,
                                 stream.quality,
                                 stream.stream_format,
                                 stream.media_format,
-                                stream.codec
+                                stream.codec,
+                                audio_marker
                             )
                         }
                     } else {
                         format!(
-                            "{}: {} - {}/{} ({})",
+                            "{}: {} - {}/{} ({}){}",
                             i + 1,
                             stream.quality,
                             stream.stream_format,
                             stream.media_format,
-                            stream.codec
+                            stream.codec,
+                            audio_marker
                         )
                     }
                 })

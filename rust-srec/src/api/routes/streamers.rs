@@ -791,11 +791,11 @@ mod property_tests {
             Ok(())
         }
 
-        async fn set_disabled_until(&self, _id: &str, _until: Option<&str>) -> crate::Result<()> {
+        async fn set_disabled_until(&self, _id: &str, _until: Option<i64>) -> crate::Result<()> {
             Ok(())
         }
 
-        async fn update_last_live_time(&self, _id: &str, _time: &str) -> crate::Result<()> {
+        async fn update_last_live_time(&self, _id: &str, _time: i64) -> crate::Result<()> {
             Ok(())
         }
 
@@ -829,7 +829,7 @@ mod property_tests {
                 .find(|s| s.id == id)
             {
                 s.consecutive_error_count = Some(error_count);
-                s.disabled_until = disabled_until.map(|dt| dt.to_rfc3339());
+                s.disabled_until = disabled_until.map(|dt| dt.timestamp_millis());
             }
             Ok(())
         }
@@ -849,7 +849,7 @@ mod property_tests {
                 s.consecutive_error_count = Some(0);
                 s.disabled_until = None;
                 if let Some(time) = last_live_time {
-                    s.last_live_time = Some(time.to_rfc3339());
+                    s.last_live_time = Some(time.timestamp_millis());
                 }
             }
             Ok(())
@@ -1107,7 +1107,6 @@ pub async fn extract_metadata(
     Json(request): Json<ExtractMetadataRequest>,
 ) -> ApiResult<Json<ExtractMetadataResponse>> {
     use crate::domain::value_objects::StreamerUrl;
-    use tokio::process::Command;
 
     // Validate URL format
     let url = match StreamerUrl::new(&request.url) {
@@ -1135,16 +1134,14 @@ pub async fn extract_metadata(
     // the external `streamlink` CLI can handle it and suggest the `streamlink`
     // pseudo-platform.
     if platform_name.is_none() {
-        let can_handle = Command::new(
+        let mut cmd = process_utils::tokio_command(
             std::env::var("STREAMLINK_PATH").unwrap_or_else(|_| "streamlink".to_string()),
-        )
-        .arg("--can-handle-url-no-redirect")
-        .arg(&request.url)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .is_ok_and(|s| s.success());
+        );
+        cmd.arg("--can-handle-url-no-redirect")
+            .arg(&request.url)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        let can_handle = cmd.status().await.is_ok_and(|s| s.success());
         if can_handle {
             platform_name = Some("streamlink".to_string());
         }

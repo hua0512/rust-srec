@@ -261,6 +261,7 @@ impl DanmuService {
         // Extract room ID - use platform-specific extras when available
         // - Huya: uses "presenter_uid" from extras
         // - Douyin: uses "id_str" from extras
+        // - Douyu: uses "rid" from extras
         // - Others: fallback to URL-based extraction
         let platform = provider.platform();
         let room_id = match platform {
@@ -277,6 +278,14 @@ impl DanmuService {
                 extras
                     .as_ref()
                     .and_then(|e| e.get("id_str"))
+                    .cloned()
+                    .or_else(|| provider.extract_room_id(streamer_url))
+            }
+            "douyu" => {
+                // Douyu uses rid for danmu connection
+                extras
+                    .as_ref()
+                    .and_then(|e| e.get("rid"))
                     .cloned()
                     .or_else(|| provider.extract_room_id(streamer_url))
             }

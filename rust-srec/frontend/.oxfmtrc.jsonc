@@ -9,5 +9,12 @@
   "bracketSpacing": true,
   "bracketSameLine": false,
   "arrowParens": "always",
-  "ignorePatterns": ["src/routeTree.gen.ts", ".output/**", "src/locales/**"],
+  "ignorePatterns": [
+    "src/routeTree.gen.ts",
+    ".output/**",
+    "src/locales/**",
+    "dist-desktop/**",
+    "dist/**",
+    "node_modules/**"
+  ],
 }

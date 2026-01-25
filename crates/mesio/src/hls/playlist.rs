@@ -1,6 +1,7 @@
 // HLS Playlist Engine: Handles fetching, parsing, and managing HLS playlists.
 
 use crate::cache::{CacheKey, CacheManager, CacheMetadata, CacheResourceType};
+use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::{HlsConfig, HlsVariantSelectionPolicy};
 use crate::hls::scheduler::ScheduledSegmentJob;
@@ -9,7 +10,6 @@ use async_trait::async_trait;
 use m3u8_rs::{MasterPlaylist, MediaPlaylist, MediaSegment, parse_playlist_res};
 use moka::future::Cache;
 use moka::policy::EvictionPolicy;
-use reqwest::Client;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -62,7 +62,7 @@ pub enum PlaylistUpdateEvent {
 }
 
 pub struct PlaylistEngine {
-    http_client: Client,
+    clients: Arc<ClientPool>,
     cache_service: Option<Arc<CacheManager>>,
     config: Arc<HlsConfig>,
 }
@@ -194,8 +194,8 @@ impl PlaylistProvider for PlaylistEngine {
             };
         }
 
-        let response = self
-            .http_client
+        let client = self.clients.client_for_url(&playlist_url);
+        let response = client
             .get(playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
             .query(&self.config.base.params)
@@ -347,8 +347,8 @@ impl PlaylistProvider for PlaylistEngine {
             })?;
 
         debug!("Selected media playlist URL: {media_playlist_url}");
-        let response = self
-            .http_client
+        let client = self.clients.client_for_url(&media_playlist_url);
+        let response = client
             .get(media_playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
             .query(&self.config.base.params)
@@ -519,12 +519,12 @@ impl PlaylistProvider for PlaylistEngine {
 
 impl PlaylistEngine {
     pub fn new(
-        http_client: Client,
+        clients: Arc<ClientPool>,
         cache_service: Option<Arc<CacheManager>>,
         config: Arc<HlsConfig>,
     ) -> Self {
         Self {
-            http_client,
+            clients,
             cache_service,
             config,
         }
@@ -625,8 +625,8 @@ impl PlaylistEngine {
             return Err(HlsDownloaderError::Cancelled);
         }
 
-        let response = self
-            .http_client
+        let client = self.clients.client_for_url(playlist_url);
+        let response = client
             .get(playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
             .query(&self.config.base.params);
@@ -973,6 +973,13 @@ mod tests {
     use std::collections::VecDeque;
     use tokio_util::sync::CancellationToken;
 
+    fn test_engine() -> PlaylistEngine {
+        let config = Arc::new(HlsConfig::default());
+        let clients =
+            Arc::new(crate::downloader::create_client_pool(&config.base).expect("client pool"));
+        PlaylistEngine::new(clients, None, config)
+    }
+
     fn parse_media_playlist(input: &str) -> MediaPlaylist {
         match parse_playlist_res(input.as_bytes()).expect("playlist should parse") {
             m3u8_rs::Playlist::MediaPlaylist(pl) => pl,
@@ -982,8 +989,7 @@ mod tests {
 
     #[tokio::test]
     async fn process_segments_skips_empty_uri_segment() {
-        let engine =
-            PlaylistEngine::new(reqwest::Client::new(), None, Arc::new(HlsConfig::default()));
+        let engine = test_engine();
         let playlist = parse_media_playlist(
             "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:2.0,\n\n",
         );
@@ -1006,8 +1012,7 @@ mod tests {
 
     #[tokio::test]
     async fn process_segments_infers_byterange_offset_and_reuses_previous_uri() {
-        let engine =
-            PlaylistEngine::new(reqwest::Client::new(), None, Arc::new(HlsConfig::default()));
+        let engine = test_engine();
         let mut playlist = parse_media_playlist(
             "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:2.0,\n#EXT-X-BYTERANGE:10@0\nfile.ts\n",
         );
@@ -1062,8 +1067,7 @@ mod tests {
 
     #[test]
     fn preprocess_twitch_playlist_keeps_daterange_and_transforms_prefetch() {
-        let engine =
-            PlaylistEngine::new(reqwest::Client::new(), None, Arc::new(HlsConfig::default()));
+        let engine = test_engine();
 
         let input = "#EXTM3U\n\
 #EXT-X-DATERANGE:ID=\"stitched-ad-1\",CLASS=\"twitch-stitched-ad\",START-DATE=\"2026-01-01T00:00:02Z\",DURATION=4.0\n\
@@ -1124,8 +1128,7 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_and_parse_playlist_returns_cancelled_when_token_cancelled() {
-        let engine =
-            PlaylistEngine::new(reqwest::Client::new(), None, Arc::new(HlsConfig::default()));
+        let engine = test_engine();
         let url = Url::parse("https://example.com/playlist.m3u8").expect("valid url");
         let token = CancellationToken::new();
         token.cancel();

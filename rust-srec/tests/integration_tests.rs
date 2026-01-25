@@ -1029,7 +1029,7 @@ mod streamer_manager_tests {
         assert!(manager.is_disabled(&streamer_id));
 
         // Verify in database
-        let result: (Option<String>,) =
+        let result: (Option<i64>,) =
             sqlx::query_as("SELECT disabled_until FROM streamers WHERE id = ?")
                 .bind(&streamer_id)
                 .fetch_one(&pool)

@@ -2,8 +2,7 @@
  * Protocol Buffer types and codec for log event WebSocket messages.
  * Generated from rust-srec/proto/log_event.proto
  */
-import pkg from 'protobufjs';
-const { parse } = pkg;
+import { log_event as pb } from './log_event_pb.js';
 
 // Log severity levels
 export enum LogLevel {
@@ -45,51 +44,9 @@ export interface WsMessage {
   payload: WsMessagePayload;
 }
 
-// Protobuf schema definition
-const protoSchema = `
-syntax = "proto3";
-
-package log_event;
-
-enum LogLevel {
-  LOG_LEVEL_UNSPECIFIED = 0;
-  LOG_LEVEL_TRACE = 1;
-  LOG_LEVEL_DEBUG = 2;
-  LOG_LEVEL_INFO = 3;
-  LOG_LEVEL_WARN = 4;
-  LOG_LEVEL_ERROR = 5;
-}
-
-enum EventType {
-  EVENT_TYPE_UNSPECIFIED = 0;
-  EVENT_TYPE_LOG = 1;
-  EVENT_TYPE_ERROR = 2;
-}
-
-message WsMessage {
-  EventType event_type = 1;
-  oneof payload {
-    LogEvent log = 2;
-    ErrorPayload error = 3;
-  }
-}
-
-message LogEvent {
-  int64 timestamp_ms = 1;
-  LogLevel level = 2;
-  string target = 3;
-  string message = 4;
-}
-
-message ErrorPayload {
-  string code = 1;
-  string message = 2;
-}
-`;
-
-// Parse the proto schema
-const root = parse(protoSchema).root;
-const WsMessageType = root.lookupType('log_event.WsMessage');
+// Precompiled protobufjs codec.
+// Avoids runtime schema parsing (which relies on codegen / unsafe-eval).
+const WsMessageType = pb.WsMessage;
 
 /**
  * Convert protobuf Long to bigint

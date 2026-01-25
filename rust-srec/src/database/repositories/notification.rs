@@ -208,9 +208,9 @@ impl NotificationRepository for SqlxNotificationRepository {
         .bind(&entry.event_payload)
         .bind(&entry.error_message)
         .bind(entry.retry_count)
-        .bind(&entry.first_attempt_at)
-        .bind(&entry.last_attempt_at)
-        .bind(&entry.created_at)
+        .bind(entry.first_attempt_at)
+        .bind(entry.last_attempt_at)
+        .bind(entry.created_at)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -259,11 +259,11 @@ impl NotificationRepository for SqlxNotificationRepository {
     }
 
     async fn cleanup_old_dead_letters(&self, retention_days: i32) -> Result<i32> {
-        let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
-        let cutoff_str = cutoff.to_rfc3339();
+        let cutoff_ms = crate::database::time::now_ms()
+            - chrono::Duration::days(retention_days as i64).num_milliseconds();
 
         let result = sqlx::query("DELETE FROM notification_dead_letter WHERE created_at < ?")
-            .bind(&cutoff_str)
+            .bind(cutoff_ms)
             .execute(&self.pool)
             .await?;
 
@@ -283,7 +283,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         .bind(&entry.priority)
         .bind(&entry.payload)
         .bind(&entry.streamer_id)
-        .bind(&entry.created_at)
+        .bind(entry.created_at)
         .execute(&self.pool)
         .await?;
         Ok(())

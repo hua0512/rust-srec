@@ -12,6 +12,9 @@ import { cn } from '@/lib/utils';
 import { resolveUrl } from '@/server/functions/parse';
 import { toast } from 'sonner';
 
+import { BASE_URL } from '@/utils/env';
+import { getDesktopAccessToken } from '@/utils/session';
+
 export interface PlayerCardProps {
   url: string;
   title?: string;
@@ -163,8 +166,17 @@ export function PlayerCard({
     // Build proxy URL if headers are needed
     const shouldProxy =
       !!currentHeaders && Object.keys(currentHeaders).length > 0;
+
+    const isDesktopBuild = import.meta.env.VITE_DESKTOP === '1';
+    const desktopToken = isDesktopBuild ? getDesktopAccessToken() : null;
+    const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+
     const playUrl = shouldProxy
-      ? `/stream-proxy?url=${encodeURIComponent(currentUrl)}&headers=${encodeURIComponent(JSON.stringify(currentHeaders))}`
+      ? isDesktopBuild
+        ? desktopToken
+          ? `${baseUrl}/stream-proxy?url=${encodeURIComponent(currentUrl)}&headers=${encodeURIComponent(JSON.stringify(currentHeaders))}&token=${encodeURIComponent(desktopToken)}`
+          : currentUrl
+        : `/stream-proxy?url=${encodeURIComponent(currentUrl)}&headers=${encodeURIComponent(JSON.stringify(currentHeaders))}`
       : currentUrl;
 
     console.log('[PlayerCard] Init:', {

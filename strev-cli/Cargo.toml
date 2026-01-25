@@ -1,6 +1,6 @@
 [package]
 name = "strev"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 description = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms"
 authors = ["rust-srec team"]
@@ -52,3 +52,6 @@ table-output = ["tabled"]
 regex-filters = ["regex"]
 minimal = []                                                                 # No optional features
 static-ssl = ["platforms-parser/static-ssl"]
+
+# Opt-in: enable native-tls fallback for legacy TLS endpoints.
+tls-native-fallback = ["platforms-parser/tls-native-fallback"]

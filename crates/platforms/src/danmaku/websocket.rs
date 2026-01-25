@@ -1,16 +1,21 @@
 use async_trait::async_trait;
 use futures::{SinkExt, StreamExt};
+use rustls::{ClientConfig, crypto::aws_lc_rs};
+use rustls_platform_verifier::BuilderVerifierExt;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, mpsc};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
+    Connector, MaybeTlsStream, WebSocketStream, connect_async_tls_with_config,
+    tungstenite::protocol::Message,
 };
 use tracing::{debug, error, info, trace, warn};
+use url::Url;
 
 use crate::danmaku::ConnectionConfig;
 use crate::danmaku::error::{DanmakuError, Result};
@@ -18,6 +23,120 @@ use crate::danmaku::event::DanmuItem;
 use crate::danmaku::provider::{DanmuConnection, DanmuProvider};
 
 const MAX_ACTIVE_CONNECTIONS: usize = 1024;
+
+const ENV_NATIVE_TLS_HOSTS: &str = "RUST_SREC_NATIVE_TLS_HOSTS";
+
+fn default_native_tls_hosts() -> Vec<String> {
+    // Douyu danmu uses legacy TLS configs on some POPs.
+    vec!["danmuproxy.douyu.com".to_string()]
+}
+
+fn native_tls_hosts_from_env() -> Vec<String> {
+    let Ok(raw) = std::env::var(ENV_NATIVE_TLS_HOSTS) else {
+        return Vec::new();
+    };
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn host_matches_entry(host: &str, entry: &str) -> bool {
+    let entry = entry.trim();
+    if entry.is_empty() {
+        return false;
+    }
+
+    if host.eq_ignore_ascii_case(entry) {
+        return true;
+    }
+
+    let normalized = entry.strip_prefix('.').unwrap_or(entry);
+    host.len() > normalized.len()
+        && host
+            .to_ascii_lowercase()
+            .ends_with(&format!(".{normalized}").to_ascii_lowercase())
+}
+
+fn should_use_native_tls(host: &str) -> bool {
+    static HOSTS: OnceLock<Vec<String>> = OnceLock::new();
+    let hosts = HOSTS.get_or_init(|| {
+        let mut hosts = default_native_tls_hosts();
+        hosts.extend(native_tls_hosts_from_env());
+        hosts
+    });
+    hosts.iter().any(|entry| host_matches_entry(host, entry))
+}
+
+fn install_rustls_provider() {
+    static PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
+    PROVIDER_INSTALLED.get_or_init(|| {
+        if let Err(e) = aws_lc_rs::default_provider().install_default() {
+            debug!(existing_provider = ?e, "rustls CryptoProvider already installed");
+        }
+    });
+}
+
+fn rustls_connector() -> Connector {
+    static CONFIG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
+    let config = CONFIG
+        .get_or_init(|| {
+            install_rustls_provider();
+
+            let provider = Arc::new(aws_lc_rs::default_provider());
+            let tls_config = ClientConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .expect("Failed to configure default TLS protocol versions")
+                .with_platform_verifier()
+                .expect("Failed to configure platform verifier")
+                .with_no_client_auth();
+
+            Arc::new(tls_config)
+        })
+        .clone();
+
+    Connector::Rustls(config)
+}
+
+#[cfg(feature = "tls-native-fallback")]
+fn native_tls_connector() -> Option<Connector> {
+    static CONNECTOR: OnceLock<Option<native_tls::TlsConnector>> = OnceLock::new();
+    let connector = CONNECTOR
+        .get_or_init(|| native_tls::TlsConnector::new().ok())
+        .clone()?;
+    Some(Connector::NativeTls(connector))
+}
+
+fn connector_for_url(url: &str) -> Connector {
+    let host = Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string));
+
+    if let Some(host) = host.as_deref()
+        && should_use_native_tls(host)
+    {
+        #[cfg(feature = "tls-native-fallback")]
+        {
+            match native_tls_connector() {
+                Some(connector) => {
+                    debug!(%host, "Using native-tls for WebSocket connection");
+                    return connector;
+                }
+                None => {
+                    warn!(%host, "Failed to create native-tls connector; falling back to rustls")
+                }
+            }
+        }
+
+        #[cfg(not(feature = "tls-native-fallback"))]
+        {
+            debug!(%host, "native-tls requested for WebSocket but feature tls-native-fallback not enabled; using rustls");
+        }
+    }
+
+    rustls_connector()
+}
 
 fn parse_cookie_header(input: &str) -> Vec<(String, String)> {
     input
@@ -317,7 +436,9 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                             }
 
                             let connect_result = if headers.is_empty() {
-                                connect_async(&url).await
+                                let connector = connector_for_url(&url);
+                                connect_async_tls_with_config(&url, None, true, Some(connector))
+                                    .await
                             } else {
                                 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
                                 use tokio_tungstenite::tungstenite::http::Request;
@@ -345,7 +466,16 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                                     builder = builder.header(name, value);
                                 }
                                 match builder.body(()) {
-                                    Ok(request) => connect_async(request).await,
+                                    Ok(request) => {
+                                        let connector = connector_for_url(&url);
+                                        connect_async_tls_with_config(
+                                            request,
+                                            None,
+                                            true,
+                                            Some(connector),
+                                        )
+                                        .await
+                                    }
                                     Err(e) => {
                                         error!("Failed to build request: {}", e);
                                         continue;

@@ -42,7 +42,7 @@ impl MonitorOutboxTxOps {
         .bind(streamer_id)
         .bind(event_type)
         .bind(payload)
-        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(crate::database::time::now_ms())
         .execute(tx)
         .await?;
 
@@ -84,12 +84,12 @@ impl MonitorOutboxOps {
 
     /// Mark an event as delivered.
     pub async fn mark_delivered(pool: &SqlitePool, id: i64) -> Result<()> {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
 
         sqlx::query(
             "UPDATE monitor_event_outbox SET delivered_at = ?, attempts = attempts + 1, last_error = NULL WHERE id = ?",
         )
-        .bind(&now)
+        .bind(now)
         .bind(id)
         .execute(pool)
         .await?;
@@ -101,7 +101,7 @@ impl MonitorOutboxOps {
     ///
     /// This prevents unbounded growth of the outbox table. The outbox is not intended
     /// as an audit log: delivered entries are safe to delete.
-    pub async fn prune_delivered_before(pool: &SqlitePool, cutoff_rfc3339: &str) -> Result<u64> {
+    pub async fn prune_delivered_before(pool: &SqlitePool, cutoff_ms: i64) -> Result<u64> {
         let result = sqlx::query(
             r#"
             DELETE FROM monitor_event_outbox
@@ -109,7 +109,7 @@ impl MonitorOutboxOps {
               AND delivered_at < ?
             "#,
         )
-        .bind(cutoff_rfc3339)
+        .bind(cutoff_ms)
         .execute(pool)
         .await?;
 
@@ -134,7 +134,7 @@ impl MonitorOutboxOps {
 pub struct OutboxEntry {
     pub id: i64,
     pub payload: String,
-    pub created_at: String,
+    pub created_at: i64,
     pub attempts: i64,
 }
 
@@ -154,8 +154,8 @@ mod tests {
                 streamer_id TEXT NOT NULL,
                 event_type TEXT NOT NULL,
                 payload TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                delivered_at TEXT,
+                created_at INTEGER NOT NULL,
+                delivered_at INTEGER,
                 attempts INTEGER DEFAULT 0,
                 last_error TEXT
             )
@@ -206,7 +206,7 @@ mod tests {
         .bind("test-1")
         .bind("StateChanged")
         .bind("{}")
-        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(crate::database::time::now_ms())
         .execute(&pool)
         .await
         .unwrap();
@@ -239,41 +239,44 @@ mod tests {
         .bind("s1")
         .bind("StateChanged")
         .bind("{}")
-        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(crate::database::time::now_ms())
         .execute(&pool)
         .await
         .unwrap();
 
         // Delivered row older than cutoff should be pruned
-        let old_delivered = (chrono::Utc::now() - chrono::Duration::days(2)).to_rfc3339();
+        let old_delivered =
+            crate::database::time::now_ms() - chrono::Duration::days(2).num_milliseconds();
         sqlx::query(
             "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at, delivered_at) VALUES (?, ?, ?, ?, ?)",
         )
         .bind("s2")
         .bind("StateChanged")
         .bind("{}")
-        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(crate::database::time::now_ms())
         .bind(old_delivered)
         .execute(&pool)
         .await
         .unwrap();
 
         // Delivered row newer than cutoff should remain
-        let new_delivered = (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339();
+        let new_delivered =
+            crate::database::time::now_ms() - chrono::Duration::minutes(5).num_milliseconds();
         sqlx::query(
             "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at, delivered_at) VALUES (?, ?, ?, ?, ?)",
         )
         .bind("s3")
         .bind("StateChanged")
         .bind("{}")
-        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(crate::database::time::now_ms())
         .bind(new_delivered)
         .execute(&pool)
         .await
         .unwrap();
 
-        let cutoff = (chrono::Utc::now() - chrono::Duration::hours(24)).to_rfc3339();
-        let deleted = MonitorOutboxOps::prune_delivered_before(&pool, &cutoff)
+        let cutoff =
+            crate::database::time::now_ms() - chrono::Duration::hours(24).num_milliseconds();
+        let deleted = MonitorOutboxOps::prune_delivered_before(&pool, cutoff)
             .await
             .unwrap();
         assert_eq!(deleted, 1);

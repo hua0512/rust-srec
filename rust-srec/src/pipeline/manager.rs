@@ -2287,7 +2287,7 @@ where
                                 titles.last().map(|t| t.title != *title).unwrap_or(true);
                             if needs_update {
                                 titles.push(TitleEntry {
-                                    ts: now.to_rfc3339(),
+                                    ts: now.timestamp_millis(),
                                     title: title.clone(),
                                 });
                                 match serde_json::to_string(&titles) {
@@ -3072,11 +3072,11 @@ mod tests {
     use std::sync::Mutex;
 
     struct TestSessionRepository {
-        end_time: Mutex<Option<String>>,
+        end_time: Mutex<Option<i64>>,
     }
 
     impl TestSessionRepository {
-        fn new(end_time: Option<String>) -> Self {
+        fn new(end_time: Option<i64>) -> Self {
             Self {
                 end_time: Mutex::new(end_time),
             }
@@ -3089,8 +3089,8 @@ mod tests {
             Ok(LiveSessionDbModel {
                 id: id.to_string(),
                 streamer_id: "streamer-1".to_string(),
-                start_time: chrono::Utc::now().to_rfc3339(),
-                end_time: self.end_time.lock().expect("lock poisoned").clone(),
+                start_time: chrono::Utc::now().timestamp_millis(),
+                end_time: *self.end_time.lock().expect("lock poisoned"),
                 titles: Some("[]".to_string()),
                 danmu_statistics_id: None,
                 total_size_bytes: 0,
@@ -3116,7 +3116,7 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn end_session(&self, _id: &str, _end_time: &str) -> Result<()> {
+        async fn end_session(&self, _id: &str, _end_time: i64) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3270,7 +3270,7 @@ mod tests {
         }
 
         async fn reset_job_for_retry(&self, id: &str) -> Result<()> {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = chrono::Utc::now().timestamp_millis();
             let mut jobs = self.jobs.lock().expect("lock poisoned");
             let job = jobs
                 .get_mut(id)
@@ -3821,7 +3821,7 @@ mod tests {
         job.dag_step_execution_id = Some("step-exec-1".to_string());
         job.status = "FAILED".to_string();
         job.error = Some("boom".to_string());
-        job.completed_at = Some(chrono::Utc::now().to_rfc3339());
+        job.completed_at = Some(chrono::Utc::now().timestamp_millis());
         let job_id = job.id.clone();
         job_repo.insert(job);
 
@@ -4257,7 +4257,7 @@ mod tests {
     #[tokio::test]
     async fn test_session_complete_triggers_after_session_end_time() {
         let session_repo = Arc::new(TestSessionRepository::new(Some(
-            chrono::Utc::now().to_rfc3339(),
+            chrono::Utc::now().timestamp_millis(),
         )));
         let manager: PipelineManager = PipelineManager::new().with_session_repository(session_repo);
 
@@ -4297,7 +4297,7 @@ mod tests {
     #[tokio::test]
     async fn test_session_complete_waits_for_paired_dags() {
         let session_repo = Arc::new(TestSessionRepository::new(Some(
-            chrono::Utc::now().to_rfc3339(),
+            chrono::Utc::now().timestamp_millis(),
         )));
         let manager: PipelineManager = PipelineManager::new().with_session_repository(session_repo);
 
@@ -4350,7 +4350,7 @@ mod tests {
     #[tokio::test]
     async fn test_session_complete_recovers_segment_dag_completion_without_context() {
         let session_repo = Arc::new(TestSessionRepository::new(Some(
-            chrono::Utc::now().to_rfc3339(),
+            chrono::Utc::now().timestamp_millis(),
         )));
         let dag_repo = Arc::new(TestDagRepository::new());
         let manager: PipelineManager = PipelineManager::new()
@@ -4412,7 +4412,7 @@ mod tests {
     #[tokio::test]
     async fn test_session_complete_recovers_paired_dag_completion_without_context() {
         let session_repo = Arc::new(TestSessionRepository::new(Some(
-            chrono::Utc::now().to_rfc3339(),
+            chrono::Utc::now().timestamp_millis(),
         )));
         let dag_repo = Arc::new(TestDagRepository::new());
         let manager: PipelineManager = PipelineManager::new()

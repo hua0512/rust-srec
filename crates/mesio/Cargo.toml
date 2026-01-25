@@ -15,7 +15,6 @@ futures = { workspace = true }
 reqwest = { workspace = true, features = [
     "json",
     "stream",
-    "rustls-tls",
     "system-proxy",
     "socks",
     "gzip",
@@ -31,6 +30,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 humansize = "2.0.0"
 rand = { workspace = true }
+rustls = { workspace = true }
 moka = { version = "0.12", features = ["future", "sync"] }
 aes = "0.8"
 cbc = "0.1"
@@ -50,3 +50,15 @@ hls = { path = "../hls" }
 [dev-dependencies]
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "time"] }
 proptest = "1.5"
+
+[features]
+default = []
+
+# Optional CLI integration (enabled by mesio-cli)
+clap = ["dep:clap"]
+
+# Opt-in: enable a native-tls reqwest client for legacy endpoints.
+tls-native-fallback = ["reqwest/native-tls"]
+
+# Opt-in: use vendored OpenSSL for native-tls (useful for static/musl builds).
+static-ssl = ["tls-native-fallback", "reqwest/native-tls-vendored"]

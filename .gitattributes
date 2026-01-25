@@ -1,0 +1,5 @@
+# Keep GitHub Actions files LF so embedded bash snippets run cleanly on Linux runners.
+.github/** text eol=lf
+
+# Keep Dockerfiles LF for Linux builds.
+**/Dockerfile text eol=lf

@@ -7,6 +7,7 @@
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use reqwest::Client;
+use std::sync::OnceLock;
 use tracing::{debug, instrument};
 
 use crate::credentials::error::CredentialError;
@@ -29,7 +30,7 @@ use platforms_parser::extractor::platforms::bilibili::{
 
 /// Bilibili credential manager.
 pub struct BilibiliCredentialManager {
-    client: Client,
+    client: OnceLock<Client>,
 }
 
 fn map_platform_refresh_error(err: PlatformsCookieRefreshError) -> CredentialError {
@@ -54,14 +55,30 @@ fn map_platform_refresh_error(err: PlatformsCookieRefreshError) -> CredentialErr
 
 impl BilibiliCredentialManager {
     pub fn new(client: Client) -> Result<Self, CredentialError> {
-        Ok(Self { client })
+        let cell = OnceLock::new();
+        // Best-effort: this only fails if set twice (which cannot happen here).
+        let _ = cell.set(client);
+        Ok(Self { client: cell })
+    }
+
+    /// Create a manager that lazily initializes its underlying HTTP client.
+    ///
+    /// This avoids paying `reqwest::Client` initialization costs on startup.
+    pub fn new_lazy() -> Result<Self, CredentialError> {
+        Ok(Self {
+            client: OnceLock::new(),
+        })
+    }
+
+    fn client(&self) -> &Client {
+        self.client.get_or_init(Client::new)
     }
 
     /// Generate a QR code for Bilibili TV login.
     /// Delegates to platforms crate utility.
     #[instrument(skip(self))]
     pub async fn generate_qr(&self) -> Result<QrGenerateResponse, CredentialError> {
-        platforms_generate_qr(&self.client)
+        platforms_generate_qr(self.client())
             .await
             .map_err(|e| CredentialError::RefreshFailed(e.to_string()))
     }
@@ -70,7 +87,7 @@ impl BilibiliCredentialManager {
     /// Delegates to platforms crate utility.
     #[instrument(skip(self))]
     pub async fn poll_qr(&self, auth_code: &str) -> Result<QrPollResult, CredentialError> {
-        platforms_poll_qr(&self.client, auth_code)
+        platforms_poll_qr(self.client(), auth_code)
             .await
             .map_err(|e| CredentialError::RefreshFailed(e.to_string()))
     }
@@ -86,7 +103,7 @@ impl CredentialManager for BilibiliCredentialManager {
     async fn check_status(&self, cookies: &str) -> Result<CredentialStatus, CredentialError> {
         debug!("Checking Bilibili cookie status");
 
-        let result = platforms_check_status(&self.client, cookies)
+        let result = platforms_check_status(self.client(), cookies)
             .await
             .map_err(map_platform_refresh_error)?;
 
@@ -120,7 +137,7 @@ impl CredentialManager for BilibiliCredentialManager {
 
         debug!("Performing Bilibili cookie refresh");
 
-        let result = platforms_refresh(&self.client, &state.cookies, refresh_token)
+        let result = platforms_refresh(self.client(), &state.cookies, refresh_token)
             .await
             .map_err(map_platform_refresh_error)?;
 
@@ -134,7 +151,7 @@ impl CredentialManager for BilibiliCredentialManager {
 
     #[instrument(skip(self, cookies))]
     async fn validate(&self, cookies: &str) -> Result<bool, CredentialError> {
-        platforms_validate(&self.client, cookies)
+        platforms_validate(self.client(), cookies)
             .await
             .map_err(map_platform_refresh_error)
     }

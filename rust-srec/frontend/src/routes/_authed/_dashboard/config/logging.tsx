@@ -5,7 +5,7 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import type { I18n } from '@lingui/core';
-import { getLoggingConfig, updateLoggingFilter } from '@/server/functions';
+import { getLoggingConfig, updateLoggingFilter, getLogsDownloadUrl } from '@/server/functions';
 import {
   parseFilterDirective,
   serializeFilterDirective,
@@ -44,6 +44,7 @@ import {
   Trash2,
   RotateCcw,
   Sparkles,
+  Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LogViewer } from '@/components/logging/log-viewer';
@@ -190,6 +191,20 @@ function LoggingConfigPage() {
     updateMutation.mutate(directive);
   };
 
+  const handleDownloadLogs = async () => {
+    try {
+      const { url } = await getLogsDownloadUrl();
+      const link = document.createElement('a');
+      link.href = url;
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error: any) {
+      toast.error(error.message || i18n._(msg`Failed to get download URL`));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -222,22 +237,33 @@ function LoggingConfigPage() {
                 </CardDescription>
               </div>
 
-              {/* Quick Add Dropdown */}
-              {availableModules.length > 0 && (
-                <Select onValueChange={handleAddModule}>
-                  <SelectTrigger className="w-full sm:w-[200px]">
-                    <Plus className="w-4 h-4 mr-2" />
-                    <SelectValue placeholder={i18n._(msg`Add module...`)} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableModules.map((module) => (
-                      <SelectItem key={module} value={module}>
-                        <span className="font-mono text-xs">{module}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              {/* Actions & Quick Add */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  onClick={handleDownloadLogs}
+                  className="w-full sm:w-auto"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  <Trans>Download Logs</Trans>
+                </Button>
+
+                {availableModules.length > 0 && (
+                  <Select onValueChange={handleAddModule}>
+                    <SelectTrigger className="w-full sm:w-[200px]">
+                      <Plus className="w-4 h-4 mr-2" />
+                      <SelectValue placeholder={i18n._(msg`Add module...`)} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableModules.map((module) => (
+                        <SelectItem key={module} value={module}>
+                          <span className="font-mono text-xs">{module}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
             </div>
           </CardHeader>
 

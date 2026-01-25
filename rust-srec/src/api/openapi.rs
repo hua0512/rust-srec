@@ -27,6 +27,9 @@ use crate::api::routes::export_import::{
 use crate::api::routes::job::{
     ClonePresetRequest, CreatePresetRequest, PresetListResponse, UpdatePresetRequest,
 };
+use crate::api::routes::logging::{
+    ArchiveTokenResponse, LogEntriesResponse, LogEntry, LogFileInfo, LogFilesResponse,
+};
 use crate::api::routes::logging::{LoggingConfigResponse, ModuleInfo, UpdateLogFilterRequest};
 use crate::api::routes::notifications::{
     CreateChannelRequest, UpdateChannelRequest, UpdateSubscriptionsRequest,
@@ -168,6 +171,10 @@ pub struct MessageResponse {
         // Logging endpoints
         crate::api::routes::logging::get_logging_config,
         crate::api::routes::logging::update_logging_config,
+        crate::api::routes::logging::list_log_files,
+        crate::api::routes::logging::list_log_entries,
+        crate::api::routes::logging::get_archive_token,
+        crate::api::routes::logging::download_logs_archive,
         // Media endpoints
         crate::api::routes::media::get_media_content,
         // Engine endpoints
@@ -264,6 +271,11 @@ pub struct MessageResponse {
             UpdateLogFilterRequest,
             LoggingConfigResponse,
             ModuleInfo,
+            LogFileInfo,
+            LogFilesResponse,
+            ArchiveTokenResponse,
+            LogEntry,
+            LogEntriesResponse,
             // Engine schemas
             CreateEngineRequest,
             UpdateEngineRequest,

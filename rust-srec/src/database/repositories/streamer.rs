@@ -26,8 +26,8 @@ pub trait StreamerRepository: Send + Sync {
     async fn update_streamer_priority(&self, id: &str, priority: &str) -> Result<()>;
     async fn increment_error_count(&self, id: &str) -> Result<i32>;
     async fn reset_error_count(&self, id: &str) -> Result<()>;
-    async fn set_disabled_until(&self, id: &str, until: Option<&str>) -> Result<()>;
-    async fn update_last_live_time(&self, id: &str, time: &str) -> Result<()>;
+    async fn set_disabled_until(&self, id: &str, until: Option<i64>) -> Result<()>;
+    async fn update_last_live_time(&self, id: &str, time: i64) -> Result<()>;
     async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()>;
     async fn delete_streamer(&self, id: &str) -> Result<()>;
 
@@ -127,14 +127,16 @@ impl StreamerRepository for SqlxStreamerRepository {
 
     async fn list_active_streamers(&self) -> Result<Vec<StreamerDbModel>> {
         // Active streamers are those not in CANCELLED, FATAL_ERROR, or NOT_FOUND states
+        let now = crate::database::time::now_ms();
         let streamers = sqlx::query_as::<_, StreamerDbModel>(
             r#"
             SELECT * FROM streamers 
             WHERE state NOT IN ('CANCELLED', 'FATAL_ERROR', 'NOT_FOUND')
-            AND (disabled_until IS NULL OR disabled_until < datetime('now'))
+            AND (disabled_until IS NULL OR disabled_until < ?)
             ORDER BY priority DESC, name
             "#,
         )
+        .bind(now)
         .fetch_all(&self.pool)
         .await?;
         Ok(streamers)
@@ -159,13 +161,13 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.state)
         .bind(&streamer.priority)
         .bind(&streamer.avatar)
-        .bind(&streamer.last_live_time)
+        .bind(streamer.last_live_time)
         .bind(&streamer.streamer_specific_config)
         .bind(streamer.consecutive_error_count)
-        .bind(&streamer.disabled_until)
+        .bind(streamer.disabled_until)
         .bind(&streamer.last_error)
-        .bind(&streamer.created_at)
-        .bind(&streamer.updated_at)
+        .bind(streamer.created_at)
+        .bind(streamer.updated_at)
         .execute(&self.pool)
         .await;
 
@@ -205,12 +207,12 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.state)
         .bind(&streamer.priority)
         .bind(&streamer.avatar)
-        .bind(&streamer.last_live_time)
+        .bind(streamer.last_live_time)
         .bind(&streamer.streamer_specific_config)
         .bind(streamer.consecutive_error_count)
-        .bind(&streamer.disabled_until)
+        .bind(streamer.disabled_until)
         .bind(&streamer.last_error)
-        .bind(&streamer.updated_at)
+        .bind(streamer.updated_at)
         .bind(&streamer.id)
         .execute(&self.pool)
         .await;
@@ -270,7 +272,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         Ok(())
     }
 
-    async fn set_disabled_until(&self, id: &str, until: Option<&str>) -> Result<()> {
+    async fn set_disabled_until(&self, id: &str, until: Option<i64>) -> Result<()> {
         sqlx::query("UPDATE streamers SET disabled_until = ? WHERE id = ?")
             .bind(until)
             .bind(id)
@@ -279,7 +281,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         Ok(())
     }
 
-    async fn update_last_live_time(&self, id: &str, time: &str) -> Result<()> {
+    async fn update_last_live_time(&self, id: &str, time: i64) -> Result<()> {
         sqlx::query("UPDATE streamers SET last_live_time = ? WHERE id = ?")
             .bind(time)
             .bind(id)
@@ -331,6 +333,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         disabled_until: Option<DateTime<Utc>>,
         error: Option<&str>,
     ) -> Result<()> {
+        let disabled_until_ms = disabled_until.map(|dt| dt.timestamp_millis());
         sqlx::query(
             r#"
             UPDATE streamers SET 
@@ -341,7 +344,7 @@ impl StreamerRepository for SqlxStreamerRepository {
             "#,
         )
         .bind(error_count)
-        .bind(disabled_until)
+        .bind(disabled_until_ms)
         .bind(error)
         .bind(id)
         .execute(&self.pool)
@@ -355,10 +358,11 @@ impl StreamerRepository for SqlxStreamerRepository {
         last_live_time: Option<DateTime<Utc>>,
     ) -> Result<()> {
         if let Some(time) = last_live_time {
+            let time_ms = time.timestamp_millis();
             sqlx::query(
                 "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ?",
             )
-            .bind(time)
+            .bind(time_ms)
             .bind(id)
             .execute(&self.pool)
             .await?;

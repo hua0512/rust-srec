@@ -223,18 +223,19 @@ impl AudioExtractProcessor {
     async fn has_audio_stream(&self, input_path: &str) -> Result<bool> {
         let ffprobe_path = std::env::var("FFPROBE_PATH").unwrap_or_else(|_| "ffprobe".to_string());
 
-        let output = Command::new(&ffprobe_path)
-            .args([
-                "-v",
-                "error",
-                "-select_streams",
-                "a:0",
-                "-show_entries",
-                "stream=codec_type",
-                "-of",
-                "csv=p=0",
-                input_path,
-            ])
+        let mut cmd = process_utils::tokio_command(&ffprobe_path);
+        cmd.args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+            input_path,
+        ]);
+        let output = cmd
             .output()
             .await
             .map_err(|e| crate::Error::Other(format!("Failed to run ffprobe: {}", e)))?;

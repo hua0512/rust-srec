@@ -17,6 +17,7 @@ pub mod notifications;
 pub mod parse;
 pub mod pipeline;
 pub mod sessions;
+pub mod stream_proxy;
 pub mod streamers;
 pub mod tdl;
 pub mod templates;
@@ -77,6 +78,8 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/logging", logging::router())
         // Media route with optional query param auth (not middleware)
         .nest("/api/media", media::router())
+        // Stream proxy route with query-param auth (not middleware)
+        .nest("/api/stream-proxy", stream_proxy::router())
         // Merge protected routes
         .merge(protected_routes)
         // Apply state to all routes

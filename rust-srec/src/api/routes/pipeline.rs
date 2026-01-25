@@ -364,11 +364,11 @@ pub struct DagStatusResponse {
     /// Error message if DAG failed.
     pub error: Option<String>,
     /// When the DAG was created.
-    pub created_at: String,
+    pub created_at: i64,
     /// When the DAG was last updated.
-    pub updated_at: String,
+    pub updated_at: i64,
     /// When the DAG completed (if finished).
-    pub completed_at: Option<String>,
+    pub completed_at: Option<i64>,
 }
 
 /// Response for a single DAG step status.
@@ -562,9 +562,9 @@ pub struct DagListItem {
     /// Progress percentage (0-100).
     pub progress_percent: f64,
     /// When the DAG was created.
-    pub created_at: String,
+    pub created_at: i64,
     /// When the DAG was last updated.
-    pub updated_at: String,
+    pub updated_at: i64,
 }
 
 /// Response for DAG cancellation.
@@ -1151,9 +1151,7 @@ pub async fn list_outputs(
     let output_responses: Vec<MediaOutputResponse> = outputs
         .iter()
         .map(|output| {
-            let created_at = chrono::DateTime::parse_from_rfc3339(&output.created_at)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .unwrap_or_else(|_| chrono::Utc::now());
+            let created_at = crate::database::time::ms_to_datetime(output.created_at);
 
             let streamer_id = match requested_streamer_id.as_deref() {
                 Some(streamer_id) => streamer_id.to_string(),

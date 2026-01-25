@@ -1,8 +1,18 @@
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::domain::ProxyConfig;
+
+pub fn install_rustls_provider() {
+    static PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
+    PROVIDER_INSTALLED.get_or_init(|| {
+        if let Err(e) = rustls::crypto::aws_lc_rs::default_provider().install_default() {
+            // Safe to ignore: can happen if another crate installed it first.
+            debug!(existing_provider = ?e, "rustls CryptoProvider already installed");
+        }
+    });
+}
 
 /// Apply `proxy_config` to an existing `reqwest::ClientBuilder`.
 ///
@@ -58,6 +68,8 @@ pub fn build_platforms_client(
     request_timeout: Duration,
     pool_max_idle_per_host: usize,
 ) -> reqwest::Client {
+    install_rustls_provider();
+
     let mut builder = platforms_parser::extractor::create_client_builder(None);
 
     if request_timeout > Duration::ZERO {

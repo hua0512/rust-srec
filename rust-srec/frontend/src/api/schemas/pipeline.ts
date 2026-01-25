@@ -1,5 +1,32 @@
 import { z } from 'zod';
 
+const TimestampMsSchema = z.union([z.number(), z.string()]).transform((v, ctx) => {
+  if (typeof v === 'number') return v;
+
+  const s = v.trim();
+  if (!s) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Empty timestamp' });
+    return z.NEVER;
+  }
+
+  // Accept numeric strings (epoch ms).
+  if (/^\d+$/.test(s)) {
+    const ms = Number(s);
+    if (Number.isFinite(ms)) return ms;
+  }
+
+  // Accept RFC3339/ISO strings.
+  const ms = Date.parse(s);
+  if (!Number.isFinite(ms)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Invalid timestamp: ${s}`,
+    });
+    return z.NEVER;
+  }
+  return ms;
+});
+
 // --- Pipeline Schemas ---
 export const JobLogEntrySchema = z.object({
   timestamp: z.string(),
@@ -162,9 +189,9 @@ export const DagExecutionSchema = z.object({
   progress_percent: z.number(),
   steps: z.array(DagStepSchema),
   error: z.string().nullable().optional(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  completed_at: z.string().nullable().optional(),
+  created_at: TimestampMsSchema,
+  updated_at: TimestampMsSchema,
+  completed_at: TimestampMsSchema.nullable().optional(),
 });
 export type DagExecution = z.infer<typeof DagExecutionSchema>;
 
@@ -215,8 +242,8 @@ export const DagSummarySchema = z.object({
   completed_steps: z.number(),
   failed_steps: z.number(),
   progress_percent: z.number(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: TimestampMsSchema,
+  updated_at: TimestampMsSchema,
 });
 export type DagSummary = z.infer<typeof DagSummarySchema>;
 

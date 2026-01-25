@@ -1,6 +1,6 @@
 [package]
 name = "mesio"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2024"
 description = "Mesio (media) streaming downloader CLI"
 license = "MIT OR Apache-2.0"
@@ -12,7 +12,7 @@ byteorder = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util", "sync"] }
 tokio-util = { workspace = true }
 futures = { workspace = true }
-reqwest = { workspace = true, features = ["json", "stream", "rustls-tls"] }
+reqwest = { workspace = true, features = ["json", "stream"] }
 crossterm = "0.29.0"
 
 # CLI dependencies
@@ -38,4 +38,13 @@ mimalloc = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 m3u8-rs = { workspace = true }
+
+[features]
+default = []
+
+# Opt-in: use vendored OpenSSL for native-tls (static/musl builds).
+static-ssl = ["mesio-engine/static-ssl"]
+
+# Opt-in: enable native-tls fallback for legacy TLS endpoints.
+tls-native-fallback = ["mesio-engine/tls-native-fallback"]
 

@@ -2,8 +2,7 @@
  * Protocol Buffer types and codec for download progress WebSocket messages.
  * Generated from rust-srec/proto/download_progress.proto
  */
-import pkg from 'protobufjs';
-const { parse } = pkg;
+import { download_progress as pb } from './download_progress_pb.js';
 
 // Event types for WebSocket messages
 export enum EventType {
@@ -133,132 +132,10 @@ export interface ClientMessage {
   action: { subscribe: SubscribeRequest } | { unsubscribe: UnsubscribeRequest };
 }
 
-// Protobuf schema definition
-const protoSchema = `
-syntax = "proto3";
-
-package download_progress;
-
-enum EventType {
-  EVENT_TYPE_UNSPECIFIED = 0;
-  EVENT_TYPE_SNAPSHOT = 1;
-  EVENT_TYPE_DOWNLOAD_STARTED = 2;
-  EVENT_TYPE_PROGRESS = 3;
-  EVENT_TYPE_SEGMENT_COMPLETED = 4;
-  EVENT_TYPE_DOWNLOAD_COMPLETED = 5;
-  EVENT_TYPE_DOWNLOAD_FAILED = 6;
-  EVENT_TYPE_DOWNLOAD_CANCELLED = 7;
-  EVENT_TYPE_ERROR = 8;
-  EVENT_TYPE_DOWNLOAD_REJECTED = 9;
-}
-
-message WsMessage {
-  EventType event_type = 1;
-  oneof payload {
-    DownloadSnapshot snapshot = 2;
-    DownloadStarted download_started = 3;
-    DownloadProgress progress = 4;
-    SegmentCompleted segment_completed = 5;
-    DownloadCompleted download_completed = 6;
-    DownloadFailed download_failed = 7;
-    DownloadCancelled download_cancelled = 8;
-    ErrorPayload error = 9;
-    DownloadRejected download_rejected = 10;
-  }
-}
-
-message ClientMessage {
-  oneof action {
-    SubscribeRequest subscribe = 1;
-    UnsubscribeRequest unsubscribe = 2;
-  }
-}
-
-message SubscribeRequest {
-  string streamer_id = 1;
-}
-
-message UnsubscribeRequest {}
-
-message DownloadSnapshot {
-  repeated DownloadProgress downloads = 1;
-}
-
-message DownloadProgress {
-  string download_id = 1;
-  string streamer_id = 2;
-  string session_id = 3;
-  string engine_type = 4;
-  string status = 5;
-  uint64 bytes_downloaded = 6;
-  double duration_secs = 7;
-  uint64 speed_bytes_per_sec = 8;
-  uint32 segments_completed = 9;
-  double media_duration_secs = 10;
-  double playback_ratio = 11;
-  int64 started_at_ms = 12;
-}
-
-message DownloadStarted {
-  string download_id = 1;
-  string streamer_id = 2;
-  string session_id = 3;
-  string engine_type = 4;
-  int64 started_at_ms = 5;
-}
-
-message SegmentCompleted {
-  string download_id = 1;
-  string streamer_id = 2;
-  string segment_path = 3;
-  uint32 segment_index = 4;
-  double duration_secs = 5;
-  uint64 size_bytes = 6;
-  string session_id = 7;
-}
-
-message DownloadCompleted {
-  string download_id = 1;
-  string streamer_id = 2;
-  string session_id = 3;
-  uint64 total_bytes = 4;
-  double total_duration_secs = 5;
-  uint32 total_segments = 6;
-}
-
-message DownloadFailed {
-  string download_id = 1;
-  string streamer_id = 2;
-  string session_id = 3;
-  string error = 4;
-  bool recoverable = 5;
-}
-
-message DownloadCancelled {
-  string download_id = 1;
-  string streamer_id = 2;
-  string session_id = 3;
-  string cause = 4;
-}
-
-message DownloadRejected {
-  string streamer_id = 1;
-  string session_id = 2;
-  string reason = 3;
-  uint64 retry_after_secs = 4;
-  bool recoverable = 5;
-}
-
-message ErrorPayload {
-  string code = 1;
-  string message = 2;
-}
-`;
-
-// Parse the proto schema
-const root = parse(protoSchema).root;
-const WsMessageType = root.lookupType('download_progress.WsMessage');
-const ClientMessageType = root.lookupType('download_progress.ClientMessage');
+// Precompiled protobufjs codec.
+// Avoids runtime schema parsing (which relies on codegen / unsafe-eval).
+const WsMessageType = pb.WsMessage;
+const ClientMessageType = pb.ClientMessage;
 
 /**
  * Convert protobuf Long to bigint

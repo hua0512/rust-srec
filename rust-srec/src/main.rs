@@ -5,10 +5,10 @@
 
 use std::sync::Arc;
 
-use rust_srec::database;
 use rust_srec::logging::init_logging;
 use rust_srec::panic_hook;
 use rust_srec::services::ServiceContainer;
+use rust_srec::{database, utils::http_client::install_rustls_provider};
 use tracing::{error, info, warn};
 
 #[global_allocator]
@@ -18,6 +18,8 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 async fn main() -> anyhow::Result<()> {
     // Load environment variables
     dotenvy::dotenv().ok();
+
+    install_rustls_provider();
 
     // Initialize logging with reloadable filter
     let log_dir = std::env::var("LOG_DIR").unwrap_or_else(|_| "logs".to_string());

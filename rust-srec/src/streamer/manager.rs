@@ -733,11 +733,11 @@ where
             avatar: metadata.avatar_url.clone(),
             consecutive_error_count: Some(metadata.consecutive_error_count),
             last_error: metadata.last_error.clone(),
-            disabled_until: metadata.disabled_until.map(|dt| dt.to_rfc3339()),
-            last_live_time: metadata.last_live_time.map(|dt| dt.to_rfc3339()),
+            disabled_until: metadata.disabled_until.map(|dt| dt.timestamp_millis()),
+            last_live_time: metadata.last_live_time.map(|dt| dt.timestamp_millis()),
             streamer_specific_config: metadata.streamer_specific_config.clone(),
-            created_at: metadata.created_at.to_rfc3339(),
-            updated_at: metadata.updated_at.to_rfc3339(),
+            created_at: metadata.created_at.timestamp_millis(),
+            updated_at: metadata.updated_at.timestamp_millis(),
         }
     }
 }
@@ -838,9 +838,9 @@ mod tests {
                 s.template_config_id = streamer.template_config_id.clone();
                 s.state = streamer.state.clone();
                 s.priority = streamer.priority.clone();
-                s.last_live_time = streamer.last_live_time.clone();
+                s.last_live_time = streamer.last_live_time;
                 s.consecutive_error_count = streamer.consecutive_error_count;
-                s.disabled_until = streamer.disabled_until.clone();
+                s.disabled_until = streamer.disabled_until;
                 s.last_error = streamer.last_error.clone();
             }
             Ok(())
@@ -867,14 +867,14 @@ mod tests {
             Ok(())
         }
 
-        async fn set_disabled_until(&self, _id: &str, _until: Option<&str>) -> Result<()> {
+        async fn set_disabled_until(&self, _id: &str, _until: Option<i64>) -> Result<()> {
             Ok(())
         }
 
-        async fn update_last_live_time(&self, id: &str, time: &str) -> Result<()> {
+        async fn update_last_live_time(&self, id: &str, time: i64) -> Result<()> {
             let mut streamers = self.streamers.lock().unwrap();
             if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
-                s.last_live_time = Some(time.to_string());
+                s.last_live_time = Some(time);
                 Ok(())
             } else {
                 Err(crate::Error::not_found("Streamer", id))
@@ -1028,8 +1028,8 @@ mod tests {
             disabled_until: None,
             last_live_time: None,
             streamer_specific_config: None,
-            created_at: Utc::now().to_rfc3339(),
-            updated_at: Utc::now().to_rfc3339(),
+            created_at: Utc::now().timestamp_millis(),
+            updated_at: Utc::now().timestamp_millis(),
         }
     }
 

@@ -134,12 +134,12 @@ pub struct NotificationDeadLetterDbModel {
     pub event_payload: String,
     pub error_message: String,
     pub retry_count: i32,
-    /// ISO 8601 timestamp of the first delivery attempt
-    pub first_attempt_at: String,
-    /// ISO 8601 timestamp of the final failed attempt
-    pub last_attempt_at: String,
-    /// ISO 8601 timestamp when added to dead letter queue
-    pub created_at: String,
+    /// Unix epoch milliseconds (UTC) of the first delivery attempt.
+    pub first_attempt_at: i64,
+    /// Unix epoch milliseconds (UTC) of the final failed attempt.
+    pub last_attempt_at: i64,
+    /// Unix epoch milliseconds (UTC) when added to dead letter queue.
+    pub created_at: i64,
 }
 
 impl NotificationDeadLetterDbModel {
@@ -149,9 +149,9 @@ impl NotificationDeadLetterDbModel {
         event_payload: impl Into<String>,
         error_message: impl Into<String>,
         retry_count: i32,
-        first_attempt_at: impl Into<String>,
+        first_attempt_at: i64,
     ) -> Self {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             channel_id: channel_id.into(),
@@ -159,8 +159,8 @@ impl NotificationDeadLetterDbModel {
             event_payload: event_payload.into(),
             error_message: error_message.into(),
             retry_count,
-            first_attempt_at: first_attempt_at.into(),
-            last_attempt_at: now.clone(),
+            first_attempt_at,
+            last_attempt_at: now,
             created_at: now,
         }
     }
@@ -178,8 +178,8 @@ pub struct NotificationEventLogDbModel {
     pub payload: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub streamer_id: Option<String>,
-    /// ISO 8601 timestamp when the event occurred
-    pub created_at: String,
+    /// Unix epoch milliseconds (UTC) when the event occurred.
+    pub created_at: i64,
 }
 
 /// Web Push subscription database model.
@@ -194,12 +194,12 @@ pub struct WebPushSubscriptionDbModel {
     pub auth: String,
     /// Minimum priority to send (low|normal|high|critical).
     pub min_priority: String,
-    pub created_at: String,
-    pub updated_at: String,
-    /// Optional next allowed attempt time (RFC3339). When set and in the future, delivery is skipped.
-    pub next_attempt_at: Option<String>,
-    /// Last time we received a 429 from the push service (RFC3339).
-    pub last_429_at: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    /// Optional next allowed attempt time. When set and in the future, delivery is skipped.
+    pub next_attempt_at: Option<i64>,
+    /// Last time we received a 429 from the push service.
+    pub last_429_at: Option<i64>,
 }
 
 /// System event names for notifications.
@@ -273,7 +273,7 @@ mod tests {
             r#"{"streamer":"test"}"#,
             "Connection refused",
             3,
-            "2024-01-01T00:00:00Z",
+            0,
         );
         assert_eq!(entry.retry_count, 3);
     }

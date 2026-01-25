@@ -58,7 +58,7 @@ impl SessionTxOps {
         initial_title: &str,
     ) -> Result<()> {
         let initial_titles = vec![TitleEntry {
-            ts: start_time.to_rfc3339(),
+            ts: start_time.timestamp_millis(),
             title: initial_title.to_string(),
         }];
         let titles_json = serde_json::to_string(&initial_titles)?;
@@ -71,8 +71,8 @@ impl SessionTxOps {
         )
         .bind(session_id)
         .bind(streamer_id)
-        .bind(start_time.to_rfc3339())
-        .bind(Option::<String>::None)
+        .bind(start_time.timestamp_millis())
+        .bind(Option::<i64>::None)
         .bind(Some(titles_json))
         .bind(Option::<String>::None)
         .bind(0_i64)
@@ -106,7 +106,7 @@ impl SessionTxOps {
             WHERE id = ?
             "#,
         )
-        .bind(end_time.to_rfc3339())
+        .bind(end_time.timestamp_millis())
         .bind(session_id)
         .bind(session_id)
         .execute(tx)
@@ -162,7 +162,7 @@ impl SessionTxOps {
 
         if needs_update {
             titles.push(TitleEntry {
-                ts: timestamp.to_rfc3339(),
+                ts: timestamp.timestamp_millis(),
                 title: new_title.to_string(),
             });
             let titles_json = serde_json::to_string(&titles)?;
@@ -216,8 +216,8 @@ mod tests {
             CREATE TABLE live_sessions (
                 id TEXT PRIMARY KEY,
                 streamer_id TEXT NOT NULL,
-                start_time TEXT NOT NULL,
-                end_time TEXT,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER,
                 titles TEXT,
                 danmu_statistics_id TEXT,
                 total_size_bytes INTEGER DEFAULT 0
@@ -279,8 +279,8 @@ mod tests {
         )
         .bind("sess-1")
         .bind("streamer-1")
-        .bind(now.to_rfc3339())
-        .bind(now.to_rfc3339())
+        .bind(now.timestamp_millis())
+        .bind(now.timestamp_millis())
         .execute(&pool)
         .await
         .unwrap();

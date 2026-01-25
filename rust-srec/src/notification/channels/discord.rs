@@ -68,6 +68,7 @@ pub struct DiscordChannel {
 impl DiscordChannel {
     /// Create a new Discord channel.
     pub fn new(config: DiscordConfig) -> Self {
+        crate::utils::http_client::install_rustls_provider();
         Self {
             config,
             client: Client::new(),

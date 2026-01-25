@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "rust-srec",
+  "version": "0.1.0",
+  "identifier": "com.hua0512.rust-srec",
+  "build": {
+    "frontendDist": "../frontend/dist-desktop",
+    "devUrl": "http://127.0.0.1:15275/",
+    "beforeDevCommand": "pnpm -C frontend dev:desktop",
+    "beforeBuildCommand": "pnpm -C frontend build:desktop"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": [
+        "default"
+      ],
+      "csp": "default-src 'self' asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' asset: http://asset.localhost data:; media-src 'self' asset: http://asset.localhost data: blob:;",
+      "devCsp": "default-src 'self' asset: http://asset.localhost http://127.0.0.1:* http://localhost:*; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:* http://127.0.0.1:* ws://localhost:* http://localhost:* ws://127.0.0.1:15275 http://127.0.0.1:15275; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' asset: http://asset.localhost data:; media-src 'self' asset: http://asset.localhost data: blob:;"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

@@ -8,6 +8,7 @@ pub mod maintenance;
 pub mod models;
 pub mod repositories;
 pub mod retry;
+pub mod time;
 
 // Re-export commonly used types
 pub use batching::{BatchWriter, BatchWriterConfig, JobStatusUpdate, StatsUpdate};

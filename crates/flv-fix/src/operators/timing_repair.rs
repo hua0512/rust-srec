@@ -354,15 +354,13 @@ impl TimingState {
         let mut new_delta = self.delta;
         let last_ts = self.last_tag.as_ref().map(|t| t.timestamp_ms).unwrap_or(0);
 
-        if tag.is_video_tag() && self.last_video_tag.is_some() {
-            let last_video = self.last_video_tag.as_ref().unwrap();
-
+        if let Some(last_video) = self.last_video_tag.as_ref().filter(|_| tag.is_video_tag()) {
             // Calculate ideal next frame timestamp
             let ideal_next_ts = last_video.timestamp_ms + self.video_frame_interval;
 
             new_delta = ideal_next_ts as i64 - current as i64;
-        } else if tag.is_audio_tag() && self.last_audio_tag.is_some() {
-            let last_audio = self.last_audio_tag.as_ref().unwrap();
+        } else if let Some(last_audio) = self.last_audio_tag.as_ref().filter(|_| tag.is_audio_tag())
+        {
             let ideal_next_ts = last_audio.timestamp_ms + self.audio_sample_interval;
             new_delta = ideal_next_ts as i64 - current as i64;
         } else if let Some(last) = &self.last_tag {

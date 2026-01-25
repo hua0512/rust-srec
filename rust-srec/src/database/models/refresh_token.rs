@@ -14,12 +14,12 @@ pub struct RefreshTokenDbModel {
     pub user_id: String,
     /// SHA-256 hash of the token value (never store raw token)
     pub token_hash: String,
-    /// When the token expires
-    pub expires_at: String,
-    /// When the token was created
-    pub created_at: String,
-    /// When the token was revoked (None if still valid)
-    pub revoked_at: Option<String>,
+    /// Unix epoch milliseconds (UTC) when the token expires.
+    pub expires_at: i64,
+    /// Unix epoch milliseconds (UTC) when the token was created.
+    pub created_at: i64,
+    /// Unix epoch milliseconds (UTC) when the token was revoked (None if still valid).
+    pub revoked_at: Option<i64>,
     /// Optional device/client information for audit purposes
     pub device_info: Option<String>,
 }
@@ -33,12 +33,12 @@ impl RefreshTokenDbModel {
         expires_at: DateTime<Utc>,
         device_info: Option<String>,
     ) -> Self {
-        let now = Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             user_id: user_id.into(),
             token_hash: token_hash.into(),
-            expires_at: expires_at.to_rfc3339(),
+            expires_at: crate::database::time::datetime_to_ms(expires_at),
             created_at: now,
             revoked_at: None,
             device_info,
@@ -47,9 +47,7 @@ impl RefreshTokenDbModel {
 
     /// Check if the token is expired.
     pub fn is_expired(&self) -> bool {
-        self.get_expires_at()
-            .map(|exp| exp < Utc::now())
-            .unwrap_or(true)
+        self.expires_at < crate::database::time::now_ms()
     }
 
     /// Check if the token is revoked.
@@ -63,30 +61,23 @@ impl RefreshTokenDbModel {
     }
 
     /// Get expires_at as DateTime<Utc>.
-    pub fn get_expires_at(&self) -> Option<DateTime<Utc>> {
-        DateTime::parse_from_rfc3339(&self.expires_at)
-            .ok()
-            .map(|dt| dt.with_timezone(&Utc))
+    pub fn get_expires_at(&self) -> DateTime<Utc> {
+        crate::database::time::ms_to_datetime(self.expires_at)
     }
 
     /// Get created_at as DateTime<Utc>.
-    pub fn get_created_at(&self) -> Option<DateTime<Utc>> {
-        DateTime::parse_from_rfc3339(&self.created_at)
-            .ok()
-            .map(|dt| dt.with_timezone(&Utc))
+    pub fn get_created_at(&self) -> DateTime<Utc> {
+        crate::database::time::ms_to_datetime(self.created_at)
     }
 
     /// Get revoked_at as DateTime<Utc>.
     pub fn get_revoked_at(&self) -> Option<DateTime<Utc>> {
-        self.revoked_at
-            .as_ref()
-            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc))
+        self.revoked_at.map(crate::database::time::ms_to_datetime)
     }
 
     /// Revoke the token.
     pub fn revoke(&mut self) {
-        self.revoked_at = Some(Utc::now().to_rfc3339());
+        self.revoked_at = Some(crate::database::time::now_ms());
     }
 }
 

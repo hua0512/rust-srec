@@ -701,7 +701,7 @@ impl JobQueue {
                         },
                         "Failed to serialize execution log entry; using fallback",
                     ),
-                    created_at: entry.timestamp.to_rfc3339(),
+                    created_at: entry.timestamp.timestamp_millis(),
                     level: Some(log_level_to_db(entry.level).to_string()),
                     message: Some(entry.message.clone()),
                 })
@@ -1004,13 +1004,10 @@ impl JobQueue {
                 db_job.execution_info = Some(serde_json::to_string(&exec_info)?);
             }
 
-            // Calculate queue wait time
-            if let Some(created) = db_job.created_at.parse::<chrono::DateTime<Utc>>().ok()
-                && let Some(started) = &db_job.started_at
-                && let Ok(started_dt) = started.parse::<chrono::DateTime<Utc>>()
-            {
-                let wait_secs = (started_dt - created).num_milliseconds() as f64 / 1000.0;
-                db_job.queue_wait_secs = Some(wait_secs.max(0.0));
+            // Calculate queue wait time (DB stores epoch millis)
+            if let (created_ms, Some(started_ms)) = (db_job.created_at, db_job.started_at) {
+                let wait_ms = started_ms.saturating_sub(created_ms);
+                db_job.queue_wait_secs = Some((wait_ms as f64 / 1000.0).max(0.0));
             }
 
             let updated = repo
@@ -1131,9 +1128,7 @@ impl JobQueue {
             let logs = rows
                 .into_iter()
                 .map(|row| {
-                    let timestamp = chrono::DateTime::parse_from_rfc3339(&row.created_at)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now());
+                    let timestamp = crate::database::time::ms_to_datetime(row.created_at);
 
                     if row.level.is_some() || row.message.is_some() {
                         let level = row
@@ -2070,7 +2065,7 @@ fn spawn_progress_aggregator(
                             job_id: job_id.clone(),
                             kind: format!("{:?}", snapshot.kind).to_ascii_lowercase(),
                             progress,
-                            updated_at: snapshot.updated_at.to_rfc3339(),
+                            updated_at: snapshot.updated_at.timestamp_millis(),
                         };
                         let _ = repo.upsert_job_execution_progress(&row).await;
                     }
@@ -2167,15 +2162,15 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         status: status.as_str().to_string(),
         config: job.config.clone().unwrap_or_else(|| "{}".to_string()),
         state,
-        created_at: job.created_at.to_rfc3339(),
-        updated_at: Utc::now().to_rfc3339(),
+        created_at: job.created_at.timestamp_millis(),
+        updated_at: crate::database::time::now_ms(),
         input: Some(inputs_json),
         outputs: Some(outputs_json),
         priority: job.priority,
         streamer_id: Some(job.streamer_id.clone()),
         session_id: Some(job.session_id.clone()),
-        started_at: job.started_at.map(|dt| dt.to_rfc3339()),
-        completed_at: job.completed_at.map(|dt| dt.to_rfc3339()),
+        started_at: job.started_at.map(|dt| dt.timestamp_millis()),
+        completed_at: job.completed_at.map(|dt| dt.timestamp_millis()),
         error: job.error.clone(),
         retry_count: job.retry_count,
         pipeline_id: job.pipeline_id.clone(),
@@ -2197,21 +2192,13 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         None => JobStatus::Pending,
     };
 
-    let created_at = chrono::DateTime::parse_from_rfc3339(&db_job.created_at)
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|_| Utc::now());
+    let created_at = crate::database::time::ms_to_datetime(db_job.created_at);
 
-    let started_at = db_job.started_at.as_ref().and_then(|s| {
-        chrono::DateTime::parse_from_rfc3339(s)
-            .map(|dt| dt.with_timezone(&Utc))
-            .ok()
-    });
+    let started_at = db_job.started_at.map(crate::database::time::ms_to_datetime);
 
-    let completed_at = db_job.completed_at.as_ref().and_then(|s| {
-        chrono::DateTime::parse_from_rfc3339(s)
-            .map(|dt| dt.with_timezone(&Utc))
-            .ok()
-    });
+    let completed_at = db_job
+        .completed_at
+        .map(crate::database::time::ms_to_datetime);
 
     // Parse inputs JSON array
     // If it fails (legacy data), treat as single path wrapped in vec

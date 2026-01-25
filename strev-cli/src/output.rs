@@ -68,6 +68,13 @@ impl OutputManager {
             self.colorize("Quality", &Color::Yellow, false),
             self.colorize(&stream.quality, &Color::Cyan, false)
         ));
+        if stream.is_audio_only {
+            output.push_str(&format!(
+                "  {}: {}\n",
+                self.colorize("Audio Only", &Color::Yellow, false),
+                self.colorize("🔊 Yes", &Color::Cyan, false)
+            ));
+        }
         output.push_str(&format!(
             "  {}: {}\n",
             self.colorize("URL", &Color::Yellow, false),
@@ -170,6 +177,13 @@ impl OutputManager {
             },
         ];
 
+        if stream_info.is_audio_only {
+            rows.push(StreamTableRow {
+                property: "Audio Only",
+                value: Cow::Borrowed("🔊 Yes"),
+            });
+        }
+
         if let Some(extras) = &stream_info.extras
             && let Some(extras_obj) = extras.as_object()
         {
@@ -196,6 +210,7 @@ impl OutputManager {
             "codec",
             "fps",
             "priority",
+            "is_audio_only",
         ];
 
         let mut extras_keys = Vec::new();
@@ -222,6 +237,7 @@ impl OutputManager {
             Self::escape_csv(&stream_info.codec),
             Cow::Owned(stream_info.fps.to_string()),
             Cow::Owned(stream_info.priority.to_string()),
+            Cow::Owned(stream_info.is_audio_only.to_string()),
         ];
 
         if let Some(extras) = &stream_info.extras
@@ -267,6 +283,25 @@ impl OutputManager {
             self.colorize("Live", &Color::Yellow, false),
             self.colorize(&media_info.is_live.to_string(), &Color::Cyan, false)
         ));
+
+        if let Some(ref categories) = media_info.category
+            && !categories.is_empty()
+        {
+            output.push_str(&format!(
+                "  {}: {}\n",
+                self.colorize("Category", &Color::Yellow, false),
+                self.colorize(&categories.join(", "), &Color::Cyan, false)
+            ));
+        }
+
+        if let Some(ref start_time) = media_info.live_start_time {
+            let time_str = start_time.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            output.push_str(&format!(
+                "  {}: {}\n",
+                self.colorize("Live Started", &Color::Yellow, false),
+                self.colorize(&time_str, &Color::Cyan, false)
+            ));
+        }
 
         if let Some(cover_url) = &media_info.cover_url {
             output.push_str(&format!(
@@ -337,6 +372,13 @@ impl OutputManager {
                 self.colorize("Priority", &Color::Yellow, false),
                 self.colorize(&stream.priority.to_string(), &Color::Cyan, false)
             ));
+            if stream.is_audio_only {
+                output.push_str(&format!(
+                    "  {}: {}\n",
+                    self.colorize("Audio Only", &Color::Yellow, false),
+                    self.colorize("🔊 Yes", &Color::Cyan, false)
+                ));
+            }
             if let Some(extras_obj) = stream
                 .extras
                 .as_ref()
@@ -431,6 +473,22 @@ impl OutputManager {
             },
         ];
 
+        if let Some(ref categories) = media_info.category
+            && !categories.is_empty()
+        {
+            rows.push(TableRow {
+                property: "Category",
+                value: Cow::Owned(categories.join(", ")),
+            });
+        }
+
+        if let Some(ref start_time) = media_info.live_start_time {
+            rows.push(TableRow {
+                property: "Live Started",
+                value: Cow::Owned(start_time.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+            });
+        }
+
         if let Some(cover_url) = &media_info.cover_url {
             rows.push(TableRow {
                 property: "Cover URL",
@@ -483,6 +541,12 @@ impl OutputManager {
                 property: "FPS",
                 value: Cow::Owned(stream.fps.to_string()),
             });
+            if stream.is_audio_only {
+                rows.push(TableRow {
+                    property: "Audio Only",
+                    value: Cow::Borrowed("🔊 Yes"),
+                });
+            }
         }
 
         let table = Table::new(rows).with(Style::modern()).to_string();
@@ -507,6 +571,22 @@ impl OutputManager {
                 Self::escape_csv(&media_info.title)
             ));
             output.push_str(&format!("is_live,{}\n", media_info.is_live));
+
+            if let Some(ref categories) = media_info.category
+                && !categories.is_empty()
+            {
+                output.push_str(&format!(
+                    "category,\"{}\"\n",
+                    Self::escape_csv(&categories.join(", "))
+                ));
+            }
+
+            if let Some(ref start_time) = media_info.live_start_time {
+                output.push_str(&format!(
+                    "live_started,\"{}\"\n",
+                    start_time.format("%Y-%m-%d %H:%M:%S UTC")
+                ));
+            }
 
             if let Some(cover_url) = &media_info.cover_url {
                 output.push_str(&format!("cover_url,\"{}\"\n", Self::escape_csv(cover_url)));
@@ -546,6 +626,9 @@ impl OutputManager {
             output.push_str(&format!("codec,\"{}\"\n", Self::escape_csv(&stream.codec)));
             output.push_str(&format!("fps,{}\n", stream.fps));
             output.push_str(&format!("priority,{}\n", stream.priority));
+            if stream.is_audio_only {
+                output.push_str("is_audio_only,true\n");
+            }
 
             Ok(output)
         } else {
@@ -554,6 +637,8 @@ impl OutputManager {
                 "artist",
                 "title",
                 "is_live",
+                "category",
+                "live_started",
                 "cover_url",
                 "artist_url",
                 "user_agent",
@@ -565,15 +650,29 @@ impl OutputManager {
                 "codec",
                 "fps",
                 "priority",
+                "is_audio_only",
             ];
             output.push_str(&headers.join(","));
             output.push('\n');
 
             if media_info.streams.is_empty() {
-                let row: [Cow<str>; 14] = [
+                let row: [Cow<str>; 17] = [
                     Self::escape_csv(&media_info.artist),
                     Self::escape_csv(&media_info.title),
                     Cow::Owned(media_info.is_live.to_string()),
+                    Cow::Owned(
+                        media_info
+                            .category
+                            .as_ref()
+                            .map(|c| c.join(", "))
+                            .unwrap_or_default(),
+                    ),
+                    Cow::Owned(
+                        media_info
+                            .live_start_time
+                            .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                            .unwrap_or_default(),
+                    ),
                     Self::escape_csv(media_info.cover_url.as_deref().unwrap_or("")),
                     Self::escape_csv(media_info.artist_url.as_deref().unwrap_or("")),
                     Cow::Borrowed(
@@ -583,6 +682,7 @@ impl OutputManager {
                             .and_then(|h| h.get("User-Agent").map(|s| s.as_str()))
                             .unwrap_or(""),
                     ),
+                    Cow::Borrowed(""),
                     Cow::Borrowed(""),
                     Cow::Borrowed(""),
                     Cow::Borrowed(""),
@@ -602,6 +702,19 @@ impl OutputManager {
                         Self::escape_csv(&media_info.artist),
                         Self::escape_csv(&media_info.title),
                         Cow::Owned(media_info.is_live.to_string()),
+                        Cow::Owned(
+                            media_info
+                                .category
+                                .as_ref()
+                                .map(|c| c.join(", "))
+                                .unwrap_or_default(),
+                        ),
+                        Cow::Owned(
+                            media_info
+                                .live_start_time
+                                .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                                .unwrap_or_default(),
+                        ),
                         Self::escape_csv(media_info.cover_url.as_deref().unwrap_or("")),
                         Self::escape_csv(media_info.artist_url.as_deref().unwrap_or("")),
                         Cow::Borrowed(
@@ -619,6 +732,7 @@ impl OutputManager {
                         Self::escape_csv(&stream.codec),
                         Cow::Owned(stream.fps.to_string()),
                         Cow::Owned(stream.priority.to_string()),
+                        Cow::Owned(stream.is_audio_only.to_string()),
                     ];
                     output.push_str(&row.join(","));
                     output.push('\n');

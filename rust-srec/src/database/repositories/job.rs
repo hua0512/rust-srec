@@ -196,15 +196,15 @@ impl JobRepository for SqlxJobRepository {
         .bind(&job.status)
         .bind(&job.config)
         .bind(&job.state)
-        .bind(&job.created_at)
-        .bind(&job.updated_at)
+        .bind(job.created_at)
+        .bind(job.updated_at)
         .bind(&job.input)
         .bind(&job.outputs)
         .bind(job.priority)
         .bind(&job.streamer_id)
         .bind(&job.session_id)
-        .bind(&job.started_at)
-        .bind(&job.completed_at)
+        .bind(job.started_at)
+        .bind(job.completed_at)
         .bind(&job.error)
         .bind(job.retry_count)
         .bind(&job.pipeline_id)
@@ -218,10 +218,10 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn update_job_status(&self, id: &str, status: &str) -> Result<()> {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         sqlx::query("UPDATE job SET status = ?, updated_at = ? WHERE id = ?")
             .bind(status)
-            .bind(&now)
+            .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -230,12 +230,12 @@ impl JobRepository for SqlxJobRepository {
 
     async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64> {
         retry_on_sqlite_busy("mark_job_failed", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             let res = sqlx::query(
                 "UPDATE job SET status = 'FAILED', completed_at = ?, updated_at = ?, error = ? WHERE id = ? AND status IN ('PENDING', 'PROCESSING')",
             )
-            .bind(&now)
-            .bind(&now)
+            .bind(now)
+            .bind(now)
             .bind(error)
             .bind(id)
             .execute(&self.pool)
@@ -247,12 +247,12 @@ impl JobRepository for SqlxJobRepository {
 
     async fn mark_job_interrupted(&self, id: &str) -> Result<u64> {
         retry_on_sqlite_busy("mark_job_interrupted", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             let res = sqlx::query(
                 "UPDATE job SET status = 'INTERRUPTED', completed_at = ?, updated_at = ? WHERE id = ? AND status IN ('PENDING', 'PROCESSING')",
             )
-            .bind(&now)
-            .bind(&now)
+            .bind(now)
+            .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -263,11 +263,11 @@ impl JobRepository for SqlxJobRepository {
 
     async fn reset_job_for_retry(&self, id: &str) -> Result<()> {
         retry_on_sqlite_busy("reset_job_for_retry", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             let res = sqlx::query(
                 "UPDATE job SET status = 'PENDING', started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ? AND status IN ('FAILED', 'INTERRUPTED')",
             )
-            .bind(&now)
+            .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -341,7 +341,7 @@ impl JobRepository for SqlxJobRepository {
             .bind(&progress.job_id)
             .bind(&progress.kind)
             .bind(&progress.progress)
-            .bind(&progress.updated_at)
+            .bind(progress.updated_at)
             .execute(&self.pool)
             .await?;
             Ok(())
@@ -367,7 +367,7 @@ impl JobRepository for SqlxJobRepository {
         job_types: Option<&[String]>,
     ) -> Result<Option<JobDbModel>> {
         retry_on_sqlite_busy("claim_next_pending_job", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
 
             // Avoid taking a write lock when there are no pending jobs: first select the next job id,
             // then claim it with a conditional UPDATE. This reduces lock contention under load.
@@ -424,8 +424,8 @@ impl JobRepository for SqlxJobRepository {
                     RETURNING *
                     "#,
                 )
-                .bind(&now)
-                .bind(&now)
+                .bind(now)
+                .bind(now)
                 .bind(&next_id)
                 .fetch_optional(&self.pool)
                 .await?;
@@ -450,10 +450,10 @@ impl JobRepository for SqlxJobRepository {
 
     async fn update_job_execution_info(&self, id: &str, execution_info: &str) -> Result<()> {
         retry_on_sqlite_busy("update_job_execution_info", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             sqlx::query("UPDATE job SET execution_info = ?, updated_at = ? WHERE id = ?")
                 .bind(execution_info)
-                .bind(&now)
+                .bind(now)
                 .bind(id)
                 .execute(&self.pool)
                 .await?;
@@ -463,10 +463,10 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn update_job_state(&self, id: &str, state: &str) -> Result<()> {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         sqlx::query("UPDATE job SET state = ?, updated_at = ? WHERE id = ?")
             .bind(state)
-            .bind(&now)
+            .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -474,7 +474,7 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn update_job(&self, job: &JobDbModel) -> Result<()> {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         sqlx::query(
             r#"
             UPDATE job SET
@@ -504,14 +504,14 @@ impl JobRepository for SqlxJobRepository {
         .bind(&job.status)
         .bind(&job.config)
         .bind(&job.state)
-        .bind(&now)
+        .bind(now)
         .bind(&job.input)
         .bind(&job.outputs)
         .bind(job.priority)
         .bind(&job.streamer_id)
         .bind(&job.session_id)
-        .bind(&job.started_at)
-        .bind(&job.completed_at)
+        .bind(job.started_at)
+        .bind(job.completed_at)
         .bind(&job.error)
         .bind(job.retry_count)
         .bind(&job.pipeline_id)
@@ -526,7 +526,7 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn update_job_if_status(&self, job: &JobDbModel, expected_status: &str) -> Result<u64> {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         let res = sqlx::query(
             r#"
             UPDATE job SET
@@ -556,14 +556,14 @@ impl JobRepository for SqlxJobRepository {
         .bind(&job.status)
         .bind(&job.config)
         .bind(&job.state)
-        .bind(&now)
+        .bind(now)
         .bind(&job.input)
         .bind(&job.outputs)
         .bind(job.priority)
         .bind(&job.streamer_id)
         .bind(&job.session_id)
-        .bind(&job.started_at)
-        .bind(&job.completed_at)
+        .bind(job.started_at)
+        .bind(job.completed_at)
         .bind(&job.error)
         .bind(job.retry_count)
         .bind(&job.pipeline_id)
@@ -580,22 +580,22 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn reset_interrupted_jobs(&self) -> Result<i32> {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         let result = sqlx::query(
             "UPDATE job SET status = 'PENDING', updated_at = ? WHERE status = 'INTERRUPTED'",
         )
-        .bind(&now)
+        .bind(now)
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() as i32)
     }
 
     async fn reset_processing_jobs(&self) -> Result<i32> {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         let result = sqlx::query(
             "UPDATE job SET status = 'PENDING', started_at = NULL, updated_at = ? WHERE status = 'PROCESSING'",
         )
-        .bind(&now)
+        .bind(now)
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() as i32)
@@ -603,8 +603,8 @@ impl JobRepository for SqlxJobRepository {
 
     async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32> {
         // First delete execution logs for old completed/failed jobs
-        let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days as i64);
-        let cutoff_str = cutoff.to_rfc3339();
+        let cutoff_ms = crate::database::time::now_ms()
+            - chrono::Duration::days(retention_days as i64).num_milliseconds();
 
         sqlx::query(
             r#"
@@ -616,7 +616,7 @@ impl JobRepository for SqlxJobRepository {
             )
             "#,
         )
-        .bind(&cutoff_str)
+        .bind(cutoff_ms)
         .execute(&self.pool)
         .await?;
 
@@ -624,7 +624,7 @@ impl JobRepository for SqlxJobRepository {
         let result = sqlx::query(
             "DELETE FROM job WHERE status IN ('COMPLETED', 'FAILED') AND updated_at < ?",
         )
-        .bind(&cutoff_str)
+        .bind(cutoff_ms)
         .execute(&self.pool)
         .await?;
 
@@ -651,7 +651,7 @@ impl JobRepository for SqlxJobRepository {
             .bind(&log.id)
             .bind(&log.job_id)
             .bind(&log.entry)
-            .bind(&log.created_at)
+            .bind(log.created_at)
             .bind(&log.level)
             .bind(&log.message)
             .execute(&self.pool)
@@ -674,7 +674,7 @@ impl JobRepository for SqlxJobRepository {
                     .bind(&log.id)
                     .bind(&log.job_id)
                     .bind(&log.entry)
-                    .bind(&log.created_at)
+                    .bind(log.created_at)
                     .execute(&self.pool)
                     .await?;
                     Ok(())
@@ -701,7 +701,7 @@ impl JobRepository for SqlxJobRepository {
                 .bind(&log.id)
                 .bind(&log.job_id)
                 .bind(&log.entry)
-                .bind(&log.created_at)
+                .bind(log.created_at)
                 .bind(&log.level)
                 .bind(&log.message)
                 .execute(&mut *tx)
@@ -726,7 +726,7 @@ impl JobRepository for SqlxJobRepository {
                         .bind(&log.id)
                         .bind(&log.job_id)
                         .bind(&log.entry)
-                        .bind(&log.created_at)
+                        .bind(log.created_at)
                         .execute(&mut *tx)
                         .await?;
                     }
@@ -891,10 +891,10 @@ impl JobRepository for SqlxJobRepository {
             count_query = count_query.bind(pipeline_id);
         }
         if let Some(from_date) = &filters.from_date {
-            count_query = count_query.bind(from_date.to_rfc3339());
+            count_query = count_query.bind(from_date.timestamp_millis());
         }
         if let Some(to_date) = &filters.to_date {
-            count_query = count_query.bind(to_date.to_rfc3339());
+            count_query = count_query.bind(to_date.timestamp_millis());
         }
         if let Some(job_type) = &filters.job_type {
             count_query = count_query.bind(job_type);
@@ -932,10 +932,10 @@ impl JobRepository for SqlxJobRepository {
             data_query = data_query.bind(pipeline_id);
         }
         if let Some(from_date) = &filters.from_date {
-            data_query = data_query.bind(from_date.to_rfc3339());
+            data_query = data_query.bind(from_date.timestamp_millis());
         }
         if let Some(to_date) = &filters.to_date {
-            data_query = data_query.bind(to_date.to_rfc3339());
+            data_query = data_query.bind(to_date.timestamp_millis());
         }
         if let Some(job_type) = &filters.job_type {
             data_query = data_query.bind(job_type);
@@ -1032,10 +1032,10 @@ impl JobRepository for SqlxJobRepository {
             data_query = data_query.bind(pipeline_id);
         }
         if let Some(from_date) = &filters.from_date {
-            data_query = data_query.bind(from_date.to_rfc3339());
+            data_query = data_query.bind(from_date.timestamp_millis());
         }
         if let Some(to_date) = &filters.to_date {
-            data_query = data_query.bind(to_date.to_rfc3339());
+            data_query = data_query.bind(to_date.timestamp_millis());
         }
         if let Some(job_type) = &filters.job_type {
             data_query = data_query.bind(job_type);
@@ -1097,7 +1097,7 @@ impl JobRepository for SqlxJobRepository {
                     duration_secs,
                     CASE 
                         WHEN started_at IS NOT NULL AND completed_at IS NOT NULL THEN
-                            (julianday(completed_at) - julianday(started_at)) * 86400.0
+                            (completed_at - started_at) / 1000.0
                         ELSE NULL
                     END
                 )
@@ -1114,7 +1114,7 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
 
         let result = sqlx::query(
             r#"
@@ -1126,8 +1126,8 @@ impl JobRepository for SqlxJobRepository {
               AND status IN ('PENDING', 'PROCESSING')
             "#,
         )
-        .bind(&now)
-        .bind(&now)
+        .bind(now)
+        .bind(now)
         .bind(pipeline_id)
         .execute(&self.pool)
         .await?;
@@ -1160,8 +1160,8 @@ impl JobRepository for SqlxJobRepository {
     /// Deletes jobs in batches to avoid long-running transactions.
     /// Returns the number of jobs deleted.
     async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64> {
-        let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-        let cutoff_str = cutoff.to_rfc3339();
+        let cutoff_ms = crate::database::time::now_ms()
+            - chrono::Duration::days(days as i64).num_milliseconds();
 
         let mut total_deleted: u64 = 0;
 
@@ -1175,8 +1175,8 @@ impl JobRepository for SqlxJobRepository {
                 LIMIT ?
                 "#,
             )
-            .bind(&cutoff_str)
-            .bind(&cutoff_str)
+            .bind(cutoff_ms)
+            .bind(cutoff_ms)
             .bind(batch_size as i64)
             .fetch_all(&self.pool)
             .await?;
@@ -1217,8 +1217,8 @@ impl JobRepository for SqlxJobRepository {
     /// Get IDs of jobs that are eligible for purging.
     /// Returns job IDs for completed/failed jobs older than the specified days.
     async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>> {
-        let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-        let cutoff_str = cutoff.to_rfc3339();
+        let cutoff_ms = crate::database::time::now_ms()
+            - chrono::Duration::days(days as i64).num_milliseconds();
 
         let job_ids: Vec<String> = sqlx::query_scalar(
             r#"
@@ -1229,8 +1229,8 @@ impl JobRepository for SqlxJobRepository {
             LIMIT ?
             "#,
         )
-        .bind(&cutoff_str)
-        .bind(&cutoff_str)
+        .bind(cutoff_ms)
+        .bind(cutoff_ms)
         .bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;

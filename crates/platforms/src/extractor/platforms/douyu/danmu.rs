@@ -239,7 +239,6 @@ pub fn create_douyu_danmu_provider() -> DouyuDanmuProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extractor::default::DEFAULT_UA;
 
     #[test]
     fn test_url_matching() {
@@ -355,57 +354,25 @@ mod tests {
     }
 
     /// Real integration test - connects to an actual Douyu live room
-    /// Run with: cargo test --package platforms douyu::danmu::tests::test_real_connection -- --ignored --nocapture
+    /// Run with:
+    ///   cargo test -p platforms-parser douyu::danmu::tests::test_real_connection --features tls-native-fallback -- --ignored --nocapture
     #[tokio::test]
     #[ignore] // Requires network access and a live room
     async fn test_real_connection() {
-        use futures::StreamExt;
-        use tokio_tungstenite::connect_async;
-        use tokio_tungstenite::tungstenite::http::Request;
+        use crate::danmaku::provider::{ConnectionConfig, DanmuProvider};
 
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::DEBUG)
             .try_init()
             .ok();
 
-        let protocol = DouyuDanmuProtocol::default();
-        let room_id = "286993";
+        let provider = create_douyu_danmu_provider();
+        let room_id = "178432";
 
-        // Get WebSocket URL
-        let ws_url = protocol.websocket_url(room_id).await.unwrap();
-        println!("Connecting to: {}", ws_url);
-
-        // Build request with required headers
-        let request = Request::builder()
-            .uri(&ws_url)
-            .header("Host", "danmuproxy.douyu.com:8502")
-            .header("Origin", "https://www.douyu.com")
-            .header("Referer", "https://www.douyu.com")
-            .header("User-Agent", DEFAULT_UA)
-            .header("Sec-WebSocket-Version", "13")
-            .header(
-                "Sec-WebSocket-Key",
-                tokio_tungstenite::tungstenite::handshake::client::generate_key(),
-            )
-            .header("Connection", "Upgrade")
-            .header("Upgrade", "websocket")
-            .body(())
-            .expect("Failed to build request");
-
-        // Connect
-        let (mut ws_stream, response) = connect_async(request).await.expect("Failed to connect");
-        println!("Connected! Response: {:?}", response.status());
-
-        // Send handshake messages
-        use futures::SinkExt;
-        let handshake_msgs = protocol.handshake_messages(room_id).await.unwrap();
-        for msg in handshake_msgs {
-            ws_stream.send(msg).await.expect("Failed to send handshake");
-        }
-        println!("Handshake sent");
-
-        // Create channel for responses (not used in this test)
-        let (tx, _rx) = mpsc::channel(100);
+        let mut connection = provider
+            .connect(room_id, ConnectionConfig::default())
+            .await
+            .expect("Failed to connect");
 
         // Receive messages
         let mut message_count = 0;
@@ -413,36 +380,28 @@ mod tests {
         let timeout = tokio::time::Duration::from_secs(60);
 
         let result = tokio::time::timeout(timeout, async {
-            while let Some(msg_result) = ws_stream.next().await {
-                match msg_result {
-                    Ok(msg) => match protocol.decode_message(&msg, room_id, &tx).await {
-                        Ok(items) => {
-                            for item in items {
-                                match item {
-                                    crate::danmaku::DanmuItem::Message(danmu) => {
-                                        println!(
-                                            "[{}] {}: {}",
-                                            danmu.timestamp.format("%H:%M:%S"),
-                                            danmu.username,
-                                            danmu.content
-                                        );
-                                        message_count += 1;
-                                    }
-                                    crate::danmaku::DanmuItem::Control(control) => {
-                                        println!("[control] {:?}", control);
-                                    }
-                                }
-                            }
+            loop {
+                match provider.receive(&connection).await {
+                    Ok(Some(item)) => match item {
+                        crate::danmaku::DanmuItem::Message(danmu) => {
+                            println!(
+                                "[{}] {}: {}",
+                                danmu.timestamp.format("%H:%M:%S"),
+                                danmu.username,
+                                danmu.content
+                            );
+                            message_count += 1;
                         }
-                        Err(e) => {
-                            if e.to_string().contains("closed") {
-                                break;
-                            }
-                            println!("Decode error: {}", e);
+                        crate::danmaku::DanmuItem::Control(control) => {
+                            println!("[control] {:?}", control);
                         }
                     },
+                    Ok(None) => {
+                        // Provider uses a short poll timeout; yield.
+                        tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
+                    }
                     Err(e) => {
-                        println!("WebSocket error: {}", e);
+                        println!("Receive error: {e}");
                         break;
                     }
                 }
@@ -451,16 +410,11 @@ mod tests {
                     println!("Received {} messages, stopping", max_messages);
                     break;
                 }
-
-                // Send heartbeat periodically (simplified for test)
-                if message_count % 5 == 0
-                    && let Some(heartbeat) = protocol.heartbeat_message()
-                {
-                    let _ = ws_stream.send(heartbeat).await;
-                }
             }
         })
         .await;
+
+        let _ = provider.disconnect(&mut connection).await;
 
         match result {
             Ok(_) => println!("Test completed successfully"),

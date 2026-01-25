@@ -25,7 +25,8 @@ export default defineConfig(() => ({
         plugins: ['macros'],
       },
     }),
-    oxlintPlugin(),
+    // Limit oxlint to source folders (avoid linting build outputs).
+    oxlintPlugin({ path: 'src' }),
   ],
   server: {
     proxy: {
@@ -42,10 +43,10 @@ export default defineConfig(() => ({
         advancedChunks: {
           groups: [
             { name: 'vendor-player-art', test: /node_modules[\\/]artplayer/ },
-            { name: 'vendor-player-hls', test: /node_modules[\\/]hls\.js/ },
+            { name: 'vendor-player-hls', test: /node_modules[\\/]hls\\.js/ },
             {
               name: 'vendor-player-mpegts',
-              test: /node_modules[\\/]mpegts\.js/,
+              test: /node_modules[\\/]mpegts\\.js/,
             },
           ],
         },

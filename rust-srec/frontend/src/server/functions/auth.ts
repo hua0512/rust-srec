@@ -1,8 +1,12 @@
-import { createServerFn } from '@tanstack/react-start';
+import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
 import { BASE_URL } from '../../utils/env';
 import { ensureValidToken } from '../tokenRefresh';
-import { sanitizeClientSession, isValidSession } from '../../utils/session';
+import {
+  sanitizeClientSession,
+  isValidSession,
+  useAppSession,
+} from '../../utils/session';
 import {
   LoginRequestSchema,
   LoginResponseSchema,
@@ -32,8 +36,6 @@ export const loginFn = createServerFn({ method: 'POST' })
       const json = await authClient.post('auth/login', { json: data }).json();
       // console.log(`[Auth] Login successful for user: ${data.username}. Parsing response...`);
       const parsed = LoginResponseSchema.parse(json);
-
-      const { useAppSession } = await import('../../utils/session');
       const session = await useAppSession();
 
       const userData = {
@@ -63,7 +65,6 @@ export const loginFn = createServerFn({ method: 'POST' })
   });
 
 export const logoutFn = createServerFn({ method: 'POST' }).handler(async () => {
-  const { useAppSession } = await import('../../utils/session');
   const session = await useAppSession();
   const refreshToken = session.data.token?.refresh_token;
 
@@ -94,7 +95,6 @@ export const changePassword = createServerFn({ method: 'POST' })
 
     // Clear the session since the backend revokes all tokens on password change
     // This forces the user to re-login with their new password
-    const { useAppSession } = await import('../../utils/session');
     const session = await useAppSession();
     await session.clear();
   });

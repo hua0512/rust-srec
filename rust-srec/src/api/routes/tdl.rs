@@ -15,7 +15,6 @@ use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
 use std::sync::{Arc, OnceLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -213,7 +212,7 @@ async fn spawn_tdl_login(
     login_args: Vec<String>,
     mut input_rx: mpsc::Receiver<String>,
 ) {
-    let mut command = Command::new(&tdl_path);
+    let mut command = process_utils::tokio_command(&tdl_path);
     if !global_args.is_empty() {
         command.args(global_args);
     }
@@ -385,7 +384,7 @@ async fn run_tdl_output(
     global_args: &[String],
     args: &[&str],
 ) -> Result<std::process::Output, std::io::Error> {
-    let mut cmd = Command::new(tdl_path);
+    let mut cmd = process_utils::tokio_command(tdl_path);
     if !global_args.is_empty() {
         cmd.args(global_args);
     }

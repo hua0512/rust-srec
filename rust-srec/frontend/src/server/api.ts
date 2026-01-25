@@ -1,6 +1,7 @@
 import { refreshAuthTokenGlobal } from './tokenRefresh';
 
 import { BASE_URL } from '../utils/env';
+import { useAppSession } from '../utils/session';
 
 export { BASE_URL };
 
@@ -31,7 +32,6 @@ export const fetchBackend = async <T = any>(
   endpoint: string,
   init?: RequestInit,
 ): Promise<T> => {
-  const { useAppSession } = await import('../utils/session');
   const session = await useAppSession();
   const token = session.data.token?.access_token;
 

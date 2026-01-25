@@ -99,8 +99,8 @@ pub struct WebPushSubscriptionResponse {
     pub id: String,
     pub endpoint: String,
     pub min_priority: String,
-    pub created_at: String,
-    pub updated_at: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]

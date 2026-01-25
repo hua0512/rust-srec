@@ -221,11 +221,7 @@ impl PipelineProvider for FlvPipeline {
             } else {
                 None
             },
-            max_duration_ms: if self.max_duration.is_some() {
-                Some(self.max_duration.unwrap().as_millis() as u32)
-            } else {
-                None
-            },
+            max_duration_ms: self.max_duration.map(|d| d.as_millis() as u32),
             split_at_keyframes_only: true,
             on_split: None,
         };

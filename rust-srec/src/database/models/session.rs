@@ -97,10 +97,10 @@ impl SessionFilters {
 pub struct LiveSessionDbModel {
     pub id: String,
     pub streamer_id: String,
-    /// ISO 8601 timestamp when the session began
-    pub start_time: String,
-    /// ISO 8601 timestamp when the session ended (null if ongoing)
-    pub end_time: Option<String>,
+    /// Unix epoch milliseconds (UTC) when the session began.
+    pub start_time: i64,
+    /// Unix epoch milliseconds (UTC) when the session ended (null if ongoing).
+    pub end_time: Option<i64>,
     /// JSON array of timestamped stream titles
     pub titles: Option<String>,
     pub danmu_statistics_id: Option<String>,
@@ -113,7 +113,7 @@ impl LiveSessionDbModel {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             streamer_id: streamer_id.into(),
-            start_time: chrono::Utc::now().to_rfc3339(),
+            start_time: crate::database::time::now_ms(),
             end_time: None,
             titles: Some("[]".to_string()),
             danmu_statistics_id: None,
@@ -125,8 +125,8 @@ impl LiveSessionDbModel {
 /// Title entry for session titles JSON array.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TitleEntry {
-    /// ISO 8601 timestamp
-    pub ts: String,
+    /// Unix epoch milliseconds (UTC).
+    pub ts: i64,
     pub title: String,
 }
 
@@ -142,8 +142,8 @@ pub struct MediaOutputDbModel {
     /// File type: VIDEO, AUDIO, THUMBNAIL, DANMU_XML
     pub file_type: String,
     pub size_bytes: i64,
-    /// ISO 8601 timestamp of file creation
-    pub created_at: String,
+    /// Unix epoch milliseconds (UTC) of file creation.
+    pub created_at: i64,
 }
 
 impl MediaOutputDbModel {
@@ -160,7 +160,7 @@ impl MediaOutputDbModel {
             file_path: file_path.into(),
             file_type: file_type.as_str().to_string(),
             size_bytes,
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: crate::database::time::now_ms(),
         }
     }
 
@@ -243,8 +243,8 @@ pub struct TopTalkerEntry {
 /// Danmu rate entry for timeseries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DanmuRateEntry {
-    /// ISO 8601 timestamp
-    pub ts: String,
+    /// Unix epoch milliseconds (UTC).
+    pub ts: i64,
     pub count: i64,
 }
 

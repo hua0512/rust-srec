@@ -1,5 +1,32 @@
 import { z } from 'zod';
 
+const TimestampMsSchema = z.union([z.number(), z.string()]).transform((v, ctx) => {
+  if (typeof v === 'number') return v;
+
+  const s = v.trim();
+  if (!s) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Empty timestamp' });
+    return z.NEVER;
+  }
+
+  // Accept numeric strings (epoch ms).
+  if (/^\d+$/.test(s)) {
+    const ms = Number(s);
+    if (Number.isFinite(ms)) return ms;
+  }
+
+  // Accept RFC3339/ISO strings.
+  const ms = Date.parse(s);
+  if (!Number.isFinite(ms)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Invalid timestamp: ${s}`,
+    });
+    return z.NEVER;
+  }
+  return ms;
+});
+
 export const ChannelTypeSchema = z.enum(['Discord', 'Email', 'Webhook']);
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
@@ -93,7 +120,7 @@ export const NotificationEventLogSchema = z.object({
   priority: z.string(),
   payload: z.string(),
   streamer_id: z.string().optional().nullable(),
-  created_at: z.string(),
+  created_at: TimestampMsSchema,
 });
 
 export type NotificationEventLog = z.infer<typeof NotificationEventLogSchema>;
@@ -102,8 +129,8 @@ export const WebPushSubscriptionSchema = z.object({
   id: z.uuid(),
   endpoint: z.string().url(),
   min_priority: z.string(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: TimestampMsSchema,
+  updated_at: TimestampMsSchema,
 });
 export type WebPushSubscription = z.infer<typeof WebPushSubscriptionSchema>;
 

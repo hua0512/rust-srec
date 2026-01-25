@@ -80,6 +80,8 @@ impl SqlxCredentialStore {
     ) -> Result<(), CredentialError> {
         debug!(template_id = %template_id, "Updating template credentials");
 
+        let now = crate::database::time::now_ms();
+
         let overrides_to_store = if let Some(token) = credentials.refresh_token.as_ref() {
             let existing_overrides: Option<String> = sqlx::query_scalar(
                 r#"
@@ -130,12 +132,13 @@ impl SqlxCredentialStore {
                     UPDATE template_config
                     SET cookies = ?,
                         platform_overrides = ?,
-                        updated_at = datetime('now')
+                        updated_at = ?
                     WHERE id = ?
                     "#,
                 )
                 .bind(&credentials.cookies)
                 .bind(overrides_json)
+                .bind(now)
                 .bind(template_id)
                 .execute(&self.pool)
                 .await?;
@@ -145,11 +148,12 @@ impl SqlxCredentialStore {
                     r#"
                     UPDATE template_config
                     SET cookies = ?,
-                        updated_at = datetime('now')
+                        updated_at = ?
                     WHERE id = ?
                     "#,
                 )
                 .bind(&credentials.cookies)
+                .bind(now)
                 .bind(template_id)
                 .execute(&self.pool)
                 .await?;
@@ -167,6 +171,8 @@ impl SqlxCredentialStore {
     ) -> Result<(), CredentialError> {
         debug!(streamer_id = %streamer_id, "Updating streamer credentials");
 
+        let now = crate::database::time::now_ms();
+
         sqlx::query(
             r#"
             UPDATE streamers
@@ -175,11 +181,12 @@ impl SqlxCredentialStore {
                 '$.cookies',
                 ?
             ),
-            updated_at = datetime('now')
+            updated_at = ?
             WHERE id = ?
             "#,
         )
         .bind(&credentials.cookies)
+        .bind(now)
         .bind(streamer_id)
         .execute(&self.pool)
         .await?;

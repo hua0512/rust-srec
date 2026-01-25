@@ -3,7 +3,7 @@ name: rust-srec Release
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "rust-srec-v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       version:
@@ -18,6 +18,60 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  changes:
+    name: Detect Desktop Changes
+    runs-on: ubuntu-latest
+    outputs:
+      desktop_changed: ${{ steps.diff.outputs.desktop_changed }}
+      base_tag: ${{ steps.diff.outputs.base_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes since previous tag
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+
+          CURRENT_TAG="${GITHUB_REF_NAME:-}"
+          if [[ -z "$CURRENT_TAG" || "$CURRENT_TAG" == "" ]]; then
+            # workflow_dispatch on a branch; compare against latest v* tag.
+            CURRENT_TAG=""
+          fi
+
+          if [[ -n "${{ inputs.version || '' }}" ]]; then
+            # Manual release path. We still diff against the latest v* tag.
+            CURRENT_TAG=""
+          fi
+
+          BASE_TAG=""
+          if [[ -n "$CURRENT_TAG" ]]; then
+            BASE_TAG=$(git tag --list 'rust-srec-v*' --sort=-v:refname | grep -v "^${CURRENT_TAG}$" | head -n 1 || true)
+          else
+            BASE_TAG=$(git tag --list 'rust-srec-v*' --sort=-v:refname | head -n 1 || true)
+          fi
+
+          echo "base_tag=$BASE_TAG" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "$BASE_TAG" ]]; then
+            # First release (or no tags). Always build desktop.
+            echo "desktop_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Diff base: $BASE_TAG"
+          CHANGED=$(git diff --name-only "$BASE_TAG...HEAD")
+
+          if echo "$CHANGED" | grep -Eq '^(rust-srec/src-tauri/|rust-srec/frontend/|rust-srec/src/|crates/|Cargo\.(toml|lock)$)'; then
+            echo "desktop_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "desktop_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   check-and-test:
     name: Check and Test
     runs-on: ubuntu-latest
@@ -38,13 +92,13 @@ jobs:
         with:
           shared-key: ci
       - name: Check
-        run: cargo check -p rust-srec --locked
+        run: cargo check -p rust-srec --locked --features tls-native-fallback
       - name: Clippy
-        run: cargo clippy -p rust-srec --locked -- -D warnings
+        run: cargo clippy -p rust-srec --locked --features tls-native-fallback -- -D warnings
       - name: Test
-        run: cargo nextest run -p rust-srec --locked
+        run: cargo nextest run -p rust-srec --locked --features tls-native-fallback
       - name: Doctests
-        run: cargo test -p rust-srec --locked --doc
+        run: cargo test -p rust-srec --locked --doc --features tls-native-fallback
       - name: sccache stats
         if: always()
         run: sccache --show-stats || true
@@ -116,7 +170,7 @@ jobs:
           sudo apt-get install -y musl-tools musl-dev
       - name: Build
         if: "!contains(matrix.target, 'musl')"
-        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }} --bins
+        run: cargo build -p rust-srec --locked --release --target ${{ matrix.target }} --bins --features tls-native-fallback
       - name: Build (musl static)
         if: contains(matrix.target, 'musl')
         env:
@@ -151,6 +205,68 @@ jobs:
       - name: sccache stats
         if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
+
+  desktop:
+    name: Desktop
+    needs: [check-and-test, changes]
+    if: needs.changes.outputs.desktop_changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ''
+          - os: ubuntu-22.04
+            args: ''
+          - os: macos-15-intel
+            args: '--target x86_64-apple-darwin'
+          - os: macos-latest
+            args: '--target aarch64-apple-darwin'
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust-srec/src-tauri
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ contains(matrix.args, '--target') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: ./.github/actions/setup-protoc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci
+
+      - name: Install dependencies (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: rust-srec/frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm -C ../../frontend install --frozen-lockfile
+
+      - name: Build desktop bundles
+        run: cargo tauri build --ci ${{ matrix.args }}
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v6
+        with:
+          name: rust-srec-desktop-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}-${{ runner.os }}-${{ runner.arch }}
+          path: rust-srec/src-tauri/target/release/bundle
+          if-no-files-found: error
 
   docker-build:
     name: Build Docker
@@ -198,6 +314,23 @@ jobs:
           mkdir -p /tmp/digests/backend
           digest="${{ steps.build-backend.outputs.digest }}"
           touch "/tmp/digests/backend/${digest#sha256:}"
+
+      - name: Build and push vapid
+        id: build-vapid
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: rust-srec/Dockerfile.vapid
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/rust-srec-vapid,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}-vapid
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}-vapid
+
+      - name: Export digest vapid
+        run: |
+          mkdir -p /tmp/digests/vapid
+          digest="${{ steps.build-vapid.outputs.digest }}"
+          touch "/tmp/digests/vapid/${digest#sha256:}"
       
       - name: Build and push frontend
         id: build-frontend
@@ -251,11 +384,21 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          VERSION_INPUT="${{ inputs.version }}"
+          if [ -n "$VERSION_INPUT" ]; then
+            RAW="$VERSION_INPUT"
           else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+            RAW="${GITHUB_REF_NAME}"
           fi
+
+          # Git tags are prefixed as rust-srec-vX.Y.Z; docker tags stay at vX.Y.Z.
+          case "$RAW" in
+            rust-srec-v*) VERSION_TAG="${RAW#rust-srec-}" ;;
+            v*) VERSION_TAG="$RAW" ;;
+            *) VERSION_TAG="v$RAW" ;;
+          esac
+
+          echo "version=$VERSION_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Create manifest list and push backend
         working-directory: /tmp/digests/backend
@@ -264,6 +407,14 @@ jobs:
             -t ghcr.io/${{ github.repository_owner }}/rust-srec:${{ steps.version.outputs.version }} \
             -t ghcr.io/${{ github.repository_owner }}/rust-srec:latest \
             $(printf 'ghcr.io/${{ github.repository_owner }}/rust-srec@sha256:%s ' *)
+
+      - name: Create manifest list and push vapid
+        working-directory: /tmp/digests/vapid
+        run: |
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository_owner }}/rust-srec-vapid:${{ steps.version.outputs.version }} \
+            -t ghcr.io/${{ github.repository_owner }}/rust-srec-vapid:latest \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/rust-srec-vapid@sha256:%s ' *)
       
       - name: Create manifest list and push frontend
         working-directory: /tmp/digests/frontend
@@ -275,7 +426,12 @@ jobs:
 
   release:
     name: Release
-    needs: [build, docker-merge]
+    needs: [build, desktop, docker-merge]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      needs.docker-merge.result == 'success' &&
+      (needs.desktop.result == 'success' || needs.desktop.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -284,6 +440,7 @@ jobs:
         with:
           path: artifacts
           pattern: rust-srec-*
+          merge-multiple: true
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:

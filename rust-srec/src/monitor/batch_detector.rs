@@ -324,6 +324,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_detector() {
+        crate::utils::http_client::install_rustls_provider();
         let rate_limiter = RateLimiterManager::new();
         let detector = BatchDetector::new(rate_limiter);
 
@@ -341,6 +342,7 @@ mod tests {
 
     #[test]
     fn test_calculate_backoff() {
+        crate::utils::http_client::install_rustls_provider();
         let rate_limiter = RateLimiterManager::new();
         let detector = BatchDetector::new(rate_limiter).with_retry_delay(Duration::from_secs(1));
 

@@ -8,18 +8,16 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::LazyLock;
-use tokio::process::Command;
 
 static DEFAULT_STREAMLINK_PATH: &str = "streamlink";
 static DEFAULT_STREAMLINK_QUALITY: &str = "best";
 
 static STREAMLINK_AVAILABLE: LazyLock<bool> = LazyLock::new(|| {
-    std::process::Command::new(DEFAULT_STREAMLINK_PATH)
-        .arg("--version")
+    let mut cmd = process_utils::std_command(DEFAULT_STREAMLINK_PATH);
+    cmd.arg("--version")
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+        .stderr(Stdio::null());
+    cmd.status().is_ok_and(|s| s.success())
 });
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -81,12 +79,11 @@ impl StreamlinkExtractor {
 
         // If the user overrides the binary path, do a best-effort availability check.
         if binary_path != DEFAULT_STREAMLINK_PATH {
-            let ok = std::process::Command::new(&binary_path)
-                .arg("--version")
+            let mut cmd = process_utils::std_command(&binary_path);
+            cmd.arg("--version")
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .is_ok_and(|s| s.success());
+                .stderr(Stdio::null());
+            let ok = cmd.status().is_ok_and(|s| s.success());
             if !ok {
                 return Err(ExtractorError::UnsupportedExtractor);
             }
@@ -115,7 +112,7 @@ impl StreamlinkExtractor {
 
     async fn run_streamlink_json(&self) -> Result<StreamlinkJson, ExtractorError> {
         let binary_path = self.config.binary_path();
-        let mut cmd = Command::new(binary_path);
+        let mut cmd = process_utils::tokio_command(binary_path);
         cmd.arg("--json").arg("--url").arg(&self.extractor.url);
 
         if let Some(ref cookies) = self.cookie_string {
@@ -146,7 +143,7 @@ impl StreamlinkExtractor {
 
     async fn resolve_stream_url(&self, quality: &str) -> Result<String, ExtractorError> {
         let binary_path = self.config.binary_path();
-        let mut cmd = Command::new(binary_path);
+        let mut cmd = process_utils::tokio_command(binary_path);
         cmd.arg("--stream-url")
             .arg("--url")
             .arg(&self.extractor.url)

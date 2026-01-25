@@ -30,12 +30,16 @@ jobs:
         with:
           components: clippy
       - uses: ./.github/actions/setup-protoc
+      - name: Install Linux TLS dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci
           save-if: ${{ false }}
       - name: Clippy check
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --exclude rust-srec-desktop --all-targets --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback -- -D warnings
       - name: sccache stats
         if: always()
         run: sccache --show-stats || true
@@ -66,15 +70,24 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
+      - name: Install Linux TLS dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci
           save-if: ${{ false }}
-      - name: Run tests
-        run: cargo nextest run --locked --workspace
-      - name: Run doctests
+      - name: Run tests (backend only)
         if: matrix.os == 'ubuntu-latest'
-        run: cargo test --locked --workspace --doc
+        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
+      - name: Run tests
+        if: matrix.os != 'ubuntu-latest'
+        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop
+      - name: Run doctests (backend only)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --locked --workspace --exclude rust-srec-desktop --doc --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
       - name: sccache stats
         if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
@@ -84,6 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
+      desktop: ${{ steps.filter.outputs.desktop }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
@@ -92,6 +106,12 @@ jobs:
           filters: |
             frontend:
               - 'rust-srec/frontend/**'
+            desktop:
+              - 'rust-srec/src-tauri/**'
+              - 'rust-srec/src/**'
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
 
   frontend-lint:
     name: Frontend Lint
@@ -117,3 +137,34 @@ jobs:
         run: pnpm run lint
       - name: Run build
         run: pnpm run build
+
+  desktop-build:
+    name: Desktop Build (no bundle)
+    needs: check-changes
+    if: needs.check-changes.outputs.desktop == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-protoc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci
+          save-if: ${{ false }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: rust-srec/frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm -C rust-srec/frontend install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@action-v0.6.1
+        with:
+          projectPath: rust-srec/src-tauri
+          args: --no-bundle

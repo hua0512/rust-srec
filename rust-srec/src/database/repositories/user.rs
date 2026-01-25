@@ -1,7 +1,6 @@
 //! User repository for database operations.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 
 use crate::Result;
@@ -31,8 +30,8 @@ pub trait UserRepository: Send + Sync {
     /// List users with pagination.
     async fn list(&self, limit: i64, offset: i64) -> Result<Vec<UserDbModel>>;
 
-    /// Update the last login timestamp for a user.
-    async fn update_last_login(&self, id: &str, time: DateTime<Utc>) -> Result<()>;
+    /// Update the last login timestamp (epoch ms) for a user.
+    async fn update_last_login(&self, id: &str, time_ms: i64) -> Result<()>;
 
     /// Update a user's password hash.
     async fn update_password(
@@ -76,9 +75,9 @@ impl UserRepository for SqlxUserRepository {
         .bind(&user.roles)
         .bind(user.is_active)
         .bind(user.must_change_password)
-        .bind(&user.last_login_at)
-        .bind(&user.created_at)
-        .bind(&user.updated_at)
+        .bind(user.last_login_at)
+        .bind(user.created_at)
+        .bind(user.updated_at)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -109,7 +108,7 @@ impl UserRepository for SqlxUserRepository {
     }
 
     async fn update(&self, user: &UserDbModel) -> Result<()> {
-        let now = Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         sqlx::query(
             r#"
             UPDATE users SET
@@ -130,8 +129,8 @@ impl UserRepository for SqlxUserRepository {
         .bind(&user.roles)
         .bind(user.is_active)
         .bind(user.must_change_password)
-        .bind(&user.last_login_at)
-        .bind(&now)
+        .bind(user.last_login_at)
+        .bind(now)
         .bind(&user.id)
         .execute(&self.pool)
         .await?;
@@ -157,10 +156,10 @@ impl UserRepository for SqlxUserRepository {
         Ok(users)
     }
 
-    async fn update_last_login(&self, id: &str, time: DateTime<Utc>) -> Result<()> {
+    async fn update_last_login(&self, id: &str, time_ms: i64) -> Result<()> {
         sqlx::query("UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?")
-            .bind(time.to_rfc3339())
-            .bind(Utc::now().to_rfc3339())
+            .bind(time_ms)
+            .bind(crate::database::time::now_ms())
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -173,20 +172,20 @@ impl UserRepository for SqlxUserRepository {
         password_hash: &str,
         clear_must_change: bool,
     ) -> Result<()> {
-        let now = Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         if clear_must_change {
             sqlx::query(
                 "UPDATE users SET password_hash = ?, must_change_password = FALSE, updated_at = ? WHERE id = ?",
             )
             .bind(password_hash)
-            .bind(&now)
+            .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
         } else {
             sqlx::query("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
                 .bind(password_hash)
-                .bind(&now)
+                .bind(now)
                 .bind(id)
                 .execute(&self.pool)
                 .await?;

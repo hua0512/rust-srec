@@ -233,8 +233,7 @@ impl Processor<FlvData> for TimeConsistencyOperator {
                             && self.continuity_mode == ContinuityMode::Reset
                         {
                             // use the first timestamp as the delta
-                            self.state.timestamp_offset =
-                                -(self.state.first_timestamp_in_segment.unwrap() as i64);
+                            self.state.timestamp_offset = -(tag.timestamp_ms as i64);
                         }
                     }
                     self.state.new_segment = false;

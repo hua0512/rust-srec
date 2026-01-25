@@ -24,12 +24,12 @@ pub struct UserDbModel {
     pub is_active: bool,
     /// Whether the user must change password on next login
     pub must_change_password: bool,
-    /// Timestamp of last successful login
-    pub last_login_at: Option<String>,
-    /// Timestamp when the user was created
-    pub created_at: String,
-    /// Timestamp when the user was last updated
-    pub updated_at: String,
+    /// Unix epoch milliseconds (UTC) of last successful login.
+    pub last_login_at: Option<i64>,
+    /// Unix epoch milliseconds (UTC) when the user was created.
+    pub created_at: i64,
+    /// Unix epoch milliseconds (UTC) when the user was last updated.
+    pub updated_at: i64,
 }
 
 impl UserDbModel {
@@ -40,7 +40,7 @@ impl UserDbModel {
         password_hash: impl Into<String>,
         roles: Vec<String>,
     ) -> Self {
-        let now = Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         let id = uuid::Uuid::new_v4().to_string();
         Self {
             id: id.clone(),
@@ -59,7 +59,7 @@ impl UserDbModel {
             is_active: true,
             must_change_password: true,
             last_login_at: None,
-            created_at: now.clone(),
+            created_at: now,
             updated_at: now,
         }
     }
@@ -99,31 +99,25 @@ impl UserDbModel {
         self.has_role("admin")
     }
 
-    /// Get last_login_at as DateTime<Utc>.
+    /// Get last_login_at as `DateTime<Utc>`.
     pub fn get_last_login_at(&self) -> Option<DateTime<Utc>> {
         self.last_login_at
-            .as_ref()
-            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc))
+            .map(crate::database::time::ms_to_datetime)
     }
 
-    /// Get created_at as DateTime<Utc>.
-    pub fn get_created_at(&self) -> Option<DateTime<Utc>> {
-        DateTime::parse_from_rfc3339(&self.created_at)
-            .ok()
-            .map(|dt| dt.with_timezone(&Utc))
+    /// Get created_at as `DateTime<Utc>`.
+    pub fn get_created_at(&self) -> DateTime<Utc> {
+        crate::database::time::ms_to_datetime(self.created_at)
     }
 
-    /// Get updated_at as DateTime<Utc>.
-    pub fn get_updated_at(&self) -> Option<DateTime<Utc>> {
-        DateTime::parse_from_rfc3339(&self.updated_at)
-            .ok()
-            .map(|dt| dt.with_timezone(&Utc))
+    /// Get updated_at as `DateTime<Utc>`.
+    pub fn get_updated_at(&self) -> DateTime<Utc> {
+        crate::database::time::ms_to_datetime(self.updated_at)
     }
 
     /// Update the updated_at timestamp to now.
     pub fn touch(&mut self) {
-        self.updated_at = Utc::now().to_rfc3339();
+        self.updated_at = crate::database::time::now_ms();
     }
 }
 
@@ -262,7 +256,7 @@ mod property_tests {
             let original_id = user.id.clone();
             let original_username = user.username.clone();
             let original_password_hash = user.password_hash.clone();
-            let original_created_at = user.created_at.clone();
+            let original_created_at = user.created_at;
 
             // Update roles
             user.set_roles(new_roles.clone());

@@ -207,7 +207,7 @@ impl ServiceContainer {
         let mut credential_service =
             CredentialRefreshService::new(credential_resolver, credential_store);
         credential_service.set_notification_service(Arc::clone(&notification_service));
-        match BilibiliCredentialManager::new(reqwest::Client::new()) {
+        match BilibiliCredentialManager::new_lazy() {
             Ok(manager) => credential_service.register_manager(Arc::new(manager)),
             Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
         }
@@ -338,23 +338,33 @@ impl ServiceContainer {
         danmu_config: DanmuServiceConfig,
         api_config: ApiServerConfig,
     ) -> Result<Self> {
+        let overall = Instant::now();
         info!("Initializing service container with full configuration");
 
         // Create repositories
+        let repos_start = Instant::now();
         let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
         let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let repos_ms = repos_start.elapsed().as_millis();
 
         // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
+        let global_config_start = Instant::now();
         let global_config = config_repo.get_global_config().await?;
+        let global_config_ms = global_config_start.elapsed().as_millis();
 
         // Create shared event broadcaster
+        let event_broadcaster_start = Instant::now();
         let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
+        let event_broadcaster_ms = event_broadcaster_start.elapsed().as_millis();
 
         // Create additional repositories for StreamMonitor
+        let monitor_repos_start = Instant::now();
         let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let monitor_repos_ms = monitor_repos_start.elapsed().as_millis();
 
         // Create config service with custom cache
+        let config_service_start = Instant::now();
         let cache = ConfigCache::with_ttl(cache_ttl);
         let config_service = Arc::new(ConfigService::with_cache_and_broadcaster(
             config_repo.clone(),
@@ -362,14 +372,18 @@ impl ServiceContainer {
             cache,
             event_broadcaster.clone(),
         ));
+        let config_service_ms = config_service_start.elapsed().as_millis();
 
         // Create streamer manager
+        let streamer_manager_start = Instant::now();
         let streamer_manager = Arc::new(StreamerManager::new(
             streamer_repo.clone(),
             event_broadcaster.clone(),
         ));
+        let streamer_manager_ms = streamer_manager_start.elapsed().as_millis();
 
         // Create stream monitor for real status detection
+        let stream_monitor_start = Instant::now();
         let mut stream_monitor = StreamMonitor::new(
             streamer_manager.clone(),
             filter_repo,
@@ -377,21 +391,25 @@ impl ServiceContainer {
             config_service.clone(),
             pool.clone(),
         );
+        let stream_monitor_ms = stream_monitor_start.elapsed().as_millis();
 
         // Build credential refresh service (shared between StreamMonitor + API).
+        let credential_service_start = Instant::now();
         let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
         let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone()));
         let mut credential_service =
             CredentialRefreshService::new(credential_resolver, credential_store);
-        match BilibiliCredentialManager::new(reqwest::Client::new()) {
+        match BilibiliCredentialManager::new_lazy() {
             Ok(manager) => credential_service.register_manager(Arc::new(manager)),
             Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
         }
         let credential_service = Arc::new(credential_service);
         stream_monitor.set_credential_service(Arc::clone(&credential_service));
         let stream_monitor = Arc::new(stream_monitor);
+        let credential_service_ms = credential_service_start.elapsed().as_millis();
 
         // Create download manager with custom config, overridden by global config for concurrency.
+        let download_manager_start = Instant::now();
         let mut effective_download_config = download_config.clone();
         effective_download_config.max_concurrent_downloads =
             (global_config.max_concurrent_downloads as i64).max(1) as usize;
@@ -399,8 +417,10 @@ impl ServiceContainer {
             DownloadManager::with_config(effective_download_config)
                 .with_config_repo(config_repo.clone()),
         );
+        let download_manager_ms = download_manager_start.elapsed().as_millis();
 
         // Create job repository for pipeline persistence
+        let pipeline_repo_start = Instant::now();
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
 
         // Create job preset repository
@@ -409,9 +429,11 @@ impl ServiceContainer {
         // Create pipeline preset repository (for workflow expansion)
         let pipeline_preset_repo =
             Arc::new(SqlitePipelinePresetRepository::new(pool.clone().into()));
+        let pipeline_repo_ms = pipeline_repo_start.elapsed().as_millis();
 
         // Create pipeline manager with job repository for database persistence.
         // Wire global-config concurrency knobs into CPU/IO worker pool sizes.
+        let pipeline_manager_start = Instant::now();
         let mut effective_pipeline_config = pipeline_config;
         effective_pipeline_config.cpu_pool.max_workers =
             autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
@@ -426,14 +448,20 @@ impl ServiceContainer {
                 .with_config_service(config_service.clone())
                 .with_dag_repository(Arc::new(SqlxDagRepository::new(pool.clone()))),
         );
+        let pipeline_manager_ms = pipeline_manager_start.elapsed().as_millis();
 
         // Get monitor event broadcaster
+        let monitor_event_broadcaster_start = Instant::now();
         let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
+        let monitor_event_broadcaster_ms = monitor_event_broadcaster_start.elapsed().as_millis();
 
         // Create danmu service with custom config
+        let danmu_service_start = Instant::now();
         let danmu_service = Arc::new(DanmuService::new(danmu_config));
+        let danmu_service_ms = danmu_service_start.elapsed().as_millis();
 
         // Create notification service with default config
+        let notification_service_start = Instant::now();
         let notification_repository = Arc::new(SqlxNotificationRepository::new(pool.clone()));
         let web_push_service = WebPushService::from_env(pool.clone())
             .unwrap_or_else(|e| {
@@ -451,17 +479,24 @@ impl ServiceContainer {
         }
         let notification_service = Arc::new(notification_service);
         notification_service.start_web_push_worker();
+        let notification_service_ms = notification_service_start.elapsed().as_millis();
+        let web_push_enabled = web_push_service.is_some();
 
         // Create metrics collector
+        let metrics_collector_start = Instant::now();
         let metrics_collector = Arc::new(MetricsCollector::new());
         if let Some(web_push) = web_push_service.as_ref() {
             web_push.set_metrics_collector(metrics_collector.clone());
         }
+        let metrics_collector_ms = metrics_collector_start.elapsed().as_millis();
 
         // Create health checker
+        let health_checker_start = Instant::now();
         let health_checker = Arc::new(HealthChecker::new());
+        let health_checker_ms = health_checker_start.elapsed().as_millis();
 
         // Create database maintenance scheduler (retention settings are user-configurable via global config)
+        let maintenance_scheduler_start = Instant::now();
         let maintenance_config = MaintenanceConfig {
             job_retention_days: global_config.job_history_retention_days.max(0),
             notification_event_log_retention_days: global_config
@@ -471,9 +506,12 @@ impl ServiceContainer {
         };
         let maintenance_scheduler =
             Arc::new(MaintenanceScheduler::new(pool.clone(), maintenance_config));
+        let maintenance_scheduler_ms = maintenance_scheduler_start.elapsed().as_millis();
 
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
+        let cancellation_token_start = Instant::now();
         let cancellation_token = CancellationToken::new();
+        let cancellation_token_ms = cancellation_token_start.elapsed().as_millis();
 
         let scheduler_config = crate::scheduler::SchedulerConfig {
             check_interval_ms: global_config.streamer_check_delay_ms as u64,
@@ -483,6 +521,7 @@ impl ServiceContainer {
         };
 
         // Create scheduler with StreamMonitor for real status checking
+        let scheduler_start = Instant::now();
         let scheduler = Arc::new(tokio::sync::RwLock::new(
             Scheduler::with_monitor_and_config(
                 streamer_manager.clone(),
@@ -493,6 +532,33 @@ impl ServiceContainer {
             )
             .with_config_repo(config_repo.clone()),
         ));
+        let scheduler_ms = scheduler_start.elapsed().as_millis();
+
+        let total_ms = overall.elapsed().as_millis();
+        info!(
+            startup_container_repos_ms = repos_ms,
+            startup_container_global_config_ms = global_config_ms,
+            startup_container_event_broadcaster_ms = event_broadcaster_ms,
+            startup_container_monitor_repos_ms = monitor_repos_ms,
+            startup_container_config_service_ms = config_service_ms,
+            startup_container_streamer_manager_ms = streamer_manager_ms,
+            startup_container_stream_monitor_ms = stream_monitor_ms,
+            startup_container_credential_service_ms = credential_service_ms,
+            startup_container_download_manager_ms = download_manager_ms,
+            startup_container_pipeline_repos_ms = pipeline_repo_ms,
+            startup_container_pipeline_manager_ms = pipeline_manager_ms,
+            startup_container_monitor_event_broadcaster_ms = monitor_event_broadcaster_ms,
+            startup_container_danmu_service_ms = danmu_service_ms,
+            startup_container_notification_service_ms = notification_service_ms,
+            startup_container_metrics_collector_ms = metrics_collector_ms,
+            startup_container_health_checker_ms = health_checker_ms,
+            startup_container_maintenance_scheduler_ms = maintenance_scheduler_ms,
+            startup_container_cancellation_token_ms = cancellation_token_ms,
+            startup_container_scheduler_ms = scheduler_ms,
+            startup_container_total_ms = total_ms,
+            web_push_enabled,
+            "Startup: service container build summary"
+        );
 
         info!("Service container initialized with full configuration and real status checking");
 
@@ -524,24 +590,40 @@ impl ServiceContainer {
 
     /// Initialize all services (hydrate data, start background tasks, etc.).
     pub async fn initialize(&self) -> Result<()> {
+        let overall = Instant::now();
         info!("Initializing services");
 
-        // Hydrate streamer manager from database
-        let streamer_count = self.streamer_manager.hydrate().await?;
+        let hydrate_start = Instant::now();
+        let (streamer_count, recovered_jobs) = tokio::try_join!(
+            self.streamer_manager.hydrate(),
+            self.pipeline_manager.recover_jobs(),
+        )?;
+
+        let hydrate_recover_ms = hydrate_start.elapsed().as_millis();
+
+        info!(
+            elapsed_ms = hydrate_recover_ms,
+            "Startup: hydrate streamers + recover jobs"
+        );
+
         info!("Hydrated {} streamers", streamer_count);
 
-        // Recover jobs from database on startup
+        // Recover jobs from database on startup.
         // This resets PROCESSING jobs to PENDING for re-execution.
         // For sequential pipelines, no special handling is needed since only one job
         // per pipeline exists at a time.
-        let recovered_jobs = self.pipeline_manager.recover_jobs().await?;
         if recovered_jobs > 0 {
             info!("Recovered {} jobs from database", recovered_jobs);
         }
 
         // Start pipeline manager
+        let pipeline_start = Instant::now();
         self.pipeline_manager.clone().start();
-        info!("Pipeline manager started");
+        let pipeline_start_ms = pipeline_start.elapsed().as_millis();
+        info!(
+            elapsed_ms = pipeline_start_ms,
+            "Startup: pipeline manager started"
+        );
 
         // Subscribe streamer manager to config events
         self.setup_config_event_subscriptions();
@@ -555,25 +637,56 @@ impl ServiceContainer {
         // Wire danmu events to download manager for segment coordination
         self.setup_danmu_event_subscriptions();
 
-        // Load notification channels/subscriptions from DB (best-effort).
-        if let Err(e) = self.notification_service.reload_from_db().await {
-            warn!("Failed to load notification configuration from DB: {}", e);
-        }
-
         // Wire notification service to system events
         self.setup_notification_event_subscriptions();
 
-        // Register health checks
-        self.register_health_checks().await;
+        // Load notification channels/subscriptions from DB (best-effort) and register health checks.
+        // Neither is required for the core runtime to start, so keep them concurrent.
+        let health_checks_start = Instant::now();
+        let (reload_result, _) = tokio::join!(
+            self.notification_service.reload_from_db(),
+            self.register_health_checks(),
+        );
+        let notifications_health_checks_ms = health_checks_start.elapsed().as_millis();
+        if let Err(e) = reload_result {
+            warn!("Failed to load notification configuration from DB: {}", e);
+        }
+        info!(
+            elapsed_ms = notifications_health_checks_ms,
+            "Startup: notifications + health checks"
+        );
 
         // Start database maintenance scheduler
+        let maintenance_start = Instant::now();
         self.maintenance_scheduler.clone().start();
+        let maintenance_start_ms = maintenance_start.elapsed().as_millis();
         info!("Database maintenance scheduler started");
 
         // Start scheduler in background
+        let scheduler_start = Instant::now();
         self.start_scheduler().await;
 
-        info!("Services initialized");
+        let scheduler_start_ms = scheduler_start.elapsed().as_millis();
+
+        info!(
+            elapsed_ms = scheduler_start_ms,
+            "Startup: scheduler task started"
+        );
+
+        let total_ms = overall.elapsed().as_millis();
+        info!(elapsed_ms = total_ms, "Services initialized");
+
+        info!(
+            startup_hydrate_recover_ms = hydrate_recover_ms,
+            startup_pipeline_start_ms = pipeline_start_ms,
+            startup_notifications_health_checks_ms = notifications_health_checks_ms,
+            startup_maintenance_start_ms = maintenance_start_ms,
+            startup_scheduler_start_ms = scheduler_start_ms,
+            startup_total_ms = total_ms,
+            streamer_count,
+            recovered_jobs,
+            "Startup: initialize summary"
+        );
         Ok(())
     }
 
@@ -606,6 +719,15 @@ impl ServiceContainer {
     /// Initialize and start the API server.
     /// This should be called after initialize() and runs the server in the background.
     pub async fn start_api_server(&self) -> Result<()> {
+        let _ = self.start_api_server_bound().await?;
+        Ok(())
+    }
+
+    /// Initialize and start the API server, returning the resolved bind address.
+    ///
+    /// This is required when binding to port `0` (ephemeral port), where the actual port is only
+    /// known after binding.
+    pub async fn start_api_server_bound(&self) -> Result<std::net::SocketAddr> {
         // Create AuthConfig from environment first (single source of truth for token expiration)
         let auth_config = AuthConfig::from_env();
 
@@ -679,20 +801,108 @@ impl ServiceContainer {
             server_cancel.cancel();
         });
 
-        // Start server in background
-        let addr = format!(
-            "{}:{}",
-            self.api_server_config.bind_address, self.api_server_config.port
-        );
-        info!("Starting API server on http://{}", addr);
+        let (listener, local_addr) = server.bind().await?;
+        info!("Starting API server on http://{}", local_addr);
 
         tokio::spawn(async move {
-            if let Err(e) = server.run().await {
+            if let Err(e) = server.run_with_listener(listener).await {
                 tracing::error!("API server error: {}", e);
             }
         });
 
-        Ok(())
+        Ok(local_addr)
+    }
+
+    /// Initialize and start the API server, returning the resolved bind address, using a
+    /// caller-provided JWT secret.
+    ///
+    /// This is primarily intended for the desktop (Tauri) wrapper, which should not depend on
+    /// `.env` loading / shell environment setup for authentication to work.
+    pub async fn start_api_server_bound_with_jwt_secret(
+        &self,
+        jwt_secret: String,
+    ) -> Result<std::net::SocketAddr> {
+        let auth_config = AuthConfig::from_env();
+
+        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
+        let audience =
+            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
+        let jwt_service = Arc::new(JwtService::new(
+            &jwt_secret,
+            &issuer,
+            &audience,
+            Some(auth_config.access_token_expiration_secs),
+        ));
+
+        // Create AuthService (always enabled when a JWT secret is provided)
+        let user_repo = Arc::new(SqlxUserRepository::new(self.pool.clone()));
+        let token_repo = Arc::new(SqlxRefreshTokenRepository::new(self.pool.clone()));
+        let auth_svc = AuthService::new(user_repo, token_repo, jwt_service.clone(), auth_config);
+        info!(
+            issuer = %issuer,
+            audience = %audience,
+            "AuthService initialized with desktop-provided JWT secret"
+        );
+
+        let mut state = AppState::with_services(
+            Some(jwt_service),
+            self.config_service.clone(),
+            self.streamer_manager.clone(),
+            self.pipeline_manager.clone(),
+            self.danmu_service.clone(),
+            self.download_manager.clone(),
+        )
+        .with_auth_service(Arc::new(auth_svc));
+
+        // Wire HealthChecker into AppState for health endpoints
+        state = state.with_health_checker(self.health_checker.clone());
+
+        // Wire credential refresh service into AppState for API endpoints.
+        state = state.with_credential_service(self.credential_service.clone());
+
+        // Wire SessionRepository, FilterRepository, and PipelinePresetRepository into AppState
+        state = state
+            .with_session_repository(Arc::new(SqlxSessionRepository::new(self.pool.clone())))
+            .with_filter_repository(Arc::new(SqlxFilterRepository::new(self.pool.clone())))
+            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(self.pool.clone())))
+            .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
+                Arc::new(self.pool.clone()),
+            )))
+            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(Arc::new(
+                self.pool.clone(),
+            ))))
+            .with_notification_repository(self.notification_repository.clone())
+            .with_notification_service(self.notification_service.clone());
+
+        if let Some(web_push) = self.web_push_service.clone() {
+            state = state.with_web_push_service(web_push);
+        }
+
+        // Wire logging config if available
+        if let Some(logging_config) = self.logging_config.get().cloned() {
+            state = state.with_logging_config(logging_config);
+        }
+
+        let server = ApiServer::with_state(self.api_server_config.clone(), state);
+        let cancel_token = self.cancellation_token.clone();
+
+        // Link server shutdown to container shutdown
+        let server_cancel = server.cancel_token();
+        tokio::spawn(async move {
+            cancel_token.cancelled().await;
+            server_cancel.cancel();
+        });
+
+        let (listener, local_addr) = server.bind().await?;
+        info!("Starting API server on http://{}", local_addr);
+
+        tokio::spawn(async move {
+            if let Err(e) = server.run_with_listener(listener).await {
+                tracing::error!("API server error: {}", e);
+            }
+        });
+
+        Ok(local_addr)
     }
 
     /// Set up config event subscriptions between services.

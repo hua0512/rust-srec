@@ -1,5 +1,6 @@
-import { createServerFn } from '@tanstack/react-start';
+import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
+import { BASE_URL } from '../../utils/env';
 import {
   LoggingConfigResponseSchema,
   UpdateLogFilterRequestSchema,
@@ -32,3 +33,21 @@ export const updateLoggingFilter = createServerFn({ method: 'POST' })
     });
     return LoggingConfigResponseSchema.parse(json);
   });
+
+/** Build an authenticated download URL for system logs. */
+export const getLogsDownloadUrl = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    // Ask the backend for a single-use archive token, then build an absolute
+    // download URL using the configured API base.
+    const json = await fetchBackend('/logging/archive-token');
+    const parsed = z
+      .object({ token: z.string().min(1), expires_at: z.string().min(1) })
+      .parse(json);
+
+    const base = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+    const url = new URL(`${base}/logging/archive`);
+    url.searchParams.set('token', parsed.token);
+
+    return { url: url.toString(), expires_at: parsed.expires_at };
+  },
+);

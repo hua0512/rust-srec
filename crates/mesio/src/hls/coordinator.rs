@@ -1,6 +1,7 @@
 // HLS Stream Coordinator: Sets up and spawns all HLS download pipeline components.
 
 use crate::CacheManager;
+use crate::downloader::ClientPool;
 use crate::hls::buffer_pool::BufferPool;
 use crate::hls::config::HlsConfig;
 use crate::hls::decryption::{DecryptionService, KeyFetcher};
@@ -11,7 +12,6 @@ use crate::hls::output::OutputManager;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine, PlaylistProvider};
 use crate::hls::processor::{SegmentProcessor, SegmentTransformer};
 use crate::hls::scheduler::{ScheduledSegmentJob, SegmentScheduler};
-use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -40,7 +40,7 @@ impl HlsStreamCoordinator {
     pub async fn setup_and_spawn(
         initial_url: String,
         config: Arc<HlsConfig>,
-        http_client: Client,
+        clients: Arc<ClientPool>,
         cache_manager: Option<Arc<CacheManager>>,
         token: CancellationToken,
         parent_span: Option<tracing::Span>,
@@ -63,7 +63,7 @@ impl HlsStreamCoordinator {
         ));
 
         let key_fetcher = Arc::new(KeyFetcher::new(
-            http_client.clone(),
+            Arc::clone(&clients),
             Arc::clone(&config),
             token.clone(),
         ));
@@ -76,7 +76,7 @@ impl HlsStreamCoordinator {
         // Create shared HTTP/2 stats tracker
         let http2_stats = Arc::new(Http2Stats::new());
         let segment_fetcher: Arc<dyn SegmentDownloader> = Arc::new(SegmentFetcher::with_metrics(
-            http_client.clone(),
+            Arc::clone(&clients),
             Arc::clone(&config),
             cache_manager.clone(),
             Arc::clone(&http2_stats),
@@ -91,7 +91,7 @@ impl HlsStreamCoordinator {
                 Arc::clone(&performance_metrics),
             ));
         let playlist_engine: Arc<dyn PlaylistProvider> = Arc::new(PlaylistEngine::new(
-            http_client.clone(),
+            Arc::clone(&clients),
             cache_manager,
             Arc::clone(&config),
         ));
@@ -227,7 +227,7 @@ mod tests {
     use super::*;
     use crate::config::DEFAULT_USER_AGENT;
     use crate::hls::config::HlsConfig;
-    use crate::{CacheConfig, CacheManager, create_client};
+    use crate::{CacheConfig, CacheManager};
     use std::sync::Arc;
     use std::time::Duration;
     use tracing::{debug, info};
@@ -260,8 +260,7 @@ mod tests {
             .with_timeout(std::time::Duration::from_secs(30))
             .with_header("referer", "http://live.douyin.com")
             .build();
-        // Create the crypto provider
-        let client = create_client(&downloader_config).unwrap();
+        let clients = Arc::new(crate::downloader::create_client_pool(&downloader_config).unwrap());
         // let initial_url = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8".to_string();
         let initial_url = "http://pull-hls-f11.douyincdn.com/thirdgame/stream-693725261315179274.m3u8?arch_hrchy=h1&exp_hrchy=h1&expire=1747991885&major_anchor_level=common&sign=f0e1fa5f131404440612b895d83316bc&t_id=037-20250516171805D14BA54D125D402EA0DF-ytZ138".to_string();
 
@@ -270,7 +269,7 @@ mod tests {
         let result = HlsStreamCoordinator::setup_and_spawn(
             initial_url,
             config,
-            client,
+            clients,
             cache,
             CancellationToken::new(),
             None, // No parent span for test

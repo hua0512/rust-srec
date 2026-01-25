@@ -10,9 +10,9 @@ use bytes::Bytes;
 use cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7}; // Pkcs7 for padding
 use hex;
 use m3u8_rs::Key;
-use reqwest::Client;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+use url::Url;
 
 // --- DecryptionOffloader Struct ---
 // Offloads CPU-intensive decryption to Tokio's blocking thread pool.
@@ -125,15 +125,19 @@ impl DecryptionOffloader {
 // --- KeyFetcher Struct ---
 // Responsible for fetching raw key data from a URI.
 pub struct KeyFetcher {
-    http_client: Client,
+    clients: Arc<crate::downloader::ClientPool>,
     config: Arc<HlsConfig>,
     token: CancellationToken,
 }
 
 impl KeyFetcher {
-    pub fn new(http_client: Client, config: Arc<HlsConfig>, token: CancellationToken) -> Self {
+    pub fn new(
+        clients: Arc<crate::downloader::ClientPool>,
+        config: Arc<HlsConfig>,
+        token: CancellationToken,
+    ) -> Self {
         Self {
-            http_client,
+            clients,
             config,
             token,
         }
@@ -146,12 +150,15 @@ impl KeyFetcher {
                 return Err(HlsDownloaderError::Cancelled);
             }
             attempts += 1;
+            let client = Url::parse(key_uri)
+                .ok()
+                .map(|url| self.clients.client_for_url(&url))
+                .unwrap_or_else(|| self.clients.default_client());
             let response = tokio::select! {
                 _ = self.token.cancelled() => {
                     return Err(HlsDownloaderError::Cancelled);
                 }
-                response = self
-                    .http_client
+                response = client
                     .get(key_uri)
                     .timeout(self.config.fetcher_config.key_download_timeout)
                     .send() => response,

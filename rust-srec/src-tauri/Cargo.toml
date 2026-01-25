@@ -1,0 +1,42 @@
+[package]
+name = "rust-srec-desktop"
+version = "0.1.0"
+description = "rust-srec desktop app (Tauri)"
+authors = ["hua0512"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/hua0512/rust-srec"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "rust_srec_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.3", features = [] }
+
+[dependencies]
+serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+hex = { workspace = true }
+rand = { workspace = true }
+anyhow = { workspace = true }
+tracing-appender = { workspace = true }
+log = "0.4"
+fs2 = "0.4"
+tauri = { version = "2.9.5", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+rust-srec = { path = ".." }
+
+[features]
+# Managed by the Tauri CLI.
+# When enabled, Tauri serves assets via the custom protocol instead of expecting a dev server.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+# Opt-in: enables Web inspector and related APIs. Avoid shipping this in release builds.
+devtools = ["tauri/devtools"]

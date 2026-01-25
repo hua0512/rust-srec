@@ -181,11 +181,11 @@ impl MaintenanceScheduler {
             return Ok(0);
         }
 
-        let cutoff = (Utc::now()
-            - chrono::Duration::days(self.config.monitor_outbox_delivered_retention_days as i64))
-        .to_rfc3339();
+        let cutoff_ms = crate::database::time::now_ms()
+            - chrono::Duration::days(self.config.monitor_outbox_delivered_retention_days as i64)
+                .num_milliseconds();
 
-        MonitorOutboxOps::prune_delivered_before(&self.pool, &cutoff).await
+        MonitorOutboxOps::prune_delivered_before(&self.pool, cutoff_ms).await
     }
 
     async fn cleanup_notification_event_logs(&self) -> Result<i32, crate::Error> {
@@ -193,12 +193,12 @@ impl MaintenanceScheduler {
             return Ok(0);
         }
 
-        let cutoff = (Utc::now()
-            - chrono::Duration::days(self.config.notification_event_log_retention_days as i64))
-        .to_rfc3339();
+        let cutoff_ms = crate::database::time::now_ms()
+            - chrono::Duration::days(self.config.notification_event_log_retention_days as i64)
+                .num_milliseconds();
 
         let result = sqlx::query("DELETE FROM notification_event_log WHERE created_at < ?")
-            .bind(&cutoff)
+            .bind(cutoff_ms)
             .execute(&self.pool)
             .await
             .map_err(|e| crate::Error::Database(e.to_string()))?;
@@ -350,8 +350,8 @@ impl MaintenanceScheduler {
 
     /// Cleanup old completed/failed jobs.
     pub async fn cleanup_old_jobs(&self) -> Result<i32, crate::Error> {
-        let cutoff = Utc::now() - chrono::Duration::days(self.config.job_retention_days as i64);
-        let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
+        let cutoff_ms = crate::database::time::now_ms()
+            - chrono::Duration::days(self.config.job_retention_days as i64).num_milliseconds();
 
         // First delete execution logs for old jobs
         sqlx::query(
@@ -361,7 +361,7 @@ impl MaintenanceScheduler {
                 AND updated_at < ?
             )",
         )
-        .bind(&cutoff_str)
+        .bind(cutoff_ms)
         .execute(&self.pool)
         .await
         .map_err(|e| crate::Error::Database(e.to_string()))?;
@@ -370,7 +370,7 @@ impl MaintenanceScheduler {
         let result = sqlx::query(
             "DELETE FROM job WHERE status IN ('COMPLETED', 'FAILED') AND updated_at < ?",
         )
-        .bind(&cutoff_str)
+        .bind(cutoff_ms)
         .execute(&self.pool)
         .await
         .map_err(|e| crate::Error::Database(e.to_string()))?;
@@ -380,12 +380,12 @@ impl MaintenanceScheduler {
 
     /// Cleanup old dead letter entries.
     pub async fn cleanup_dead_letters(&self) -> Result<i32, crate::Error> {
-        let cutoff =
-            Utc::now() - chrono::Duration::days(self.config.dead_letter_retention_days as i64);
-        let cutoff_str = cutoff.to_rfc3339();
+        let cutoff_ms = crate::database::time::now_ms()
+            - chrono::Duration::days(self.config.dead_letter_retention_days as i64)
+                .num_milliseconds();
 
         let result = sqlx::query("DELETE FROM notification_dead_letter WHERE created_at < ?")
-            .bind(&cutoff_str)
+            .bind(cutoff_ms)
             .execute(&self.pool)
             .await
             .map_err(|e| crate::Error::Database(e.to_string()))?;

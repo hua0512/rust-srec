@@ -48,6 +48,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { buildWebSocketUrl } from '@/lib/url';
 
 const MAX_LOG_ENTRIES = 500;
 const WS_RECONNECT_BASE_DELAY = 1000;
@@ -57,24 +58,7 @@ interface DisplayLogEvent extends LogEvent {
   id: number;
 }
 
-/** Build WebSocket URL for log streaming */
-function buildLogWebSocketUrl(accessToken: string): string {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
 
-  let wsUrl: string;
-
-  if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
-    const url = new URL(apiBaseUrl);
-    const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    wsUrl = `${wsProtocol}//${url.host}${url.pathname}`;
-  } else {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    wsUrl = `${protocol}//${window.location.host}${apiBaseUrl}`;
-  }
-
-  const basePath = wsUrl.replace(/\/$/, '');
-  return `${basePath}/logging/stream?token=${accessToken}`;
-}
 
 /** Get log level icon component */
 function getLevelIcon(level: LogLevel) {
@@ -203,21 +187,35 @@ export function LogViewer() {
   // Connect to WebSocket
   const connect = useCallback(() => {
     if (!accessToken) return;
+    if (typeof window === 'undefined') return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
-    const wsUrl = buildLogWebSocketUrl(accessToken);
+    const wsUrl = buildWebSocketUrl(accessToken, '/logging/stream');
+    if (import.meta.env.DEV) {
+      console.debug('[LOG WS] Connecting to', wsUrl);
+    }
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
+      if (import.meta.env.DEV) {
+        console.debug('[LOG WS] Connected');
+      }
       setIsConnected(true);
       reconnectAttemptRef.current = 0;
     };
 
     ws.onmessage = handleMessage;
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (import.meta.env.DEV) {
+        console.debug('[LOG WS] Close', {
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+        });
+      }
       setIsConnected(false);
       wsRef.current = null;
 
@@ -232,7 +230,10 @@ export function LogViewer() {
       }
     };
 
-    ws.onerror = () => {
+    ws.onerror = (event) => {
+      if (import.meta.env.DEV) {
+        console.error('[LOG WS] Connection error', event);
+      }
       setIsConnected(false);
     };
 

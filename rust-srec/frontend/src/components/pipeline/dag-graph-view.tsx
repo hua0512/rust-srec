@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { motion, useMotionValue, useSpring } from 'framer-motion';
+import { motion, useMotionValue, useSpring } from 'motion/react';
 import { DagGraph, DagGraphNode, DagStepStatus } from '@/api/schemas';
 import { cn } from '@/lib/utils';
 import {

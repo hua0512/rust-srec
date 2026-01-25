@@ -351,12 +351,11 @@ impl StreamDetector {
         // debug!("Media info: {:#?}", media_info);
 
         if media_info.is_live {
-            // Extract additional metadata from extras if available
             let category = media_info
-                .extras
+                .category
                 .as_ref()
-                .and_then(|extras| extras.get("category"))
-                .cloned();
+                .filter(|c| !c.is_empty())
+                .map(|c| c.join(", "));
 
             let viewer_count = media_info
                 .extras

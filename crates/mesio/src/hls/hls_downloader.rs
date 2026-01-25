@@ -12,14 +12,14 @@ use tracing::debug;
 
 use crate::{
     BoxMediaStream, CacheManager, Download, DownloadError, ProtocolBase, SourceManager,
-    create_client, hls::HlsDownloaderError,
+    downloader::create_client_pool, hls::HlsDownloaderError,
 };
 use tokio_util::sync::CancellationToken;
 
 use super::{HlsConfig, HlsStreamCoordinator, HlsStreamEvent, coordinator::AllTaskHandles};
 
 pub struct HlsDownloader {
-    client: Client,
+    clients: Arc<crate::downloader::ClientPool>,
     config: HlsConfig,
 }
 
@@ -31,8 +31,8 @@ impl HlsDownloader {
     /// Create a new HlsDownloader with custom configuration
     pub fn with_config(config: HlsConfig) -> Result<Self, DownloadError> {
         let downloader_config = config.base.clone();
-        let client = create_client(&downloader_config)?;
-        Ok(Self { client, config })
+        let clients = Arc::new(create_client_pool(&downloader_config)?);
+        Ok(Self { clients, config })
     }
 
     pub fn config(&self) -> &HlsConfig {
@@ -40,7 +40,7 @@ impl HlsDownloader {
     }
 
     pub fn client(&self) -> &Client {
-        &self.client
+        self.clients.default_client()
     }
 
     async fn try_download_from_source(
@@ -92,7 +92,7 @@ impl HlsDownloader {
         let (client_event_rx, handles) = HlsStreamCoordinator::setup_and_spawn(
             url.to_string(),
             config.clone(),
-            self.client.clone(),
+            Arc::clone(&self.clients),
             cache_manager,
             token,
             parent_span,

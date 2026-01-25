@@ -20,8 +20,7 @@ export function useNotificationDot() {
         const p = (e.priority ?? '').toString().trim().toLowerCase();
         if (p !== 'critical') return false;
 
-        const ts = Date.parse(e.created_at);
-        if (!Number.isFinite(ts)) return true;
+        const ts = e.created_at;
         return ts >= cutoff && ts > lastSeen;
       });
     },
