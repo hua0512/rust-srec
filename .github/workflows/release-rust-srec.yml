@@ -305,10 +305,19 @@ jobs:
         with:
           name: rust-srec-desktop-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}-${{ runner.os }}-${{ runner.arch }}
           path: |
-            target/release/bundle
-            target/*/release/bundle
-            rust-srec/src-tauri/target/release/bundle
-            rust-srec/src-tauri/target/*/release/bundle
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*-setup.exe
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.rpm
+            target/release/bundle/**/*.AppImage
+
+            target/*/release/bundle/**/*.dmg
+            target/*/release/bundle/**/*.msi
+            target/*/release/bundle/**/*-setup.exe
+            target/*/release/bundle/**/*.deb
+            target/*/release/bundle/**/*.rpm
+            target/*/release/bundle/**/*.AppImage
           if-no-files-found: error
 
   docker-build:
