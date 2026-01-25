@@ -63,22 +63,14 @@ impl StreamerMetadata {
             last_error: model.last_error.clone(),
             // Map config overrides
             streamer_specific_config: model.streamer_specific_config.clone(),
-            disabled_until: model.disabled_until.as_ref().and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(s)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            }),
-            last_live_time: model.last_live_time.as_ref().and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(s)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            }),
-            created_at: chrono::DateTime::parse_from_rfc3339(&model.created_at)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&model.updated_at)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
+            disabled_until: model
+                .disabled_until
+                .map(crate::database::time::ms_to_datetime),
+            last_live_time: model
+                .last_live_time
+                .map(crate::database::time::ms_to_datetime),
+            created_at: crate::database::time::ms_to_datetime(model.created_at),
+            updated_at: crate::database::time::ms_to_datetime(model.updated_at),
         }
     }
 

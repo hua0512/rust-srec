@@ -166,9 +166,9 @@ pub struct SessionInfo {
     /// Device information if available
     pub device_info: Option<String>,
     /// When the session was created
-    pub created_at: String,
+    pub created_at: i64,
     /// When the session expires
-    pub expires_at: String,
+    pub expires_at: i64,
 }
 
 /// Authentication service for managing user authentication and tokens.
@@ -312,7 +312,7 @@ impl AuthService {
         // Update last login timestamp
         let now = Utc::now();
         self.user_repo
-            .update_last_login(&user.id, now)
+            .update_last_login(&user.id, now.timestamp_millis())
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
 
@@ -405,7 +405,7 @@ impl AuthService {
                 user_id = %stored_token.user_id,
                 refresh_token_id = %stored_token.id,
                 refresh_expires_at = %stored_token.expires_at,
-                refresh_revoked_at = ?stored_token.revoked_at.as_deref(),
+                refresh_revoked_at = ?stored_token.revoked_at,
                 device_info = ?stored_token.device_info.as_deref(),
                 token_hash_prefix = %token_hash_prefix,
                 grace_secs = %self.config.refresh_token_reuse_grace_secs,
@@ -416,7 +416,7 @@ impl AuthService {
                 user_id = %stored_token.user_id,
                 refresh_token_id = %stored_token.id,
                 refresh_expires_at = %stored_token.expires_at,
-                refresh_revoked_at = ?stored_token.revoked_at.as_deref(),
+                refresh_revoked_at = ?stored_token.revoked_at,
                 device_info = ?stored_token.device_info.as_deref(),
                 token_hash_prefix = %token_hash_prefix,
                 "Revoked refresh token presented (possible token reuse)"
@@ -810,11 +810,7 @@ mod tests {
         async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
             Ok(vec![])
         }
-        async fn update_last_login(
-            &self,
-            _id: &str,
-            _time: chrono::DateTime<chrono::Utc>,
-        ) -> crate::Result<()> {
+        async fn update_last_login(&self, _id: &str, _time_ms: i64) -> crate::Result<()> {
             Ok(())
         }
         async fn update_password(&self, _id: &str, _hash: &str, _clear: bool) -> crate::Result<()> {
@@ -901,7 +897,7 @@ mod tests {
             self.revoke_called.store(true, Ordering::SeqCst);
             let mut token = self.token.lock().await;
             if token.id == id {
-                token.revoked_at = Some(Utc::now().to_rfc3339());
+                token.revoked_at = Some(Utc::now().timestamp_millis());
             }
             Ok(())
         }
@@ -951,11 +947,7 @@ mod tests {
         async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
             Ok(vec![])
         }
-        async fn update_last_login(
-            &self,
-            _id: &str,
-            _time: chrono::DateTime<chrono::Utc>,
-        ) -> crate::Result<()> {
+        async fn update_last_login(&self, _id: &str, _time_ms: i64) -> crate::Result<()> {
             Ok(())
         }
         async fn update_password(&self, _id: &str, _hash: &str, _clear: bool) -> crate::Result<()> {
@@ -973,7 +965,7 @@ mod tests {
 
         let mut stored =
             RefreshTokenDbModel::new("user-1", token_hash, Utc::now() + Duration::days(7), None);
-        stored.revoked_at = Some((Utc::now() - Duration::hours(2)).to_rfc3339());
+        stored.revoked_at = Some((Utc::now() - Duration::hours(2)).timestamp_millis());
 
         let token_repo = Arc::new(SpyRefreshTokenRepository::new(stored));
         let user_repo = Arc::new(MockUserRepository);
@@ -1003,7 +995,7 @@ mod tests {
 
         let mut stored =
             RefreshTokenDbModel::new("user-1", token_hash, Utc::now() + Duration::days(7), None);
-        stored.revoked_at = Some((Utc::now() - Duration::hours(2)).to_rfc3339());
+        stored.revoked_at = Some((Utc::now() - Duration::hours(2)).timestamp_millis());
 
         let token_repo = Arc::new(SpyRefreshTokenRepository::new(stored));
         let user_repo = Arc::new(MockUserRepository);
@@ -1037,7 +1029,7 @@ mod tests {
             Utc::now() + Duration::days(7),
             Some("test-device".to_string()),
         );
-        stored.revoked_at = Some((Utc::now() - Duration::seconds(1)).to_rfc3339());
+        stored.revoked_at = Some((Utc::now() - Duration::seconds(1)).timestamp_millis());
 
         let token_repo = Arc::new(SpyRefreshTokenRepository::new(stored));
 
@@ -1246,11 +1238,7 @@ mod property_tests {
             async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
                 Ok(vec![])
             }
-            async fn update_last_login(
-                &self,
-                _id: &str,
-                _time: chrono::DateTime<chrono::Utc>,
-            ) -> crate::Result<()> {
+            async fn update_last_login(&self, _id: &str, _time_ms: i64) -> crate::Result<()> {
                 Ok(())
             }
             async fn update_password(

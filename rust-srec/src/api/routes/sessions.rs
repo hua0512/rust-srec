@@ -148,17 +148,8 @@ pub async fn list_sessions(
             .await
             .unwrap_or(0);
 
-        // Parse start_time
-        let start_time = chrono::DateTime::parse_from_rfc3339(&session.start_time)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|_| chrono::Utc::now());
-
-        // Parse end_time
-        let end_time = session.end_time.as_ref().and_then(|s| {
-            chrono::DateTime::parse_from_rfc3339(s)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .ok()
-        });
+        let start_time = crate::database::time::ms_to_datetime(session.start_time);
+        let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
 
         // Calculate duration
         let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
@@ -268,17 +259,8 @@ pub async fn get_session(
     // Get output count
     let output_count = session_repository.get_output_count(&id).await.unwrap_or(0);
 
-    // Parse start_time
-    let start_time = chrono::DateTime::parse_from_rfc3339(&session.start_time)
-        .map(|dt| dt.with_timezone(&chrono::Utc))
-        .unwrap_or_else(|_| chrono::Utc::now());
-
-    // Parse end_time
-    let end_time = session.end_time.as_ref().and_then(|s| {
-        chrono::DateTime::parse_from_rfc3339(s)
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .ok()
-    });
+    let start_time = crate::database::time::ms_to_datetime(session.start_time);
+    let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
 
     // Calculate duration
     let duration_secs = end_time.map(|end| (end - start_time).num_seconds() as u64);
@@ -357,14 +339,9 @@ fn parse_titles(titles_json: &Option<String>) -> (Vec<TitleChange>, String) {
 
     let titles: Vec<TitleChange> = title_entries
         .iter()
-        .filter_map(|entry| {
-            let timestamp = chrono::DateTime::parse_from_rfc3339(&entry.ts)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .ok()?;
-            Some(TitleChange {
-                title: entry.title.clone(),
-                timestamp,
-            })
+        .map(|entry| TitleChange {
+            title: entry.title.clone(),
+            timestamp: crate::database::time::ms_to_datetime(entry.ts),
         })
         .collect();
 
@@ -524,8 +501,8 @@ mod tests {
     #[test]
     fn test_parse_titles_with_entries() {
         let json = r#"[
-            {"ts": "2025-01-01T10:00:00Z", "title": "First Stream"},
-            {"ts": "2025-01-01T12:00:00Z", "title": "Updated Title"}
+            {"ts": 1735725600000, "title": "First Stream"},
+            {"ts": 1735732800000, "title": "Updated Title"}
         ]"#;
 
         let (titles, title) = parse_titles(&Some(json.to_string()));

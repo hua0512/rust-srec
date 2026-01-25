@@ -791,11 +791,11 @@ mod property_tests {
             Ok(())
         }
 
-        async fn set_disabled_until(&self, _id: &str, _until: Option<&str>) -> crate::Result<()> {
+        async fn set_disabled_until(&self, _id: &str, _until: Option<i64>) -> crate::Result<()> {
             Ok(())
         }
 
-        async fn update_last_live_time(&self, _id: &str, _time: &str) -> crate::Result<()> {
+        async fn update_last_live_time(&self, _id: &str, _time: i64) -> crate::Result<()> {
             Ok(())
         }
 
@@ -829,7 +829,7 @@ mod property_tests {
                 .find(|s| s.id == id)
             {
                 s.consecutive_error_count = Some(error_count);
-                s.disabled_until = disabled_until.map(|dt| dt.to_rfc3339());
+                s.disabled_until = disabled_until.map(|dt| dt.timestamp_millis());
             }
             Ok(())
         }
@@ -849,7 +849,7 @@ mod property_tests {
                 s.consecutive_error_count = Some(0);
                 s.disabled_until = None;
                 if let Some(time) = last_live_time {
-                    s.last_live_time = Some(time.to_rfc3339());
+                    s.last_live_time = Some(time.timestamp_millis());
                 }
             }
             Ok(())

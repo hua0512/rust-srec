@@ -1,7 +1,6 @@
 //! Refresh token repository for database operations.
 
 use async_trait::async_trait;
-use chrono::Utc;
 use sqlx::SqlitePool;
 
 use crate::Result;
@@ -58,9 +57,9 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
         .bind(&token.id)
         .bind(&token.user_id)
         .bind(&token.token_hash)
-        .bind(&token.expires_at)
-        .bind(&token.created_at)
-        .bind(&token.revoked_at)
+        .bind(token.expires_at)
+        .bind(token.created_at)
+        .bind(token.revoked_at)
         .bind(&token.device_info)
         .execute(&self.pool)
         .await?;
@@ -78,8 +77,7 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
     }
 
     async fn find_active_by_user(&self, user_id: &str) -> Result<Vec<RefreshTokenDbModel>> {
-        // Keep comparisons consistent with our stored timestamp format.
-        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        let now = crate::database::time::now_ms();
 
         let tokens = sqlx::query_as::<_, RefreshTokenDbModel>(
             r#"
@@ -91,16 +89,16 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
             "#,
         )
         .bind(user_id)
-        .bind(&now)
+        .bind(now)
         .fetch_all(&self.pool)
         .await?;
         Ok(tokens)
     }
 
     async fn revoke(&self, id: &str) -> Result<()> {
-        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        let now = crate::database::time::now_ms();
         sqlx::query("UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?")
-            .bind(&now)
+            .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -108,11 +106,11 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
     }
 
     async fn revoke_all_for_user(&self, user_id: &str) -> Result<()> {
-        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        let now = crate::database::time::now_ms();
         sqlx::query(
             "UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
         )
-        .bind(&now)
+        .bind(now)
         .bind(user_id)
         .execute(&self.pool)
         .await?;
@@ -120,18 +118,16 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
     }
 
     async fn cleanup_expired(&self) -> Result<u64> {
-        // Keep comparisons consistent with our stored timestamp format.
-        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        let now = crate::database::time::now_ms();
         let result = sqlx::query("DELETE FROM refresh_tokens WHERE expires_at < ?")
-            .bind(&now)
+            .bind(now)
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected())
     }
 
     async fn count_active_by_user(&self, user_id: &str) -> Result<i64> {
-        // Keep comparisons consistent with our stored timestamp format.
-        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        let now = crate::database::time::now_ms();
         let result: (i64,) = sqlx::query_as(
             r#"
             SELECT COUNT(*) FROM refresh_tokens
@@ -141,7 +137,7 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
             "#,
         )
         .bind(user_id)
-        .bind(&now)
+        .bind(now)
         .fetch_one(&self.pool)
         .await?;
         Ok(result.0)

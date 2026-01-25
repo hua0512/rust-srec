@@ -260,7 +260,7 @@ impl WebPushService {
             return;
         }
 
-        let now_ts = Utc::now().timestamp();
+        let now_ms = Utc::now().timestamp_millis();
         let priority = event.priority();
         let event_log_id = event_log_id.map(|s| s.to_string());
 
@@ -268,9 +268,8 @@ impl WebPushService {
             .for_each_concurrent(DEFAULT_CONCURRENCY, |sub| {
                 let event_log_id = event_log_id.clone();
                 async move {
-                    if let Some(next_attempt_at) = sub.next_attempt_at.as_deref()
-                        && let Ok(next_dt) = chrono::DateTime::parse_from_rfc3339(next_attempt_at)
-                        && next_dt.timestamp() > now_ts
+                    if let Some(next_attempt_at_ms) = sub.next_attempt_at
+                        && next_attempt_at_ms > now_ms
                     {
                         if let Some(metrics) = self.metrics.read().as_ref().cloned() {
                             metrics.record_web_push_skipped_backoff();
@@ -462,15 +461,15 @@ impl WebPushService {
         let now = Utc::now();
         let next = now
             + chrono::Duration::from_std(delay).unwrap_or_else(|_| chrono::Duration::seconds(60));
-        let now_str = now.to_rfc3339();
-        let next_str = next.to_rfc3339();
+        let now_ms = now.timestamp_millis();
+        let next_ms = next.timestamp_millis();
 
         sqlx::query(
             "UPDATE web_push_subscription SET next_attempt_at = ?, last_429_at = ?, updated_at = ? WHERE endpoint = ?",
         )
-        .bind(&next_str)
-        .bind(&now_str)
-        .bind(&now_str)
+        .bind(next_ms)
+        .bind(now_ms)
+        .bind(now_ms)
         .bind(endpoint)
         .execute(&self.pool)
         .await?;
@@ -480,11 +479,11 @@ impl WebPushService {
     }
 
     async fn clear_backoff(&self, endpoint: &str) -> Result<()> {
-        let now_str = Utc::now().to_rfc3339();
+        let now_ms = Utc::now().timestamp_millis();
         sqlx::query(
             "UPDATE web_push_subscription SET next_attempt_at = NULL, last_429_at = NULL, updated_at = ? WHERE endpoint = ?",
         )
-        .bind(&now_str)
+        .bind(now_ms)
         .bind(endpoint)
         .execute(&self.pool)
         .await?;

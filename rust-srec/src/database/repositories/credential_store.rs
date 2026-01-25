@@ -80,7 +80,7 @@ impl SqlxCredentialStore {
     ) -> Result<(), CredentialError> {
         debug!(template_id = %template_id, "Updating template credentials");
 
-        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        let now = crate::database::time::now_ms();
 
         let overrides_to_store = if let Some(token) = credentials.refresh_token.as_ref() {
             let existing_overrides: Option<String> = sqlx::query_scalar(
@@ -138,7 +138,7 @@ impl SqlxCredentialStore {
                 )
                 .bind(&credentials.cookies)
                 .bind(overrides_json)
-                .bind(&now)
+                .bind(now)
                 .bind(template_id)
                 .execute(&self.pool)
                 .await?;
@@ -153,7 +153,7 @@ impl SqlxCredentialStore {
                     "#,
                 )
                 .bind(&credentials.cookies)
-                .bind(&now)
+                .bind(now)
                 .bind(template_id)
                 .execute(&self.pool)
                 .await?;
@@ -171,7 +171,7 @@ impl SqlxCredentialStore {
     ) -> Result<(), CredentialError> {
         debug!(streamer_id = %streamer_id, "Updating streamer credentials");
 
-        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+        let now = crate::database::time::now_ms();
 
         sqlx::query(
             r#"
@@ -186,7 +186,7 @@ impl SqlxCredentialStore {
             "#,
         )
         .bind(&credentials.cookies)
-        .bind(&now)
+        .bind(now)
         .bind(streamer_id)
         .execute(&self.pool)
         .await?;

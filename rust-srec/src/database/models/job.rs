@@ -149,10 +149,10 @@ pub struct JobDbModel {
     pub config: String,
     /// JSON blob for dynamic job state
     pub state: String,
-    /// ISO 8601 timestamp when the job was created
-    pub created_at: String,
-    /// ISO 8601 timestamp when the job was last updated
-    pub updated_at: String,
+    /// Unix epoch milliseconds (UTC) when the job was created.
+    pub created_at: i64,
+    /// Unix epoch milliseconds (UTC) when the job was last updated.
+    pub updated_at: i64,
     // Pipeline-specific fields
     /// Input path or source for the job (single input file)
     pub input: Option<String>,
@@ -164,10 +164,10 @@ pub struct JobDbModel {
     pub streamer_id: Option<String>,
     /// Associated session ID
     pub session_id: Option<String>,
-    /// ISO 8601 timestamp when the job started processing
-    pub started_at: Option<String>,
-    /// ISO 8601 timestamp when the job completed
-    pub completed_at: Option<String>,
+    /// Unix epoch milliseconds (UTC) when the job started processing.
+    pub started_at: Option<i64>,
+    /// Unix epoch milliseconds (UTC) when the job completed.
+    pub completed_at: Option<i64>,
     /// Error message if the job failed
     pub error: Option<String>,
     /// Number of retry attempts
@@ -186,14 +186,14 @@ pub struct JobDbModel {
 
 impl JobDbModel {
     pub fn new(job_type: JobType, config: impl Into<String>) -> Self {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             job_type: job_type.as_str().to_string(),
             status: JobStatus::Pending.as_str().to_string(),
             config: config.into(),
             state: "{}".to_string(),
-            created_at: now.clone(),
+            created_at: now,
             updated_at: now,
             input: None,
             outputs: None,
@@ -221,14 +221,14 @@ impl JobDbModel {
         session_id: Option<String>,
         config: impl Into<String>,
     ) -> Self {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             job_type: JobType::Pipeline.as_str().to_string(),
             status: JobStatus::Pending.as_str().to_string(),
             config: config.into(),
             state: "{}".to_string(),
-            created_at: now.clone(),
+            created_at: now,
             updated_at: now,
             input: Some(input.into()),
             outputs: None, // Outputs are populated during/after job execution
@@ -263,7 +263,7 @@ impl JobDbModel {
         streamer_id: Option<String>,
         session_id: Option<String>,
     ) -> Self {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         let id = uuid::Uuid::new_v4().to_string();
         let output_str = output.into();
         Self {
@@ -272,7 +272,7 @@ impl JobDbModel {
             status: JobStatus::Pending.as_str().to_string(),
             config: "{}".to_string(),
             state: "{}".to_string(),
-            created_at: now.clone(),
+            created_at: now,
             updated_at: now,
             input: Some(input.into()),
             outputs: Some(output_str),
@@ -318,7 +318,7 @@ impl JobDbModel {
             },
             "Failed to serialize job outputs; storing empty list",
         ));
-        self.updated_at = chrono::Utc::now().to_rfc3339();
+        self.updated_at = crate::database::time::now_ms();
     }
 
     /// Add an output path to this job.
@@ -330,32 +330,32 @@ impl JobDbModel {
 
     /// Mark the job as started processing.
     pub fn mark_started(&mut self) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = JobStatus::Processing.as_str().to_string();
-        self.started_at = Some(now.clone());
+        self.started_at = Some(now);
         self.updated_at = now;
     }
 
     /// Mark the job as completed.
     pub fn mark_completed(&mut self) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = JobStatus::Completed.as_str().to_string();
-        self.completed_at = Some(now.clone());
+        self.completed_at = Some(now);
         self.updated_at = now;
     }
 
     /// Mark the job as failed with an error message.
     pub fn mark_failed(&mut self, error: impl Into<String>) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = JobStatus::Failed.as_str().to_string();
-        self.completed_at = Some(now.clone());
+        self.completed_at = Some(now);
         self.error = Some(error.into());
         self.updated_at = now;
     }
 
     /// Reset the job for retry.
     pub fn reset_for_retry(&mut self) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = JobStatus::Pending.as_str().to_string();
         self.started_at = None;
         self.completed_at = None;
@@ -457,8 +457,8 @@ pub struct JobExecutionLogDbModel {
     pub job_id: String,
     /// JSON blob for the log entry
     pub entry: String,
-    /// ISO 8601 timestamp
-    pub created_at: String,
+    /// Unix epoch milliseconds (UTC).
+    pub created_at: i64,
     /// Optional structured level (e.g. "INFO", "WARN", "ERROR").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub level: Option<String>,
@@ -473,7 +473,7 @@ impl JobExecutionLogDbModel {
             id: uuid::Uuid::new_v4().to_string(),
             job_id: job_id.into(),
             entry: entry.into(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: crate::database::time::now_ms(),
             level: None,
             message: None,
         }
@@ -488,8 +488,8 @@ pub struct JobExecutionProgressDbModel {
     pub kind: String,
     /// JSON blob for the progress snapshot.
     pub progress: String,
-    /// ISO 8601 timestamp.
-    pub updated_at: String,
+    /// Unix epoch milliseconds (UTC).
+    pub updated_at: i64,
 }
 
 /// Log entry structure for job execution logs.

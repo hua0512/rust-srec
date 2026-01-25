@@ -33,12 +33,12 @@ pub struct DagExecutionDbModel {
     pub segment_index: Option<i64>,
     /// Segment source ("video", "danmu", or "paired") for segment-related DAGs.
     pub segment_source: Option<String>,
-    /// ISO 8601 timestamp when the DAG was created.
-    pub created_at: String,
-    /// ISO 8601 timestamp when the DAG was last updated.
-    pub updated_at: String,
-    /// ISO 8601 timestamp when the DAG completed (success or failure).
-    pub completed_at: Option<String>,
+    /// Unix epoch milliseconds (UTC) when the DAG was created.
+    pub created_at: i64,
+    /// Unix epoch milliseconds (UTC) when the DAG was last updated.
+    pub updated_at: i64,
+    /// Unix epoch milliseconds (UTC) when the DAG completed (success or failure).
+    pub completed_at: Option<i64>,
     /// Error message if the DAG failed.
     pub error: Option<String>,
     /// Total number of steps in the DAG.
@@ -56,7 +56,7 @@ impl DagExecutionDbModel {
         streamer_id: Option<String>,
         session_id: Option<String>,
     ) -> Self {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         let id = uuid::Uuid::new_v4().to_string();
         let total_steps = dag_definition.steps.len() as i32;
 
@@ -76,7 +76,7 @@ impl DagExecutionDbModel {
             session_id,
             segment_index: None,
             segment_source: None,
-            created_at: now.clone(),
+            created_at: now,
             updated_at: now,
             completed_at: None,
             error: None,
@@ -105,24 +105,24 @@ impl DagExecutionDbModel {
 
     /// Mark the DAG as completed successfully.
     pub fn mark_completed(&mut self) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = DagExecutionStatus::Completed.as_str().to_string();
-        self.completed_at = Some(now.clone());
+        self.completed_at = Some(now);
         self.updated_at = now;
     }
 
     /// Mark the DAG as failed.
     pub fn mark_failed(&mut self, error: impl Into<String>) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = DagExecutionStatus::Failed.as_str().to_string();
-        self.completed_at = Some(now.clone());
+        self.completed_at = Some(now);
         self.error = Some(error.into());
         self.updated_at = now;
     }
 
     /// Mark the DAG as interrupted.
     pub fn mark_interrupted(&mut self) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = DagExecutionStatus::Interrupted.as_str().to_string();
         self.updated_at = now;
     }
@@ -130,13 +130,13 @@ impl DagExecutionDbModel {
     /// Increment the completed steps counter.
     pub fn increment_completed(&mut self) {
         self.completed_steps += 1;
-        self.updated_at = chrono::Utc::now().to_rfc3339();
+        self.updated_at = crate::database::time::now_ms();
     }
 
     /// Increment the failed steps counter.
     pub fn increment_failed(&mut self) {
         self.failed_steps += 1;
-        self.updated_at = chrono::Utc::now().to_rfc3339();
+        self.updated_at = crate::database::time::now_ms();
     }
 
     /// Check if the DAG is complete (all steps finished or failed).
@@ -180,16 +180,16 @@ pub struct DagStepExecutionDbModel {
     pub depends_on_step_ids: String,
     /// JSON array of output paths produced by this step.
     pub outputs: Option<String>,
-    /// ISO 8601 timestamp when the step was created.
-    pub created_at: String,
-    /// ISO 8601 timestamp when the step was last updated.
-    pub updated_at: String,
+    /// Unix epoch milliseconds (UTC) when the step was created.
+    pub created_at: i64,
+    /// Unix epoch milliseconds (UTC) when the step was last updated.
+    pub updated_at: i64,
 }
 
 impl DagStepExecutionDbModel {
     /// Create a new step execution record.
     pub fn new(dag_id: &str, step_id: &str, depends_on: &[String]) -> Self {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         let is_root = depends_on.is_empty();
         let id = uuid::Uuid::new_v4().to_string();
 
@@ -215,7 +215,7 @@ impl DagStepExecutionDbModel {
                 "Failed to serialize depends_on_step_ids; storing empty list",
             ),
             outputs: None,
-            created_at: now.clone(),
+            created_at: now,
             updated_at: now,
         }
     }
@@ -270,7 +270,7 @@ impl DagStepExecutionDbModel {
             },
             "Failed to serialize outputs; storing empty list",
         ));
-        self.updated_at = chrono::Utc::now().to_rfc3339();
+        self.updated_at = crate::database::time::now_ms();
     }
 
     /// Check if this step has no dependencies (root step).
@@ -280,14 +280,14 @@ impl DagStepExecutionDbModel {
 
     /// Mark the step as pending (ready to run).
     pub fn mark_pending(&mut self) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = DagStepStatus::Pending.as_str().to_string();
         self.updated_at = now;
     }
 
     /// Mark the step as processing with a job ID.
     pub fn mark_processing(&mut self, job_id: &str) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = DagStepStatus::Processing.as_str().to_string();
         self.job_id = Some(job_id.to_string());
         self.updated_at = now;
@@ -295,7 +295,7 @@ impl DagStepExecutionDbModel {
 
     /// Mark the step as completed with outputs.
     pub fn mark_completed(&mut self, outputs: &[String]) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = DagStepStatus::Completed.as_str().to_string();
         self.set_outputs(outputs);
         self.updated_at = now;
@@ -303,14 +303,14 @@ impl DagStepExecutionDbModel {
 
     /// Mark the step as failed.
     pub fn mark_failed(&mut self) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = DagStepStatus::Failed.as_str().to_string();
         self.updated_at = now;
     }
 
     /// Mark the step as cancelled.
     pub fn mark_cancelled(&mut self) {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = crate::database::time::now_ms();
         self.status = DagStepStatus::Cancelled.as_str().to_string();
         self.updated_at = now;
     }

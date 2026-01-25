@@ -894,7 +894,7 @@ impl NotificationService {
                 priority: event.priority().to_string(),
                 payload: serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()),
                 streamer_id: event.streamer_id().map(|s| s.to_string()),
-                created_at: event.timestamp().to_rfc3339(),
+                created_at: event.timestamp().timestamp_millis(),
             };
             if let Err(e) = repo.add_event_log(&entry).await {
                 warn!(error = %e, "Failed to persist notification event log (non-fatal)");
@@ -1226,7 +1226,7 @@ impl NotificationService {
                                 payload,
                                 e.to_string(),
                                 attempts as i32,
-                                pending_snapshot.created_at.to_rfc3339(),
+                                pending_snapshot.created_at.timestamp_millis(),
                             );
                             if let Err(err) = repo.add_to_dead_letter(&db_entry).await {
                                 warn!(

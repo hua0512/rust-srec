@@ -163,9 +163,9 @@ impl DagRepository for SqlxDagRepository {
         .bind(&dag.session_id)
         .bind(dag.segment_index)
         .bind(&dag.segment_source)
-        .bind(&dag.created_at)
-        .bind(&dag.updated_at)
-        .bind(&dag.completed_at)
+        .bind(dag.created_at)
+        .bind(dag.updated_at)
+        .bind(dag.completed_at)
         .bind(&dag.error)
         .bind(dag.total_steps)
         .bind(dag.completed_steps)
@@ -185,9 +185,9 @@ impl DagRepository for SqlxDagRepository {
 
     async fn update_dag_status(&self, id: &str, status: &str, error: Option<&str>) -> Result<()> {
         retry_on_sqlite_busy("update_dag_status", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             let completed_at = if status == "COMPLETED" || status == "FAILED" {
-                Some(now.clone())
+                Some(now)
             } else {
                 None
             };
@@ -200,8 +200,8 @@ impl DagRepository for SqlxDagRepository {
                 "#,
             )
             .bind(status)
-            .bind(&now)
-            .bind(&completed_at)
+            .bind(now)
+            .bind(completed_at)
             .bind(error)
             .bind(id)
             .execute(&self.pool)
@@ -213,11 +213,11 @@ impl DagRepository for SqlxDagRepository {
 
     async fn increment_dag_completed(&self, dag_id: &str) -> Result<()> {
         retry_on_sqlite_busy("increment_dag_completed", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             sqlx::query(
                 "UPDATE dag_execution SET completed_steps = completed_steps + 1, updated_at = ? WHERE id = ?",
             )
-            .bind(&now)
+            .bind(now)
             .bind(dag_id)
             .execute(&self.pool)
             .await?;
@@ -228,11 +228,11 @@ impl DagRepository for SqlxDagRepository {
 
     async fn increment_dag_failed(&self, dag_id: &str) -> Result<()> {
         retry_on_sqlite_busy("increment_dag_failed", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             sqlx::query(
                 "UPDATE dag_execution SET failed_steps = failed_steps + 1, updated_at = ? WHERE id = ?",
             )
-            .bind(&now)
+            .bind(now)
             .bind(dag_id)
             .execute(&self.pool)
             .await?;
@@ -341,8 +341,8 @@ impl DagRepository for SqlxDagRepository {
         .bind(&step.status)
         .bind(&step.depends_on_step_ids)
         .bind(&step.outputs)
-        .bind(&step.created_at)
-        .bind(&step.updated_at)
+        .bind(step.created_at)
+        .bind(step.updated_at)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -372,8 +372,8 @@ impl DagRepository for SqlxDagRepository {
             .bind(&step.status)
             .bind(&step.depends_on_step_ids)
             .bind(&step.outputs)
-            .bind(&step.created_at)
-            .bind(&step.updated_at)
+            .bind(step.created_at)
+            .bind(step.updated_at)
             .execute(&mut *tx)
             .await?;
         }
@@ -419,7 +419,7 @@ impl DagRepository for SqlxDagRepository {
 
     async fn update_step(&self, step: &DagStepExecutionDbModel) -> Result<()> {
         retry_on_sqlite_busy("update_step", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             sqlx::query(
                 r#"
                 UPDATE dag_step_execution
@@ -430,7 +430,7 @@ impl DagRepository for SqlxDagRepository {
             .bind(&step.job_id)
             .bind(&step.status)
             .bind(&step.outputs)
-            .bind(&now)
+            .bind(now)
             .bind(&step.id)
             .execute(&self.pool)
             .await?;
@@ -441,10 +441,10 @@ impl DagRepository for SqlxDagRepository {
 
     async fn update_step_status(&self, id: &str, status: &str) -> Result<()> {
         retry_on_sqlite_busy("update_step_status", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             sqlx::query("UPDATE dag_step_execution SET status = ?, updated_at = ? WHERE id = ?")
                 .bind(status)
-                .bind(&now)
+                .bind(now)
                 .bind(id)
                 .execute(&self.pool)
                 .await?;
@@ -460,7 +460,7 @@ impl DagRepository for SqlxDagRepository {
         job_id: &str,
     ) -> Result<()> {
         retry_on_sqlite_busy("update_step_status_with_job", || async {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             let updated = sqlx::query(
                 r#"
                 UPDATE dag_step_execution
@@ -477,7 +477,7 @@ impl DagRepository for SqlxDagRepository {
             )
             .bind(status)
             .bind(job_id)
-            .bind(&now)
+            .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -533,7 +533,7 @@ impl DagRepository for SqlxDagRepository {
     ) -> Result<Vec<ReadyStep>> {
         retry_on_sqlite_busy("complete_step_and_check_dependents", || async {
             let mut tx = self.pool.begin().await?;
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
             let outputs_json = serde_json::to_string(outputs)?;
 
             fn output_dedup_key(output: &str) -> String {
@@ -576,7 +576,7 @@ impl DagRepository for SqlxDagRepository {
                 "#,
             )
             .bind(&outputs_json)
-            .bind(&now)
+            .bind(now)
             .bind(step_id)
             .execute(&mut *tx)
             .await?;
@@ -598,7 +598,7 @@ impl DagRepository for SqlxDagRepository {
             sqlx::query(
                 "UPDATE dag_execution SET completed_steps = completed_steps + 1, updated_at = ? WHERE id = ?",
             )
-            .bind(&now)
+            .bind(now)
             .bind(&completed_step.dag_id)
             .execute(&mut *tx)
             .await?;
@@ -670,7 +670,7 @@ impl DagRepository for SqlxDagRepository {
                     sqlx::query(
                         "UPDATE dag_step_execution SET status = 'PENDING', updated_at = ? WHERE id = ?",
                     )
-                    .bind(&now)
+                    .bind(now)
                     .bind(&dependent.id)
                     .execute(&mut *tx)
                     .await?;
@@ -711,8 +711,8 @@ impl DagRepository for SqlxDagRepository {
                     "UPDATE dag_execution SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
                 )
                 .bind(final_status)
-                .bind(&now)
-                .bind(&now)
+                .bind(now)
+                .bind(now)
                 .bind(&completed_step.dag_id)
                 .execute(&mut *tx)
                 .await?;
@@ -727,7 +727,7 @@ impl DagRepository for SqlxDagRepository {
     async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>> {
         retry_on_sqlite_busy("fail_dag_and_cancel_steps", || async {
             let mut tx = self.pool.begin().await?;
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
 
             // 1. Get job IDs of processing steps (for cancellation)
             let processing_job_ids: Vec<String> = sqlx::query_scalar(
@@ -748,7 +748,7 @@ impl DagRepository for SqlxDagRepository {
                 WHERE dag_id = ? AND status IN ('BLOCKED', 'PENDING')
                 "#,
             )
-            .bind(&now)
+            .bind(now)
             .bind(dag_id)
             .execute(&mut *tx)
             .await?;
@@ -762,7 +762,7 @@ impl DagRepository for SqlxDagRepository {
                 WHERE dag_id = ? AND status = 'PROCESSING'
                 "#,
             )
-            .bind(&now)
+            .bind(now)
             .bind(dag_id)
             .execute(&mut *tx)
             .await?;
@@ -775,8 +775,8 @@ impl DagRepository for SqlxDagRepository {
                 WHERE id = ?
                 "#,
             )
-            .bind(&now)
-            .bind(&now)
+            .bind(now)
+            .bind(now)
             .bind(error)
             .bind(dag_id)
             .execute(&mut *tx)
@@ -791,7 +791,7 @@ impl DagRepository for SqlxDagRepository {
     async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
         retry_on_sqlite_busy("reset_dag_for_retry", || async {
             let mut tx = self.pool.begin().await?;
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = crate::database::time::now_ms();
 
             // Un-cancel downstream work so it can be scheduled again.
             sqlx::query(
@@ -803,7 +803,7 @@ impl DagRepository for SqlxDagRepository {
                 WHERE dag_id = ? AND status = 'CANCELLED'
                 "#,
             )
-            .bind(&now)
+            .bind(now)
             .bind(dag_id)
             .execute(&mut *tx)
             .await?;
@@ -816,7 +816,7 @@ impl DagRepository for SqlxDagRepository {
                 WHERE dag_id = ? AND status = 'FAILED'
                 "#,
             )
-            .bind(&now)
+            .bind(now)
             .bind(dag_id)
             .execute(&mut *tx)
             .await?;
@@ -837,7 +837,7 @@ impl DagRepository for SqlxDagRepository {
                 WHERE id = ?
                 "#,
             )
-            .bind(&now)
+            .bind(now)
             .bind(dag_id)
             .bind(dag_id)
             .execute(&mut *tx)
@@ -992,9 +992,9 @@ mod tests {
                 session_id TEXT,
                 segment_index INTEGER,
                 segment_source TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                completed_at TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                completed_at INTEGER,
                 error TEXT,
                 total_steps INTEGER NOT NULL,
                 completed_steps INTEGER NOT NULL DEFAULT 0,
@@ -1016,8 +1016,8 @@ mod tests {
                 status TEXT NOT NULL DEFAULT 'BLOCKED',
                 depends_on_step_ids TEXT NOT NULL DEFAULT '[]',
                 outputs TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
                 FOREIGN KEY (dag_id) REFERENCES dag_execution(id) ON DELETE CASCADE,
                 UNIQUE (dag_id, step_id)
             )

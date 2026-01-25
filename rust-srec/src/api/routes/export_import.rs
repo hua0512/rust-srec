@@ -9,7 +9,8 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -46,6 +47,63 @@ fn schema_version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
     };
 
     (major, minor, patch) >= min
+}
+
+fn parse_timestamp_ms_str(value: &str) -> Result<i64, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err("timestamp string is empty".to_string());
+    }
+
+    if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
+        return Ok(dt.with_timezone(&Utc).timestamp_millis());
+    }
+
+    if let Ok(ms) = value.parse::<i64>() {
+        return Ok(ms);
+    }
+
+    Err(format!(
+        "invalid timestamp value '{value}' (expected RFC3339 or epoch ms)"
+    ))
+}
+
+fn deserialize_timestamp_ms<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum RawTs {
+        Ms(i64),
+        Str(String),
+    }
+
+    match RawTs::deserialize(deserializer)? {
+        RawTs::Ms(ms) => Ok(ms),
+        RawTs::Str(s) => parse_timestamp_ms_str(&s).map_err(D::Error::custom),
+    }
+}
+
+fn deserialize_opt_timestamp_ms<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum RawTs {
+        Ms(i64),
+        Str(String),
+    }
+
+    let value = Option::<RawTs>::deserialize(deserializer)?;
+    match value {
+        None => Ok(None),
+        Some(RawTs::Ms(ms)) => Ok(Some(ms)),
+        Some(RawTs::Str(s)) => parse_timestamp_ms_str(&s)
+            .map(Some)
+            .map_err(D::Error::custom),
+    }
 }
 
 fn default_streamer_state() -> String {
@@ -345,9 +403,12 @@ pub struct UserExport {
     pub roles: Vec<String>,
     pub is_active: bool,
     pub must_change_password: bool,
-    pub last_login_at: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    #[serde(default, deserialize_with = "deserialize_opt_timestamp_ms")]
+    pub last_login_at: Option<i64>,
+    #[serde(deserialize_with = "deserialize_timestamp_ms")]
+    pub created_at: i64,
+    #[serde(deserialize_with = "deserialize_timestamp_ms")]
+    pub updated_at: i64,
 }
 
 // ============================================================================
@@ -1185,7 +1246,7 @@ pub async fn import_config(
                 .streamer_specific_config
                 .clone()
                 .map(json_value_to_db_string);
-            updated.updated_at = Utc::now().to_rfc3339();
+            updated.updated_at = crate::database::time::now_ms();
 
             streamer_repo
                 .update_streamer(&updated)
@@ -1565,7 +1626,7 @@ pub async fn import_config(
                 updated.roles = roles_json;
                 updated.is_active = user_export.is_active;
                 updated.must_change_password = user_export.must_change_password;
-                updated.last_login_at = user_export.last_login_at.clone();
+                updated.last_login_at = user_export.last_login_at;
 
                 user_repo
                     .update(&updated)
@@ -1595,9 +1656,9 @@ pub async fn import_config(
                     roles: roles_json,
                     is_active: user_export.is_active,
                     must_change_password: user_export.must_change_password,
-                    last_login_at: user_export.last_login_at.clone(),
-                    created_at: user_export.created_at.clone(),
-                    updated_at: user_export.updated_at.clone(),
+                    last_login_at: user_export.last_login_at,
+                    created_at: user_export.created_at,
+                    updated_at: user_export.updated_at,
                 };
 
                 user_repo
@@ -1730,8 +1791,8 @@ mod tests {
             is_active: true,
             must_change_password: false,
             last_login_at: None,
-            created_at: "2026-01-01T00:00:00Z".to_string(),
-            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            created_at: 1_767_225_600_000,
+            updated_at: 1_767_225_600_000,
         };
 
         let json = serde_json::to_value(&user).unwrap();
@@ -1804,11 +1865,7 @@ mod tests {
                 Ok(self.users.clone())
             }
 
-            async fn update_last_login(
-                &self,
-                _id: &str,
-                _time: chrono::DateTime<chrono::Utc>,
-            ) -> crate::Result<()> {
+            async fn update_last_login(&self, _id: &str, _time: i64) -> crate::Result<()> {
                 Ok(())
             }
 

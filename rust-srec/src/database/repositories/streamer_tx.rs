@@ -48,7 +48,7 @@ impl StreamerTxOps {
             WHERE id = ?
             "#,
         )
-        .bind(last_live_time.to_rfc3339())
+        .bind(last_live_time.timestamp_millis())
         .bind(streamer_id)
         .execute(tx)
         .await?;
@@ -129,7 +129,7 @@ impl StreamerTxOps {
         streamer_id: &str,
         disabled_until: Option<DateTime<Utc>>,
     ) -> Result<u64> {
-        let disabled_until_str = disabled_until.map(|dt| dt.to_rfc3339());
+        let disabled_until_ms = disabled_until.map(|dt| dt.timestamp_millis());
         let state = if disabled_until.is_some() {
             "TEMPORAL_DISABLED"
         } else {
@@ -137,7 +137,7 @@ impl StreamerTxOps {
         };
 
         let result = sqlx::query("UPDATE streamers SET disabled_until = ?, state = ? WHERE id = ?")
-            .bind(disabled_until_str.as_deref())
+            .bind(disabled_until_ms)
             .bind(state)
             .bind(streamer_id)
             .execute(tx)
@@ -203,8 +203,8 @@ mod tests {
                 avatar TEXT,
                 consecutive_error_count INTEGER DEFAULT 0,
                 last_error TEXT,
-                disabled_until TEXT,
-                last_live_time TEXT
+                disabled_until INTEGER,
+                last_live_time INTEGER
             )
             "#,
         )
@@ -316,7 +316,7 @@ mod tests {
         tx.commit().await.unwrap();
 
         // Verify disabled_until set AND state changed to TEMPORAL_DISABLED
-        let row: (String, Option<String>) =
+        let row: (String, Option<i64>) =
             sqlx::query_as("SELECT state, disabled_until FROM streamers WHERE id = 'test-1'")
                 .fetch_one(&pool)
                 .await
@@ -331,7 +331,7 @@ mod tests {
             .unwrap();
         tx2.commit().await.unwrap();
 
-        let row2: (String, Option<String>) =
+        let row2: (String, Option<i64>) =
             sqlx::query_as("SELECT state, disabled_until FROM streamers WHERE id = 'test-1'")
                 .fetch_one(&pool)
                 .await

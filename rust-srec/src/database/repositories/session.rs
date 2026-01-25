@@ -25,7 +25,7 @@ pub trait SessionRepository: Send + Sync {
         limit: i32,
     ) -> Result<Vec<LiveSessionDbModel>>;
     async fn create_session(&self, session: &LiveSessionDbModel) -> Result<()>;
-    async fn end_session(&self, id: &str, end_time: &str) -> Result<()>;
+    async fn end_session(&self, id: &str, end_time: i64) -> Result<()>;
     async fn resume_session(&self, id: &str) -> Result<()>;
     async fn update_session_titles(&self, id: &str, titles: &str) -> Result<()>;
     async fn delete_session(&self, id: &str) -> Result<()>;
@@ -127,8 +127,8 @@ impl SessionRepository for SqlxSessionRepository {
         )
         .bind(&session.id)
         .bind(&session.streamer_id)
-        .bind(&session.start_time)
-        .bind(&session.end_time)
+        .bind(session.start_time)
+        .bind(session.end_time)
         .bind(&session.titles)
         .bind(&session.danmu_statistics_id)
         .bind(session.total_size_bytes)
@@ -137,7 +137,7 @@ impl SessionRepository for SqlxSessionRepository {
         Ok(())
     }
 
-    async fn end_session(&self, id: &str, end_time: &str) -> Result<()> {
+    async fn end_session(&self, id: &str, end_time: i64) -> Result<()> {
         sqlx::query(
             r#"
             UPDATE live_sessions 
@@ -236,7 +236,7 @@ impl SessionRepository for SqlxSessionRepository {
                 .bind(&output.file_path)
                 .bind(&output.file_type)
                 .bind(output.size_bytes)
-                .bind(&output.created_at)
+                .bind(output.created_at)
                 .execute(&mut *conn)
                 .await?;
 
@@ -416,10 +416,10 @@ impl SessionRepository for SqlxSessionRepository {
             count_query = count_query.bind(streamer_id);
         }
         if let Some(from_date) = &filters.from_date {
-            count_query = count_query.bind(from_date.to_rfc3339());
+            count_query = count_query.bind(from_date.timestamp_millis());
         }
         if let Some(to_date) = &filters.to_date {
-            count_query = count_query.bind(to_date.to_rfc3339());
+            count_query = count_query.bind(to_date.timestamp_millis());
         }
         if let Some(search) = &filters.search {
             let pattern = format!("%{}%", search);
@@ -439,10 +439,10 @@ impl SessionRepository for SqlxSessionRepository {
             data_query = data_query.bind(streamer_id);
         }
         if let Some(from_date) = &filters.from_date {
-            data_query = data_query.bind(from_date.to_rfc3339());
+            data_query = data_query.bind(from_date.timestamp_millis());
         }
         if let Some(to_date) = &filters.to_date {
-            data_query = data_query.bind(to_date.to_rfc3339());
+            data_query = data_query.bind(to_date.timestamp_millis());
         }
         if let Some(search) = &filters.search {
             let pattern = format!("%{}%", search);

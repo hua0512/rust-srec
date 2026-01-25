@@ -763,7 +763,7 @@ impl<
         let last_session = SessionTxOps::get_last_session(&mut tx, &streamer.id).await?;
 
         let session_id = if let Some(session) = last_session {
-            match session.end_time.as_deref() {
+            match session.end_time {
                 None => {
                     debug!("Reusing active session {}", session.id);
                     SessionTxOps::update_titles(
@@ -776,16 +776,9 @@ impl<
                     .await?;
                     session.id.clone()
                 }
-                Some(end_time_str) => {
-                    let end_time = chrono::DateTime::parse_from_rfc3339(end_time_str)
-                        .map(|dt| dt.with_timezone(&chrono::Utc))
-                        .unwrap_or_else(|error| {
-                            warn!(
-                                "Failed to parse session end_time '{}' for session {}: {}; using now as fallback",
-                                end_time_str, session.id, error
-                            );
-                            chrono::Utc::now()
-                        });
+                Some(end_time_ms) => {
+                    let end_time = crate::database::time::ms_to_datetime(end_time_ms);
+                    let end_time_str = end_time.to_rfc3339();
 
                     // If this session was authoritatively ended (e.g., via danmu stream-closed),
                     // do not resume it even if it's within the session gap window.
@@ -1305,19 +1298,11 @@ async fn flush_outbox_once(
                     Err(e) => {
                         // No receivers available - keep events briefly to handle listener startup.
                         let now = chrono::Utc::now();
-                        let age_secs = match chrono::DateTime::parse_from_rfc3339(&entry.created_at)
-                        {
-                            Ok(dt) => now
-                                .signed_duration_since(dt.with_timezone(&chrono::Utc))
-                                .num_seconds(),
-                            Err(err) => {
-                                warn!(
-                                    "Monitor outbox event id={} has invalid created_at '{}': {}",
-                                    entry.id, entry.created_at, err
-                                );
-                                0
-                            }
-                        };
+                        let age_secs = now
+                            .signed_duration_since(crate::database::time::ms_to_datetime(
+                                entry.created_at,
+                            ))
+                            .num_seconds();
 
                         let should_drop = entry.attempts >= OUTBOX_NO_RECEIVER_MAX_ATTEMPTS
                             || age_secs >= OUTBOX_NO_RECEIVER_MAX_AGE_SECS;
