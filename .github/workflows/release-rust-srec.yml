@@ -270,22 +270,46 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $exe = Join-Path 'target/release' 'rust-srec.exe'
-          if (-not (Test-Path $exe)) {
-            $exe = Get-ChildItem 'target/release' -Filter '*.exe' |
-              Where-Object { $_.Name -notlike '*setup*' } |
-              Select-Object -First 1 -ExpandProperty FullName
+          $candidateReleaseDirs = @(
+            'target/release',
+            '../../target/release'
+          )
+
+          $exe = $null
+          foreach ($dir in $candidateReleaseDirs) {
+            $candidate = Join-Path $dir 'rust-srec.exe'
+            if (Test-Path $candidate) {
+              $exe = $candidate
+              break
+            }
           }
           if (-not $exe) {
-            throw "No desktop .exe found under target/release"
+            foreach ($dir in $candidateReleaseDirs) {
+              if (-not (Test-Path $dir)) { continue }
+              $exe = Get-ChildItem $dir -Filter '*.exe' |
+                Where-Object { $_.Name -notlike '*setup*' } |
+                Select-Object -First 1 -ExpandProperty FullName
+              if ($exe) { break }
+            }
+          }
+          if (-not $exe) {
+            throw "No desktop .exe found under target/release or ../../target/release"
           }
 
           $staging = 'portable/rust-srec'
           New-Item -ItemType Directory -Force -Path $staging | Out-Null
           Copy-Item $exe -Destination $staging -Force
 
-          if (Test-Path 'target/release/resources') {
-            Copy-Item 'target/release/resources' -Destination $staging -Recurse -Force
+          $resources = $null
+          foreach ($dir in $candidateReleaseDirs) {
+            $candidate = Join-Path $dir 'resources'
+            if (Test-Path $candidate) {
+              $resources = $candidate
+              break
+            }
+          }
+          if ($resources) {
+            Copy-Item $resources -Destination $staging -Recurse -Force
           }
 
           $zipName = "rust-srec-desktop-portable-$($env:GITHUB_REF_NAME)-$($env:RUNNER_OS)-$($env:RUNNER_ARCH).zip"
@@ -305,6 +329,20 @@ jobs:
         with:
           name: rust-srec-desktop-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}-${{ runner.os }}-${{ runner.arch }}
           path: |
+            ../../target/release/bundle/**/*.dmg
+            ../../target/release/bundle/**/*.msi
+            ../../target/release/bundle/**/*-setup.exe
+            ../../target/release/bundle/**/*.deb
+            ../../target/release/bundle/**/*.rpm
+            ../../target/release/bundle/**/*.AppImage
+
+            ../../target/*/release/bundle/**/*.dmg
+            ../../target/*/release/bundle/**/*.msi
+            ../../target/*/release/bundle/**/*-setup.exe
+            ../../target/*/release/bundle/**/*.deb
+            ../../target/*/release/bundle/**/*.rpm
+            ../../target/*/release/bundle/**/*.AppImage
+
             target/release/bundle/**/*.dmg
             target/release/bundle/**/*.msi
             target/release/bundle/**/*-setup.exe
