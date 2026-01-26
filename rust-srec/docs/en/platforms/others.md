@@ -41,4 +41,6 @@
 - **URL**: `https://weibo.com/l/wblive/p/show/{id}`, `https://weibo.com/u/{uid}`
 - **Protocol**: HLS
 - **Danmaku**: ❌ Not supported
-- **Note**: Links in the format `https://weibo.com/u/{uid}` require authenticated user cookies.
+::: info
+Links in the format `https://weibo.com/u/{uid}` require authenticated user cookies.
+:::

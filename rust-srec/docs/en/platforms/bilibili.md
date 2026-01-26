@@ -48,6 +48,12 @@ Set cookies in **Platform Config** → **Bilibili**:
 
 ## Notes
 
-- **Cookies are required for recording Super HD (1080P) and above quality.**
+::: warning
+Cookies are required for recording Super HD (1080P) and above quality.
+:::
+
+::: info
 - Some streams require login for higher quality
 - VIP-only streams require corresponding membership
+- HLS streams may be delayed when the streamer first goes online.
+:::

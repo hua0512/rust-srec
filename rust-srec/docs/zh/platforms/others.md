@@ -41,4 +41,6 @@
 - **URL**: `https://weibo.com/l/wblive/p/show/{id}`, `https://weibo.com/u/{uid}`
 - **协议**: HLS
 - **弹幕**: ❌ 不支持
-- **备注**: 使用 `https://weibo.com/u/{uid}` 格式的链接需要配置已授权的用户 Cookie。
+::: info
+使用 `https://weibo.com/u/{uid}` 格式的链接需要配置已授权的用户 Cookie。
+:::
