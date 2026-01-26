@@ -218,6 +218,8 @@ jobs:
             args: ''
           - os: ubuntu-22.04
             args: ''
+          - os: ubuntu-22.04-arm
+            args: ''
           - os: macos-15-intel
             args: '--target x86_64-apple-darwin'
           - os: macos-latest
@@ -244,6 +246,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Limit bundles (Linux ARM64)
+        if: runner.os == 'Linux' && runner.arch == 'ARM64'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq '.bundle.targets = ["deb"]' tauri.conf.json > tauri.conf.json.tmp
+          mv tauri.conf.json.tmp tauri.conf.json
 
       - uses: pnpm/action-setup@v4
         with:
