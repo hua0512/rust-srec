@@ -375,7 +375,18 @@ jobs:
             }
           }
 
-          $zipName = "rust-srec-desktop-portable-$($env:GITHUB_REF_NAME)-$($env:RUNNER_OS)-$($env:RUNNER_ARCH).zip"
+          $os = ($env:RUNNER_OS ?? '').ToLowerInvariant()
+          if (-not $os) { $os = 'windows' }
+
+          $archRaw = $env:RUNNER_ARCH ?? ''
+          $arch = switch ($archRaw.ToUpperInvariant()) {
+            'X64' { 'amd64' }
+            'ARM64' { 'arm64' }
+            Default { $archRaw.ToLowerInvariant() }
+          }
+          if (-not $arch) { $arch = 'amd64' }
+
+          $zipName = "rust-srec-desktop-portable-$os-$arch.zip"
           $zipPath = Join-Path $outDir $zipName
           Compress-Archive -Path (Join-Path $root 'portable/*') -DestinationPath $zipPath -Force
 
@@ -585,13 +596,92 @@ jobs:
 
           mkdir -p publish
 
+          normalize_desktop_asset_name() {
+            local base="$1"
+            local arch=""
+            local arch_norm=""
+
+            # Portable zip (normalized in the Windows desktop job).
+            if [[ "$base" =~ ^rust-srec-desktop-portable-[a-z]+-(amd64|arm64)\.zip$ ]]; then
+              printf '%s' "$base"
+              return 0
+            fi
+
+            # Back-compat: old portable zip name.
+            if [[ "$base" =~ ^rust-srec-desktop-portable-rust-srec-v[0-9]+\.[0-9]+\.[0-9]+-Windows-(X64|ARM64)\.zip$ ]]; then
+              arch="${BASH_REMATCH[1]}"
+              case "$arch" in
+                X64) arch_norm="amd64" ;;
+                ARM64) arch_norm="arm64" ;;
+              esac
+              printf 'rust-srec-desktop-portable-windows-%s.zip' "$arch_norm"
+              return 0
+            fi
+
+            # Linux packages.
+            if [[ "$base" =~ ^rust-srec_[0-9]+\.[0-9]+\.[0-9]+_(amd64|arm64|x86_64|aarch64)\.deb$ ]]; then
+              arch="${BASH_REMATCH[1]}"
+              case "$arch" in
+                amd64|x86_64) arch_norm="amd64" ;;
+                arm64|aarch64) arch_norm="arm64" ;;
+              esac
+              printf 'rust-srec-desktop-linux-%s.deb' "$arch_norm"
+              return 0
+            fi
+
+            if [[ "$base" =~ ^rust-srec_[0-9]+\.[0-9]+\.[0-9]+_(amd64|arm64|x86_64|aarch64)\.AppImage$ ]]; then
+              arch="${BASH_REMATCH[1]}"
+              case "$arch" in
+                amd64|x86_64) arch_norm="amd64" ;;
+                arm64|aarch64) arch_norm="arm64" ;;
+              esac
+              printf 'rust-srec-desktop-linux-%s.AppImage' "$arch_norm"
+              return 0
+            fi
+
+            if [[ "$base" =~ ^rust-srec-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\.(x86_64|aarch64)\.rpm$ ]]; then
+              arch="${BASH_REMATCH[1]}"
+              case "$arch" in
+                x86_64) arch_norm="amd64" ;;
+                aarch64) arch_norm="arm64" ;;
+              esac
+              printf 'rust-srec-desktop-linux-%s.rpm' "$arch_norm"
+              return 0
+            fi
+
+            # macOS DMG.
+            if [[ "$base" =~ ^rust-srec_[0-9]+\.[0-9]+\.[0-9]+_(x64|aarch64|amd64|arm64)\.dmg$ ]]; then
+              arch="${BASH_REMATCH[1]}"
+              case "$arch" in
+                x64|amd64) arch_norm="amd64" ;;
+                aarch64|arm64) arch_norm="arm64" ;;
+              esac
+              printf 'rust-srec-desktop-macos-%s.dmg' "$arch_norm"
+              return 0
+            fi
+
+            # Windows installers.
+            if [[ "$base" =~ ^rust-srec_[0-9]+\.[0-9]+\.[0-9]+_(x64|amd64)(_.+)?\.msi$ ]]; then
+              printf 'rust-srec-desktop-windows-amd64.msi'
+              return 0
+            fi
+
+            if [[ "$base" =~ ^rust-srec_[0-9]+\.[0-9]+\.[0-9]+_(x64|amd64)-setup\.exe$ ]]; then
+              printf 'rust-srec-desktop-windows-amd64-setup.exe'
+              return 0
+            fi
+
+            printf '%s' "$base"
+          }
+
           while IFS= read -r -d '' file; do
             base="$(basename "$file")"
             case "$base" in
               rust-srec-linux-*|rust-srec-macos-*|rust-srec-vapid-linux-*|rust-srec-vapid-macos-*|*.exe|*.dmg|*.msi|*.deb|*.rpm|*.AppImage|*.zip) ;;
               *) continue ;;
             esac
-            cp -v "$file" "publish/$base"
+            out="$(normalize_desktop_asset_name "$base")"
+            cp -v "$file" "publish/$out"
           done < <(find artifacts -maxdepth 2 -type f -print0)
 
           test -n "$(ls -A publish)"
