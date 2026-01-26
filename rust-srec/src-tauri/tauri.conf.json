@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "rust-srec",
-  "version": "0.1.0",
   "identifier": "com.hua0512.rust-srec",
   "build": {
     "frontendDist": "../frontend/dist-desktop",

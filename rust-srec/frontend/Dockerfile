@@ -3,6 +3,11 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# Optional build identifier embedded into the UI bundle.
+# Provide via `--build-arg VITE_UI_BUILD=...`.
+ARG VITE_UI_BUILD
+ENV VITE_UI_BUILD=$VITE_UI_BUILD
+
 # Copy package files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 

@@ -1,6 +1,6 @@
 [package]
 name = "rust-srec-desktop"
-version = "0.1.0"
+version.workspace = true
 description = "rust-srec desktop app (Tauri)"
 authors = ["hua0512"]
 license = "MIT OR Apache-2.0"

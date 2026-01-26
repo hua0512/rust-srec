@@ -64,7 +64,7 @@ pub struct MessageResponse {
 #[openapi(
     info(
         title = "rust-srec API",
-        version = "0.1.0",
+        version = env!("CARGO_PKG_VERSION"),
         description = "REST API for the rust-srec streaming recorder. Provides endpoints for managing streamers, recording sessions, pipeline jobs, and system configuration.",
         license(name = "MIT OR Apache-2.0"),
         contact(name = "rust-srec", url = "https://github.com/hua0512/rust-srec")

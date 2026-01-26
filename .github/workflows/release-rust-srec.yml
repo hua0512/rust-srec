@@ -93,6 +93,32 @@ jobs:
           shared-key: ci
       - name: Check
         run: cargo check -p rust-srec --locked --features tls-native-fallback
+
+      - name: Verify release version matches Cargo
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          RAW_INPUT="${{ inputs.version || '' }}"
+          if [ -n "$RAW_INPUT" ]; then
+            EXPECTED="$RAW_INPUT"
+          else
+            EXPECTED="${GITHUB_REF_NAME#rust-srec-v}"
+          fi
+
+          # cargo metadata always reports the effective package version.
+          BACKEND_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "rust-srec") | .version')
+          DESKTOP_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "rust-srec-desktop") | .version')
+
+          if [ "$BACKEND_VERSION" != "$EXPECTED" ]; then
+            echo "rust-srec Cargo version mismatch: expected $EXPECTED, got $BACKEND_VERSION" >&2
+            exit 1
+          fi
+
+          if [ "$DESKTOP_VERSION" != "$EXPECTED" ]; then
+            echo "rust-srec-desktop Cargo version mismatch: expected $EXPECTED, got $DESKTOP_VERSION" >&2
+            exit 1
+          fi
       - name: Clippy
         run: cargo clippy -p rust-srec --locked --features tls-native-fallback -- -D warnings
       - name: Test
@@ -273,6 +299,8 @@ jobs:
         run: pnpm -C ../frontend install --frozen-lockfile
 
       - name: Build desktop bundles
+        env:
+          VITE_UI_BUILD: ${{ github.ref_name }}@${{ github.sha }}
         run: cargo tauri build --ci ${{ matrix.args }}
 
       - name: Collect desktop artifacts (macOS/Linux)
@@ -446,6 +474,8 @@ jobs:
           context: ./rust-srec/frontend
           file: rust-srec/frontend/Dockerfile
           platforms: ${{ matrix.platform }}
+          build-args: |
+            VITE_UI_BUILD=${{ github.ref_name }}@${{ github.sha }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend,push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}-frontend
           cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}-frontend
