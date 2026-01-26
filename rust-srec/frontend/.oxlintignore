@@ -1,4 +1,5 @@
 src/routeTree.gen.ts
+src/api/proto/**
 dist/**
 dist-desktop/**
 .output/**

@@ -2,8 +2,9 @@ export const getBaseUrl = () => {
   // Tauri desktop: runtime-injected backend URL (set by the native host).
   // Keep this synchronous because it is used at import time by existing modules.
   if (typeof globalThis !== 'undefined') {
-    const backendUrl = (globalThis as unknown as { __RUST_SREC_BACKEND_URL__?: unknown })
-      .__RUST_SREC_BACKEND_URL__;
+    const backendUrl = (
+      globalThis as unknown as { __RUST_SREC_BACKEND_URL__?: unknown }
+    ).__RUST_SREC_BACKEND_URL__;
     if (typeof backendUrl === 'string' && backendUrl.trim().length > 0) {
       return `${backendUrl.replace(/\/$/, '')}/api`;
     }

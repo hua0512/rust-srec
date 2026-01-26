@@ -9,7 +9,11 @@
  */
 
 import type { ClientSessionData, SessionData } from '../utils/session';
-import { sanitizeClientSession, isValidSession, useAppSession } from '../utils/session';
+import {
+  sanitizeClientSession,
+  isValidSession,
+  useAppSession,
+} from '../utils/session';
 import { BASE_URL } from '../utils/env';
 
 type RefreshOutcome = {

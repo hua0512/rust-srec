@@ -16,11 +16,18 @@ function updateProgress(payload: BootProgressPayload): void {
   const progressBar = document.getElementById('progress-bar');
   const percentEl = document.getElementById('percent');
 
-  if (statusEl && typeof payload.status === 'string' && payload.status.length > 0) {
+  if (
+    statusEl &&
+    typeof payload.status === 'string' &&
+    payload.status.length > 0
+  ) {
     statusEl.textContent = payload.status;
   }
 
-  if (typeof payload.progress === 'number' && Number.isFinite(payload.progress)) {
+  if (
+    typeof payload.progress === 'number' &&
+    Number.isFinite(payload.progress)
+  ) {
     const p = clamp01(payload.progress);
     if (progressBar) {
       (progressBar as HTMLElement).style.width = `${p * 100}%`;

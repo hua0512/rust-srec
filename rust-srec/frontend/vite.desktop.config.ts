@@ -32,7 +32,6 @@ export default defineConfig({
     }),
     // Limit oxlint to source folders (avoid linting build outputs).
     oxlintPlugin({ path: 'src' }),
-    oxlintPlugin({ path: 'desktop' }),
   ],
   resolve: {
     alias: [
@@ -40,7 +39,10 @@ export default defineConfig({
       // Replace server functions with a direct in-browser implementation.
       {
         find: /^@\/server\/createServerFn$/,
-        replacement: path.resolve(__dirname, 'src/server/createServerFn.desktop.ts'),
+        replacement: path.resolve(
+          __dirname,
+          'src/server/createServerFn.desktop.ts',
+        ),
       },
       // Hard-stop any accidental TanStack Start runtime imports.
       {

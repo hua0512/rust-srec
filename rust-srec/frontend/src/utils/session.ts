@@ -20,7 +20,9 @@ type SessionLike<T> = {
 const BROWSER_SESSION_STORAGE_KEY = 'rust_srec_session_v1';
 
 function isBrowserRuntime(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+  return (
+    typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+  );
 }
 
 function parseStoredSession(raw: string | null): Partial<SessionData> {
@@ -52,7 +54,9 @@ let browserSessionSingleton: SessionLike<SessionData> | null = null;
 function getBrowserSession(): SessionLike<SessionData> {
   if (browserSessionSingleton) return browserSessionSingleton;
 
-  let data = parseStoredSession(window.localStorage.getItem(BROWSER_SESSION_STORAGE_KEY));
+  let data = parseStoredSession(
+    window.localStorage.getItem(BROWSER_SESSION_STORAGE_KEY),
+  );
 
   browserSessionSingleton = {
     get data() {
@@ -75,7 +79,9 @@ function getBrowserSession(): SessionLike<SessionData> {
 }
 
 // Type guard to check if session data is complete
-export function isValidSession(data: Partial<SessionData>): data is SessionData {
+export function isValidSession(
+  data: Partial<SessionData>,
+): data is SessionData {
   return !!(
     data.username &&
     data.token?.access_token &&
@@ -115,7 +121,9 @@ export async function useAppSession(): Promise<SessionLike<SessionData>> {
   // Desktop SPA builds never have a server runtime. Always use localStorage.
   if (isDesktopBuild) {
     if (!isBrowserRuntime()) {
-      throw new Error('Desktop session is only available in the browser runtime');
+      throw new Error(
+        'Desktop session is only available in the browser runtime',
+      );
     }
     return getBrowserSession();
   }
@@ -125,9 +133,8 @@ export async function useAppSession(): Promise<SessionLike<SessionData>> {
     throw new Error('useAppSession is server-only outside desktop builds');
   }
 
-  const { useSession, getRequestHeader } = await import(
-    '@tanstack/react-start/server'
-  );
+  const { useSession, getRequestHeader } =
+    await import('@tanstack/react-start/server');
 
   // Determine if cookies should use the secure flag
   // Priority:

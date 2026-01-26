@@ -17,7 +17,8 @@ export const updateLocale = createServerFn({ method: 'POST' })
         return;
       }
 
-      const { setResponseHeader } = await import('@tanstack/react-start/server');
+      const { setResponseHeader } =
+        await import('@tanstack/react-start/server');
       setResponseHeader(
         'Set-Cookie',
         serialize(localeStorageKey, data, {

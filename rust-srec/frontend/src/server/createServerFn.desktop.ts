@@ -15,7 +15,9 @@ type ServerFnBuilder<TInput, TOutput> = {
     validator: InputValidator<TNextInput>,
   ) => ServerFnBuilder<TNextInput, TOutput>;
   handler: (
-    handler: ((ctx: HandlerContext<TInput>) => Promise<TOutput> | TOutput) | (() => Promise<TOutput> | TOutput),
+    handler:
+      | ((ctx: HandlerContext<TInput>) => Promise<TOutput> | TOutput)
+      | (() => Promise<TOutput> | TOutput),
   ) => ServerFn<TInput, TOutput>;
 };
 
@@ -32,7 +34,9 @@ export function createServerFn<TInput = void, TOutput = unknown>(
     handler(fn) {
       return (async (data?: any) => {
         const input =
-          data && typeof data === 'object' && 'data' in data ? (data as any).data : data;
+          data && typeof data === 'object' && 'data' in data
+            ? (data as any).data
+            : data;
         const validated = validator ? validator(input) : input;
         // Allow handlers with either `(ctx) => ...` or `() => ...`.
         if (typeof fn === 'function' && fn.length === 0) {

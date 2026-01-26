@@ -1,5 +1,11 @@
 import { parse, serialize } from 'cookie-es';
-import { defaultLocale, getPreferredLocale, isLocaleValid, Locale, localeStorageKey } from './i18n';
+import {
+  defaultLocale,
+  getPreferredLocale,
+  isLocaleValid,
+  Locale,
+  localeStorageKey,
+} from './i18n';
 
 export function getLocaleFromRequest(request: Request) {
   const headers = request.headers;

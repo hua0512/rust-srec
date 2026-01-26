@@ -47,7 +47,8 @@ const Devtools = (() => {
 
         setModules({
           TanStackDevtools: reactDevtools.TanStackDevtools,
-          TanStackRouterDevtoolsPanel: routerDevtools.TanStackRouterDevtoolsPanel,
+          TanStackRouterDevtoolsPanel:
+            routerDevtools.TanStackRouterDevtoolsPanel,
           ReactQueryDevtoolsPanel: queryDevtools.ReactQueryDevtoolsPanel,
         });
       })();

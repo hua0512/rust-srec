@@ -5,7 +5,11 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import type { I18n } from '@lingui/core';
-import { getLoggingConfig, updateLoggingFilter, getLogsDownloadUrl } from '@/server/functions';
+import {
+  getLoggingConfig,
+  updateLoggingFilter,
+  getLogsDownloadUrl,
+} from '@/server/functions';
 import {
   parseFilterDirective,
   serializeFilterDirective,

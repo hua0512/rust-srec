@@ -11,10 +11,11 @@
   "arrowParens": "always",
   "ignorePatterns": [
     "src/routeTree.gen.ts",
+    "src/api/proto/**",
     ".output/**",
     "src/locales/**",
     "dist-desktop/**",
     "dist/**",
-    "node_modules/**"
+    "node_modules/**",
   ],
 }

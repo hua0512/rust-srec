@@ -1,283 +1,301 @@
 <!doctype html>
 <html lang="en">
-
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Rust-Srec</title>
-  <style>
-    :root {
-      /* Base tokens - Light (Default) */
-      --bg-core: #ffffff;
-      --bg-surface: #f4f4f5;
-      --border-subtle: #e4e4e7;
-      --text-primary: #18181b;
-      --text-secondary: #71717a;
-      --accent: #3b82f6;
-      --accent-glow: rgba(59, 130, 246, 0.2);
-      --logo-filter: none;
-
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-    }
-
-    @media (prefers-color-scheme: dark) {
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rust-Srec</title>
+    <style>
       :root {
-        --bg-core: #09090b;
-        --bg-surface: #18181b;
-        --border-subtle: #27272a;
-        --text-primary: #f4f4f5;
-        --text-secondary: #a1a1aa;
-        --accent-glow: rgba(59, 130, 246, 0.4);
-        /* Current logo is white/light, so we keep it as is or brighten it for dark mode */
-        --logo-filter: invert(1) brightness(1.2);
-      }
-    }
+        /* Base tokens - Light (Default) */
+        --bg-core: #ffffff;
+        --bg-surface: #f4f4f5;
+        --border-subtle: #e4e4e7;
+        --text-primary: #18181b;
+        --text-secondary: #71717a;
+        --accent: #3b82f6;
+        --accent-glow: rgba(59, 130, 246, 0.2);
+        --logo-filter: none;
 
-    * {
-      box-sizing: border-box;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    body {
-      margin: 0;
-      padding: 0;
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background-color: var(--bg-core);
-      background-image: radial-gradient(circle at 50% 0%, var(--bg-surface) 0%, var(--bg-core) 100%);
-      color: var(--text-primary);
-      font-family: var(--font-sans);
-      overflow: hidden;
-      cursor: wait;
-      user-select: none;
-    }
-
-    /* Glassmorphism blobs */
-    .blob {
-      position: absolute;
-      width: clamp(200px, 60vw, 400px);
-      height: clamp(200px, 60vw, 400px);
-      border-radius: 50%;
-      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-      z-index: -1;
-      filter: blur(60px);
-      animation: float-blob 20s infinite alternate ease-in-out;
-    }
-
-    .blob-1 {
-      top: -15%;
-      left: -10%;
-      animation-duration: 25s;
-    }
-
-    .blob-2 {
-      bottom: -15%;
-      right: -10%;
-      animation-duration: 30s;
-      opacity: 0.7;
-      background: radial-gradient(circle, rgba(99, 102, 241, 0.2) 0%, transparent 70%);
-      /* indigo tint */
-    }
-
-    .splash-layout {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 48px;
-      backdrop-filter: blur(2px);
-      animation: fade-up 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-
-    .logo-section {
-      position: relative;
-      margin-bottom: 32px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .logo-wrapper {
-      position: relative;
-      width: 80px;
-      height: 80px;
-      margin-bottom: 16px;
-      background: var(--bg-surface);
-      border-radius: 20px;
-      padding: 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
-      border: 1px solid var(--border-subtle);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform 0.3s ease;
-    }
-
-    .logo-wrapper img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      filter: var(--logo-filter) drop-shadow(0 0 8px var(--accent-glow));
-      animation: pulse-logo 4s ease-in-out infinite;
-    }
-
-    .app-brand {
-      font-size: 24px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      color: var(--text-primary);
-      margin: 0;
-      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    /* Progress Display */
-    .interaction-zone {
-      width: 100%;
-      max-width: 320px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      margin-top: 40px;
-    }
-
-    .status-line {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-family: var(--font-sans);
-      font-size: 13px;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    .status-msg {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 240px;
-      opacity: 0.8;
-    }
-
-    .percent-val {
-      color: var(--accent);
-      font-weight: 700;
-      font-family: var(--font-mono);
-      font-size: 12px;
-    }
-
-    .meter {
-      width: 100%;
-      height: 6px;
-      background: var(--border-subtle);
-      border-radius: 10px;
-      overflow: hidden;
-      position: relative;
-      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-    }
-
-    .meter-fill {
-      position: absolute;
-      left: 0;
-      top: 0;
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--accent), #60a5fa);
-      border-radius: 10px;
-      box-shadow: 0 0 15px var(--accent-glow);
-      transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-
-    .meter-fill::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-      animation: sweep 2.5s infinite linear;
-    }
-
-    @keyframes fade-up {
-      from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.95);
+        --font-sans:
+          'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          Helvetica, Arial, sans-serif;
+        --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
       }
 
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-    }
-
-    @keyframes pulse-logo {
-
-      0%,
-      100% {
-        transform: scale(1);
-      }
-
-      50% {
-        transform: scale(1.08);
-      }
-    }
-
-    @keyframes float-blob {
-      0% {
-        transform: translate(0, 0) rotate(0deg);
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-core: #09090b;
+          --bg-surface: #18181b;
+          --border-subtle: #27272a;
+          --text-primary: #f4f4f5;
+          --text-secondary: #a1a1aa;
+          --accent-glow: rgba(59, 130, 246, 0.4);
+          /* Current logo is white/light, so we keep it as is or brighten it for dark mode */
+          --logo-filter: invert(1) brightness(1.2);
+        }
       }
 
-      50% {
-        transform: translate(30px, 20px) rotate(5deg);
+      * {
+        box-sizing: border-box;
+        -webkit-font-smoothing: antialiased;
       }
 
-      100% {
-        transform: translate(-20px, 40px) rotate(-5deg);
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: var(--bg-core);
+        background-image: radial-gradient(
+          circle at 50% 0%,
+          var(--bg-surface) 0%,
+          var(--bg-core) 100%
+        );
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        overflow: hidden;
+        cursor: wait;
+        user-select: none;
       }
-    }
 
-    @keyframes sweep {
-      0% {
-        transform: translateX(-100%);
+      /* Glassmorphism blobs */
+      .blob {
+        position: absolute;
+        width: clamp(200px, 60vw, 400px);
+        height: clamp(200px, 60vw, 400px);
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          var(--accent-glow) 0%,
+          transparent 70%
+        );
+        z-index: -1;
+        filter: blur(60px);
+        animation: float-blob 20s infinite alternate ease-in-out;
       }
 
-      100% {
-        transform: translateX(200%);
+      .blob-1 {
+        top: -15%;
+        left: -10%;
+        animation-duration: 25s;
       }
-    }
-  </style>
-</head>
 
-<body>
-  <div class="blob blob-1"></div>
-  <div class="blob blob-2"></div>
+      .blob-2 {
+        bottom: -15%;
+        right: -10%;
+        animation-duration: 30s;
+        opacity: 0.7;
+        background: radial-gradient(
+          circle,
+          rgba(99, 102, 241, 0.2) 0%,
+          transparent 70%
+        );
+        /* indigo tint */
+      }
 
-  <div class="splash-layout">
-    <div class="logo-section">
-      <div class="logo-wrapper">
-        <img src="stream-rec.svg" alt="logo" />
+      .splash-layout {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 48px;
+        backdrop-filter: blur(2px);
+        animation: fade-up 320ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      .logo-section {
+        position: relative;
+        margin-bottom: 32px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .logo-wrapper {
+        position: relative;
+        width: 80px;
+        height: 80px;
+        margin-bottom: 16px;
+        background: var(--bg-surface);
+        border-radius: 20px;
+        padding: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+        border: 1px solid var(--border-subtle);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.3s ease;
+      }
+
+      .logo-wrapper img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        filter: var(--logo-filter) drop-shadow(0 0 8px var(--accent-glow));
+        animation: pulse-logo 4s ease-in-out infinite;
+      }
+
+      .app-brand {
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--text-primary);
+        margin: 0;
+        background: linear-gradient(
+          135deg,
+          var(--text-primary) 0%,
+          var(--text-secondary) 100%
+        );
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      /* Progress Display */
+      .interaction-zone {
+        width: 100%;
+        max-width: 320px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 40px;
+      }
+
+      .status-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-family: var(--font-sans);
+        font-size: 13px;
+        color: var(--text-secondary);
+        font-weight: 500;
+      }
+
+      .status-msg {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 240px;
+        opacity: 0.8;
+      }
+
+      .percent-val {
+        color: var(--accent);
+        font-weight: 700;
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+
+      .meter {
+        width: 100%;
+        height: 6px;
+        background: var(--border-subtle);
+        border-radius: 10px;
+        overflow: hidden;
+        position: relative;
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+      }
+
+      .meter-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--accent), #60a5fa);
+        border-radius: 10px;
+        box-shadow: 0 0 15px var(--accent-glow);
+        transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      .meter-fill::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          rgba(255, 255, 255, 0.4),
+          transparent
+        );
+        animation: sweep 2.5s infinite linear;
+      }
+
+      @keyframes fade-up {
+        from {
+          transform: translateY(20px) scale(0.95);
+        }
+
+        to {
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      @keyframes pulse-logo {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+
+        50% {
+          transform: scale(1.08);
+        }
+      }
+
+      @keyframes float-blob {
+        0% {
+          transform: translate(0, 0) rotate(0deg);
+        }
+
+        50% {
+          transform: translate(30px, 20px) rotate(5deg);
+        }
+
+        100% {
+          transform: translate(-20px, 40px) rotate(-5deg);
+        }
+      }
+
+      @keyframes sweep {
+        0% {
+          transform: translateX(-100%);
+        }
+
+        100% {
+          transform: translateX(200%);
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <div class="splash-layout">
+      <div class="logo-section">
+        <div class="logo-wrapper">
+          <img src="stream-rec.svg" alt="logo" />
+        </div>
+        <h1 class="app-brand">Rust-Srec</h1>
       </div>
-      <h1 class="app-brand">Rust-Srec</h1>
+
+      <div class="interaction-zone">
+        <div class="status-line">
+          <span class="status-msg" id="status">Initializing system...</span>
+          <span class="percent-val" id="percent">0%</span>
+        </div>
+        <div class="meter">
+          <div class="meter-fill" id="progress-bar"></div>
+        </div>
+      </div>
     </div>
 
-    <div class="interaction-zone">
-      <div class="status-line">
-        <span class="status-msg" id="status">Initializing system...</span>
-        <span class="percent-val" id="percent">0%</span>
-      </div>
-      <div class="meter">
-        <div class="meter-fill" id="progress-bar"></div>
-      </div>
-    </div>
-  </div>
-
-  <script type="module" src="/src/splash.desktop.ts"></script>
-</body>
-
+    <script type="module" src="/src/splash.desktop.ts"></script>
+  </body>
 </html>

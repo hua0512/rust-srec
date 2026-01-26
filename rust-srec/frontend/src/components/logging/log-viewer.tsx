@@ -58,8 +58,6 @@ interface DisplayLogEvent extends LogEvent {
   id: number;
 }
 
-
-
 /** Get log level icon component */
 function getLevelIcon(level: LogLevel) {
   const iconClass = 'w-3.5 h-3.5 shrink-0';

@@ -14,7 +14,10 @@ declare global {
 
 function isTauriRuntime(): boolean {
   if (typeof window === 'undefined') return false;
-  return typeof window.__TAURI__ !== 'undefined' || typeof window.__TAURI_INTERNALS__ !== 'undefined';
+  return (
+    typeof window.__TAURI__ !== 'undefined' ||
+    typeof window.__TAURI_INTERNALS__ !== 'undefined'
+  );
 }
 
 function readInitialLaunchPayload(): DesktopLaunchPayload | null {
@@ -23,7 +26,10 @@ function readInitialLaunchPayload(): DesktopLaunchPayload | null {
   const rawArgs = window.__RUST_SREC_LAUNCH_ARGS__;
   const rawCwd = window.__RUST_SREC_LAUNCH_CWD__;
 
-  const args = Array.isArray(rawArgs) && rawArgs.every((v) => typeof v === 'string') ? rawArgs : null;
+  const args =
+    Array.isArray(rawArgs) && rawArgs.every((v) => typeof v === 'string')
+      ? rawArgs
+      : null;
   const cwd = typeof rawCwd === 'string' ? rawCwd : '';
   if (!args) return null;
 
@@ -41,9 +47,12 @@ export async function initDesktopLaunchListener(
   }
 
   const { listen } = await import('@tauri-apps/api/event');
-  const unlisten = await listen<DesktopLaunchPayload>('rust-srec://single-instance', (event) => {
-    onLaunch(event.payload);
-  });
+  const unlisten = await listen<DesktopLaunchPayload>(
+    'rust-srec://single-instance',
+    (event) => {
+      onLaunch(event.payload);
+    },
+  );
 
   return unlisten;
 }

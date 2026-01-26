@@ -32,7 +32,9 @@ export function getRouter(i18n?: I18n) {
     resolvedI18n,
     {
       WrapProvider: (props) => (
-        <TanstackQuery.Provider {...rqContext}>{props.children}</TanstackQuery.Provider>
+        <TanstackQuery.Provider {...rqContext}>
+          {props.children}
+        </TanstackQuery.Provider>
       ),
     },
   );
