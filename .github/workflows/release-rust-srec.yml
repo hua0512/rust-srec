@@ -537,9 +537,26 @@ jobs:
           path: artifacts
           pattern: rust-srec-*
           merge-multiple: true
+      - name: Prepare publish assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p publish
+
+          while IFS= read -r -d '' file; do
+            base="$(basename "$file")"
+            case "$base" in
+              *.exe|*.dmg|*.msi|*.deb|*.rpm|*.AppImage|*.zip) ;;
+              *) continue ;;
+            esac
+            cp -v "$file" "publish/$base"
+          done < <(find artifacts -type f -maxdepth 2 -print0)
+
+          test -n "$(ls -A publish)"
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/*
+            publish/*
           generate_release_notes: true
