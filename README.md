@@ -37,6 +37,8 @@ This is a Rust workspace containing:
 - REST API with OpenAPI + Swagger UI (`/api/docs`) and JWT authentication
 - Docker-first deployment (official images in `rust-srec/docker-compose.yml`)
 
+Note: Docker images are tagged as `vX.Y.Z` (leading `v`). If you set `VERSION` in `rust-srec/docker-compose.yml`, use `v0.1.0` (not `0.1.0`).
+
 ## CLI tools
 
 - `strev` (source in `strev-cli/`): platform extraction / stream inspection

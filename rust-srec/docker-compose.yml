@@ -1,5 +1,6 @@
 services:
   rust-srec:
+    # NOTE: Images are tagged as vX.Y.Z (leading 'v'), e.g. VERSION=v0.1.0.
     image: ghcr.io/hua0512/rust-srec:${VERSION:-latest}
     container_name: rust-srec
     restart: unless-stopped
@@ -50,6 +51,7 @@ services:
         max-file: "5"
 
   frontend:
+    # NOTE: Images are tagged as vX.Y.Z (leading 'v'), e.g. VERSION=v0.1.0.
     image: ghcr.io/hua0512/rust-srec-frontend:${VERSION:-latest}
     container_name: rust-srec-frontend
     restart: unless-stopped
