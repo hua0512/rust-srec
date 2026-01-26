@@ -547,13 +547,43 @@ jobs:
           while IFS= read -r -d '' file; do
             base="$(basename "$file")"
             case "$base" in
-              *.exe|*.dmg|*.msi|*.deb|*.rpm|*.AppImage|*.zip) ;;
+              rust-srec-linux-*|rust-srec-macos-*|rust-srec-vapid-linux-*|rust-srec-vapid-macos-*|*.exe|*.dmg|*.msi|*.deb|*.rpm|*.AppImage|*.zip) ;;
               *) continue ;;
             esac
             cp -v "$file" "publish/$base"
-          done < <(find artifacts -type f -maxdepth 2 -print0)
+          done < <(find artifacts -maxdepth 2 -type f -print0)
 
           test -n "$(ls -A publish)"
+      - name: Prune stale release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "gh not found; skipping asset pruning"
+            exit 0
+          fi
+
+          if ! release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" 2>/dev/null)"; then
+            echo "No existing release for tag ${GITHUB_REF_NAME}; skipping asset pruning"
+            exit 0
+          fi
+
+          mapfile -t keep < <(ls -1 publish)
+          if [ "${#keep[@]}" -eq 0 ]; then
+            echo "publish/ is empty; refusing to prune"
+            exit 1
+          fi
+
+          echo "$release_json" | jq -r '.assets[]? | [.id, .name] | @tsv' | while IFS=$'\t' read -r id name; do
+            if printf '%s\n' "${keep[@]}" | grep -Fqx -- "$name"; then
+              continue
+            fi
+            echo "Deleting stale asset: $name"
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${id}" >/dev/null
+          done
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
