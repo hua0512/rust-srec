@@ -16,6 +16,13 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri_plugin_notification::NotificationExt;
 
+mod desktop_notifications;
+
+use desktop_notifications::{
+    DesktopNotificationConfig, load_or_create_desktop_notifications_config,
+    register_desktop_notifications_ipc, should_deliver_desktop_notification,
+};
+
 #[derive(Clone, Serialize)]
 struct BootProgressPayload {
     status: String,
@@ -31,23 +38,7 @@ impl Default for BootProgressPayload {
     }
 }
 
-/// Event types that should trigger native desktop notifications.
-/// Focus on "stream online" and error conditions.
-const DESKTOP_NOTIFICATION_EVENT_TYPES: &[&str] = &[
-    "stream_online",
-    "download_error",
-    "pipeline_failed",
-    "pipeline_queue_critical",
-    "fatal_error",
-    "out_of_space",
-    "credential_refresh_failed",
-    "credential_invalid",
-];
-
-/// Check if an event type should trigger a desktop notification.
-fn should_notify_desktop(event_type: &str) -> bool {
-    DESKTOP_NOTIFICATION_EVENT_TYPES.contains(&event_type)
-}
+// Desktop notifications are implemented in `desktop_notifications`.
 
 fn show_main_window(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
@@ -125,6 +116,9 @@ struct DesktopBackendState {
 
     init_cancel: tokio_util::sync::CancellationToken,
     latest_launch: std::sync::Mutex<LaunchArgsPayload>,
+
+    data_dir: PathBuf,
+    desktop_notifications: std::sync::Mutex<DesktopNotificationConfig>,
 }
 
 #[derive(Clone, Serialize)]
@@ -134,7 +128,12 @@ struct LaunchArgsPayload {
 }
 
 impl DesktopBackendState {
-    fn new(instance_lock: std::fs::File, initial_launch: LaunchArgsPayload) -> Self {
+    fn new(
+        instance_lock: std::fs::File,
+        initial_launch: LaunchArgsPayload,
+        data_dir: PathBuf,
+        desktop_notifications: DesktopNotificationConfig,
+    ) -> Self {
         Self {
             container: std::sync::Mutex::new(None),
             log_guard: std::sync::Mutex::new(None),
@@ -144,6 +143,9 @@ impl DesktopBackendState {
             boot_progress: std::sync::Mutex::new(BootProgressPayload::default()),
             init_cancel: tokio_util::sync::CancellationToken::new(),
             latest_launch: std::sync::Mutex::new(initial_launch),
+
+            data_dir,
+            desktop_notifications: std::sync::Mutex::new(desktop_notifications),
         }
     }
 
@@ -239,6 +241,7 @@ fn build_init_script(
     backend_url: &str,
     launch: &LaunchArgsPayload,
     boot_error: Option<&str>,
+    desktop_notifications: &DesktopNotificationConfig,
 ) -> String {
     let backend_url_json =
         serde_json::to_string(backend_url).unwrap_or_else(|_| "\"\"".to_string());
@@ -249,17 +252,22 @@ fn build_init_script(
         None => "null".to_string(),
     };
 
+    let desktop_notifications_json =
+        serde_json::to_string(desktop_notifications).unwrap_or_else(|_| "null".to_string());
+
     format!(
         "globalThis.__RUST_SREC_BACKEND_URL__ = {backend_url_json};\
-globalThis.__RUST_SREC_LAUNCH_ARGS__ = {launch_args_json};\
-globalThis.__RUST_SREC_LAUNCH_CWD__ = {launch_cwd_json};\
-globalThis.__RUST_SREC_BOOT_ERROR__ = {boot_error_json};"
+ globalThis.__RUST_SREC_LAUNCH_ARGS__ = {launch_args_json};\
+ globalThis.__RUST_SREC_LAUNCH_CWD__ = {launch_cwd_json};\
+ globalThis.__RUST_SREC_BOOT_ERROR__ = {boot_error_json};\
+ globalThis.__RUST_SREC_DESKTOP_NOTIFICATIONS__ = {desktop_notifications_json};"
     )
 }
 
 async fn show_boot_error_window(app_handle: &tauri::AppHandle, message: &str) {
     let state = app_handle.state::<DesktopBackendState>();
     let launch = state.current_launch();
+    let desktop_notifications = state.desktop_notifications();
 
     let webview_url = if tauri::is_dev() {
         tauri::WebviewUrl::External(
@@ -270,7 +278,7 @@ async fn show_boot_error_window(app_handle: &tauri::AppHandle, message: &str) {
         tauri::WebviewUrl::App("index.desktop.html".into())
     };
 
-    let init_script = build_init_script("", &launch, Some(message));
+    let init_script = build_init_script("", &launch, Some(message), &desktop_notifications);
 
     if app_handle.get_webview_window("main").is_none() {
         if let Ok(window) = tauri::WebviewWindowBuilder::new(app_handle, "main", webview_url)
@@ -502,7 +510,8 @@ async fn run_desktop_backend_init(
 
     let backend_url = format!("http://{}", backend_addr);
     let launch = state.current_launch();
-    let init_script = build_init_script(&backend_url, &launch, None);
+    let desktop_notifications = state.desktop_notifications();
+    let init_script = build_init_script(&backend_url, &launch, None, &desktop_notifications);
 
     let webview_url = if tauri::is_dev() {
         tauri::WebviewUrl::External(
@@ -605,9 +614,12 @@ async fn run_desktop_notification_listener(
             result = rx.recv() => {
                 match result {
                     Ok(event) => {
-                        if !should_notify_desktop(event.event_type()) {
+                        let state = app_handle.state::<DesktopBackendState>();
+                        let cfg = state.desktop_notifications();
+                        if !should_deliver_desktop_notification(&cfg, &event) {
                             continue;
                         }
+
                         let title = event.title();
                         let body = event.description();
 
@@ -732,6 +744,9 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
 
+            let desktop_notifications =
+                load_or_create_desktop_notifications_config(&data_dir).unwrap_or_default();
+
             let log_dir = app.path().app_log_dir()?;
             std::fs::create_dir_all(&log_dir)?;
             let log_dir_str = log_dir.to_string_lossy().to_string();
@@ -766,7 +781,11 @@ pub fn run() {
                     args: launch_args.clone(),
                     cwd: launch_cwd.clone(),
                 },
+                data_dir.clone(),
+                desktop_notifications,
             ));
+
+            register_desktop_notifications_ipc(app.handle());
 
             // Show a lightweight loading window while the backend starts.
             let splash_url = if tauri::is_dev() {
@@ -779,7 +798,12 @@ pub fn run() {
 
             let splash_init = {
                 let state = app.state::<DesktopBackendState>();
-                build_init_script("", &state.current_launch(), None)
+                build_init_script(
+                    "",
+                    &state.current_launch(),
+                    None,
+                    &state.desktop_notifications(),
+                )
             };
 
             let splash_window = tauri::WebviewWindowBuilder::new(app, "splash", splash_url)
@@ -830,6 +854,8 @@ pub fn run() {
                         }
                     });
             }
+
+            // Desktop notifications IPC bridge lives in `desktop_notifications`.
 
             // Create system tray icon early so the app is controllable during startup.
             #[cfg(desktop)]

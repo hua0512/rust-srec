@@ -5,12 +5,13 @@ import {
   Locale,
   localeStorageKey,
 } from '../../integrations/lingui/i18n';
+import { isDesktopBuild } from '@/utils/desktop';
 
 export const updateLocale = createServerFn({ method: 'POST' })
   .inputValidator((locale: string) => locale as Locale)
   .handler(async ({ data }) => {
     if (isLocaleValid(data)) {
-      if (import.meta.env.VITE_DESKTOP === '1') {
+      if (isDesktopBuild()) {
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(localeStorageKey, data);
         }

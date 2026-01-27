@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 
 import { BASE_URL } from '@/utils/env';
 import { getDesktopAccessToken } from '@/utils/session';
+import { isDesktopBuild } from '@/utils/desktop';
 
 export interface PlayerCardProps {
   url: string;
@@ -167,12 +168,12 @@ export function PlayerCard({
     const shouldProxy =
       !!currentHeaders && Object.keys(currentHeaders).length > 0;
 
-    const isDesktopBuild = import.meta.env.VITE_DESKTOP === '1';
-    const desktopToken = isDesktopBuild ? getDesktopAccessToken() : null;
+    const desktopBuild = isDesktopBuild();
+    const desktopToken = desktopBuild ? getDesktopAccessToken() : null;
     const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
 
     const playUrl = shouldProxy
-      ? isDesktopBuild
+      ? desktopBuild
         ? desktopToken
           ? `${baseUrl}/stream-proxy?url=${encodeURIComponent(currentUrl)}&headers=${encodeURIComponent(JSON.stringify(currentHeaders))}&token=${encodeURIComponent(desktopToken)}`
           : currentUrl

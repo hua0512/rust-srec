@@ -5,6 +5,7 @@ import {
   listChannels,
   deleteChannel,
   testChannel,
+  listEventTypes,
   getWebPushPublicKey,
   subscribeWebPush,
   unsubscribeWebPush,
@@ -21,12 +22,14 @@ import { ChannelCard } from '@/components/notifications/channel-card';
 import { ChannelForm } from '@/components/notifications/channel-form';
 import { SubscriptionManager } from '@/components/notifications/subscription-manager';
 import { BrowserChannelDialog } from '@/components/notifications/browser-channel-dialog';
+import { DesktopChannelDialog } from '@/components/notifications/desktop-channel-dialog';
 import { NotificationChannel, WebPushSubscription } from '@/api/schemas';
 import { motion, AnimatePresence } from 'motion/react';
 import { Badge } from '@/components/ui/badge';
 import { Link } from '@tanstack/react-router';
 import { cn } from '@/lib/utils';
 import { useNotificationDot } from '@/hooks/use-notification-dot';
+import { isTauriRuntime } from '@/utils/tauri';
 import {
   getBrowserNotificationsEnabled,
   setBrowserNotificationsEnabled,
@@ -39,12 +42,20 @@ import {
   subscriptionToJson,
   unsubscribePush,
 } from '@/lib/web-push';
+import {
+  initDesktopNotificationsBridge,
+  readInitialDesktopNotificationsConfig,
+  setDesktopNotificationsConfig,
+  testDesktopNotifications,
+  type DesktopNotificationConfig,
+} from '@/desktop/desktop-notifications';
 
 export const Route = createFileRoute('/_authed/_dashboard/notifications/')({
   component: NotificationsPage,
 });
 
 function NotificationsPage() {
+  const isDesktop = isTauriRuntime();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -65,6 +76,22 @@ function NotificationsPage() {
   const [browserNotificationsEnabled, setBrowserNotificationsEnabledState] =
     useState(false);
 
+  const [isDesktopDialogOpen, setIsDesktopDialogOpen] = useState(false);
+
+  const defaultDesktopConfig: DesktopNotificationConfig = {
+    enabled: true,
+    minPriority: 'normal',
+    // Empty => no desktop notifications until events are selected.
+    eventTypes: [],
+  };
+
+  const [desktopNotificationsConfig, setDesktopNotificationsConfigState] =
+    useState<DesktopNotificationConfig | null>(() =>
+      isDesktop
+        ? (readInitialDesktopNotificationsConfig() ?? defaultDesktopConfig)
+        : null,
+    );
+
   const { hasCriticalDot } = useNotificationDot();
 
   useEffect(() => {
@@ -80,6 +107,7 @@ function NotificationsPage() {
   };
 
   useEffect(() => {
+    if (isDesktop) return;
     const supported = isWebPushSupported();
     setWebPushSupported(supported);
     if (!supported) return;
@@ -106,11 +134,42 @@ function NotificationsPage() {
         // ignore
       }
     })();
-  }, []);
+  }, [isDesktop]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    let alive = true;
+    let unlisten: (() => void) | null = null;
+
+    void (async () => {
+      const nextUnlisten = await initDesktopNotificationsBridge((cfg) => {
+        if (!alive) return;
+        setDesktopNotificationsConfigState(cfg);
+      });
+
+      if (!alive) {
+        nextUnlisten();
+        return;
+      }
+
+      unlisten = nextUnlisten;
+    })();
+
+    return () => {
+      alive = false;
+      if (unlisten) unlisten();
+    };
+  }, [isDesktop]);
 
   const { data: channels, isLoading } = useQuery({
     queryKey: ['notification-channels'],
     queryFn: () => listChannels(),
+  });
+
+  const { data: desktopEventTypes = [] } = useQuery({
+    queryKey: ['notification-event-types'],
+    queryFn: () => listEventTypes(),
+    enabled: isDesktop,
   });
 
   const webPushKeyQuery = useQuery({
@@ -283,6 +342,32 @@ function NotificationsPage() {
     return i18n._(msg`Permission required`);
   }, [i18n, webPushKeyQuery.isError, webPushPermission, webPushSupported]);
 
+  const desktopMinPriorityLabel = useMemo(() => {
+    const p = desktopNotificationsConfig?.minPriority ?? 'normal';
+    switch (p) {
+      case 'critical':
+        return i18n._(msg`Critical Only`);
+      case 'high':
+        return i18n._(msg`High+`);
+      case 'low':
+        return i18n._(msg`All`);
+      case 'normal':
+      default:
+        return i18n._(msg`Normal+`);
+    }
+  }, [desktopNotificationsConfig?.minPriority, i18n]);
+
+  const desktopConfiguredEventsText = useMemo(() => {
+    const selected = desktopNotificationsConfig?.eventTypes?.length ?? 0;
+    const total = desktopEventTypes.length;
+    if (total > 0) return `${selected} / ${total}`;
+    return String(selected);
+  }, [desktopEventTypes.length, desktopNotificationsConfig?.eventTypes]);
+
+  const internalActive = isDesktop
+    ? !!desktopNotificationsConfig?.enabled
+    : browserNotificationsEnabled || webPushEnabled;
+
   return (
     <motion.div
       className="min-h-screen space-y-6"
@@ -380,7 +465,11 @@ function NotificationsPage() {
               {/* Browser Card First */}
               <motion.div variants={item}>
                 <div
-                  onClick={() => setIsBrowserDialogOpen(true)}
+                  onClick={() =>
+                    isDesktop
+                      ? setIsDesktopDialogOpen(true)
+                      : setIsBrowserDialogOpen(true)
+                  }
                   className="cursor-pointer relative overflow-hidden group border border-border/40 hover:border-primary/20 transition-all duration-500 hover:shadow-2xl hover:shadow-primary/10 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl rounded-3xl p-6 h-full flex flex-col justify-between min-h-[220px]"
                 >
                   <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
@@ -394,26 +483,26 @@ function NotificationsPage() {
                         <Monitor className="h-5 w-5 text-primary" />
                       </div>
                       <Badge
-                        variant={
-                          browserNotificationsEnabled || webPushEnabled
-                            ? 'default'
-                            : 'secondary'
-                        }
+                        variant={internalActive ? 'default' : 'secondary'}
                         className={cn(
                           'text-[10px] font-bold uppercase tracking-wider px-2 py-0 h-5 border-none shadow-none',
-                          browserNotificationsEnabled || webPushEnabled
+                          internalActive
                             ? 'bg-primary/20 text-primary hover:bg-primary/30'
                             : 'bg-muted/30 text-muted-foreground',
                         )}
                       >
-                        {browserNotificationsEnabled || webPushEnabled
+                        {internalActive
                           ? i18n._(msg`Active`)
                           : i18n._(msg`Inactive`)}
                       </Badge>
                     </div>
                     <div className="space-y-1">
                       <h3 className="text-base font-medium tracking-tight group-hover:text-primary transition-colors duration-300">
-                        <Trans>Browser Notifications</Trans>
+                        {isDesktop ? (
+                          <Trans>Desktop Notifications</Trans>
+                        ) : (
+                          <Trans>Browser Notifications</Trans>
+                        )}
                       </h3>
                       <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/60">
                         <Trans>Internal</Trans>
@@ -421,26 +510,62 @@ function NotificationsPage() {
                     </div>
 
                     <div className="mt-4 space-y-2">
-                      <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-                        <span className="text-[9px] uppercase tracking-wider opacity-50">
-                          <Trans>Live Polling</Trans>
-                        </span>
-                        <span className="text-base font-medium tracking-tight group-hover:text-primary transition-colors duration-300">
-                          {browserNotificationsEnabled
-                            ? i18n._(msg`Enabled`)
-                            : i18n._(msg`Disabled`)}
-                        </span>
-                      </div>
-                      <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
-                        <span className="text-[9px] uppercase tracking-wider opacity-50">
-                          <Trans>Web Push</Trans>
-                        </span>
-                        <span className="text-[11px] font-medium text-foreground/80">
-                          {webPushEnabled
-                            ? i18n._(msg`Enabled`)
-                            : i18n._(msg`Disabled`)}
-                        </span>
-                      </div>
+                      {isDesktop ? (
+                        <>
+                          <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
+                            <span className="text-[9px] uppercase tracking-wider opacity-50">
+                              <Trans>Status</Trans>
+                            </span>
+                            <span className="text-base font-medium tracking-tight group-hover:text-primary transition-colors duration-300">
+                              {desktopNotificationsConfig?.enabled
+                                ? i18n._(msg`Enabled`)
+                                : i18n._(msg`Disabled`)}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
+                              <span className="text-[9px] uppercase tracking-wider opacity-50">
+                                <Trans>Configured Events</Trans>
+                              </span>
+                              <span className="text-[11px] font-medium text-foreground/80">
+                                {desktopConfiguredEventsText}
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
+                              <span className="text-[9px] uppercase tracking-wider opacity-50">
+                                <Trans>Min Priority</Trans>
+                              </span>
+                              <span className="text-[11px] font-medium text-foreground/80">
+                                {desktopMinPriorityLabel}
+                              </span>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
+                            <span className="text-[9px] uppercase tracking-wider opacity-50">
+                              <Trans>Live Polling</Trans>
+                            </span>
+                            <span className="text-base font-medium tracking-tight group-hover:text-primary transition-colors duration-300">
+                              {browserNotificationsEnabled
+                                ? i18n._(msg`Enabled`)
+                                : i18n._(msg`Disabled`)}
+                            </span>
+                          </div>
+                          <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
+                            <span className="text-[9px] uppercase tracking-wider opacity-50">
+                              <Trans>Web Push</Trans>
+                            </span>
+                            <span className="text-[11px] font-medium text-foreground/80">
+                              {webPushEnabled
+                                ? i18n._(msg`Enabled`)
+                                : i18n._(msg`Disabled`)}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -471,7 +596,7 @@ function NotificationsPage() {
       </div>
 
       <BrowserChannelDialog
-        open={isBrowserDialogOpen}
+        open={!isDesktop && isBrowserDialogOpen}
         onOpenChange={setIsBrowserDialogOpen}
         webPushSupported={webPushSupported}
         webPushEnabled={webPushEnabled}
@@ -483,6 +608,22 @@ function NotificationsPage() {
         browserNotificationsEnabled={browserNotificationsEnabled}
         onBrowserNotificationsToggle={handleBrowserNotificationsToggle}
       />
+
+      {isDesktop && desktopNotificationsConfig && (
+        <DesktopChannelDialog
+          open={isDesktopDialogOpen}
+          onOpenChange={setIsDesktopDialogOpen}
+          config={desktopNotificationsConfig}
+          eventTypes={desktopEventTypes}
+          onTest={() => {
+            void testDesktopNotifications();
+          }}
+          onConfigChange={(next) => {
+            setDesktopNotificationsConfigState(next);
+            void setDesktopNotificationsConfig(next);
+          }}
+        />
+      )}
 
       <ChannelForm
         open={isFormOpen}

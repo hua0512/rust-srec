@@ -3,6 +3,7 @@ import { twMerge } from 'tailwind-merge';
 
 import { BASE_URL } from '../utils/env';
 import { getDesktopAccessToken } from '../utils/session';
+import { isDesktopBuild } from '../utils/desktop';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -22,8 +23,8 @@ export function getPlatformFromUrl(url: string) {
 export function getProxiedUrl(url: string | null | undefined) {
   if (!url) return undefined;
 
-  const isDesktopBuild = import.meta.env.VITE_DESKTOP === '1';
-  const desktopToken = isDesktopBuild ? getDesktopAccessToken() : null;
+  const desktopBuild = isDesktopBuild();
+  const desktopToken = desktopBuild ? getDesktopAccessToken() : null;
   const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
 
   const platform = getPlatformFromUrl(url);
@@ -43,7 +44,7 @@ export function getProxiedUrl(url: string | null | undefined) {
     }
     const headersParam = encodeURIComponent(JSON.stringify(headers));
 
-    if (isDesktopBuild) {
+    if (desktopBuild) {
       // Desktop builds must proxy via the backend API (no TanStack Start server).
       if (!desktopToken) return url;
 

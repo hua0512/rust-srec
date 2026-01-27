@@ -17,6 +17,8 @@ type SessionLike<T> = {
   clear: () => Promise<void>;
 };
 
+import { isDesktopBuild } from '@/utils/desktop';
+
 const BROWSER_SESSION_STORAGE_KEY = 'rust_srec_session_v1';
 
 function isBrowserRuntime(): boolean {
@@ -38,8 +40,7 @@ function parseStoredSession(raw: string | null): Partial<SessionData> {
 }
 
 export function getDesktopAccessToken(): string | null {
-  const isDesktopBuild = import.meta.env.VITE_DESKTOP === '1';
-  if (!isDesktopBuild) return null;
+  if (!isDesktopBuild()) return null;
   if (!isBrowserRuntime()) return null;
 
   const stored = parseStoredSession(
@@ -116,10 +117,8 @@ export function sanitizeClientSession(data: SessionData): ClientSessionData {
 // Use TanStack Start's server session in SSR deployments, but fall back
 // to localStorage for pure-client builds (e.g. Tauri desktop).
 export async function useAppSession(): Promise<SessionLike<SessionData>> {
-  const isDesktopBuild = import.meta.env.VITE_DESKTOP === '1';
-
   // Desktop SPA builds never have a server runtime. Always use localStorage.
-  if (isDesktopBuild) {
+  if (isDesktopBuild()) {
     if (!isBrowserRuntime()) {
       throw new Error(
         'Desktop session is only available in the browser runtime',
