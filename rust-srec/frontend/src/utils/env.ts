@@ -1,3 +1,5 @@
+import { isTauriRuntime } from '@/utils/tauri';
+
 export const getBaseUrl = () => {
   // Tauri desktop: runtime-injected backend URL (set by the native host).
   // Keep this synchronous because it is used at import time by existing modules.
@@ -14,7 +16,7 @@ export const getBaseUrl = () => {
     if (
       import.meta.env.DEV &&
       typeof window !== 'undefined' &&
-      typeof (window as any).__TAURI__ !== 'undefined'
+      isTauriRuntime()
     ) {
       console.warn(
         '[desktop] __RUST_SREC_BACKEND_URL__ missing; falling back to VITE_API_BASE_URL/window.location. WebSockets will likely fail.',

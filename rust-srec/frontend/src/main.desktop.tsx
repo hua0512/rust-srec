@@ -9,6 +9,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from '@tanstack/react-router';
 
+import { isTauriRuntime } from '@/utils/tauri';
+
 import { getRouter } from './router.desktop';
 import {
   createI18nInstance,
@@ -39,10 +41,6 @@ let frontendReadyNotified = false;
 function getBootError(): string | null {
   const raw = (globalThis as any).__RUST_SREC_BOOT_ERROR__;
   return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
-}
-
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined';
 }
 
 async function notifyFrontendReady(): Promise<void> {

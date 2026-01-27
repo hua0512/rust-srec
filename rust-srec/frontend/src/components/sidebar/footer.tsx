@@ -4,7 +4,7 @@ import { getSystemHealth } from '@/server/functions';
 
 const UI_BUILD =
   typeof import.meta.env.VITE_UI_BUILD === 'string' &&
-    import.meta.env.VITE_UI_BUILD.length > 0
+  import.meta.env.VITE_UI_BUILD.length > 0
     ? import.meta.env.VITE_UI_BUILD
     : 'dev';
 
@@ -35,7 +35,8 @@ export function Footer() {
             </a>
             .
           </Trans>{' '}
-          Backend: {backendVersion ?? '-'} <span className="mx-1 opacity-60 text-[10px]">|</span> UI: {UI_BUILD}
+          Backend: {backendVersion ?? '-'}{' '}
+          <span className="mx-1 opacity-60 text-[10px]">|</span> UI: {UI_BUILD}
         </p>
       </div>
     </div>

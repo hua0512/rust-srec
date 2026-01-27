@@ -15,6 +15,8 @@ import { QueryClient } from '@tanstack/react-query';
 import { ensureValidToken } from '@/server/tokenRefresh';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
+import { BrowserNotificationListener } from '@/components/notifications/browser-notification-listener';
+import { isDesktopBuild } from '@/utils/desktop';
 
 type DevtoolsModules = {
   TanStackDevtools: React.ComponentType<any>;
@@ -139,7 +141,7 @@ function RootComponent() {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const { i18n } = useLingui();
-  const isDesktop = import.meta.env.VITE_DESKTOP === '1';
+  const isDesktop = isDesktopBuild();
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -183,6 +185,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
+        <BrowserNotificationListener />
         <Devtools />
         <Toaster position="top-right" />
         <Scripts />

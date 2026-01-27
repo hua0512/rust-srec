@@ -1,3 +1,5 @@
+import { isTauriRuntime } from '@/utils/tauri';
+
 export type DesktopLaunchPayload = {
   args: string[];
   cwd: string;
@@ -10,14 +12,6 @@ declare global {
     __TAURI__?: unknown;
     __TAURI_INTERNALS__?: unknown;
   }
-}
-
-function isTauriRuntime(): boolean {
-  if (typeof window === 'undefined') return false;
-  return (
-    typeof window.__TAURI__ !== 'undefined' ||
-    typeof window.__TAURI_INTERNALS__ !== 'undefined'
-  );
 }
 
 function readInitialLaunchPayload(): DesktopLaunchPayload | null {
