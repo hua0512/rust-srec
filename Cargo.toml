@@ -26,7 +26,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 authors = ["hua0512"]
 repository = "https://github.com/hua0512/rust-srec"
 license = "MIT OR Apache-2.0"
