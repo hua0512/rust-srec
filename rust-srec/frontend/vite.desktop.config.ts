@@ -35,6 +35,18 @@ export default defineConfig({
   ],
   resolve: {
     alias: [
+      // Ensure pbjs-generated `import * as $protobuf from "protobufjs/minimal";`
+      // works in ESM builds by routing it through an ESM shim.
+      {
+        // IMPORTANT: do NOT match `protobufjs/minimal.js` here.
+        // Our shim imports `protobufjs/minimal.js` to get the actual CommonJS
+        // implementation; if we alias `.js` too, we create a self-import cycle.
+        find: /^protobufjs\/minimal$/,
+        replacement: path.resolve(
+          __dirname,
+          'src/api/proto/protobufjs-minimal.ts',
+        ),
+      },
       // Desktop build does not run a TanStack Start server.
       // Replace server functions with a direct in-browser implementation.
       {
