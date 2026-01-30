@@ -178,6 +178,7 @@ mod tests {
             streamer_name: "Test".to_string(),
             old_state: StreamerState::NotLive,
             new_state: StreamerState::Live,
+            reason: None,
             timestamp: chrono::Utc::now(),
         };
 

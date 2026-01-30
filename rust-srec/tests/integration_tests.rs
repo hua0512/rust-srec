@@ -1269,6 +1269,7 @@ mod end_to_end_tests {
             streams: vec![],
             media_headers: None,
             media_extras: None,
+            next_check_hint: None,
         };
 
         // Process the status

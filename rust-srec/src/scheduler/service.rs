@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -26,7 +27,7 @@ use crate::database::repositories::{
     ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
 };
 use crate::domain::Priority;
-use crate::downloader::DownloadManagerEvent;
+use crate::downloader::{DownloadManagerEvent, DownloadStopCause};
 use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
@@ -44,6 +45,22 @@ const DEFAULT_OFFLINE_CHECK_INTERVAL_MS: u64 = 20_000;
 
 /// Default offline check count before switching to offline interval.
 const DEFAULT_OFFLINE_CHECK_COUNT: u32 = 3;
+
+/// Maximum age for entries in `Scheduler::stopped_downloads`.
+///
+/// This map is used to suppress follow-up terminal events that can arrive after a stop request.
+const STOPPED_DOWNLOADS_TTL: Duration = Duration::from_secs(60 * 60);
+
+/// Minimum interval between pruning passes over `Scheduler::stopped_downloads`.
+///
+/// Pruning is opportunistic (triggered on new cancellations) and throttled to avoid repeated
+/// O(n) scans when cancels happen in bursts.
+const STOPPED_DOWNLOADS_PRUNE_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Minimum size before we consider pruning `Scheduler::stopped_downloads`.
+///
+/// Avoids an O(n) scan when the map is trivially small.
+const STOPPED_DOWNLOADS_PRUNE_MIN_SIZE: usize = 256;
 
 /// Scheduler configuration.
 #[derive(Debug, Clone)]
@@ -108,6 +125,13 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     download_event_rx: Option<broadcast::Receiver<DownloadManagerEvent>>,
     /// Throttle map for forwarding download heartbeats to streamer actors.
     download_heartbeat_last_sent: DashMap<String, Instant>,
+    /// Tracks downloads that were explicitly stopped/cancelled.
+    ///
+    /// Used to suppress follow-up `DownloadCompleted` / `DownloadFailed` events that can
+    /// legitimately arrive after a stop request (graceful engine finalization).
+    stopped_downloads: DashMap<String, (DownloadStopCause, i64)>,
+    /// Throttle for opportunistic pruning of `stopped_downloads` (wall clock ms).
+    stopped_downloads_last_prune_at_ms: AtomicI64,
 }
 
 impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
@@ -200,6 +224,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             platform_handles: HashMap::new(),
             download_event_rx: None,
             download_heartbeat_last_sent: DashMap::new(),
+            stopped_downloads: DashMap::new(),
+            stopped_downloads_last_prune_at_ms: AtomicI64::new(crate::database::time::now_ms()),
         }
     }
 
@@ -296,6 +322,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             platform_handles: HashMap::new(),
             download_event_rx: None,
             download_heartbeat_last_sent: DashMap::new(),
+            stopped_downloads: DashMap::new(),
+            stopped_downloads_last_prune_at_ms: AtomicI64::new(crate::database::time::now_ms()),
         }
     }
 
@@ -904,7 +932,19 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 )
                 .await;
             }
-            DownloadManagerEvent::DownloadCompleted { streamer_id, .. } => {
+            DownloadManagerEvent::DownloadCompleted {
+                streamer_id,
+                download_id,
+                ..
+            } => {
+                if self.stopped_downloads.remove(&download_id).is_some() {
+                    debug!(
+                        streamer_id = %streamer_id,
+                        download_id = %download_id,
+                        "Ignoring DownloadCompleted for previously-stopped download"
+                    );
+                    return;
+                }
                 send_to_actor(
                     streamer_id,
                     StreamerMessage::DownloadEnded(DownloadEndPolicy::StreamerOffline),
@@ -912,8 +952,19 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 .await;
             }
             DownloadManagerEvent::DownloadFailed {
-                streamer_id, error, ..
+                streamer_id,
+                download_id,
+                error,
+                ..
             } => {
+                if self.stopped_downloads.remove(&download_id).is_some() {
+                    debug!(
+                        streamer_id = %streamer_id,
+                        download_id = %download_id,
+                        "Ignoring DownloadFailed for previously-stopped download"
+                    );
+                    return;
+                }
                 send_to_actor(
                     streamer_id,
                     StreamerMessage::DownloadEnded(DownloadEndPolicy::SegmentFailed(error)),
@@ -921,13 +972,51 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 .await;
             }
             DownloadManagerEvent::DownloadCancelled {
-                streamer_id, cause, ..
+                streamer_id,
+                download_id,
+                cause,
+                ..
             } => {
+                let now_ms = crate::database::time::now_ms();
+
+                // Engines can still emit a terminal event after a stop request
+                // (graceful finalization). Track this so we can suppress follow-ups.
+                self.stopped_downloads
+                    .insert(download_id.clone(), (cause.clone(), now_ms));
+
+                // Opportunistic TTL pruning to prevent unbounded growth if a cancelled download
+                // never produces a follow-up terminal event.
+                let interval_ms = STOPPED_DOWNLOADS_PRUNE_INTERVAL.as_millis() as i64;
+                let should_prune = self.stopped_downloads.len() >= STOPPED_DOWNLOADS_PRUNE_MIN_SIZE
+                    && {
+                        let last = self
+                            .stopped_downloads_last_prune_at_ms
+                            .load(Ordering::Relaxed);
+                        let elapsed_ms = now_ms.saturating_sub(last);
+                        if elapsed_ms >= interval_ms {
+                            self.stopped_downloads_last_prune_at_ms
+                                .compare_exchange(
+                                    last,
+                                    now_ms,
+                                    Ordering::Relaxed,
+                                    Ordering::Relaxed,
+                                )
+                                .is_ok()
+                        } else {
+                            false
+                        }
+                    };
+                if should_prune {
+                    let ttl_ms = STOPPED_DOWNLOADS_TTL.as_millis() as i64;
+                    self.stopped_downloads.retain(|_, (_, inserted_at)| {
+                        now_ms.saturating_sub(*inserted_at) <= ttl_ms
+                    });
+                }
+
                 let end_reason = match cause {
-                    crate::downloader::DownloadStopCause::User => DownloadEndPolicy::UserCancelled,
-                    crate::downloader::DownloadStopCause::StreamerOffline => {
-                        DownloadEndPolicy::StreamerOffline
-                    }
+                    DownloadStopCause::User => DownloadEndPolicy::UserCancelled,
+                    DownloadStopCause::StreamerOffline => DownloadEndPolicy::StreamerOffline,
+                    DownloadStopCause::OutOfSchedule => DownloadEndPolicy::OutOfSchedule,
                     other => DownloadEndPolicy::Stopped(other),
                 };
 
