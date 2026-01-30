@@ -316,9 +316,6 @@ impl<'a> ConfigRouter<'a> {
         result
     }
 
-    // NOTE: routing is implemented via `plan_with_scope` + `deliver_plan` to preserve
-    // snapshot semantics for restart cache updates.
-
     /// Get the actors that would receive an update for a given scope.
     ///
     /// This is useful for testing and debugging to verify routing logic
