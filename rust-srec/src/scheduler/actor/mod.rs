@@ -24,7 +24,7 @@ mod restart_tracker;
 mod streamer_actor;
 mod supervisor;
 
-pub use config_router::{ConfigRouter, ConfigScope, PlatformMapping, RoutingResult};
+pub use config_router::{ConfigRouter, ConfigScope, PlatformMapping, RoutingPlan, RoutingResult};
 pub use handle::{ActorHandle, ActorMetadata, SendError};
 pub use messages::{
     BatchDetectionResult, CheckResult, DownloadEndPolicy, PlatformActorState, PlatformConfig,

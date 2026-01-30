@@ -9,11 +9,21 @@
 
 use std::collections::HashMap;
 
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use super::handle::ActorHandle;
 use super::messages::{PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage};
 use crate::config::events::ConfigUpdateEvent;
+
+/// Pre-computed configs for a routing operation.
+///
+/// This allows callers to preserve snapshot semantics: compute configs once, update
+/// restart caches, then deliver config update messages using the exact same values.
+#[derive(Debug, Clone, Default)]
+pub struct RoutingPlan {
+    pub streamers: Vec<(String, StreamerConfig)>,
+    pub platforms: Vec<(String, PlatformConfig)>,
+}
 
 /// Result of a routing operation.
 #[derive(Debug, Clone)]
@@ -209,171 +219,105 @@ impl<'a> ConfigRouter<'a> {
         streamer_config_fn: impl Fn(&str) -> StreamerConfig,
         platform_config_fn: impl Fn(&str) -> PlatformConfig,
     ) -> RoutingResult {
+        let plan = self.plan_with_scope(scope, streamer_config_fn, platform_config_fn);
+        self.deliver_plan(plan).await
+    }
+
+    pub fn plan_with_scope(
+        &self,
+        scope: &ConfigScope,
+        streamer_config_fn: impl Fn(&str) -> StreamerConfig,
+        platform_config_fn: impl Fn(&str) -> PlatformConfig,
+    ) -> RoutingPlan {
+        let mut plan = RoutingPlan::default();
+
         match scope {
             ConfigScope::Streamer(streamer_id) => {
-                self.route_to_streamer(streamer_id, &streamer_config_fn)
-                    .await
+                if self.streamer_handles.contains_key(streamer_id) {
+                    plan.streamers
+                        .push((streamer_id.clone(), streamer_config_fn(streamer_id)));
+                }
             }
             ConfigScope::Platform(platform_id) => {
-                self.route_to_platform(platform_id, &streamer_config_fn, &platform_config_fn)
-                    .await
+                if self.platform_handles.contains_key(platform_id) {
+                    plan.platforms
+                        .push((platform_id.clone(), platform_config_fn(platform_id)));
+                }
+
+                for streamer_id in self.platform_mapping.streamers_on_platform(platform_id) {
+                    if self.streamer_handles.contains_key(streamer_id) {
+                        plan.streamers
+                            .push((streamer_id.clone(), streamer_config_fn(streamer_id)));
+                    }
+                }
             }
             ConfigScope::Global => {
-                self.route_globally(&streamer_config_fn, &platform_config_fn)
-                    .await
+                for platform_id in self.platform_handles.keys() {
+                    plan.platforms
+                        .push((platform_id.clone(), platform_config_fn(platform_id)));
+                }
+                for streamer_id in self.streamer_handles.keys() {
+                    plan.streamers
+                        .push((streamer_id.clone(), streamer_config_fn(streamer_id)));
+                }
             }
         }
+
+        plan
     }
 
-    /// Route a config update to a single streamer actor.
-    ///
-    /// Implements Requirement 3.1: Streamer-specific updates go to single actor.
-    async fn route_to_streamer(
-        &self,
-        streamer_id: &str,
-        config_fn: &impl Fn(&str) -> StreamerConfig,
-    ) -> RoutingResult {
+    pub async fn deliver_plan(&self, plan: RoutingPlan) -> RoutingResult {
         let mut result = RoutingResult::new();
 
-        if let Some(handle) = self.streamer_handles.get(streamer_id) {
-            let config = config_fn(streamer_id);
-            match handle.send(StreamerMessage::ConfigUpdate(config)).await {
-                Ok(()) => {
-                    debug!("Routed config update to streamer {}", streamer_id);
-                    result.record_success();
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to route config update to streamer {}: {}",
-                        streamer_id, e
-                    );
-                    result.record_failure(streamer_id);
-                }
-            }
-        } else {
-            debug!("Streamer {} not found for config routing", streamer_id);
-        }
-
-        result
-    }
-
-    /// Route a config update to all actors on a platform.
-    ///
-    /// Implements Requirement 3.2: Platform updates go to all actors on platform.
-    async fn route_to_platform(
-        &self,
-        platform_id: &str,
-        streamer_config_fn: &impl Fn(&str) -> StreamerConfig,
-        platform_config_fn: &impl Fn(&str) -> PlatformConfig,
-    ) -> RoutingResult {
-        let mut result = RoutingResult::new();
-
-        // Route to platform actor if it exists
-        if let Some(handle) = self.platform_handles.get(platform_id) {
-            let config = platform_config_fn(platform_id);
-            match handle.send(PlatformMessage::ConfigUpdate(config)).await {
-                Ok(()) => {
-                    debug!("Routed config update to platform actor {}", platform_id);
-                    result.record_success();
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to route config update to platform actor {}: {}",
-                        platform_id, e
-                    );
-                    result.record_failure(format!("platform:{}", platform_id));
-                }
-            }
-        }
-
-        // Route to all streamers on this platform
-        let streamers = self.platform_mapping.streamers_on_platform(platform_id);
-        for streamer_id in streamers {
-            if let Some(handle) = self.streamer_handles.get(streamer_id) {
-                let config = streamer_config_fn(streamer_id);
-                match handle.send(StreamerMessage::ConfigUpdate(config)).await {
+        // Platforms first (matches previous global/platform routing order).
+        for (platform_id, config) in plan.platforms {
+            if let Some(handle) = self.platform_handles.get(&platform_id) {
+                match handle.send(PlatformMessage::ConfigUpdate(config)).await {
                     Ok(()) => {
-                        debug!(
-                            "Routed platform config update to streamer {} on {}",
-                            streamer_id, platform_id
-                        );
+                        debug!("Routed config update to platform actor {}", platform_id);
                         result.record_success();
                     }
                     Err(e) => {
                         warn!(
-                            "Failed to route platform config update to streamer {}: {}",
+                            "Failed to route config update to platform actor {}: {}",
+                            platform_id, e
+                        );
+                        result.record_failure(format!("platform:{}", platform_id));
+                    }
+                }
+            } else {
+                debug!(
+                    "Platform actor {} not found for config routing",
+                    platform_id
+                );
+            }
+        }
+
+        for (streamer_id, config) in plan.streamers {
+            if let Some(handle) = self.streamer_handles.get(&streamer_id) {
+                match handle.send(StreamerMessage::ConfigUpdate(config)).await {
+                    Ok(()) => {
+                        debug!("Routed config update to streamer {}", streamer_id);
+                        result.record_success();
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to route config update to streamer {}: {}",
                             streamer_id, e
                         );
                         result.record_failure(streamer_id);
                     }
                 }
+            } else {
+                debug!("Streamer {} not found for config routing", streamer_id);
             }
         }
-
-        info!(
-            "Routed platform {} config update: {} delivered, {} failed",
-            platform_id, result.delivered, result.failed
-        );
 
         result
     }
 
-    /// Route a config update to all actors globally.
-    ///
-    /// Implements Requirement 3.3: Global updates go to all actors.
-    async fn route_globally(
-        &self,
-        streamer_config_fn: &impl Fn(&str) -> StreamerConfig,
-        platform_config_fn: &impl Fn(&str) -> PlatformConfig,
-    ) -> RoutingResult {
-        let mut result = RoutingResult::new();
-
-        // Route to all platform actors
-        for (platform_id, handle) in self.platform_handles.iter() {
-            let config = platform_config_fn(platform_id);
-            match handle.send(PlatformMessage::ConfigUpdate(config)).await {
-                Ok(()) => {
-                    debug!(
-                        "Routed global config update to platform actor {}",
-                        platform_id
-                    );
-                    result.record_success();
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to route global config update to platform actor {}: {}",
-                        platform_id, e
-                    );
-                    result.record_failure(format!("platform:{}", platform_id));
-                }
-            }
-        }
-
-        // Route to all streamer actors
-        for (streamer_id, handle) in self.streamer_handles.iter() {
-            let config = streamer_config_fn(streamer_id);
-            match handle.send(StreamerMessage::ConfigUpdate(config)).await {
-                Ok(()) => {
-                    debug!("Routed global config update to streamer {}", streamer_id);
-                    result.record_success();
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to route global config update to streamer {}: {}",
-                        streamer_id, e
-                    );
-                    result.record_failure(streamer_id);
-                }
-            }
-        }
-
-        info!(
-            "Routed global config update: {} delivered, {} failed",
-            result.delivered, result.failed
-        );
-
-        result
-    }
+    // NOTE: routing is implemented via `plan_with_scope` + `deliver_plan` to preserve
+    // snapshot semantics for restart cache updates.
 
     /// Get the actors that would receive an update for a given scope.
     ///
