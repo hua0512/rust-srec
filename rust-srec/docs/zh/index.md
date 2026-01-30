@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: Rust-srec
-  text: 自动化直播录制解决方案
-  tagline: 基于 Rust 构建的高性能多平台直播录制系统
+  text: 专业级在线直播录制系统
+  tagline: 基于 Rust 构建，极速、稳定且全自动的多平台直播录制引擎。专业、高效、触手可及。
   actions:
     - theme: brand
       text: 快速开始
@@ -12,6 +12,9 @@ hero:
     - theme: alt
       text: GitHub
       link: https://github.com/hua0512/rust-srec
+  image:
+    src: /stream-rec-orange.svg
+    alt: Rust-srec
 
 features:
   - icon: 🎬

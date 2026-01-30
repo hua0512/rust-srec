@@ -1,0 +1,35 @@
+<svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="body-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e44d26;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f16529;stop-opacity:1" />
+    </linearGradient>
+    <style>
+      @keyframes pulse {
+        0%, 100% { opacity: 0.4; stroke-width: 2; }
+        50% { opacity: 1; stroke-width: 2.5; filter: drop-shadow(0 0 2px #fff); }
+      }
+      @keyframes float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-1px); }
+      }
+      .signal-line {
+        animation: pulse 2s ease-in-out infinite;
+      }
+      .tv-body {
+        animation: float 4s ease-in-out infinite;
+      }
+    </style>
+  </defs>
+
+  <!-- 图标主体 -->
+  <g class="tv-body">
+    <!-- 天线 -->
+    <path d="M17 3L12 8L7 3" stroke="url(#body-gradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- 电视机身 -->
+    <rect x="2" y="7" width="20" height="15" rx="4" fill="url(#body-gradient)"/>
+    
+    <!-- 屏幕折线 (镂空效果) -->
+    <path class="signal-line" d="M9 15.5L11.5 13L13.5 15L16 12.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

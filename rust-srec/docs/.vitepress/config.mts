@@ -13,12 +13,31 @@ export default defineConfig({
         '/env.zh.example',
     ],
 
+    head: [
+        ['link', { rel: 'icon', type: 'image/svg+xml', href: '/stream-rec.svg' }],
+        ['meta', { name: 'theme-color', content: '#e44d26' }],
+        ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
+        ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
+        ['link', { href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap', rel: 'stylesheet' }]
+    ],
+
     locales: {
         en: {
             label: 'English',
             lang: 'en',
             link: '/en/',
             themeConfig: {
+                editLink: {
+                    pattern: 'https://github.com/hua0512/rust-srec/edit/main/rust-srec/docs/:path',
+                    text: 'Edit this page on GitHub'
+                },
+                lastUpdated: {
+                    text: 'Last Updated',
+                    formatOptions: {
+                        dateStyle: 'medium',
+                        timeStyle: 'short'
+                    }
+                },
                 nav: [
                     { text: 'Home', link: '/en/' },
                     { text: 'Getting Started', link: '/en/getting-started/' },
@@ -74,6 +93,17 @@ export default defineConfig({
             lang: 'zh-CN',
             link: '/zh/',
             themeConfig: {
+                editLink: {
+                    pattern: 'https://github.com/hua0512/rust-srec/edit/main/rust-srec/docs/:path',
+                    text: '在 GitHub 上编辑此页'
+                },
+                lastUpdated: {
+                    text: '最后更新于',
+                    formatOptions: {
+                        dateStyle: 'medium',
+                        timeStyle: 'short'
+                    }
+                },
                 nav: [
                     { text: '首页', link: '/zh/' },
                     { text: '快速开始', link: '/zh/getting-started/' },
@@ -127,12 +157,16 @@ export default defineConfig({
     },
 
     themeConfig: {
-        logo: '/stream-rec.svg',
+        logo: '/stream-rec-color.svg',
         socialLinks: [
             { icon: 'github', link: 'https://github.com/hua0512/rust-srec' }
         ],
         search: {
             provider: 'local'
+        },
+        footer: {
+            message: 'Released under the MIT License.',
+            copyright: 'Copyright © 2024-present hua0512'
         }
     }
 })

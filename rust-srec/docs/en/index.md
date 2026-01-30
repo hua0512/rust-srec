@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: Rust-srec
-  text: Automated stream recording solution
-  tagline: A high-performance, multi-platform streaming recorder built with Rust
+  text: Professional Online Streaming Recorder
+  tagline: A blazingly fast, multi-platform recording engine powered by Rust. Stable, efficient, and fully automated.
   actions:
     - theme: brand
       text: Get Started
@@ -12,6 +12,9 @@ hero:
     - theme: alt
       text: View on GitHub
       link: https://github.com/hua0512/rust-srec
+  image:
+    src: /stream-rec-orange.svg
+    alt: Rust-srec
 
 features:
   - icon: 🎬
@@ -29,9 +32,9 @@ features:
   - icon: 💬
     title: Danmaku Support
     details: Capture live chat/danmaku alongside video streams
-  - icon: �
-    title: Containerized Deployment
-    details: Easy deployment with Docker and docker-compose
+  - icon: 🐳
+    title: Container Ready
+    details: Lightweight Docker images for easy deployment and scaling
   - icon: 📅
     title: Customizable Recording Schedules
     details: Schedule recording times and automatically manage file names for easy organization
