@@ -67,6 +67,13 @@ pub enum MonitorEvent {
         streamer_name: String,
         old_state: StreamerState,
         new_state: StreamerState,
+        /// Optional reason for the state change.
+        ///
+        /// This is primarily used for non-terminal state transitions like
+        /// `Live -> OutOfSchedule`, where consumers may want to take action
+        /// (e.g., stop an active download) without conflating it with Offline.
+        #[serde(default)]
+        reason: Option<String>,
         timestamp: DateTime<Utc>,
     },
 }

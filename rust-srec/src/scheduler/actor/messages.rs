@@ -100,6 +100,13 @@ pub enum DownloadEndPolicy {
     /// The actor treats this like an end-of-stream signal, but continues monitoring.
     Stopped(DownloadStopCause),
 
+    /// Recording stopped because the streamer is out of schedule.
+    ///
+    /// This is a policy stop (not an observation that the stream ended). The actor
+    /// should keep the streamer in `OutOfSchedule` state and schedule the next check
+    /// using the filter's smart-wake hint if available.
+    OutOfSchedule,
+
     /// Network error during download (e.g., timeout, connection lost).
     ///
     /// Technical failure that doesn't confirm the streamer is offline. The actor

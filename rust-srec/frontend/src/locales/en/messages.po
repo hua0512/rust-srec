@@ -89,6 +89,14 @@ msgstr "{0, plural, one {# Warning} other {# Warnings}}"
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, one {file} other {files}}"
 
+#. placeholder {0}: day.full
+#. placeholder {0}: p.label
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:158
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:191
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:235
+msgid "{0}"
+msgstr "{0}"
+
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:101
 msgid "{0} Configuration"
@@ -219,7 +227,7 @@ msgstr "Actions"
 msgid "Active"
 msgstr "Active"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:36
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:130
 msgid "Active Days"
 msgstr "Active Days"
 
@@ -2131,11 +2139,14 @@ msgstr "Encoding Preset"
 msgid "Encoding Settings"
 msgstr "Encoding Settings"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:352
+msgid "End"
+msgstr "End"
+
 #: src/components/sessions/timeline-tab.tsx:147
 msgid "End of History"
 msgstr "End of History"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:104
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:599
 msgid "End Time"
 msgstr "End Time"
@@ -2780,10 +2791,6 @@ msgstr "Filename Template"
 msgid "files"
 msgstr "files"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:115
-msgid "Filter applies if current time is between Start and End time."
-msgstr "Filter applies if current time is between Start and End time."
-
 #: src/components/filters/forms/FilterTypeSelector.tsx:19
 msgid "Filter by title keywords"
 msgstr "Filter by title keywords"
@@ -3383,6 +3390,10 @@ msgstr "Inset"
 #: src/components/streamers/card/use-streamer-status.tsx:189
 msgid "Inspecting"
 msgstr "Inspecting"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:210
+msgid "Interactive 24-hour timeline selection."
+msgstr "Interactive 24-hour timeline selection."
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:457
 msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
@@ -5041,6 +5052,10 @@ msgstr "Position"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "Powered by <0>Rust-srec</0>."
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:377
+msgid "Precision Schedule"
+msgstr "Precision Schedule"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:193
 msgid "Prefer Manifest"
 msgstr "Prefer Manifest"
@@ -5121,6 +5136,8 @@ msgstr "Preset updated successfully"
 msgid "presets"
 msgstr "presets"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:147
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:222
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
@@ -5964,7 +5981,7 @@ msgstr "Select strategy"
 msgid "Select template"
 msgstr "Select template"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:39
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:133
 msgid "Select the days required for this filter to apply."
 msgstr "Select the days required for this filter to apply."
 
@@ -6254,6 +6271,10 @@ msgstr "Standard cron expression (sec min hour day mon dow)."
 msgid "Standard protocol for extraction. Recommended for most cases."
 msgstr "Standard protocol for extraction. Recommended for most cases."
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:318
+msgid "Start"
+msgstr "Start"
+
 #: src/components/streamers/config/streamer-general-settings.tsx:260
 msgid "Start checking this streamer immediately."
 msgstr "Start checking this streamer immediately."
@@ -6274,7 +6295,6 @@ msgstr "Start Phone & Code Login"
 msgid "Start QR Login"
 msgstr "Start QR Login"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:539
 msgid "Start Time"
 msgstr "Start Time"
@@ -6692,6 +6712,10 @@ msgstr "Theme Preset"
 msgid "These settings only apply to the desktop app. The server will still deliver channel notifications (Discord/Email/Webhook) normally."
 msgstr "These settings only apply to the desktop app. The server will still deliver channel notifications (Discord/Email/Webhook) normally."
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:380
+msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
+msgstr "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
+
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:298
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
@@ -6777,6 +6801,10 @@ msgstr "Time offset to take screenshot from"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:170
 msgid "Time Placeholders (Local Time)"
 msgstr "Time Placeholders (Local Time)"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:207
+msgid "Time Range"
+msgstr "Time Range"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:226
 msgid "Timeline"

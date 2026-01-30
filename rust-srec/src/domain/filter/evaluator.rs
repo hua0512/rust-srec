@@ -536,13 +536,16 @@ impl FilterEvaluator {
             None => return false,
         };
 
-        // Check if in range
+        // Check if in range.
+        //
+        // The end boundary is exclusive. This matches user expectations for schedules like
+        // "09:00 - 17:00" meaning "stop at 17:00".
         if start <= end {
             // Normal range (e.g., 09:00 - 17:00)
-            current_time >= start && current_time <= end
+            current_time >= start && current_time < end
         } else {
             // Overnight range (e.g., 22:00 - 02:00)
-            current_time >= start || current_time <= end
+            current_time >= start || current_time < end
         }
     }
 
@@ -573,7 +576,7 @@ impl FilterEvaluator {
         }
 
         // We're on the "next day" part of an overnight range
-        current_time <= end
+        current_time < end
     }
 
     fn weekday_to_string(weekday: chrono::Weekday) -> String {

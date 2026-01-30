@@ -38,7 +38,7 @@ use crate::database::repositories::{
     streamer::SqlxStreamerRepository,
     user::SqlxUserRepository,
 };
-use crate::domain::Priority;
+use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
     DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
 };
@@ -2241,6 +2241,65 @@ impl ServiceContainer {
                         Err(e) => {
                             warn!(
                                 "Failed to stop download for streamer {}: {}",
+                                streamer_id, e
+                            );
+                        }
+                    }
+                }
+            }
+            MonitorEvent::StateChanged {
+                streamer_id,
+                streamer_name,
+                new_state: StreamerState::OutOfSchedule,
+                reason,
+                ..
+            } => {
+                // Only stop recording when the state transition is due to schedule.
+                // Title/category mismatch currently also maps to OutOfSchedule, but we
+                // intentionally don't stop downloads for those reasons here.
+                if reason.as_deref() != Some("out_of_schedule") {
+                    return;
+                }
+
+                info!(
+                    "Streamer {} ({}) became OutOfSchedule; stopping active download/danmu if any",
+                    streamer_name, streamer_id
+                );
+
+                // Stop danmu collection if active.
+                if let Some(sid) = danmu_service.get_session_by_streamer(&streamer_id) {
+                    match danmu_service.stop_collection(&sid).await {
+                        Ok(stats) => {
+                            info!(
+                                "Stopped danmu collection for session {}: {} messages collected",
+                                sid, stats.total_count
+                            );
+                        }
+                        Err(e) => {
+                            warn!("Failed to stop danmu collection for session {}: {}", sid, e);
+                        }
+                    }
+                }
+
+                // Stop download if active.
+                if let Some(download_info) = download_manager.get_download_by_streamer(&streamer_id)
+                {
+                    match download_manager
+                        .stop_download_with_reason(
+                            &download_info.id,
+                            crate::downloader::DownloadStopCause::OutOfSchedule,
+                        )
+                        .await
+                    {
+                        Ok(()) => {
+                            info!(
+                                "Stopped download {} for streamer {} (out_of_schedule)",
+                                download_info.id, streamer_id
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to stop download for streamer {} (out_of_schedule): {}",
                                 streamer_id, e
                             );
                         }

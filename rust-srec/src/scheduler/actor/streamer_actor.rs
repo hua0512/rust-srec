@@ -332,7 +332,22 @@ impl StreamerActor {
             if sleep_duration.is_none() && self.state.streamer_state == StreamerState::Live {
                 let watchdog = self.live_watchdog_interval();
                 let stall = self.time_until_live_stall_watchdog();
-                sleep_duration = Some(std::cmp::min(watchdog, stall));
+                let mut next = std::cmp::min(watchdog, stall);
+
+                // Boundary wake: if the last status check provided a hint (e.g. schedule end
+                // time), wake up at that time even while Live.
+                if let Some(ref last) = self.state.last_check
+                    && let Some(hint) = last.next_check_hint
+                {
+                    let now = chrono::Utc::now();
+                    if hint <= now {
+                        next = Duration::ZERO;
+                    } else if let Ok(delay) = hint.signed_duration_since(now).to_std() {
+                        next = std::cmp::min(next, delay);
+                    }
+                }
+
+                sleep_duration = Some(next);
             }
             let check_timer = Self::create_check_timer(sleep_duration);
 
@@ -890,6 +905,7 @@ impl StreamerActor {
     /// | `NetworkError` | Continue monitoring | Preserve | Immediate | Technical issue, verify status quickly to resume if still live |
     /// | `SegmentFailed` | Continue monitoring | Preserve | Immediate | Technical issue, verify status quickly to resume if still live |
     /// | `UserCancelled` | **STOP ACTOR** | N/A | N/A | User explicitly wants to stop monitoring this streamer |
+    /// | `OutOfSchedule` | Continue monitoring | Preserve | Smart wake / normal | Policy stop; streamer may still be live, but recording is not allowed |
     /// | `Other` | Continue monitoring | Preserve | Normal interval | Unknown reason, verify actual state through checks |
     ///
     /// ## StreamerOffline
@@ -963,6 +979,19 @@ impl StreamerActor {
                 // since was_live becomes false.
                 self.state.streamer_state = StreamerState::NotLive;
                 self.state.hysteresis.reset();
+                self.state.schedule_next_check(&self.config, error_count);
+            }
+            DownloadEndPolicy::OutOfSchedule => {
+                // Policy stop: the streamer may still be live, but the recording window ended.
+                // Do NOT publish Offline; the monitor already recorded OutOfSchedule.
+                //
+                // Keep the actor in OutOfSchedule state so schedule_next_check can use the
+                // smart-wake hint (derived from FilterReason::OutOfSchedule).
+                self.state.streamer_state = StreamerState::OutOfSchedule;
+                if !self.state.hysteresis.was_live() {
+                    // Be robust to externally orchestrated downloads where we never observed Live.
+                    self.state.hysteresis.mark_live();
+                }
                 self.state.schedule_next_check(&self.config, error_count);
             }
             DownloadEndPolicy::StreamerOffline | DownloadEndPolicy::Stopped(_) => {
@@ -1598,6 +1627,7 @@ mod tests {
                 streams: vec![],
                 media_headers: None,
                 media_extras: None,
+                next_check_hint: None,
             },
         };
         handle

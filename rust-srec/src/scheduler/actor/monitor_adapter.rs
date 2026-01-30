@@ -273,13 +273,17 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
     use crate::domain::StreamerState;
 
     match status {
-        LiveStatus::Live { title, .. } => CheckResult {
+        LiveStatus::Live {
+            title,
+            next_check_hint,
+            ..
+        } => CheckResult {
             state: StreamerState::Live,
             stream_url: None,
             title: Some(title.clone()),
             checked_at: chrono::Utc::now(),
             error: None,
-            next_check_hint: None,
+            next_check_hint: *next_check_hint,
         },
         LiveStatus::Offline => CheckResult::success(StreamerState::NotLive),
         LiveStatus::Filtered { reason, title, .. } => {

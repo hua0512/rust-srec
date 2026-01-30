@@ -251,6 +251,8 @@ pub enum DownloadStopCause {
     StreamerOffline,
     /// Danmu stream emitted `StreamClosed` and we stop the download promptly.
     DanmuStreamClosed,
+    /// The streamer is live but recording is no longer allowed (schedule window ended).
+    OutOfSchedule,
     /// Streamer was disabled/deleted; downloads are stopped as part of cleanup.
     StreamerDisabled,
     /// Application shutdown.
@@ -265,6 +267,7 @@ impl DownloadStopCause {
             Self::User => "user",
             Self::StreamerOffline => "streamer_offline",
             Self::DanmuStreamClosed => "danmu_stream_closed",
+            Self::OutOfSchedule => "out_of_schedule",
             Self::StreamerDisabled => "streamer_disabled",
             Self::Shutdown => "shutdown",
             Self::Other(_) => "other",

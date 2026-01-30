@@ -43,6 +43,13 @@ pub enum LiveStatus {
         media_headers: Option<HashMap<String, String>>,
         /// Additional platform-specific metadata extracted from MediaInfo.extras.
         media_extras: Option<HashMap<String, String>>,
+
+        /// Hint for when to check next (used for boundary wakes).
+        ///
+        /// This is currently used to stop recording exactly at the end of a time-based
+        /// schedule window while a download is active.
+        #[serde(default)]
+        next_check_hint: Option<DateTime<Utc>>,
     },
     /// Streamer is offline.
     Offline,
@@ -486,6 +493,7 @@ impl StreamDetector {
                 streams,
                 media_headers,
                 media_extras,
+                next_check_hint: None,
             })
         } else {
             trace!(
@@ -535,6 +543,7 @@ impl StreamDetector {
         } = &status
         {
             let now = Utc::now();
+            let mut next_check_hint: Option<DateTime<Utc>> = None;
 
             for filter in filters {
                 let matches = filter.matches(title, category.as_deref().unwrap_or(""), now);
@@ -556,6 +565,44 @@ impl StreamDetector {
                         category: category.clone(),
                     });
                 }
+
+                // If the filter is time-based and currently matches, compute the end boundary
+                // so the scheduler can perform a boundary wake while Live.
+                if (filter.filter_type() == FilterType::TimeBased
+                    || filter.filter_type() == FilterType::Cron)
+                    && let Some(end_at) = filter.next_unmatch_time(now)
+                {
+                    next_check_hint = match next_check_hint {
+                        Some(existing) => Some(std::cmp::min(existing, end_at)),
+                        None => Some(end_at),
+                    };
+                }
+            }
+
+            // Attach the hint to the live status.
+            if let LiveStatus::Live {
+                title,
+                category,
+                started_at,
+                viewer_count,
+                avatar,
+                streams,
+                media_headers,
+                media_extras,
+                ..
+            } = status
+            {
+                return Ok(LiveStatus::Live {
+                    title,
+                    category,
+                    started_at,
+                    viewer_count,
+                    avatar,
+                    streams,
+                    media_headers,
+                    media_extras,
+                    next_check_hint,
+                });
             }
         }
 
@@ -623,6 +670,7 @@ mod tests {
             streams: vec![create_test_stream()],
             media_headers: None,
             media_extras: None,
+            next_check_hint: None,
         };
         assert!(status.is_live());
         assert!(!status.is_offline());
@@ -662,6 +710,7 @@ mod tests {
             streams: vec![create_test_stream()],
             media_headers: None,
             media_extras: None,
+            next_check_hint: None,
         };
         assert_eq!(live.title(), Some("Live Title"));
 
@@ -699,6 +748,7 @@ mod tests {
                 streams: vec![create_test_stream()],
                 media_headers: None,
                 media_extras: None,
+                next_check_hint: None,
             }
             .is_fatal_error()
         );

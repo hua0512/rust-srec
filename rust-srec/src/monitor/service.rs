@@ -1032,11 +1032,24 @@ impl<
         _title: String,
         _category: Option<String>,
     ) -> Result<()> {
-        let new_state = match reason {
-            FilterReason::OutOfSchedule { .. } => StreamerState::OutOfSchedule,
-            FilterReason::TitleMismatch | FilterReason::CategoryMismatch => {
-                // For title/category mismatch, we still consider it "out of schedule"
-                StreamerState::OutOfSchedule
+        let (new_state, state_change_reason) = match reason {
+            FilterReason::OutOfSchedule { .. } => (
+                StreamerState::OutOfSchedule,
+                Some("out_of_schedule".to_string()),
+            ),
+            FilterReason::TitleMismatch => {
+                // For title/category mismatch, we still consider it "out of schedule".
+                (
+                    StreamerState::OutOfSchedule,
+                    Some("title_mismatch".to_string()),
+                )
+            }
+            FilterReason::CategoryMismatch => {
+                // For title/category mismatch, we still consider it "out of schedule".
+                (
+                    StreamerState::OutOfSchedule,
+                    Some("category_mismatch".to_string()),
+                )
             }
         };
 
@@ -1056,6 +1069,19 @@ impl<
 
         let mut tx = self.begin_immediate().await?;
 
+        // If the streamer is filtered due to schedule, end any active session.
+        //
+        // This supports time-based filters: when the schedule window ends while we are
+        // actively recording, we intentionally end the session (without pretending the
+        // stream went offline) and suppress session resumption by gap when the schedule
+        // opens again.
+        let ended_session_id = match reason {
+            FilterReason::OutOfSchedule { .. } => {
+                SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?
+            }
+            _ => None,
+        };
+
         StreamerTxOps::update_state(&mut tx, &streamer.id, &new_state.to_string()).await?;
 
         // Enqueue a state change event (non-notifying) so consumers see the same ordering/guarantees
@@ -1065,11 +1091,16 @@ impl<
             streamer_name: streamer.name.clone(),
             old_state: streamer.state,
             new_state,
+            reason: state_change_reason,
             timestamp: now,
         };
         MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
 
         tx.commit().await?;
+
+        if let Some(ref session_id) = ended_session_id {
+            self.mark_session_hard_ended(&streamer.id, session_id);
+        }
 
         self.reload_streamer_cache(&streamer.id, "state update")
             .await;
@@ -1394,6 +1425,7 @@ mod tests {
             }],
             media_headers: None,
             media_extras: None,
+            next_check_hint: None,
         };
         assert_eq!(status_summary(&live_status), "Live");
 

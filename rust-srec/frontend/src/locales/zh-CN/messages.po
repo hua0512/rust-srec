@@ -89,6 +89,14 @@ msgstr "{0, plural, other {# 个警告}}"
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, other {个文件}}"
 
+#. placeholder {0}: day.full
+#. placeholder {0}: p.label
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:158
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:191
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:235
+msgid "{0}"
+msgstr "{0}"
+
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:101
 msgid "{0} Configuration"
@@ -219,7 +227,7 @@ msgstr "操作"
 msgid "Active"
 msgstr "启用"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:36
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:130
 msgid "Active Days"
 msgstr "生效日期"
 
@@ -2131,11 +2139,14 @@ msgstr "编码预设"
 msgid "Encoding Settings"
 msgstr "编码设置"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:352
+msgid "End"
+msgstr "结束"
+
 #: src/components/sessions/timeline-tab.tsx:147
 msgid "End of History"
 msgstr "历史结束"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:104
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:599
 msgid "End Time"
 msgstr "结束时间"
@@ -2780,10 +2791,6 @@ msgstr "文件名模板"
 msgid "files"
 msgstr "文件"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:115
-msgid "Filter applies if current time is between Start and End time."
-msgstr "当当前时间在开始与结束时间之间时应用过滤器。"
-
 #: src/components/filters/forms/FilterTypeSelector.tsx:19
 msgid "Filter by title keywords"
 msgstr "按标题关键字过滤"
@@ -3383,6 +3390,10 @@ msgstr "嵌入"
 #: src/components/streamers/card/use-streamer-status.tsx:189
 msgid "Inspecting"
 msgstr "检查中"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:210
+msgid "Interactive 24-hour timeline selection."
+msgstr "24小时交互式时间线选择。"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:457
 msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
@@ -5041,6 +5052,10 @@ msgstr "位置"
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "由 <0>Rust-srec</0> 提供支持。"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:377
+msgid "Precision Schedule"
+msgstr "精确时间表"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:193
 msgid "Prefer Manifest"
 msgstr "优先使用清单"
@@ -5121,6 +5136,8 @@ msgstr "预设更新成功"
 msgid "presets"
 msgstr "预设"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:147
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:222
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
@@ -5964,7 +5981,7 @@ msgstr "选择策略"
 msgid "Select template"
 msgstr "选择模板"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:39
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:133
 msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
@@ -6254,6 +6271,10 @@ msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 msgid "Standard protocol for extraction. Recommended for most cases."
 msgstr "提取的标准协议。推荐用于大多数情况。"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:318
+msgid "Start"
+msgstr "开始"
+
 #: src/components/streamers/config/streamer-general-settings.tsx:260
 msgid "Start checking this streamer immediately."
 msgstr "立即开始检查此主播。"
@@ -6274,7 +6295,6 @@ msgstr "开始手机号和验证码登录"
 msgid "Start QR Login"
 msgstr "开始二维码登录"
 
-#: src/components/filters/forms/TimeBasedFilterForm.tsx:81
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:539
 msgid "Start Time"
 msgstr "开始时间"
@@ -6692,6 +6712,10 @@ msgstr "主题预设"
 msgid "These settings only apply to the desktop app. The server will still deliver channel notifications (Discord/Email/Webhook) normally."
 msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道通知（Discord/电子邮件/Webhook）。"
 
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:380
+msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
+msgstr "此过滤器仅在时间线上突出显示的窗口期间激活。如果开始时间在结束时间之后，窗口将自动跨越午夜。"
+
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:298
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
@@ -6777,6 +6801,10 @@ msgstr "截图时间偏移"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:170
 msgid "Time Placeholders (Local Time)"
 msgstr "时间占位符（本地时间）"
+
+#: src/components/filters/forms/TimeBasedFilterForm.tsx:207
+msgid "Time Range"
+msgstr "时间范围"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.tsx:226
 msgid "Timeline"
