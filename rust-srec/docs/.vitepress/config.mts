@@ -33,7 +33,8 @@ export default defineConfig({
                                 { text: 'Introduction', link: '/en/getting-started/' },
                                 { text: 'Installation', link: '/en/getting-started/installation' },
                                 { text: 'Docker', link: '/en/getting-started/docker' },
-                                { text: 'Configuration', link: '/en/getting-started/configuration' }
+                                { text: 'Configuration', link: '/en/getting-started/configuration' },
+                                { text: 'FAQ', link: '/en/getting-started/faq' }
                             ]
                         },
                         {
@@ -86,7 +87,8 @@ export default defineConfig({
                                 { text: '介绍', link: '/zh/getting-started/' },
                                 { text: '安装', link: '/zh/getting-started/installation' },
                                 { text: 'Docker 部署', link: '/zh/getting-started/docker' },
-                                { text: '配置', link: '/zh/getting-started/configuration' }
+                                { text: '配置', link: '/zh/getting-started/configuration' },
+                                { text: '常见问题', link: '/zh/getting-started/faq' }
                             ]
                         },
                         {
