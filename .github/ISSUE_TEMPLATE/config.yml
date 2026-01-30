@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://hua0512.github.io/rust-srec/
+    about: Read setup, configuration, and architecture docs.
+  - name: Getting Started
+    url: https://hua0512.github.io/rust-srec/en/getting-started/
+    about: Installation and first-run instructions.

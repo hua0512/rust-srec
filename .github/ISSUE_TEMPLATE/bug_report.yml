@@ -1,0 +1,98 @@
+name: Bug report
+description: Report a bug or regression.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting!
+
+        Security note: please **redact secrets** (tokens, cookies, private URLs, stream keys, passwords) before posting logs/screenshots.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety / privacy
+      options:
+        - label: I confirm I removed or masked secrets and sensitive data from the issue (tokens/cookies/stream keys/passwords/private URLs)
+          required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part is affected?
+      options:
+        - Backend (rust-srec)
+        - Web UI (rust-srec/frontend)
+        - Desktop (rust-srec/src-tauri)
+        - CLI (strev)
+        - CLI (mesio)
+        - Workspace crate (crates/*)
+        - Docker / deployment
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Release version (vX.Y.Z) or git SHA.
+      placeholder: v0.1.0 or b97fc463
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS + arch + tool versions.
+      placeholder: Windows 11 x64, rustc 1.xx, node 22, pnpm 10.xx
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the issue.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Paste relevant logs (with secrets removed). Use fenced code blocks.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, config snippets (redacted), related issues, etc.
+    validations:
+      required: false

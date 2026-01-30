@@ -16,6 +16,7 @@ A production-ready, automated stream recording solution built with Rust.
 - Installation (binaries / from source): https://hua0512.github.io/rust-srec/en/getting-started/installation
 - Configuration: https://hua0512.github.io/rust-srec/en/getting-started/configuration
 - Architecture overview: https://hua0512.github.io/rust-srec/en/concepts/architecture
+- Engines: https://hua0512.github.io/rust-srec/en/concepts/engines
 - FAQ: https://hua0512.github.io/rust-srec/en/getting-started/faq
 
 ## What’s in this repo
