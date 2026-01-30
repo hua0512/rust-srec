@@ -425,6 +425,16 @@ where
         self.cache.invalidate(streamer_id);
     }
 
+    pub fn notify_streamer_filters_updated(&self, streamer_id: &str) {
+        // Filters are stored separately from merged config, but changes should still invalidate
+        // streamer config and trigger a scheduler re-check (OutOfSchedule smart-wake).
+        self.invalidate_streamer(streamer_id);
+        self.broadcaster
+            .publish(ConfigUpdateEvent::StreamerFiltersUpdated {
+                streamer_id: streamer_id.to_string(),
+            });
+    }
+
     /// Invalidate cached configs for all streamers on a platform.
     pub async fn invalidate_platform(&self, platform_id: &str) -> Result<()> {
         self.invalidate_streamers_by_platform(platform_id).await

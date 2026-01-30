@@ -71,6 +71,12 @@ pub enum ConfigUpdateEvent {
         /// Whether the streamer is now active (can be monitored).
         is_active: bool,
     },
+
+    /// Streamer filters were created/updated/deleted.
+    ///
+    /// Filters are stored separately from the main config/templates and can affect scheduling
+    /// decisions (e.g. OutOfSchedule smart-wake). Emit this to force a re-check for the streamer.
+    StreamerFiltersUpdated { streamer_id: String },
 }
 
 impl ConfigUpdateEvent {
@@ -101,6 +107,9 @@ impl ConfigUpdateEvent {
                     "Streamer state synced from DB: {} (active={})",
                     streamer_id, is_active
                 )
+            }
+            Self::StreamerFiltersUpdated { streamer_id } => {
+                format!("Streamer filters updated: {}", streamer_id)
             }
         }
     }
@@ -252,6 +261,7 @@ impl std::hash::Hash for ConfigUpdateEvent {
                 streamer_id.hash(state);
                 is_active.hash(state);
             }
+            ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => streamer_id.hash(state),
         }
     }
 }

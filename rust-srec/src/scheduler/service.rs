@@ -659,6 +659,15 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     async fn handle_config_event(&mut self, event: ConfigUpdateEvent) {
         debug!("Handling config event: {}", event.description());
 
+        // Filters can affect OutOfSchedule smart-wake hints. Force a fresh check soon so the
+        // StreamerActor picks up the new filter behavior immediately.
+        if let ConfigUpdateEvent::StreamerFiltersUpdated { ref streamer_id } = event {
+            if let Some(handle) = self.supervisor.registry().get_streamer(streamer_id) {
+                let _ = handle.send(StreamerMessage::CheckStatus).await;
+            }
+            // Also route a config update so timing/priority changes still apply if any.
+        }
+
         if matches!(event, ConfigUpdateEvent::GlobalUpdated) {
             match self.refresh_timing_config_from_db().await {
                 Ok(true) => {}
