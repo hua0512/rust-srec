@@ -59,6 +59,7 @@ export default defineConfig({
                             text: 'Concepts',
                             items: [
                                 { text: 'Architecture', link: '/en/concepts/architecture' },
+                                { text: 'Engines', link: '/en/concepts/engines' },
                                 { text: 'Configuration Layers', link: '/en/concepts/configuration' },
                                 { text: 'DAG Pipeline', link: '/en/concepts/pipeline' },
                                 { text: 'Notification System', link: '/en/concepts/notifications' }
@@ -113,6 +114,7 @@ export default defineConfig({
                             text: '核心概念',
                             items: [
                                 { text: '系统架构', link: '/zh/concepts/architecture' },
+                                { text: '下载引擎', link: '/zh/concepts/engines' },
                                 { text: '配置层级', link: '/zh/concepts/configuration' },
                                 { text: 'DAG 管道', link: '/zh/concepts/pipeline' },
                                 { text: '通知系统', link: '/zh/concepts/notifications' }
