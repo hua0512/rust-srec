@@ -39,7 +39,7 @@ msgstr "-reconnect 1"
 msgid "(Delete source)"
 msgstr "(Delete source)"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:365
+#: src/routes/_authed/_dashboard/config/logging.tsx:338
 msgid "(empty)"
 msgstr "(empty)"
 
@@ -247,7 +247,7 @@ msgstr "Adaptive Refresh (Default: On)"
 msgid "Add"
 msgstr "Add"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:353
+#: src/routes/_authed/_dashboard/config/logging.tsx:326
 msgid "Add a module above to configure its log level"
 msgstr "Add a module above to configure its log level"
 
@@ -311,7 +311,7 @@ msgstr "Add Metadata"
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "Add metadata tags (title, artist, date) to the video file."
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:259
+#: src/routes/_authed/_dashboard/config/logging.tsx:232
 msgid "Add module..."
 msgstr "Add module..."
 
@@ -807,6 +807,10 @@ msgstr "Bot Name"
 msgid "Brand Colors"
 msgstr "Brand Colors"
 
+#: src/components/logging/log-file-browser.tsx:242
+msgid "Browse and download application log files. Filter by date range or download all."
+msgstr "Browse and download application log files. Filter by date range or download all."
+
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:160
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "Browse generated media artifacts from pipeline jobs"
@@ -1267,7 +1271,7 @@ msgstr "Context"
 msgid "Continue on Error"
 msgstr "Continue on Error"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:237
+#: src/routes/_authed/_dashboard/config/logging.tsx:219
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "Control verbosity for each module. Lower levels include higher ones."
 
@@ -1499,7 +1503,7 @@ msgstr "Cron"
 msgid "Cron Expression"
 msgstr "Cron Expression"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:362
+#: src/routes/_authed/_dashboard/config/logging.tsx:335
 msgid "Current Filter Directive"
 msgstr "Current Filter Directive"
 
@@ -1617,13 +1621,17 @@ msgstr "Dashboard"
 msgid "Database"
 msgstr "Database"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:71
+#: src/routes/_authed/_dashboard/config/logging.tsx:67
 msgid "Database queries"
 msgstr "Database queries"
 
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:206
 msgid "Date"
 msgstr "Date"
+
+#: src/components/logging/log-file-browser.tsx:382
+msgid "Date range:"
+msgstr "Date range:"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:190
 msgid "Day (01-31)"
@@ -1888,9 +1896,22 @@ msgstr "Down"
 msgid "Download"
 msgstr "Download"
 
+#. placeholder {0}: file.filename
+#: src/components/logging/log-file-browser.tsx:456
+msgid "Download {0}"
+msgstr "Download {0}"
+
+#: src/components/logging/log-file-browser.tsx:316
+msgid "Download All"
+msgstr "Download All"
+
 #: src/components/config/global/backup-restore-card.tsx:247
 msgid "Download Backup"
 msgstr "Download Backup"
+
+#: src/components/logging/log-file-browser.tsx:342
+msgid "Download complete"
+msgstr "Download complete"
 
 #. placeholder {0}: inner.path || inner.title || 'unknown'
 #: src/routes/_authed/_dashboard/notifications/events.tsx:526
@@ -1909,7 +1930,7 @@ msgstr "Download Delay"
 msgid "Download Engine"
 msgstr "Download Engine"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:64
+#: src/routes/_authed/_dashboard/config/logging.tsx:60
 msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
@@ -1917,10 +1938,6 @@ msgstr "Download engine (mesio)"
 #: src/routes/_authed/_dashboard/notifications/events.tsx:529
 msgid "Download failed: {0}"
 msgstr "Download failed: {0}"
-
-#: src/routes/_authed/_dashboard/config/logging.tsx:252
-msgid "Download Logs"
-msgstr "Download Logs"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:248
 #: src/routes/_authed/_dashboard/system/health.tsx:327
@@ -1939,6 +1956,15 @@ msgstr "Download started: {0}"
 #: src/components/streamers/edit/active-download-card.tsx:40
 msgid "Downloading"
 msgstr "Downloading"
+
+#. placeholder {0}: file.filename
+#: src/components/logging/log-file-browser.tsx:213
+msgid "Downloading {0}"
+msgstr "Downloading {0}"
+
+#: src/components/logging/log-file-browser.tsx:346
+msgid "Downloading..."
+msgstr "Downloading..."
 
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:272
 msgid "Drag from edge to link steps"
@@ -2554,6 +2580,14 @@ msgstr "Failed to delete workflow: {0}"
 msgid "Failed to disable Web Push"
 msgstr "Failed to disable Web Push"
 
+#: src/components/logging/log-file-browser.tsx:217
+msgid "Failed to download file"
+msgstr "Failed to download file"
+
+#: src/components/logging/log-file-browser.tsx:194
+msgid "Failed to download logs"
+msgstr "Failed to download logs"
+
 #: src/routes/_authed/_dashboard/notifications/index.tsx:274
 msgid "Failed to enable Web Push"
 msgstr "Failed to enable Web Push"
@@ -2566,10 +2600,6 @@ msgstr "Failed to export configuration"
 #: src/hooks/use-edit-streamer.ts:117
 msgid "Failed to extract name from URL"
 msgstr "Failed to extract name from URL"
-
-#: src/routes/_authed/_dashboard/config/logging.tsx:208
-msgid "Failed to get download URL"
-msgstr "Failed to get download URL"
 
 #: src/components/config/global/backup-restore-card.tsx:120
 msgid "Failed to import configuration"
@@ -2670,7 +2700,7 @@ msgstr "Failed to update channel"
 msgid "Failed to update filter"
 msgstr "Failed to update filter"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:164
+#: src/routes/_authed/_dashboard/config/logging.tsx:160
 msgid "Failed to update logging configuration"
 msgstr "Failed to update logging configuration"
 
@@ -2787,6 +2817,7 @@ msgstr "Filename pattern (e.g., thumb.jpg)"
 msgid "Filename Template"
 msgstr "Filename Template"
 
+#: src/components/logging/log-file-browser.tsx:237
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:178
 msgid "files"
 msgstr "files"
@@ -2875,11 +2906,11 @@ msgstr "Floating"
 msgid "Flow & Dependencies"
 msgstr "Flow & Dependencies"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:65
+#: src/routes/_authed/_dashboard/config/logging.tsx:61
 msgid "FLV parser"
 msgstr "FLV parser"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:66
+#: src/routes/_authed/_dashboard/config/logging.tsx:62
 msgid "FLV stream fixing pipeline"
 msgstr "FLV stream fixing pipeline"
 
@@ -3157,11 +3188,11 @@ msgstr "High+"
 msgid "History Retention"
 msgstr "History Retention"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:67
+#: src/routes/_authed/_dashboard/config/logging.tsx:63
 msgid "HLS parser"
 msgstr "HLS parser"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:68
+#: src/routes/_authed/_dashboard/config/logging.tsx:64
 msgid "HLS stream fixing pipeline"
 msgstr "HLS stream fixing pipeline"
 
@@ -3191,11 +3222,11 @@ msgstr "How to pair video files with .ass subtitles"
 msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
 msgstr "HTTP cookies for authentication. These are automatically updated when refreshed."
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:73
+#: src/routes/_authed/_dashboard/config/logging.tsx:69
 msgid "HTTP middleware"
 msgstr "HTTP middleware"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:72
+#: src/routes/_authed/_dashboard/config/logging.tsx:68
 msgid "HTTP requests"
 msgstr "HTTP requests"
 
@@ -3651,6 +3682,10 @@ msgstr "Loading workflows..."
 msgid "Local Archive"
 msgstr "Local Archive"
 
+#: src/components/logging/log-file-browser.tsx:234
+msgid "Log Files"
+msgstr "Log Files"
+
 #: src/routes/_authed/_dashboard/config/route.tsx:77
 msgid "Log levels & modules"
 msgstr "Log levels & modules"
@@ -3663,7 +3698,7 @@ msgstr "Logged in successfully"
 msgid "Logging"
 msgstr "Logging"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:158
+#: src/routes/_authed/_dashboard/config/logging.tsx:154
 msgid "Logging configuration updated"
 msgstr "Logging configuration updated"
 
@@ -3705,6 +3740,10 @@ msgstr "Login Type"
 msgid "Logs"
 msgstr "Logs"
 
+#: src/components/logging/log-file-browser.tsx:179
+msgid "Logs downloaded successfully"
+msgstr "Logs downloaded successfully"
+
 #: src/components/config/engines/forms/mesio-form.tsx:148
 msgid "Loop Protection"
 msgstr "Loop Protection"
@@ -3721,7 +3760,7 @@ msgstr "Low"
 msgid "Lower value = Higher Quality"
 msgstr "Lower value = Higher Quality"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:63
+#: src/routes/_authed/_dashboard/config/logging.tsx:59
 msgid "Main application"
 msgstr "Main application"
 
@@ -3978,7 +4017,7 @@ msgstr "Minute (00-59)"
 msgid "Modify the parameters for this processing step."
 msgstr "Modify the parameters for this processing step."
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:234
+#: src/routes/_authed/_dashboard/config/logging.tsx:216
 msgid "Module Log Levels"
 msgstr "Module Log Levels"
 
@@ -4203,6 +4242,10 @@ msgstr "No keywords set"
 msgid "No limit"
 msgstr "No limit"
 
+#: src/components/logging/log-file-browser.tsx:416
+msgid "No log files found"
+msgstr "No log files found"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:792
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
@@ -4227,7 +4270,7 @@ msgstr "No media outputs yet"
 msgid "No metadata tags added"
 msgstr "No metadata tags added"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:350
+#: src/routes/_authed/_dashboard/config/logging.tsx:323
 msgid "No modules configured"
 msgstr "No modules configured"
 
@@ -4970,7 +5013,7 @@ msgstr "Platform Overrides"
 msgid "Platform Specific Configuration"
 msgstr "Platform Specific Configuration"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:69
+#: src/routes/_authed/_dashboard/config/logging.tsx:65
 msgid "Platform URL extractors"
 msgstr "Platform URL extractors"
 
@@ -5558,7 +5601,7 @@ msgstr "Required if the stream is password-protected by the broadcaster."
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:387
+#: src/routes/_authed/_dashboard/config/logging.tsx:369
 #: src/routes/_authed/_dashboard/config/theme.tsx:105
 msgid "Reset"
 msgstr "Reset"
@@ -5761,7 +5804,7 @@ msgstr "Sanitized streamer name"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:543
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
 #: src/routes/_authed/_dashboard/config/global.tsx:90
-#: src/routes/_authed/_dashboard/config/logging.tsx:398
+#: src/routes/_authed/_dashboard/config/logging.tsx:380
 msgid "Save Changes"
 msgstr "Save Changes"
 
@@ -5779,7 +5822,7 @@ msgstr "Save Workflow"
 #: src/components/pipeline/workflows/workflow-editor.tsx:272
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
 #: src/routes/_authed/_dashboard/config/global.tsx:90
-#: src/routes/_authed/_dashboard/config/logging.tsx:397
+#: src/routes/_authed/_dashboard/config/logging.tsx:379
 msgid "Saving..."
 msgstr "Saving..."
 
@@ -5947,6 +5990,10 @@ msgstr "Select codec"
 #: src/components/streamers/config/streamer-general-settings.tsx:154
 msgid "Select config"
 msgstr "Select config"
+
+#: src/components/logging/log-file-browser.tsx:271
+msgid "Select date range"
+msgstr "Select date range"
 
 #: src/components/config/global/backup-restore-card.tsx:281
 msgid "Select File"
@@ -6143,7 +6190,7 @@ msgstr "Settings updated successfully"
 msgid "Shadcn UI Theme Presets"
 msgstr "Shadcn UI Theme Presets"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:70
+#: src/routes/_authed/_dashboard/config/logging.tsx:66
 msgid "Shared pipeline utilities"
 msgstr "Shared pipeline utilities"
 
@@ -6867,6 +6914,10 @@ msgstr "Total"
 msgid "Total Size"
 msgstr "Total Size"
 
+#: src/components/logging/log-file-browser.tsx:374
+msgid "Total size:"
+msgstr "Total size:"
+
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:290
 msgid "Total Steps"
 msgstr "Total Steps"
@@ -6965,6 +7016,10 @@ msgstr "Triggered when video and danmu are available"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:525
 msgid "Trimming & Time"
 msgstr "Trimming & Time"
+
+#: src/components/logging/log-file-browser.tsx:420
+msgid "Try adjusting the date range"
+msgstr "Try adjusting the date range"
 
 #: src/routes/_authed/_dashboard/notifications/events.tsx:342
 msgid "Try adjusting your filters or limit"

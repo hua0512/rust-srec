@@ -64,3 +64,29 @@ export function serializeFilterDirective(filters: ModuleFilter[]): string {
     .map((f) => `${f.module}=${f.level}`)
     .join(',');
 }
+
+// --- Log Files Schemas ---
+
+/** Log file info from API */
+export const LogFileInfoSchema = z.object({
+  date: z.string(),
+  filename: z.string(),
+  size_bytes: z.number(),
+});
+export type LogFileInfo = z.infer<typeof LogFileInfoSchema>;
+
+/** Log files list response */
+export const LogFilesResponseSchema = z.object({
+  items: z.array(LogFileInfoSchema),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+});
+export type LogFilesResponse = z.infer<typeof LogFilesResponseSchema>;
+
+/** Archive token response */
+export const ArchiveTokenResponseSchema = z.object({
+  token: z.string(),
+  expires_at: z.string(),
+});
+export type ArchiveTokenResponse = z.infer<typeof ArchiveTokenResponseSchema>;
