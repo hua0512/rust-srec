@@ -1,68 +1,68 @@
-import { memo, useMemo } from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
-import { Globe, Activity, Link2 } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
-import { Button } from '@/components/ui/button';
-import { EventIcon } from './event-icon';
-import { PayloadPreview } from './payload-preview';
+import { memo, useMemo } from "react";
+import { formatDistanceToNow } from "date-fns";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Globe, Activity, Link2 } from "lucide-react";
+import { Trans } from "@lingui/react/macro";
+import { Button } from "@/components/ui/button";
+import { EventIcon } from "./event-icon";
+import { PayloadPreview } from "./payload-preview";
 
 export const getPriorityStyles = (priority: string) => {
   switch (priority.toLowerCase()) {
-    case 'critical':
+    case "critical":
       return {
-        bg: 'bg-destructive/5 dark:bg-destructive/10',
-        border: 'border-destructive/20 group-hover:border-destructive/40',
-        text: 'text-destructive',
-        badge: 'bg-destructive/10 text-destructive border-destructive/20',
-        icon: 'bg-destructive/10 text-destructive',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(239,68,68,0.15)]',
-        flare: 'from-destructive/20 to-transparent',
+        bg: "bg-destructive/5 dark:bg-destructive/10",
+        border: "border-destructive/20 group-hover:border-destructive/40",
+        text: "text-destructive",
+        badge: "bg-destructive/10 text-destructive border-destructive/20",
+        icon: "bg-destructive/10 text-destructive",
+        glow: "group-hover:shadow-[0_0_20px_rgba(239,68,68,0.15)]",
+        flare: "from-destructive/20 to-transparent",
       };
-    case 'high':
+    case "high":
       return {
-        bg: 'bg-orange-500/5 dark:bg-orange-500/10',
-        border: 'border-orange-500/20 group-hover:border-orange-500/40',
-        text: 'text-orange-600 dark:text-orange-400',
+        bg: "bg-orange-500/5 dark:bg-orange-500/10",
+        border: "border-orange-500/20 group-hover:border-orange-500/40",
+        text: "text-orange-600 dark:text-orange-400",
         badge:
-          'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
-        icon: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(249,115,22,0.15)]',
-        flare: 'from-orange-500/20 to-transparent',
+          "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20",
+        icon: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+        glow: "group-hover:shadow-[0_0_20px_rgba(249,115,22,0.15)]",
+        flare: "from-orange-500/20 to-transparent",
       };
-    case 'normal':
+    case "normal":
       return {
-        bg: 'bg-blue-500/5 dark:bg-blue-500/10',
-        border: 'border-blue-500/20 group-hover:border-blue-500/40',
-        text: 'text-blue-600 dark:text-blue-400',
+        bg: "bg-blue-500/5 dark:bg-blue-500/10",
+        border: "border-blue-500/20 group-hover:border-blue-500/40",
+        text: "text-blue-600 dark:text-blue-400",
         badge:
-          'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
-        icon: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]',
-        flare: 'from-blue-500/20 to-transparent',
+          "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+        icon: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+        glow: "group-hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]",
+        flare: "from-blue-500/20 to-transparent",
       };
-    case 'low':
+    case "low":
       return {
-        bg: 'bg-slate-500/5 dark:bg-slate-500/10',
-        border: 'border-slate-500/20 group-hover:border-slate-500/40',
-        text: 'text-slate-600 dark:text-slate-400',
+        bg: "bg-slate-500/5 dark:bg-slate-500/10",
+        border: "border-slate-500/20 group-hover:border-slate-500/40",
+        text: "text-slate-600 dark:text-slate-400",
         badge:
-          'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
-        icon: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(100,116,139,0.15)]',
-        flare: 'from-slate-500/20 to-transparent',
+          "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
+        icon: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
+        glow: "group-hover:shadow-[0_0_20px_rgba(100,116,139,0.15)]",
+        flare: "from-slate-500/20 to-transparent",
       };
     default:
       return {
-        bg: 'bg-slate-500/5 dark:bg-slate-500/10',
-        border: 'border-slate-500/20 group-hover:border-slate-500/40',
-        text: 'text-slate-600 dark:text-slate-400',
+        bg: "bg-slate-500/5 dark:bg-slate-500/10",
+        border: "border-slate-500/20 group-hover:border-slate-500/40",
+        text: "text-slate-600 dark:text-slate-400",
         badge:
-          'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
-        icon: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(100,116,139,0.15)]',
-        flare: 'from-slate-500/20 to-transparent',
+          "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
+        icon: "bg-slate-500/10 text-slate-600 dark:text-slate-400",
+        glow: "group-hover:shadow-[0_0_20px_rgba(100,116,139,0.15)]",
+        flare: "from-slate-500/20 to-transparent",
       };
   }
 };
@@ -87,24 +87,24 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
     () => getPriorityStyles(event.priority),
     [event.priority],
   );
-  const displayTitle = event.event_type.replace(/_/g, ' ');
+  const displayTitle = event.event_type.replace(/_/g, " ");
 
   return (
     <div
       className={cn(
-        'group relative flex flex-col gap-4 p-5 rounded-[2rem] border transition-all duration-500 overflow-hidden',
+        "group relative flex flex-col gap-4 p-5 rounded-4xl border transition-all duration-500 overflow-hidden",
         styles.bg,
         styles.border,
         styles.glow,
         event.read
-          ? 'opacity-70 grayscale-[0.2]'
-          : 'bg-card ring-1 ring-primary/5 shadow-sm',
+          ? "opacity-70 grayscale-[0.2]"
+          : "bg-card ring-1 ring-primary/5 shadow-sm",
       )}
     >
       {/* Background Flare */}
       <div
         className={cn(
-          'absolute -top-12 -right-12 w-32 h-32 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-2xl rounded-full pointer-events-none',
+          "absolute -top-12 -right-12 w-32 h-32 bg-linear-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-2xl rounded-full pointer-events-none",
           styles.flare,
         )}
       />
@@ -112,7 +112,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
       {!event.read && (
         <div
           className="absolute top-6 right-6 h-1.5 w-1.5 rounded-full bg-primary"
-          style={{ filter: 'drop-shadow(0 0 4px hsl(var(--primary)))' }}
+          style={{ filter: "drop-shadow(0 0 4px hsl(var(--primary)))" }}
         />
       )}
 
@@ -120,7 +120,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
         <div className="flex items-center gap-3">
           <div
             className={cn(
-              'p-2.5 rounded-2xl ring-1 ring-inset ring-white/10 shadow-lg transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3',
+              "p-2.5 rounded-2xl ring-1 ring-inset ring-white/10 shadow-lg transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3",
               styles.icon,
             )}
           >
@@ -131,7 +131,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
               <Badge
                 variant="outline"
                 className={cn(
-                  'text-[9px] font-bold uppercase tracking-widest px-1.5 h-4 border-none shadow-none',
+                  "text-[9px] font-bold uppercase tracking-widest px-1.5 h-4 border-none shadow-none",
                   styles.badge,
                 )}
               >
@@ -153,7 +153,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
           {event.streamer_id ? (
             <div className="flex items-center gap-1 text-[9px] font-medium text-muted-foreground/40 bg-muted/20 px-1.5 py-0.5 rounded-full border border-border/10">
               <Globe className="h-2.5 w-2.5" />
-              <span className="truncate max-w-[80px]">{event.streamer_id}</span>
+              <span className="truncate max-w-20">{event.streamer_id}</span>
             </div>
           ) : (
             <div className="flex items-center gap-1 text-[9px] font-medium text-muted-foreground/30 bg-muted/10 px-1.5 py-0.5 rounded-full">
@@ -184,4 +184,4 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
     </div>
   );
 });
-EventCard.displayName = 'EventCard';
+EventCard.displayName = "EventCard";

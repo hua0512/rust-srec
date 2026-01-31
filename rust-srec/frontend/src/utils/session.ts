@@ -164,7 +164,7 @@ export async function useAppSession(): Promise<SessionLike<SessionData>> {
     return process.env.NODE_ENV === 'production';
   };
 
-  return useSession<SessionData>({
+  const session = await useSession<SessionData>({
     name: 'srec_session',
     password:
       process.env.SESSION_SECRET ||
@@ -176,4 +176,16 @@ export async function useAppSession(): Promise<SessionLike<SessionData>> {
       maxAge: 30 * 24 * 60 * 60, // 30 days
     },
   });
+
+  return {
+    get data() {
+      return session.data;
+    },
+    async update(next: SessionData) {
+      await session.update(next);
+    },
+    async clear() {
+      await session.clear();
+    },
+  };
 }

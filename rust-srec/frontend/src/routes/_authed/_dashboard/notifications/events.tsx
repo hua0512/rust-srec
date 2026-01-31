@@ -231,7 +231,7 @@ function NotificationEventsPage() {
     return (
       <div className="p-4 md:p-8 space-y-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
+          <div className="p-2.5 rounded-xl bg-linear-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
             <Bell className="h-5 w-5 text-primary" />
           </div>
           <div>
@@ -263,7 +263,7 @@ function NotificationEventsPage() {
   }
 
   return (
-    <div className="min-h-screen space-y-6 bg-gradient-to-br from-background via-background to-muted/20">
+    <div className="min-h-screen space-y-6 bg-linear-to-br from-background via-background to-muted/20">
       <DashboardHeader
         icon={Bell}
         title={<Trans>Notification Events</Trans>}
@@ -276,7 +276,7 @@ function NotificationEventsPage() {
               defaultValue={streamerId}
               onSearch={handleSetStreamerId}
               placeholder={i18n._(msg`Search streamer...`)}
-              className="md:w-56 min-w-[200px]"
+              className="md:w-56 min-w-50"
             />
 
             <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />

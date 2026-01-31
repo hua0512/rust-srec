@@ -423,7 +423,7 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/components/notifications/browser-channel-dialog.tsx:159
 #: src/components/notifications/desktop-channel-dialog.tsx:61
 #: src/components/pipeline/workflows/step-library.tsx:291
-#: src/routes/_authed/_dashboard/notifications/events.tsx:147
+#: src/routes/_authed/_dashboard/notifications/events.tsx:154
 #: src/routes/_authed/_dashboard/notifications/index.tsx:353
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:105
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:199
@@ -446,7 +446,7 @@ msgstr "所有平台"
 msgid "All Time"
 msgstr "全部时间"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:294
+#: src/routes/_authed/_dashboard/notifications/events.tsx:323
 msgid "All Types"
 msgstr "所有类型"
 
@@ -960,7 +960,7 @@ msgstr "个渠道"
 #: src/components/config/global/backup-restore-card.tsx:402
 #: src/components/config/global/backup-restore-card.tsx:407
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
-#: src/routes/_authed/_dashboard/notifications/events.tsx:351
+#: src/routes/_authed/_dashboard/notifications/events.tsx:380
 msgid "Channels"
 msgstr "声道"
 
@@ -1289,7 +1289,7 @@ msgstr "Cookie"
 msgid "Cookies Only"
 msgstr "仅 Cookie"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:446
+#: src/routes/_authed/_dashboard/notifications/events.tsx:479
 msgid "Copied"
 msgstr "已复制"
 
@@ -1334,7 +1334,7 @@ msgstr "复制文件"
 msgid "Copy Files"
 msgstr "复制文件"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:452
+#: src/routes/_authed/_dashboard/notifications/events.tsx:485
 msgid "Copy JSON"
 msgstr "复制 JSON"
 
@@ -1483,7 +1483,7 @@ msgstr "CRF（恒定码率因子）"
 #: src/components/notifications/forms/discord-form.tsx:117
 #: src/components/notifications/forms/email-form.tsx:194
 #: src/components/notifications/forms/webhook-form.tsx:165
-#: src/routes/_authed/_dashboard/notifications/events.tsx:148
+#: src/routes/_authed/_dashboard/notifications/events.tsx:157
 msgid "Critical"
 msgstr "严重"
 
@@ -1604,7 +1604,7 @@ msgstr "弹幕转 ASS 字幕"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:206
+#: src/components/config/shared-config-editor.tsx:208
 msgid "Danmu"
 msgstr "弹幕"
 
@@ -2312,7 +2312,7 @@ msgstr "预计剩余时间"
 msgid "Event Hooks"
 msgstr "事件钩子"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:290
+#: src/routes/_authed/_dashboard/notifications/events.tsx:319
 msgid "Event Type"
 msgstr "事件类型"
 
@@ -2489,7 +2489,7 @@ msgstr "克隆预设失败：{0}"
 msgid "Failed to clone template: {0}"
 msgstr "克隆模板失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:448
+#: src/routes/_authed/_dashboard/notifications/events.tsx:481
 msgid "Failed to copy"
 msgstr "复制失败"
 
@@ -2602,7 +2602,7 @@ msgstr "加载引擎失败：{0}"
 msgid "Failed to load engines: {0}"
 msgstr "加载引擎列表失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:222
+#: src/routes/_authed/_dashboard/notifications/events.tsx:249
 msgid "Failed to load events"
 msgstr "加载事件失败"
 
@@ -2849,7 +2849,7 @@ msgstr "过滤窗口大小"
 msgid "Filtering & Behavior"
 msgstr "过滤与行为"
 
-#: src/components/config/shared-config-editor.tsx:151
+#: src/components/config/shared-config-editor.tsx:153
 msgid "Filters"
 msgstr "过滤器"
 
@@ -3163,7 +3163,7 @@ msgstr "高质量 MP3"
 
 #: src/components/notifications/browser-channel-dialog.tsx:153
 #: src/components/notifications/desktop-channel-dialog.tsx:57
-#: src/routes/_authed/_dashboard/notifications/events.tsx:149
+#: src/routes/_authed/_dashboard/notifications/events.tsx:163
 #: src/routes/_authed/_dashboard/notifications/index.tsx:351
 msgid "High+"
 msgstr "高+"
@@ -3190,7 +3190,7 @@ msgstr "HLS 调优"
 msgid "Home"
 msgstr "主页"
 
-#: src/components/config/shared-config-editor.tsx:195
+#: src/components/config/shared-config-editor.tsx:197
 msgid "Hooks"
 msgstr "钩子"
 
@@ -3406,7 +3406,7 @@ msgstr "嵌入"
 msgid "Inspecting"
 msgstr "检查中"
 
-#: src/components/notifications/events/event-card.tsx:164
+#: src/components/notifications/events/event-card.tsx:179
 msgid "Interact"
 msgstr "查看详情"
 
@@ -3796,11 +3796,11 @@ msgstr "清单（按顺序配对）"
 msgid "Manual update required"
 msgstr "需要手动更新"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:325
+#: src/routes/_authed/_dashboard/notifications/events.tsx:354
 msgid "Mark Read"
 msgstr "标记已读"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:143
+#: src/routes/_authed/_dashboard/notifications/events.tsx:149
 msgid "Marked all as read"
 msgstr "已全部标记为已读"
 
@@ -4107,7 +4107,7 @@ msgstr "原生"
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
 
-#: src/components/config/shared-config-editor.tsx:173
+#: src/components/config/shared-config-editor.tsx:175
 msgid "Network"
 msgstr "网络"
 
@@ -4145,7 +4145,7 @@ msgid "New Template Name"
 msgstr "新模板名称"
 
 #: src/components/streamers/streamer-form.tsx:239
-#: src/routes/_authed/_dashboard/notifications/events.tsx:411
+#: src/routes/_authed/_dashboard/notifications/events.tsx:444
 msgid "Next"
 msgstr "下一步"
 
@@ -4206,7 +4206,7 @@ msgstr "未定义环境变量"
 msgid "No errors found. Max depth: {0}"
 msgstr "未发现错误。最大深度：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:372
+#: src/routes/_authed/_dashboard/notifications/events.tsx:401
 msgid "No events found"
 msgstr "未找到事件"
 
@@ -4407,7 +4407,7 @@ msgstr "正常"
 
 #: src/components/notifications/browser-channel-dialog.tsx:156
 #: src/components/notifications/desktop-channel-dialog.tsx:59
-#: src/routes/_authed/_dashboard/notifications/events.tsx:150
+#: src/routes/_authed/_dashboard/notifications/events.tsx:169
 #: src/routes/_authed/_dashboard/notifications/index.tsx:356
 msgid "Normal+"
 msgstr "普通+"
@@ -4424,8 +4424,8 @@ msgstr "未找到主播"
 msgid "Not supported in this browser"
 msgstr "此浏览器不支持"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:212
-#: src/routes/_authed/_dashboard/notifications/events.tsx:242
+#: src/routes/_authed/_dashboard/notifications/events.tsx:239
+#: src/routes/_authed/_dashboard/notifications/events.tsx:269
 msgid "Notification Events"
 msgstr "通知事件"
 
@@ -4615,7 +4615,7 @@ msgstr "空间不足"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1019
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:162
+#: src/components/config/shared-config-editor.tsx:164
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -4738,28 +4738,28 @@ msgstr "覆盖文件"
 msgid "Overwrite Output"
 msgstr "覆盖输出"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:400
+#: src/routes/_authed/_dashboard/notifications/events.tsx:433
 msgid "Page"
 msgstr "页码"
 
 #: src/components/config/global/pipeline-config-card.tsx:216
-#: src/components/config/shared-config-editor.tsx:439
+#: src/components/config/shared-config-editor.tsx:441
 msgid "Paired"
 msgstr "已配对"
 
-#: src/components/config/shared-config-editor.tsx:580
+#: src/components/config/shared-config-editor.tsx:582
 msgid "Paired pipeline is not supported for this entity."
 msgstr "该实体不支持配对分段处理管道。"
 
 #: src/components/config/global/pipeline-config-card.tsx:213
-#: src/components/config/shared-config-editor.tsx:436
+#: src/components/config/shared-config-editor.tsx:438
 msgid "Paired Segment"
 msgstr "配对分段"
 
 #: src/components/config/global/pipeline-config-card.tsx:224
 #: src/components/config/global/pipeline-config-card.tsx:309
-#: src/components/config/shared-config-editor.tsx:447
-#: src/components/config/shared-config-editor.tsx:550
+#: src/components/config/shared-config-editor.tsx:449
+#: src/components/config/shared-config-editor.tsx:552
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
@@ -4856,14 +4856,14 @@ msgid "Per page:"
 msgstr "每页："
 
 #: src/components/config/global/pipeline-config-card.tsx:176
-#: src/components/config/shared-config-editor.tsx:397
+#: src/components/config/shared-config-editor.tsx:399
 msgid "Per-segment"
 msgstr "逐段"
 
 #: src/components/config/global/pipeline-config-card.tsx:187
 #: src/components/config/global/pipeline-config-card.tsx:292
-#: src/components/config/shared-config-editor.tsx:408
-#: src/components/config/shared-config-editor.tsx:519
+#: src/components/config/shared-config-editor.tsx:410
+#: src/components/config/shared-config-editor.tsx:521
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
@@ -4893,7 +4893,7 @@ msgstr "手机号和验证码（可选两步验证）"
 msgid "Pick a preset theme or import a custom one."
 msgstr "选择预设主题或导入自定义主题。"
 
-#: src/components/config/shared-config-editor.tsx:217
+#: src/components/config/shared-config-editor.tsx:219
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
@@ -5206,7 +5206,7 @@ msgstr "预览缩略图"
 msgid "Preview Unavailable"
 msgstr "预览不可用"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:396
+#: src/routes/_authed/_dashboard/notifications/events.tsx:429
 msgid "Previous"
 msgstr "上一页"
 
@@ -5298,7 +5298,7 @@ msgstr "保护设置"
 msgid "Protocol Settings"
 msgstr "协议设置"
 
-#: src/components/config/shared-config-editor.tsx:184
+#: src/components/config/shared-config-editor.tsx:186
 msgid "Proxy"
 msgstr "代理"
 
@@ -5428,8 +5428,8 @@ msgstr "当直播结束时接收通知。"
 msgid "Receive a notification when a streamer goes live."
 msgstr "当主播开播时接收通知。"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:215
-#: src/routes/_authed/_dashboard/notifications/events.tsx:244
+#: src/routes/_authed/_dashboard/notifications/events.tsx:242
+#: src/routes/_authed/_dashboard/notifications/events.tsx:271
 msgid "Recent notification events persisted by the backend"
 msgstr "后端持久化的最近通知事件"
 
@@ -5468,7 +5468,7 @@ msgid "Recordings"
 msgstr "录制内容"
 
 #: src/components/config/shared/network-settings-card.tsx:197
-#: src/routes/_authed/_dashboard/notifications/events.tsx:341
+#: src/routes/_authed/_dashboard/notifications/events.tsx:370
 #: src/routes/_authed/_dashboard/system/health.tsx:148
 msgid "Refresh"
 msgstr "刷新"
@@ -5583,8 +5583,8 @@ msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "如果直播间被主播设置了密码保护，则为必填。"
 
 #: src/components/config/global/pipeline-config-card.tsx:239
-#: src/components/config/shared-config-editor.tsx:462
-#: src/components/config/shared-config-editor.tsx:560
+#: src/components/config/shared-config-editor.tsx:464
+#: src/components/config/shared-config-editor.tsx:562
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
@@ -5701,17 +5701,17 @@ msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
 #: src/components/config/global/pipeline-config-card.tsx:294
-#: src/components/config/shared-config-editor.tsx:522
+#: src/components/config/shared-config-editor.tsx:524
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "在每个录制分段完成后立即运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:328
-#: src/components/config/shared-config-editor.tsx:599
+#: src/components/config/shared-config-editor.tsx:601
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
 
 #: src/components/config/global/pipeline-config-card.tsx:273
-#: src/components/config/shared-config-editor.tsx:498
+#: src/components/config/shared-config-editor.tsx:500
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
@@ -5728,11 +5728,11 @@ msgid "Runs when a download encounters an error."
 msgstr "录制发生错误时运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:233
-#: src/components/config/shared-config-editor.tsx:456
+#: src/components/config/shared-config-editor.tsx:458
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
 
-#: src/components/config/shared-config-editor.tsx:554
+#: src/components/config/shared-config-editor.tsx:556
 msgid "Runs when both video and danmu segments are available."
 msgstr "当视频和弹幕分段都可用时运行。"
 
@@ -5886,7 +5886,7 @@ msgstr "搜索预设..."
 msgid "Search sessions..."
 msgstr "搜索录制会话..."
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:251
+#: src/routes/_authed/_dashboard/notifications/events.tsx:278
 msgid "Search streamer..."
 msgstr "搜索主播..."
 
@@ -5924,7 +5924,7 @@ msgid "Security & Identity"
 msgstr "安全与身份"
 
 #: src/components/config/global/pipeline-config-card.tsx:179
-#: src/components/config/shared-config-editor.tsx:400
+#: src/components/config/shared-config-editor.tsx:402
 msgid "Segment"
 msgstr "分段"
 
@@ -6071,25 +6071,25 @@ msgid "Server not configured"
 msgstr "服务器未配置"
 
 #: src/components/config/global/pipeline-config-card.tsx:259
-#: src/components/config/shared-config-editor.tsx:482
+#: src/components/config/shared-config-editor.tsx:484
 #: src/components/pipeline/outputs/output-card.tsx:201
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:258
 msgid "Session"
 msgstr "会话"
 
 #: src/components/config/global/pipeline-config-card.tsx:256
-#: src/components/config/shared-config-editor.tsx:479
+#: src/components/config/shared-config-editor.tsx:481
 msgid "Session Complete"
 msgstr "会话完成"
 
 #: src/components/config/global/pipeline-config-card.tsx:267
 #: src/components/config/global/pipeline-config-card.tsx:326
-#: src/components/config/shared-config-editor.tsx:490
-#: src/components/config/shared-config-editor.tsx:596
+#: src/components/config/shared-config-editor.tsx:492
+#: src/components/config/shared-config-editor.tsx:598
 msgid "Session Complete Pipeline"
 msgstr "会话完成处理管道"
 
-#: src/components/config/shared-config-editor.tsx:619
+#: src/components/config/shared-config-editor.tsx:621
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
@@ -6558,7 +6558,7 @@ msgstr "同步"
 msgid "System"
 msgstr "系统"
 
-#: src/components/notifications/events/event-card.tsx:146
+#: src/components/notifications/events/event-card.tsx:161
 msgid "SYSTEM"
 msgstr "系统"
 
@@ -6767,7 +6767,7 @@ msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and res
 msgstr "该登录需要 Telegram 两步验证密码。请启用“允许两步验证”并重启。"
 
 #: src/components/config/global/pipeline-config-card.tsx:193
-#: src/components/config/shared-config-editor.tsx:416
+#: src/components/config/shared-config-editor.tsx:418
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
@@ -6938,12 +6938,12 @@ msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
 #: src/components/config/global/pipeline-config-card.tsx:189
-#: src/components/config/shared-config-editor.tsx:410
+#: src/components/config/shared-config-editor.tsx:412
 msgid "Triggered after each segment recording"
 msgstr "每个分段录制后触发"
 
 #: src/components/config/global/pipeline-config-card.tsx:269
-#: src/components/config/shared-config-editor.tsx:492
+#: src/components/config/shared-config-editor.tsx:494
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
@@ -7004,7 +7004,7 @@ msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
 #: src/components/config/global/pipeline-config-card.tsx:226
-#: src/components/config/shared-config-editor.tsx:449
+#: src/components/config/shared-config-editor.tsx:451
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
@@ -7016,7 +7016,7 @@ msgstr "裁剪与时间"
 msgid "Try adjusting the date range"
 msgstr "尝试调整日期范围"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:375
+#: src/routes/_authed/_dashboard/notifications/events.tsx:404
 msgid "Try adjusting your filters or limit"
 msgstr "尝试调整过滤器或限制"
 
@@ -7046,7 +7046,7 @@ msgid "Try again"
 msgstr "重试"
 
 #: src/components/default-catch-boundary.tsx:42
-#: src/routes/_authed/_dashboard/notifications/events.tsx:230
+#: src/routes/_authed/_dashboard/notifications/events.tsx:257
 #: src/routes/_authed/_dashboard/system/health.tsx:111
 msgid "Try Again"
 msgstr "重试"
@@ -7112,7 +7112,7 @@ msgstr "未知"
 msgid "Unknown Engine ID: {engineId}"
 msgstr "未知引擎 ID：{engineId}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:225
+#: src/routes/_authed/_dashboard/notifications/events.tsx:252
 #: src/routes/_authed/_dashboard/player/index.tsx:132
 #: src/routes/_authed/_dashboard/player/index.tsx:201
 msgid "Unknown error"

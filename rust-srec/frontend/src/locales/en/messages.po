@@ -423,7 +423,7 @@ msgstr "Alerts when disk space is running low."
 #: src/components/notifications/browser-channel-dialog.tsx:159
 #: src/components/notifications/desktop-channel-dialog.tsx:61
 #: src/components/pipeline/workflows/step-library.tsx:291
-#: src/routes/_authed/_dashboard/notifications/events.tsx:147
+#: src/routes/_authed/_dashboard/notifications/events.tsx:154
 #: src/routes/_authed/_dashboard/notifications/index.tsx:353
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:105
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:199
@@ -446,7 +446,7 @@ msgstr "All Platforms"
 msgid "All Time"
 msgstr "All Time"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:294
+#: src/routes/_authed/_dashboard/notifications/events.tsx:323
 msgid "All Types"
 msgstr "All Types"
 
@@ -960,7 +960,7 @@ msgstr "channels"
 #: src/components/config/global/backup-restore-card.tsx:402
 #: src/components/config/global/backup-restore-card.tsx:407
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
-#: src/routes/_authed/_dashboard/notifications/events.tsx:351
+#: src/routes/_authed/_dashboard/notifications/events.tsx:380
 msgid "Channels"
 msgstr "Channels"
 
@@ -1289,7 +1289,7 @@ msgstr "Cookies"
 msgid "Cookies Only"
 msgstr "Cookies Only"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:446
+#: src/routes/_authed/_dashboard/notifications/events.tsx:479
 msgid "Copied"
 msgstr "Copied"
 
@@ -1334,7 +1334,7 @@ msgstr "Copy File"
 msgid "Copy Files"
 msgstr "Copy Files"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:452
+#: src/routes/_authed/_dashboard/notifications/events.tsx:485
 msgid "Copy JSON"
 msgstr "Copy JSON"
 
@@ -1483,7 +1483,7 @@ msgstr "CRF (Constant Rate Factor)"
 #: src/components/notifications/forms/discord-form.tsx:117
 #: src/components/notifications/forms/email-form.tsx:194
 #: src/components/notifications/forms/webhook-form.tsx:165
-#: src/routes/_authed/_dashboard/notifications/events.tsx:148
+#: src/routes/_authed/_dashboard/notifications/events.tsx:157
 msgid "Critical"
 msgstr "Critical"
 
@@ -1604,7 +1604,7 @@ msgstr "Danmaku to ASS Subtitles"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:206
+#: src/components/config/shared-config-editor.tsx:208
 msgid "Danmu"
 msgstr "Danmu"
 
@@ -2312,7 +2312,7 @@ msgstr "ETA"
 msgid "Event Hooks"
 msgstr "Event Hooks"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:290
+#: src/routes/_authed/_dashboard/notifications/events.tsx:319
 msgid "Event Type"
 msgstr "Event Type"
 
@@ -2489,7 +2489,7 @@ msgstr "Failed to clone preset: {0}"
 msgid "Failed to clone template: {0}"
 msgstr "Failed to clone template: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:448
+#: src/routes/_authed/_dashboard/notifications/events.tsx:481
 msgid "Failed to copy"
 msgstr "Failed to copy"
 
@@ -2602,7 +2602,7 @@ msgstr "Failed to load engine: {0}"
 msgid "Failed to load engines: {0}"
 msgstr "Failed to load engines: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:222
+#: src/routes/_authed/_dashboard/notifications/events.tsx:249
 msgid "Failed to load events"
 msgstr "Failed to load events"
 
@@ -2849,7 +2849,7 @@ msgstr "Filter Window Size"
 msgid "Filtering & Behavior"
 msgstr "Filtering & Behavior"
 
-#: src/components/config/shared-config-editor.tsx:151
+#: src/components/config/shared-config-editor.tsx:153
 msgid "Filters"
 msgstr "Filters"
 
@@ -3163,7 +3163,7 @@ msgstr "High Quality MP3"
 
 #: src/components/notifications/browser-channel-dialog.tsx:153
 #: src/components/notifications/desktop-channel-dialog.tsx:57
-#: src/routes/_authed/_dashboard/notifications/events.tsx:149
+#: src/routes/_authed/_dashboard/notifications/events.tsx:163
 #: src/routes/_authed/_dashboard/notifications/index.tsx:351
 msgid "High+"
 msgstr "High+"
@@ -3190,7 +3190,7 @@ msgstr "HLS Tuning"
 msgid "Home"
 msgstr "Home"
 
-#: src/components/config/shared-config-editor.tsx:195
+#: src/components/config/shared-config-editor.tsx:197
 msgid "Hooks"
 msgstr "Hooks"
 
@@ -3406,7 +3406,7 @@ msgstr "Inset"
 msgid "Inspecting"
 msgstr "Inspecting"
 
-#: src/components/notifications/events/event-card.tsx:164
+#: src/components/notifications/events/event-card.tsx:179
 msgid "Interact"
 msgstr "Interact"
 
@@ -3796,11 +3796,11 @@ msgstr "Manifest (Pair by Order)"
 msgid "Manual update required"
 msgstr "Manual update required"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:325
+#: src/routes/_authed/_dashboard/notifications/events.tsx:354
 msgid "Mark Read"
 msgstr "Mark Read"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:143
+#: src/routes/_authed/_dashboard/notifications/events.tsx:149
 msgid "Marked all as read"
 msgstr "Marked all as read"
 
@@ -4107,7 +4107,7 @@ msgstr "Native"
 msgid "Native Resolution Thumbnail"
 msgstr "Native Resolution Thumbnail"
 
-#: src/components/config/shared-config-editor.tsx:173
+#: src/components/config/shared-config-editor.tsx:175
 msgid "Network"
 msgstr "Network"
 
@@ -4145,7 +4145,7 @@ msgid "New Template Name"
 msgstr "New Template Name"
 
 #: src/components/streamers/streamer-form.tsx:239
-#: src/routes/_authed/_dashboard/notifications/events.tsx:411
+#: src/routes/_authed/_dashboard/notifications/events.tsx:444
 msgid "Next"
 msgstr "Next"
 
@@ -4206,7 +4206,7 @@ msgstr "No environment variables defined"
 msgid "No errors found. Max depth: {0}"
 msgstr "No errors found. Max depth: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:372
+#: src/routes/_authed/_dashboard/notifications/events.tsx:401
 msgid "No events found"
 msgstr "No events found"
 
@@ -4407,7 +4407,7 @@ msgstr "Normal"
 
 #: src/components/notifications/browser-channel-dialog.tsx:156
 #: src/components/notifications/desktop-channel-dialog.tsx:59
-#: src/routes/_authed/_dashboard/notifications/events.tsx:150
+#: src/routes/_authed/_dashboard/notifications/events.tsx:169
 #: src/routes/_authed/_dashboard/notifications/index.tsx:356
 msgid "Normal+"
 msgstr "Normal+"
@@ -4424,8 +4424,8 @@ msgstr "Not Found"
 msgid "Not supported in this browser"
 msgstr "Not supported in this browser"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:212
-#: src/routes/_authed/_dashboard/notifications/events.tsx:242
+#: src/routes/_authed/_dashboard/notifications/events.tsx:239
+#: src/routes/_authed/_dashboard/notifications/events.tsx:269
 msgid "Notification Events"
 msgstr "Notification Events"
 
@@ -4615,7 +4615,7 @@ msgstr "Out of Space"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1019
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:162
+#: src/components/config/shared-config-editor.tsx:164
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -4738,28 +4738,28 @@ msgstr "Overwrite Files"
 msgid "Overwrite Output"
 msgstr "Overwrite Output"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:400
+#: src/routes/_authed/_dashboard/notifications/events.tsx:433
 msgid "Page"
 msgstr "Page"
 
 #: src/components/config/global/pipeline-config-card.tsx:216
-#: src/components/config/shared-config-editor.tsx:439
+#: src/components/config/shared-config-editor.tsx:441
 msgid "Paired"
 msgstr "Paired"
 
-#: src/components/config/shared-config-editor.tsx:580
+#: src/components/config/shared-config-editor.tsx:582
 msgid "Paired pipeline is not supported for this entity."
 msgstr "Paired pipeline is not supported for this entity."
 
 #: src/components/config/global/pipeline-config-card.tsx:213
-#: src/components/config/shared-config-editor.tsx:436
+#: src/components/config/shared-config-editor.tsx:438
 msgid "Paired Segment"
 msgstr "Paired Segment"
 
 #: src/components/config/global/pipeline-config-card.tsx:224
 #: src/components/config/global/pipeline-config-card.tsx:309
-#: src/components/config/shared-config-editor.tsx:447
-#: src/components/config/shared-config-editor.tsx:550
+#: src/components/config/shared-config-editor.tsx:449
+#: src/components/config/shared-config-editor.tsx:552
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
@@ -4856,14 +4856,14 @@ msgid "Per page:"
 msgstr "Per page:"
 
 #: src/components/config/global/pipeline-config-card.tsx:176
-#: src/components/config/shared-config-editor.tsx:397
+#: src/components/config/shared-config-editor.tsx:399
 msgid "Per-segment"
 msgstr "Per-segment"
 
 #: src/components/config/global/pipeline-config-card.tsx:187
 #: src/components/config/global/pipeline-config-card.tsx:292
-#: src/components/config/shared-config-editor.tsx:408
-#: src/components/config/shared-config-editor.tsx:519
+#: src/components/config/shared-config-editor.tsx:410
+#: src/components/config/shared-config-editor.tsx:521
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
@@ -4893,7 +4893,7 @@ msgstr "Phone & Code (2FA optional)"
 msgid "Pick a preset theme or import a custom one."
 msgstr "Pick a preset theme or import a custom one."
 
-#: src/components/config/shared-config-editor.tsx:217
+#: src/components/config/shared-config-editor.tsx:219
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
@@ -5206,7 +5206,7 @@ msgstr "Preview Thumbnail"
 msgid "Preview Unavailable"
 msgstr "Preview Unavailable"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:396
+#: src/routes/_authed/_dashboard/notifications/events.tsx:429
 msgid "Previous"
 msgstr "Previous"
 
@@ -5298,7 +5298,7 @@ msgstr "Protection Settings"
 msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
-#: src/components/config/shared-config-editor.tsx:184
+#: src/components/config/shared-config-editor.tsx:186
 msgid "Proxy"
 msgstr "Proxy"
 
@@ -5428,8 +5428,8 @@ msgstr "Receive a notification when a stream ends."
 msgid "Receive a notification when a streamer goes live."
 msgstr "Receive a notification when a streamer goes live."
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:215
-#: src/routes/_authed/_dashboard/notifications/events.tsx:244
+#: src/routes/_authed/_dashboard/notifications/events.tsx:242
+#: src/routes/_authed/_dashboard/notifications/events.tsx:271
 msgid "Recent notification events persisted by the backend"
 msgstr "Recent notification events persisted by the backend"
 
@@ -5468,7 +5468,7 @@ msgid "Recordings"
 msgstr "Recordings"
 
 #: src/components/config/shared/network-settings-card.tsx:197
-#: src/routes/_authed/_dashboard/notifications/events.tsx:341
+#: src/routes/_authed/_dashboard/notifications/events.tsx:370
 #: src/routes/_authed/_dashboard/system/health.tsx:148
 msgid "Refresh"
 msgstr "Refresh"
@@ -5583,8 +5583,8 @@ msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "Required if the stream is password-protected by the broadcaster."
 
 #: src/components/config/global/pipeline-config-card.tsx:239
-#: src/components/config/shared-config-editor.tsx:462
-#: src/components/config/shared-config-editor.tsx:560
+#: src/components/config/shared-config-editor.tsx:464
+#: src/components/config/shared-config-editor.tsx:562
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
@@ -5701,17 +5701,17 @@ msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}
 msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 
 #: src/components/config/global/pipeline-config-card.tsx:294
-#: src/components/config/shared-config-editor.tsx:522
+#: src/components/config/shared-config-editor.tsx:524
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "Runs for each recorded segment immediately after it's finished."
 
 #: src/components/config/global/pipeline-config-card.tsx:328
-#: src/components/config/shared-config-editor.tsx:599
+#: src/components/config/shared-config-editor.tsx:601
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "Runs once after the entire session ends and all segment pipelines have completed."
 
 #: src/components/config/global/pipeline-config-card.tsx:273
-#: src/components/config/shared-config-editor.tsx:498
+#: src/components/config/shared-config-editor.tsx:500
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 
@@ -5728,11 +5728,11 @@ msgid "Runs when a download encounters an error."
 msgstr "Runs when a download encounters an error."
 
 #: src/components/config/global/pipeline-config-card.tsx:233
-#: src/components/config/shared-config-editor.tsx:456
+#: src/components/config/shared-config-editor.tsx:458
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "Runs when both the video segment and its corresponding danmu segment are available."
 
-#: src/components/config/shared-config-editor.tsx:554
+#: src/components/config/shared-config-editor.tsx:556
 msgid "Runs when both video and danmu segments are available."
 msgstr "Runs when both video and danmu segments are available."
 
@@ -5886,7 +5886,7 @@ msgstr "Search presets..."
 msgid "Search sessions..."
 msgstr "Search sessions..."
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:251
+#: src/routes/_authed/_dashboard/notifications/events.tsx:278
 msgid "Search streamer..."
 msgstr "Search streamer..."
 
@@ -5924,7 +5924,7 @@ msgid "Security & Identity"
 msgstr "Security & Identity"
 
 #: src/components/config/global/pipeline-config-card.tsx:179
-#: src/components/config/shared-config-editor.tsx:400
+#: src/components/config/shared-config-editor.tsx:402
 msgid "Segment"
 msgstr "Segment"
 
@@ -6071,25 +6071,25 @@ msgid "Server not configured"
 msgstr "Server not configured"
 
 #: src/components/config/global/pipeline-config-card.tsx:259
-#: src/components/config/shared-config-editor.tsx:482
+#: src/components/config/shared-config-editor.tsx:484
 #: src/components/pipeline/outputs/output-card.tsx:201
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:258
 msgid "Session"
 msgstr "Session"
 
 #: src/components/config/global/pipeline-config-card.tsx:256
-#: src/components/config/shared-config-editor.tsx:479
+#: src/components/config/shared-config-editor.tsx:481
 msgid "Session Complete"
 msgstr "Session Complete"
 
 #: src/components/config/global/pipeline-config-card.tsx:267
 #: src/components/config/global/pipeline-config-card.tsx:326
-#: src/components/config/shared-config-editor.tsx:490
-#: src/components/config/shared-config-editor.tsx:596
+#: src/components/config/shared-config-editor.tsx:492
+#: src/components/config/shared-config-editor.tsx:598
 msgid "Session Complete Pipeline"
 msgstr "Session Complete Pipeline"
 
-#: src/components/config/shared-config-editor.tsx:619
+#: src/components/config/shared-config-editor.tsx:621
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
@@ -6558,7 +6558,7 @@ msgstr "Sync"
 msgid "System"
 msgstr "System"
 
-#: src/components/notifications/events/event-card.tsx:146
+#: src/components/notifications/events/event-card.tsx:161
 msgid "SYSTEM"
 msgstr "SYSTEM"
 
@@ -6767,7 +6767,7 @@ msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and res
 msgstr "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
 
 #: src/components/config/global/pipeline-config-card.tsx:193
-#: src/components/config/shared-config-editor.tsx:416
+#: src/components/config/shared-config-editor.tsx:418
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
@@ -6938,12 +6938,12 @@ msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
 #: src/components/config/global/pipeline-config-card.tsx:189
-#: src/components/config/shared-config-editor.tsx:410
+#: src/components/config/shared-config-editor.tsx:412
 msgid "Triggered after each segment recording"
 msgstr "Triggered after each segment recording"
 
 #: src/components/config/global/pipeline-config-card.tsx:269
-#: src/components/config/shared-config-editor.tsx:492
+#: src/components/config/shared-config-editor.tsx:494
 msgid "Triggered after the entire session ends"
 msgstr "Triggered after the entire session ends"
 
@@ -7004,7 +7004,7 @@ msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
 #: src/components/config/global/pipeline-config-card.tsx:226
-#: src/components/config/shared-config-editor.tsx:449
+#: src/components/config/shared-config-editor.tsx:451
 msgid "Triggered when video and danmu are available"
 msgstr "Triggered when video and danmu are available"
 
@@ -7016,7 +7016,7 @@ msgstr "Trimming & Time"
 msgid "Try adjusting the date range"
 msgstr "Try adjusting the date range"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:375
+#: src/routes/_authed/_dashboard/notifications/events.tsx:404
 msgid "Try adjusting your filters or limit"
 msgstr "Try adjusting your filters or limit"
 
@@ -7046,7 +7046,7 @@ msgid "Try again"
 msgstr "Try again"
 
 #: src/components/default-catch-boundary.tsx:42
-#: src/routes/_authed/_dashboard/notifications/events.tsx:230
+#: src/routes/_authed/_dashboard/notifications/events.tsx:257
 #: src/routes/_authed/_dashboard/system/health.tsx:111
 msgid "Try Again"
 msgstr "Try Again"
@@ -7112,7 +7112,7 @@ msgstr "Unknown"
 msgid "Unknown Engine ID: {engineId}"
 msgstr "Unknown Engine ID: {engineId}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:225
+#: src/routes/_authed/_dashboard/notifications/events.tsx:252
 #: src/routes/_authed/_dashboard/player/index.tsx:132
 #: src/routes/_authed/_dashboard/player/index.tsx:201
 msgid "Unknown error"

@@ -2,6 +2,7 @@
  * Protocol Buffer types and codec for log event WebSocket messages.
  * Generated from rust-srec/proto/log_event.proto
  */
+// @ts-expect-error - Generated protobuf JS file without type declarations
 import { log_event as pb } from './log_event_pb.js';
 
 // Log severity levels

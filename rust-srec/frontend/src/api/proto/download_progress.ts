@@ -2,6 +2,7 @@
  * Protocol Buffer types and codec for download progress WebSocket messages.
  * Generated from rust-srec/proto/download_progress.proto
  */
+// @ts-expect-error - Generated protobuf JS file without type declarations
 import { download_progress as pb } from './download_progress_pb.js';
 
 // Event types for WebSocket messages
