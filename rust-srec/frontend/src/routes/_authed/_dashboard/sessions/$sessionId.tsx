@@ -89,7 +89,7 @@ function SessionDetailPage() {
   const handleDownload = async (outputId: string, filename: string) => {
     try {
       const url = getMediaUrl(
-        `/media/${outputId}/content`,
+        `/api/media/${outputId}/content`,
         user?.token?.access_token,
       );
       if (!url) throw new Error('Invalid download URL');
@@ -142,10 +142,10 @@ function SessionDetailPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Skeleton className="h-[200px] md:col-span-2 rounded-xl md:rounded-2xl" />
-          <Skeleton className="h-[200px] rounded-xl md:rounded-2xl" />
+          <Skeleton className="h-50 md:col-span-2 rounded-xl md:rounded-2xl" />
+          <Skeleton className="h-50 rounded-xl md:rounded-2xl" />
         </div>
-        <Skeleton className="h-[400px] rounded-xl md:rounded-2xl" />
+        <Skeleton className="h-100 rounded-xl md:rounded-2xl" />
       </div>
     );
   }
@@ -187,8 +187,8 @@ function SessionDetailPage() {
     <div className="relative min-h-screen bg-background overflow-hidden selection:bg-primary/20">
       {/* Ambient Background */}
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-0 -mt-20 -ml-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 right-0 -mb-40 -mr-20 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
+        <div className="absolute top-0 left-0 -mt-20 -ml-20 w-125 h-125 bg-primary/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-0 right-0 -mb-40 -mr-20 w-150 h-150 bg-blue-500/5 rounded-full blur-[120px]" />
         {/* Subtle Grid Pattern */}
         <div
           className="absolute inset-0 opacity-[0.03]"
