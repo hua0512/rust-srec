@@ -82,7 +82,22 @@ pub async fn get_media_content(
         .get_media_output(&id)
         .await
         .map_err(ApiError::from)?;
-    let path = PathBuf::from(media.file_path);
+
+    // Windows note: some parts of the pipeline/tooling may emit extended-length paths
+    // like `\\?\C:\...`. While this is valid for Win32 APIs, it can be a portability
+    // footgun across libraries and runtimes. Normalize it to a regular path when possible.
+    let mut path = PathBuf::from(&media.file_path);
+    if cfg!(windows)
+        && let Some(s) = path.to_str()
+    {
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            // `\\?\UNC\server\share\...` -> `\\server\share\...`
+            path = PathBuf::from(format!(r"\\{}", rest));
+        } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+            // `\\?\C:\...` -> `C:\...`
+            path = PathBuf::from(rest);
+        }
+    }
 
     if !path.exists() {
         return Err(ApiError::not_found(format!("Media file not found: {}", id)));
