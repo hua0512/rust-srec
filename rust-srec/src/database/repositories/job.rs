@@ -1265,14 +1265,14 @@ mod stress_tests {
         let repo = Arc::new(SqlxJobRepository::new(pool));
 
         for i in 0..JOBS {
-            let mut job = JobDbModel::new_pipeline(
+            let mut job = JobDbModel::new_with_input(
+                "remux",
                 format!("input-{i}"),
                 0,
                 Some("streamer".to_string()),
                 Some("session".to_string()),
                 "{}",
             );
-            job.job_type = "remux".to_string();
             job.priority = (i % 3) as i32;
             repo.create_job(&job).await.unwrap();
         }

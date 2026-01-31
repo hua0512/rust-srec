@@ -39,7 +39,9 @@ pub use context::{Statistics, StreamerContext};
 pub use pipeline::Pipeline;
 pub use processor::Processor;
 pub use progress::{Progress, ProgressEvent};
-pub use utils::{expand_filename_template, expand_path_template, expand_path_template_at, sanitize_filename};
+pub use utils::{
+    expand_filename_template, expand_path_template, expand_path_template_at, sanitize_filename,
+};
 
 pub use writer_task::{
     FormatStrategy, PostWriteAction, ProgressCallback, ProgressConfig, TaskError, WriterConfig,
