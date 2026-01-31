@@ -9,6 +9,6 @@
     },
     "devDependencies": {
         "mermaid": "^11.4.0",
-        "vitepress": "^2.0.0-alpha.15"
+        "vitepress": "^2.0.0-alpha.16"
     }
 }
