@@ -76,7 +76,7 @@
     "@lingui/cli": "^5.8.0",
     "@lingui/macro": "^5.7.0",
     "@lingui/vite-plugin": "^5.7.0",
-    "@tanstack/devtools-vite": "^0.4.1",
+    "@tanstack/devtools-vite": "^0.5.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.10.2",
