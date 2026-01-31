@@ -423,6 +423,7 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/components/notifications/browser-channel-dialog.tsx:159
 #: src/components/notifications/desktop-channel-dialog.tsx:61
 #: src/components/pipeline/workflows/step-library.tsx:291
+#: src/routes/_authed/_dashboard/notifications/events.tsx:147
 #: src/routes/_authed/_dashboard/notifications/index.tsx:353
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:105
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:199
@@ -445,7 +446,7 @@ msgstr "所有平台"
 msgid "All Time"
 msgstr "全部时间"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:253
+#: src/routes/_authed/_dashboard/notifications/events.tsx:294
 msgid "All Types"
 msgstr "所有类型"
 
@@ -959,6 +960,7 @@ msgstr "个渠道"
 #: src/components/config/global/backup-restore-card.tsx:402
 #: src/components/config/global/backup-restore-card.tsx:407
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
+#: src/routes/_authed/_dashboard/notifications/events.tsx:351
 msgid "Channels"
 msgstr "声道"
 
@@ -1287,7 +1289,7 @@ msgstr "Cookie"
 msgid "Cookies Only"
 msgstr "仅 Cookie"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:479
+#: src/routes/_authed/_dashboard/notifications/events.tsx:446
 msgid "Copied"
 msgstr "已复制"
 
@@ -1301,7 +1303,6 @@ msgstr "复制"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:101
-#: src/routes/_authed/_dashboard/notifications/events.tsx:485
 msgid "Copy"
 msgstr "复制"
 
@@ -1332,6 +1333,10 @@ msgstr "复制文件"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:78
 msgid "Copy Files"
 msgstr "复制文件"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:452
+msgid "Copy JSON"
+msgstr "复制 JSON"
 
 #: src/components/pipeline/outputs/output-card.tsx:139
 msgid "Copy Path"
@@ -1478,6 +1483,7 @@ msgstr "CRF（恒定码率因子）"
 #: src/components/notifications/forms/discord-form.tsx:117
 #: src/components/notifications/forms/email-form.tsx:194
 #: src/components/notifications/forms/webhook-form.tsx:165
+#: src/routes/_authed/_dashboard/notifications/events.tsx:148
 msgid "Critical"
 msgstr "严重"
 
@@ -1835,10 +1841,6 @@ msgstr "内部服务与资源的详细健康检查。"
 msgid "Detailed processor settings"
 msgstr "处理器详细设置"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:423
-msgid "Details Ready"
-msgstr "详情就绪"
-
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:446
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
@@ -1913,11 +1915,6 @@ msgstr "下载备份"
 msgid "Download complete"
 msgstr "下载完成"
 
-#. placeholder {0}: inner.path || inner.title || 'unknown'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:526
-msgid "Download completed: {0}"
-msgstr "下载已完成：{0}"
-
 #: src/components/config/engines/forms/mesio-hls-form.tsx:719
 msgid "Download Concurrency"
 msgstr "下载并发数"
@@ -1934,11 +1931,6 @@ msgstr "录制引擎"
 msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
-#. placeholder {0}: error || 'Unknown error'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:529
-msgid "Download failed: {0}"
-msgstr "下载失败：{0}"
-
 #: src/routes/_authed/_dashboard/dashboard.tsx:248
 #: src/routes/_authed/_dashboard/system/health.tsx:327
 msgid "Download Manager"
@@ -1947,11 +1939,6 @@ msgstr "下载管理"
 #: src/components/config/shared/network-settings-card.tsx:324
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
-
-#. placeholder {0}: inner.title || streamer || 'unknown'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:522
-msgid "Download started: {0}"
-msgstr "下载已开始：{0}"
 
 #: src/components/streamers/edit/active-download-card.tsx:40
 msgid "Downloading"
@@ -2325,7 +2312,7 @@ msgstr "预计剩余时间"
 msgid "Event Hooks"
 msgstr "事件钩子"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:249
+#: src/routes/_authed/_dashboard/notifications/events.tsx:290
 msgid "Event Type"
 msgstr "事件类型"
 
@@ -2502,7 +2489,7 @@ msgstr "克隆预设失败：{0}"
 msgid "Failed to clone template: {0}"
 msgstr "克隆模板失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:481
+#: src/routes/_authed/_dashboard/notifications/events.tsx:448
 msgid "Failed to copy"
 msgstr "复制失败"
 
@@ -2615,7 +2602,7 @@ msgstr "加载引擎失败：{0}"
 msgid "Failed to load engines: {0}"
 msgstr "加载引擎列表失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:210
+#: src/routes/_authed/_dashboard/notifications/events.tsx:222
 msgid "Failed to load events"
 msgstr "加载事件失败"
 
@@ -2845,10 +2832,6 @@ msgstr "过滤互动玩法"
 #: src/components/config/engines/forms/mesio-form.tsx:157
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "过滤重复标签并检测流重放循环"
-
-#: src/routes/_authed/_dashboard/notifications/events.tsx:239
-msgid "Filter streamer..."
-msgstr "过滤主播..."
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:75
 msgid "Filter Type"
@@ -3180,6 +3163,7 @@ msgstr "高质量 MP3"
 
 #: src/components/notifications/browser-channel-dialog.tsx:153
 #: src/components/notifications/desktop-channel-dialog.tsx:57
+#: src/routes/_authed/_dashboard/notifications/events.tsx:149
 #: src/routes/_authed/_dashboard/notifications/index.tsx:351
 msgid "High+"
 msgstr "高+"
@@ -3421,6 +3405,10 @@ msgstr "嵌入"
 #: src/components/streamers/card/use-streamer-status.tsx:189
 msgid "Inspecting"
 msgstr "检查中"
+
+#: src/components/notifications/events/event-card.tsx:164
+msgid "Interact"
+msgstr "查看详情"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:210
 msgid "Interactive 24-hour timeline selection."
@@ -3808,6 +3796,14 @@ msgstr "清单（按顺序配对）"
 msgid "Manual update required"
 msgstr "需要手动更新"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:325
+msgid "Mark Read"
+msgstr "标记已读"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:143
+msgid "Marked all as read"
+msgstr "已全部标记为已读"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:174
 msgid "Match Strategy"
 msgstr "匹配策略"
@@ -4149,6 +4145,7 @@ msgid "New Template Name"
 msgstr "新模板名称"
 
 #: src/components/streamers/streamer-form.tsx:239
+#: src/routes/_authed/_dashboard/notifications/events.tsx:411
 msgid "Next"
 msgstr "下一步"
 
@@ -4209,7 +4206,7 @@ msgstr "未定义环境变量"
 msgid "No errors found. Max depth: {0}"
 msgstr "未发现错误。最大深度：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:339
+#: src/routes/_authed/_dashboard/notifications/events.tsx:372
 msgid "No events found"
 msgstr "未找到事件"
 
@@ -4410,6 +4407,7 @@ msgstr "正常"
 
 #: src/components/notifications/browser-channel-dialog.tsx:156
 #: src/components/notifications/desktop-channel-dialog.tsx:59
+#: src/routes/_authed/_dashboard/notifications/events.tsx:150
 #: src/routes/_authed/_dashboard/notifications/index.tsx:356
 msgid "Normal+"
 msgstr "普通+"
@@ -4426,12 +4424,8 @@ msgstr "未找到主播"
 msgid "Not supported in this browser"
 msgstr "此浏览器不支持"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:318
-msgid "Notification Channels"
-msgstr "通知渠道"
-
-#: src/routes/_authed/_dashboard/notifications/events.tsx:200
-#: src/routes/_authed/_dashboard/notifications/events.tsx:230
+#: src/routes/_authed/_dashboard/notifications/events.tsx:212
+#: src/routes/_authed/_dashboard/notifications/events.tsx:242
 msgid "Notification Events"
 msgstr "通知事件"
 
@@ -4743,6 +4737,10 @@ msgstr "覆盖文件"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:147
 msgid "Overwrite Output"
 msgstr "覆盖输出"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:400
+msgid "Page"
+msgstr "页码"
 
 #: src/components/config/global/pipeline-config-card.tsx:216
 #: src/components/config/shared-config-editor.tsx:439
@@ -5208,6 +5206,10 @@ msgstr "预览缩略图"
 msgid "Preview Unavailable"
 msgstr "预览不可用"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:396
+msgid "Previous"
+msgstr "上一页"
+
 #: src/components/sessions/timeline-tab.tsx:127
 msgid "Previous Title"
 msgstr "上一个标题"
@@ -5426,8 +5428,8 @@ msgstr "当直播结束时接收通知。"
 msgid "Receive a notification when a streamer goes live."
 msgstr "当主播开播时接收通知。"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:203
-#: src/routes/_authed/_dashboard/notifications/events.tsx:232
+#: src/routes/_authed/_dashboard/notifications/events.tsx:215
+#: src/routes/_authed/_dashboard/notifications/events.tsx:244
 msgid "Recent notification events persisted by the backend"
 msgstr "后端持久化的最近通知事件"
 
@@ -5452,25 +5454,10 @@ msgstr "录制弹幕"
 msgid "Recording"
 msgstr "录制"
 
-#. placeholder {0}: error || 'Unknown error'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:516
-msgid "Recording failed: {0}"
-msgstr "录制失败：{0}"
-
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:245
 msgid "Recording Filters"
 msgstr "录制过滤器"
-
-#. placeholder {0}: streamer || 'unknown streamer'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:513
-msgid "Recording finished for {0}"
-msgstr "{0} 的录制已结束"
-
-#. placeholder {0}: streamer || 'unknown streamer'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:509
-msgid "Recording started for {0}"
-msgstr "{0} 的录制已开始"
 
 #: src/components/streamers/card/use-streamer-status.tsx:220
 msgid "Recording will start when schedule allows"
@@ -5481,7 +5468,7 @@ msgid "Recordings"
 msgstr "录制内容"
 
 #: src/components/config/shared/network-settings-card.tsx:197
-#: src/routes/_authed/_dashboard/notifications/events.tsx:308
+#: src/routes/_authed/_dashboard/notifications/events.tsx:341
 #: src/routes/_authed/_dashboard/system/health.tsx:148
 msgid "Refresh"
 msgstr "刷新"
@@ -5898,6 +5885,10 @@ msgstr "搜索预设..."
 #: src/routes/_authed/_dashboard/sessions/index.tsx:305
 msgid "Search sessions..."
 msgstr "搜索录制会话..."
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:251
+msgid "Search streamer..."
+msgstr "搜索主播..."
 
 #: src/routes/_authed/_dashboard/streamers/index.tsx:253
 msgid "Search streamers..."
@@ -6567,6 +6558,10 @@ msgstr "同步"
 msgid "System"
 msgstr "系统"
 
+#: src/components/notifications/events/event-card.tsx:146
+msgid "SYSTEM"
+msgstr "系统"
+
 #: src/lib/menu-list.ts:109
 #: src/routes/_authed/_dashboard/system/health.tsx:130
 msgid "System Health"
@@ -7021,7 +7016,7 @@ msgstr "裁剪与时间"
 msgid "Try adjusting the date range"
 msgstr "尝试调整日期范围"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:342
+#: src/routes/_authed/_dashboard/notifications/events.tsx:375
 msgid "Try adjusting your filters or limit"
 msgstr "尝试调整过滤器或限制"
 
@@ -7051,7 +7046,7 @@ msgid "Try again"
 msgstr "重试"
 
 #: src/components/default-catch-boundary.tsx:42
-#: src/routes/_authed/_dashboard/notifications/events.tsx:218
+#: src/routes/_authed/_dashboard/notifications/events.tsx:230
 #: src/routes/_authed/_dashboard/system/health.tsx:111
 msgid "Try Again"
 msgstr "重试"
@@ -7117,7 +7112,7 @@ msgstr "未知"
 msgid "Unknown Engine ID: {engineId}"
 msgstr "未知引擎 ID：{engineId}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:213
+#: src/routes/_authed/_dashboard/notifications/events.tsx:225
 #: src/routes/_authed/_dashboard/player/index.tsx:132
 #: src/routes/_authed/_dashboard/player/index.tsx:201
 msgid "Unknown error"
@@ -7362,7 +7357,6 @@ msgstr "查看详细日志与输出"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:164
 #: src/components/sessions/session-card.tsx:271
 #: src/routes/_authed/_dashboard/dashboard.tsx:176
-#: src/routes/_authed/_dashboard/notifications/events.tsx:437
 msgid "View Details"
 msgstr "查看详情"
 

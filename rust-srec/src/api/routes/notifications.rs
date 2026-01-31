@@ -75,6 +75,8 @@ pub struct ListEventsQuery {
     pub streamer_id: Option<String>,
     /// Search by streamer name (case-insensitive).
     pub search: Option<String>,
+    /// Filter by minimum priority level (low, normal, high, critical).
+    pub priority: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, utoipa::ToSchema)]
@@ -315,7 +317,8 @@ pub async fn unsubscribe_web_push(
         ("offset" = Option<i32>, Query, description = "Row offset for pagination (default: 0)"),
         ("event_type" = Option<String>, Query, description = "Filter by event type"),
         ("streamer_id" = Option<String>, Query, description = "Filter by streamer id"),
-        ("search" = Option<String>, Query, description = "Search by streamer name (case-insensitive)")
+        ("search" = Option<String>, Query, description = "Search by streamer name (case-insensitive)"),
+        ("priority" = Option<String>, Query, description = "Filter by minimum priority level (low, normal, high, critical)")
     ),
     responses(
         (status = 200, description = "List of events", body = Vec<crate::database::models::notification::NotificationEventLogDbModel>)
@@ -337,6 +340,7 @@ pub async fn list_events(
             q.event_type.as_deref(),
             q.streamer_id.as_deref(),
             q.search.as_deref(),
+            q.priority.as_deref(),
             offset,
             limit,
         )

@@ -10,10 +10,6 @@ import {
   setLastNotifiedCriticalMs,
 } from '@/lib/notification-state';
 
-function isCritical(priority: string | null | undefined): boolean {
-  return String(priority ?? '').toLowerCase() === 'critical';
-}
-
 function safeParseJson(input: string): any | null {
   try {
     return JSON.parse(input);
@@ -73,7 +69,8 @@ export function BrowserNotificationListener() {
 
   const { data: events } = useQuery({
     queryKey: ['notification-events', 'browser', 'critical'],
-    queryFn: () => listEvents({ data: { limit: 50, offset: 0 } }),
+    queryFn: () =>
+      listEvents({ data: { limit: 50, offset: 0, priority: 'critical' } }),
     enabled: shouldPoll,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
@@ -93,8 +90,8 @@ export function BrowserNotificationListener() {
       return;
     }
 
+    // Server already filters by priority=critical, so all events are critical
     const candidates = events
-      .filter((e) => isCritical(e.priority))
       .map((e) => ({ e, t: e.created_at }))
       .filter((x) => Number.isFinite(x.t) && x.t > baseline)
       .sort((a, b) => a.t - b.t);

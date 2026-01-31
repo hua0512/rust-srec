@@ -46,6 +46,7 @@ pub trait NotificationRepository: Send + Sync {
         event_type: Option<&str>,
         streamer_id: Option<&str>,
         search: Option<&str>,
+        priority: Option<&str>,
         offset: i32,
         limit: i32,
     ) -> Result<Vec<NotificationEventLogDbModel>>;
@@ -294,6 +295,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         event_type: Option<&str>,
         streamer_id: Option<&str>,
         search: Option<&str>,
+        priority: Option<&str>,
         offset: i32,
         limit: i32,
     ) -> Result<Vec<NotificationEventLogDbModel>> {
@@ -316,6 +318,19 @@ impl NotificationRepository for SqlxNotificationRepository {
             conditions.push("nel.streamer_id = ?");
         }
 
+        if priority.is_some() {
+            // Map priority to numeric value for >= comparison
+            // low=0, normal=1, high=2, critical=3
+            conditions.push(
+                "CASE LOWER(nel.priority) \
+                 WHEN 'low' THEN 0 \
+                 WHEN 'normal' THEN 1 \
+                 WHEN 'high' THEN 2 \
+                 WHEN 'critical' THEN 3 \
+                 ELSE 0 END >= ?",
+            );
+        }
+
         if !conditions.is_empty() {
             query_str.push_str(" WHERE ");
             query_str.push_str(&conditions.join(" AND "));
@@ -335,6 +350,16 @@ impl NotificationRepository for SqlxNotificationRepository {
         }
         if let Some(sid) = streamer_id {
             query = query.bind(sid);
+        }
+        if let Some(p) = priority {
+            let priority_value = match p.to_ascii_lowercase().as_str() {
+                "low" => 0,
+                "normal" => 1,
+                "high" => 2,
+                "critical" => 3,
+                _ => 0,
+            };
+            query = query.bind(priority_value);
         }
         query = query.bind(limit);
         query = query.bind(offset);

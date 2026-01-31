@@ -423,6 +423,7 @@ msgstr "Alerts when disk space is running low."
 #: src/components/notifications/browser-channel-dialog.tsx:159
 #: src/components/notifications/desktop-channel-dialog.tsx:61
 #: src/components/pipeline/workflows/step-library.tsx:291
+#: src/routes/_authed/_dashboard/notifications/events.tsx:147
 #: src/routes/_authed/_dashboard/notifications/index.tsx:353
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:105
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:199
@@ -445,7 +446,7 @@ msgstr "All Platforms"
 msgid "All Time"
 msgstr "All Time"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:253
+#: src/routes/_authed/_dashboard/notifications/events.tsx:294
 msgid "All Types"
 msgstr "All Types"
 
@@ -959,6 +960,7 @@ msgstr "channels"
 #: src/components/config/global/backup-restore-card.tsx:402
 #: src/components/config/global/backup-restore-card.tsx:407
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:192
+#: src/routes/_authed/_dashboard/notifications/events.tsx:351
 msgid "Channels"
 msgstr "Channels"
 
@@ -1287,7 +1289,7 @@ msgstr "Cookies"
 msgid "Cookies Only"
 msgstr "Cookies Only"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:479
+#: src/routes/_authed/_dashboard/notifications/events.tsx:446
 msgid "Copied"
 msgstr "Copied"
 
@@ -1301,7 +1303,6 @@ msgstr "copy"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:101
-#: src/routes/_authed/_dashboard/notifications/events.tsx:485
 msgid "Copy"
 msgstr "Copy"
 
@@ -1332,6 +1333,10 @@ msgstr "Copy File"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:78
 msgid "Copy Files"
 msgstr "Copy Files"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:452
+msgid "Copy JSON"
+msgstr "Copy JSON"
 
 #: src/components/pipeline/outputs/output-card.tsx:139
 msgid "Copy Path"
@@ -1478,6 +1483,7 @@ msgstr "CRF (Constant Rate Factor)"
 #: src/components/notifications/forms/discord-form.tsx:117
 #: src/components/notifications/forms/email-form.tsx:194
 #: src/components/notifications/forms/webhook-form.tsx:165
+#: src/routes/_authed/_dashboard/notifications/events.tsx:148
 msgid "Critical"
 msgstr "Critical"
 
@@ -1835,10 +1841,6 @@ msgstr "Detailed health checks for internal services and resources."
 msgid "Detailed processor settings"
 msgstr "Detailed processor settings"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:423
-msgid "Details Ready"
-msgstr "Details Ready"
-
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:446
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
@@ -1913,11 +1915,6 @@ msgstr "Download Backup"
 msgid "Download complete"
 msgstr "Download complete"
 
-#. placeholder {0}: inner.path || inner.title || 'unknown'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:526
-msgid "Download completed: {0}"
-msgstr "Download completed: {0}"
-
 #: src/components/config/engines/forms/mesio-hls-form.tsx:719
 msgid "Download Concurrency"
 msgstr "Download Concurrency"
@@ -1934,11 +1931,6 @@ msgstr "Download Engine"
 msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
-#. placeholder {0}: error || 'Unknown error'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:529
-msgid "Download failed: {0}"
-msgstr "Download failed: {0}"
-
 #: src/routes/_authed/_dashboard/dashboard.tsx:248
 #: src/routes/_authed/_dashboard/system/health.tsx:327
 msgid "Download Manager"
@@ -1947,11 +1939,6 @@ msgstr "Download Manager"
 #: src/components/config/shared/network-settings-card.tsx:324
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
-
-#. placeholder {0}: inner.title || streamer || 'unknown'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:522
-msgid "Download started: {0}"
-msgstr "Download started: {0}"
 
 #: src/components/streamers/edit/active-download-card.tsx:40
 msgid "Downloading"
@@ -2325,7 +2312,7 @@ msgstr "ETA"
 msgid "Event Hooks"
 msgstr "Event Hooks"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:249
+#: src/routes/_authed/_dashboard/notifications/events.tsx:290
 msgid "Event Type"
 msgstr "Event Type"
 
@@ -2502,7 +2489,7 @@ msgstr "Failed to clone preset: {0}"
 msgid "Failed to clone template: {0}"
 msgstr "Failed to clone template: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:481
+#: src/routes/_authed/_dashboard/notifications/events.tsx:448
 msgid "Failed to copy"
 msgstr "Failed to copy"
 
@@ -2615,7 +2602,7 @@ msgstr "Failed to load engine: {0}"
 msgid "Failed to load engines: {0}"
 msgstr "Failed to load engines: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:210
+#: src/routes/_authed/_dashboard/notifications/events.tsx:222
 msgid "Failed to load events"
 msgstr "Failed to load events"
 
@@ -2845,10 +2832,6 @@ msgstr "Filter Interactive Games"
 #: src/components/config/engines/forms/mesio-form.tsx:157
 msgid "Filter repeated tags and detect stream replay loops"
 msgstr "Filter repeated tags and detect stream replay loops"
-
-#: src/routes/_authed/_dashboard/notifications/events.tsx:239
-msgid "Filter streamer..."
-msgstr "Filter streamer..."
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:75
 msgid "Filter Type"
@@ -3180,6 +3163,7 @@ msgstr "High Quality MP3"
 
 #: src/components/notifications/browser-channel-dialog.tsx:153
 #: src/components/notifications/desktop-channel-dialog.tsx:57
+#: src/routes/_authed/_dashboard/notifications/events.tsx:149
 #: src/routes/_authed/_dashboard/notifications/index.tsx:351
 msgid "High+"
 msgstr "High+"
@@ -3421,6 +3405,10 @@ msgstr "Inset"
 #: src/components/streamers/card/use-streamer-status.tsx:189
 msgid "Inspecting"
 msgstr "Inspecting"
+
+#: src/components/notifications/events/event-card.tsx:164
+msgid "Interact"
+msgstr "Interact"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:210
 msgid "Interactive 24-hour timeline selection."
@@ -3808,6 +3796,14 @@ msgstr "Manifest (Pair by Order)"
 msgid "Manual update required"
 msgstr "Manual update required"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:325
+msgid "Mark Read"
+msgstr "Mark Read"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:143
+msgid "Marked all as read"
+msgstr "Marked all as read"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:174
 msgid "Match Strategy"
 msgstr "Match Strategy"
@@ -4149,6 +4145,7 @@ msgid "New Template Name"
 msgstr "New Template Name"
 
 #: src/components/streamers/streamer-form.tsx:239
+#: src/routes/_authed/_dashboard/notifications/events.tsx:411
 msgid "Next"
 msgstr "Next"
 
@@ -4209,7 +4206,7 @@ msgstr "No environment variables defined"
 msgid "No errors found. Max depth: {0}"
 msgstr "No errors found. Max depth: {0}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:339
+#: src/routes/_authed/_dashboard/notifications/events.tsx:372
 msgid "No events found"
 msgstr "No events found"
 
@@ -4410,6 +4407,7 @@ msgstr "Normal"
 
 #: src/components/notifications/browser-channel-dialog.tsx:156
 #: src/components/notifications/desktop-channel-dialog.tsx:59
+#: src/routes/_authed/_dashboard/notifications/events.tsx:150
 #: src/routes/_authed/_dashboard/notifications/index.tsx:356
 msgid "Normal+"
 msgstr "Normal+"
@@ -4426,12 +4424,8 @@ msgstr "Not Found"
 msgid "Not supported in this browser"
 msgstr "Not supported in this browser"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:318
-msgid "Notification Channels"
-msgstr "Notification Channels"
-
-#: src/routes/_authed/_dashboard/notifications/events.tsx:200
-#: src/routes/_authed/_dashboard/notifications/events.tsx:230
+#: src/routes/_authed/_dashboard/notifications/events.tsx:212
+#: src/routes/_authed/_dashboard/notifications/events.tsx:242
 msgid "Notification Events"
 msgstr "Notification Events"
 
@@ -4743,6 +4737,10 @@ msgstr "Overwrite Files"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:147
 msgid "Overwrite Output"
 msgstr "Overwrite Output"
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:400
+msgid "Page"
+msgstr "Page"
 
 #: src/components/config/global/pipeline-config-card.tsx:216
 #: src/components/config/shared-config-editor.tsx:439
@@ -5208,6 +5206,10 @@ msgstr "Preview Thumbnail"
 msgid "Preview Unavailable"
 msgstr "Preview Unavailable"
 
+#: src/routes/_authed/_dashboard/notifications/events.tsx:396
+msgid "Previous"
+msgstr "Previous"
+
 #: src/components/sessions/timeline-tab.tsx:127
 msgid "Previous Title"
 msgstr "Previous Title"
@@ -5426,8 +5428,8 @@ msgstr "Receive a notification when a stream ends."
 msgid "Receive a notification when a streamer goes live."
 msgstr "Receive a notification when a streamer goes live."
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:203
-#: src/routes/_authed/_dashboard/notifications/events.tsx:232
+#: src/routes/_authed/_dashboard/notifications/events.tsx:215
+#: src/routes/_authed/_dashboard/notifications/events.tsx:244
 msgid "Recent notification events persisted by the backend"
 msgstr "Recent notification events persisted by the backend"
 
@@ -5452,25 +5454,10 @@ msgstr "Record Danmu"
 msgid "Recording"
 msgstr "Recording"
 
-#. placeholder {0}: error || 'Unknown error'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:516
-msgid "Recording failed: {0}"
-msgstr "Recording failed: {0}"
-
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
 #: src/routes/_authed/_dashboard/streamers/$id.edit.tsx:245
 msgid "Recording Filters"
 msgstr "Recording Filters"
-
-#. placeholder {0}: streamer || 'unknown streamer'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:513
-msgid "Recording finished for {0}"
-msgstr "Recording finished for {0}"
-
-#. placeholder {0}: streamer || 'unknown streamer'
-#: src/routes/_authed/_dashboard/notifications/events.tsx:509
-msgid "Recording started for {0}"
-msgstr "Recording started for {0}"
 
 #: src/components/streamers/card/use-streamer-status.tsx:220
 msgid "Recording will start when schedule allows"
@@ -5481,7 +5468,7 @@ msgid "Recordings"
 msgstr "Recordings"
 
 #: src/components/config/shared/network-settings-card.tsx:197
-#: src/routes/_authed/_dashboard/notifications/events.tsx:308
+#: src/routes/_authed/_dashboard/notifications/events.tsx:341
 #: src/routes/_authed/_dashboard/system/health.tsx:148
 msgid "Refresh"
 msgstr "Refresh"
@@ -5898,6 +5885,10 @@ msgstr "Search presets..."
 #: src/routes/_authed/_dashboard/sessions/index.tsx:305
 msgid "Search sessions..."
 msgstr "Search sessions..."
+
+#: src/routes/_authed/_dashboard/notifications/events.tsx:251
+msgid "Search streamer..."
+msgstr "Search streamer..."
 
 #: src/routes/_authed/_dashboard/streamers/index.tsx:253
 msgid "Search streamers..."
@@ -6567,6 +6558,10 @@ msgstr "Sync"
 msgid "System"
 msgstr "System"
 
+#: src/components/notifications/events/event-card.tsx:146
+msgid "SYSTEM"
+msgstr "SYSTEM"
+
 #: src/lib/menu-list.ts:109
 #: src/routes/_authed/_dashboard/system/health.tsx:130
 msgid "System Health"
@@ -7021,7 +7016,7 @@ msgstr "Trimming & Time"
 msgid "Try adjusting the date range"
 msgstr "Try adjusting the date range"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:342
+#: src/routes/_authed/_dashboard/notifications/events.tsx:375
 msgid "Try adjusting your filters or limit"
 msgstr "Try adjusting your filters or limit"
 
@@ -7051,7 +7046,7 @@ msgid "Try again"
 msgstr "Try again"
 
 #: src/components/default-catch-boundary.tsx:42
-#: src/routes/_authed/_dashboard/notifications/events.tsx:218
+#: src/routes/_authed/_dashboard/notifications/events.tsx:230
 #: src/routes/_authed/_dashboard/system/health.tsx:111
 msgid "Try Again"
 msgstr "Try Again"
@@ -7117,7 +7112,7 @@ msgstr "Unknown"
 msgid "Unknown Engine ID: {engineId}"
 msgstr "Unknown Engine ID: {engineId}"
 
-#: src/routes/_authed/_dashboard/notifications/events.tsx:213
+#: src/routes/_authed/_dashboard/notifications/events.tsx:225
 #: src/routes/_authed/_dashboard/player/index.tsx:132
 #: src/routes/_authed/_dashboard/player/index.tsx:201
 msgid "Unknown error"
@@ -7362,7 +7357,6 @@ msgstr "View Detailed Logs & Outputs"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:164
 #: src/components/sessions/session-card.tsx:271
 #: src/routes/_authed/_dashboard/dashboard.tsx:176
-#: src/routes/_authed/_dashboard/notifications/events.tsx:437
 msgid "View Details"
 msgstr "View Details"
 

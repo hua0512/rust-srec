@@ -748,7 +748,9 @@ impl NotificationEvent {
                     queue_depth, threshold
                 )
             }
-            Self::SystemStartup { .. } => "System initialized successfully".to_string(),
+            Self::SystemStartup { version, .. } => {
+                format!("System initialized successfully (v{})", version)
+            }
             Self::SystemShutdown { reason, .. } => reason.clone(),
             Self::Credential { event } => event.to_message(),
         }
