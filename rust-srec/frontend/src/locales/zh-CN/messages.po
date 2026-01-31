@@ -39,7 +39,7 @@ msgstr "-reconnect 1"
 msgid "(Delete source)"
 msgstr "（删除源文件）"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:365
+#: src/routes/_authed/_dashboard/config/logging.tsx:338
 msgid "(empty)"
 msgstr "（空）"
 
@@ -247,7 +247,7 @@ msgstr "自适应刷新（默认：开）"
 msgid "Add"
 msgstr "添加"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:353
+#: src/routes/_authed/_dashboard/config/logging.tsx:326
 msgid "Add a module above to configure its log level"
 msgstr "在上方添加模块以配置其日志级别"
 
@@ -311,7 +311,7 @@ msgstr "添加元数据"
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:259
+#: src/routes/_authed/_dashboard/config/logging.tsx:232
 msgid "Add module..."
 msgstr "添加模块..."
 
@@ -807,6 +807,10 @@ msgstr "机器人名称"
 msgid "Brand Colors"
 msgstr "品牌颜色"
 
+#: src/components/logging/log-file-browser.tsx:242
+msgid "Browse and download application log files. Filter by date range or download all."
+msgstr "浏览和下载应用程序日志文件。按日期范围筛选或下载全部。"
+
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:160
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "浏览处理任务生成的媒体文件"
@@ -1267,7 +1271,7 @@ msgstr "上下文"
 msgid "Continue on Error"
 msgstr "出错时继续"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:237
+#: src/routes/_authed/_dashboard/config/logging.tsx:219
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "控制各模块的日志详细程度。较低级别包含较高级别。"
 
@@ -1499,7 +1503,7 @@ msgstr "Cron"
 msgid "Cron Expression"
 msgstr "Cron 表达式"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:362
+#: src/routes/_authed/_dashboard/config/logging.tsx:335
 msgid "Current Filter Directive"
 msgstr "当前过滤指令"
 
@@ -1617,13 +1621,17 @@ msgstr "仪表盘"
 msgid "Database"
 msgstr "数据库"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:71
+#: src/routes/_authed/_dashboard/config/logging.tsx:67
 msgid "Database queries"
 msgstr "数据库查询"
 
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:206
 msgid "Date"
 msgstr "日期"
+
+#: src/components/logging/log-file-browser.tsx:382
+msgid "Date range:"
+msgstr "日期范围："
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:190
 msgid "Day (01-31)"
@@ -1888,9 +1896,22 @@ msgstr "不可用"
 msgid "Download"
 msgstr "下载"
 
+#. placeholder {0}: file.filename
+#: src/components/logging/log-file-browser.tsx:456
+msgid "Download {0}"
+msgstr "下载 {0}"
+
+#: src/components/logging/log-file-browser.tsx:316
+msgid "Download All"
+msgstr "下载全部"
+
 #: src/components/config/global/backup-restore-card.tsx:247
 msgid "Download Backup"
 msgstr "下载备份"
+
+#: src/components/logging/log-file-browser.tsx:342
+msgid "Download complete"
+msgstr "下载完成"
 
 #. placeholder {0}: inner.path || inner.title || 'unknown'
 #: src/routes/_authed/_dashboard/notifications/events.tsx:526
@@ -1909,7 +1930,7 @@ msgstr "录制延迟"
 msgid "Download Engine"
 msgstr "录制引擎"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:64
+#: src/routes/_authed/_dashboard/config/logging.tsx:60
 msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
@@ -1917,10 +1938,6 @@ msgstr "下载引擎（mesio）"
 #: src/routes/_authed/_dashboard/notifications/events.tsx:529
 msgid "Download failed: {0}"
 msgstr "下载失败：{0}"
-
-#: src/routes/_authed/_dashboard/config/logging.tsx:252
-msgid "Download Logs"
-msgstr "下载日志"
 
 #: src/routes/_authed/_dashboard/dashboard.tsx:248
 #: src/routes/_authed/_dashboard/system/health.tsx:327
@@ -1939,6 +1956,15 @@ msgstr "下载已开始：{0}"
 #: src/components/streamers/edit/active-download-card.tsx:40
 msgid "Downloading"
 msgstr "下载中"
+
+#. placeholder {0}: file.filename
+#: src/components/logging/log-file-browser.tsx:213
+msgid "Downloading {0}"
+msgstr "正在下载 {0}"
+
+#: src/components/logging/log-file-browser.tsx:346
+msgid "Downloading..."
+msgstr "下载中..."
 
 #: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:272
 msgid "Drag from edge to link steps"
@@ -2554,6 +2580,14 @@ msgstr "删除工作流失败：{0}"
 msgid "Failed to disable Web Push"
 msgstr "禁用 Web 推送失败"
 
+#: src/components/logging/log-file-browser.tsx:217
+msgid "Failed to download file"
+msgstr "下载文件失败"
+
+#: src/components/logging/log-file-browser.tsx:194
+msgid "Failed to download logs"
+msgstr "下载日志失败"
+
 #: src/routes/_authed/_dashboard/notifications/index.tsx:274
 msgid "Failed to enable Web Push"
 msgstr "启用 Web 推送失败"
@@ -2566,10 +2600,6 @@ msgstr "导出配置失败"
 #: src/hooks/use-edit-streamer.ts:117
 msgid "Failed to extract name from URL"
 msgstr "从 URL 提取名称失败"
-
-#: src/routes/_authed/_dashboard/config/logging.tsx:208
-msgid "Failed to get download URL"
-msgstr "获取下载 URL 失败"
 
 #: src/components/config/global/backup-restore-card.tsx:120
 msgid "Failed to import configuration"
@@ -2670,7 +2700,7 @@ msgstr "更新渠道失败"
 msgid "Failed to update filter"
 msgstr "更新过滤器失败"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:164
+#: src/routes/_authed/_dashboard/config/logging.tsx:160
 msgid "Failed to update logging configuration"
 msgstr "更新日志配置失败"
 
@@ -2787,6 +2817,7 @@ msgstr "文件名模式（例如 thumb.jpg）"
 msgid "Filename Template"
 msgstr "文件名模板"
 
+#: src/components/logging/log-file-browser.tsx:237
 #: src/routes/_authed/_dashboard/pipeline/outputs.tsx:178
 msgid "files"
 msgstr "文件"
@@ -2875,11 +2906,11 @@ msgstr "悬浮"
 msgid "Flow & Dependencies"
 msgstr "流程与依赖"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:65
+#: src/routes/_authed/_dashboard/config/logging.tsx:61
 msgid "FLV parser"
 msgstr "FLV 解析器"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:66
+#: src/routes/_authed/_dashboard/config/logging.tsx:62
 msgid "FLV stream fixing pipeline"
 msgstr "FLV 流修复管道"
 
@@ -3157,11 +3188,11 @@ msgstr "高+"
 msgid "History Retention"
 msgstr "历史保留"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:67
+#: src/routes/_authed/_dashboard/config/logging.tsx:63
 msgid "HLS parser"
 msgstr "HLS 解析器"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:68
+#: src/routes/_authed/_dashboard/config/logging.tsx:64
 msgid "HLS stream fixing pipeline"
 msgstr "HLS 流修复管道"
 
@@ -3191,11 +3222,11 @@ msgstr "如何将视频文件与 .ass 字幕配对"
 msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
 msgstr "用于认证的 HTTP cookie。刷新时会自动更新。"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:73
+#: src/routes/_authed/_dashboard/config/logging.tsx:69
 msgid "HTTP middleware"
 msgstr "HTTP 中间件"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:72
+#: src/routes/_authed/_dashboard/config/logging.tsx:68
 msgid "HTTP requests"
 msgstr "HTTP 请求"
 
@@ -3651,6 +3682,10 @@ msgstr "正在加载工作流..."
 msgid "Local Archive"
 msgstr "本地归档"
 
+#: src/components/logging/log-file-browser.tsx:234
+msgid "Log Files"
+msgstr "日志文件"
+
 #: src/routes/_authed/_dashboard/config/route.tsx:77
 msgid "Log levels & modules"
 msgstr "日志级别与模块"
@@ -3663,7 +3698,7 @@ msgstr "登录成功"
 msgid "Logging"
 msgstr "日志"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:158
+#: src/routes/_authed/_dashboard/config/logging.tsx:154
 msgid "Logging configuration updated"
 msgstr "日志配置已更新"
 
@@ -3705,6 +3740,10 @@ msgstr "登录类型"
 msgid "Logs"
 msgstr "日志"
 
+#: src/components/logging/log-file-browser.tsx:179
+msgid "Logs downloaded successfully"
+msgstr "日志下载成功"
+
 #: src/components/config/engines/forms/mesio-form.tsx:148
 msgid "Loop Protection"
 msgstr "循环保护"
@@ -3721,7 +3760,7 @@ msgstr "低"
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:63
+#: src/routes/_authed/_dashboard/config/logging.tsx:59
 msgid "Main application"
 msgstr "主程序"
 
@@ -3978,7 +4017,7 @@ msgstr "分 (00-59)"
 msgid "Modify the parameters for this processing step."
 msgstr "修改此处理步骤的参数。"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:234
+#: src/routes/_authed/_dashboard/config/logging.tsx:216
 msgid "Module Log Levels"
 msgstr "模块日志级别"
 
@@ -4203,6 +4242,10 @@ msgstr "未设置关键字"
 msgid "No limit"
 msgstr "不限"
 
+#: src/components/logging/log-file-browser.tsx:416
+msgid "No log files found"
+msgstr "未找到日志文件"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:792
 msgid "No logs available for this execution."
 msgstr "该执行记录暂无日志。"
@@ -4227,7 +4270,7 @@ msgstr "暂无媒体文件"
 msgid "No metadata tags added"
 msgstr "未添加元数据标签"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:350
+#: src/routes/_authed/_dashboard/config/logging.tsx:323
 msgid "No modules configured"
 msgstr "未配置模块"
 
@@ -4970,7 +5013,7 @@ msgstr "平台覆盖项"
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:69
+#: src/routes/_authed/_dashboard/config/logging.tsx:65
 msgid "Platform URL extractors"
 msgstr "平台 URL 提取器"
 
@@ -5558,7 +5601,7 @@ msgstr "如果直播间被主播设置了密码保护，则为必填。"
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:387
+#: src/routes/_authed/_dashboard/config/logging.tsx:369
 #: src/routes/_authed/_dashboard/config/theme.tsx:105
 msgid "Reset"
 msgstr "重置"
@@ -5761,7 +5804,7 @@ msgstr "清理后的主播名称"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:543
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
 #: src/routes/_authed/_dashboard/config/global.tsx:90
-#: src/routes/_authed/_dashboard/config/logging.tsx:398
+#: src/routes/_authed/_dashboard/config/logging.tsx:380
 msgid "Save Changes"
 msgstr "保存更改"
 
@@ -5779,7 +5822,7 @@ msgstr "保存工作流"
 #: src/components/pipeline/workflows/workflow-editor.tsx:272
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
 #: src/routes/_authed/_dashboard/config/global.tsx:90
-#: src/routes/_authed/_dashboard/config/logging.tsx:397
+#: src/routes/_authed/_dashboard/config/logging.tsx:379
 msgid "Saving..."
 msgstr "保存中..."
 
@@ -5947,6 +5990,10 @@ msgstr "选择编解码器"
 #: src/components/streamers/config/streamer-general-settings.tsx:154
 msgid "Select config"
 msgstr "选择配置"
+
+#: src/components/logging/log-file-browser.tsx:271
+msgid "Select date range"
+msgstr "选择日期范围"
 
 #: src/components/config/global/backup-restore-card.tsx:281
 msgid "Select File"
@@ -6143,7 +6190,7 @@ msgstr "设置更新成功"
 msgid "Shadcn UI Theme Presets"
 msgstr "Shadcn UI 主题预设"
 
-#: src/routes/_authed/_dashboard/config/logging.tsx:70
+#: src/routes/_authed/_dashboard/config/logging.tsx:66
 msgid "Shared pipeline utilities"
 msgstr "共享的处理管道工具"
 
@@ -6867,6 +6914,10 @@ msgstr "总计"
 msgid "Total Size"
 msgstr "总大小"
 
+#: src/components/logging/log-file-browser.tsx:374
+msgid "Total size:"
+msgstr "总大小："
+
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:290
 msgid "Total Steps"
 msgstr "总步骤数"
@@ -6965,6 +7016,10 @@ msgstr "当视频和弹幕可用时触发"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:525
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
+
+#: src/components/logging/log-file-browser.tsx:420
+msgid "Try adjusting the date range"
+msgstr "尝试调整日期范围"
 
 #: src/routes/_authed/_dashboard/notifications/events.tsx:342
 msgid "Try adjusting your filters or limit"

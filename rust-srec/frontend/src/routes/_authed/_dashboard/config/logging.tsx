@@ -5,11 +5,7 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import type { I18n } from '@lingui/core';
-import {
-  getLoggingConfig,
-  updateLoggingFilter,
-  getLogsDownloadUrl,
-} from '@/server/functions';
+import { getLoggingConfig, updateLoggingFilter } from '@/server/functions';
 import {
   parseFilterDirective,
   serializeFilterDirective,
@@ -48,10 +44,10 @@ import {
   Trash2,
   RotateCcw,
   Sparkles,
-  Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LogViewer } from '@/components/logging/log-viewer';
+import { LogFileBrowser } from '@/components/logging/log-file-browser';
 
 export const Route = createFileRoute('/_authed/_dashboard/config/logging')({
   component: LoggingConfigPage,
@@ -195,25 +191,11 @@ function LoggingConfigPage() {
     updateMutation.mutate(directive);
   };
 
-  const handleDownloadLogs = async () => {
-    try {
-      const { url } = await getLogsDownloadUrl();
-      const link = document.createElement('a');
-      link.href = url;
-      // Trigger download
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error: any) {
-      toast.error(error.message || i18n._(msg`Failed to get download URL`));
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-[400px] rounded-xl" />
+        <Skeleton className="h-100 rounded-xl" />
       </div>
     );
   }
@@ -225,7 +207,7 @@ function LoggingConfigPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <Card className="border-border/40 bg-gradient-to-b from-card to-card/80 shadow-lg">
+        <Card className="border-border/40 bg-linear-to-b from-card to-card/80 shadow-lg">
           <CardHeader className="pb-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -241,20 +223,11 @@ function LoggingConfigPage() {
                 </CardDescription>
               </div>
 
-              {/* Actions & Quick Add */}
+              {/* Quick Add Module */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-                <Button
-                  variant="outline"
-                  onClick={handleDownloadLogs}
-                  className="w-full sm:w-auto"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  <Trans>Download Logs</Trans>
-                </Button>
-
                 {availableModules.length > 0 && (
                   <Select onValueChange={handleAddModule}>
-                    <SelectTrigger className="w-full sm:w-[200px]">
+                    <SelectTrigger className="w-full sm:w-50">
                       <Plus className="w-4 h-4 mr-2" />
                       <SelectValue placeholder={i18n._(msg`Add module...`)} />
                     </SelectTrigger>
@@ -314,7 +287,7 @@ function LoggingConfigPage() {
                         handleLevelChange(filter.module, level)
                       }
                     >
-                      <SelectTrigger className="w-full sm:w-[130px] h-9">
+                      <SelectTrigger className="w-full sm:w-32.5 h-9">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -370,6 +343,15 @@ function LoggingConfigPage() {
         </Card>
       </motion.div>
 
+      {/* Log File Browser */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.05 }}
+      >
+        <LogFileBrowser />
+      </motion.div>
+
       {/* Real-Time Log Viewer */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -390,7 +372,7 @@ function LoggingConfigPage() {
             onClick={handleSave}
             disabled={updateMutation.isPending}
             size="lg"
-            className="shadow-2xl shadow-primary/40 hover:shadow-primary/50 transition-all hover:scale-105 active:scale-95 rounded-full px-8 h-14 bg-gradient-to-r from-primary to-primary/90 text-base font-semibold"
+            className="shadow-2xl shadow-primary/40 hover:shadow-primary/50 transition-all hover:scale-105 active:scale-95 rounded-full px-8 h-14 bg-linear-to-r from-primary to-primary/90 text-base font-semibold"
           >
             <Save className="w-5 h-5 mr-2" />
             {updateMutation.isPending
