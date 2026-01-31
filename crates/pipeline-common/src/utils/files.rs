@@ -16,12 +16,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// - `%t` - Unix timestamp
 /// - `%%` - Literal percent sign
 pub fn expand_path_template(template: &str) -> String {
-    expand_template_internal(template, None, false)
+    expand_template_internal(template, None, false, None)
+}
+
+/// Expand path template with placeholders using a specific reference timestamp.
+///
+/// Same as `expand_path_template`, but uses the provided timestamp (Unix epoch milliseconds)
+/// instead of the current time.
+pub fn expand_path_template_at(template: &str, reference_timestamp_ms: Option<i64>) -> String {
+    expand_template_internal(template, None, false, reference_timestamp_ms)
 }
 
 /// Expand filename template with placeholders similar to FFmpeg
 pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) -> String {
-    expand_template_internal(template, sequence_number, true)
+    expand_template_internal(template, sequence_number, true, None)
 }
 
 /// Internal implementation for expanding templates.
@@ -30,12 +38,28 @@ pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) ->
 /// * `template` - The template string to expand
 /// * `sequence_number` - Optional sequence number for `%i` placeholder
 /// * `sanitize` - Whether to sanitize the result for use as a filename
+/// * `reference_timestamp_ms` - Optional reference timestamp in Unix epoch milliseconds.
+///   If None, uses the current time.
 fn expand_template_internal(
     template: &str,
     sequence_number: Option<u32>,
     sanitize: bool,
+    reference_timestamp_ms: Option<i64>,
 ) -> String {
-    let now = time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+    let now = if let Some(ts_ms) = reference_timestamp_ms {
+        time::OffsetDateTime::from_unix_timestamp(ts_ms / 1000)
+            .unwrap_or_else(|_| time::OffsetDateTime::now_utc())
+    } else {
+        time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc())
+    };
+    let reference_timestamp_secs = reference_timestamp_ms
+        .map(|ms| (ms / 1000) as u64)
+        .unwrap_or_else(|| {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        });
     let mut result = String::with_capacity(template.len() * 2);
     let mut chars = template.chars().peekable();
 
@@ -77,11 +101,7 @@ fn expand_template_internal(
                         chars.next();
                     }
                     't' => {
-                        let timestamp = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs();
-                        result.push_str(&timestamp.to_string());
+                        result.push_str(&reference_timestamp_secs.to_string());
                         chars.next();
                     }
 

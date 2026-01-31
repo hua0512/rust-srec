@@ -139,6 +139,42 @@ pub fn expand_placeholders(
     session_title: Option<&str>,
     platform: Option<&str>,
 ) -> String {
+    expand_placeholders_at(
+        template,
+        streamer_id,
+        session_id,
+        streamer_name,
+        session_title,
+        platform,
+        None,
+    )
+}
+
+/// Expand placeholders in a path template using a specific reference timestamp.
+///
+/// Same as `expand_placeholders`, but uses the provided timestamp (Unix epoch milliseconds)
+/// instead of the current time for time-based placeholders. This is useful for retries
+/// where the original timestamp should be preserved.
+///
+/// # Arguments
+///
+/// * `template` - The path template to expand
+/// * `streamer_id` - Raw streamer ID
+/// * `session_id` - Raw session ID
+/// * `streamer_name` - Optional human-readable streamer name
+/// * `session_title` - Optional session/stream title
+/// * `platform` - Optional platform name
+/// * `reference_timestamp_ms` - Optional reference timestamp in Unix epoch milliseconds.
+///   If None, uses the current time.
+pub fn expand_placeholders_at(
+    template: &str,
+    streamer_id: &str,
+    session_id: &str,
+    streamer_name: Option<&str>,
+    session_title: Option<&str>,
+    platform: Option<&str>,
+    reference_timestamp_ms: Option<i64>,
+) -> String {
     // First, expand curly-brace placeholders
     let streamer_display = streamer_name
         .map(sanitize_filename)
@@ -153,8 +189,8 @@ pub fn expand_placeholders(
         .replace("{session_id}", session_id)
         .replace("{platform}", platform_display);
 
-    // Then expand time-based placeholders using pipeline_common's expand_path_template
-    pipeline_common::expand_path_template(&result)
+    // Then expand time-based placeholders using pipeline_common's expand_path_template_at
+    pipeline_common::expand_path_template_at(&result, reference_timestamp_ms)
 }
 
 #[cfg(test)]
