@@ -421,6 +421,7 @@ mod tests {
             streamer_name: Some("Streamer".to_string()),
             session_title: Some("Title".to_string()),
             platform: Some("X".to_string()),
+            ..Default::default()
         };
 
         let args = TdlUploadProcessor::build_args(&cfg, &input, "/in.mp4");
@@ -438,6 +439,7 @@ mod tests {
             streamer_name: Some("Alice".to_string()),
             session_title: Some("Hello".to_string()),
             platform: Some("Twitch".to_string()),
+            ..Default::default()
         };
 
         let out = TdlUploadProcessor::expand_arg(

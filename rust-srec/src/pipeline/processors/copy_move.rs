@@ -1036,6 +1036,7 @@ mod tests {
             streamer_name: Some("TestStreamer".to_string()),
             session_title: Some("LiveStream".to_string()),
             platform: Some("Twitch".to_string()),
+            ..Default::default()
         };
 
         let output = processor.process(&input, &ctx).await.unwrap();

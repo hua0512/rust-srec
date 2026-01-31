@@ -9,7 +9,7 @@ use tracing::{error, info, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
-use crate::utils::filename::expand_placeholders;
+use crate::utils::filename::expand_placeholders_at;
 
 /// Rclone operation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -411,6 +411,8 @@ impl RcloneProcessor {
 
     /// Determine remote destination path with placeholder expansion.
     /// Supports: {streamer}, {title}, {streamer_id}, {session_id}, and time placeholders (%Y, %m, %d, etc.)
+    ///
+    /// Time placeholders use `input.created_at` to ensure consistency across retries.
     fn determine_remote_destination(
         input: &ProcessorInput,
         config_json: Option<&serde_json::Value>,
@@ -429,6 +431,10 @@ impl RcloneProcessor {
             String::new()
         };
 
+        // Use job's created_at timestamp for time placeholder expansion.
+        // This ensures retries use the same timestamp as the original job.
+        let reference_timestamp_ms = input.created_at.timestamp_millis();
+
         // Debug: Log all placeholder-related values before expansion
         tracing::debug!(
             template = %remote_destination_raw,
@@ -436,17 +442,19 @@ impl RcloneProcessor {
             session_id = %input.session_id,
             streamer_name = ?input.streamer_name,
             session_title = ?input.session_title,
+            created_at = %input.created_at,
             "Rclone: Expanding placeholders"
         );
 
-        // Expand placeholders in destination path
-        let expanded = expand_placeholders(
+        // Expand placeholders in destination path using reference timestamp
+        let expanded = expand_placeholders_at(
             &remote_destination_raw,
             &input.streamer_id,
             &input.session_id,
             input.streamer_name.as_deref(),
             input.session_title.as_deref(),
             input.platform.as_deref(),
+            Some(reference_timestamp_ms),
         );
 
         tracing::debug!(
@@ -655,6 +663,8 @@ mod tests {
 
     #[test]
     fn test_determine_remote_destination_with_metadata() {
+        use chrono::TimeZone;
+
         let input = ProcessorInput {
             inputs: vec!["/input.mp4".to_string()],
             outputs: vec![],
@@ -664,6 +674,7 @@ mod tests {
             session_title: Some("Live Title".to_string()),
             platform: None,
             config: Some(r#"{"destination_root": "remote:/{streamer}/{title}/"}"#.to_string()),
+            created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
         };
 
         let config_json =
@@ -672,5 +683,31 @@ mod tests {
             RcloneProcessor::determine_remote_destination(&input, config_json.as_ref());
 
         assert_eq!(destination, "remote:/StreamerName/Live Title");
+    }
+
+    #[test]
+    fn test_determine_remote_destination_with_created_at() {
+        use chrono::TimeZone;
+
+        // Use a specific created_at timestamp: 2024-01-01 00:00:00 UTC
+        let input = ProcessorInput {
+            inputs: vec!["/input.mp4".to_string()],
+            outputs: vec![],
+            streamer_id: "123".to_string(),
+            session_id: "456".to_string(),
+            streamer_name: Some("StreamerName".to_string()),
+            session_title: Some("Live Title".to_string()),
+            platform: None,
+            config: Some(r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/"}"#.to_string()),
+            created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+        };
+
+        let config_json =
+            serde_json::from_str::<serde_json::Value>(input.config.as_ref().unwrap()).ok();
+        let destination =
+            RcloneProcessor::determine_remote_destination(&input, config_json.as_ref());
+
+        // Should use created_at (2024-01-01) for time placeholders
+        assert_eq!(destination, "remote:/2024/01/01/StreamerName");
     }
 }

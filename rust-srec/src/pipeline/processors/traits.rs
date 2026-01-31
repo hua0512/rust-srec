@@ -1,6 +1,7 @@
 //! Processor trait and related types.
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -18,7 +19,7 @@ pub enum ProcessorType {
 }
 
 /// Input for a processor.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ProcessorInput {
     /// Input file paths.
     pub inputs: Vec<String>,
@@ -36,6 +37,25 @@ pub struct ProcessorInput {
     pub session_title: Option<String>,
     /// Platform name (e.g., "Twitch", "Huya").
     pub platform: Option<String>,
+    /// When the job was originally created.
+    /// Used for time-based placeholder expansion to ensure consistency across retries.
+    pub created_at: DateTime<Utc>,
+}
+
+impl Default for ProcessorInput {
+    fn default() -> Self {
+        Self {
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            config: None,
+            streamer_id: String::new(),
+            session_id: String::new(),
+            streamer_name: None,
+            session_title: None,
+            platform: None,
+            created_at: Utc::now(),
+        }
+    }
 }
 
 impl ProcessorInput {
@@ -55,6 +75,7 @@ impl ProcessorInput {
             streamer_name: None,
             session_title: None,
             platform: None,
+            created_at: Utc::now(),
         }
     }
 
@@ -79,6 +100,12 @@ impl ProcessorInput {
     /// Set the platform.
     pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
         self.platform = Some(platform.into());
+        self
+    }
+
+    /// Set the created_at timestamp.
+    pub fn with_created_at(mut self, created_at: DateTime<Utc>) -> Self {
+        self.created_at = created_at;
         self
     }
 }
@@ -234,6 +261,7 @@ mod tests {
             streamer_name: Some("Test Streamer".to_string()),
             session_title: Some("Test Title".to_string()),
             platform: None,
+            created_at: Utc::now(),
         };
 
         assert_eq!(input.inputs[0], "/input.flv");

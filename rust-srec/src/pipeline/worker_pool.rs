@@ -459,6 +459,7 @@ impl WorkerPool {
                                 streamer_name: job.streamer_name.take(),
                                 session_title: job.session_title.take(),
                                 platform: job.platform.take(),
+                                created_at: job.created_at,
                             };
 
                             let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(100);

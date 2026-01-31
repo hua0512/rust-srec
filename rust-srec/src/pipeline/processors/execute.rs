@@ -735,6 +735,7 @@ mod tests {
             session_title: Some("Title:With:Colons".to_string()),
             platform: Some("Twitch".to_string()),
             config: None,
+            ..Default::default()
         };
 
         let cmd = "echo {platform} {streamer} {title} {streamer_id} {session_id}";
