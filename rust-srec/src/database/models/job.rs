@@ -141,7 +141,12 @@ impl JobCounts {
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct JobDbModel {
     pub id: String,
-    /// Job type: DOWNLOAD, PIPELINE, or specific step types like "remux", "upload", "thumbnail"
+    /// Job type.
+    ///
+    /// This field is a free-form string used to route work to a processor and to filter/list jobs.
+    /// In practice, it is usually:
+    /// - A processor name for inline steps (e.g. `remux`, `upload`, `thumbnail`)
+    /// - A preset name for preset-driven DAG steps (e.g. `thumbnail_native`, `thumbnail_hd`)
     pub job_type: String,
     /// Status: PENDING, PROCESSING, COMPLETED, FAILED, INTERRUPTED
     pub status: String,
@@ -185,11 +190,11 @@ pub struct JobDbModel {
 }
 
 impl JobDbModel {
-    pub fn new(job_type: JobType, config: impl Into<String>) -> Self {
+    pub fn new(job_type: impl Into<String>, config: impl Into<String>) -> Self {
         let now = crate::database::time::now_ms();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
-            job_type: job_type.as_str().to_string(),
+            job_type: job_type.into(),
             status: JobStatus::Pending.as_str().to_string(),
             config: config.into(),
             state: "{}".to_string(),
@@ -213,8 +218,9 @@ impl JobDbModel {
         }
     }
 
-    /// Create a new pipeline job with all fields.
-    pub fn new_pipeline(
+    /// Create a new job that has an input path.
+    pub fn new_with_input(
+        job_type: impl Into<String>,
         input: impl Into<String>,
         priority: i32,
         streamer_id: Option<String>,
@@ -224,7 +230,7 @@ impl JobDbModel {
         let now = crate::database::time::now_ms();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
-            job_type: JobType::Pipeline.as_str().to_string(),
+            job_type: job_type.into(),
             status: JobStatus::Pending.as_str().to_string(),
             config: config.into(),
             state: "{}".to_string(),
@@ -367,39 +373,6 @@ impl JobDbModel {
     /// Get the job status as an enum.
     pub fn get_status(&self) -> Option<JobStatus> {
         JobStatus::parse(&self.status)
-    }
-
-    /// Get the job type as an enum.
-    pub fn get_job_type(&self) -> Option<JobType> {
-        JobType::parse(&self.job_type)
-    }
-}
-
-/// Job types.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
-)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum JobType {
-    Download,
-    Pipeline,
-}
-
-impl JobType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Download => "DOWNLOAD",
-            Self::Pipeline => "PIPELINE",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "DOWNLOAD" => Some(Self::Download),
-            "PIPELINE" => Some(Self::Pipeline),
-            _ => None,
-        }
     }
 }
 
@@ -1012,9 +985,9 @@ mod tests {
 
     #[test]
     fn test_job_new() {
-        let job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
+        let job = JobDbModel::new("remux", r#"{"steps":[]}"#);
         assert_eq!(job.status, "PENDING");
-        assert_eq!(job.job_type, "PIPELINE");
+        assert_eq!(job.job_type, "remux");
         assert_eq!(job.priority, 0);
         assert_eq!(job.retry_count, 0);
         assert!(job.input.is_none());
@@ -1029,7 +1002,8 @@ mod tests {
 
     #[test]
     fn test_job_new_pipeline() {
-        let job = JobDbModel::new_pipeline(
+        let job = JobDbModel::new_with_input(
+            "remux",
             "/input/file.flv",
             10,
             Some("streamer-123".to_string()),
@@ -1037,7 +1011,7 @@ mod tests {
             r#"{"steps":[]}"#,
         );
         assert_eq!(job.status, "PENDING");
-        assert_eq!(job.job_type, "PIPELINE");
+        assert_eq!(job.job_type, "remux");
         assert_eq!(job.input, Some("/input/file.flv".to_string()));
         assert!(job.outputs.is_none()); // Outputs start empty
         assert!(job.get_outputs().is_empty());
@@ -1049,7 +1023,14 @@ mod tests {
 
     #[test]
     fn test_job_outputs() {
-        let mut job = JobDbModel::new_pipeline("/input/file.flv", 5, None, None, r#"{"steps":[]}"#);
+        let mut job = JobDbModel::new_with_input(
+            "remux",
+            "/input/file.flv",
+            5,
+            None,
+            None,
+            r#"{"steps":[]}"#,
+        );
 
         // Initially no outputs
         assert!(job.get_outputs().is_empty());
@@ -1081,7 +1062,7 @@ mod tests {
 
     #[test]
     fn test_job_lifecycle_methods() {
-        let mut job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
+        let mut job = JobDbModel::new("remux", r#"{"steps":[]}"#);
 
         // Test mark_started
         job.mark_started();
@@ -1096,7 +1077,7 @@ mod tests {
 
     #[test]
     fn test_job_mark_failed() {
-        let mut job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
+        let mut job = JobDbModel::new("remux", r#"{"steps":[]}"#);
         job.mark_started();
         job.mark_failed("Something went wrong");
 
@@ -1107,7 +1088,7 @@ mod tests {
 
     #[test]
     fn test_job_reset_for_retry() {
-        let mut job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
+        let mut job = JobDbModel::new("remux", r#"{"steps":[]}"#);
         job.mark_started();
         job.mark_failed("Error");
 
@@ -1140,9 +1121,9 @@ mod tests {
 
     #[test]
     fn test_get_status_and_type() {
-        let job = JobDbModel::new(JobType::Pipeline, r#"{"steps":[]}"#);
+        let job = JobDbModel::new("remux", r#"{"steps":[]}"#);
         assert_eq!(job.get_status(), Some(JobStatus::Pending));
-        assert_eq!(job.get_job_type(), Some(JobType::Pipeline));
+        assert_eq!(job.job_type, "remux");
     }
 
     #[test]

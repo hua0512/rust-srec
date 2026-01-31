@@ -99,14 +99,14 @@ async fn sqlite_claim_stress_no_double_claims_or_lost_transitions() {
 
     // Seed a backlog of PENDING jobs.
     for i in 0..JOBS {
-        let mut job = JobDbModel::new_pipeline(
+        let mut job = JobDbModel::new_with_input(
+            "remux",
             format!("input-{i}"),
             (i % 10) as i32,
             Some("streamer".to_string()),
             Some("session".to_string()),
             "{}",
         );
-        job.job_type = "remux".to_string();
         job.priority = ((i % 5) as i32) - 2;
         repo.create_job(&job).await.unwrap();
     }

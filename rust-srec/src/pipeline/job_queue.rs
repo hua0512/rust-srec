@@ -21,8 +21,17 @@ use crate::database::models::{
     MediaOutputDbModel, Pagination, TitleEntry,
 };
 use crate::database::repositories::{JobRepository, SessionRepository, StreamerRepository};
+use crate::pipeline::processors::utils as processor_utils;
 use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
+
+fn is_thumbnail_job_type(job_type: &str) -> bool {
+    // JobDbModel.job_type is a free-form string. In practice we use:
+    // - "thumbnail" for the direct thumbnail processor
+    // - "thumbnail_<preset>" (e.g. thumbnail_native/thumbnail_hd) for preset-driven DAG steps
+    let jt = job_type.to_ascii_lowercase();
+    jt == "thumbnail" || jt.starts_with("thumbnail_")
+}
 
 const EXECUTION_INFO_MAX_LOGS: usize = 200;
 const PROGRESS_FLUSH_INTERVAL_MS: u64 = 250;
@@ -618,10 +627,42 @@ impl JobQueue {
     }
 
     /// Persist thumbnail output to media_outputs table.
-    async fn _persist_thumbnail_output(&self, session_id: &str, output_path: &str) {
+    async fn persist_thumbnail_output(&self, session_id: &str, output_path: &str) {
         let Some(repo) = self.session_repo.get() else {
             return;
         };
+
+        // Avoid inserting obviously-non-thumbnail outputs.
+        // The ThumbnailProcessor may return passthrough outputs for unsupported inputs.
+        let Some(ext) = processor_utils::get_extension(output_path) else {
+            return;
+        };
+        if !processor_utils::is_image(&ext) {
+            return;
+        }
+
+        // Best-effort dedupe: repeated retries/completions should not create duplicate rows.
+        // (Schema does not enforce uniqueness on file_path.)
+        if let Ok(existing) = repo.get_media_outputs_for_session(session_id).await {
+            let output_key = if cfg!(windows) {
+                output_path.to_ascii_lowercase()
+            } else {
+                output_path.to_string()
+            };
+
+            if existing.iter().any(|row| {
+                row.file_type == MediaFileType::Thumbnail.as_str() && {
+                    let row_key = if cfg!(windows) {
+                        row.file_path.to_ascii_lowercase()
+                    } else {
+                        row.file_path.clone()
+                    };
+                    row_key == output_key
+                }
+            }) {
+                return;
+            }
+        }
 
         // Get file size
         let size_bytes = tokio::fs::metadata(output_path)
@@ -969,9 +1010,17 @@ impl JobQueue {
     pub async fn complete(&self, job_id: &str, result: JobResult) -> Result<()> {
         let mut transitioned = false;
 
+        // Capture outputs for persistence before they are moved into cache/DB models.
+        let outputs_for_persist = result.outputs.clone();
+        let mut completed_job_type: Option<String> = None;
+        let mut completed_session_id: Option<String> = None;
+
         // Update database if repository is available.
         if let Some(repo) = &self.job_repository {
             let mut db_job = repo.get_job(job_id).await?;
+
+            completed_job_type = Some(db_job.job_type.clone());
+            completed_session_id = db_job.session_id.clone();
 
             // Only allow PROCESSING -> COMPLETED to avoid overwriting INTERRUPTED jobs.
             // (Cancellation is expected to win races.)
@@ -1023,6 +1072,14 @@ impl JobQueue {
 
         // Update cache (in-memory mode or best-effort visibility).
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
+            // Capture from cache if not already known (in-memory mode has no db_job).
+            if completed_job_type.is_none() {
+                completed_job_type = Some(job.job_type.clone());
+            }
+            if completed_session_id.is_none() && !job.session_id.is_empty() {
+                completed_session_id = Some(job.session_id.clone());
+            }
+
             if job.status != JobStatus::Interrupted {
                 transitioned |= matches!(job.status, JobStatus::Pending | JobStatus::Processing);
                 job.status = JobStatus::Completed;
@@ -1046,6 +1103,23 @@ impl JobQueue {
             }
         } else if self.job_repository.is_none() {
             return Err(Error::not_found("Job", job_id));
+        }
+
+        // Persist thumbnail outputs to the session media_outputs table.
+        //
+        // This covers:
+        // - Direct thumbnail jobs (job_type == "thumbnail")
+        // - Preset-driven DAG steps (job_type == "thumbnail_<preset>")
+        //
+        // Segment persistence is handled by the download manager event path.
+        if completed_job_type
+            .as_deref()
+            .is_some_and(is_thumbnail_job_type)
+            && let Some(session_id) = completed_session_id.as_deref()
+        {
+            for output_path in &outputs_for_persist {
+                self.persist_thumbnail_output(session_id, output_path).await;
+            }
         }
 
         // Cleanup in-memory tracking for this job.
