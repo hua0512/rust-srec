@@ -2131,6 +2131,7 @@ mod tests {
             _event_type: Option<&str>,
             _streamer_id: Option<&str>,
             _search: Option<&str>,
+            _priority: Option<&str>,
             _offset: i32,
             _limit: i32,
         ) -> Result<Vec<NotificationEventLogDbModel>> {

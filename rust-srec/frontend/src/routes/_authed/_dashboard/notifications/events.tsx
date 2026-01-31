@@ -1,38 +1,33 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import type { I18n } from '@lingui/core';
-import { formatDistanceToNow } from 'date-fns';
 import {
   Bell,
   RefreshCw,
-  Globe,
-  Download,
-  AlertCircle,
-  AlertTriangle,
-  Info,
-  Settings,
-  ShieldCheck,
-  Webhook,
-  Mail,
-  MessageSquare,
   Activity,
-  History,
-  Timer,
-  Clock,
-  Layers,
-  Link2,
   X,
-  ListOrdered,
+  CheckCheck,
+  Filter,
+  Flame,
+  Zap,
+  Circle,
 } from 'lucide-react';
+
+import { JsonViewer, prettyJson } from '@/components/shared/json-viewer';
+import { EventCard } from '@/components/notifications/events/event-card';
 
 import { listEvents, listEventTypes } from '@/server/functions/notifications';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -51,6 +46,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
   getLastSeenCriticalMs,
+  onNotificationStateChanged,
   setLastSeenCriticalMs,
 } from '@/lib/notification-state';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
@@ -62,79 +58,29 @@ export const Route = createFileRoute(
   component: NotificationEventsPage,
 });
 
-function EventIcon({
-  eventType,
-  className,
-}: {
-  eventType: string;
-  className?: string;
-}) {
-  const type = eventType.toLowerCase();
-  if (type.includes('download')) return <Download className={className} />;
-  if (type.includes('error') || type.includes('fail'))
-    return <AlertCircle className={className} />;
-  if (type.includes('warning')) return <AlertTriangle className={className} />;
-  if (type.includes('config') || type.includes('settings'))
-    return <Settings className={className} />;
-  if (type.includes('auth')) return <ShieldCheck className={className} />;
-  if (type.includes('webhook')) return <Webhook className={className} />;
-  if (type.includes('email')) return <Mail className={className} />;
-  if (type.includes('danmu') || type.includes('chat'))
-    return <MessageSquare className={className} />;
-  if (type.includes('pipeline')) return <Layers className={className} />;
-  if (type.includes('engine')) return <Activity className={className} />;
-  if (type.includes('retention')) return <History className={className} />;
-  if (type.includes('delay') || type.includes('timer'))
-    return <Timer className={className} />;
-  if (type.includes('recording') || type.includes('session'))
-    return <Clock className={className} />;
-
-  return <Info className={className} />;
-}
-
-function getPriorityStyles(priority: string) {
-  const p = priority.toLowerCase();
-  switch (p) {
-    case 'critical':
-      return {
-        card: 'border-l-red-500 bg-red-500/5 hover:bg-red-500/10',
-        glow: 'shadow-[0_0_15px_rgba(239,68,68,0.1)]',
-        icon: 'bg-red-500/20 text-red-500',
-        badge: 'bg-red-500/10 text-red-600 border-red-500/20',
-      };
-    case 'high':
-      return {
-        card: 'border-l-orange-500 bg-orange-500/5 hover:bg-orange-500/10',
-        glow: 'shadow-[0_0_15px_rgba(249,115,22,0.1)]',
-        icon: 'bg-orange-500/20 text-orange-500',
-        badge: 'bg-orange-500/10 text-orange-600 border-orange-500/20',
-      };
-    case 'normal':
-      return {
-        card: 'border-l-blue-500 bg-blue-500/5 hover:bg-blue-500/10',
-        glow: 'shadow-[0_0_15px_rgba(59,130,246,0.1)]',
-        icon: 'bg-blue-500/20 text-blue-500',
-        badge: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-      };
-    default:
-      return {
-        card: 'border-l-slate-500 bg-slate-500/5 hover:bg-slate-500/10',
-        glow: 'shadow-[0_0_15px_rgba(100,116,139,0.1)]',
-        icon: 'bg-slate-500/20 text-slate-500',
-        badge: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
-      };
-  }
-}
+// Redundant local components removed, now imported from components.
 
 function NotificationEventsPage() {
   const { i18n } = useLingui();
+  const queryClient = useQueryClient();
   const [eventType, setEventType] = useState<string>('all');
+  const [priority, setPriority] = useState<string>('all');
   const [streamerId, setStreamerId] = useState<string>('');
-  const [limit, setLimit] = useState<string>('200');
+  const [page, setPage] = useState(1);
   const [selectedPayload, setSelectedPayload] = useState<{
     title: string;
     payload: string;
   } | null>(null);
+
+  const limit = 50;
+
+  const [lastSeenMs, setLastSeenMs] = useState(() => getLastSeenCriticalMs());
+
+  useEffect(() => {
+    return onNotificationStateChanged(() => {
+      setLastSeenMs(getLastSeenCriticalMs());
+    });
+  }, []);
 
   const { data: eventTypes } = useQuery({
     queryKey: ['notification-event-types'],
@@ -142,19 +88,20 @@ function NotificationEventsPage() {
   });
 
   const query = useMemo(() => {
-    const n = Number(limit);
     return {
-      limit: Number.isFinite(n) ? n : 200,
+      limit,
+      offset: (page - 1) * limit,
       event_type: eventType === 'all' ? undefined : eventType,
+      priority: priority === 'all' ? undefined : priority,
       search:
         streamerId && streamerId !== 'all' && streamerId.trim()
           ? streamerId.trim()
           : undefined,
     };
-  }, [eventType, streamerId, limit]);
+  }, [eventType, priority, streamerId, page]);
 
   const {
-    data: events,
+    data: rawEvents,
     isLoading,
     error,
     refetch,
@@ -165,34 +112,126 @@ function NotificationEventsPage() {
     refetchInterval: 15000,
   });
 
+  const events = useMemo(() => {
+    if (!rawEvents) return [];
+    return rawEvents.map((e) => ({
+      ...e,
+      read: e.created_at <= lastSeenMs,
+    }));
+  }, [rawEvents, lastSeenMs]);
+
+  // Only auto-mark critical events as seen when they're actually visible
   useEffect(() => {
-    if (!events || typeof window === 'undefined') return;
-    const maxCritical = events.reduce((max, e) => {
+    if (!rawEvents || typeof window === 'undefined') return;
+
+    // Don't auto-dismiss if filters would hide critical events
+    const criticalVisible = priority === 'all' || priority === 'critical';
+    if (!criticalVisible) return;
+
+    const maxCritical = rawEvents.reduce((max, e) => {
       const p = (e.priority ?? '').toString().trim().toLowerCase();
       if (p !== 'critical') return max;
       return Math.max(max, e.created_at);
     }, 0);
     if (maxCritical <= 0) return;
     const prev = getLastSeenCriticalMs();
-    if (maxCritical > prev) setLastSeenCriticalMs(maxCritical);
-  }, [events]);
+    if (maxCritical > prev) {
+      setLastSeenCriticalMs(maxCritical);
+      setLastSeenMs(maxCritical);
+    }
+  }, [rawEvents, priority]);
+
+  const handleMarkAllRead = useCallback(() => {
+    const now = Date.now();
+    setLastSeenCriticalMs(now);
+    setLastSeenMs(now);
+    queryClient.invalidateQueries({ queryKey: ['notification-critical-dot'] });
+    toast.success(i18n._(msg`Marked all as read`));
+  }, [i18n, queryClient]);
+
+  const priorityFilters = useMemo(
+    () => [
+      { value: 'all', label: i18n._(msg`All`), icon: Filter },
+      {
+        value: 'critical',
+        label: i18n._(msg`Critical`),
+        icon: Flame,
+        color: 'text-red-500',
+      },
+      {
+        value: 'high',
+        label: i18n._(msg`High+`),
+        icon: Zap,
+        color: 'text-orange-500',
+      },
+      {
+        value: 'normal',
+        label: i18n._(msg`Normal+`),
+        icon: Circle,
+        color: 'text-blue-500',
+      },
+    ],
+    [i18n],
+  );
 
   const hasActiveFilters =
     eventType !== 'all' ||
-    (streamerId !== '' && streamerId !== 'all') ||
-    limit !== '200';
+    priority !== 'all' ||
+    (streamerId !== '' && streamerId !== 'all');
 
-  const clearFilters = () => {
-    setEventType('all');
-    setStreamerId('');
-    setLimit('200');
-  };
+  const clearFilters = useCallback(() => {
+    startTransition(() => {
+      setEventType('all');
+      setPriority('all');
+      setStreamerId('');
+      setPage(1);
+    });
+  }, []);
+
+  const handleSetPriority = useCallback((val: string) => {
+    startTransition(() => {
+      setPriority(val);
+    });
+  }, []);
+
+  const handleSetEventType = useCallback((val: string) => {
+    startTransition(() => {
+      setEventType(val);
+    });
+  }, []);
+
+  const handleSetStreamerId = useCallback((val: string) => {
+    startTransition(() => {
+      setStreamerId(val);
+    });
+  }, []);
+
+  const handleSetPage = useCallback(
+    (updater: number | ((p: number) => number)) => {
+      setPage(updater);
+    },
+    [],
+  );
+
+  const handleViewDetails = useCallback((event: any) => {
+    setSelectedPayload({
+      title: `${event.event_type} (${event.priority})`,
+      payload: event.payload,
+    });
+  }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [eventType, priority, streamerId]);
+
+  const hasMore = (events?.length ?? 0) >= limit;
+  const hasPrev = page > 1;
 
   if (error) {
     return (
       <div className="p-4 md:p-8 space-y-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
+          <div className="p-2.5 rounded-xl bg-linear-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
             <Bell className="h-5 w-5 text-primary" />
           </div>
           <div>
@@ -224,7 +263,7 @@ function NotificationEventsPage() {
   }
 
   return (
-    <div className="min-h-screen space-y-6 bg-gradient-to-br from-background via-background to-muted/20">
+    <div className="min-h-screen space-y-6 bg-linear-to-br from-background via-background to-muted/20">
       <DashboardHeader
         icon={Bell}
         title={<Trans>Notification Events</Trans>}
@@ -235,15 +274,46 @@ function NotificationEventsPage() {
           <>
             <SearchInput
               defaultValue={streamerId}
-              onSearch={setStreamerId}
-              placeholder={i18n._(msg`Filter streamer...`)}
-              className="md:w-56 min-w-[200px]"
+              onSearch={handleSetStreamerId}
+              placeholder={i18n._(msg`Search streamer...`)}
+              className="md:w-56 min-w-50"
             />
 
             <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
 
             <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
-              <Select value={eventType} onValueChange={setEventType}>
+              {priorityFilters.map((filter) => {
+                const Icon = filter.icon;
+                const isActive = priority === filter.value;
+                return (
+                  <button
+                    key={filter.value}
+                    onClick={() => handleSetPriority(filter.value)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
+                      isActive
+                        ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                    )}
+                  >
+                    <Icon
+                      className={cn(
+                        'h-3 w-3',
+                        isActive
+                          ? filter.color || 'text-primary'
+                          : 'text-muted-foreground',
+                      )}
+                    />
+                    <span>{filter.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
+
+            <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
+              <Select value={eventType} onValueChange={handleSetEventType}>
                 <SelectTrigger className="h-7 border-none bg-transparent hover:bg-background/50 transition-colors rounded-full text-xs font-medium px-3 gap-1.5 focus:ring-0 shadow-none">
                   <Activity className="h-3.5 w-3.5 text-muted-foreground" />
                   <SelectValue placeholder={i18n._(msg`Event Type`)} />
@@ -255,24 +325,6 @@ function NotificationEventsPage() {
                   {(eventTypes ?? []).map((et) => (
                     <SelectItem key={et.event_type} value={et.event_type}>
                       {et.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
-
-            <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
-              <Select value={limit} onValueChange={setLimit}>
-                <SelectTrigger className="h-7 border-none bg-transparent hover:bg-background/50 transition-colors rounded-full text-xs font-medium px-3 gap-1.5 focus:ring-0 shadow-none">
-                  <ListOrdered className="h-3 w-3 text-muted-foreground" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {['50', '100', '200', '500', '1000'].map((v) => (
-                    <SelectItem key={v} value={v}>
-                      {v} items
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -293,9 +345,19 @@ function NotificationEventsPage() {
             <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
 
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-9 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-300"
+              className="h-9 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-300 shrink-0"
+              onClick={handleMarkAllRead}
+            >
+              <CheckCheck className="mr-2 h-3.5 w-3.5" />
+              <Trans>Mark Read</Trans>
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-300 shrink-0"
               onClick={() => refetch()}
               disabled={isRefetching}
             >
@@ -312,10 +374,10 @@ function NotificationEventsPage() {
               variant="outline"
               size="sm"
               asChild
-              className="h-9 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 transition-all duration-300"
+              className="h-9 px-4 rounded-xl text-xs font-black uppercase tracking-widest bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 transition-all duration-300 shrink-0"
             >
               <Link to="/notifications">
-                <Trans>Notification Channels</Trans>
+                <Trans>Channels</Trans>
               </Link>
             </Button>
           </>
@@ -345,110 +407,42 @@ function NotificationEventsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(events ?? []).map((e) => {
-              const when = (() => {
-                try {
-                  return formatDistanceToNow(e.created_at, {
-                    addSuffix: true,
-                  });
-                } catch {
-                  return String(e.created_at);
-                }
-              })();
+            {events.map((e) => (
+              <EventCard
+                key={e.id}
+                event={e}
+                onViewDetails={handleViewDetails}
+              />
+            ))}
+          </div>
+        )}
 
-              const styles = getPriorityStyles(e.priority);
-              const isCrit = e.priority.toLowerCase() === 'critical';
-
-              return (
-                <div
-                  key={e.id}
-                  className={cn(
-                    'group relative flex flex-col p-4 rounded-2xl border border-border/40 border-l-4 transition-all duration-300 hover:shadow-xl hover:scale-[1.02] backdrop-blur-sm',
-                    styles.card,
-                    styles.glow,
-                  )}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={cn(
-                          'p-2 rounded-xl transition-colors duration-300 group-hover:scale-110',
-                          styles.icon,
-                        )}
-                      >
-                        <EventIcon
-                          eventType={e.event_type}
-                          className="h-4 w-4"
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xs font-mono font-medium opacity-70 group-hover:opacity-100 transition-opacity">
-                          {e.event_type}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                          <Activity className="h-2.5 w-2.5 opacity-50" />
-                          {when}
-                        </div>
-                      </div>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        'text-[9px] px-1.5 py-0 h-4 border-none shadow-none uppercase font-bold tracking-wider',
-                        styles.badge,
-                      )}
-                    >
-                      {e.priority}
-                    </Badge>
-                  </div>
-
-                  <div className="flex-1">
-                    {e.streamer_id && (
-                      <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded-lg bg-background/40 border border-border/20 w-fit">
-                        <Globe className="h-3 w-3 text-primary/60" />
-                        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[150px]">
-                          {e.streamer_id}
-                        </span>
-                      </div>
-                    )}
-                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                      {formatSummary(e.payload, e.event_type, i18n)}
-                    </p>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-border/20 flex justify-between items-center opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0 duration-300">
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-1.5 rounded-full bg-primary/40 animate-pulse" />
-                      <span className="text-[9px] text-muted-foreground font-medium uppercase tracking-tighter">
-                        <Trans>Details Ready</Trans>
-                      </span>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-[10px] font-bold gap-1.5 hover:bg-primary/10 hover:text-primary transition-colors"
-                      onClick={() => {
-                        setSelectedPayload({
-                          title: `${e.event_type} (${e.priority})`,
-                          payload: e.payload,
-                        });
-                      }}
-                    >
-                      <Trans>View Details</Trans>
-                      <Link2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-
-                  {/* Aesthetic Corner Flare */}
-                  <div
-                    className={cn(
-                      'absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-tr-2xl pointer-events-none',
-                      isCrit && 'from-red-500/20',
-                    )}
-                  />
-                </div>
-              );
-            })}
+        {(hasPrev || hasMore) && (
+          <div className="flex items-center justify-center gap-2 pt-6">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleSetPage((p) => Math.max(1, p - 1))}
+              disabled={!hasPrev}
+              className="h-9 px-4 rounded-xl"
+            >
+              <Trans>Previous</Trans>
+            </Button>
+            <div className="flex items-center gap-1 px-4">
+              <span className="text-sm text-muted-foreground">
+                <Trans>Page</Trans>
+              </span>
+              <span className="text-sm font-medium">{page}</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleSetPage((p) => p + 1)}
+              disabled={!hasMore}
+              className="h-9 px-4 rounded-xl"
+            >
+              <Trans>Next</Trans>
+            </Button>
           </div>
         )}
       </div>
@@ -461,20 +455,26 @@ function NotificationEventsPage() {
       >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{selectedPayload?.title}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <Activity className="h-4 w-4 text-primary" />
+              </div>
+              {selectedPayload?.title}
+            </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh] rounded-lg bg-muted/30 p-3 border">
-            <pre className="whitespace-pre-wrap text-xs font-mono">
-              {prettyJson(selectedPayload?.payload)}
-            </pre>
+          <ScrollArea className="max-h-[70vh] rounded-xl bg-muted/50 p-4 border">
+            {selectedPayload && <JsonViewer json={selectedPayload.payload} />}
           </ScrollArea>
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
+              size="sm"
+              className="rounded-xl"
               onClick={() => {
+                if (!selectedPayload) return;
                 try {
                   navigator.clipboard.writeText(
-                    prettyJson(selectedPayload?.payload),
+                    prettyJson(selectedPayload.payload),
                   );
                   toast.success(i18n._(msg`Copied`));
                 } catch {
@@ -482,71 +482,11 @@ function NotificationEventsPage() {
                 }
               }}
             >
-              <Trans>Copy</Trans>
+              <Trans>Copy JSON</Trans>
             </Button>
           </div>
         </DialogContent>
       </Dialog>
     </div>
   );
-}
-
-function formatSummary(payload: string, eventType: string, i18n: I18n): string {
-  try {
-    const parsed = JSON.parse(payload);
-    const variant = Object.keys(parsed)[0];
-    const inner = variant ? (parsed as any)[variant] : null;
-
-    if (!inner) return payload.slice(0, 100);
-
-    const streamer = inner.streamer_name || inner.streamer || inner.streamer_id;
-    const error =
-      inner.error_message || inner.error || inner.reason || inner.message;
-
-    if (eventType.toLowerCase().includes('recording')) {
-      if (variant === 'Started')
-        return i18n._(
-          msg`Recording started for ${streamer || 'unknown streamer'}`,
-        );
-      if (variant === 'Finished')
-        return i18n._(
-          msg`Recording finished for ${streamer || 'unknown streamer'}`,
-        );
-      if (variant === 'Failed')
-        return i18n._(msg`Recording failed: ${error || 'Unknown error'}`);
-    }
-
-    if (eventType.toLowerCase().includes('download')) {
-      if (variant === 'Started')
-        return i18n._(
-          msg`Download started: ${inner.title || streamer || 'unknown'}`,
-        );
-      if (variant === 'Finished')
-        return i18n._(
-          msg`Download completed: ${inner.path || inner.title || 'unknown'}`,
-        );
-      if (variant === 'Failed')
-        return i18n._(msg`Download failed: ${error || 'Unknown error'}`);
-    }
-
-    if (error) return error;
-
-    return (
-      inner.message ||
-      inner.reason ||
-      (typeof inner === 'string' ? inner : JSON.stringify(inner).slice(0, 100))
-    );
-  } catch {
-    return payload.slice(0, 100);
-  }
-}
-
-function prettyJson(payload?: string) {
-  if (!payload) return '';
-  try {
-    const parsed = JSON.parse(payload);
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return payload;
-  }
 }

@@ -22,10 +22,7 @@ import {
   type Locale,
 } from './integrations/lingui/i18n';
 
-const rootEl = document.getElementById('root');
-if (!rootEl) {
-  throw new Error('Missing #root element');
-}
+const rootEl = document.getElementById('root')!;
 
 function escapeHtml(input: string): string {
   return input

@@ -98,6 +98,7 @@ export const listEvents = createServerFn({ method: 'GET' })
         event_type?: string;
         streamer_id?: string;
         search?: string;
+        priority?: string;
       } = {},
     ) => q,
   )
@@ -108,6 +109,7 @@ export const listEvents = createServerFn({ method: 'GET' })
     if (data.event_type) params.set('event_type', data.event_type);
     if (data.streamer_id) params.set('streamer_id', data.streamer_id);
     if (data.search) params.set('search', data.search);
+    if (data.priority) params.set('priority', data.priority);
 
     const qs = params.toString();
     const json = await fetchBackend(
