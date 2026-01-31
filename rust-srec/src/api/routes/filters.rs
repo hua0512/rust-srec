@@ -168,13 +168,18 @@ pub async fn create_filter(
     let config_str = validate_and_serialize_config(filter_type, request.config)?;
 
     // Create DB model
-    let filter = FilterDbModel::new(streamer_id, filter_type, config_str);
+    let filter = FilterDbModel::new(&streamer_id, filter_type, config_str);
 
     // Save to DB
     filter_repo
         .create_filter(&filter)
         .await
         .map_err(ApiError::from)?;
+
+    // Notify scheduler/runtime that filter rules changed for this streamer.
+    if let Some(config_service) = &state.config_service {
+        config_service.notify_streamer_filters_updated(&streamer_id);
+    }
 
     model_to_response(&filter).map(Json)
 }
@@ -289,6 +294,10 @@ pub async fn update_filter(
         .await
         .map_err(ApiError::from)?;
 
+    if let Some(config_service) = &state.config_service {
+        config_service.notify_streamer_filters_updated(&streamer_id);
+    }
+
     model_to_response(&filter).map(Json)
 }
 
@@ -329,6 +338,10 @@ pub async fn delete_filter(
         .delete_filter(&id)
         .await
         .map_err(ApiError::from)?;
+
+    if let Some(config_service) = &state.config_service {
+        config_service.notify_streamer_filters_updated(&streamer_id);
+    }
 
     Ok(Json(serde_json::json!({
         "success": true,

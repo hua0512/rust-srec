@@ -26,19 +26,14 @@ pub const DEFAULT_DESKTOP_NOTIFICATION_EVENT_TYPES: &[&str] = &[
     "credential_invalid",
 ];
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DesktopNotificationMinPriority {
     Low,
+    #[default]
     Normal,
     High,
     Critical,
-}
-
-impl Default for DesktopNotificationMinPriority {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 impl From<DesktopNotificationMinPriority> for rust_srec::notification::NotificationPriority {

@@ -143,11 +143,19 @@ impl ActorRegistry {
         self.streamers.iter()
     }
 
+    pub fn streamer_handles_map(&self) -> &HashMap<String, ActorHandle<StreamerMessage>> {
+        &self.streamers
+    }
+
     /// Get all platform handles.
     pub fn platform_handles(
         &self,
     ) -> impl Iterator<Item = (&String, &ActorHandle<PlatformMessage>)> {
         self.platforms.iter()
+    }
+
+    pub fn platform_handles_map(&self) -> &HashMap<String, ActorHandle<PlatformMessage>> {
+        &self.platforms
     }
 
     /// Get streamers on a specific platform.

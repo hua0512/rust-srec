@@ -1067,6 +1067,16 @@ impl ServiceContainer {
                                             ).await;
                                         }
                                     }
+                                    ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => {
+                                        // Filters are evaluated by StreamMonitor on each check, but changing
+                                        // them can affect OutOfSchedule smart-wake behavior. Invalidate merged
+                                        // config and let the scheduler/actors re-check soon.
+                                        config_service.invalidate_streamer(&streamer_id);
+                                        debug!(
+                                            "Received streamer filters update event: {}",
+                                            streamer_id
+                                        );
+                                    }
                                 }
                             }
                             Err(_) => break,
