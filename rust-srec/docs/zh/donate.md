@@ -12,7 +12,23 @@
 
 支持持续开发：
 
+#### 微信支付
+
+<img src="/images/donate_wx_qr.jpg" alt="微信支付" width="300" />
+
+#### 支付宝
+
+<img src="/images/donate_alipay_qr.png" alt="支付宝" width="300" />
+
 - [GitHub Sponsors](https://github.com/sponsors/hua0512)
+
+### 💬 QQ群
+
+QQ群号：566418735
+
+[点击链接加入群聊【鸽鸽鸽鸽鸽】](https://qm.qq.com/q/qAbmjCuTug)
+
+<img src="/images/qq_group_zh.jpg" alt="QQ群二维码" width="300" />
 
 ### 🐛 贡献
 
