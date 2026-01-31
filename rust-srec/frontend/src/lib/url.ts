@@ -7,6 +7,7 @@
  * @returns The fully constructed URL, or null if the path is invalid.
  */
 import { getBaseUrl } from '@/utils/env';
+import { isTauriRuntime } from '@/utils/tauri';
 
 export function getMediaUrl(
   path: string | null | undefined,
@@ -21,13 +22,22 @@ export function getMediaUrl(
     return path;
   }
 
-  // Use relative URL to avoid SSR/client mismatch
+  // Use relative URL by default to avoid SSR/client mismatch.
   // Path from backend typically starts with /api/...
   let fullUrl = path.startsWith('/') ? path : `/${path}`;
 
   if (token) {
     const separator = fullUrl.includes('?') ? '&' : '?';
     fullUrl += `${separator}token=${token}`;
+  }
+
+  // Desktop/Tauri: avoid hitting the Vite dev server origin (127.0.0.1:15275 in dev
+  // or tauri:// in prod). Use the runtime-injected backend URL when available.
+  if (isTauriRuntime()) {
+    const baseUrl = getBaseUrl();
+    if (baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) {
+      return new URL(fullUrl, baseUrl).toString();
+    }
   }
 
   return fullUrl;
