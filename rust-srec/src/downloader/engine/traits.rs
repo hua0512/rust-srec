@@ -408,6 +408,8 @@ impl DownloadHandle {
 pub struct DownloadInfo {
     /// Download ID.
     pub id: String,
+    /// Stream URL being downloaded.
+    pub url: String,
     /// Streamer ID.
     pub streamer_id: String,
     /// Session ID.

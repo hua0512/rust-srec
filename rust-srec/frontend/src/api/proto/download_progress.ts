@@ -33,6 +33,7 @@ export interface DownloadProgress {
   mediaDurationSecs: number;
   playbackRatio: number;
   startedAtMs: bigint;
+  downloadUrl: string;
 }
 
 // Initial snapshot of all active downloads
@@ -163,6 +164,7 @@ function convertDownloadProgress(
 ): DownloadProgress {
   return {
     downloadId: (raw.downloadId as string) || '',
+    downloadUrl: (raw.downloadUrl as string) || '',
     streamerId: (raw.streamerId as string) || '',
     sessionId: (raw.sessionId as string) || '',
     engineType: (raw.engineType as string) || '',

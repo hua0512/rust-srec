@@ -1012,6 +1012,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 streamer_id,
                 session_id,
                 progress,
+                ..
             } => {
                 let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
                     Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,

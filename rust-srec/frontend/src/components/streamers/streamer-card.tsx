@@ -40,7 +40,7 @@ export const StreamerCard = memo(
             : '',
         )}
       >
-        <CardHeader className="px-5 py-4">
+        <CardHeader className="px-5 py-2">
           <div className="flex justify-between items-start">
             <div className="space-y-3 w-full">
               <div className="flex items-center justify-between w-full">

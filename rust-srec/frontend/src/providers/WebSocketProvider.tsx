@@ -79,6 +79,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
                 mediaDurationSecs: 0,
                 playbackRatio: 0,
                 startedAtMs: started.startedAtMs,
+                downloadUrl: '',
               };
               addDownload(initialProgress);
             }

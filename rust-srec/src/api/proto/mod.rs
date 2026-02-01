@@ -26,6 +26,7 @@ impl From<&DownloadInfo> for DownloadProgress {
     fn from(info: &DownloadInfo) -> Self {
         Self {
             download_id: info.id.clone(),
+            download_url: info.url.clone(),
             streamer_id: info.streamer_id.clone(),
             session_id: info.session_id.clone(),
             engine_type: info.engine_type.as_str().to_string(),
@@ -109,6 +110,7 @@ mod tests {
     fn create_test_download_info() -> DownloadInfo {
         DownloadInfo {
             id: "download-123".to_string(),
+            url: "https://example.com/stream".to_string(),
             streamer_id: "streamer-456".to_string(),
             session_id: "session-789".to_string(),
             engine_type: EngineType::Ffmpeg,

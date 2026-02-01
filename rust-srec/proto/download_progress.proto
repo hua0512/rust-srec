@@ -66,6 +66,8 @@ message DownloadProgress {
   double media_duration_secs = 10;
   double playback_ratio = 11;
   int64 started_at_ms = 12;  // Unix timestamp in milliseconds
+  // The actual stream URL being downloaded (may contain signed query params).
+  string download_url = 13;
 }
 
 // Download started event

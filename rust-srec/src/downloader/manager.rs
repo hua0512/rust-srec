@@ -192,6 +192,7 @@ impl Default for DownloadManagerConfig {
 /// Internal state for an active download.
 struct ActiveDownload {
     handle: Arc<DownloadHandle>,
+    download_url: String,
     status: DownloadStatus,
     progress: DownloadProgress,
     #[allow(dead_code)]
@@ -290,6 +291,8 @@ pub enum DownloadManagerEvent {
         download_id: String,
         streamer_id: String,
         session_id: String,
+        /// Stream URL being downloaded.
+        download_url: String,
         progress: DownloadProgress,
     },
     /// Segment started - a new segment file has been opened for writing.
@@ -750,6 +753,7 @@ impl DownloadManager {
             download_id.clone(),
             ActiveDownload {
                 handle: handle.clone(),
+                download_url: config.url.clone(),
                 status: DownloadStatus::Starting,
                 progress: DownloadProgress::default(),
                 is_high_priority,
@@ -834,15 +838,22 @@ impl DownloadManager {
                         );
                     }
                     SegmentEvent::Progress(progress) => {
-                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
+                        // Avoid a second DashMap lookup and avoid reading DownloadConfig on every tick.
+                        let download_url = if let Some(mut download) =
+                            active_downloads.get_mut(&download_id_clone)
+                        {
                             download.progress = progress.clone();
                             download.status = DownloadStatus::Downloading;
-                        }
+                            download.download_url.clone()
+                        } else {
+                            String::new()
+                        };
                         // Broadcast progress event to WebSocket subscribers
                         let _ = event_tx.send(DownloadManagerEvent::Progress {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
                             session_id: session_id.clone(),
+                            download_url,
                             progress,
                         });
                     }
@@ -852,10 +863,6 @@ impl DownloadManager {
                         total_segments,
                     } => {
                         circuit_breakers_ref.record_success();
-
-                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
-                            download.status = DownloadStatus::Completed;
-                        }
 
                         // remove download from active_downloads
                         // just before the event to avoid race condition
@@ -900,10 +907,6 @@ impl DownloadManager {
 
                         if !is_permanent_http_error {
                             circuit_breakers_ref.record_failure();
-                        }
-
-                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
-                            download.status = DownloadStatus::Failed;
                         }
 
                         // remove download from active_downloads
@@ -1018,6 +1021,7 @@ impl DownloadManager {
                 let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
+                    url: config_snapshot.url.clone(),
                     streamer_id: config_snapshot.streamer_id,
                     session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
@@ -1167,6 +1171,7 @@ impl DownloadManager {
                 let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
+                    url: config_snapshot.url.clone(),
                     streamer_id: config_snapshot.streamer_id,
                     session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
@@ -1404,6 +1409,7 @@ impl DownloadManager {
                 let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
+                    url: config_snapshot.url.clone(),
                     streamer_id: config_snapshot.streamer_id,
                     session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
@@ -1674,6 +1680,7 @@ mod tests {
 
         let active_download = ActiveDownload {
             handle,
+            download_url: "http://test.example.com/stream".to_string(),
             status: DownloadStatus::Downloading,
             progress: DownloadProgress::default(),
             is_high_priority: false,

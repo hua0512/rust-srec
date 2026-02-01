@@ -1,11 +1,17 @@
 import { memo } from 'react';
-import { Download, Zap, Save, Clock, Layers, Gauge } from 'lucide-react';
+import { Download, Zap, Save, Clock, Layers, Gauge, Globe } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { CountUp } from '@/components/ui/count-up';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trans } from '@lingui/react/macro';
 import { formatBytes, formatDuration, cn } from '@/lib/utils';
 import { Download as DownloadType } from '@/store/downloads';
+import { getUrlHost } from '@/lib/url';
 
 interface ActiveDownloadCardProps {
   downloads: DownloadType[];
@@ -31,20 +37,59 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
             <div className="flex items-center justify-between text-sm font-semibold text-red-500">
               <div className="flex items-center gap-2">
                 <Download className="w-4 h-4 animate-bounce" />{' '}
-                <Trans>Active Download</Trans>
+                <Trans render={({ translation }) => <>{translation}</>}>
+                  Active Download
+                </Trans>
               </div>
               <Badge
                 variant="outline"
                 className="border-red-500/30 text-red-500 bg-red-500/10 animate-pulse"
               >
-                {download.status || <Trans>Downloading</Trans>}
+                {download.status || (
+                  <Trans render={({ translation }) => <>{translation}</>}>
+                    Downloading
+                  </Trans>
+                )}
               </Badge>
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-2">
+              {(() => {
+                const cdnHost = getUrlHost(download.downloadUrl);
+                if (!cdnHost) return null;
+                return (
+                  <div className="space-y-1 overflow-hidden">
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Globe className="w-3 h-3" />{' '}
+                      <Trans render={({ translation }) => <>{translation}</>}>
+                        CDN
+                      </Trans>
+                    </div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div
+                          className="font-mono font-medium text-sm truncate cursor-help text-foreground/80 hover:text-foreground transition-colors"
+                          title={cdnHost}
+                        >
+                          {cdnHost}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="bottom"
+                        className="max-w-[400px] break-all font-mono text-[10px]"
+                      >
+                        {download.downloadUrl}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                );
+              })()}
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Zap className="w-3 h-3" /> <Trans>Speed</Trans>
+                  <Zap className="w-3 h-3" />{' '}
+                  <Trans render={({ translation }) => <>{translation}</>}>
+                    Speed
+                  </Trans>
                 </div>
                 <div className="font-mono font-medium text-lg">
                   <CountUp
@@ -55,7 +100,10 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Save className="w-3 h-3" /> <Trans>Size</Trans>
+                  <Save className="w-3 h-3" />{' '}
+                  <Trans render={({ translation }) => <>{translation}</>}>
+                    Size
+                  </Trans>
                 </div>
                 <div className="font-mono font-medium text-lg">
                   <CountUp
@@ -66,7 +114,10 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Clock className="w-3 h-3" /> <Trans>Duration</Trans>
+                  <Clock className="w-3 h-3" />{' '}
+                  <Trans render={({ translation }) => <>{translation}</>}>
+                    Duration
+                  </Trans>
                 </div>
                 <div className="font-mono font-medium text-lg">
                   {formatDuration(download.durationSecs)}
@@ -74,7 +125,10 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Layers className="w-3 h-3" /> <Trans>Segments</Trans>
+                  <Layers className="w-3 h-3" />{' '}
+                  <Trans render={({ translation }) => <>{translation}</>}>
+                    Segments
+                  </Trans>
                 </div>
                 <div className="font-mono font-medium text-lg">
                   <CountUp value={download.segmentsCompleted} />
@@ -82,7 +136,10 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Gauge className="w-3 h-3" /> <Trans>Ratio</Trans>
+                  <Gauge className="w-3 h-3" />{' '}
+                  <Trans render={({ translation }) => <>{translation}</>}>
+                    Ratio
+                  </Trans>
                 </div>
                 <div
                   className={cn(

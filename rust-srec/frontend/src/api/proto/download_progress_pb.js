@@ -1528,6 +1528,7 @@ export const download_progress = $root.download_progress = (() => {
          * @property {number|null} [mediaDurationSecs] DownloadProgress mediaDurationSecs
          * @property {number|null} [playbackRatio] DownloadProgress playbackRatio
          * @property {number|Long|null} [startedAtMs] DownloadProgress startedAtMs
+         * @property {string|null} [downloadUrl] DownloadProgress downloadUrl
          */
 
         /**
@@ -1642,6 +1643,14 @@ export const download_progress = $root.download_progress = (() => {
         DownloadProgress.prototype.startedAtMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
 
         /**
+         * DownloadProgress downloadUrl.
+         * @member {string} downloadUrl
+         * @memberof download_progress.DownloadProgress
+         * @instance
+         */
+        DownloadProgress.prototype.downloadUrl = "";
+
+        /**
          * Creates a new DownloadProgress instance using the specified properties.
          * @function create
          * @memberof download_progress.DownloadProgress
@@ -1689,6 +1698,8 @@ export const download_progress = $root.download_progress = (() => {
                 writer.uint32(/* id 11, wireType 1 =*/89).double(message.playbackRatio);
             if (message.startedAtMs != null && Object.hasOwnProperty.call(message, "startedAtMs"))
                 writer.uint32(/* id 12, wireType 0 =*/96).int64(message.startedAtMs);
+            if (message.downloadUrl != null && Object.hasOwnProperty.call(message, "downloadUrl"))
+                writer.uint32(/* id 13, wireType 2 =*/106).string(message.downloadUrl);
             return writer;
         };
 
@@ -1773,6 +1784,10 @@ export const download_progress = $root.download_progress = (() => {
                         message.startedAtMs = reader.int64();
                         break;
                     }
+                case 13: {
+                        message.downloadUrl = reader.string();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -1844,6 +1859,9 @@ export const download_progress = $root.download_progress = (() => {
             if (message.startedAtMs != null && message.hasOwnProperty("startedAtMs"))
                 if (!$util.isInteger(message.startedAtMs) && !(message.startedAtMs && $util.isInteger(message.startedAtMs.low) && $util.isInteger(message.startedAtMs.high)))
                     return "startedAtMs: integer|Long expected";
+            if (message.downloadUrl != null && message.hasOwnProperty("downloadUrl"))
+                if (!$util.isString(message.downloadUrl))
+                    return "downloadUrl: string expected";
             return null;
         };
 
@@ -1904,6 +1922,8 @@ export const download_progress = $root.download_progress = (() => {
                     message.startedAtMs = object.startedAtMs;
                 else if (typeof object.startedAtMs === "object")
                     message.startedAtMs = new $util.LongBits(object.startedAtMs.low >>> 0, object.startedAtMs.high >>> 0).toNumber();
+            if (object.downloadUrl != null)
+                message.downloadUrl = String(object.downloadUrl);
             return message;
         };
 
@@ -1945,6 +1965,7 @@ export const download_progress = $root.download_progress = (() => {
                     object.startedAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                 } else
                     object.startedAtMs = options.longs === String ? "0" : 0;
+                object.downloadUrl = "";
             }
             if (message.downloadId != null && message.hasOwnProperty("downloadId"))
                 object.downloadId = message.downloadId;
@@ -1979,6 +2000,8 @@ export const download_progress = $root.download_progress = (() => {
                     object.startedAtMs = options.longs === String ? String(message.startedAtMs) : message.startedAtMs;
                 else
                     object.startedAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.startedAtMs) : options.longs === Number ? new $util.LongBits(message.startedAtMs.low >>> 0, message.startedAtMs.high >>> 0).toNumber() : message.startedAtMs;
+            if (message.downloadUrl != null && message.hasOwnProperty("downloadUrl"))
+                object.downloadUrl = message.downloadUrl;
             return object;
         };
 

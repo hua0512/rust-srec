@@ -279,6 +279,7 @@ fn map_event_to_protobuf(
             download_id,
             streamer_id,
             session_id,
+            download_url,
             progress,
         } => {
             let payload = crate::api::proto::DownloadProgress {
@@ -294,6 +295,7 @@ fn map_event_to_protobuf(
                 media_duration_secs: progress.media_duration_secs,
                 playback_ratio: progress.playback_ratio,
                 started_at_ms: 0, // Not available in progress event
+                download_url: download_url.clone(),
             };
             Some(WsMessage {
                 event_type: EventType::Progress as i32,

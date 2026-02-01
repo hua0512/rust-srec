@@ -12,6 +12,8 @@ export type ConnectionStatus =
 
 interface DownloadState {
   downloads: Map<string, DownloadProgress>;
+  // Bumps on any downloads Map mutation; can be selected to force rerenders.
+  downloadsVersion: number;
   connectionStatus: ConnectionStatus;
 
   // Actions
@@ -32,40 +34,66 @@ interface DownloadState {
 
 export const useDownloadStore = create<DownloadState>((set, get) => ({
   downloads: new Map(),
+  downloadsVersion: 0,
   connectionStatus: 'disconnected',
 
+  // Note: We mutate the Map in-place to avoid allocating a new Map on every
+  // progress tick. Consumers should prefer selectors like getDownloadsByStreamer
+  // (which returns new arrays) rather than selecting `downloads` directly.
   setSnapshot: (downloads) =>
-    set({
-      downloads: new Map(downloads.map((d) => [d.downloadId, d])),
+    set((state) => {
+      state.downloads.clear();
+      for (const d of downloads) {
+        state.downloads.set(d.downloadId, d);
+      }
+      return {
+        downloads: state.downloads,
+        downloadsVersion: state.downloadsVersion + 1,
+      };
     }),
 
   addDownload: (download) =>
     set((state) => {
-      const newDownloads = new Map(state.downloads);
-      newDownloads.set(download.downloadId, download);
-      return { downloads: newDownloads };
+      state.downloads.set(download.downloadId, download);
+      return {
+        downloads: state.downloads,
+        downloadsVersion: state.downloadsVersion + 1,
+      };
     }),
 
   updateProgress: (downloadId, progress) =>
     set((state) => {
       const existing = state.downloads.get(downloadId);
       if (!existing) return state;
-      const newDownloads = new Map(state.downloads);
-      newDownloads.set(downloadId, { ...existing, ...progress });
-      return { downloads: newDownloads };
+      // Preserve referential updates for shallow-equality selectors.
+      state.downloads.set(downloadId, { ...existing, ...progress });
+      return {
+        downloads: state.downloads,
+        downloadsVersion: state.downloadsVersion + 1,
+      };
     }),
 
   removeDownload: (downloadId) =>
     set((state) => {
-      const newDownloads = new Map(state.downloads);
-      newDownloads.delete(downloadId);
-      return { downloads: newDownloads };
+      if (!state.downloads.has(downloadId)) return state;
+      state.downloads.delete(downloadId);
+      return {
+        downloads: state.downloads,
+        downloadsVersion: state.downloadsVersion + 1,
+      };
     }),
 
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
   clearAll: () =>
-    set({ downloads: new Map(), connectionStatus: 'disconnected' }),
+    set((state) => {
+      state.downloads.clear();
+      return {
+        downloads: state.downloads,
+        downloadsVersion: state.downloadsVersion + 1,
+        connectionStatus: 'disconnected',
+      };
+    }),
 
   getDownloadsByStreamer: (streamerId) => {
     return Array.from(get().downloads.values()).filter(
