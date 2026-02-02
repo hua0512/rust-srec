@@ -788,6 +788,10 @@ msgstr "可执行文件路径"
 msgid "Bitrate"
 msgstr "比特率"
 
+#: src/components/streamers/config/stream-selection-input.tsx:127
+msgid "Blacklisted CDNs"
+msgstr "CDN黑名单"
+
 #: src/components/pipeline/dag-graph-view.tsx:388
 msgid "Blocked"
 msgstr "已阻止"
@@ -1998,7 +2002,7 @@ msgstr "例如 /output/processed/"
 msgid "e.g. 0:v:0, 0:a:0"
 msgstr "列如: 0:v:0, 0:a:0"
 
-#: src/components/streamers/config/stream-selection-input.tsx:74
+#: src/components/streamers/config/stream-selection-input.tsx:75
 msgid "e.g. 1080p, source, 原画"
 msgstr "例如 1080p, source, 原画"
 
@@ -2006,7 +2010,7 @@ msgstr "例如 1080p, source, 原画"
 msgid "e.g. 128k, 320k"
 msgstr "例如 128k、320k"
 
-#: src/components/streamers/config/stream-selection-input.tsx:113
+#: src/components/streamers/config/stream-selection-input.tsx:114
 msgid "e.g. aliyun, akamaized"
 msgstr "例如 aliyun, akamaized"
 
@@ -2014,11 +2018,15 @@ msgstr "例如 aliyun, akamaized"
 msgid "e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
 msgstr "例如 C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
 
+#: src/components/streamers/config/stream-selection-input.tsx:133
+msgid "e.g. cdn-to-avoid"
+msgstr "例如 黑名单CDN"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:62
 msgid "e.g. echo {input} > {output}"
 msgstr "例如 echo {input} > {output}"
 
-#: src/components/streamers/config/stream-selection-input.tsx:94
+#: src/components/streamers/config/stream-selection-input.tsx:95
 msgid "e.g. flv, hls"
 msgstr "例如 flv, hls"
 
@@ -2351,6 +2359,10 @@ msgstr "排除关键字"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:204
 msgid "Exclude Patterns"
 msgstr "排除模式"
+
+#: src/components/streamers/config/stream-selection-input.tsx:138
+msgid "Exclude streams from these CDN providers entirely. Press Enter to add."
+msgstr "完全排除这些 CDN 提供商的流。按回车键添加。"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:590
 msgid "Excluded Extensions"
@@ -3297,11 +3309,11 @@ msgstr "如果设置，直播标题必须包含至少一个这些关键字。"
 msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
 msgstr "如果你的账户启用了 Telegram 两步验证，请使用桌面登录（`-T desktop`）或在终端中本地运行 `tdl login`。"
 
-#: src/components/streamers/config/stream-selection-input.tsx:183
+#: src/components/streamers/config/stream-selection-input.tsx:204
 msgid "Ignore streams above this bitrate."
 msgstr "忽略高于此比特率的流。"
 
-#: src/components/streamers/config/stream-selection-input.tsx:159
+#: src/components/streamers/config/stream-selection-input.tsx:180
 msgid "Ignore streams below this bitrate."
 msgstr "忽略低于此比特率的流。"
 
@@ -3585,7 +3597,7 @@ msgstr "libx264"
 msgid "Light"
 msgstr "浅色"
 
-#: src/components/streamers/config/stream-selection-input.tsx:134
+#: src/components/streamers/config/stream-selection-input.tsx:155
 msgid "Limits"
 msgstr "限制"
 
@@ -3815,7 +3827,7 @@ msgstr "已全部标记为已读"
 msgid "Match Strategy"
 msgstr "匹配策略"
 
-#: src/components/streamers/config/stream-selection-input.tsx:165
+#: src/components/streamers/config/stream-selection-input.tsx:186
 msgid "Max Bitrate (bps)"
 msgstr "最大比特率（bps）"
 
@@ -3980,7 +3992,7 @@ msgstr "元数据变量"
 msgid "Method"
 msgstr "请求方法"
 
-#: src/components/streamers/config/stream-selection-input.tsx:141
+#: src/components/streamers/config/stream-selection-input.tsx:162
 msgid "Min Bitrate (bps)"
 msgstr "最小比特率（bps）"
 
@@ -4241,8 +4253,8 @@ msgstr "未找到处理任务"
 msgid "No keywords set"
 msgstr "未设置关键字"
 
-#: src/components/streamers/config/stream-selection-input.tsx:154
-#: src/components/streamers/config/stream-selection-input.tsx:178
+#: src/components/streamers/config/stream-selection-input.tsx:175
+#: src/components/streamers/config/stream-selection-input.tsx:199
 msgid "No limit"
 msgstr "不限"
 
@@ -5112,7 +5124,7 @@ msgstr "优先使用清单"
 msgid "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
 msgstr "优先使用二维码登录；其次是手机号和验证码（可选两步验证）；最后是桌面登录。"
 
-#: src/components/streamers/config/stream-selection-input.tsx:60
+#: src/components/streamers/config/stream-selection-input.tsx:61
 msgid "Preferences"
 msgstr "偏好设置"
 
@@ -5120,15 +5132,15 @@ msgstr "偏好设置"
 msgid "Preferred CDN"
 msgstr "首选 CDN"
 
-#: src/components/streamers/config/stream-selection-input.tsx:107
+#: src/components/streamers/config/stream-selection-input.tsx:108
 msgid "Preferred CDNs"
 msgstr "首选 CDN"
 
-#: src/components/streamers/config/stream-selection-input.tsx:88
+#: src/components/streamers/config/stream-selection-input.tsx:89
 msgid "Preferred Formats"
 msgstr "首选格式"
 
-#: src/components/streamers/config/stream-selection-input.tsx:68
+#: src/components/streamers/config/stream-selection-input.tsx:69
 msgid "Preferred Qualities"
 msgstr "首选画质"
 
@@ -5229,15 +5241,15 @@ msgstr "主要"
 msgid "Primary Action"
 msgstr "主要操作"
 
-#: src/components/streamers/config/stream-selection-input.tsx:118
+#: src/components/streamers/config/stream-selection-input.tsx:119
 msgid "Prioritize specific CDN providers. Press Enter to add."
 msgstr "优先选择特定 CDN 提供商。按 Enter 添加。"
 
-#: src/components/streamers/config/stream-selection-input.tsx:79
+#: src/components/streamers/config/stream-selection-input.tsx:80
 msgid "Prioritize specific qualities (case-insensitive). Press Enter to add."
 msgstr "优先选择特定画质（不区分大小写）。按 Enter 添加。"
 
-#: src/components/streamers/config/stream-selection-input.tsx:99
+#: src/components/streamers/config/stream-selection-input.tsx:100
 msgid "Prioritize specific streaming protocols. Press Enter to add."
 msgstr "优先选择特定流媒体协议。按 Enter 添加。"
 

@@ -1,14 +1,14 @@
-import { ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 
 type TooltipColorTheme =
-  | "amber"
-  | "orange"
-  | "red"
-  | "violet"
-  | "blue"
-  | "rose"
-  | "slate";
+  | 'amber'
+  | 'orange'
+  | 'red'
+  | 'violet'
+  | 'blue'
+  | 'rose'
+  | 'slate';
 
 interface StatusInfoTooltipProps {
   icon: ReactNode;
@@ -32,66 +32,66 @@ const themeStyles: Record<
 > = {
   amber: {
     headerGradient:
-      "from-amber-500/10 via-amber-500/5 to-transparent border-amber-500/10",
-    headerBorder: "border-amber-500/10",
-    iconBg: "bg-amber-500/10",
-    iconColor: "text-amber-600",
-    ring: "ring-amber-500/20",
-    shadow: "shadow-[inset_0_0_10px_rgba(245,158,11,0.1)]",
+      'from-amber-500/10 via-amber-500/5 to-transparent border-amber-500/10',
+    headerBorder: 'border-amber-500/10',
+    iconBg: 'bg-amber-500/10',
+    iconColor: 'text-amber-600',
+    ring: 'ring-amber-500/20',
+    shadow: 'shadow-[inset_0_0_10px_rgba(245,158,11,0.1)]',
   },
   orange: {
     headerGradient:
-      "from-orange-500/10 via-orange-500/5 to-transparent border-orange-500/10",
-    headerBorder: "border-orange-500/10",
-    iconBg: "bg-orange-500/10",
-    iconColor: "text-orange-600",
-    ring: "ring-orange-500/20",
-    shadow: "shadow-[inset_0_0_10px_rgba(249,115,22,0.1)]",
+      'from-orange-500/10 via-orange-500/5 to-transparent border-orange-500/10',
+    headerBorder: 'border-orange-500/10',
+    iconBg: 'bg-orange-500/10',
+    iconColor: 'text-orange-600',
+    ring: 'ring-orange-500/20',
+    shadow: 'shadow-[inset_0_0_10px_rgba(249,115,22,0.1)]',
   },
   red: {
     headerGradient:
-      "from-red-500/10 via-red-500/5 to-transparent border-red-500/10",
-    headerBorder: "border-red-500/10",
-    iconBg: "bg-red-500/10",
-    iconColor: "text-red-600",
-    ring: "ring-red-500/20",
-    shadow: "shadow-[inset_0_0_10px_rgba(239,68,68,0.1)]",
+      'from-red-500/10 via-red-500/5 to-transparent border-red-500/10',
+    headerBorder: 'border-red-500/10',
+    iconBg: 'bg-red-500/10',
+    iconColor: 'text-red-600',
+    ring: 'ring-red-500/20',
+    shadow: 'shadow-[inset_0_0_10px_rgba(239,68,68,0.1)]',
   },
   violet: {
     headerGradient:
-      "from-violet-500/10 via-violet-500/5 to-transparent border-violet-500/10",
-    headerBorder: "border-violet-500/10",
-    iconBg: "bg-violet-500/10",
-    iconColor: "text-violet-600",
-    ring: "ring-violet-500/20",
-    shadow: "shadow-[inset_0_0_10px_rgba(139,92,246,0.1)]",
+      'from-violet-500/10 via-violet-500/5 to-transparent border-violet-500/10',
+    headerBorder: 'border-violet-500/10',
+    iconBg: 'bg-violet-500/10',
+    iconColor: 'text-violet-600',
+    ring: 'ring-violet-500/20',
+    shadow: 'shadow-[inset_0_0_10px_rgba(139,92,246,0.1)]',
   },
   blue: {
     headerGradient:
-      "from-blue-500/10 via-blue-500/5 to-transparent border-blue-500/10",
-    headerBorder: "border-blue-500/10",
-    iconBg: "bg-blue-500/10",
-    iconColor: "text-blue-600",
-    ring: "ring-blue-500/20",
-    shadow: "shadow-[inset_0_0_10px_rgba(59,130,246,0.1)]",
+      'from-blue-500/10 via-blue-500/5 to-transparent border-blue-500/10',
+    headerBorder: 'border-blue-500/10',
+    iconBg: 'bg-blue-500/10',
+    iconColor: 'text-blue-600',
+    ring: 'ring-blue-500/20',
+    shadow: 'shadow-[inset_0_0_10px_rgba(59,130,246,0.1)]',
   },
   slate: {
     headerGradient:
-      "from-slate-500/10 via-slate-500/5 to-transparent border-slate-500/10",
-    headerBorder: "border-slate-500/10",
-    iconBg: "bg-slate-500/10",
-    iconColor: "text-slate-600 dark:text-slate-400",
-    ring: "ring-slate-500/20",
-    shadow: "shadow-[inset_0_0_10px_rgba(100,116,139,0.1)]",
+      'from-slate-500/10 via-slate-500/5 to-transparent border-slate-500/10',
+    headerBorder: 'border-slate-500/10',
+    iconBg: 'bg-slate-500/10',
+    iconColor: 'text-slate-600 dark:text-slate-400',
+    ring: 'ring-slate-500/20',
+    shadow: 'shadow-[inset_0_0_10px_rgba(100,116,139,0.1)]',
   },
   rose: {
     headerGradient:
-      "from-rose-500/10 via-rose-500/5 to-transparent border-rose-500/10",
-    headerBorder: "border-rose-500/10",
-    iconBg: "bg-rose-500/10",
-    iconColor: "text-rose-600",
-    ring: "ring-rose-500/20",
-    shadow: "shadow-[inset_0_0_10px_rgba(244,63,94,0.1)]",
+      'from-rose-500/10 via-rose-500/5 to-transparent border-rose-500/10',
+    headerBorder: 'border-rose-500/10',
+    iconBg: 'bg-rose-500/10',
+    iconColor: 'text-rose-600',
+    ring: 'ring-rose-500/20',
+    shadow: 'shadow-[inset_0_0_10px_rgba(244,63,94,0.1)]',
   },
 };
 
@@ -107,26 +107,26 @@ export function StatusInfoTooltip({
 
   // Extract color for CSS variables
   const colorMatch = styles.iconColor?.match(/text-([a-z]+)-600/);
-  const colorName = colorMatch ? colorMatch[1] : "primary";
+  const colorName = colorMatch ? colorMatch[1] : 'primary';
 
   return (
     <div
-      className={cn("flex flex-col min-w-70 max-w-85", className)}
+      className={cn('flex flex-col min-w-70 max-w-85', className)}
       style={
         {
-          "--tooltip-theme-color": `var(--${colorName}-500, currentColor)`,
-          "--tooltip-theme-bg": `var(--${colorName}-500-10, color-mix(in srgb, currentColor 10%, transparent))`,
+          '--tooltip-theme-color': `var(--${colorName}-500, currentColor)`,
+          '--tooltip-theme-bg': `var(--${colorName}-500-10, color-mix(in srgb, currentColor 10%, transparent))`,
         } as React.CSSProperties
       }
     >
       {/* Header */}
       <div
-        className={cn("p-3 bg-linear-to-br border-b", styles.headerGradient)}
+        className={cn('p-3 bg-linear-to-br border-b', styles.headerGradient)}
       >
         <div className="flex items-center gap-2.5">
           <div
             className={cn(
-              "p-1.5 rounded-full ring-1 transition-colors duration-300",
+              'p-1.5 rounded-full ring-1 transition-colors duration-300',
               styles.iconBg,
               styles.iconColor,
               styles.shadow,

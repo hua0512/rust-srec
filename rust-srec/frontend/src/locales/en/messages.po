@@ -788,6 +788,10 @@ msgstr "Binary Path"
 msgid "Bitrate"
 msgstr "Bitrate"
 
+#: src/components/streamers/config/stream-selection-input.tsx:127
+msgid "Blacklisted CDNs"
+msgstr "Blacklisted CDNs"
+
 #: src/components/pipeline/dag-graph-view.tsx:388
 msgid "Blocked"
 msgstr "Blocked"
@@ -1998,7 +2002,7 @@ msgstr "e.g. /output/processed/"
 msgid "e.g. 0:v:0, 0:a:0"
 msgstr "e.g. 0:v:0, 0:a:0"
 
-#: src/components/streamers/config/stream-selection-input.tsx:74
+#: src/components/streamers/config/stream-selection-input.tsx:75
 msgid "e.g. 1080p, source, 原画"
 msgstr "e.g. 1080p, source, 原画"
 
@@ -2006,7 +2010,7 @@ msgstr "e.g. 1080p, source, 原画"
 msgid "e.g. 128k, 320k"
 msgstr "e.g. 128k, 320k"
 
-#: src/components/streamers/config/stream-selection-input.tsx:113
+#: src/components/streamers/config/stream-selection-input.tsx:114
 msgid "e.g. aliyun, akamaized"
 msgstr "e.g. aliyun, akamaized"
 
@@ -2014,11 +2018,15 @@ msgstr "e.g. aliyun, akamaized"
 msgid "e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
 msgstr "e.g. C:\\Users\\...\\AppData\\Roaming\\Telegram Desktop"
 
+#: src/components/streamers/config/stream-selection-input.tsx:133
+msgid "e.g. cdn-to-avoid"
+msgstr "e.g. cdn-to-avoid"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:62
 msgid "e.g. echo {input} > {output}"
 msgstr "e.g. echo {input} > {output}"
 
-#: src/components/streamers/config/stream-selection-input.tsx:94
+#: src/components/streamers/config/stream-selection-input.tsx:95
 msgid "e.g. flv, hls"
 msgstr "e.g. flv, hls"
 
@@ -2351,6 +2359,10 @@ msgstr "Exclude Keywords"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:204
 msgid "Exclude Patterns"
 msgstr "Exclude Patterns"
+
+#: src/components/streamers/config/stream-selection-input.tsx:138
+msgid "Exclude streams from these CDN providers entirely. Press Enter to add."
+msgstr "Exclude streams from these CDN providers entirely. Press Enter to add."
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:590
 msgid "Excluded Extensions"
@@ -3297,11 +3309,11 @@ msgstr "If set, stream titles must contain at least one of these keywords."
 msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
 msgstr "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
 
-#: src/components/streamers/config/stream-selection-input.tsx:183
+#: src/components/streamers/config/stream-selection-input.tsx:204
 msgid "Ignore streams above this bitrate."
 msgstr "Ignore streams above this bitrate."
 
-#: src/components/streamers/config/stream-selection-input.tsx:159
+#: src/components/streamers/config/stream-selection-input.tsx:180
 msgid "Ignore streams below this bitrate."
 msgstr "Ignore streams below this bitrate."
 
@@ -3585,7 +3597,7 @@ msgstr "libx264"
 msgid "Light"
 msgstr "Light"
 
-#: src/components/streamers/config/stream-selection-input.tsx:134
+#: src/components/streamers/config/stream-selection-input.tsx:155
 msgid "Limits"
 msgstr "Limits"
 
@@ -3815,7 +3827,7 @@ msgstr "Marked all as read"
 msgid "Match Strategy"
 msgstr "Match Strategy"
 
-#: src/components/streamers/config/stream-selection-input.tsx:165
+#: src/components/streamers/config/stream-selection-input.tsx:186
 msgid "Max Bitrate (bps)"
 msgstr "Max Bitrate (bps)"
 
@@ -3980,7 +3992,7 @@ msgstr "Metadata Variables"
 msgid "Method"
 msgstr "Method"
 
-#: src/components/streamers/config/stream-selection-input.tsx:141
+#: src/components/streamers/config/stream-selection-input.tsx:162
 msgid "Min Bitrate (bps)"
 msgstr "Min Bitrate (bps)"
 
@@ -4241,8 +4253,8 @@ msgstr "No jobs found"
 msgid "No keywords set"
 msgstr "No keywords set"
 
-#: src/components/streamers/config/stream-selection-input.tsx:154
-#: src/components/streamers/config/stream-selection-input.tsx:178
+#: src/components/streamers/config/stream-selection-input.tsx:175
+#: src/components/streamers/config/stream-selection-input.tsx:199
 msgid "No limit"
 msgstr "No limit"
 
@@ -5112,7 +5124,7 @@ msgstr "Prefer Manifest"
 msgid "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
 msgstr "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
 
-#: src/components/streamers/config/stream-selection-input.tsx:60
+#: src/components/streamers/config/stream-selection-input.tsx:61
 msgid "Preferences"
 msgstr "Preferences"
 
@@ -5120,15 +5132,15 @@ msgstr "Preferences"
 msgid "Preferred CDN"
 msgstr "Preferred CDN"
 
-#: src/components/streamers/config/stream-selection-input.tsx:107
+#: src/components/streamers/config/stream-selection-input.tsx:108
 msgid "Preferred CDNs"
 msgstr "Preferred CDNs"
 
-#: src/components/streamers/config/stream-selection-input.tsx:88
+#: src/components/streamers/config/stream-selection-input.tsx:89
 msgid "Preferred Formats"
 msgstr "Preferred Formats"
 
-#: src/components/streamers/config/stream-selection-input.tsx:68
+#: src/components/streamers/config/stream-selection-input.tsx:69
 msgid "Preferred Qualities"
 msgstr "Preferred Qualities"
 
@@ -5229,15 +5241,15 @@ msgstr "Primary"
 msgid "Primary Action"
 msgstr "Primary Action"
 
-#: src/components/streamers/config/stream-selection-input.tsx:118
+#: src/components/streamers/config/stream-selection-input.tsx:119
 msgid "Prioritize specific CDN providers. Press Enter to add."
 msgstr "Prioritize specific CDN providers. Press Enter to add."
 
-#: src/components/streamers/config/stream-selection-input.tsx:79
+#: src/components/streamers/config/stream-selection-input.tsx:80
 msgid "Prioritize specific qualities (case-insensitive). Press Enter to add."
 msgstr "Prioritize specific qualities (case-insensitive). Press Enter to add."
 
-#: src/components/streamers/config/stream-selection-input.tsx:99
+#: src/components/streamers/config/stream-selection-input.tsx:100
 msgid "Prioritize specific streaming protocols. Press Enter to add."
 msgstr "Prioritize specific streaming protocols. Press Enter to add."
 
