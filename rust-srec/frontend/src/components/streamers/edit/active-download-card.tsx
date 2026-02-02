@@ -1,5 +1,14 @@
 import { memo } from 'react';
-import { Download, Zap, Save, Clock, Layers, Gauge, Globe } from 'lucide-react';
+import {
+  Download,
+  Zap,
+  Save,
+  Clock,
+  Layers,
+  Gauge,
+  Globe,
+  Link,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
@@ -11,7 +20,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Trans } from '@lingui/react/macro';
 import { formatBytes, formatDuration, cn } from '@/lib/utils';
 import { Download as DownloadType } from '@/store/downloads';
-import { getUrlHost } from '@/lib/url';
 
 interface ActiveDownloadCardProps {
   downloads: DownloadType[];
@@ -54,8 +62,35 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-2">
+              {/* Download URL - full width row */}
+              {download.downloadUrl && (
+                <div className="col-span-2 space-y-1 overflow-hidden">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Link className="w-3 h-3" />{' '}
+                    <Trans render={({ translation }) => <>{translation}</>}>
+                      Stream URL
+                    </Trans>
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className="font-mono text-xs truncate cursor-help text-foreground/80 hover:text-foreground transition-colors"
+                        title={download.downloadUrl}
+                      >
+                        {download.downloadUrl}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      className="max-w-[500px] break-all font-mono text-[10px]"
+                    >
+                      {download.downloadUrl}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
               {(() => {
-                const cdnHost = getUrlHost(download.downloadUrl);
+                const cdnHost = download.cdnHost;
                 if (!cdnHost) return null;
                 return (
                   <div className="space-y-1 overflow-hidden">
@@ -78,7 +113,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
                         side="bottom"
                         className="max-w-[400px] break-all font-mono text-[10px]"
                       >
-                        {download.downloadUrl}
+                        {cdnHost}
                       </TooltipContent>
                     </Tooltip>
                   </div>

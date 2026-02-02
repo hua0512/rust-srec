@@ -10,7 +10,6 @@ import { useStreamerStatus } from './card/use-streamer-status';
 import { StreamActionsMenu } from './card/stream-actions-menu';
 import { StreamAvatarInfo } from './card/stream-avatar-info';
 import { DashboardCard } from '../dashboard/dashboard-card';
-import { useStore } from 'zustand';
 import { useDownloadStore } from '@/store/downloads';
 
 interface StreamerCardProps {
@@ -22,9 +21,8 @@ interface StreamerCardProps {
 
 export const StreamerCard = memo(
   ({ streamer, onDelete, onToggle, onCheck }: StreamerCardProps) => {
-    // Query downloads for this streamer - using useStore for hydration safety
-    const downloads = useStore(
-      useDownloadStore,
+    // Query downloads for this streamer
+    const downloads = useDownloadStore(
       useShallow((state) => state.getDownloadsByStreamer(streamer.id)),
     );
     const activeDownload = downloads?.[0]; // Show first active download

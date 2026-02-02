@@ -22,8 +22,8 @@ export const download_progress = $root.download_progress = (() => {
      * @enum {number}
      * @property {number} EVENT_TYPE_UNSPECIFIED=0 EVENT_TYPE_UNSPECIFIED value
      * @property {number} EVENT_TYPE_SNAPSHOT=1 EVENT_TYPE_SNAPSHOT value
-     * @property {number} EVENT_TYPE_DOWNLOAD_STARTED=2 EVENT_TYPE_DOWNLOAD_STARTED value
-     * @property {number} EVENT_TYPE_PROGRESS=3 EVENT_TYPE_PROGRESS value
+     * @property {number} EVENT_TYPE_DOWNLOAD_META=2 EVENT_TYPE_DOWNLOAD_META value
+     * @property {number} EVENT_TYPE_DOWNLOAD_METRICS=3 EVENT_TYPE_DOWNLOAD_METRICS value
      * @property {number} EVENT_TYPE_SEGMENT_COMPLETED=4 EVENT_TYPE_SEGMENT_COMPLETED value
      * @property {number} EVENT_TYPE_DOWNLOAD_COMPLETED=5 EVENT_TYPE_DOWNLOAD_COMPLETED value
      * @property {number} EVENT_TYPE_DOWNLOAD_FAILED=6 EVENT_TYPE_DOWNLOAD_FAILED value
@@ -35,8 +35,8 @@ export const download_progress = $root.download_progress = (() => {
         const valuesById = {}, values = Object.create(valuesById);
         values[valuesById[0] = "EVENT_TYPE_UNSPECIFIED"] = 0;
         values[valuesById[1] = "EVENT_TYPE_SNAPSHOT"] = 1;
-        values[valuesById[2] = "EVENT_TYPE_DOWNLOAD_STARTED"] = 2;
-        values[valuesById[3] = "EVENT_TYPE_PROGRESS"] = 3;
+        values[valuesById[2] = "EVENT_TYPE_DOWNLOAD_META"] = 2;
+        values[valuesById[3] = "EVENT_TYPE_DOWNLOAD_METRICS"] = 3;
         values[valuesById[4] = "EVENT_TYPE_SEGMENT_COMPLETED"] = 4;
         values[valuesById[5] = "EVENT_TYPE_DOWNLOAD_COMPLETED"] = 5;
         values[valuesById[6] = "EVENT_TYPE_DOWNLOAD_FAILED"] = 6;
@@ -54,8 +54,8 @@ export const download_progress = $root.download_progress = (() => {
          * @interface IWsMessage
          * @property {download_progress.EventType|null} [eventType] WsMessage eventType
          * @property {download_progress.IDownloadSnapshot|null} [snapshot] WsMessage snapshot
-         * @property {download_progress.IDownloadStarted|null} [downloadStarted] WsMessage downloadStarted
-         * @property {download_progress.IDownloadProgress|null} [progress] WsMessage progress
+         * @property {download_progress.IDownloadMeta|null} [downloadMeta] WsMessage downloadMeta
+         * @property {download_progress.IDownloadMetrics|null} [downloadMetrics] WsMessage downloadMetrics
          * @property {download_progress.ISegmentCompleted|null} [segmentCompleted] WsMessage segmentCompleted
          * @property {download_progress.IDownloadCompleted|null} [downloadCompleted] WsMessage downloadCompleted
          * @property {download_progress.IDownloadFailed|null} [downloadFailed] WsMessage downloadFailed
@@ -96,20 +96,20 @@ export const download_progress = $root.download_progress = (() => {
         WsMessage.prototype.snapshot = null;
 
         /**
-         * WsMessage downloadStarted.
-         * @member {download_progress.IDownloadStarted|null|undefined} downloadStarted
+         * WsMessage downloadMeta.
+         * @member {download_progress.IDownloadMeta|null|undefined} downloadMeta
          * @memberof download_progress.WsMessage
          * @instance
          */
-        WsMessage.prototype.downloadStarted = null;
+        WsMessage.prototype.downloadMeta = null;
 
         /**
-         * WsMessage progress.
-         * @member {download_progress.IDownloadProgress|null|undefined} progress
+         * WsMessage downloadMetrics.
+         * @member {download_progress.IDownloadMetrics|null|undefined} downloadMetrics
          * @memberof download_progress.WsMessage
          * @instance
          */
-        WsMessage.prototype.progress = null;
+        WsMessage.prototype.downloadMetrics = null;
 
         /**
          * WsMessage segmentCompleted.
@@ -164,12 +164,12 @@ export const download_progress = $root.download_progress = (() => {
 
         /**
          * WsMessage payload.
-         * @member {"snapshot"|"downloadStarted"|"progress"|"segmentCompleted"|"downloadCompleted"|"downloadFailed"|"downloadCancelled"|"error"|"downloadRejected"|undefined} payload
+         * @member {"snapshot"|"downloadMeta"|"downloadMetrics"|"segmentCompleted"|"downloadCompleted"|"downloadFailed"|"downloadCancelled"|"error"|"downloadRejected"|undefined} payload
          * @memberof download_progress.WsMessage
          * @instance
          */
         Object.defineProperty(WsMessage.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["snapshot", "downloadStarted", "progress", "segmentCompleted", "downloadCompleted", "downloadFailed", "downloadCancelled", "error", "downloadRejected"]),
+            get: $util.oneOfGetter($oneOfFields = ["snapshot", "downloadMeta", "downloadMetrics", "segmentCompleted", "downloadCompleted", "downloadFailed", "downloadCancelled", "error", "downloadRejected"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -201,10 +201,10 @@ export const download_progress = $root.download_progress = (() => {
                 writer.uint32(/* id 1, wireType 0 =*/8).int32(message.eventType);
             if (message.snapshot != null && Object.hasOwnProperty.call(message, "snapshot"))
                 $root.download_progress.DownloadSnapshot.encode(message.snapshot, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
-            if (message.downloadStarted != null && Object.hasOwnProperty.call(message, "downloadStarted"))
-                $root.download_progress.DownloadStarted.encode(message.downloadStarted, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-            if (message.progress != null && Object.hasOwnProperty.call(message, "progress"))
-                $root.download_progress.DownloadProgress.encode(message.progress, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+            if (message.downloadMeta != null && Object.hasOwnProperty.call(message, "downloadMeta"))
+                $root.download_progress.DownloadMeta.encode(message.downloadMeta, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+            if (message.downloadMetrics != null && Object.hasOwnProperty.call(message, "downloadMetrics"))
+                $root.download_progress.DownloadMetrics.encode(message.downloadMetrics, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
             if (message.segmentCompleted != null && Object.hasOwnProperty.call(message, "segmentCompleted"))
                 $root.download_progress.SegmentCompleted.encode(message.segmentCompleted, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
             if (message.downloadCompleted != null && Object.hasOwnProperty.call(message, "downloadCompleted"))
@@ -262,11 +262,11 @@ export const download_progress = $root.download_progress = (() => {
                         break;
                     }
                 case 3: {
-                        message.downloadStarted = $root.download_progress.DownloadStarted.decode(reader, reader.uint32());
+                        message.downloadMeta = $root.download_progress.DownloadMeta.decode(reader, reader.uint32());
                         break;
                     }
                 case 4: {
-                        message.progress = $root.download_progress.DownloadProgress.decode(reader, reader.uint32());
+                        message.downloadMetrics = $root.download_progress.DownloadMetrics.decode(reader, reader.uint32());
                         break;
                     }
                 case 5: {
@@ -353,24 +353,24 @@ export const download_progress = $root.download_progress = (() => {
                         return "snapshot." + error;
                 }
             }
-            if (message.downloadStarted != null && message.hasOwnProperty("downloadStarted")) {
+            if (message.downloadMeta != null && message.hasOwnProperty("downloadMeta")) {
                 if (properties.payload === 1)
                     return "payload: multiple values";
                 properties.payload = 1;
                 {
-                    let error = $root.download_progress.DownloadStarted.verify(message.downloadStarted);
+                    let error = $root.download_progress.DownloadMeta.verify(message.downloadMeta);
                     if (error)
-                        return "downloadStarted." + error;
+                        return "downloadMeta." + error;
                 }
             }
-            if (message.progress != null && message.hasOwnProperty("progress")) {
+            if (message.downloadMetrics != null && message.hasOwnProperty("downloadMetrics")) {
                 if (properties.payload === 1)
                     return "payload: multiple values";
                 properties.payload = 1;
                 {
-                    let error = $root.download_progress.DownloadProgress.verify(message.progress);
+                    let error = $root.download_progress.DownloadMetrics.verify(message.downloadMetrics);
                     if (error)
-                        return "progress." + error;
+                        return "downloadMetrics." + error;
                 }
             }
             if (message.segmentCompleted != null && message.hasOwnProperty("segmentCompleted")) {
@@ -463,11 +463,11 @@ export const download_progress = $root.download_progress = (() => {
             case 1:
                 message.eventType = 1;
                 break;
-            case "EVENT_TYPE_DOWNLOAD_STARTED":
+            case "EVENT_TYPE_DOWNLOAD_META":
             case 2:
                 message.eventType = 2;
                 break;
-            case "EVENT_TYPE_PROGRESS":
+            case "EVENT_TYPE_DOWNLOAD_METRICS":
             case 3:
                 message.eventType = 3;
                 break;
@@ -501,15 +501,15 @@ export const download_progress = $root.download_progress = (() => {
                     throw TypeError(".download_progress.WsMessage.snapshot: object expected");
                 message.snapshot = $root.download_progress.DownloadSnapshot.fromObject(object.snapshot);
             }
-            if (object.downloadStarted != null) {
-                if (typeof object.downloadStarted !== "object")
-                    throw TypeError(".download_progress.WsMessage.downloadStarted: object expected");
-                message.downloadStarted = $root.download_progress.DownloadStarted.fromObject(object.downloadStarted);
+            if (object.downloadMeta != null) {
+                if (typeof object.downloadMeta !== "object")
+                    throw TypeError(".download_progress.WsMessage.downloadMeta: object expected");
+                message.downloadMeta = $root.download_progress.DownloadMeta.fromObject(object.downloadMeta);
             }
-            if (object.progress != null) {
-                if (typeof object.progress !== "object")
-                    throw TypeError(".download_progress.WsMessage.progress: object expected");
-                message.progress = $root.download_progress.DownloadProgress.fromObject(object.progress);
+            if (object.downloadMetrics != null) {
+                if (typeof object.downloadMetrics !== "object")
+                    throw TypeError(".download_progress.WsMessage.downloadMetrics: object expected");
+                message.downloadMetrics = $root.download_progress.DownloadMetrics.fromObject(object.downloadMetrics);
             }
             if (object.segmentCompleted != null) {
                 if (typeof object.segmentCompleted !== "object")
@@ -566,15 +566,15 @@ export const download_progress = $root.download_progress = (() => {
                 if (options.oneofs)
                     object.payload = "snapshot";
             }
-            if (message.downloadStarted != null && message.hasOwnProperty("downloadStarted")) {
-                object.downloadStarted = $root.download_progress.DownloadStarted.toObject(message.downloadStarted, options);
+            if (message.downloadMeta != null && message.hasOwnProperty("downloadMeta")) {
+                object.downloadMeta = $root.download_progress.DownloadMeta.toObject(message.downloadMeta, options);
                 if (options.oneofs)
-                    object.payload = "downloadStarted";
+                    object.payload = "downloadMeta";
             }
-            if (message.progress != null && message.hasOwnProperty("progress")) {
-                object.progress = $root.download_progress.DownloadProgress.toObject(message.progress, options);
+            if (message.downloadMetrics != null && message.hasOwnProperty("downloadMetrics")) {
+                object.downloadMetrics = $root.download_progress.DownloadMetrics.toObject(message.downloadMetrics, options);
                 if (options.oneofs)
-                    object.payload = "progress";
+                    object.payload = "downloadMetrics";
             }
             if (message.segmentCompleted != null && message.hasOwnProperty("segmentCompleted")) {
                 object.segmentCompleted = $root.download_progress.SegmentCompleted.toObject(message.segmentCompleted, options);
@@ -1290,7 +1290,7 @@ export const download_progress = $root.download_progress = (() => {
          * Properties of a DownloadSnapshot.
          * @memberof download_progress
          * @interface IDownloadSnapshot
-         * @property {Array.<download_progress.IDownloadProgress>|null} [downloads] DownloadSnapshot downloads
+         * @property {Array.<download_progress.IDownloadState>|null} [downloads] DownloadSnapshot downloads
          */
 
         /**
@@ -1311,7 +1311,7 @@ export const download_progress = $root.download_progress = (() => {
 
         /**
          * DownloadSnapshot downloads.
-         * @member {Array.<download_progress.IDownloadProgress>} downloads
+         * @member {Array.<download_progress.IDownloadState>} downloads
          * @memberof download_progress.DownloadSnapshot
          * @instance
          */
@@ -1343,7 +1343,7 @@ export const download_progress = $root.download_progress = (() => {
                 writer = $Writer.create();
             if (message.downloads != null && message.downloads.length)
                 for (let i = 0; i < message.downloads.length; ++i)
-                    $root.download_progress.DownloadProgress.encode(message.downloads[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                    $root.download_progress.DownloadState.encode(message.downloads[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
             return writer;
         };
 
@@ -1383,7 +1383,7 @@ export const download_progress = $root.download_progress = (() => {
                 case 1: {
                         if (!(message.downloads && message.downloads.length))
                             message.downloads = [];
-                        message.downloads.push($root.download_progress.DownloadProgress.decode(reader, reader.uint32()));
+                        message.downloads.push($root.download_progress.DownloadState.decode(reader, reader.uint32()));
                         break;
                     }
                 default:
@@ -1425,7 +1425,7 @@ export const download_progress = $root.download_progress = (() => {
                 if (!Array.isArray(message.downloads))
                     return "downloads: array expected";
                 for (let i = 0; i < message.downloads.length; ++i) {
-                    let error = $root.download_progress.DownloadProgress.verify(message.downloads[i]);
+                    let error = $root.download_progress.DownloadState.verify(message.downloads[i]);
                     if (error)
                         return "downloads." + error;
                 }
@@ -1452,7 +1452,7 @@ export const download_progress = $root.download_progress = (() => {
                 for (let i = 0; i < object.downloads.length; ++i) {
                     if (typeof object.downloads[i] !== "object")
                         throw TypeError(".download_progress.DownloadSnapshot.downloads: object expected");
-                    message.downloads[i] = $root.download_progress.DownloadProgress.fromObject(object.downloads[i]);
+                    message.downloads[i] = $root.download_progress.DownloadState.fromObject(object.downloads[i]);
                 }
             }
             return message;
@@ -1476,7 +1476,7 @@ export const download_progress = $root.download_progress = (() => {
             if (message.downloads && message.downloads.length) {
                 object.downloads = [];
                 for (let j = 0; j < message.downloads.length; ++j)
-                    object.downloads[j] = $root.download_progress.DownloadProgress.toObject(message.downloads[j], options);
+                    object.downloads[j] = $root.download_progress.DownloadState.toObject(message.downloads[j], options);
             }
             return object;
         };
@@ -1510,36 +1510,25 @@ export const download_progress = $root.download_progress = (() => {
         return DownloadSnapshot;
     })();
 
-    download_progress.DownloadProgress = (function() {
+    download_progress.DownloadState = (function() {
 
         /**
-         * Properties of a DownloadProgress.
+         * Properties of a DownloadState.
          * @memberof download_progress
-         * @interface IDownloadProgress
-         * @property {string|null} [downloadId] DownloadProgress downloadId
-         * @property {string|null} [streamerId] DownloadProgress streamerId
-         * @property {string|null} [sessionId] DownloadProgress sessionId
-         * @property {string|null} [engineType] DownloadProgress engineType
-         * @property {string|null} [status] DownloadProgress status
-         * @property {number|Long|null} [bytesDownloaded] DownloadProgress bytesDownloaded
-         * @property {number|null} [durationSecs] DownloadProgress durationSecs
-         * @property {number|Long|null} [speedBytesPerSec] DownloadProgress speedBytesPerSec
-         * @property {number|null} [segmentsCompleted] DownloadProgress segmentsCompleted
-         * @property {number|null} [mediaDurationSecs] DownloadProgress mediaDurationSecs
-         * @property {number|null} [playbackRatio] DownloadProgress playbackRatio
-         * @property {number|Long|null} [startedAtMs] DownloadProgress startedAtMs
-         * @property {string|null} [downloadUrl] DownloadProgress downloadUrl
+         * @interface IDownloadState
+         * @property {download_progress.IDownloadMeta|null} [meta] DownloadState meta
+         * @property {download_progress.IDownloadMetrics|null} [metrics] DownloadState metrics
          */
 
         /**
-         * Constructs a new DownloadProgress.
+         * Constructs a new DownloadState.
          * @memberof download_progress
-         * @classdesc Represents a DownloadProgress.
-         * @implements IDownloadProgress
+         * @classdesc Represents a DownloadState.
+         * @implements IDownloadState
          * @constructor
-         * @param {download_progress.IDownloadProgress=} [properties] Properties to set
+         * @param {download_progress.IDownloadState=} [properties] Properties to set
          */
-        function DownloadProgress(properties) {
+        function DownloadState(properties) {
             if (properties)
                 for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -1547,131 +1536,336 @@ export const download_progress = $root.download_progress = (() => {
         }
 
         /**
-         * DownloadProgress downloadId.
-         * @member {string} downloadId
-         * @memberof download_progress.DownloadProgress
+         * DownloadState meta.
+         * @member {download_progress.IDownloadMeta|null|undefined} meta
+         * @memberof download_progress.DownloadState
          * @instance
          */
-        DownloadProgress.prototype.downloadId = "";
+        DownloadState.prototype.meta = null;
 
         /**
-         * DownloadProgress streamerId.
-         * @member {string} streamerId
-         * @memberof download_progress.DownloadProgress
+         * DownloadState metrics.
+         * @member {download_progress.IDownloadMetrics|null|undefined} metrics
+         * @memberof download_progress.DownloadState
          * @instance
          */
-        DownloadProgress.prototype.streamerId = "";
+        DownloadState.prototype.metrics = null;
 
         /**
-         * DownloadProgress sessionId.
-         * @member {string} sessionId
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.sessionId = "";
-
-        /**
-         * DownloadProgress engineType.
-         * @member {string} engineType
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.engineType = "";
-
-        /**
-         * DownloadProgress status.
-         * @member {string} status
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.status = "";
-
-        /**
-         * DownloadProgress bytesDownloaded.
-         * @member {number|Long} bytesDownloaded
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.bytesDownloaded = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
-
-        /**
-         * DownloadProgress durationSecs.
-         * @member {number} durationSecs
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.durationSecs = 0;
-
-        /**
-         * DownloadProgress speedBytesPerSec.
-         * @member {number|Long} speedBytesPerSec
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.speedBytesPerSec = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
-
-        /**
-         * DownloadProgress segmentsCompleted.
-         * @member {number} segmentsCompleted
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.segmentsCompleted = 0;
-
-        /**
-         * DownloadProgress mediaDurationSecs.
-         * @member {number} mediaDurationSecs
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.mediaDurationSecs = 0;
-
-        /**
-         * DownloadProgress playbackRatio.
-         * @member {number} playbackRatio
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.playbackRatio = 0;
-
-        /**
-         * DownloadProgress startedAtMs.
-         * @member {number|Long} startedAtMs
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.startedAtMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
-
-        /**
-         * DownloadProgress downloadUrl.
-         * @member {string} downloadUrl
-         * @memberof download_progress.DownloadProgress
-         * @instance
-         */
-        DownloadProgress.prototype.downloadUrl = "";
-
-        /**
-         * Creates a new DownloadProgress instance using the specified properties.
+         * Creates a new DownloadState instance using the specified properties.
          * @function create
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadState
          * @static
-         * @param {download_progress.IDownloadProgress=} [properties] Properties to set
-         * @returns {download_progress.DownloadProgress} DownloadProgress instance
+         * @param {download_progress.IDownloadState=} [properties] Properties to set
+         * @returns {download_progress.DownloadState} DownloadState instance
          */
-        DownloadProgress.create = function create(properties) {
-            return new DownloadProgress(properties);
+        DownloadState.create = function create(properties) {
+            return new DownloadState(properties);
         };
 
         /**
-         * Encodes the specified DownloadProgress message. Does not implicitly {@link download_progress.DownloadProgress.verify|verify} messages.
+         * Encodes the specified DownloadState message. Does not implicitly {@link download_progress.DownloadState.verify|verify} messages.
          * @function encode
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadState
          * @static
-         * @param {download_progress.IDownloadProgress} message DownloadProgress message or plain object to encode
+         * @param {download_progress.IDownloadState} message DownloadState message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        DownloadProgress.encode = function encode(message, writer) {
+        DownloadState.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.meta != null && Object.hasOwnProperty.call(message, "meta"))
+                $root.download_progress.DownloadMeta.encode(message.meta, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            if (message.metrics != null && Object.hasOwnProperty.call(message, "metrics"))
+                $root.download_progress.DownloadMetrics.encode(message.metrics, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+            return writer;
+        };
+
+        /**
+         * Encodes the specified DownloadState message, length delimited. Does not implicitly {@link download_progress.DownloadState.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof download_progress.DownloadState
+         * @static
+         * @param {download_progress.IDownloadState} message DownloadState message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DownloadState.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a DownloadState message from the specified reader or buffer.
+         * @function decode
+         * @memberof download_progress.DownloadState
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {download_progress.DownloadState} DownloadState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DownloadState.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.download_progress.DownloadState();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.meta = $root.download_progress.DownloadMeta.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 2: {
+                        message.metrics = $root.download_progress.DownloadMetrics.decode(reader, reader.uint32());
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a DownloadState message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof download_progress.DownloadState
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {download_progress.DownloadState} DownloadState
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DownloadState.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a DownloadState message.
+         * @function verify
+         * @memberof download_progress.DownloadState
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        DownloadState.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.meta != null && message.hasOwnProperty("meta")) {
+                let error = $root.download_progress.DownloadMeta.verify(message.meta);
+                if (error)
+                    return "meta." + error;
+            }
+            if (message.metrics != null && message.hasOwnProperty("metrics")) {
+                let error = $root.download_progress.DownloadMetrics.verify(message.metrics);
+                if (error)
+                    return "metrics." + error;
+            }
+            return null;
+        };
+
+        /**
+         * Creates a DownloadState message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof download_progress.DownloadState
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {download_progress.DownloadState} DownloadState
+         */
+        DownloadState.fromObject = function fromObject(object) {
+            if (object instanceof $root.download_progress.DownloadState)
+                return object;
+            let message = new $root.download_progress.DownloadState();
+            if (object.meta != null) {
+                if (typeof object.meta !== "object")
+                    throw TypeError(".download_progress.DownloadState.meta: object expected");
+                message.meta = $root.download_progress.DownloadMeta.fromObject(object.meta);
+            }
+            if (object.metrics != null) {
+                if (typeof object.metrics !== "object")
+                    throw TypeError(".download_progress.DownloadState.metrics: object expected");
+                message.metrics = $root.download_progress.DownloadMetrics.fromObject(object.metrics);
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a DownloadState message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof download_progress.DownloadState
+         * @static
+         * @param {download_progress.DownloadState} message DownloadState
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        DownloadState.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.meta = null;
+                object.metrics = null;
+            }
+            if (message.meta != null && message.hasOwnProperty("meta"))
+                object.meta = $root.download_progress.DownloadMeta.toObject(message.meta, options);
+            if (message.metrics != null && message.hasOwnProperty("metrics"))
+                object.metrics = $root.download_progress.DownloadMetrics.toObject(message.metrics, options);
+            return object;
+        };
+
+        /**
+         * Converts this DownloadState to JSON.
+         * @function toJSON
+         * @memberof download_progress.DownloadState
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        DownloadState.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for DownloadState
+         * @function getTypeUrl
+         * @memberof download_progress.DownloadState
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        DownloadState.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/download_progress.DownloadState";
+        };
+
+        return DownloadState;
+    })();
+
+    download_progress.DownloadMeta = (function() {
+
+        /**
+         * Properties of a DownloadMeta.
+         * @memberof download_progress
+         * @interface IDownloadMeta
+         * @property {string|null} [downloadId] DownloadMeta downloadId
+         * @property {string|null} [streamerId] DownloadMeta streamerId
+         * @property {string|null} [sessionId] DownloadMeta sessionId
+         * @property {string|null} [engineType] DownloadMeta engineType
+         * @property {number|Long|null} [startedAtMs] DownloadMeta startedAtMs
+         * @property {number|Long|null} [updatedAtMs] DownloadMeta updatedAtMs
+         * @property {string|null} [cdnHost] DownloadMeta cdnHost
+         * @property {string|null} [downloadUrl] DownloadMeta downloadUrl
+         */
+
+        /**
+         * Constructs a new DownloadMeta.
+         * @memberof download_progress
+         * @classdesc Represents a DownloadMeta.
+         * @implements IDownloadMeta
+         * @constructor
+         * @param {download_progress.IDownloadMeta=} [properties] Properties to set
+         */
+        function DownloadMeta(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * DownloadMeta downloadId.
+         * @member {string} downloadId
+         * @memberof download_progress.DownloadMeta
+         * @instance
+         */
+        DownloadMeta.prototype.downloadId = "";
+
+        /**
+         * DownloadMeta streamerId.
+         * @member {string} streamerId
+         * @memberof download_progress.DownloadMeta
+         * @instance
+         */
+        DownloadMeta.prototype.streamerId = "";
+
+        /**
+         * DownloadMeta sessionId.
+         * @member {string} sessionId
+         * @memberof download_progress.DownloadMeta
+         * @instance
+         */
+        DownloadMeta.prototype.sessionId = "";
+
+        /**
+         * DownloadMeta engineType.
+         * @member {string} engineType
+         * @memberof download_progress.DownloadMeta
+         * @instance
+         */
+        DownloadMeta.prototype.engineType = "";
+
+        /**
+         * DownloadMeta startedAtMs.
+         * @member {number|Long} startedAtMs
+         * @memberof download_progress.DownloadMeta
+         * @instance
+         */
+        DownloadMeta.prototype.startedAtMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+        /**
+         * DownloadMeta updatedAtMs.
+         * @member {number|Long} updatedAtMs
+         * @memberof download_progress.DownloadMeta
+         * @instance
+         */
+        DownloadMeta.prototype.updatedAtMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+        /**
+         * DownloadMeta cdnHost.
+         * @member {string} cdnHost
+         * @memberof download_progress.DownloadMeta
+         * @instance
+         */
+        DownloadMeta.prototype.cdnHost = "";
+
+        /**
+         * DownloadMeta downloadUrl.
+         * @member {string} downloadUrl
+         * @memberof download_progress.DownloadMeta
+         * @instance
+         */
+        DownloadMeta.prototype.downloadUrl = "";
+
+        /**
+         * Creates a new DownloadMeta instance using the specified properties.
+         * @function create
+         * @memberof download_progress.DownloadMeta
+         * @static
+         * @param {download_progress.IDownloadMeta=} [properties] Properties to set
+         * @returns {download_progress.DownloadMeta} DownloadMeta instance
+         */
+        DownloadMeta.create = function create(properties) {
+            return new DownloadMeta(properties);
+        };
+
+        /**
+         * Encodes the specified DownloadMeta message. Does not implicitly {@link download_progress.DownloadMeta.verify|verify} messages.
+         * @function encode
+         * @memberof download_progress.DownloadMeta
+         * @static
+         * @param {download_progress.IDownloadMeta} message DownloadMeta message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DownloadMeta.encode = function encode(message, writer) {
             if (!writer)
                 writer = $Writer.create();
             if (message.downloadId != null && Object.hasOwnProperty.call(message, "downloadId"))
@@ -1682,55 +1876,45 @@ export const download_progress = $root.download_progress = (() => {
                 writer.uint32(/* id 3, wireType 2 =*/26).string(message.sessionId);
             if (message.engineType != null && Object.hasOwnProperty.call(message, "engineType"))
                 writer.uint32(/* id 4, wireType 2 =*/34).string(message.engineType);
-            if (message.status != null && Object.hasOwnProperty.call(message, "status"))
-                writer.uint32(/* id 5, wireType 2 =*/42).string(message.status);
-            if (message.bytesDownloaded != null && Object.hasOwnProperty.call(message, "bytesDownloaded"))
-                writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.bytesDownloaded);
-            if (message.durationSecs != null && Object.hasOwnProperty.call(message, "durationSecs"))
-                writer.uint32(/* id 7, wireType 1 =*/57).double(message.durationSecs);
-            if (message.speedBytesPerSec != null && Object.hasOwnProperty.call(message, "speedBytesPerSec"))
-                writer.uint32(/* id 8, wireType 0 =*/64).uint64(message.speedBytesPerSec);
-            if (message.segmentsCompleted != null && Object.hasOwnProperty.call(message, "segmentsCompleted"))
-                writer.uint32(/* id 9, wireType 0 =*/72).uint32(message.segmentsCompleted);
-            if (message.mediaDurationSecs != null && Object.hasOwnProperty.call(message, "mediaDurationSecs"))
-                writer.uint32(/* id 10, wireType 1 =*/81).double(message.mediaDurationSecs);
-            if (message.playbackRatio != null && Object.hasOwnProperty.call(message, "playbackRatio"))
-                writer.uint32(/* id 11, wireType 1 =*/89).double(message.playbackRatio);
             if (message.startedAtMs != null && Object.hasOwnProperty.call(message, "startedAtMs"))
-                writer.uint32(/* id 12, wireType 0 =*/96).int64(message.startedAtMs);
+                writer.uint32(/* id 5, wireType 0 =*/40).int64(message.startedAtMs);
+            if (message.cdnHost != null && Object.hasOwnProperty.call(message, "cdnHost"))
+                writer.uint32(/* id 6, wireType 2 =*/50).string(message.cdnHost);
             if (message.downloadUrl != null && Object.hasOwnProperty.call(message, "downloadUrl"))
-                writer.uint32(/* id 13, wireType 2 =*/106).string(message.downloadUrl);
+                writer.uint32(/* id 7, wireType 2 =*/58).string(message.downloadUrl);
+            if (message.updatedAtMs != null && Object.hasOwnProperty.call(message, "updatedAtMs"))
+                writer.uint32(/* id 8, wireType 0 =*/64).int64(message.updatedAtMs);
             return writer;
         };
 
         /**
-         * Encodes the specified DownloadProgress message, length delimited. Does not implicitly {@link download_progress.DownloadProgress.verify|verify} messages.
+         * Encodes the specified DownloadMeta message, length delimited. Does not implicitly {@link download_progress.DownloadMeta.verify|verify} messages.
          * @function encodeDelimited
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadMeta
          * @static
-         * @param {download_progress.IDownloadProgress} message DownloadProgress message or plain object to encode
+         * @param {download_progress.IDownloadMeta} message DownloadMeta message or plain object to encode
          * @param {$protobuf.Writer} [writer] Writer to encode to
          * @returns {$protobuf.Writer} Writer
          */
-        DownloadProgress.encodeDelimited = function encodeDelimited(message, writer) {
+        DownloadMeta.encodeDelimited = function encodeDelimited(message, writer) {
             return this.encode(message, writer).ldelim();
         };
 
         /**
-         * Decodes a DownloadProgress message from the specified reader or buffer.
+         * Decodes a DownloadMeta message from the specified reader or buffer.
          * @function decode
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadMeta
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
          * @param {number} [length] Message length if known beforehand
-         * @returns {download_progress.DownloadProgress} DownloadProgress
+         * @returns {download_progress.DownloadMeta} DownloadMeta
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        DownloadProgress.decode = function decode(reader, length, error) {
+        DownloadMeta.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
-            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.download_progress.DownloadProgress();
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.download_progress.DownloadMeta();
             while (reader.pos < end) {
                 let tag = reader.uint32();
                 if (tag === error)
@@ -1753,38 +1937,18 @@ export const download_progress = $root.download_progress = (() => {
                         break;
                     }
                 case 5: {
-                        message.status = reader.string();
-                        break;
-                    }
-                case 6: {
-                        message.bytesDownloaded = reader.uint64();
-                        break;
-                    }
-                case 7: {
-                        message.durationSecs = reader.double();
-                        break;
-                    }
-                case 8: {
-                        message.speedBytesPerSec = reader.uint64();
-                        break;
-                    }
-                case 9: {
-                        message.segmentsCompleted = reader.uint32();
-                        break;
-                    }
-                case 10: {
-                        message.mediaDurationSecs = reader.double();
-                        break;
-                    }
-                case 11: {
-                        message.playbackRatio = reader.double();
-                        break;
-                    }
-                case 12: {
                         message.startedAtMs = reader.int64();
                         break;
                     }
-                case 13: {
+                case 8: {
+                        message.updatedAtMs = reader.int64();
+                        break;
+                    }
+                case 6: {
+                        message.cdnHost = reader.string();
+                        break;
+                    }
+                case 7: {
                         message.downloadUrl = reader.string();
                         break;
                     }
@@ -1797,30 +1961,30 @@ export const download_progress = $root.download_progress = (() => {
         };
 
         /**
-         * Decodes a DownloadProgress message from the specified reader or buffer, length delimited.
+         * Decodes a DownloadMeta message from the specified reader or buffer, length delimited.
          * @function decodeDelimited
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadMeta
          * @static
          * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-         * @returns {download_progress.DownloadProgress} DownloadProgress
+         * @returns {download_progress.DownloadMeta} DownloadMeta
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        DownloadProgress.decodeDelimited = function decodeDelimited(reader) {
+        DownloadMeta.decodeDelimited = function decodeDelimited(reader) {
             if (!(reader instanceof $Reader))
                 reader = new $Reader(reader);
             return this.decode(reader, reader.uint32());
         };
 
         /**
-         * Verifies a DownloadProgress message.
+         * Verifies a DownloadMeta message.
          * @function verify
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadMeta
          * @static
          * @param {Object.<string,*>} message Plain object to verify
          * @returns {string|null} `null` if valid, otherwise the reason why it is not
          */
-        DownloadProgress.verify = function verify(message) {
+        DownloadMeta.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
             if (message.downloadId != null && message.hasOwnProperty("downloadId"))
@@ -1835,6 +1999,392 @@ export const download_progress = $root.download_progress = (() => {
             if (message.engineType != null && message.hasOwnProperty("engineType"))
                 if (!$util.isString(message.engineType))
                     return "engineType: string expected";
+            if (message.startedAtMs != null && message.hasOwnProperty("startedAtMs"))
+                if (!$util.isInteger(message.startedAtMs) && !(message.startedAtMs && $util.isInteger(message.startedAtMs.low) && $util.isInteger(message.startedAtMs.high)))
+                    return "startedAtMs: integer|Long expected";
+            if (message.updatedAtMs != null && message.hasOwnProperty("updatedAtMs"))
+                if (!$util.isInteger(message.updatedAtMs) && !(message.updatedAtMs && $util.isInteger(message.updatedAtMs.low) && $util.isInteger(message.updatedAtMs.high)))
+                    return "updatedAtMs: integer|Long expected";
+            if (message.cdnHost != null && message.hasOwnProperty("cdnHost"))
+                if (!$util.isString(message.cdnHost))
+                    return "cdnHost: string expected";
+            if (message.downloadUrl != null && message.hasOwnProperty("downloadUrl"))
+                if (!$util.isString(message.downloadUrl))
+                    return "downloadUrl: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a DownloadMeta message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof download_progress.DownloadMeta
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {download_progress.DownloadMeta} DownloadMeta
+         */
+        DownloadMeta.fromObject = function fromObject(object) {
+            if (object instanceof $root.download_progress.DownloadMeta)
+                return object;
+            let message = new $root.download_progress.DownloadMeta();
+            if (object.downloadId != null)
+                message.downloadId = String(object.downloadId);
+            if (object.streamerId != null)
+                message.streamerId = String(object.streamerId);
+            if (object.sessionId != null)
+                message.sessionId = String(object.sessionId);
+            if (object.engineType != null)
+                message.engineType = String(object.engineType);
+            if (object.startedAtMs != null)
+                if ($util.Long)
+                    (message.startedAtMs = $util.Long.fromValue(object.startedAtMs)).unsigned = false;
+                else if (typeof object.startedAtMs === "string")
+                    message.startedAtMs = parseInt(object.startedAtMs, 10);
+                else if (typeof object.startedAtMs === "number")
+                    message.startedAtMs = object.startedAtMs;
+                else if (typeof object.startedAtMs === "object")
+                    message.startedAtMs = new $util.LongBits(object.startedAtMs.low >>> 0, object.startedAtMs.high >>> 0).toNumber();
+            if (object.updatedAtMs != null)
+                if ($util.Long)
+                    (message.updatedAtMs = $util.Long.fromValue(object.updatedAtMs)).unsigned = false;
+                else if (typeof object.updatedAtMs === "string")
+                    message.updatedAtMs = parseInt(object.updatedAtMs, 10);
+                else if (typeof object.updatedAtMs === "number")
+                    message.updatedAtMs = object.updatedAtMs;
+                else if (typeof object.updatedAtMs === "object")
+                    message.updatedAtMs = new $util.LongBits(object.updatedAtMs.low >>> 0, object.updatedAtMs.high >>> 0).toNumber();
+            if (object.cdnHost != null)
+                message.cdnHost = String(object.cdnHost);
+            if (object.downloadUrl != null)
+                message.downloadUrl = String(object.downloadUrl);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a DownloadMeta message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof download_progress.DownloadMeta
+         * @static
+         * @param {download_progress.DownloadMeta} message DownloadMeta
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        DownloadMeta.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.downloadId = "";
+                object.streamerId = "";
+                object.sessionId = "";
+                object.engineType = "";
+                if ($util.Long) {
+                    let long = new $util.Long(0, 0, false);
+                    object.startedAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.startedAtMs = options.longs === String ? "0" : 0;
+                object.cdnHost = "";
+                object.downloadUrl = "";
+                if ($util.Long) {
+                    let long = new $util.Long(0, 0, false);
+                    object.updatedAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.updatedAtMs = options.longs === String ? "0" : 0;
+            }
+            if (message.downloadId != null && message.hasOwnProperty("downloadId"))
+                object.downloadId = message.downloadId;
+            if (message.streamerId != null && message.hasOwnProperty("streamerId"))
+                object.streamerId = message.streamerId;
+            if (message.sessionId != null && message.hasOwnProperty("sessionId"))
+                object.sessionId = message.sessionId;
+            if (message.engineType != null && message.hasOwnProperty("engineType"))
+                object.engineType = message.engineType;
+            if (message.startedAtMs != null && message.hasOwnProperty("startedAtMs"))
+                if (typeof message.startedAtMs === "number")
+                    object.startedAtMs = options.longs === String ? String(message.startedAtMs) : message.startedAtMs;
+                else
+                    object.startedAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.startedAtMs) : options.longs === Number ? new $util.LongBits(message.startedAtMs.low >>> 0, message.startedAtMs.high >>> 0).toNumber() : message.startedAtMs;
+            if (message.cdnHost != null && message.hasOwnProperty("cdnHost"))
+                object.cdnHost = message.cdnHost;
+            if (message.downloadUrl != null && message.hasOwnProperty("downloadUrl"))
+                object.downloadUrl = message.downloadUrl;
+            if (message.updatedAtMs != null && message.hasOwnProperty("updatedAtMs"))
+                if (typeof message.updatedAtMs === "number")
+                    object.updatedAtMs = options.longs === String ? String(message.updatedAtMs) : message.updatedAtMs;
+                else
+                    object.updatedAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.updatedAtMs) : options.longs === Number ? new $util.LongBits(message.updatedAtMs.low >>> 0, message.updatedAtMs.high >>> 0).toNumber() : message.updatedAtMs;
+            return object;
+        };
+
+        /**
+         * Converts this DownloadMeta to JSON.
+         * @function toJSON
+         * @memberof download_progress.DownloadMeta
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        DownloadMeta.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for DownloadMeta
+         * @function getTypeUrl
+         * @memberof download_progress.DownloadMeta
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        DownloadMeta.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/download_progress.DownloadMeta";
+        };
+
+        return DownloadMeta;
+    })();
+
+    download_progress.DownloadMetrics = (function() {
+
+        /**
+         * Properties of a DownloadMetrics.
+         * @memberof download_progress
+         * @interface IDownloadMetrics
+         * @property {string|null} [downloadId] DownloadMetrics downloadId
+         * @property {string|null} [status] DownloadMetrics status
+         * @property {number|Long|null} [bytesDownloaded] DownloadMetrics bytesDownloaded
+         * @property {number|null} [durationSecs] DownloadMetrics durationSecs
+         * @property {number|Long|null} [speedBytesPerSec] DownloadMetrics speedBytesPerSec
+         * @property {number|null} [segmentsCompleted] DownloadMetrics segmentsCompleted
+         * @property {number|null} [mediaDurationSecs] DownloadMetrics mediaDurationSecs
+         * @property {number|null} [playbackRatio] DownloadMetrics playbackRatio
+         */
+
+        /**
+         * Constructs a new DownloadMetrics.
+         * @memberof download_progress
+         * @classdesc Represents a DownloadMetrics.
+         * @implements IDownloadMetrics
+         * @constructor
+         * @param {download_progress.IDownloadMetrics=} [properties] Properties to set
+         */
+        function DownloadMetrics(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * DownloadMetrics downloadId.
+         * @member {string} downloadId
+         * @memberof download_progress.DownloadMetrics
+         * @instance
+         */
+        DownloadMetrics.prototype.downloadId = "";
+
+        /**
+         * DownloadMetrics status.
+         * @member {string} status
+         * @memberof download_progress.DownloadMetrics
+         * @instance
+         */
+        DownloadMetrics.prototype.status = "";
+
+        /**
+         * DownloadMetrics bytesDownloaded.
+         * @member {number|Long} bytesDownloaded
+         * @memberof download_progress.DownloadMetrics
+         * @instance
+         */
+        DownloadMetrics.prototype.bytesDownloaded = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * DownloadMetrics durationSecs.
+         * @member {number} durationSecs
+         * @memberof download_progress.DownloadMetrics
+         * @instance
+         */
+        DownloadMetrics.prototype.durationSecs = 0;
+
+        /**
+         * DownloadMetrics speedBytesPerSec.
+         * @member {number|Long} speedBytesPerSec
+         * @memberof download_progress.DownloadMetrics
+         * @instance
+         */
+        DownloadMetrics.prototype.speedBytesPerSec = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * DownloadMetrics segmentsCompleted.
+         * @member {number} segmentsCompleted
+         * @memberof download_progress.DownloadMetrics
+         * @instance
+         */
+        DownloadMetrics.prototype.segmentsCompleted = 0;
+
+        /**
+         * DownloadMetrics mediaDurationSecs.
+         * @member {number} mediaDurationSecs
+         * @memberof download_progress.DownloadMetrics
+         * @instance
+         */
+        DownloadMetrics.prototype.mediaDurationSecs = 0;
+
+        /**
+         * DownloadMetrics playbackRatio.
+         * @member {number} playbackRatio
+         * @memberof download_progress.DownloadMetrics
+         * @instance
+         */
+        DownloadMetrics.prototype.playbackRatio = 0;
+
+        /**
+         * Creates a new DownloadMetrics instance using the specified properties.
+         * @function create
+         * @memberof download_progress.DownloadMetrics
+         * @static
+         * @param {download_progress.IDownloadMetrics=} [properties] Properties to set
+         * @returns {download_progress.DownloadMetrics} DownloadMetrics instance
+         */
+        DownloadMetrics.create = function create(properties) {
+            return new DownloadMetrics(properties);
+        };
+
+        /**
+         * Encodes the specified DownloadMetrics message. Does not implicitly {@link download_progress.DownloadMetrics.verify|verify} messages.
+         * @function encode
+         * @memberof download_progress.DownloadMetrics
+         * @static
+         * @param {download_progress.IDownloadMetrics} message DownloadMetrics message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DownloadMetrics.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.downloadId != null && Object.hasOwnProperty.call(message, "downloadId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.downloadId);
+            if (message.status != null && Object.hasOwnProperty.call(message, "status"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.status);
+            if (message.bytesDownloaded != null && Object.hasOwnProperty.call(message, "bytesDownloaded"))
+                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.bytesDownloaded);
+            if (message.durationSecs != null && Object.hasOwnProperty.call(message, "durationSecs"))
+                writer.uint32(/* id 4, wireType 1 =*/33).double(message.durationSecs);
+            if (message.speedBytesPerSec != null && Object.hasOwnProperty.call(message, "speedBytesPerSec"))
+                writer.uint32(/* id 5, wireType 0 =*/40).uint64(message.speedBytesPerSec);
+            if (message.segmentsCompleted != null && Object.hasOwnProperty.call(message, "segmentsCompleted"))
+                writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.segmentsCompleted);
+            if (message.mediaDurationSecs != null && Object.hasOwnProperty.call(message, "mediaDurationSecs"))
+                writer.uint32(/* id 7, wireType 1 =*/57).double(message.mediaDurationSecs);
+            if (message.playbackRatio != null && Object.hasOwnProperty.call(message, "playbackRatio"))
+                writer.uint32(/* id 8, wireType 1 =*/65).double(message.playbackRatio);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified DownloadMetrics message, length delimited. Does not implicitly {@link download_progress.DownloadMetrics.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof download_progress.DownloadMetrics
+         * @static
+         * @param {download_progress.IDownloadMetrics} message DownloadMetrics message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DownloadMetrics.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a DownloadMetrics message from the specified reader or buffer.
+         * @function decode
+         * @memberof download_progress.DownloadMetrics
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {download_progress.DownloadMetrics} DownloadMetrics
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DownloadMetrics.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.download_progress.DownloadMetrics();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.downloadId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.status = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.bytesDownloaded = reader.uint64();
+                        break;
+                    }
+                case 4: {
+                        message.durationSecs = reader.double();
+                        break;
+                    }
+                case 5: {
+                        message.speedBytesPerSec = reader.uint64();
+                        break;
+                    }
+                case 6: {
+                        message.segmentsCompleted = reader.uint32();
+                        break;
+                    }
+                case 7: {
+                        message.mediaDurationSecs = reader.double();
+                        break;
+                    }
+                case 8: {
+                        message.playbackRatio = reader.double();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a DownloadMetrics message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof download_progress.DownloadMetrics
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {download_progress.DownloadMetrics} DownloadMetrics
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DownloadMetrics.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a DownloadMetrics message.
+         * @function verify
+         * @memberof download_progress.DownloadMetrics
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        DownloadMetrics.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.downloadId != null && message.hasOwnProperty("downloadId"))
+                if (!$util.isString(message.downloadId))
+                    return "downloadId: string expected";
             if (message.status != null && message.hasOwnProperty("status"))
                 if (!$util.isString(message.status))
                     return "status: string expected";
@@ -1856,35 +2406,23 @@ export const download_progress = $root.download_progress = (() => {
             if (message.playbackRatio != null && message.hasOwnProperty("playbackRatio"))
                 if (typeof message.playbackRatio !== "number")
                     return "playbackRatio: number expected";
-            if (message.startedAtMs != null && message.hasOwnProperty("startedAtMs"))
-                if (!$util.isInteger(message.startedAtMs) && !(message.startedAtMs && $util.isInteger(message.startedAtMs.low) && $util.isInteger(message.startedAtMs.high)))
-                    return "startedAtMs: integer|Long expected";
-            if (message.downloadUrl != null && message.hasOwnProperty("downloadUrl"))
-                if (!$util.isString(message.downloadUrl))
-                    return "downloadUrl: string expected";
             return null;
         };
 
         /**
-         * Creates a DownloadProgress message from a plain object. Also converts values to their respective internal types.
+         * Creates a DownloadMetrics message from a plain object. Also converts values to their respective internal types.
          * @function fromObject
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadMetrics
          * @static
          * @param {Object.<string,*>} object Plain object
-         * @returns {download_progress.DownloadProgress} DownloadProgress
+         * @returns {download_progress.DownloadMetrics} DownloadMetrics
          */
-        DownloadProgress.fromObject = function fromObject(object) {
-            if (object instanceof $root.download_progress.DownloadProgress)
+        DownloadMetrics.fromObject = function fromObject(object) {
+            if (object instanceof $root.download_progress.DownloadMetrics)
                 return object;
-            let message = new $root.download_progress.DownloadProgress();
+            let message = new $root.download_progress.DownloadMetrics();
             if (object.downloadId != null)
                 message.downloadId = String(object.downloadId);
-            if (object.streamerId != null)
-                message.streamerId = String(object.streamerId);
-            if (object.sessionId != null)
-                message.sessionId = String(object.sessionId);
-            if (object.engineType != null)
-                message.engineType = String(object.engineType);
             if (object.status != null)
                 message.status = String(object.status);
             if (object.bytesDownloaded != null)
@@ -1913,38 +2451,24 @@ export const download_progress = $root.download_progress = (() => {
                 message.mediaDurationSecs = Number(object.mediaDurationSecs);
             if (object.playbackRatio != null)
                 message.playbackRatio = Number(object.playbackRatio);
-            if (object.startedAtMs != null)
-                if ($util.Long)
-                    (message.startedAtMs = $util.Long.fromValue(object.startedAtMs)).unsigned = false;
-                else if (typeof object.startedAtMs === "string")
-                    message.startedAtMs = parseInt(object.startedAtMs, 10);
-                else if (typeof object.startedAtMs === "number")
-                    message.startedAtMs = object.startedAtMs;
-                else if (typeof object.startedAtMs === "object")
-                    message.startedAtMs = new $util.LongBits(object.startedAtMs.low >>> 0, object.startedAtMs.high >>> 0).toNumber();
-            if (object.downloadUrl != null)
-                message.downloadUrl = String(object.downloadUrl);
             return message;
         };
 
         /**
-         * Creates a plain object from a DownloadProgress message. Also converts values to other types if specified.
+         * Creates a plain object from a DownloadMetrics message. Also converts values to other types if specified.
          * @function toObject
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadMetrics
          * @static
-         * @param {download_progress.DownloadProgress} message DownloadProgress
+         * @param {download_progress.DownloadMetrics} message DownloadMetrics
          * @param {$protobuf.IConversionOptions} [options] Conversion options
          * @returns {Object.<string,*>} Plain object
          */
-        DownloadProgress.toObject = function toObject(message, options) {
+        DownloadMetrics.toObject = function toObject(message, options) {
             if (!options)
                 options = {};
             let object = {};
             if (options.defaults) {
                 object.downloadId = "";
-                object.streamerId = "";
-                object.sessionId = "";
-                object.engineType = "";
                 object.status = "";
                 if ($util.Long) {
                     let long = new $util.Long(0, 0, true);
@@ -1960,21 +2484,9 @@ export const download_progress = $root.download_progress = (() => {
                 object.segmentsCompleted = 0;
                 object.mediaDurationSecs = 0;
                 object.playbackRatio = 0;
-                if ($util.Long) {
-                    let long = new $util.Long(0, 0, false);
-                    object.startedAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
-                } else
-                    object.startedAtMs = options.longs === String ? "0" : 0;
-                object.downloadUrl = "";
             }
             if (message.downloadId != null && message.hasOwnProperty("downloadId"))
                 object.downloadId = message.downloadId;
-            if (message.streamerId != null && message.hasOwnProperty("streamerId"))
-                object.streamerId = message.streamerId;
-            if (message.sessionId != null && message.hasOwnProperty("sessionId"))
-                object.sessionId = message.sessionId;
-            if (message.engineType != null && message.hasOwnProperty("engineType"))
-                object.engineType = message.engineType;
             if (message.status != null && message.hasOwnProperty("status"))
                 object.status = message.status;
             if (message.bytesDownloaded != null && message.hasOwnProperty("bytesDownloaded"))
@@ -1995,355 +2507,36 @@ export const download_progress = $root.download_progress = (() => {
                 object.mediaDurationSecs = options.json && !isFinite(message.mediaDurationSecs) ? String(message.mediaDurationSecs) : message.mediaDurationSecs;
             if (message.playbackRatio != null && message.hasOwnProperty("playbackRatio"))
                 object.playbackRatio = options.json && !isFinite(message.playbackRatio) ? String(message.playbackRatio) : message.playbackRatio;
-            if (message.startedAtMs != null && message.hasOwnProperty("startedAtMs"))
-                if (typeof message.startedAtMs === "number")
-                    object.startedAtMs = options.longs === String ? String(message.startedAtMs) : message.startedAtMs;
-                else
-                    object.startedAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.startedAtMs) : options.longs === Number ? new $util.LongBits(message.startedAtMs.low >>> 0, message.startedAtMs.high >>> 0).toNumber() : message.startedAtMs;
-            if (message.downloadUrl != null && message.hasOwnProperty("downloadUrl"))
-                object.downloadUrl = message.downloadUrl;
             return object;
         };
 
         /**
-         * Converts this DownloadProgress to JSON.
+         * Converts this DownloadMetrics to JSON.
          * @function toJSON
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadMetrics
          * @instance
          * @returns {Object.<string,*>} JSON object
          */
-        DownloadProgress.prototype.toJSON = function toJSON() {
+        DownloadMetrics.prototype.toJSON = function toJSON() {
             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
         };
 
         /**
-         * Gets the default type url for DownloadProgress
+         * Gets the default type url for DownloadMetrics
          * @function getTypeUrl
-         * @memberof download_progress.DownloadProgress
+         * @memberof download_progress.DownloadMetrics
          * @static
          * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns {string} The default type url
          */
-        DownloadProgress.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+        DownloadMetrics.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
             if (typeUrlPrefix === undefined) {
                 typeUrlPrefix = "type.googleapis.com";
             }
-            return typeUrlPrefix + "/download_progress.DownloadProgress";
+            return typeUrlPrefix + "/download_progress.DownloadMetrics";
         };
 
-        return DownloadProgress;
-    })();
-
-    download_progress.DownloadStarted = (function() {
-
-        /**
-         * Properties of a DownloadStarted.
-         * @memberof download_progress
-         * @interface IDownloadStarted
-         * @property {string|null} [downloadId] DownloadStarted downloadId
-         * @property {string|null} [streamerId] DownloadStarted streamerId
-         * @property {string|null} [sessionId] DownloadStarted sessionId
-         * @property {string|null} [engineType] DownloadStarted engineType
-         * @property {number|Long|null} [startedAtMs] DownloadStarted startedAtMs
-         */
-
-        /**
-         * Constructs a new DownloadStarted.
-         * @memberof download_progress
-         * @classdesc Represents a DownloadStarted.
-         * @implements IDownloadStarted
-         * @constructor
-         * @param {download_progress.IDownloadStarted=} [properties] Properties to set
-         */
-        function DownloadStarted(properties) {
-            if (properties)
-                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                    if (properties[keys[i]] != null)
-                        this[keys[i]] = properties[keys[i]];
-        }
-
-        /**
-         * DownloadStarted downloadId.
-         * @member {string} downloadId
-         * @memberof download_progress.DownloadStarted
-         * @instance
-         */
-        DownloadStarted.prototype.downloadId = "";
-
-        /**
-         * DownloadStarted streamerId.
-         * @member {string} streamerId
-         * @memberof download_progress.DownloadStarted
-         * @instance
-         */
-        DownloadStarted.prototype.streamerId = "";
-
-        /**
-         * DownloadStarted sessionId.
-         * @member {string} sessionId
-         * @memberof download_progress.DownloadStarted
-         * @instance
-         */
-        DownloadStarted.prototype.sessionId = "";
-
-        /**
-         * DownloadStarted engineType.
-         * @member {string} engineType
-         * @memberof download_progress.DownloadStarted
-         * @instance
-         */
-        DownloadStarted.prototype.engineType = "";
-
-        /**
-         * DownloadStarted startedAtMs.
-         * @member {number|Long} startedAtMs
-         * @memberof download_progress.DownloadStarted
-         * @instance
-         */
-        DownloadStarted.prototype.startedAtMs = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
-
-        /**
-         * Creates a new DownloadStarted instance using the specified properties.
-         * @function create
-         * @memberof download_progress.DownloadStarted
-         * @static
-         * @param {download_progress.IDownloadStarted=} [properties] Properties to set
-         * @returns {download_progress.DownloadStarted} DownloadStarted instance
-         */
-        DownloadStarted.create = function create(properties) {
-            return new DownloadStarted(properties);
-        };
-
-        /**
-         * Encodes the specified DownloadStarted message. Does not implicitly {@link download_progress.DownloadStarted.verify|verify} messages.
-         * @function encode
-         * @memberof download_progress.DownloadStarted
-         * @static
-         * @param {download_progress.IDownloadStarted} message DownloadStarted message or plain object to encode
-         * @param {$protobuf.Writer} [writer] Writer to encode to
-         * @returns {$protobuf.Writer} Writer
-         */
-        DownloadStarted.encode = function encode(message, writer) {
-            if (!writer)
-                writer = $Writer.create();
-            if (message.downloadId != null && Object.hasOwnProperty.call(message, "downloadId"))
-                writer.uint32(/* id 1, wireType 2 =*/10).string(message.downloadId);
-            if (message.streamerId != null && Object.hasOwnProperty.call(message, "streamerId"))
-                writer.uint32(/* id 2, wireType 2 =*/18).string(message.streamerId);
-            if (message.sessionId != null && Object.hasOwnProperty.call(message, "sessionId"))
-                writer.uint32(/* id 3, wireType 2 =*/26).string(message.sessionId);
-            if (message.engineType != null && Object.hasOwnProperty.call(message, "engineType"))
-                writer.uint32(/* id 4, wireType 2 =*/34).string(message.engineType);
-            if (message.startedAtMs != null && Object.hasOwnProperty.call(message, "startedAtMs"))
-                writer.uint32(/* id 5, wireType 0 =*/40).int64(message.startedAtMs);
-            return writer;
-        };
-
-        /**
-         * Encodes the specified DownloadStarted message, length delimited. Does not implicitly {@link download_progress.DownloadStarted.verify|verify} messages.
-         * @function encodeDelimited
-         * @memberof download_progress.DownloadStarted
-         * @static
-         * @param {download_progress.IDownloadStarted} message DownloadStarted message or plain object to encode
-         * @param {$protobuf.Writer} [writer] Writer to encode to
-         * @returns {$protobuf.Writer} Writer
-         */
-        DownloadStarted.encodeDelimited = function encodeDelimited(message, writer) {
-            return this.encode(message, writer).ldelim();
-        };
-
-        /**
-         * Decodes a DownloadStarted message from the specified reader or buffer.
-         * @function decode
-         * @memberof download_progress.DownloadStarted
-         * @static
-         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-         * @param {number} [length] Message length if known beforehand
-         * @returns {download_progress.DownloadStarted} DownloadStarted
-         * @throws {Error} If the payload is not a reader or valid buffer
-         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-         */
-        DownloadStarted.decode = function decode(reader, length, error) {
-            if (!(reader instanceof $Reader))
-                reader = $Reader.create(reader);
-            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.download_progress.DownloadStarted();
-            while (reader.pos < end) {
-                let tag = reader.uint32();
-                if (tag === error)
-                    break;
-                switch (tag >>> 3) {
-                case 1: {
-                        message.downloadId = reader.string();
-                        break;
-                    }
-                case 2: {
-                        message.streamerId = reader.string();
-                        break;
-                    }
-                case 3: {
-                        message.sessionId = reader.string();
-                        break;
-                    }
-                case 4: {
-                        message.engineType = reader.string();
-                        break;
-                    }
-                case 5: {
-                        message.startedAtMs = reader.int64();
-                        break;
-                    }
-                default:
-                    reader.skipType(tag & 7);
-                    break;
-                }
-            }
-            return message;
-        };
-
-        /**
-         * Decodes a DownloadStarted message from the specified reader or buffer, length delimited.
-         * @function decodeDelimited
-         * @memberof download_progress.DownloadStarted
-         * @static
-         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-         * @returns {download_progress.DownloadStarted} DownloadStarted
-         * @throws {Error} If the payload is not a reader or valid buffer
-         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-         */
-        DownloadStarted.decodeDelimited = function decodeDelimited(reader) {
-            if (!(reader instanceof $Reader))
-                reader = new $Reader(reader);
-            return this.decode(reader, reader.uint32());
-        };
-
-        /**
-         * Verifies a DownloadStarted message.
-         * @function verify
-         * @memberof download_progress.DownloadStarted
-         * @static
-         * @param {Object.<string,*>} message Plain object to verify
-         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-         */
-        DownloadStarted.verify = function verify(message) {
-            if (typeof message !== "object" || message === null)
-                return "object expected";
-            if (message.downloadId != null && message.hasOwnProperty("downloadId"))
-                if (!$util.isString(message.downloadId))
-                    return "downloadId: string expected";
-            if (message.streamerId != null && message.hasOwnProperty("streamerId"))
-                if (!$util.isString(message.streamerId))
-                    return "streamerId: string expected";
-            if (message.sessionId != null && message.hasOwnProperty("sessionId"))
-                if (!$util.isString(message.sessionId))
-                    return "sessionId: string expected";
-            if (message.engineType != null && message.hasOwnProperty("engineType"))
-                if (!$util.isString(message.engineType))
-                    return "engineType: string expected";
-            if (message.startedAtMs != null && message.hasOwnProperty("startedAtMs"))
-                if (!$util.isInteger(message.startedAtMs) && !(message.startedAtMs && $util.isInteger(message.startedAtMs.low) && $util.isInteger(message.startedAtMs.high)))
-                    return "startedAtMs: integer|Long expected";
-            return null;
-        };
-
-        /**
-         * Creates a DownloadStarted message from a plain object. Also converts values to their respective internal types.
-         * @function fromObject
-         * @memberof download_progress.DownloadStarted
-         * @static
-         * @param {Object.<string,*>} object Plain object
-         * @returns {download_progress.DownloadStarted} DownloadStarted
-         */
-        DownloadStarted.fromObject = function fromObject(object) {
-            if (object instanceof $root.download_progress.DownloadStarted)
-                return object;
-            let message = new $root.download_progress.DownloadStarted();
-            if (object.downloadId != null)
-                message.downloadId = String(object.downloadId);
-            if (object.streamerId != null)
-                message.streamerId = String(object.streamerId);
-            if (object.sessionId != null)
-                message.sessionId = String(object.sessionId);
-            if (object.engineType != null)
-                message.engineType = String(object.engineType);
-            if (object.startedAtMs != null)
-                if ($util.Long)
-                    (message.startedAtMs = $util.Long.fromValue(object.startedAtMs)).unsigned = false;
-                else if (typeof object.startedAtMs === "string")
-                    message.startedAtMs = parseInt(object.startedAtMs, 10);
-                else if (typeof object.startedAtMs === "number")
-                    message.startedAtMs = object.startedAtMs;
-                else if (typeof object.startedAtMs === "object")
-                    message.startedAtMs = new $util.LongBits(object.startedAtMs.low >>> 0, object.startedAtMs.high >>> 0).toNumber();
-            return message;
-        };
-
-        /**
-         * Creates a plain object from a DownloadStarted message. Also converts values to other types if specified.
-         * @function toObject
-         * @memberof download_progress.DownloadStarted
-         * @static
-         * @param {download_progress.DownloadStarted} message DownloadStarted
-         * @param {$protobuf.IConversionOptions} [options] Conversion options
-         * @returns {Object.<string,*>} Plain object
-         */
-        DownloadStarted.toObject = function toObject(message, options) {
-            if (!options)
-                options = {};
-            let object = {};
-            if (options.defaults) {
-                object.downloadId = "";
-                object.streamerId = "";
-                object.sessionId = "";
-                object.engineType = "";
-                if ($util.Long) {
-                    let long = new $util.Long(0, 0, false);
-                    object.startedAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
-                } else
-                    object.startedAtMs = options.longs === String ? "0" : 0;
-            }
-            if (message.downloadId != null && message.hasOwnProperty("downloadId"))
-                object.downloadId = message.downloadId;
-            if (message.streamerId != null && message.hasOwnProperty("streamerId"))
-                object.streamerId = message.streamerId;
-            if (message.sessionId != null && message.hasOwnProperty("sessionId"))
-                object.sessionId = message.sessionId;
-            if (message.engineType != null && message.hasOwnProperty("engineType"))
-                object.engineType = message.engineType;
-            if (message.startedAtMs != null && message.hasOwnProperty("startedAtMs"))
-                if (typeof message.startedAtMs === "number")
-                    object.startedAtMs = options.longs === String ? String(message.startedAtMs) : message.startedAtMs;
-                else
-                    object.startedAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.startedAtMs) : options.longs === Number ? new $util.LongBits(message.startedAtMs.low >>> 0, message.startedAtMs.high >>> 0).toNumber() : message.startedAtMs;
-            return object;
-        };
-
-        /**
-         * Converts this DownloadStarted to JSON.
-         * @function toJSON
-         * @memberof download_progress.DownloadStarted
-         * @instance
-         * @returns {Object.<string,*>} JSON object
-         */
-        DownloadStarted.prototype.toJSON = function toJSON() {
-            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-        };
-
-        /**
-         * Gets the default type url for DownloadStarted
-         * @function getTypeUrl
-         * @memberof download_progress.DownloadStarted
-         * @static
-         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
-         * @returns {string} The default type url
-         */
-        DownloadStarted.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
-            if (typeUrlPrefix === undefined) {
-                typeUrlPrefix = "type.googleapis.com";
-            }
-            return typeUrlPrefix + "/download_progress.DownloadStarted";
-        };
-
-        return DownloadStarted;
+        return DownloadMetrics;
     })();
 
     download_progress.SegmentCompleted = (function() {

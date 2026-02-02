@@ -3,14 +3,14 @@
  * Generated from rust-srec/proto/download_progress.proto
  */
 // @ts-expect-error - Generated protobuf JS file without type declarations
-import { download_progress as pb } from './download_progress_pb.js';
+import { download_progress as pb } from "./download_progress_pb.js";
 
 // Event types for WebSocket messages
 export enum EventType {
   EVENT_TYPE_UNSPECIFIED = 0,
   EVENT_TYPE_SNAPSHOT = 1,
-  EVENT_TYPE_DOWNLOAD_STARTED = 2,
-  EVENT_TYPE_PROGRESS = 3,
+  EVENT_TYPE_DOWNLOAD_META = 2,
+  EVENT_TYPE_DOWNLOAD_METRICS = 3,
   EVENT_TYPE_SEGMENT_COMPLETED = 4,
   EVENT_TYPE_DOWNLOAD_COMPLETED = 5,
   EVENT_TYPE_DOWNLOAD_FAILED = 6,
@@ -19,12 +19,22 @@ export enum EventType {
   EVENT_TYPE_DOWNLOAD_REJECTED = 9,
 }
 
-// Progress information for a single download
-export interface DownloadProgress {
+// Download metadata (low frequency)
+export interface DownloadMeta {
   downloadId: string;
   streamerId: string;
   sessionId: string;
   engineType: string;
+  startedAtMs: bigint;
+  // Monotonic (best-effort) meta update time.
+  updatedAtMs: bigint;
+  cdnHost: string;
+  downloadUrl: string;
+}
+
+// Download metrics (high frequency)
+export interface DownloadMetrics {
+  downloadId: string;
   status: string;
   bytesDownloaded: bigint;
   durationSecs: number;
@@ -32,25 +42,30 @@ export interface DownloadProgress {
   segmentsCompleted: number;
   mediaDurationSecs: number;
   playbackRatio: number;
-  startedAtMs: bigint;
-  downloadUrl: string;
+}
+
+export interface DownloadState {
+  meta: DownloadMeta;
+  metrics: DownloadMetrics;
 }
 
 // Initial snapshot of all active downloads
 export interface DownloadSnapshot {
-  downloads: DownloadProgress[];
+  downloads: DownloadState[];
 }
 
-// Download started event
-export interface DownloadStarted {
-  downloadId: string;
-  streamerId: string;
-  sessionId: string;
-  engineType: string;
-  startedAtMs: bigint;
-}
+// Server-to-client message payload union type
+export type WsMessagePayload =
+  | { snapshot: DownloadSnapshot }
+  | { downloadMeta: DownloadMeta }
+  | { downloadMetrics: DownloadMetrics }
+  | { segmentCompleted: SegmentCompleted }
+  | { downloadCompleted: DownloadCompleted }
+  | { downloadFailed: DownloadFailed }
+  | { downloadCancelled: DownloadCancelled }
+  | { downloadRejected: DownloadRejected }
+  | { error: ErrorPayload };
 
-// Segment completed event
 export interface SegmentCompleted {
   downloadId: string;
   streamerId: string;
@@ -61,7 +76,6 @@ export interface SegmentCompleted {
   sessionId: string;
 }
 
-// Download completed event
 export interface DownloadCompleted {
   downloadId: string;
   streamerId: string;
@@ -71,7 +85,6 @@ export interface DownloadCompleted {
   totalSegments: number;
 }
 
-// Download failed event
 export interface DownloadFailed {
   downloadId: string;
   streamerId: string;
@@ -80,7 +93,6 @@ export interface DownloadFailed {
   recoverable: boolean;
 }
 
-// Download cancelled event
 export interface DownloadCancelled {
   downloadId: string;
   streamerId: string;
@@ -88,7 +100,6 @@ export interface DownloadCancelled {
   cause: string;
 }
 
-// Download rejected event
 export interface DownloadRejected {
   streamerId: string;
   sessionId: string;
@@ -97,23 +108,10 @@ export interface DownloadRejected {
   recoverable: boolean;
 }
 
-// Error payload for service errors
 export interface ErrorPayload {
   code: string;
   message: string;
 }
-
-// Server-to-client message payload union type
-export type WsMessagePayload =
-  | { snapshot: DownloadSnapshot }
-  | { downloadStarted: DownloadStarted }
-  | { progress: DownloadProgress }
-  | { segmentCompleted: SegmentCompleted }
-  | { downloadCompleted: DownloadCompleted }
-  | { downloadFailed: DownloadFailed }
-  | { downloadCancelled: DownloadCancelled }
-  | { downloadRejected: DownloadRejected }
-  | { error: ErrorPayload };
 
 // Server-to-client message envelope
 export interface WsMessage {
@@ -143,11 +141,11 @@ const ClientMessageType = pb.ClientMessage;
  * Convert protobuf Long to bigint
  */
 function toBigInt(value: unknown): bigint {
-  if (typeof value === 'bigint') return value;
-  if (typeof value === 'number') return BigInt(value);
-  if (typeof value === 'string') return BigInt(value);
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number") return BigInt(value);
+  if (typeof value === "string") return BigInt(value);
   // Handle protobufjs Long type
-  if (value && typeof value === 'object' && 'low' in value && 'high' in value) {
+  if (value && typeof value === "object" && "low" in value && "high" in value) {
     const long = value as { low: number; high: number; unsigned?: boolean };
     const low = BigInt(long.low >>> 0);
     const high = BigInt(long.high >>> 0);
@@ -156,27 +154,104 @@ function toBigInt(value: unknown): bigint {
   return 0n;
 }
 
-/**
- * Convert a raw protobuf DownloadProgress to our interface
- */
-function convertDownloadProgress(
-  raw: Record<string, unknown>,
-): DownloadProgress {
+function convertDownloadMeta(raw: Record<string, unknown>): DownloadMeta {
   return {
-    downloadId: (raw.downloadId as string) || '',
-    downloadUrl: (raw.downloadUrl as string) || '',
-    streamerId: (raw.streamerId as string) || '',
-    sessionId: (raw.sessionId as string) || '',
-    engineType: (raw.engineType as string) || '',
-    status: (raw.status as string) || '',
+    downloadId: (raw.downloadId as string) || "",
+    streamerId: (raw.streamerId as string) || "",
+    sessionId: (raw.sessionId as string) || "",
+    engineType: (raw.engineType as string) || "",
+    startedAtMs: toBigInt(raw.startedAtMs),
+    updatedAtMs: toBigInt(raw.updatedAtMs),
+    cdnHost: (raw.cdnHost as string) || "",
+    downloadUrl: (raw.downloadUrl as string) || "",
+  };
+}
+
+function convertDownloadMetrics(raw: Record<string, unknown>): DownloadMetrics {
+  return {
+    downloadId: (raw.downloadId as string) || "",
+    status: (raw.status as string) || "",
     bytesDownloaded: toBigInt(raw.bytesDownloaded),
     durationSecs: (raw.durationSecs as number) || 0,
     speedBytesPerSec: toBigInt(raw.speedBytesPerSec),
     segmentsCompleted: (raw.segmentsCompleted as number) || 0,
     mediaDurationSecs: (raw.mediaDurationSecs as number) || 0,
     playbackRatio: (raw.playbackRatio as number) || 0,
-    startedAtMs: toBigInt(raw.startedAtMs),
   };
+}
+
+function convertSegmentCompleted(raw: Record<string, unknown>): SegmentCompleted {
+  return {
+    downloadId: (raw.downloadId as string) || "",
+    streamerId: (raw.streamerId as string) || "",
+    segmentPath: (raw.segmentPath as string) || "",
+    segmentIndex: (raw.segmentIndex as number) || 0,
+    durationSecs: (raw.durationSecs as number) || 0,
+    sizeBytes: toBigInt(raw.sizeBytes),
+    sessionId: (raw.sessionId as string) || "",
+  };
+}
+
+function convertDownloadCompleted(raw: Record<string, unknown>): DownloadCompleted {
+  return {
+    downloadId: (raw.downloadId as string) || "",
+    streamerId: (raw.streamerId as string) || "",
+    sessionId: (raw.sessionId as string) || "",
+    totalBytes: toBigInt(raw.totalBytes),
+    totalDurationSecs: (raw.totalDurationSecs as number) || 0,
+    totalSegments: (raw.totalSegments as number) || 0,
+  };
+}
+
+function convertDownloadFailed(raw: Record<string, unknown>): DownloadFailed {
+  return {
+    downloadId: (raw.downloadId as string) || "",
+    streamerId: (raw.streamerId as string) || "",
+    sessionId: (raw.sessionId as string) || "",
+    error: (raw.error as string) || "",
+    recoverable: (raw.recoverable as boolean) || false,
+  };
+}
+
+function convertDownloadCancelled(raw: Record<string, unknown>): DownloadCancelled {
+  return {
+    downloadId: (raw.downloadId as string) || "",
+    streamerId: (raw.streamerId as string) || "",
+    sessionId: (raw.sessionId as string) || "",
+    cause: (raw.cause as string) || "",
+  };
+}
+
+function convertDownloadRejected(raw: Record<string, unknown>): DownloadRejected {
+  return {
+    streamerId: (raw.streamerId as string) || "",
+    sessionId: (raw.sessionId as string) || "",
+    reason: (raw.reason as string) || "",
+    retryAfterSecs: toBigInt(raw.retryAfterSecs),
+    recoverable: (raw.recoverable as boolean) || false,
+  };
+}
+
+function convertErrorPayload(raw: Record<string, unknown>): ErrorPayload {
+  return {
+    code: (raw.code as string) || "",
+    message: (raw.message as string) || "",
+  };
+}
+
+function convertDownloadState(raw: Record<string, unknown>): DownloadState {
+  const metaRaw = raw.meta as Record<string, unknown> | undefined;
+  const metricsRaw = raw.metrics as Record<string, unknown> | undefined;
+
+  // In proto3, non-optional message fields can still be omitted; be defensive.
+  const meta = metaRaw ? convertDownloadMeta(metaRaw) : convertDownloadMeta({});
+  const metrics = metricsRaw ? convertDownloadMetrics(metricsRaw) : convertDownloadMetrics({});
+
+  // If one side has an id and the other doesn't, align them.
+  if (!meta.downloadId && metrics.downloadId) meta.downloadId = metrics.downloadId;
+  if (!metrics.downloadId && meta.downloadId) metrics.downloadId = meta.downloadId;
+
+  return { meta, metrics };
 }
 
 /**
@@ -198,94 +273,52 @@ export function decodeWsMessage(data: Uint8Array): WsMessage {
       (rawSnapshot.downloads as Record<string, unknown>[]) || [];
     payload = {
       snapshot: {
-        downloads: rawDownloads.map(convertDownloadProgress),
+        downloads: rawDownloads.map(convertDownloadState),
       },
     };
-  } else if (decoded.downloadStarted) {
-    const raw = decoded.downloadStarted as Record<string, unknown>;
+  } else if (decoded.downloadMeta) {
+    const raw = decoded.downloadMeta as Record<string, unknown>;
     payload = {
-      downloadStarted: {
-        downloadId: (raw.downloadId as string) || '',
-        streamerId: (raw.streamerId as string) || '',
-        sessionId: (raw.sessionId as string) || '',
-        engineType: (raw.engineType as string) || '',
-        startedAtMs: toBigInt(raw.startedAtMs),
-      },
+      downloadMeta: convertDownloadMeta(raw),
     };
-  } else if (decoded.progress) {
+  } else if (decoded.downloadMetrics) {
+    const raw = decoded.downloadMetrics as Record<string, unknown>;
     payload = {
-      progress: convertDownloadProgress(
-        decoded.progress as Record<string, unknown>,
-      ),
+      downloadMetrics: convertDownloadMetrics(raw),
     };
   } else if (decoded.segmentCompleted) {
     const raw = decoded.segmentCompleted as Record<string, unknown>;
     payload = {
-      segmentCompleted: {
-        downloadId: (raw.downloadId as string) || '',
-        streamerId: (raw.streamerId as string) || '',
-        segmentPath: (raw.segmentPath as string) || '',
-        segmentIndex: (raw.segmentIndex as number) || 0,
-        durationSecs: (raw.durationSecs as number) || 0,
-        sizeBytes: toBigInt(raw.sizeBytes),
-        sessionId: (raw.sessionId as string) || '',
-      },
+      segmentCompleted: convertSegmentCompleted(raw),
     };
   } else if (decoded.downloadCompleted) {
     const raw = decoded.downloadCompleted as Record<string, unknown>;
     payload = {
-      downloadCompleted: {
-        downloadId: (raw.downloadId as string) || '',
-        streamerId: (raw.streamerId as string) || '',
-        sessionId: (raw.sessionId as string) || '',
-        totalBytes: toBigInt(raw.totalBytes),
-        totalDurationSecs: (raw.totalDurationSecs as number) || 0,
-        totalSegments: (raw.totalSegments as number) || 0,
-      },
+      downloadCompleted: convertDownloadCompleted(raw),
     };
   } else if (decoded.downloadFailed) {
     const raw = decoded.downloadFailed as Record<string, unknown>;
     payload = {
-      downloadFailed: {
-        downloadId: (raw.downloadId as string) || '',
-        streamerId: (raw.streamerId as string) || '',
-        sessionId: (raw.sessionId as string) || '',
-        error: (raw.error as string) || '',
-        recoverable: (raw.recoverable as boolean) || false,
-      },
+      downloadFailed: convertDownloadFailed(raw),
     };
   } else if (decoded.downloadCancelled) {
     const raw = decoded.downloadCancelled as Record<string, unknown>;
     payload = {
-      downloadCancelled: {
-        downloadId: (raw.downloadId as string) || '',
-        streamerId: (raw.streamerId as string) || '',
-        sessionId: (raw.sessionId as string) || '',
-        cause: (raw.cause as string) || '',
-      },
+      downloadCancelled: convertDownloadCancelled(raw),
     };
   } else if (decoded.downloadRejected) {
     const raw = decoded.downloadRejected as Record<string, unknown>;
     payload = {
-      downloadRejected: {
-        streamerId: (raw.streamerId as string) || '',
-        sessionId: (raw.sessionId as string) || '',
-        reason: (raw.reason as string) || '',
-        retryAfterSecs: toBigInt(raw.retryAfterSecs),
-        recoverable: (raw.recoverable as boolean) || false,
-      },
+      downloadRejected: convertDownloadRejected(raw),
     };
   } else if (decoded.error) {
     const raw = decoded.error as Record<string, unknown>;
     payload = {
-      error: {
-        code: (raw.code as string) || '',
-        message: (raw.message as string) || '',
-      },
+      error: convertErrorPayload(raw),
     };
   } else {
-    // Default to empty error payload for unspecified
-    payload = { error: { code: 'UNKNOWN', message: 'Unknown message type' } };
+    // Default to unknown message type
+    throw new Error("Unknown WebSocket message type");
   }
 
   return { eventType, payload };
@@ -297,7 +330,7 @@ export function decodeWsMessage(data: Uint8Array): WsMessage {
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
   let protoMsg: Record<string, unknown>;
 
-  if ('subscribe' in msg.action) {
+  if ("subscribe" in msg.action) {
     protoMsg = {
       subscribe: {
         streamerId: msg.action.subscribe.streamerId,

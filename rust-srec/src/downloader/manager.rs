@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -192,7 +193,6 @@ impl Default for DownloadManagerConfig {
 /// Internal state for an active download.
 struct ActiveDownload {
     handle: Arc<DownloadHandle>,
-    download_url: String,
     status: DownloadStatus,
     progress: DownloadProgress,
     #[allow(dead_code)]
@@ -285,14 +285,15 @@ pub enum DownloadManagerEvent {
         streamer_id: String,
         session_id: String,
         engine_type: EngineType,
+        cdn_host: String,
+        download_url: String,
     },
     /// Progress update for a download.
     Progress {
         download_id: String,
         streamer_id: String,
         session_id: String,
-        /// Stream URL being downloaded.
-        download_url: String,
+        status: DownloadStatus,
         progress: DownloadProgress,
     },
     /// Segment started - a new segment file has been opened for writing.
@@ -749,11 +750,11 @@ impl DownloadManager {
         ));
 
         // Store active download
+        let cdn_host = crate::utils::url::extract_host(&config.url).unwrap_or_default();
         self.active_downloads.insert(
             download_id.clone(),
             ActiveDownload {
                 handle: handle.clone(),
-                download_url: config.url.clone(),
                 status: DownloadStatus::Starting,
                 progress: DownloadProgress::default(),
                 is_high_priority,
@@ -769,6 +770,8 @@ impl DownloadManager {
             streamer_id: config.streamer_id.clone(),
             session_id: config.session_id.clone(),
             engine_type,
+            cdn_host,
+            download_url: config.url.clone(),
         });
 
         info!(
@@ -806,6 +809,12 @@ impl DownloadManager {
         let high_priority_limit = self.high_priority_limit.clone();
 
         tokio::spawn(async move {
+            // Limit how often we broadcast progress updates (per download).
+            // Engines may emit progress 1-10x/sec; broadcasting every tick can overwhelm
+            // tokio::broadcast (clone-per-subscriber) and the WS clients.
+            const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(250);
+            let mut last_progress_emit = Instant::now() - PROGRESS_MIN_INTERVAL;
+
             while let Some(event) = segment_rx.recv().await {
                 match event {
                     SegmentEvent::SegmentCompleted(info) => {
@@ -838,24 +847,22 @@ impl DownloadManager {
                         );
                     }
                     SegmentEvent::Progress(progress) => {
-                        // Avoid a second DashMap lookup and avoid reading DownloadConfig on every tick.
-                        let download_url = if let Some(mut download) =
-                            active_downloads.get_mut(&download_id_clone)
-                        {
+                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
                             download.progress = progress.clone();
                             download.status = DownloadStatus::Downloading;
-                            download.download_url.clone()
-                        } else {
-                            String::new()
-                        };
-                        // Broadcast progress event to WebSocket subscribers
-                        let _ = event_tx.send(DownloadManagerEvent::Progress {
-                            download_id: download_id_clone.clone(),
-                            streamer_id: streamer_id.clone(),
-                            session_id: session_id.clone(),
-                            download_url,
-                            progress,
-                        });
+                        }
+
+                        // Broadcast progress event to WebSocket subscribers (throttled).
+                        if last_progress_emit.elapsed() >= PROGRESS_MIN_INTERVAL {
+                            last_progress_emit = Instant::now();
+                            let _ = event_tx.send(DownloadManagerEvent::Progress {
+                                download_id: download_id_clone.clone(),
+                                streamer_id: streamer_id.clone(),
+                                session_id: session_id.clone(),
+                                status: DownloadStatus::Downloading,
+                                progress,
+                            });
+                        }
                     }
                     SegmentEvent::DownloadCompleted {
                         total_bytes,
@@ -863,6 +870,19 @@ impl DownloadManager {
                         total_segments,
                     } => {
                         circuit_breakers_ref.record_success();
+
+                        // If progress is throttled, the latest tick might not have been broadcast.
+                        // Emit one final progress update before sending the terminal event.
+                        if let Some(download) = active_downloads.get(&download_id_clone) {
+                            let final_progress = download.progress.clone();
+                            let _ = event_tx.send(DownloadManagerEvent::Progress {
+                                download_id: download_id_clone.clone(),
+                                streamer_id: streamer_id.clone(),
+                                session_id: session_id.clone(),
+                                status: DownloadStatus::Downloading,
+                                progress: final_progress,
+                            });
+                        }
 
                         // remove download from active_downloads
                         // just before the event to avoid race condition
@@ -907,6 +927,18 @@ impl DownloadManager {
 
                         if !is_permanent_http_error {
                             circuit_breakers_ref.record_failure();
+                        }
+
+                        // Emit one final progress update (best-effort) before the failure event.
+                        if let Some(download) = active_downloads.get(&download_id_clone) {
+                            let final_progress = download.progress.clone();
+                            let _ = event_tx.send(DownloadManagerEvent::Progress {
+                                download_id: download_id_clone.clone(),
+                                streamer_id: streamer_id.clone(),
+                                session_id: session_id.clone(),
+                                status: DownloadStatus::Downloading,
+                                progress: final_progress,
+                            });
                         }
 
                         // remove download from active_downloads
@@ -980,6 +1012,15 @@ impl DownloadManager {
     ) -> Result<()> {
         if let Some((_, download)) = self.active_downloads.remove(download_id) {
             let engine_type = download.handle.engine_type;
+
+            // Emit one final progress update before cancellation.
+            let _ = self.event_tx.send(DownloadManagerEvent::Progress {
+                download_id: download_id.to_string(),
+                streamer_id: download.handle.config_snapshot().streamer_id.clone(),
+                session_id: download.handle.config_snapshot().session_id.clone(),
+                status: DownloadStatus::Cancelled,
+                progress: download.progress.clone(),
+            });
 
             if let Some(engine) = self.get_engine(engine_type) {
                 engine.stop(&download.handle).await?;
@@ -1680,7 +1721,6 @@ mod tests {
 
         let active_download = ActiveDownload {
             handle,
-            download_url: "http://test.example.com/stream".to_string(),
             status: DownloadStatus::Downloading,
             progress: DownloadProgress::default(),
             is_high_priority: false,

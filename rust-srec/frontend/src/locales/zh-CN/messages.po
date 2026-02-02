@@ -231,7 +231,7 @@ msgstr "启用"
 msgid "Active Days"
 msgstr "生效日期"
 
-#: src/components/streamers/edit/active-download-card.tsx:40
+#: src/components/streamers/edit/active-download-card.tsx:48
 msgid "Active Download"
 msgstr "正在录制"
 
@@ -921,8 +921,8 @@ msgstr "分类"
 msgid "Category"
 msgstr "分类"
 
-#: src/components/streamers/edit/active-download-card.tsx:64
-#: src/components/streamers/progress-indicator.tsx:143
+#: src/components/streamers/edit/active-download-card.tsx:99
+#: src/components/streamers/progress-indicator.tsx:142
 msgid "CDN"
 msgstr "CDN"
 
@@ -1900,7 +1900,7 @@ msgid "Down"
 msgstr "不可用"
 
 #: src/components/sessions/recordings-tab.tsx:131
-#: src/components/streamers/progress-indicator.tsx:111
+#: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "下载"
 
@@ -1946,7 +1946,7 @@ msgstr "下载管理"
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
-#: src/components/streamers/edit/active-download-card.tsx:49
+#: src/components/streamers/edit/active-download-card.tsx:57
 msgid "Downloading"
 msgstr "下载中"
 
@@ -1972,8 +1972,8 @@ msgid "Dual Format"
 msgstr "双格式输出"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:569
-#: src/components/streamers/edit/active-download-card.tsx:118
-#: src/components/streamers/progress-indicator.tsx:125
+#: src/components/streamers/edit/active-download-card.tsx:153
+#: src/components/streamers/progress-indicator.tsx:124
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:584
 msgid "Duration"
 msgstr "时长"
@@ -5372,8 +5372,8 @@ msgstr "内存使用率"
 msgid "Random"
 msgstr "随机"
 
-#: src/components/streamers/edit/active-download-card.tsx:140
-#: src/components/streamers/progress-indicator.tsx:133
+#: src/components/streamers/edit/active-download-card.tsx:175
+#: src/components/streamers/progress-indicator.tsx:132
 msgid "Ratio"
 msgstr "比例"
 
@@ -5940,7 +5940,7 @@ msgstr "分段"
 msgid "Segment Timeout (ms)"
 msgstr "分段超时（毫秒）"
 
-#: src/components/streamers/edit/active-download-card.tsx:129
+#: src/components/streamers/edit/active-download-card.tsx:164
 msgid "Segments"
 msgstr "分段"
 
@@ -6193,7 +6193,7 @@ msgstr "Shadcn UI 主题预设"
 msgid "Shared pipeline utilities"
 msgstr "共享的处理管道工具"
 
-#: src/components/streamers/progress-indicator.tsx:99
+#: src/components/streamers/progress-indicator.tsx:98
 msgid "Show download details"
 msgstr "显示录制下载详情"
 
@@ -6235,7 +6235,7 @@ msgid "Single URL"
 msgstr "单个 URL"
 
 #: src/components/pipeline/outputs/output-card.tsx:178
-#: src/components/streamers/edit/active-download-card.tsx:104
+#: src/components/streamers/edit/active-download-card.tsx:139
 msgid "Size"
 msgstr "大小"
 
@@ -6288,7 +6288,7 @@ msgstr "特定 TTWID Cookie"
 msgid "Specify preferred content delivery network (e.g., ws-h5, hs-h5)."
 msgstr "指定首选的内容分发网络（例如 ws-h5, hs-h5）。"
 
-#: src/components/streamers/edit/active-download-card.tsx:90
+#: src/components/streamers/edit/active-download-card.tsx:125
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:602
 msgid "Speed"
 msgstr "速度"
@@ -6428,6 +6428,10 @@ msgstr "流播放器"
 #: src/components/config/engines/forms/mesio-form.tsx:58
 msgid "Stream Splitting Strategy"
 msgstr "流分割策略"
+
+#: src/components/streamers/edit/active-download-card.tsx:70
+msgid "Stream URL"
+msgstr "直播链接"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:225
 msgid "Streamer"
@@ -7204,6 +7208,7 @@ msgstr "运行时间"
 #: src/components/notifications/channel-card.tsx:104
 #: src/components/streamers/config/streamer-general-settings.tsx:66
 #: src/components/streamers/edit/streamer-meta-form.tsx:116
+#: src/components/streamers/progress-indicator.tsx:152
 msgid "URL"
 msgstr "URL"
 

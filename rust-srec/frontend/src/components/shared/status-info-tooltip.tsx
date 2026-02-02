@@ -136,13 +136,13 @@ export function StatusInfoTooltip({
             {icon}
           </div>
           <div>
-            <p className="font-semibold text-sm leading-none tracking-tight text-foreground/90">
+            <div className="font-semibold text-sm leading-none tracking-tight text-foreground/90">
               {title}
-            </p>
+            </div>
             {subtitle && (
-              <p className="text-[10px] text-muted-foreground mt-1 font-medium">
+              <div className="text-[10px] text-muted-foreground mt-1 font-medium">
                 {subtitle}
-              </p>
+              </div>
             )}
           </div>
         </div>

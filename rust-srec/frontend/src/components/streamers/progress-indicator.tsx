@@ -1,16 +1,15 @@
-import { Download, Zap, Clock, TrendingUp } from 'lucide-react';
+import { Download as DownloadIcon, Zap, Clock, TrendingUp } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { formatBytes, formatDuration, formatSpeed } from '../../lib/format';
 import { cn } from '../../lib/utils';
-import { getUrlHost } from '../../lib/url';
-import type { DownloadProgress } from '../../api/proto/download_progress';
+import type { Download } from '@/store/downloads';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { StatusInfoTooltip } from '../shared/status-info-tooltip';
 
 interface ProgressIndicatorProps {
-  progress: DownloadProgress;
+  progress: Download;
   compact?: boolean;
 }
 
@@ -20,7 +19,7 @@ export function ProgressIndicator({
 }: ProgressIndicatorProps) {
   const { i18n } = useLingui();
   const isHealthy = progress.playbackRatio >= 1.0;
-  const cdnHost = getUrlHost(progress.downloadUrl);
+  const cdnHost = progress.cdnHost || '';
   const tooltipTheme = isHealthy ? 'blue' : 'orange';
 
   const trigger = compact ? (
@@ -33,7 +32,7 @@ export function ProgressIndicator({
             : 'text-orange-600 dark:text-orange-400',
         )}
       >
-        <Download className="h-3 w-3" />
+        <DownloadIcon className="h-3 w-3" />
         {formatSpeed(Number(progress.speedBytesPerSec))}
       </div>
       <div className="text-muted-foreground">
@@ -48,7 +47,7 @@ export function ProgressIndicator({
     <div className="flex flex-col gap-1 p-2 bg-muted/30 rounded-md text-xs">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 text-muted-foreground">
-          <Download className="h-3 w-3" />
+          <DownloadIcon className="h-3 w-3" />
           <div>{formatBytes(Number(progress.bytesDownloaded))}</div>
         </div>
         <div
@@ -106,7 +105,7 @@ export function ProgressIndicator({
         className="p-0 bg-background text-foreground border border-border/50 shadow-xl backdrop-blur-md overflow-hidden rounded-xl"
       >
         <StatusInfoTooltip
-          icon={<Download className="w-4 h-4" />}
+          icon={<DownloadIcon className="w-4 h-4" />}
           title={
             <Trans render={({ translation }) => <>{translation}</>}>
               Download
@@ -145,8 +144,23 @@ export function ProgressIndicator({
               </Trans>
             </div>
             <div className="font-mono text-foreground/90 break-all">
-              {cdnHost ?? '-'}
+              {cdnHost || '-'}
             </div>
+            {progress.downloadUrl && (
+              <>
+                <div className="text-muted-foreground">
+                  <Trans render={({ translation }) => <>{translation}</>}>
+                    URL
+                  </Trans>
+                </div>
+                <div
+                  className="font-mono text-foreground/90 break-all max-w-[200px] truncate"
+                  title={progress.downloadUrl}
+                >
+                  {progress.downloadUrl}
+                </div>
+              </>
+            )}
           </div>
         </StatusInfoTooltip>
       </TooltipContent>

@@ -24,12 +24,16 @@ use tracing::{debug, warn};
 /// Heartbeat ping interval in seconds.
 const HEARTBEAT_INTERVAL_SECS: u64 = 30;
 
+/// Send a snapshot on subscribe/unsubscribe to support mid-join and filtering.
+///
+/// This is intentionally "best effort": if the client is already gone we just exit.
+const SNAPSHOT_ON_SUBSCRIBE: bool = true;
+
 use crate::api::error::ApiError;
 use crate::api::proto::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadRejected,
-    DownloadStarted, EventType, SegmentCompleted, WsMessage, create_error_message,
-    create_snapshot_message, download_progress::client_message::Action,
-    download_progress::ws_message::Payload,
+    EventType, SegmentCompleted, WsMessage, create_error_message, create_snapshot_message,
+    download_progress::client_message::Action, download_progress::ws_message::Payload,
 };
 use crate::api::server::AppState;
 use crate::downloader::DownloadManagerEvent;
@@ -46,20 +50,23 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/ws", get(download_progress_ws))
 }
 
-/// WebSocket handler for download progress streaming.
+/// WebSocket handler for download status streaming.
 ///
 /// Authenticates via JWT token in query parameter, then upgrades to WebSocket.
-/// Sends initial snapshot of active downloads, then streams progress events.
+/// Sends an initial snapshot of active downloads, then streams metadata + metrics deltas.
 ///
 /// # Authentication
 /// Requires valid JWT token via `?token=<jwt>` query parameter.
 ///
 /// # Events (Protocol Buffer encoded)
-/// - `snapshot`: Initial list of all active downloads
-/// - `download_started`: New download started
-/// - `progress`: Download progress update
+/// - `snapshot`: Initial list of all active downloads (each entry includes `meta` + `metrics`)
+/// - `download_meta`: Low-frequency metadata updates (includes full `download_url`)
+/// - `download_metrics`: High-frequency numeric progress updates
+/// - `segment_completed`: Segment completed (path, size, duration)
 /// - `download_completed`: Download finished successfully
 /// - `download_failed`: Download failed
+/// - `download_cancelled`: Download cancelled
+/// - `download_rejected`: Download rejected before start
 ///
 /// # Client Messages (Protocol Buffer encoded)
 /// - `subscribe`: Filter updates to specific streamer_id
@@ -103,7 +110,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     // 1. Send initial snapshot as protobuf binary
     let downloads = download_manager.get_active_downloads();
-    let snapshot_msg = create_snapshot_message(downloads.clone());
+    let snapshot_msg = create_snapshot_message(downloads);
     let bytes = snapshot_msg.encode_to_vec();
 
     if sender
@@ -138,10 +145,33 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                     Some(Action::Subscribe(req)) => {
                                         // debug!("Client subscribed to streamer: {}", req.streamer_id);
                                         filter = Some(req.streamer_id);
+
+                                         // Snapshot-on-subscribe: ensures a mid-join client gets
+                                         // current state even if it missed previous delta events.
+                                        if SNAPSHOT_ON_SUBSCRIBE {
+                                            let mut downloads = download_manager.get_active_downloads();
+                                            if let Some(ref streamer_id) = filter {
+                                                downloads.retain(|d| &d.streamer_id == streamer_id);
+                                            }
+                                            let snapshot_msg = create_snapshot_message(downloads);
+                                            let bytes = snapshot_msg.encode_to_vec();
+                                            if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
+                                                break;
+                                            }
+                                        }
                                     }
                                     Some(Action::Unsubscribe(_)) => {
                                         // debug!("Client unsubscribed from filter");
                                         filter = None;
+
+                                        if SNAPSHOT_ON_SUBSCRIBE {
+                                            let downloads = download_manager.get_active_downloads();
+                                            let snapshot_msg = create_snapshot_message(downloads);
+                                            let bytes = snapshot_msg.encode_to_vec();
+                                            if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
+                                                break;
+                                            }
+                                        }
                                     }
                                     None => {
                                         // debug!("Client message has no action");
@@ -180,16 +210,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             event = event_rx.recv() => {
                 match event {
                     Ok(event) => {
+                        // V2 message (metadata/metrics split)
                         if let Some(msg) = map_event_to_protobuf(&event, &filter) {
                             let bytes = msg.encode_to_vec();
-                            // Use send for backpressure - if buffer is full, drop message
                             match sender.send(Message::Binary(Bytes::from(bytes))).await {
-                                Ok(_) => {
-                                    // trace!("Sent event {:?} to client", event);
-                                }
+                                Ok(_) => {}
                                 Err(e) => {
                                     debug!("Failed to send message, client may be slow: {}", e);
-                                    // Don't break - client might recover
                                 }
                             }
                         }
@@ -227,19 +254,18 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     // debug!("WebSocket connection closed, cleaning up");
 }
 
-/// Map a DownloadManagerEvent to a protobuf WsMessage, applying filter if set.
+/// Map a DownloadManagerEvent to metadata/metrics split messages.
 ///
 /// Returns None if the event should be filtered out.
 fn map_event_to_protobuf(
     event: &DownloadManagerEvent,
     filter: &Option<String>,
 ) -> Option<WsMessage> {
-    // Extract streamer_id from event for filtering
     let event_streamer_id = match event {
         DownloadManagerEvent::DownloadStarted { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::Progress { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::SegmentCompleted { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::SegmentStarted { streamer_id, .. } => streamer_id, // Added
+        DownloadManagerEvent::SegmentStarted { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::DownloadCompleted { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::DownloadFailed { streamer_id, .. } => streamer_id,
         DownloadManagerEvent::DownloadCancelled { streamer_id, .. } => streamer_id,
@@ -248,58 +274,57 @@ fn map_event_to_protobuf(
         DownloadManagerEvent::DownloadRejected { streamer_id, .. } => streamer_id,
     };
 
-    // Apply filter
     if let Some(filter_id) = filter
         && event_streamer_id != filter_id
     {
         return None;
     }
 
-    // Map event to protobuf message
     match event {
         DownloadManagerEvent::DownloadStarted {
             download_id,
             streamer_id,
             session_id,
             engine_type,
+            cdn_host,
+            download_url,
         } => {
-            let payload = DownloadStarted {
+            let now_ms = chrono::Utc::now().timestamp_millis();
+            let meta = crate::api::proto::DownloadMeta {
                 download_id: download_id.clone(),
                 streamer_id: streamer_id.clone(),
                 session_id: session_id.clone(),
                 engine_type: engine_type.as_str().to_string(),
-                started_at_ms: chrono::Utc::now().timestamp_millis(),
+                started_at_ms: now_ms,
+                // First meta emission is also the initial "updated" time.
+                updated_at_ms: now_ms,
+                cdn_host: cdn_host.clone(),
+                download_url: download_url.clone(),
             };
             Some(WsMessage {
-                event_type: EventType::DownloadStarted as i32,
-                payload: Some(Payload::DownloadStarted(payload)),
+                event_type: EventType::DownloadMeta as i32,
+                payload: Some(Payload::DownloadMeta(meta)),
             })
         }
         DownloadManagerEvent::Progress {
             download_id,
-            streamer_id,
-            session_id,
-            download_url,
             progress,
+            status,
+            ..
         } => {
-            let payload = crate::api::proto::DownloadProgress {
+            let metrics = crate::api::proto::DownloadMetrics {
                 download_id: download_id.clone(),
-                streamer_id: streamer_id.clone(),
-                session_id: session_id.clone(),
-                engine_type: String::new(), // Not available in progress event
-                status: "Downloading".to_string(),
+                status: status.as_str().to_string(),
                 bytes_downloaded: progress.bytes_downloaded,
                 duration_secs: progress.duration_secs,
                 speed_bytes_per_sec: progress.speed_bytes_per_sec,
                 segments_completed: progress.segments_completed,
                 media_duration_secs: progress.media_duration_secs,
                 playback_ratio: progress.playback_ratio,
-                started_at_ms: 0, // Not available in progress event
-                download_url: download_url.clone(),
             };
             Some(WsMessage {
-                event_type: EventType::Progress as i32,
-                payload: Some(Payload::Progress(payload)),
+                event_type: EventType::DownloadMetrics as i32,
+                payload: Some(Payload::DownloadMetrics(metrics)),
             })
         }
         DownloadManagerEvent::SegmentCompleted {
@@ -383,13 +408,6 @@ fn map_event_to_protobuf(
                 payload: Some(Payload::DownloadCancelled(payload)),
             })
         }
-        // Config events are internal, don't broadcast to clients
-        DownloadManagerEvent::ConfigUpdated { .. }
-        | DownloadManagerEvent::ConfigUpdateFailed { .. }
-        // TODO: SegmentStarted ignored for now
-        | DownloadManagerEvent::SegmentStarted { .. } => None,
-        // DownloadRejected is informational - could optionally broadcast
-        // For now, we include it as it provides useful feedback to UI
         DownloadManagerEvent::DownloadRejected {
             streamer_id,
             session_id,
@@ -401,13 +419,14 @@ fn map_event_to_protobuf(
                 session_id: session_id.clone(),
                 reason: reason.clone(),
                 retry_after_secs: retry_after_secs.unwrap_or(0),
-                recoverable: true, // Circuit breaker rejections are always recoverable
+                recoverable: true,
             };
             Some(WsMessage {
                 event_type: EventType::DownloadRejected as i32,
                 payload: Some(Payload::DownloadRejected(payload)),
             })
         }
+        _ => None,
     }
 }
 
@@ -431,6 +450,8 @@ mod tests {
             streamer_id: "streamer-123".to_string(),
             session_id: "session-1".to_string(),
             engine_type: EngineType::Ffmpeg,
+            cdn_host: "cdn.example.com".to_string(),
+            download_url: "https://cdn.example.com/stream".to_string(),
         };
 
         // No filter - should pass
@@ -459,24 +480,26 @@ mod tests {
     }
 
     #[test]
-    fn test_download_started_event_mapping() {
+    fn test_download_meta_event_mapping() {
         let event = DownloadManagerEvent::DownloadStarted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             session_id: "session-1".to_string(),
             engine_type: EngineType::Ffmpeg,
+            cdn_host: "cdn.example.com".to_string(),
+            download_url: "https://cdn.example.com/stream".to_string(),
         };
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
-        assert_eq!(msg.event_type, EventType::DownloadStarted as i32);
+        assert_eq!(msg.event_type, EventType::DownloadMeta as i32);
 
-        if let Some(Payload::DownloadStarted(payload)) = msg.payload {
+        if let Some(Payload::DownloadMeta(payload)) = msg.payload {
             assert_eq!(payload.download_id, "dl-1");
             assert_eq!(payload.streamer_id, "streamer-123");
             assert_eq!(payload.session_id, "session-1");
             assert_eq!(payload.engine_type, "ffmpeg");
         } else {
-            panic!("Expected DownloadStarted payload");
+            panic!("Expected DownloadMeta payload");
         }
     }
 
@@ -603,6 +626,8 @@ mod tests {
             streamer_id: "streamer-123".to_string(),
             session_id: "session-1".to_string(),
             engine_type: EngineType::Ffmpeg,
+            cdn_host: "cdn.example.com".to_string(),
+            download_url: "https://cdn.example.com/stream".to_string(),
         };
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();

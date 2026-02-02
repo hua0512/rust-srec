@@ -7,7 +7,6 @@ import {
   decodeWsMessage,
   encodeClientMessage,
   EventType,
-  type DownloadProgress,
 } from '@/api/proto/download_progress';
 import { buildWebSocketUrl } from '@/lib/url';
 import { WebSocketContext } from './WebSocketContext';
@@ -40,8 +39,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
   // Download store actions
   const setSnapshot = useDownloadStore((state) => state.setSnapshot);
-  const addDownload = useDownloadStore((state) => state.addDownload);
-  const updateProgress = useDownloadStore((state) => state.updateProgress);
+  const upsertMeta = useDownloadStore((state) => state.upsertMeta);
+  const upsertMetrics = useDownloadStore((state) => state.upsertMetrics);
   const removeDownload = useDownloadStore((state) => state.removeDownload);
   const setConnectionStatus = useDownloadStore(
     (state) => state.setConnectionStatus,
@@ -63,83 +62,52 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             }
             break;
 
-          case EventType.EVENT_TYPE_DOWNLOAD_STARTED:
-            if ('downloadStarted' in message.payload) {
-              const started = message.payload.downloadStarted;
-              const initialProgress: DownloadProgress = {
-                downloadId: started.downloadId,
-                streamerId: started.streamerId,
-                sessionId: started.sessionId,
-                engineType: started.engineType,
-                status: 'Starting',
-                bytesDownloaded: 0n,
-                durationSecs: 0,
-                speedBytesPerSec: 0n,
-                segmentsCompleted: 0,
-                mediaDurationSecs: 0,
-                playbackRatio: 0,
-                startedAtMs: started.startedAtMs,
-                downloadUrl: '',
-              };
-              addDownload(initialProgress);
+          case EventType.EVENT_TYPE_DOWNLOAD_META:
+            if ('downloadMeta' in message.payload) {
+              const meta = message.payload.downloadMeta;
+              upsertMeta(meta);
             }
             break;
 
-          case EventType.EVENT_TYPE_PROGRESS:
-            if ('progress' in message.payload) {
-              const progress = message.payload.progress;
-              updateProgress(progress.downloadId, progress);
+          case EventType.EVENT_TYPE_DOWNLOAD_METRICS:
+            if ('downloadMetrics' in message.payload) {
+              const m = message.payload.downloadMetrics;
+              upsertMetrics(m);
             }
             break;
 
           case EventType.EVENT_TYPE_DOWNLOAD_COMPLETED:
             if ('downloadCompleted' in message.payload) {
+              // Terminal event - remove from active list.
               removeDownload(message.payload.downloadCompleted.downloadId);
             }
             break;
 
           case EventType.EVENT_TYPE_DOWNLOAD_FAILED:
             if ('downloadFailed' in message.payload) {
+              // Terminal event - remove from active list.
               removeDownload(message.payload.downloadFailed.downloadId);
             }
             break;
 
           case EventType.EVENT_TYPE_DOWNLOAD_CANCELLED:
             if ('downloadCancelled' in message.payload) {
-              const cancelled = message.payload.downloadCancelled;
-              if (cancelled.cause && cancelled.cause !== 'user') {
-                console.warn('Download cancelled:', cancelled);
-              }
-              removeDownload(cancelled.downloadId);
-            }
-            break;
-
-          case EventType.EVENT_TYPE_DOWNLOAD_REJECTED:
-            if ('downloadRejected' in message.payload) {
-              console.warn(
-                'Download rejected:',
-                message.payload.downloadRejected,
-              );
+              // Terminal event - remove from active list.
+              removeDownload(message.payload.downloadCancelled.downloadId);
             }
             break;
 
           case EventType.EVENT_TYPE_SEGMENT_COMPLETED:
-            break;
-
+          case EventType.EVENT_TYPE_DOWNLOAD_REJECTED:
           case EventType.EVENT_TYPE_ERROR:
-            if ('error' in message.payload) {
-              console.error(
-                'WebSocket error from server:',
-                message.payload.error,
-              );
-            }
+            // Not currently surfaced in the UI; decoding still works.
             break;
         }
       } catch (error) {
         console.error('Failed to decode WebSocket message:', error);
       }
     },
-    [setSnapshot, addDownload, updateProgress, removeDownload],
+    [setSnapshot, upsertMeta, upsertMetrics, removeDownload],
   );
 
   const connect = useCallback(() => {
@@ -251,9 +219,24 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, accessToken, connect, disconnect]);
 
-  // No-op for now as we use global subscription
-  const subscribe = useCallback((_streamerId: string) => {}, []);
-  const unsubscribe = useCallback((_streamerId: string) => {}, []);
+  const subscribe = useCallback((streamerId: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const msg = encodeClientMessage({
+      action: { subscribe: { streamerId } },
+    });
+    ws.send(msg);
+  }, []);
+
+  const unsubscribe = useCallback((_streamerId: string) => {
+    // Protocol unsubscribe is global (clears filter).
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const msg = encodeClientMessage({
+      action: { unsubscribe: {} },
+    });
+    ws.send(msg);
+  }, []);
 
   return (
     <WebSocketContext.Provider

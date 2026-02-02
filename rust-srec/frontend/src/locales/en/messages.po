@@ -231,7 +231,7 @@ msgstr "Active"
 msgid "Active Days"
 msgstr "Active Days"
 
-#: src/components/streamers/edit/active-download-card.tsx:40
+#: src/components/streamers/edit/active-download-card.tsx:48
 msgid "Active Download"
 msgstr "Active Download"
 
@@ -921,8 +921,8 @@ msgstr "Categories"
 msgid "Category"
 msgstr "Category"
 
-#: src/components/streamers/edit/active-download-card.tsx:64
-#: src/components/streamers/progress-indicator.tsx:143
+#: src/components/streamers/edit/active-download-card.tsx:99
+#: src/components/streamers/progress-indicator.tsx:142
 msgid "CDN"
 msgstr "CDN"
 
@@ -1900,7 +1900,7 @@ msgid "Down"
 msgstr "Down"
 
 #: src/components/sessions/recordings-tab.tsx:131
-#: src/components/streamers/progress-indicator.tsx:111
+#: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "Download"
 
@@ -1946,7 +1946,7 @@ msgstr "Download Manager"
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/components/streamers/edit/active-download-card.tsx:49
+#: src/components/streamers/edit/active-download-card.tsx:57
 msgid "Downloading"
 msgstr "Downloading"
 
@@ -1972,8 +1972,8 @@ msgid "Dual Format"
 msgstr "Dual Format"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:569
-#: src/components/streamers/edit/active-download-card.tsx:118
-#: src/components/streamers/progress-indicator.tsx:125
+#: src/components/streamers/edit/active-download-card.tsx:153
+#: src/components/streamers/progress-indicator.tsx:124
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:584
 msgid "Duration"
 msgstr "Duration"
@@ -5372,8 +5372,8 @@ msgstr "RAM utilization"
 msgid "Random"
 msgstr "Random"
 
-#: src/components/streamers/edit/active-download-card.tsx:140
-#: src/components/streamers/progress-indicator.tsx:133
+#: src/components/streamers/edit/active-download-card.tsx:175
+#: src/components/streamers/progress-indicator.tsx:132
 msgid "Ratio"
 msgstr "Ratio"
 
@@ -5940,7 +5940,7 @@ msgstr "Segment"
 msgid "Segment Timeout (ms)"
 msgstr "Segment Timeout (ms)"
 
-#: src/components/streamers/edit/active-download-card.tsx:129
+#: src/components/streamers/edit/active-download-card.tsx:164
 msgid "Segments"
 msgstr "Segments"
 
@@ -6193,7 +6193,7 @@ msgstr "Shadcn UI Theme Presets"
 msgid "Shared pipeline utilities"
 msgstr "Shared pipeline utilities"
 
-#: src/components/streamers/progress-indicator.tsx:99
+#: src/components/streamers/progress-indicator.tsx:98
 msgid "Show download details"
 msgstr "Show download details"
 
@@ -6235,7 +6235,7 @@ msgid "Single URL"
 msgstr "Single URL"
 
 #: src/components/pipeline/outputs/output-card.tsx:178
-#: src/components/streamers/edit/active-download-card.tsx:104
+#: src/components/streamers/edit/active-download-card.tsx:139
 msgid "Size"
 msgstr "Size"
 
@@ -6288,7 +6288,7 @@ msgstr "Specific TTWID Cookie"
 msgid "Specify preferred content delivery network (e.g., ws-h5, hs-h5)."
 msgstr "Specify preferred content delivery network (e.g., ws-h5, hs-h5)."
 
-#: src/components/streamers/edit/active-download-card.tsx:90
+#: src/components/streamers/edit/active-download-card.tsx:125
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:602
 msgid "Speed"
 msgstr "Speed"
@@ -6428,6 +6428,10 @@ msgstr "Stream Player"
 #: src/components/config/engines/forms/mesio-form.tsx:58
 msgid "Stream Splitting Strategy"
 msgstr "Stream Splitting Strategy"
+
+#: src/components/streamers/edit/active-download-card.tsx:70
+msgid "Stream URL"
+msgstr "Stream URL"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:225
 msgid "Streamer"
@@ -7204,6 +7208,7 @@ msgstr "Uptime"
 #: src/components/notifications/channel-card.tsx:104
 #: src/components/streamers/config/streamer-general-settings.tsx:66
 #: src/components/streamers/edit/streamer-meta-form.tsx:116
+#: src/components/streamers/progress-indicator.tsx:152
 msgid "URL"
 msgstr "URL"
 

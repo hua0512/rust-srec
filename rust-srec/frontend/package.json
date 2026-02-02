@@ -9,7 +9,7 @@
     "dev:desktop": "cross-env VITE_DESKTOP=1 vite dev --config vite.desktop.config.ts",
     "build:desktop": "pnpm run proto:gen && cross-env VITE_DESKTOP=1 vite build --config vite.desktop.config.ts",
     "serve": "vite preview",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "extract": "lingui extract --clean",
     "compile": "lingui compile",
     "format": "npx oxfmt --write .",
