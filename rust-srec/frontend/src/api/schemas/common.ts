@@ -13,6 +13,7 @@ export const StreamSelectionConfigObjectSchema = z.object({
   preferred_media_formats: z.array(z.string()).optional(),
   preferred_qualities: z.array(z.string()).optional(),
   preferred_cdns: z.array(z.string()).optional(),
+  blacklisted_cdns: z.array(z.string()).optional(),
   min_bitrate: z.number().optional(),
   max_bitrate: z.number().optional(),
 });

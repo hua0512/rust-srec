@@ -16,6 +16,7 @@ export interface StreamSelectionConfig {
   preferred_qualities?: string[];
   preferred_formats?: string[];
   preferred_cdns?: string[];
+  blacklisted_cdns?: string[];
   min_bitrate?: number;
   max_bitrate?: number;
 }
@@ -102,25 +103,44 @@ export function StreamSelectionInput({
               </FormDescription>
             </FormItem>
 
-            <FormItem>
-              <FormLabel>
-                <Trans>Preferred CDNs</Trans>
-              </FormLabel>
-              <FormControl>
-                <TagInput
-                  value={value.preferred_cdns || []}
-                  onChange={(tags) => updateField('preferred_cdns', tags)}
-                  placeholder={i18n._(msg`e.g. aliyun, akamaized`)}
-                  className="bg-background"
-                />
-              </FormControl>
-              <FormDescription>
-                <Trans>
-                  Prioritize specific CDN providers. Press Enter to add.
-                </Trans>
-              </FormDescription>
-            </FormItem>
-          </div>
+             <FormItem>
+               <FormLabel>
+                 <Trans>Preferred CDNs</Trans>
+               </FormLabel>
+               <FormControl>
+                 <TagInput
+                   value={value.preferred_cdns || []}
+                   onChange={(tags) => updateField('preferred_cdns', tags)}
+                   placeholder={i18n._(msg`e.g. aliyun, akamaized`)}
+                   className="bg-background"
+                 />
+               </FormControl>
+               <FormDescription>
+                 <Trans>
+                   Prioritize specific CDN providers. Press Enter to add.
+                 </Trans>
+               </FormDescription>
+             </FormItem>
+
+             <FormItem>
+               <FormLabel>
+                 <Trans>Blacklisted CDNs</Trans>
+               </FormLabel>
+               <FormControl>
+                 <TagInput
+                   value={value.blacklisted_cdns || []}
+                   onChange={(tags) => updateField('blacklisted_cdns', tags)}
+                   placeholder={i18n._(msg`e.g. cdn-to-avoid`)}
+                   className="bg-background"
+                 />
+               </FormControl>
+               <FormDescription>
+                 <Trans>
+                   Exclude streams from these CDN providers entirely. Press Enter to add.
+                 </Trans>
+               </FormDescription>
+             </FormItem>
+           </div>
         </CardContent>
       </Card>
 

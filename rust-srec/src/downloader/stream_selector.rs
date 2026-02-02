@@ -5,6 +5,7 @@
 
 use platforms_parser::media::{StreamFormat, StreamInfo, formats::MediaFormat};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use tracing::debug;
 
 /// Configuration for stream selection preferences.
@@ -35,6 +36,10 @@ pub struct StreamSelectionConfig {
     /// Preferred CDN providers in order of preference.
     /// Empty means accept any CDN.
     pub preferred_cdns: Vec<String>,
+    /// Blacklisted CDN providers that should be excluded.
+    /// Streams from these CDNs will be filtered out entirely.
+    /// Uses substring matching (case-insensitive).
+    pub blacklisted_cdns: Vec<String>,
     /// Minimum bitrate in bits per second (0 = no minimum).
     pub min_bitrate: u64,
     /// Maximum bitrate in bits per second (0 = no maximum).
@@ -46,6 +51,7 @@ impl StreamSelectionConfig {
     ///
     /// Non-empty/non-zero values from `other` override values from `self`.
     /// This supports the layered config hierarchy (global → platform → template → streamer).
+    #[must_use]
     pub fn merge(&self, other: &Self) -> Self {
         Self {
             // Use other's formats if specified AND non-empty, otherwise keep self's
@@ -67,6 +73,17 @@ impl StreamSelectionConfig {
                 self.preferred_cdns.clone()
             } else {
                 other.preferred_cdns.clone()
+            },
+            // Blacklists are combined (union) rather than replaced
+            // This ensures child configs can add to parent blacklists
+            blacklisted_cdns: {
+                let mut combined = self.blacklisted_cdns.clone();
+                for cdn in &other.blacklisted_cdns {
+                    if !combined.contains(cdn) {
+                        combined.push(cdn.clone());
+                    }
+                }
+                combined
             },
             // Use other's bitrate limits if non-zero
             min_bitrate: if other.min_bitrate > 0 {
@@ -90,11 +107,13 @@ pub struct StreamSelector {
 
 impl StreamSelector {
     /// Create a new stream selector with default configuration.
+    #[must_use]
     pub fn new() -> Self {
         Self::with_config(StreamSelectionConfig::default())
     }
 
     /// Create a new stream selector with custom configuration.
+    #[must_use]
     pub fn with_config(config: StreamSelectionConfig) -> Self {
         Self { config }
     }
@@ -102,31 +121,45 @@ impl StreamSelector {
     /// Select the best stream from the available streams.
     ///
     /// Returns the best matching stream, or None if no streams match the criteria.
+    #[must_use]
     pub fn select_best<'a>(&self, streams: &'a [StreamInfo]) -> Option<&'a StreamInfo> {
         self.sort_candidates(streams).first().copied()
     }
 
     /// Sort candidates by preference.
+    #[must_use]
     pub fn sort_candidates<'a>(&self, streams: &'a [StreamInfo]) -> Vec<&'a StreamInfo> {
         if streams.is_empty() {
             return Vec::new();
         }
 
-        // Filter streams based on criteria
-        let filtered: Vec<&StreamInfo> = streams
+        // First, filter out blacklisted CDNs (hard exclude, always applied)
+        let non_blacklisted: Vec<&StreamInfo> = streams
             .iter()
-            .filter(|s| self.matches_criteria(s))
+            .filter(|s| !self.is_cdn_blacklisted(s))
             .collect();
 
-        // If no streams match criteria, fall back to all streams
+        // If all streams are blacklisted, return empty
+        if non_blacklisted.is_empty() {
+            return Vec::new();
+        }
+
+        // Filter streams based on criteria (bitrate, etc.)
+        let filtered: Vec<&StreamInfo> = non_blacklisted
+            .iter()
+            .filter(|s| self.matches_criteria(s))
+            .copied()
+            .collect();
+
+        // If no streams match criteria, fall back to non-blacklisted streams
         let candidates = if filtered.is_empty() {
             debug!(
-                available = streams.len(),
+                available = non_blacklisted.len(),
                 min_bitrate = self.config.min_bitrate,
                 max_bitrate = self.config.max_bitrate,
                 "stream selection fallback (no candidates matched criteria)"
             );
-            streams.iter().collect()
+            non_blacklisted
         } else {
             filtered
         };
@@ -139,6 +172,7 @@ impl StreamSelector {
     }
 
     /// Check if a stream matches the selection criteria.
+    #[inline]
     fn matches_criteria(&self, stream: &StreamInfo) -> bool {
         // Check bitrate constraints
         if self.config.min_bitrate > 0 && stream.bitrate < self.config.min_bitrate {
@@ -162,41 +196,13 @@ impl StreamSelector {
         // 5. Priority Field (lower value = higher priority)
         // 6. Bitrate (higher value = better)
 
-        // 1. Compare by quality preference
-        let quality_score_a = self.quality_score(a);
-        let quality_score_b = self.quality_score(b);
-        if quality_score_a != quality_score_b {
-            return quality_score_a.cmp(&quality_score_b);
-        }
-
-        // 2. Compare by CDN preference
-        let cdn_score_a = self.cdn_score(a);
-        let cdn_score_b = self.cdn_score(b);
-        if cdn_score_a != cdn_score_b {
-            return cdn_score_a.cmp(&cdn_score_b);
-        }
-
-        // 3. Compare by format preference
-        let format_score_a = self.format_score(a);
-        let format_score_b = self.format_score(b);
-        if format_score_a != format_score_b {
-            return format_score_a.cmp(&format_score_b);
-        }
-
-        // 4. Compare by media format preference
-        let media_format_score_a = self.media_format_score(a);
-        let media_format_score_b = self.media_format_score(b);
-        if media_format_score_a != media_format_score_b {
-            return media_format_score_a.cmp(&media_format_score_b);
-        }
-
-        // 5. Compare by priority (lower priority value = higher priority)
-        if a.priority != b.priority {
-            return a.priority.cmp(&b.priority);
-        }
-
-        // 6. Compare by bitrate (higher is better)
-        b.bitrate.cmp(&a.bitrate)
+        self.quality_score(a)
+            .cmp(&self.quality_score(b))
+            .then_with(|| self.cdn_score(a).cmp(&self.cdn_score(b)))
+            .then_with(|| self.format_score(a).cmp(&self.format_score(b)))
+            .then_with(|| self.media_format_score(a).cmp(&self.media_format_score(b)))
+            .then_with(|| a.priority.cmp(&b.priority))
+            .then_with(|| b.bitrate.cmp(&a.bitrate))
     }
 
     /// Get the format preference score (lower is better).
@@ -246,6 +252,19 @@ impl StreamSelector {
             .unwrap_or(usize::MAX)
     }
 
+    /// Extract CDN identifier from stream extras or fall back to URL.
+    /// Returns a reference when possible to avoid allocation.
+    #[inline]
+    fn get_cdn_source<'a>(&self, stream: &'a StreamInfo) -> Cow<'a, str> {
+        stream
+            .extras
+            .as_ref()
+            .and_then(|e| e.get("cdn"))
+            .and_then(|v| v.as_str())
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Borrowed(&stream.url))
+    }
+
     /// Get the CDN preference score (lower is better).
     fn cdn_score(&self, stream: &StreamInfo) -> usize {
         if self.config.preferred_cdns.is_empty() {
@@ -255,22 +274,29 @@ impl StreamSelector {
             return 0;
         }
 
-        // Extract CDN from extras
-        let cdn = stream
-            .extras
-            .as_ref()
-            .and_then(|e| e.get("cdn"))
-            .and_then(|v| v.as_str());
+        let cdn_source = self.get_cdn_source(stream);
+        let cdn_lower = cdn_source.to_lowercase();
+        self.config
+            .preferred_cdns
+            .iter()
+            .position(|c| cdn_lower.contains(&c.to_lowercase()))
+            .unwrap_or(usize::MAX)
+    }
 
-        match cdn {
-            Some(cdn_name) => self
-                .config
-                .preferred_cdns
-                .iter()
-                .position(|c| cdn_name.contains(c))
-                .unwrap_or(usize::MAX),
-            None => usize::MAX,
+    /// Check if a stream's CDN is blacklisted.
+    /// Uses case-insensitive substring matching.
+    /// Falls back to URL matching if CDN info is not available in extras.
+    fn is_cdn_blacklisted(&self, stream: &StreamInfo) -> bool {
+        if self.config.blacklisted_cdns.is_empty() {
+            return false;
         }
+
+        let cdn_source = self.get_cdn_source(stream);
+        let cdn_lower = cdn_source.to_lowercase();
+        self.config
+            .blacklisted_cdns
+            .iter()
+            .any(|blacklisted| cdn_lower.contains(&blacklisted.to_lowercase()))
     }
 }
 
@@ -695,5 +721,255 @@ mod tests {
         // With Quality > CDN > Format priority, CDN should win even if Format prefers FLV
         assert_eq!(best.unwrap().stream_format, StreamFormat::Hls);
         assert_eq!(best.unwrap().url, "http://example.com/hls.m3u8");
+    }
+
+    #[test]
+    fn test_blacklisted_cdn_excluded() {
+        let config = StreamSelectionConfig {
+            blacklisted_cdns: vec!["badcdn".to_string()],
+            ..Default::default()
+        };
+        let selector = StreamSelector::with_config(config);
+
+        let mut stream_good = create_test_stream(
+            "http://example.com/good.flv",
+            StreamFormat::Flv,
+            "1080p",
+            5000000,
+            1,
+        );
+        let mut extras_good = serde_json::Map::new();
+        extras_good.insert(
+            "cdn".to_string(),
+            serde_json::Value::String("goodcdn".to_string()),
+        );
+        stream_good.extras = Some(serde_json::Value::Object(extras_good));
+
+        let mut stream_bad = create_test_stream(
+            "http://example.com/bad.flv",
+            StreamFormat::Flv,
+            "1080p",
+            5000000,
+            1,
+        );
+        let mut extras_bad = serde_json::Map::new();
+        extras_bad.insert(
+            "cdn".to_string(),
+            serde_json::Value::String("badcdn-server1".to_string()),
+        );
+        stream_bad.extras = Some(serde_json::Value::Object(extras_bad));
+
+        let streams = vec![stream_bad, stream_good];
+        let best = selector.select_best(&streams);
+
+        assert!(best.is_some());
+        assert_eq!(best.unwrap().url, "http://example.com/good.flv");
+    }
+
+    #[test]
+    fn test_blacklist_case_insensitive() {
+        let config = StreamSelectionConfig {
+            blacklisted_cdns: vec!["BADCDN".to_string()],
+            ..Default::default()
+        };
+        let selector = StreamSelector::with_config(config);
+
+        let mut stream = create_test_stream(
+            "http://example.com/stream.flv",
+            StreamFormat::Flv,
+            "1080p",
+            5000000,
+            1,
+        );
+        let mut extras = serde_json::Map::new();
+        extras.insert(
+            "cdn".to_string(),
+            serde_json::Value::String("badcdn".to_string()),
+        );
+        stream.extras = Some(serde_json::Value::Object(extras));
+
+        let streams = vec![stream];
+        let result = selector.select_best(&streams);
+
+        // Stream should be blacklisted (case insensitive match)
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_merge_blacklists_combined() {
+        let base = StreamSelectionConfig {
+            blacklisted_cdns: vec!["cdn1".to_string(), "cdn2".to_string()],
+            ..Default::default()
+        };
+        let other = StreamSelectionConfig {
+            blacklisted_cdns: vec!["cdn2".to_string(), "cdn3".to_string()],
+            ..Default::default()
+        };
+
+        let merged = base.merge(&other);
+
+        // Should contain all unique CDNs from both
+        assert!(merged.blacklisted_cdns.contains(&"cdn1".to_string()));
+        assert!(merged.blacklisted_cdns.contains(&"cdn2".to_string()));
+        assert!(merged.blacklisted_cdns.contains(&"cdn3".to_string()));
+        assert_eq!(merged.blacklisted_cdns.len(), 3);
+    }
+
+    #[test]
+    fn test_stream_without_cdn_not_blacklisted() {
+        let config = StreamSelectionConfig {
+            blacklisted_cdns: vec!["badcdn".to_string()],
+            ..Default::default()
+        };
+        let selector = StreamSelector::with_config(config);
+
+        // Stream without CDN info
+        let stream = create_test_stream(
+            "http://example.com/stream.flv",
+            StreamFormat::Flv,
+            "1080p",
+            5000000,
+            1,
+        );
+
+        let streams = vec![stream];
+        let result = selector.select_best(&streams);
+
+        // Stream without CDN info should NOT be blacklisted
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_blacklist_with_preferences() {
+        // Preferred CDN should still be excluded if also blacklisted
+        let config = StreamSelectionConfig {
+            preferred_cdns: vec!["goodcdn".to_string(), "badcdn".to_string()],
+            blacklisted_cdns: vec!["badcdn".to_string()],
+            ..Default::default()
+        };
+        let selector = StreamSelector::with_config(config);
+
+        let mut stream_good = create_test_stream(
+            "http://example.com/good.flv",
+            StreamFormat::Flv,
+            "1080p",
+            5000000,
+            2, // Lower priority
+        );
+        let mut extras_good = serde_json::Map::new();
+        extras_good.insert(
+            "cdn".to_string(),
+            serde_json::Value::String("goodcdn".to_string()),
+        );
+        stream_good.extras = Some(serde_json::Value::Object(extras_good));
+
+        let mut stream_bad = create_test_stream(
+            "http://example.com/bad.flv",
+            StreamFormat::Flv,
+            "1080p",
+            5000000,
+            1, // Higher priority
+        );
+        let mut extras_bad = serde_json::Map::new();
+        extras_bad.insert(
+            "cdn".to_string(),
+            serde_json::Value::String("badcdn".to_string()),
+        );
+        stream_bad.extras = Some(serde_json::Value::Object(extras_bad));
+
+        let streams = vec![stream_bad, stream_good];
+        let best = selector.select_best(&streams);
+
+        // Even though badcdn has higher priority and is preferred,
+        // it should be excluded because it's blacklisted
+        assert!(best.is_some());
+        assert_eq!(best.unwrap().url, "http://example.com/good.flv");
+    }
+
+    #[test]
+    fn test_blacklist_matches_url_when_no_cdn_extra() {
+        let config = StreamSelectionConfig {
+            blacklisted_cdns: vec!["akamaized".to_string()],
+            ..Default::default()
+        };
+        let selector = StreamSelector::with_config(config);
+
+        // Stream with akamaized in URL but no cdn in extras
+        let stream = create_test_stream(
+            "https://video.akamaized.net/stream.m3u8",
+            StreamFormat::Hls,
+            "1080p",
+            5000000,
+            1,
+        );
+
+        let streams = vec![stream];
+        let result = selector.select_best(&streams);
+
+        // Should be blacklisted based on URL
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_preferred_cdn_matches_url_when_no_cdn_extra() {
+        let config = StreamSelectionConfig {
+            preferred_cdns: vec!["cloudfront".to_string()],
+            ..Default::default()
+        };
+        let selector = StreamSelector::with_config(config);
+
+        let stream_cloudfront = create_test_stream(
+            "https://d1234.cloudfront.net/stream.m3u8",
+            StreamFormat::Hls,
+            "1080p",
+            5000000,
+            2,
+        );
+
+        let stream_other = create_test_stream(
+            "https://other-cdn.example.com/stream.m3u8",
+            StreamFormat::Hls,
+            "1080p",
+            5000000,
+            1,
+        );
+
+        let streams = vec![stream_other, stream_cloudfront];
+        let best = selector.select_best(&streams);
+
+        // Should prefer cloudfront based on URL matching
+        assert!(best.is_some());
+        assert!(best.unwrap().url.contains("cloudfront"));
+    }
+
+    #[test]
+    fn test_cdn_extra_takes_precedence_over_url() {
+        // When extras["cdn"] exists, it should be used instead of URL
+        let config = StreamSelectionConfig {
+            blacklisted_cdns: vec!["badcdn".to_string()],
+            ..Default::default()
+        };
+        let selector = StreamSelector::with_config(config);
+
+        // Stream with "badcdn" in URL but different cdn in extras
+        let mut stream = create_test_stream(
+            "https://badcdn.example.com/stream.m3u8",
+            StreamFormat::Hls,
+            "1080p",
+            5000000,
+            1,
+        );
+        let mut extras = serde_json::Map::new();
+        extras.insert(
+            "cdn".to_string(),
+            serde_json::Value::String("goodcdn".to_string()),
+        );
+        stream.extras = Some(serde_json::Value::Object(extras));
+
+        let streams = vec![stream];
+        let result = selector.select_best(&streams);
+
+        // Should NOT be blacklisted because extras["cdn"] = "goodcdn" takes precedence
+        assert!(result.is_some());
     }
 }
