@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo } from "react";
 import {
   Download,
   Zap,
@@ -8,18 +8,18 @@ import {
   Gauge,
   Globe,
   Link,
-} from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { CountUp } from '@/components/ui/count-up';
-import { motion, AnimatePresence } from 'motion/react';
-import { Trans } from '@lingui/react/macro';
-import { formatBytes, formatDuration, cn } from '@/lib/utils';
-import { Download as DownloadType } from '@/store/downloads';
+} from "@/components/ui/tooltip";
+import { CountUp } from "@/components/ui/count-up";
+import { motion, AnimatePresence } from "motion/react";
+import { Trans } from "@lingui/react/macro";
+import { formatBytes, formatDuration, cn } from "@/lib/utils";
+import { Download as DownloadType } from "@/store/downloads";
 
 interface ActiveDownloadCardProps {
   downloads: DownloadType[];
@@ -44,7 +44,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
           >
             <div className="flex items-center justify-between text-sm font-semibold text-red-500">
               <div className="flex items-center gap-2">
-                <Download className="w-4 h-4 animate-bounce" />{' '}
+                <Download className="w-4 h-4 animate-bounce" />{" "}
                 <Trans render={({ translation }) => <>{translation}</>}>
                   Active Download
                 </Trans>
@@ -66,7 +66,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               {download.downloadUrl && (
                 <div className="col-span-2 space-y-1 overflow-hidden">
                   <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <Link className="w-3 h-3" />{' '}
+                    <Link className="w-3 h-3" />{" "}
                     <Trans render={({ translation }) => <>{translation}</>}>
                       Stream URL
                     </Trans>
@@ -82,7 +82,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
                     </TooltipTrigger>
                     <TooltipContent
                       side="bottom"
-                      className="max-w-[500px] break-all font-mono text-[10px]"
+                      className="max-w-125 break-all font-mono text-[10px]"
                     >
                       {download.downloadUrl}
                     </TooltipContent>
@@ -95,7 +95,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
                 return (
                   <div className="space-y-1 overflow-hidden">
                     <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                      <Globe className="w-3 h-3" />{' '}
+                      <Globe className="w-3 h-3" />{" "}
                       <Trans render={({ translation }) => <>{translation}</>}>
                         CDN
                       </Trans>
@@ -111,7 +111,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
                       </TooltipTrigger>
                       <TooltipContent
                         side="bottom"
-                        className="max-w-[400px] break-all font-mono text-[10px]"
+                        className="max-w-100 break-all font-mono text-[10px]"
                       >
                         {cdnHost}
                       </TooltipContent>
@@ -121,7 +121,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               })()}
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Zap className="w-3 h-3" />{' '}
+                  <Zap className="w-3 h-3" />{" "}
                   <Trans render={({ translation }) => <>{translation}</>}>
                     Speed
                   </Trans>
@@ -129,13 +129,13 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
                 <div className="font-mono font-medium text-lg">
                   <CountUp
                     value={Number(download.speedBytesPerSec)}
-                    formatter={(v) => formatBytes(v) + '/s'}
+                    formatter={(v) => formatBytes(v) + "/s"}
                   />
                 </div>
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Save className="w-3 h-3" />{' '}
+                  <Save className="w-3 h-3" />{" "}
                   <Trans render={({ translation }) => <>{translation}</>}>
                     Size
                   </Trans>
@@ -149,7 +149,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Clock className="w-3 h-3" />{' '}
+                  <Clock className="w-3 h-3" />{" "}
                   <Trans render={({ translation }) => <>{translation}</>}>
                     Duration
                   </Trans>
@@ -160,7 +160,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Layers className="w-3 h-3" />{' '}
+                  <Layers className="w-3 h-3" />{" "}
                   <Trans render={({ translation }) => <>{translation}</>}>
                     Segments
                   </Trans>
@@ -171,24 +171,24 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Gauge className="w-3 h-3" />{' '}
+                  <Gauge className="w-3 h-3" />{" "}
                   <Trans render={({ translation }) => <>{translation}</>}>
                     Ratio
                   </Trans>
                 </div>
                 <div
                   className={cn(
-                    'font-mono font-medium text-lg',
+                    "font-mono font-medium text-lg",
                     download.playbackRatio < 0.9
-                      ? 'text-yellow-500'
+                      ? "text-yellow-500"
                       : download.playbackRatio > 1.1
-                        ? 'text-emerald-500'
-                        : '',
+                        ? "text-emerald-500"
+                        : "",
                   )}
                 >
                   <CountUp
                     value={download.playbackRatio * 100}
-                    formatter={(v) => (Number(v) / 100).toFixed(2) + 'x'}
+                    formatter={(v) => (Number(v) / 100).toFixed(2) + "x"}
                   />
                 </div>
               </div>
