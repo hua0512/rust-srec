@@ -434,7 +434,7 @@ msgstr "Alerts when disk space is running low."
 msgid "All"
 msgstr "All"
 
-#: src/components/logging/log-viewer.tsx:414
+#: src/components/logging/log-viewer.tsx:432
 msgid "All Levels"
 msgstr "All Levels"
 
@@ -637,11 +637,11 @@ msgstr "Auto Thumbnail"
 msgid "Auto-Refresh"
 msgstr "Auto-Refresh"
 
-#: src/components/logging/log-viewer.tsx:430
+#: src/components/logging/log-viewer.tsx:448
 msgid "Auto-scroll disabled"
 msgstr "Auto-scroll disabled"
 
-#: src/components/logging/log-viewer.tsx:429
+#: src/components/logging/log-viewer.tsx:447
 msgid "Auto-scroll enabled"
 msgstr "Auto-scroll enabled"
 
@@ -1018,7 +1018,7 @@ msgstr "Choose your display language"
 msgid "Cleanup"
 msgstr "Cleanup"
 
-#: src/components/logging/log-viewer.tsx:389
+#: src/components/logging/log-viewer.tsx:407
 #: src/components/notifications/desktop-channel-dialog.tsx:190
 #: src/routes/_authed/_dashboard/config/theme.tsx:229
 msgid "Clear"
@@ -1242,7 +1242,7 @@ msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
 #: src/components/connection-status-indicator.tsx:24
-#: src/components/logging/log-viewer.tsx:350
+#: src/components/logging/log-viewer.tsx:368
 msgid "Connected"
 msgstr "Connected"
 
@@ -1871,7 +1871,7 @@ msgid "Disabled"
 msgstr "Disabled"
 
 #: src/components/connection-status-indicator.tsx:34
-#: src/components/logging/log-viewer.tsx:355
+#: src/components/logging/log-viewer.tsx:373
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -2247,7 +2247,7 @@ msgstr "Enter keywords to include..."
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
-#: src/components/logging/log-viewer.tsx:495
+#: src/components/logging/log-viewer.tsx:513
 msgid "entries"
 msgstr "entries"
 
@@ -3697,7 +3697,7 @@ msgstr "Logging"
 msgid "Logging configuration updated"
 msgstr "Logging configuration updated"
 
-#: src/components/logging/log-viewer.tsx:504
+#: src/components/logging/log-viewer.tsx:522
 msgid "Logging paused"
 msgstr "Logging paused"
 
@@ -4254,7 +4254,7 @@ msgstr "No log files found"
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
-#: src/components/logging/log-viewer.tsx:448
+#: src/components/logging/log-viewer.tsx:466
 msgid "No logs to display"
 msgstr "No logs to display"
 
@@ -4834,11 +4834,11 @@ msgstr "Path to Telegram Desktop (contains tdata)"
 msgid "Path Variables"
 msgstr "Path Variables"
 
-#: src/components/logging/log-viewer.tsx:383
+#: src/components/logging/log-viewer.tsx:401
 msgid "Pause"
 msgstr "Pause"
 
-#: src/components/logging/log-viewer.tsx:498
+#: src/components/logging/log-viewer.tsx:516
 msgid "paused"
 msgstr "paused"
 
@@ -5416,7 +5416,7 @@ msgstr "Ready to Watch"
 msgid "Real-time"
 msgstr "Real-time"
 
-#: src/components/logging/log-viewer.tsx:337
+#: src/components/logging/log-viewer.tsx:355
 msgid "Real-Time Logs"
 msgstr "Real-Time Logs"
 
@@ -5629,7 +5629,7 @@ msgstr "Restore from a backup file"
 msgid "Restore password"
 msgstr "Restore password"
 
-#: src/components/logging/log-viewer.tsx:378
+#: src/components/logging/log-viewer.tsx:396
 msgid "Resume"
 msgstr "Resume"
 
@@ -5874,7 +5874,7 @@ msgstr "Search events..."
 msgid "Search jobs..."
 msgstr "Search jobs..."
 
-#: src/components/logging/log-viewer.tsx:399
+#: src/components/logging/log-viewer.tsx:417
 msgid "Search logs..."
 msgstr "Search logs..."
 
@@ -7359,7 +7359,7 @@ msgstr "View"
 msgid "View All"
 msgstr "View All"
 
-#: src/components/logging/log-viewer.tsx:361
+#: src/components/logging/log-viewer.tsx:379
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 
@@ -7385,7 +7385,7 @@ msgstr "Wait"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/logging/log-viewer.tsx:452
+#: src/components/logging/log-viewer.tsx:470
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 

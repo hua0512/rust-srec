@@ -1,0 +1,10 @@
+# buf.gen.yaml - Code generation configuration for protobuf-es
+version: v2
+inputs:
+  - directory: ../proto
+plugins:
+  - local: protoc-gen-es
+    out: src/api/proto/gen
+    opt:
+      - target=ts
+      - import_extension=.js

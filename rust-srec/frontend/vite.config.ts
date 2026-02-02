@@ -1,6 +1,3 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { defineConfig } from 'vite';
 import { devtools } from '@tanstack/devtools-vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
@@ -11,8 +8,6 @@ import { nitro } from 'nitro/vite';
 
 import { lingui } from '@lingui/vite-plugin';
 import oxlintPlugin from 'vite-plugin-oxlint';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(() => ({
   plugins: [
@@ -33,23 +28,6 @@ export default defineConfig(() => ({
     // Limit oxlint to source folders (avoid linting build outputs).
     oxlintPlugin({ path: 'src' }),
   ],
-  resolve: {
-    alias: [
-      // Ensure pbjs-generated `import * as $protobuf from "protobufjs/minimal";`
-      // works in SSR (ESM) by routing it through an ESM shim.
-      {
-        // IMPORTANT: do NOT match `protobufjs/minimal.js` here.
-        // Our shim imports `protobufjs/minimal.js` to get the actual CommonJS
-        // implementation; if we alias `.js` too, we create a self-import cycle
-        // (and hit `Cannot access 'pb' before initialization`).
-        find: /^protobufjs\/minimal$/,
-        replacement: path.resolve(
-          __dirname,
-          'src/api/proto/protobufjs-minimal.ts',
-        ),
-      },
-    ],
-  },
   server: {
     proxy: {
       '/api': {

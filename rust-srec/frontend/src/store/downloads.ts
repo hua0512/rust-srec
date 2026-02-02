@@ -1,9 +1,4 @@
 import { create } from 'zustand';
-import type {
-  DownloadMeta,
-  DownloadMetrics,
-  DownloadState,
-} from '../api/proto/download_progress';
 
 // Connection status type
 export type ConnectionStatus =
@@ -11,6 +6,34 @@ export type ConnectionStatus =
   | 'connecting'
   | 'connected'
   | 'error';
+
+// Plain object versions of proto types for store state
+export interface DownloadMeta {
+  downloadId: string;
+  streamerId: string;
+  sessionId: string;
+  engineType: string;
+  startedAtMs: bigint;
+  updatedAtMs: bigint;
+  cdnHost: string;
+  downloadUrl: string;
+}
+
+export interface DownloadMetrics {
+  downloadId: string;
+  status: string;
+  bytesDownloaded: bigint;
+  durationSecs: number;
+  speedBytesPerSec: bigint;
+  segmentsCompleted: number;
+  mediaDurationSecs: number;
+  playbackRatio: number;
+}
+
+export interface DownloadState {
+  meta: DownloadMeta;
+  metrics: DownloadMetrics;
+}
 
 export interface DownloadView {
   downloadId: string;

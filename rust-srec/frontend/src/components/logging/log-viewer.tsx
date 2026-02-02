@@ -9,12 +9,12 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import {
-  decodeWsMessage,
   EventType,
   LogLevel,
-  getLogLevelName,
+  WsMessageSchema,
   type LogEvent,
-} from '@/api/proto/log_event';
+} from '@/api/proto/gen/log_event_pb.js';
+import { fromBinary } from '@bufbuild/protobuf';
 import { sessionQueryOptions } from '@/api/session';
 import { Button } from '@/components/ui/button';
 import {
@@ -54,6 +54,24 @@ const MAX_LOG_ENTRIES = 500;
 const WS_RECONNECT_BASE_DELAY = 1000;
 const WS_RECONNECT_MAX_DELAY = 30000;
 
+/** Get human-readable log level name */
+function getLogLevelName(level: LogLevel): string {
+  switch (level) {
+    case LogLevel.TRACE:
+      return 'TRACE';
+    case LogLevel.DEBUG:
+      return 'DEBUG';
+    case LogLevel.INFO:
+      return 'INFO';
+    case LogLevel.WARN:
+      return 'WARN';
+    case LogLevel.ERROR:
+      return 'ERROR';
+    default:
+      return 'UNKNOWN';
+  }
+}
+
 interface DisplayLogEvent extends LogEvent {
   id: number;
 }
@@ -62,15 +80,15 @@ interface DisplayLogEvent extends LogEvent {
 function getLevelIcon(level: LogLevel) {
   const iconClass = 'w-3.5 h-3.5 shrink-0';
   switch (level) {
-    case LogLevel.LOG_LEVEL_TRACE:
+    case LogLevel.TRACE:
       return <Terminal className={cn(iconClass, 'text-slate-400')} />;
-    case LogLevel.LOG_LEVEL_DEBUG:
+    case LogLevel.DEBUG:
       return <Bug className={cn(iconClass, 'text-blue-400')} />;
-    case LogLevel.LOG_LEVEL_INFO:
+    case LogLevel.INFO:
       return <Info className={cn(iconClass, 'text-emerald-400')} />;
-    case LogLevel.LOG_LEVEL_WARN:
+    case LogLevel.WARN:
       return <AlertTriangle className={cn(iconClass, 'text-amber-400')} />;
-    case LogLevel.LOG_LEVEL_ERROR:
+    case LogLevel.ERROR:
       return <XCircle className={cn(iconClass, 'text-rose-400')} />;
     default:
       return <Terminal className={cn(iconClass, 'text-muted-foreground')} />;
@@ -80,15 +98,15 @@ function getLevelIcon(level: LogLevel) {
 /** Get log level background color classes */
 function getLevelBgColor(level: LogLevel): string {
   switch (level) {
-    case LogLevel.LOG_LEVEL_TRACE:
+    case LogLevel.TRACE:
       return 'bg-slate-500/5 hover:bg-slate-500/10';
-    case LogLevel.LOG_LEVEL_DEBUG:
+    case LogLevel.DEBUG:
       return 'bg-blue-500/5 hover:bg-blue-500/10';
-    case LogLevel.LOG_LEVEL_INFO:
+    case LogLevel.INFO:
       return 'bg-emerald-500/5 hover:bg-emerald-500/10';
-    case LogLevel.LOG_LEVEL_WARN:
+    case LogLevel.WARN:
       return 'bg-amber-500/5 hover:bg-amber-500/10';
-    case LogLevel.LOG_LEVEL_ERROR:
+    case LogLevel.ERROR:
       return 'bg-rose-500/5 hover:bg-rose-500/10';
     default:
       return 'hover:bg-muted/50';
@@ -98,15 +116,15 @@ function getLevelBgColor(level: LogLevel): string {
 /** Get log level badge color classes */
 function getLevelBadgeColor(level: LogLevel): string {
   switch (level) {
-    case LogLevel.LOG_LEVEL_TRACE:
+    case LogLevel.TRACE:
       return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
-    case LogLevel.LOG_LEVEL_DEBUG:
+    case LogLevel.DEBUG:
       return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-    case LogLevel.LOG_LEVEL_INFO:
+    case LogLevel.INFO:
       return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-    case LogLevel.LOG_LEVEL_WARN:
+    case LogLevel.WARN:
       return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-    case LogLevel.LOG_LEVEL_ERROR:
+    case LogLevel.ERROR:
       return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
     default:
       return 'bg-muted/50 text-muted-foreground border-muted';
@@ -148,14 +166,14 @@ export function LogViewer() {
     (event: MessageEvent) => {
       try {
         const data = new Uint8Array(event.data as ArrayBuffer);
-        const message = decodeWsMessage(data);
+        const message = fromBinary(WsMessageSchema, data);
 
         if (
-          message.eventType === EventType.EVENT_TYPE_LOG &&
-          'log' in message.payload
+          message.eventType === EventType.LOG &&
+          message.payload.case === 'log'
         ) {
           const logEvent: DisplayLogEvent = {
-            ...message.payload.log,
+            ...message.payload.value,
             id: logIdRef.current++,
           };
 
@@ -291,12 +309,12 @@ export function LogViewer() {
       // Level filter
       if (filterLevel !== 'all') {
         const levelMap: Record<FilterLevel, LogLevel> = {
-          all: LogLevel.LOG_LEVEL_UNSPECIFIED,
-          trace: LogLevel.LOG_LEVEL_TRACE,
-          debug: LogLevel.LOG_LEVEL_DEBUG,
-          info: LogLevel.LOG_LEVEL_INFO,
-          warn: LogLevel.LOG_LEVEL_WARN,
-          error: LogLevel.LOG_LEVEL_ERROR,
+          all: LogLevel.UNSPECIFIED,
+          trace: LogLevel.TRACE,
+          debug: LogLevel.DEBUG,
+          info: LogLevel.INFO,
+          warn: LogLevel.WARN,
+          error: LogLevel.ERROR,
         };
         if (log.level < levelMap[filterLevel]) return false;
       }

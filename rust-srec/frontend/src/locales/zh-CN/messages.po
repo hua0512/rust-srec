@@ -434,7 +434,7 @@ msgstr "磁盘空间不足时发出警报。"
 msgid "All"
 msgstr "全部"
 
-#: src/components/logging/log-viewer.tsx:414
+#: src/components/logging/log-viewer.tsx:432
 msgid "All Levels"
 msgstr "所有级别"
 
@@ -637,11 +637,11 @@ msgstr "自动封面"
 msgid "Auto-Refresh"
 msgstr "自动刷新"
 
-#: src/components/logging/log-viewer.tsx:430
+#: src/components/logging/log-viewer.tsx:448
 msgid "Auto-scroll disabled"
 msgstr "已关闭自动滚动"
 
-#: src/components/logging/log-viewer.tsx:429
+#: src/components/logging/log-viewer.tsx:447
 msgid "Auto-scroll enabled"
 msgstr "已开启自动滚动"
 
@@ -1018,7 +1018,7 @@ msgstr "选择你的显示语言"
 msgid "Cleanup"
 msgstr "清理"
 
-#: src/components/logging/log-viewer.tsx:389
+#: src/components/logging/log-viewer.tsx:407
 #: src/components/notifications/desktop-channel-dialog.tsx:190
 #: src/routes/_authed/_dashboard/config/theme.tsx:229
 msgid "Clear"
@@ -1242,7 +1242,7 @@ msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
 
 #: src/components/connection-status-indicator.tsx:24
-#: src/components/logging/log-viewer.tsx:350
+#: src/components/logging/log-viewer.tsx:368
 msgid "Connected"
 msgstr "已连接"
 
@@ -1871,7 +1871,7 @@ msgid "Disabled"
 msgstr "已禁用"
 
 #: src/components/connection-status-indicator.tsx:34
-#: src/components/logging/log-viewer.tsx:355
+#: src/components/logging/log-viewer.tsx:373
 msgid "Disconnected"
 msgstr "已断开"
 
@@ -2247,7 +2247,7 @@ msgstr "输入要包含的关键词..."
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
-#: src/components/logging/log-viewer.tsx:495
+#: src/components/logging/log-viewer.tsx:513
 msgid "entries"
 msgstr "条"
 
@@ -3697,7 +3697,7 @@ msgstr "日志"
 msgid "Logging configuration updated"
 msgstr "日志配置已更新"
 
-#: src/components/logging/log-viewer.tsx:504
+#: src/components/logging/log-viewer.tsx:522
 msgid "Logging paused"
 msgstr "日志已暂停"
 
@@ -4254,7 +4254,7 @@ msgstr "未找到日志文件"
 msgid "No logs available for this execution."
 msgstr "该执行记录暂无日志。"
 
-#: src/components/logging/log-viewer.tsx:448
+#: src/components/logging/log-viewer.tsx:466
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
@@ -4834,11 +4834,11 @@ msgstr "Telegram Desktop 路径（包含 tdata）"
 msgid "Path Variables"
 msgstr "路径变量"
 
-#: src/components/logging/log-viewer.tsx:383
+#: src/components/logging/log-viewer.tsx:401
 msgid "Pause"
 msgstr "暂停"
 
-#: src/components/logging/log-viewer.tsx:498
+#: src/components/logging/log-viewer.tsx:516
 msgid "paused"
 msgstr "条已暂停"
 
@@ -5416,7 +5416,7 @@ msgstr "准备观看"
 msgid "Real-time"
 msgstr "实时"
 
-#: src/components/logging/log-viewer.tsx:337
+#: src/components/logging/log-viewer.tsx:355
 msgid "Real-Time Logs"
 msgstr "实时日志"
 
@@ -5629,7 +5629,7 @@ msgstr "从备份文件恢复"
 msgid "Restore password"
 msgstr "重置密码"
 
-#: src/components/logging/log-viewer.tsx:378
+#: src/components/logging/log-viewer.tsx:396
 msgid "Resume"
 msgstr "继续"
 
@@ -5874,7 +5874,7 @@ msgstr "搜索事件..."
 msgid "Search jobs..."
 msgstr "搜索处理任务..."
 
-#: src/components/logging/log-viewer.tsx:399
+#: src/components/logging/log-viewer.tsx:417
 msgid "Search logs..."
 msgstr "搜索日志..."
 
@@ -7359,7 +7359,7 @@ msgstr "查看"
 msgid "View All"
 msgstr "查看全部"
 
-#: src/components/logging/log-viewer.tsx:361
+#: src/components/logging/log-viewer.tsx:379
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "实时查看应用日志。日志仅保留最近 {MAX_LOG_ENTRIES} 条。"
 
@@ -7385,7 +7385,7 @@ msgstr "等待"
 msgid "Wait time before starting."
 msgstr "开始前等待时间。"
 
-#: src/components/logging/log-viewer.tsx:452
+#: src/components/logging/log-viewer.tsx:470
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
 
