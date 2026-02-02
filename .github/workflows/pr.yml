@@ -133,6 +133,8 @@ jobs:
           cache-dependency-path: rust-srec/frontend/pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Check formatting
+        run: pnpm run fmt:check
       - name: Run lint
         run: pnpm run lint
       - name: Run build

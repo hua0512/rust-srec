@@ -12,8 +12,9 @@
     "test": "vitest run",
     "extract": "lingui extract --clean",
     "compile": "lingui compile",
-    "format": "npx oxfmt --write .",
-    "lint": "oxlint ."
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "lint": "oxlint --type-aware ."
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.11.0",
@@ -88,6 +89,7 @@
     "babel-plugin-macros": "^3.1.0",
     "cross-env": "^10.1.0",
     "jsdom": "^27.0.0",
+    "oxfmt": "^0.28.0",
     "oxlint": "^1.32.0",
     "oxlint-tsgolint": "^0.11.4",
     "shadcn": "^3.7.0",
