@@ -1,6 +1,6 @@
 [package]
 name = "mesio"
-version = "0.3.7"
+version = "0.3.8"
 edition = "2024"
 description = "Mesio (media) streaming downloader CLI"
 license = "MIT OR Apache-2.0"
@@ -47,4 +47,3 @@ static-ssl = ["mesio-engine/static-ssl"]
 
 # Opt-in: enable native-tls fallback for legacy TLS endpoints.
 tls-native-fallback = ["mesio-engine/tls-native-fallback"]
-

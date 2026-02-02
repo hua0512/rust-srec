@@ -2541,7 +2541,7 @@ dependencies = [
 
 [[package]]
 name = "hls-fix"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "bytes",
  "crc32fast",
@@ -3385,7 +3385,7 @@ dependencies = [
 
 [[package]]
 name = "mesio"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "byteorder",
  "bytes",
