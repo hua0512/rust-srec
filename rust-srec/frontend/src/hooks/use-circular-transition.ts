@@ -55,7 +55,7 @@ export function useCircularTransition(): CircularTransitionHook {
           Math.max(coords.y, window.innerHeight - coords.y),
         );
 
-        viewTransition.ready
+        void viewTransition.ready
           .then(() => {
             const clipPath = [
               `circle(0px at ${coords.x}px ${coords.y}px)`,

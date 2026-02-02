@@ -83,8 +83,8 @@ export const SessionCard = memo(
       try {
         await deleteSession({ data: session.id });
         toast.success(i18n._(msg`Session deleted successfully`));
-        queryClient.invalidateQueries({ queryKey: ['sessions'] });
-        router.invalidate();
+        void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        void router.invalidate();
       } catch (error) {
         console.error('Failed to delete session:', error);
         toast.error(i18n._(msg`Failed to delete session`));

@@ -155,7 +155,7 @@ const WorkflowFlowEditorInner = memo(
         setHasLaidOut(true);
 
         window.requestAnimationFrame(() => {
-          fitView({ padding: 0.2, duration: 200 });
+          void fitView({ padding: 0.2, duration: 200 });
         });
       }
     }, [

@@ -179,7 +179,7 @@ function JobDetailsPage() {
 
   useEffect(() => {
     if (inView && hasNextPage) {
-      fetchNextPage();
+      void fetchNextPage();
     }
   }, [inView, hasNextPage, fetchNextPage]);
 
@@ -187,7 +187,9 @@ function JobDetailsPage() {
     mutationFn: (id: string) => retryPipelineJob({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`Job retry initiated`));
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'job', jobId] });
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'job', jobId],
+      });
     },
     onError: () => toast.error(i18n._(msg`Failed to retry job`)),
   });
@@ -196,7 +198,9 @@ function JobDetailsPage() {
     mutationFn: (id: string) => cancelPipelineJob({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`Job cancelled`));
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'job', jobId] });
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'job', jobId],
+      });
     },
     onError: () => toast.error(i18n._(msg`Failed to cancel job`)),
   });

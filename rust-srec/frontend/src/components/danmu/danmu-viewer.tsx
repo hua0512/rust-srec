@@ -108,7 +108,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
       }
     };
 
-    fetchAndParseDanmu();
+    void fetchAndParseDanmu();
   }, [url]);
 
   const filteredComments = useMemo(() => {

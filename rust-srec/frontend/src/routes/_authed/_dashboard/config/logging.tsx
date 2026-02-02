@@ -152,7 +152,7 @@ function LoggingConfigPage() {
     mutationFn: (filter: string) => updateLoggingFilter({ data: { filter } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Logging configuration updated`));
-      queryClient.invalidateQueries({ queryKey: ['logging', 'config'] });
+      void queryClient.invalidateQueries({ queryKey: ['logging', 'config'] });
       setIsDirty(false);
     },
     onError: (error: any) => {

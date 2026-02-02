@@ -55,7 +55,7 @@ const PlayerCard = React.lazy(() =>
 function SessionDetailPage() {
   const { sessionId } = Route.useParams();
   const { user } = Route.useRouteContext();
-  const [playingOutput, setPlayingOutput] = useState<any | null>(null);
+  const [playingOutput, setPlayingOutput] = useState<any>(null);
 
   // Client-side time to avoid hydration mismatch
   const [now, setNow] = useState<Date | null>(null);

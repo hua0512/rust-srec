@@ -127,7 +127,7 @@ function PipelineJobsPage() {
   // Helper to update search params
   const updateSearchParams = useCallback(
     (updates: Partial<SearchParams>) => {
-      navigate({
+      void navigate({
         search: (prev) => {
           const next = { ...prev, ...updates };
           // Remove undefined/null values to keep URL clean
@@ -257,14 +257,18 @@ function PipelineJobsPage() {
       toast.success(
         i18n._(msg`Cancelled ${result.cancelled_steps} steps in pipeline`),
       );
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'pipelines'],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
     onError: (error: any) => {
       // Handle case where DAG is already in terminal state (completed/failed)
       if (error?.body?.message?.includes('terminal state')) {
         toast.info(i18n._(msg`Pipeline is already completed or cancelled`));
-        queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
+        void queryClient.invalidateQueries({
+          queryKey: ['pipeline', 'pipelines'],
+        });
       } else {
         toast.error(i18n._(msg`Failed to cancel pipeline`));
       }
@@ -275,8 +279,10 @@ function PipelineJobsPage() {
     mutationFn: (pipelineId: string) => deletePipeline({ data: pipelineId }),
     onSuccess: () => {
       toast.success(i18n._(msg`Pipeline deleted successfully`));
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'pipelines'],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
     onError: () => toast.error(i18n._(msg`Failed to delete pipeline`)),
   });
@@ -285,8 +291,10 @@ function PipelineJobsPage() {
     mutationFn: () => retryAllFailedPipelines(),
     onSuccess: (result: any) => {
       toast.success(result.message);
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'pipelines'],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
     onError: () =>
       toast.error(i18n._(msg`Failed to retry all failed pipelines`)),
@@ -294,7 +302,7 @@ function PipelineJobsPage() {
 
   const handleViewDetails = useCallback(
     (pipelineId: string) => {
-      navigate({
+      void navigate({
         to: '/pipeline/executions/$pipelineId',
         params: { pipelineId },
       });

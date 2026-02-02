@@ -20,7 +20,7 @@ function CreateStreamerPage() {
     mutationFn: (data: any) => createStreamer({ data }),
     onSuccess: () => {
       toast.success(i18n._(msg`Streamer created successfully`));
-      navigate({ to: '/streamers' });
+      void navigate({ to: '/streamers' });
     },
     onError: (error: any) => {
       toast.error(error.message || i18n._(msg`Failed to create streamer`));

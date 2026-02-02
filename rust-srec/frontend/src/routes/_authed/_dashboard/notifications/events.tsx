@@ -145,7 +145,9 @@ function NotificationEventsPage() {
     const now = Date.now();
     setLastSeenCriticalMs(now);
     setLastSeenMs(now);
-    queryClient.invalidateQueries({ queryKey: ['notification-critical-dot'] });
+    void queryClient.invalidateQueries({
+      queryKey: ['notification-critical-dot'],
+    });
     toast.success(i18n._(msg`Marked all as read`));
   }, [i18n, queryClient]);
 
@@ -473,7 +475,7 @@ function NotificationEventsPage() {
               onClick={() => {
                 if (!selectedPayload) return;
                 try {
-                  navigator.clipboard.writeText(
+                  void navigator.clipboard.writeText(
                     prettyJson(selectedPayload.payload),
                   );
                   toast.success(i18n._(msg`Copied`));

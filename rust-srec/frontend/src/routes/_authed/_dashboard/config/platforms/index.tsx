@@ -49,7 +49,10 @@ function PlatformsConfigPage() {
   }, [platforms, debouncedSearch]);
 
   const handleEdit = (platformId: string) => {
-    navigate({ to: '/config/platforms/$platformId', params: { platformId } });
+    void navigate({
+      to: '/config/platforms/$platformId',
+      params: { platformId },
+    });
   };
 
   if (error) {

@@ -40,9 +40,9 @@ export function createServerFn<TInput = void, TOutput = unknown>(
         const validated = validator ? validator(input) : input;
         // Allow handlers with either `(ctx) => ...` or `() => ...`.
         if (typeof fn === 'function' && fn.length === 0) {
-          return await (fn as () => Promise<any> | any)();
+          return await (fn as () => Promise<any>)();
         }
-        return await (fn as (ctx: HandlerContext<any>) => Promise<any> | any)({
+        return await (fn as (ctx: HandlerContext<any>) => Promise<any>)({
           data: validated,
         });
       }) as ServerFn<any, any>;

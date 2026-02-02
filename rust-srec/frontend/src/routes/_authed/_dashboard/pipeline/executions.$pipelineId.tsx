@@ -77,7 +77,7 @@ function PipelineExecutionPage() {
     mutationFn: (id: string) => retryDagSteps({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`Failed steps retry initiated`));
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ['pipeline', 'executions', pipelineId],
       });
     },
@@ -90,10 +90,10 @@ function PipelineExecutionPage() {
       toast.success(
         i18n._(msg`Cancelled ${result.cancelled_steps} steps in pipeline`),
       );
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ['pipeline', 'executions', pipelineId],
       });
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
     },
     onError: () => toast.error(i18n._(msg`Failed to cancel pipeline`)),
   });

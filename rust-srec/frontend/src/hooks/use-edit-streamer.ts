@@ -74,9 +74,9 @@ export function useEditStreamer({ id, streamer }: UseEditStreamerProps) {
       updateStreamer({ data: { id, data } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Streamer updated successfully`));
-      queryClient.invalidateQueries({ queryKey: ['streamers'] });
-      queryClient.invalidateQueries({ queryKey: ['streamer', id] });
-      navigate({ to: '/streamers' });
+      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
+      void queryClient.invalidateQueries({ queryKey: ['streamer', id] });
+      void navigate({ to: '/streamers' });
     },
     onError: (error: any) => {
       toast.error(error.message || i18n._(msg`Failed to update streamer`));
@@ -88,7 +88,9 @@ export function useEditStreamer({ id, streamer }: UseEditStreamerProps) {
       deleteFilter({ data: { streamerId: id, filterId } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Filter deleted successfully`));
-      queryClient.invalidateQueries({ queryKey: ['streamers', id, 'filters'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['streamers', id, 'filters'],
+      });
     },
     onError: (error: any) => {
       toast.error(error.message || i18n._(msg`Failed to delete filter`));

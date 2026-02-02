@@ -20,7 +20,7 @@ export function StreamerFiltersTab({
   onDeleteFilter,
 }: StreamerFiltersTabProps) {
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
-  const [filterToEdit, setFilterToEdit] = useState<any | null>(null);
+  const [filterToEdit, setFilterToEdit] = useState<any>(null);
 
   return (
     <div className="space-y-4">

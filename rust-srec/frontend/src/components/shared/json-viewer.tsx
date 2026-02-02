@@ -210,7 +210,7 @@ const JsonNode = memo(({ value, depth, keyName }: JsonNodeProps) => {
   return (
     <div style={{ paddingLeft: indent }}>
       <span className="text-muted-foreground text-sm font-mono">
-        {String(value)}
+        {JSON.stringify(value)}
       </span>
     </div>
   );

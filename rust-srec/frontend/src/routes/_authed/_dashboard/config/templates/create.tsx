@@ -27,8 +27,8 @@ function CreateTemplatePage() {
     },
     onSuccess: () => {
       toast.success(i18n._(msg`Template created successfully`));
-      queryClient.invalidateQueries({ queryKey: ['templates'] });
-      navigate({ to: '/config/templates' });
+      void queryClient.invalidateQueries({ queryKey: ['templates'] });
+      void navigate({ to: '/config/templates' });
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to create template: ${error.message}`)),

@@ -63,7 +63,7 @@ export function BilibiliQrLoginDialog({
   // Generate QR code when dialog opens
   useEffect(() => {
     if (open) {
-      generateQr();
+      void generateQr();
     } else {
       // Reset state when closing
       setQrUrl(null);
@@ -108,7 +108,7 @@ export function BilibiliQrLoginDialog({
     // Poll every 2 seconds
     const interval = setInterval(poll, 2000);
     // Also poll immediately
-    poll();
+    void poll();
 
     return () => clearInterval(interval);
   }, [open, authCode, scope, status, onSuccess, onOpenChange]);

@@ -108,11 +108,11 @@ export function BackupRestoreCard() {
     onSuccess: (result: any) => {
       setImportResult(result);
       // Invalidate all relevant queries to refresh UI
-      queryClient.invalidateQueries({ queryKey: ['config'] });
-      queryClient.invalidateQueries({ queryKey: ['streamers'] });
-      queryClient.invalidateQueries({ queryKey: ['templates'] });
-      queryClient.invalidateQueries({ queryKey: ['engines'] });
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      void queryClient.invalidateQueries({ queryKey: ['config'] });
+      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
+      void queryClient.invalidateQueries({ queryKey: ['templates'] });
+      void queryClient.invalidateQueries({ queryKey: ['engines'] });
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
 
       toast.success(i18n._(msg`Configuration imported successfully`));
     },

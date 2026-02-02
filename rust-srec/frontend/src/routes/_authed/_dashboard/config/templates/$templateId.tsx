@@ -37,9 +37,11 @@ function EditTemplatePage() {
       updateTemplate({ data: { id: templateId, data } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Template updated successfully`));
-      queryClient.invalidateQueries({ queryKey: ['templates'] });
-      queryClient.invalidateQueries({ queryKey: ['template', templateId] });
-      navigate({ to: '/config/templates' });
+      void queryClient.invalidateQueries({ queryKey: ['templates'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['template', templateId],
+      });
+      void navigate({ to: '/config/templates' });
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to update template: ${error.message}`)),

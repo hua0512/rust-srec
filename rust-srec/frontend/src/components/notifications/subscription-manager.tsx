@@ -221,7 +221,7 @@ export function SubscriptionManager({
       updateSubscriptions({ data: { id: channel!.id, events } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Subscriptions updated`));
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ['subscriptions', channel?.id],
       });
       onOpenChange(false);

@@ -145,7 +145,7 @@ export function TdlLoginDialog({
     onSuccess: () => {
       setInputTask('');
       setIsSensitive(false);
-      refetchStatus();
+      void refetchStatus();
     },
     onError: (e) => {
       toast.error(i18n._(msg`Failed to send input: ${e.message}`));

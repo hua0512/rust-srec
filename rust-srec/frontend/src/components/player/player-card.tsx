@@ -46,9 +46,9 @@ export function PlayerCard({
   onMuteChange,
 }: PlayerCardProps) {
   const artRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<any | null>(null); // Type loose for dynamic import
-  const hlsRef = useRef<any | null>(null);
-  const flvRef = useRef<any | null>(null);
+  const playerRef = useRef<any>(null); // Type loose for dynamic import
+  const hlsRef = useRef<any>(null);
+  const flvRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [resolving, setResolving] = useState(false);
@@ -121,7 +121,7 @@ export function PlayerCard({
       }
     };
 
-    resolve();
+    void resolve();
 
     return () => {
       disposed = true;
@@ -321,7 +321,7 @@ export function PlayerCard({
       }
     };
 
-    initPlayer();
+    void initPlayer();
 
     return () => {
       disposed = true;

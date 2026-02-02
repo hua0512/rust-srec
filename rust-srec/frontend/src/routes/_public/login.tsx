@@ -70,7 +70,7 @@ function LoginPage() {
 
       if (mustChangePassword) {
         toast.warning(i18n._(msg`Password change required`));
-        router.navigate({ to: '/change-password', replace: true });
+        void router.navigate({ to: '/change-password', replace: true });
         return;
       }
 
@@ -83,7 +83,7 @@ function LoginPage() {
         !search.redirect.includes(':');
 
       const safeRedirect = isValidRedirect ? search.redirect : '/dashboard';
-      router.navigate({ to: safeRedirect, replace: true });
+      void router.navigate({ to: safeRedirect, replace: true });
     },
     [router, search.redirect],
   );

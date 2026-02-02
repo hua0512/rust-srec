@@ -22,8 +22,8 @@ function CreatePresetPage() {
     mutationFn: createJobPreset,
     onSuccess: () => {
       toast.success(i18n._(msg`Preset created successfully`));
-      queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
-      navigate({ to: '/pipeline/presets' });
+      void queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
+      void navigate({ to: '/pipeline/presets' });
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to create preset: ${error.message}`)),

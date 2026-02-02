@@ -101,8 +101,10 @@ function CreatePipelineJobPage() {
     },
     onSuccess: () => {
       toast.success(i18n._(msg`Pipeline job created successfully`));
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'pipelines'] });
-      navigate({ to: '/pipeline/jobs' });
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'pipelines'],
+      });
+      void navigate({ to: '/pipeline/jobs' });
     },
     onError: (error: any) => {
       toast.error(error?.message || i18n._(msg`Failed to create pipeline job`));

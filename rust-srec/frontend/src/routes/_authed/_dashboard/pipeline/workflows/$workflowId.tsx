@@ -37,11 +37,13 @@ function EditWorkflowPage() {
     mutationFn: updatePipelinePreset,
     onSuccess: () => {
       toast.success(i18n._(msg`Workflow updated successfully`));
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'workflows'] });
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'workflows'],
+      });
+      void queryClient.invalidateQueries({
         queryKey: ['pipeline', 'workflow', workflowId],
       });
-      navigate({ to: '/pipeline/workflows' });
+      void navigate({ to: '/pipeline/workflows' });
     },
     onError: (error) => {
       console.error('Failed to update workflow:', error);

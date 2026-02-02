@@ -186,7 +186,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
     mutationFn: (data: any) => createChannel({ data }),
     onSuccess: () => {
       toast.success(i18n._(msg`Channel created`));
-      queryClient.invalidateQueries({ queryKey: ['notification-channels'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['notification-channels'],
+      });
       onOpenChange(false);
     },
     onError: (err: any) =>
@@ -198,7 +200,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
       updateChannel({ data: { id: channel!.id, data } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Channel updated`));
-      queryClient.invalidateQueries({ queryKey: ['notification-channels'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['notification-channels'],
+      });
       onOpenChange(false);
     },
     onError: (err: any) =>

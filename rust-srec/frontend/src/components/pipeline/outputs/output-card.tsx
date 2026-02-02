@@ -67,7 +67,7 @@ export function OutputCard({ output }: OutputCardProps) {
   }, []);
 
   const handleCopyPath = () => {
-    navigator.clipboard.writeText(output.file_path);
+    void navigator.clipboard.writeText(output.file_path);
     setCopied(true);
     toast.success(i18n._(msg`File path copied to clipboard`));
     setTimeout(() => setCopied(false), 2000);
@@ -150,7 +150,7 @@ export function OutputCard({ output }: OutputCardProps) {
                       : '/',
                   ),
                 );
-                navigator.clipboard.writeText(dir);
+                void navigator.clipboard.writeText(dir);
                 toast.success(i18n._(msg`Directory path copied`));
               }}
             >

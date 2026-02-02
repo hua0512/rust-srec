@@ -129,7 +129,7 @@ function GlobalConfigForm({
     mutationFn: (data: GlobalConfigFormValues) => updateGlobalConfig({ data }),
     onSuccess: () => {
       toast.success(i18n._(msg`Settings updated successfully`));
-      queryClient.invalidateQueries({ queryKey: ['config', 'global'] });
+      void queryClient.invalidateQueries({ queryKey: ['config', 'global'] });
     },
     onError: (error: any) => {
       toast.error(error.message || i18n._(msg`Failed to update settings`));

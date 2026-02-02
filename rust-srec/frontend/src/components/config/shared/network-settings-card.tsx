@@ -131,7 +131,9 @@ export const NetworkSettingsCard = memo(
       onSuccess: (data) => {
         if (data.refreshed) {
           toast.success(i18n._(msg`Credentials refreshed successfully`));
-          queryClient.invalidateQueries({ queryKey: credentialSourceQueryKey });
+          void queryClient.invalidateQueries({
+            queryKey: credentialSourceQueryKey,
+          });
         } else if (data.requires_relogin) {
           toast.error(i18n._(msg`Refresh failed: Manual login required`));
         } else {
@@ -341,7 +343,7 @@ export const NetworkSettingsCard = memo(
             onOpenChange={setQrDialogOpen}
             scope={scope}
             onSuccess={() => {
-              queryClient.invalidateQueries({
+              void queryClient.invalidateQueries({
                 queryKey: credentialSourceQueryKey,
               });
               // Invalidate the main configuration query based on scope to trigger a refresh
@@ -352,7 +354,7 @@ export const NetworkSettingsCard = memo(
                     : scope.type === 'template'
                       ? ['template', scope.id]
                       : ['streamer', scope.id];
-                queryClient.invalidateQueries({ queryKey: mainQueryKey });
+                void queryClient.invalidateQueries({ queryKey: mainQueryKey });
               }
               toast.success(i18n._(msg`Credentials saved successfully`));
             }}

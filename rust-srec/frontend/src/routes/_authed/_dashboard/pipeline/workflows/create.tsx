@@ -23,8 +23,10 @@ function CreateWorkflowPage() {
     mutationFn: createPipelinePreset,
     onSuccess: () => {
       toast.success(i18n._(msg`Workflow created successfully`));
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'workflows'] });
-      navigate({ to: '/pipeline/workflows' });
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'workflows'],
+      });
+      void navigate({ to: '/pipeline/workflows' });
     },
     onError: (error) => {
       console.error('Failed to create workflow:', error);

@@ -144,7 +144,7 @@ export function FilterDialog({
       createFilter({ data: { streamerId, data } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Filter created successfully`));
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ['streamers', streamerId, 'filters'],
       });
       onOpenChange(false);
@@ -159,7 +159,7 @@ export function FilterDialog({
       updateFilter({ data: { streamerId, filterId: filterToEdit!.id, data } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Filter updated successfully`));
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ['streamers', streamerId, 'filters'],
       });
       onOpenChange(false);

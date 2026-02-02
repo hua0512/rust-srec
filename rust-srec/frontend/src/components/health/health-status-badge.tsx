@@ -8,12 +8,7 @@ import {
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
-export type HealthStatus =
-  | 'healthy'
-  | 'degraded'
-  | 'unhealthy'
-  | 'unknown'
-  | string;
+export type HealthStatus = string;
 
 interface HealthStatusBadgeProps {
   status: HealthStatus;

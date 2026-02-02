@@ -33,9 +33,11 @@ function EditPresetPage() {
     mutationFn: updateJobPreset,
     onSuccess: () => {
       toast.success(i18n._(msg`Preset updated successfully`));
-      queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
-      queryClient.invalidateQueries({ queryKey: ['job', 'preset', presetId] });
-      navigate({ to: '/pipeline/presets' });
+      void queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['job', 'preset', presetId],
+      });
+      void navigate({ to: '/pipeline/presets' });
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to update preset: ${error.message}`)),

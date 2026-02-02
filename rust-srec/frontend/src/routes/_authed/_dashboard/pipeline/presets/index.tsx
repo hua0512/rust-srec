@@ -166,7 +166,7 @@ function PresetsPage() {
     mutationFn: deleteJobPreset,
     onSuccess: () => {
       toast.success(i18n._(msg`Preset deleted successfully`));
-      queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
+      void queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to delete preset: ${error.message}`)),
@@ -176,12 +176,12 @@ function PresetsPage() {
     mutationFn: cloneJobPreset,
     onSuccess: (cloned) => {
       toast.success(i18n._(msg`Preset cloned successfully`));
-      queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
+      void queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
       setCloneDialogOpen(false);
       setPresetToClone(null);
       setCloneName('');
       // Navigate to edit the cloned preset
-      navigate({
+      void navigate({
         to: '/pipeline/presets/$presetId',
         params: { presetId: cloned.id },
       });
@@ -195,7 +195,7 @@ function PresetsPage() {
   };
 
   const handleEdit = (preset: z.infer<typeof JobPresetSchema>) => {
-    navigate({
+    void navigate({
       to: '/pipeline/presets/$presetId',
       params: { presetId: preset.id },
     });
@@ -216,7 +216,7 @@ function PresetsPage() {
   };
 
   const handleCreate = () => {
-    navigate({ to: '/pipeline/presets/create' });
+    void navigate({ to: '/pipeline/presets/create' });
   };
 
   // Show error if fetch failed

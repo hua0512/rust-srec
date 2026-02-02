@@ -39,7 +39,7 @@ function ChangePasswordPage() {
   // Client-side redirect check after hydration
   useEffect(() => {
     if (!user?.token) {
-      router.navigate({
+      void router.navigate({
         to: '/login',
         search: { redirect: '/change-password' },
       });
@@ -69,7 +69,7 @@ function ChangePasswordPage() {
       );
 
       await router.invalidate();
-      router.navigate({ to: '/login', replace: true });
+      void router.navigate({ to: '/login', replace: true });
     } catch (error: any) {
       toast.error(error?.message || i18n._(msg`Failed to change password`));
     }

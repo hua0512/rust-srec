@@ -114,7 +114,7 @@ function NotificationsPage() {
 
     setWebPushPermission(Notification.permission);
 
-    (async () => {
+    void (async () => {
       try {
         const reg = await registerWebPushServiceWorker();
         const sub = await getExistingPushSubscription(reg);
@@ -194,7 +194,7 @@ function NotificationsPage() {
               min_priority: priority,
             },
           });
-          queryClient.invalidateQueries({
+          void queryClient.invalidateQueries({
             queryKey: ['web-push', 'subscriptions'],
           });
           toast.success(i18n._(msg`Web Push priority updated`));
@@ -225,7 +225,7 @@ function NotificationsPage() {
           await unsubscribePush(sub);
         }
         setWebPushEnabled(false);
-        queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: ['web-push', 'subscriptions'],
         });
         toast.message(i18n._(msg`Web Push disabled for this browser`));
@@ -266,7 +266,7 @@ function NotificationsPage() {
       });
 
       setWebPushEnabled(true);
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ['web-push', 'subscriptions'],
       });
       toast.success(i18n._(msg`Web Push enabled for this browser`));
@@ -279,7 +279,9 @@ function NotificationsPage() {
     mutationFn: (id: string) => deleteChannel({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`Channel deleted`));
-      queryClient.invalidateQueries({ queryKey: ['notification-channels'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['notification-channels'],
+      });
     },
     onError: (err: any) => {
       toast.error(err.message || i18n._(msg`Failed to delete channel`));

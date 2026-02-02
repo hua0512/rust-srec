@@ -63,11 +63,11 @@ function TemplatesConfigPage() {
     mutationFn: cloneTemplate,
     onSuccess: (cloned) => {
       toast.success(i18n._(msg`Template cloned successfully`));
-      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      void queryClient.invalidateQueries({ queryKey: ['templates'] });
       setCloneDialogOpen(false);
       setTemplateToClone(null);
       setCloneName('');
-      navigate({
+      void navigate({
         to: '/config/templates/$templateId',
         params: { templateId: cloned.id },
       });
@@ -84,7 +84,10 @@ function TemplatesConfigPage() {
   }, [templates, debouncedSearch]);
 
   const handleEdit = (templateId: string) => {
-    navigate({ to: '/config/templates/$templateId', params: { templateId } });
+    void navigate({
+      to: '/config/templates/$templateId',
+      params: { templateId },
+    });
   };
 
   const handleClone = (template: z.infer<typeof TemplateSchema>) => {

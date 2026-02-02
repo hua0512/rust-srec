@@ -64,7 +64,7 @@ function EditEnginePage() {
         engine={engine}
         onSuccess={() => {
           toast.success(i18n._(msg`Engine updated successfully`));
-          navigate({ to: '/config/engines' });
+          void navigate({ to: '/config/engines' });
         }}
       />
     </div>

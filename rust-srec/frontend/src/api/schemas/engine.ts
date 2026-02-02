@@ -379,7 +379,7 @@ export const CreateEngineRequestSchema = z
       default:
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `Unknown engine type: ${engine_type}`,
+          message: `Unknown engine type: ${String(engine_type)}`,
           path: ['engine_type'],
         });
         return;

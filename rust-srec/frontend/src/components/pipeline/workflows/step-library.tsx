@@ -131,7 +131,7 @@ export const StepLibrary = memo(function StepLibrary({
       hasNextPresets &&
       !isFetchingNextPresets
     ) {
-      fetchNextPresets();
+      void fetchNextPresets();
     }
   }, [
     activeTab,
@@ -148,7 +148,7 @@ export const StepLibrary = memo(function StepLibrary({
       hasNextWorkflows &&
       !isFetchingNextWorkflows
     ) {
-      fetchNextWorkflows();
+      void fetchNextWorkflows();
     }
   }, [
     activeTab,

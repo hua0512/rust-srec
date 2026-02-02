@@ -112,7 +112,9 @@ function WorkflowsPage() {
     mutationFn: deletePipelinePreset,
     onSuccess: () => {
       toast.success(i18n._(msg`Workflow deleted successfully`));
-      queryClient.invalidateQueries({ queryKey: ['pipeline', 'workflows'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'workflows'],
+      });
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to delete workflow: ${error.message}`)),
@@ -123,14 +125,14 @@ function WorkflowsPage() {
   };
 
   const handleEdit = (workflow: PipelinePreset) => {
-    navigate({
+    void navigate({
       to: '/pipeline/workflows/$workflowId',
       params: { workflowId: workflow.id },
     });
   };
 
   const handleCreate = () => {
-    navigate({ to: '/pipeline/workflows/create' });
+    void navigate({ to: '/pipeline/workflows/create' });
   };
 
   if (isError) {

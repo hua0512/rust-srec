@@ -146,7 +146,7 @@ function SessionsPage() {
   });
 
   const updateSearch = (newParams: Partial<typeof search>) => {
-    navigate({
+    void navigate({
       search: (prev) => ({ ...prev, ...newParams }),
       replace: true,
     });
@@ -273,7 +273,7 @@ function SessionsPage() {
       );
       setSelectedIds(new Set());
       setSelectionMode(false);
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      void queryClient.invalidateQueries({ queryKey: ['sessions'] });
     } catch (error) {
       console.error('Failed to delete sessions:', error);
       toast.error(i18n._(msg`Failed to delete sessions`));

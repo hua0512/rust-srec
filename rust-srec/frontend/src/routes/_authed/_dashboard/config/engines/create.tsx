@@ -19,7 +19,7 @@ function CreateEnginePage() {
       <EngineEditor
         onSuccess={() => {
           toast.success(i18n._(msg`Engine created successfully`));
-          navigate({ to: '/config/engines' });
+          void navigate({ to: '/config/engines' });
         }}
       />
     </div>

@@ -68,7 +68,7 @@ export function EngineCard({ engine }: EngineCardProps) {
       }
     };
 
-    checkAvailability();
+    void checkAvailability();
 
     return () => {
       mounted = false;

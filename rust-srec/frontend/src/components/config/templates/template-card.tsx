@@ -57,7 +57,7 @@ export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
   const deleteMutation = useMutation({
     mutationFn: () => deleteTemplate({ data: template.id }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      void queryClient.invalidateQueries({ queryKey: ['templates'] });
       toast.success(`Deleted template "${template.name}"`);
       setShowDeleteAlert(false);
     },

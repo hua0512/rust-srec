@@ -159,7 +159,7 @@ export async function refreshAuthTokenGlobal(): Promise<string | null> {
       fallbackRefreshExpiry: currentData.token?.refresh_expires_in,
     });
     inFlightRefreshByRefreshToken.set(currentRefreshToken, refreshPromise);
-    refreshPromise.finally(() => {
+    void refreshPromise.finally(() => {
       inFlightRefreshByRefreshToken.delete(currentRefreshToken);
     });
   }

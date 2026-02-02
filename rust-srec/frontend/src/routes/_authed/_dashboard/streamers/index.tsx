@@ -181,7 +181,7 @@ function StreamersPage() {
     mutationFn: (id: string) => deleteStreamer({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`Streamer deleted`));
-      queryClient.invalidateQueries({ queryKey: ['streamers'] });
+      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
     onError: (error: any) =>
       toast.error(error.message || i18n._(msg`Failed to delete streamer`)),
@@ -199,7 +199,7 @@ function StreamersPage() {
       updateStreamer({ data: { id, data: { enabled } } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Streamer updated`));
-      queryClient.invalidateQueries({ queryKey: ['streamers'] });
+      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
     },
     onError: (error: any) =>
       toast.error(error.message || i18n._(msg`Failed to update streamer`)),
