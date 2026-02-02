@@ -1,38 +1,38 @@
 /**
  * Real-time log viewer component that consumes the log streaming WebSocket.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouteContext } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { motion } from 'motion/react';
-import { msg } from '@lingui/core/macro';
-import { useLingui } from '@lingui/react';
-import { Trans } from '@lingui/react/macro';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouteContext } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { motion } from "motion/react";
+import { msg } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
+import { Trans } from "@lingui/react/macro";
 import {
-  decodeWsMessage,
   EventType,
   LogLevel,
-  getLogLevelName,
+  WsMessageSchema,
   type LogEvent,
-} from '@/api/proto/log_event';
-import { sessionQueryOptions } from '@/api/session';
-import { Button } from '@/components/ui/button';
+} from "@/api/proto/gen/log_event_pb.js";
+import { fromBinary } from "@bufbuild/protobuf";
+import { sessionQueryOptions } from "@/api/session";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Bug,
   Info,
@@ -46,13 +46,31 @@ import {
   ArrowDown,
   Wifi,
   WifiOff,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { buildWebSocketUrl } from '@/lib/url';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { buildWebSocketUrl } from "@/lib/url";
 
 const MAX_LOG_ENTRIES = 500;
 const WS_RECONNECT_BASE_DELAY = 1000;
 const WS_RECONNECT_MAX_DELAY = 30000;
+
+/** Get human-readable log level name */
+function getLogLevelName(level: LogLevel): string {
+  switch (level) {
+    case LogLevel.TRACE:
+      return "TRACE";
+    case LogLevel.DEBUG:
+      return "DEBUG";
+    case LogLevel.INFO:
+      return "INFO";
+    case LogLevel.WARN:
+      return "WARN";
+    case LogLevel.ERROR:
+      return "ERROR";
+    default:
+      return "UNKNOWN";
+  }
+}
 
 interface DisplayLogEvent extends LogEvent {
   id: number;
@@ -60,68 +78,68 @@ interface DisplayLogEvent extends LogEvent {
 
 /** Get log level icon component */
 function getLevelIcon(level: LogLevel) {
-  const iconClass = 'w-3.5 h-3.5 shrink-0';
+  const iconClass = "w-3.5 h-3.5 shrink-0";
   switch (level) {
-    case LogLevel.LOG_LEVEL_TRACE:
-      return <Terminal className={cn(iconClass, 'text-slate-400')} />;
-    case LogLevel.LOG_LEVEL_DEBUG:
-      return <Bug className={cn(iconClass, 'text-blue-400')} />;
-    case LogLevel.LOG_LEVEL_INFO:
-      return <Info className={cn(iconClass, 'text-emerald-400')} />;
-    case LogLevel.LOG_LEVEL_WARN:
-      return <AlertTriangle className={cn(iconClass, 'text-amber-400')} />;
-    case LogLevel.LOG_LEVEL_ERROR:
-      return <XCircle className={cn(iconClass, 'text-rose-400')} />;
+    case LogLevel.TRACE:
+      return <Terminal className={cn(iconClass, "text-slate-400")} />;
+    case LogLevel.DEBUG:
+      return <Bug className={cn(iconClass, "text-blue-400")} />;
+    case LogLevel.INFO:
+      return <Info className={cn(iconClass, "text-emerald-400")} />;
+    case LogLevel.WARN:
+      return <AlertTriangle className={cn(iconClass, "text-amber-400")} />;
+    case LogLevel.ERROR:
+      return <XCircle className={cn(iconClass, "text-rose-400")} />;
     default:
-      return <Terminal className={cn(iconClass, 'text-muted-foreground')} />;
+      return <Terminal className={cn(iconClass, "text-muted-foreground")} />;
   }
 }
 
 /** Get log level background color classes */
 function getLevelBgColor(level: LogLevel): string {
   switch (level) {
-    case LogLevel.LOG_LEVEL_TRACE:
-      return 'bg-slate-500/5 hover:bg-slate-500/10';
-    case LogLevel.LOG_LEVEL_DEBUG:
-      return 'bg-blue-500/5 hover:bg-blue-500/10';
-    case LogLevel.LOG_LEVEL_INFO:
-      return 'bg-emerald-500/5 hover:bg-emerald-500/10';
-    case LogLevel.LOG_LEVEL_WARN:
-      return 'bg-amber-500/5 hover:bg-amber-500/10';
-    case LogLevel.LOG_LEVEL_ERROR:
-      return 'bg-rose-500/5 hover:bg-rose-500/10';
+    case LogLevel.TRACE:
+      return "bg-slate-500/5 hover:bg-slate-500/10";
+    case LogLevel.DEBUG:
+      return "bg-blue-500/5 hover:bg-blue-500/10";
+    case LogLevel.INFO:
+      return "bg-emerald-500/5 hover:bg-emerald-500/10";
+    case LogLevel.WARN:
+      return "bg-amber-500/5 hover:bg-amber-500/10";
+    case LogLevel.ERROR:
+      return "bg-rose-500/5 hover:bg-rose-500/10";
     default:
-      return 'hover:bg-muted/50';
+      return "hover:bg-muted/50";
   }
 }
 
 /** Get log level badge color classes */
 function getLevelBadgeColor(level: LogLevel): string {
   switch (level) {
-    case LogLevel.LOG_LEVEL_TRACE:
-      return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
-    case LogLevel.LOG_LEVEL_DEBUG:
-      return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-    case LogLevel.LOG_LEVEL_INFO:
-      return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-    case LogLevel.LOG_LEVEL_WARN:
-      return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-    case LogLevel.LOG_LEVEL_ERROR:
-      return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+    case LogLevel.TRACE:
+      return "bg-slate-500/10 text-slate-400 border-slate-500/20";
+    case LogLevel.DEBUG:
+      return "bg-blue-500/10 text-blue-400 border-blue-500/20";
+    case LogLevel.INFO:
+      return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+    case LogLevel.WARN:
+      return "bg-amber-500/10 text-amber-400 border-amber-500/20";
+    case LogLevel.ERROR:
+      return "bg-rose-500/10 text-rose-400 border-rose-500/20";
     default:
-      return 'bg-muted/50 text-muted-foreground border-muted';
+      return "bg-muted/50 text-muted-foreground border-muted";
   }
 }
 
-type FilterLevel = 'all' | 'trace' | 'debug' | 'info' | 'warn' | 'error';
+type FilterLevel = "all" | "trace" | "debug" | "info" | "warn" | "error";
 
 export function LogViewer() {
   const { i18n } = useLingui();
   const [logs, setLogs] = useState<DisplayLogEvent[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [filterLevel, setFilterLevel] = useState<FilterLevel>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [filterLevel, setFilterLevel] = useState<FilterLevel>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -133,12 +151,12 @@ export function LogViewer() {
   const logIdRef = useRef(0);
   const pausedLogsRef = useRef<DisplayLogEvent[]>([]);
 
-  const { user: routeUser } = useRouteContext({ from: '__root__' }) as {
+  const { user: routeUser } = useRouteContext({ from: "__root__" }) as {
     user?: any;
   };
   const { data: sessionData } = useQuery({
     ...sessionQueryOptions,
-    enabled: typeof window !== 'undefined',
+    enabled: typeof window !== "undefined",
     initialData: routeUser ?? null,
   });
   const accessToken = sessionData?.token?.access_token;
@@ -148,14 +166,14 @@ export function LogViewer() {
     (event: MessageEvent) => {
       try {
         const data = new Uint8Array(event.data as ArrayBuffer);
-        const message = decodeWsMessage(data);
+        const message = fromBinary(WsMessageSchema, data);
 
         if (
-          message.eventType === EventType.EVENT_TYPE_LOG &&
-          'log' in message.payload
+          message.eventType === EventType.LOG &&
+          message.payload.case === "log"
         ) {
           const logEvent: DisplayLogEvent = {
-            ...message.payload.log,
+            ...message.payload.value,
             id: logIdRef.current++,
           };
 
@@ -176,7 +194,7 @@ export function LogViewer() {
           }
         }
       } catch (error) {
-        console.error('Failed to decode log message:', error);
+        console.error("Failed to decode log message:", error);
       }
     },
     [isPaused],
@@ -185,20 +203,20 @@ export function LogViewer() {
   // Connect to WebSocket
   const connect = useCallback(() => {
     if (!accessToken) return;
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
-    const wsUrl = buildWebSocketUrl(accessToken, '/logging/stream');
+    const wsUrl = buildWebSocketUrl(accessToken, "/logging/stream");
     if (import.meta.env.DEV) {
-      console.debug('[LOG WS] Connecting to', wsUrl);
+      console.debug("[LOG WS] Connecting to", wsUrl);
     }
     const ws = new WebSocket(wsUrl);
-    ws.binaryType = 'arraybuffer';
+    ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
       if (import.meta.env.DEV) {
-        console.debug('[LOG WS] Connected');
+        console.debug("[LOG WS] Connected");
       }
       setIsConnected(true);
       reconnectAttemptRef.current = 0;
@@ -208,7 +226,7 @@ export function LogViewer() {
 
     ws.onclose = (event) => {
       if (import.meta.env.DEV) {
-        console.debug('[LOG WS] Close', {
+        console.debug("[LOG WS] Close", {
           code: event.code,
           reason: event.reason,
           wasClean: event.wasClean,
@@ -230,7 +248,7 @@ export function LogViewer() {
 
     ws.onerror = (event) => {
       if (import.meta.env.DEV) {
-        console.error('[LOG WS] Connection error', event);
+        console.error("[LOG WS] Connection error", event);
       }
       setIsConnected(false);
     };
@@ -289,14 +307,14 @@ export function LogViewer() {
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
       // Level filter
-      if (filterLevel !== 'all') {
+      if (filterLevel !== "all") {
         const levelMap: Record<FilterLevel, LogLevel> = {
-          all: LogLevel.LOG_LEVEL_UNSPECIFIED,
-          trace: LogLevel.LOG_LEVEL_TRACE,
-          debug: LogLevel.LOG_LEVEL_DEBUG,
-          info: LogLevel.LOG_LEVEL_INFO,
-          warn: LogLevel.LOG_LEVEL_WARN,
-          error: LogLevel.LOG_LEVEL_ERROR,
+          all: LogLevel.UNSPECIFIED,
+          trace: LogLevel.TRACE,
+          debug: LogLevel.DEBUG,
+          info: LogLevel.INFO,
+          warn: LogLevel.WARN,
+          error: LogLevel.ERROR,
         };
         if (log.level < levelMap[filterLevel]) return false;
       }
@@ -317,17 +335,17 @@ export function LogViewer() {
   // Format timestamp - memoized function
   const formatTime = useCallback((timestampMs: bigint) => {
     const date = new Date(Number(timestampMs));
-    return date.toLocaleTimeString('en-US', {
+    return date.toLocaleTimeString("en-US", {
       hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
       fractionalSecondDigits: 3,
     });
   }, []);
 
   return (
-    <Card className="border-border/40 bg-gradient-to-b from-card to-card/80 shadow-lg">
+    <Card className="border-border/40 bg-linear-to-b from-card to-card/80 shadow-lg">
       <CardHeader className="pb-4">
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
@@ -338,10 +356,10 @@ export function LogViewer() {
                 <Badge
                   variant="outline"
                   className={cn(
-                    'ml-2 text-[10px]',
+                    "ml-2 text-[10px]",
                     isConnected
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                      : "bg-rose-500/10 text-rose-400 border-rose-500/20",
                   )}
                 >
                   {isConnected ? (
@@ -367,10 +385,10 @@ export function LogViewer() {
 
             <div className="flex items-center gap-2">
               <Button
-                variant={isPaused ? 'default' : 'outline'}
+                variant={isPaused ? "default" : "outline"}
                 size="sm"
                 onClick={togglePause}
-                className={cn(isPaused && 'animate-pulse')}
+                className={cn(isPaused && "animate-pulse")}
               >
                 {isPaused ? (
                   <>
@@ -406,7 +424,7 @@ export function LogViewer() {
               value={filterLevel}
               onValueChange={(v) => setFilterLevel(v as FilterLevel)}
             >
-              <SelectTrigger className="w-full sm:w-[140px]">
+              <SelectTrigger className="w-full sm:w-35">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -421,7 +439,7 @@ export function LogViewer() {
               </SelectContent>
             </Select>
             <Button
-              variant={autoScroll ? 'default' : 'outline'}
+              variant={autoScroll ? "default" : "outline"}
               size="icon"
               onClick={() => setAutoScroll(!autoScroll)}
               title={
@@ -439,7 +457,7 @@ export function LogViewer() {
       <CardContent>
         <div
           ref={logContainerRef}
-          className="h-[400px] overflow-y-auto rounded-lg border border-border/40 bg-black/20 font-mono text-xs"
+          className="h-100 overflow-y-auto rounded-lg border border-border/40 bg-black/20 font-mono text-xs"
         >
           {filteredLogs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
@@ -461,24 +479,24 @@ export function LogViewer() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.1 }}
                 className={cn(
-                  'flex items-start gap-2 px-3 py-1.5 border-b border-border/20 transition-colors',
+                  "flex items-start gap-2 px-3 py-1.5 border-b border-border/20 transition-colors",
                   getLevelBgColor(log.level),
                 )}
               >
-                <span className="text-muted-foreground shrink-0 w-[85px]">
+                <span className="text-muted-foreground shrink-0 w-21.25">
                   {formatTime(log.timestampMs)}
                 </span>
                 <Badge
                   variant="outline"
                   className={cn(
-                    'text-[9px] uppercase font-medium shrink-0 px-1.5 py-0',
+                    "text-[9px] uppercase font-medium shrink-0 px-1.5 py-0",
                     getLevelBadgeColor(log.level),
                   )}
                 >
                   {getLevelIcon(log.level)}
                   <span className="ml-1">{getLogLevelName(log.level)}</span>
                 </Badge>
-                <span className="text-primary/80 shrink-0 max-w-[150px] truncate">
+                <span className="text-primary/80 shrink-0 max-w-37.5 truncate">
                   {log.target}
                 </span>
                 <span className="text-foreground/90 break-all flex-1">

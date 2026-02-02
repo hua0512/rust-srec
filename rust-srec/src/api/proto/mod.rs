@@ -17,19 +17,32 @@ pub mod log_event {
 
 // Re-export commonly used types
 pub use download_progress::{
-    ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadProgress,
-    DownloadRejected, DownloadSnapshot, DownloadStarted, ErrorPayload, EventType, SegmentCompleted,
-    SubscribeRequest, UnsubscribeRequest, WsMessage,
+    ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadMeta,
+    DownloadMetrics, DownloadRejected, DownloadSnapshot, DownloadState, ErrorPayload, EventType,
+    SegmentCompleted, SubscribeRequest, UnsubscribeRequest, WsMessage,
 };
 
-impl From<&DownloadInfo> for DownloadProgress {
+impl From<&DownloadInfo> for DownloadMeta {
     fn from(info: &DownloadInfo) -> Self {
         Self {
             download_id: info.id.clone(),
             streamer_id: info.streamer_id.clone(),
             session_id: info.session_id.clone(),
             engine_type: info.engine_type.as_str().to_string(),
-            status: format!("{:?}", info.status),
+            started_at_ms: info.started_at.timestamp_millis(),
+            // Snapshot meta is immutable, so updated_at tracks started_at.
+            updated_at_ms: info.started_at.timestamp_millis(),
+            cdn_host: crate::utils::url::extract_host(&info.url).unwrap_or_default(),
+            download_url: info.url.clone(),
+        }
+    }
+}
+
+impl From<&DownloadInfo> for DownloadMetrics {
+    fn from(info: &DownloadInfo) -> Self {
+        Self {
+            download_id: info.id.clone(),
+            status: info.status.as_str().to_string(),
             bytes_downloaded: info.progress.bytes_downloaded,
             duration_secs: info.progress.duration_secs,
             speed_bytes_per_sec: safe_speed(
@@ -42,14 +55,7 @@ impl From<&DownloadInfo> for DownloadProgress {
                 info.progress.media_duration_secs,
                 info.progress.duration_secs,
             ),
-            started_at_ms: info.started_at.timestamp_millis(),
         }
-    }
-}
-
-impl From<DownloadInfo> for DownloadProgress {
-    fn from(info: DownloadInfo) -> Self {
-        DownloadProgress::from(&info)
     }
 }
 
@@ -73,14 +79,18 @@ fn safe_playback_ratio(media_duration_secs: f64, elapsed_secs: f64) -> f64 {
 
 /// Create a snapshot message from a list of download infos.
 pub fn create_snapshot_message(downloads: Vec<DownloadInfo>) -> WsMessage {
-    let progress_list: Vec<DownloadProgress> = downloads.into_iter().map(Into::into).collect();
+    let states: Vec<DownloadState> = downloads
+        .iter()
+        .map(|d| DownloadState {
+            meta: Some(DownloadMeta::from(d)),
+            metrics: Some(DownloadMetrics::from(d)),
+        })
+        .collect();
 
     WsMessage {
         event_type: EventType::Snapshot as i32,
         payload: Some(download_progress::ws_message::Payload::Snapshot(
-            DownloadSnapshot {
-                downloads: progress_list,
-            },
+            DownloadSnapshot { downloads: states },
         )),
     }
 }
@@ -109,6 +119,7 @@ mod tests {
     fn create_test_download_info() -> DownloadInfo {
         DownloadInfo {
             id: "download-123".to_string(),
+            url: "https://example.com/stream".to_string(),
             streamer_id: "streamer-456".to_string(),
             session_id: "session-789".to_string(),
             engine_type: EngineType::Ffmpeg,
@@ -127,17 +138,21 @@ mod tests {
     }
 
     #[test]
-    fn test_download_info_to_progress_conversion() {
+    fn test_download_info_to_meta_metrics_conversion() {
         let info = create_test_download_info();
-        let progress: DownloadProgress = info.into();
+        let meta = DownloadMeta::from(&info);
+        let metrics = DownloadMetrics::from(&info);
 
-        assert_eq!(progress.download_id, "download-123");
-        assert_eq!(progress.streamer_id, "streamer-456");
-        assert_eq!(progress.session_id, "session-789");
-        assert_eq!(progress.engine_type, "ffmpeg");
-        assert_eq!(progress.status, "Downloading");
-        assert_eq!(progress.bytes_downloaded, 1024000);
-        assert_eq!(progress.segments_completed, 5);
+        assert_eq!(meta.download_id, "download-123");
+        assert_eq!(meta.streamer_id, "streamer-456");
+        assert_eq!(meta.session_id, "session-789");
+        assert_eq!(meta.engine_type, "ffmpeg");
+        assert!(!meta.download_url.is_empty());
+
+        assert_eq!(metrics.download_id, "download-123");
+        assert_eq!(metrics.status, "downloading");
+        assert_eq!(metrics.bytes_downloaded, 1024000);
+        assert_eq!(metrics.segments_completed, 5);
     }
 
     #[test]

@@ -6,8 +6,8 @@ package download_progress;
 enum EventType {
   EVENT_TYPE_UNSPECIFIED = 0;
   EVENT_TYPE_SNAPSHOT = 1;
-  EVENT_TYPE_DOWNLOAD_STARTED = 2;
-  EVENT_TYPE_PROGRESS = 3;
+  EVENT_TYPE_DOWNLOAD_META = 2;
+  EVENT_TYPE_DOWNLOAD_METRICS = 3;
   EVENT_TYPE_SEGMENT_COMPLETED = 4;
   EVENT_TYPE_DOWNLOAD_COMPLETED = 5;
   EVENT_TYPE_DOWNLOAD_FAILED = 6;
@@ -21,8 +21,8 @@ message WsMessage {
   EventType event_type = 1;
   oneof payload {
     DownloadSnapshot snapshot = 2;
-    DownloadStarted download_started = 3;
-    DownloadProgress progress = 4;
+    DownloadMeta download_meta = 3;
+    DownloadMetrics download_metrics = 4;
     SegmentCompleted segment_completed = 5;
     DownloadCompleted download_completed = 6;
     DownloadFailed download_failed = 7;
@@ -48,33 +48,41 @@ message UnsubscribeRequest {}
 
 // Initial snapshot of all active downloads
 message DownloadSnapshot {
-  repeated DownloadProgress downloads = 1;
+  repeated DownloadState downloads = 1;
 }
 
-
-// Progress information for a single download
-message DownloadProgress {
-  string download_id = 1;
-  string streamer_id = 2;
-  string session_id = 3;
-  string engine_type = 4;
-  string status = 5;
-  uint64 bytes_downloaded = 6;
-  double duration_secs = 7;
-  uint64 speed_bytes_per_sec = 8;
-  uint32 segments_completed = 9;
-  double media_duration_secs = 10;
-  double playback_ratio = 11;
-  int64 started_at_ms = 12;  // Unix timestamp in milliseconds
+// A complete download state, split into metadata and metrics.
+message DownloadState {
+  DownloadMeta meta = 1;
+  DownloadMetrics metrics = 2;
 }
 
-// Download started event
-message DownloadStarted {
+// Download metadata (low frequency).
+message DownloadMeta {
   string download_id = 1;
   string streamer_id = 2;
   string session_id = 3;
   string engine_type = 4;
   int64 started_at_ms = 5;
+  // Monotonic (best-effort) update timestamp to help clients coalesce meta updates.
+  // Clients should ignore meta updates older than what they've already applied.
+  int64 updated_at_ms = 8;
+  // CDN host for this download (host[:port]).
+  string cdn_host = 6;
+  // The actual stream URL being downloaded (may contain signed query params).
+  string download_url = 7;
+}
+
+// Download metrics (high frequency).
+message DownloadMetrics {
+  string download_id = 1;
+  string status = 2;
+  uint64 bytes_downloaded = 3;
+  double duration_secs = 4;
+  uint64 speed_bytes_per_sec = 5;
+  uint32 segments_completed = 6;
+  double media_duration_secs = 7;
+  double playback_ratio = 8;
 }
 
 // Segment completed event
@@ -113,13 +121,7 @@ message DownloadCancelled {
   string streamer_id = 2;
   string session_id = 3;
   // Download stop cause (best-effort).
-  // Values are produced by server-side `DownloadStopCause::as_str()` and may include:
-  // - "user"
-  // - "streamer_offline"
-  // - "danmu_stream_closed"
-  // - "streamer_disabled"
-  // - "shutdown"
-  // - "other"
+  // Values are produced by server-side `DownloadStopCause::as_str()`.
   string cause = 4;
 }
 

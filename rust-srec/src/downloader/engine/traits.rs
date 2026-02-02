@@ -272,6 +272,20 @@ pub enum DownloadStatus {
     Cancelled,
 }
 
+impl DownloadStatus {
+    /// Stable lowercase string representation for APIs.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Starting => "starting",
+            Self::Downloading => "downloading",
+            Self::Paused => "paused",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
 /// Progress information for a download.
 #[derive(Debug, Clone)]
 pub struct DownloadProgress {
@@ -408,6 +422,8 @@ impl DownloadHandle {
 pub struct DownloadInfo {
     /// Download ID.
     pub id: String,
+    /// Stream URL being downloaded.
+    pub url: String,
     /// Streamer ID.
     pub streamer_id: String,
     /// Session ID.

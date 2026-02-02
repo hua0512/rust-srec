@@ -231,7 +231,7 @@ msgstr "Active"
 msgid "Active Days"
 msgstr "Active Days"
 
-#: src/components/streamers/edit/active-download-card.tsx:34
+#: src/components/streamers/edit/active-download-card.tsx:48
 msgid "Active Download"
 msgstr "Active Download"
 
@@ -434,7 +434,7 @@ msgstr "Alerts when disk space is running low."
 msgid "All"
 msgstr "All"
 
-#: src/components/logging/log-viewer.tsx:414
+#: src/components/logging/log-viewer.tsx:432
 msgid "All Levels"
 msgstr "All Levels"
 
@@ -637,11 +637,11 @@ msgstr "Auto Thumbnail"
 msgid "Auto-Refresh"
 msgstr "Auto-Refresh"
 
-#: src/components/logging/log-viewer.tsx:430
+#: src/components/logging/log-viewer.tsx:448
 msgid "Auto-scroll disabled"
 msgstr "Auto-scroll disabled"
 
-#: src/components/logging/log-viewer.tsx:429
+#: src/components/logging/log-viewer.tsx:447
 msgid "Auto-scroll enabled"
 msgstr "Auto-scroll enabled"
 
@@ -921,6 +921,11 @@ msgstr "Categories"
 msgid "Category"
 msgstr "Category"
 
+#: src/components/streamers/edit/active-download-card.tsx:99
+#: src/components/streamers/progress-indicator.tsx:142
+msgid "CDN"
+msgstr "CDN"
+
 #: src/components/layout/site-header.tsx:34
 #: src/components/sidebar/navbar.tsx:28
 #: src/routes/_authed/change-password.tsx:123
@@ -1013,7 +1018,7 @@ msgstr "Choose your display language"
 msgid "Cleanup"
 msgstr "Cleanup"
 
-#: src/components/logging/log-viewer.tsx:389
+#: src/components/logging/log-viewer.tsx:407
 #: src/components/notifications/desktop-channel-dialog.tsx:190
 #: src/routes/_authed/_dashboard/config/theme.tsx:229
 msgid "Clear"
@@ -1237,7 +1242,7 @@ msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
 #: src/components/connection-status-indicator.tsx:24
-#: src/components/logging/log-viewer.tsx:350
+#: src/components/logging/log-viewer.tsx:368
 msgid "Connected"
 msgstr "Connected"
 
@@ -1866,7 +1871,7 @@ msgid "Disabled"
 msgstr "Disabled"
 
 #: src/components/connection-status-indicator.tsx:34
-#: src/components/logging/log-viewer.tsx:355
+#: src/components/logging/log-viewer.tsx:373
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -1895,6 +1900,7 @@ msgid "Down"
 msgstr "Down"
 
 #: src/components/sessions/recordings-tab.tsx:131
+#: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "Download"
 
@@ -1940,7 +1946,7 @@ msgstr "Download Manager"
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/components/streamers/edit/active-download-card.tsx:40
+#: src/components/streamers/edit/active-download-card.tsx:57
 msgid "Downloading"
 msgstr "Downloading"
 
@@ -1966,7 +1972,8 @@ msgid "Dual Format"
 msgstr "Dual Format"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:569
-#: src/components/streamers/edit/active-download-card.tsx:69
+#: src/components/streamers/edit/active-download-card.tsx:153
+#: src/components/streamers/progress-indicator.tsx:124
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:584
 msgid "Duration"
 msgstr "Duration"
@@ -2240,7 +2247,7 @@ msgstr "Enter keywords to include..."
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
-#: src/components/logging/log-viewer.tsx:495
+#: src/components/logging/log-viewer.tsx:513
 msgid "entries"
 msgstr "entries"
 
@@ -3690,7 +3697,7 @@ msgstr "Logging"
 msgid "Logging configuration updated"
 msgstr "Logging configuration updated"
 
-#: src/components/logging/log-viewer.tsx:504
+#: src/components/logging/log-viewer.tsx:522
 msgid "Logging paused"
 msgstr "Logging paused"
 
@@ -4247,7 +4254,7 @@ msgstr "No log files found"
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
-#: src/components/logging/log-viewer.tsx:448
+#: src/components/logging/log-viewer.tsx:466
 msgid "No logs to display"
 msgstr "No logs to display"
 
@@ -4827,11 +4834,11 @@ msgstr "Path to Telegram Desktop (contains tdata)"
 msgid "Path Variables"
 msgstr "Path Variables"
 
-#: src/components/logging/log-viewer.tsx:383
+#: src/components/logging/log-viewer.tsx:401
 msgid "Pause"
 msgstr "Pause"
 
-#: src/components/logging/log-viewer.tsx:498
+#: src/components/logging/log-viewer.tsx:516
 msgid "paused"
 msgstr "paused"
 
@@ -5365,7 +5372,8 @@ msgstr "RAM utilization"
 msgid "Random"
 msgstr "Random"
 
-#: src/components/streamers/edit/active-download-card.tsx:85
+#: src/components/streamers/edit/active-download-card.tsx:175
+#: src/components/streamers/progress-indicator.tsx:132
 msgid "Ratio"
 msgstr "Ratio"
 
@@ -5408,7 +5416,7 @@ msgstr "Ready to Watch"
 msgid "Real-time"
 msgstr "Real-time"
 
-#: src/components/logging/log-viewer.tsx:337
+#: src/components/logging/log-viewer.tsx:355
 msgid "Real-Time Logs"
 msgstr "Real-Time Logs"
 
@@ -5621,7 +5629,7 @@ msgstr "Restore from a backup file"
 msgid "Restore password"
 msgstr "Restore password"
 
-#: src/components/logging/log-viewer.tsx:378
+#: src/components/logging/log-viewer.tsx:396
 msgid "Resume"
 msgstr "Resume"
 
@@ -5866,7 +5874,7 @@ msgstr "Search events..."
 msgid "Search jobs..."
 msgstr "Search jobs..."
 
-#: src/components/logging/log-viewer.tsx:399
+#: src/components/logging/log-viewer.tsx:417
 msgid "Search logs..."
 msgstr "Search logs..."
 
@@ -5932,7 +5940,7 @@ msgstr "Segment"
 msgid "Segment Timeout (ms)"
 msgstr "Segment Timeout (ms)"
 
-#: src/components/streamers/edit/active-download-card.tsx:77
+#: src/components/streamers/edit/active-download-card.tsx:164
 msgid "Segments"
 msgstr "Segments"
 
@@ -6185,6 +6193,10 @@ msgstr "Shadcn UI Theme Presets"
 msgid "Shared pipeline utilities"
 msgstr "Shared pipeline utilities"
 
+#: src/components/streamers/progress-indicator.tsx:98
+msgid "Show download details"
+msgstr "Show download details"
+
 #: src/routes/_authed/change-password.tsx:166
 #: src/routes/_authed/change-password.tsx:208
 #: src/routes/_authed/change-password.tsx:252
@@ -6223,7 +6235,7 @@ msgid "Single URL"
 msgstr "Single URL"
 
 #: src/components/pipeline/outputs/output-card.tsx:178
-#: src/components/streamers/edit/active-download-card.tsx:58
+#: src/components/streamers/edit/active-download-card.tsx:139
 msgid "Size"
 msgstr "Size"
 
@@ -6276,7 +6288,7 @@ msgstr "Specific TTWID Cookie"
 msgid "Specify preferred content delivery network (e.g., ws-h5, hs-h5)."
 msgstr "Specify preferred content delivery network (e.g., ws-h5, hs-h5)."
 
-#: src/components/streamers/edit/active-download-card.tsx:47
+#: src/components/streamers/edit/active-download-card.tsx:125
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.tsx:602
 msgid "Speed"
 msgstr "Speed"
@@ -6416,6 +6428,10 @@ msgstr "Stream Player"
 #: src/components/config/engines/forms/mesio-form.tsx:58
 msgid "Stream Splitting Strategy"
 msgstr "Stream Splitting Strategy"
+
+#: src/components/streamers/edit/active-download-card.tsx:70
+msgid "Stream URL"
+msgstr "Stream URL"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:225
 msgid "Streamer"
@@ -7192,6 +7208,7 @@ msgstr "Uptime"
 #: src/components/notifications/channel-card.tsx:104
 #: src/components/streamers/config/streamer-general-settings.tsx:66
 #: src/components/streamers/edit/streamer-meta-form.tsx:116
+#: src/components/streamers/progress-indicator.tsx:152
 msgid "URL"
 msgstr "URL"
 
@@ -7342,7 +7359,7 @@ msgstr "View"
 msgid "View All"
 msgstr "View All"
 
-#: src/components/logging/log-viewer.tsx:361
+#: src/components/logging/log-viewer.tsx:379
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 
@@ -7368,7 +7385,7 @@ msgstr "Wait"
 msgid "Wait time before starting."
 msgstr "Wait time before starting."
 
-#: src/components/logging/log-viewer.tsx:452
+#: src/components/logging/log-viewer.tsx:470
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 

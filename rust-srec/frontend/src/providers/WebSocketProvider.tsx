@@ -1,14 +1,16 @@
 import { useEffect, useRef, useCallback, ReactNode } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
 import { sessionQueryOptions } from '@/api/session';
 import { useDownloadStore } from '@/store/downloads';
 import {
-  decodeWsMessage,
-  encodeClientMessage,
+  WsMessageSchema,
+  ClientMessageSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
   EventType,
-  type DownloadProgress,
-} from '@/api/proto/download_progress';
+} from '@/api/proto/gen/download_progress_pb.js';
 import { buildWebSocketUrl } from '@/lib/url';
 import { WebSocketContext } from './WebSocketContext';
 
@@ -40,8 +42,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
   // Download store actions
   const setSnapshot = useDownloadStore((state) => state.setSnapshot);
-  const addDownload = useDownloadStore((state) => state.addDownload);
-  const updateProgress = useDownloadStore((state) => state.updateProgress);
+  const upsertMeta = useDownloadStore((state) => state.upsertMeta);
+  const upsertMetrics = useDownloadStore((state) => state.upsertMetrics);
   const removeDownload = useDownloadStore((state) => state.removeDownload);
   const setConnectionStatus = useDownloadStore(
     (state) => state.setConnectionStatus,
@@ -53,92 +55,60 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     (event: MessageEvent) => {
       try {
         const data = new Uint8Array(event.data as ArrayBuffer);
-        const message = decodeWsMessage(data);
+        const message = fromBinary(WsMessageSchema, data);
         // console.debug('[WS] Received message:', message.eventType);
 
         switch (message.eventType) {
-          case EventType.EVENT_TYPE_SNAPSHOT:
-            if ('snapshot' in message.payload) {
-              setSnapshot(message.payload.snapshot.downloads);
+          case EventType.SNAPSHOT:
+            if (message.payload.case === 'snapshot') {
+              setSnapshot(message.payload.value.downloads);
             }
             break;
 
-          case EventType.EVENT_TYPE_DOWNLOAD_STARTED:
-            if ('downloadStarted' in message.payload) {
-              const started = message.payload.downloadStarted;
-              const initialProgress: DownloadProgress = {
-                downloadId: started.downloadId,
-                streamerId: started.streamerId,
-                sessionId: started.sessionId,
-                engineType: started.engineType,
-                status: 'Starting',
-                bytesDownloaded: 0n,
-                durationSecs: 0,
-                speedBytesPerSec: 0n,
-                segmentsCompleted: 0,
-                mediaDurationSecs: 0,
-                playbackRatio: 0,
-                startedAtMs: started.startedAtMs,
-              };
-              addDownload(initialProgress);
+          case EventType.DOWNLOAD_META:
+            if (message.payload.case === 'downloadMeta') {
+              upsertMeta(message.payload.value);
             }
             break;
 
-          case EventType.EVENT_TYPE_PROGRESS:
-            if ('progress' in message.payload) {
-              const progress = message.payload.progress;
-              updateProgress(progress.downloadId, progress);
+          case EventType.DOWNLOAD_METRICS:
+            if (message.payload.case === 'downloadMetrics') {
+              upsertMetrics(message.payload.value);
             }
             break;
 
-          case EventType.EVENT_TYPE_DOWNLOAD_COMPLETED:
-            if ('downloadCompleted' in message.payload) {
-              removeDownload(message.payload.downloadCompleted.downloadId);
+          case EventType.DOWNLOAD_COMPLETED:
+            if (message.payload.case === 'downloadCompleted') {
+              // Terminal event - remove from active list.
+              removeDownload(message.payload.value.downloadId);
             }
             break;
 
-          case EventType.EVENT_TYPE_DOWNLOAD_FAILED:
-            if ('downloadFailed' in message.payload) {
-              removeDownload(message.payload.downloadFailed.downloadId);
+          case EventType.DOWNLOAD_FAILED:
+            if (message.payload.case === 'downloadFailed') {
+              // Terminal event - remove from active list.
+              removeDownload(message.payload.value.downloadId);
             }
             break;
 
-          case EventType.EVENT_TYPE_DOWNLOAD_CANCELLED:
-            if ('downloadCancelled' in message.payload) {
-              const cancelled = message.payload.downloadCancelled;
-              if (cancelled.cause && cancelled.cause !== 'user') {
-                console.warn('Download cancelled:', cancelled);
-              }
-              removeDownload(cancelled.downloadId);
+          case EventType.DOWNLOAD_CANCELLED:
+            if (message.payload.case === 'downloadCancelled') {
+              // Terminal event - remove from active list.
+              removeDownload(message.payload.value.downloadId);
             }
             break;
 
-          case EventType.EVENT_TYPE_DOWNLOAD_REJECTED:
-            if ('downloadRejected' in message.payload) {
-              console.warn(
-                'Download rejected:',
-                message.payload.downloadRejected,
-              );
-            }
-            break;
-
-          case EventType.EVENT_TYPE_SEGMENT_COMPLETED:
-            break;
-
-          case EventType.EVENT_TYPE_ERROR:
-            if ('error' in message.payload) {
-              console.error(
-                'WebSocket error from server:',
-                message.payload.error,
-              );
-            }
+          case EventType.SEGMENT_COMPLETED:
+          case EventType.DOWNLOAD_REJECTED:
+          case EventType.ERROR:
+            // Not currently surfaced in the UI; decoding still works.
             break;
         }
       } catch (error) {
         console.error('Failed to decode WebSocket message:', error);
       }
     },
-    [setSnapshot, addDownload, updateProgress, removeDownload],
+    [setSnapshot, upsertMeta, upsertMetrics, removeDownload],
   );
 
   const connect = useCallback(() => {
@@ -165,10 +135,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       reconnectAttemptRef.current = 0;
 
       // Explicitly Clear any filters to ensure we receive everything
-      const msg = encodeClientMessage({
-        action: { unsubscribe: {} },
+      const unsubscribeReq = create(UnsubscribeRequestSchema, {});
+      const clientMessage = create(ClientMessageSchema, {
+        action: { case: 'unsubscribe', value: unsubscribeReq },
       });
-      ws.send(msg);
+      ws.send(toBinary(ClientMessageSchema, clientMessage));
     };
 
     ws.onmessage = handleMessage;
@@ -250,9 +221,26 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, accessToken, connect, disconnect]);
 
-  // No-op for now as we use global subscription
-  const subscribe = useCallback((_streamerId: string) => {}, []);
-  const unsubscribe = useCallback((_streamerId: string) => {}, []);
+  const subscribe = useCallback((streamerId: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const subscribeReq = create(SubscribeRequestSchema, { streamerId });
+    const clientMessage = create(ClientMessageSchema, {
+      action: { case: 'subscribe', value: subscribeReq },
+    });
+    ws.send(toBinary(ClientMessageSchema, clientMessage));
+  }, []);
+
+  const unsubscribe = useCallback((_streamerId: string) => {
+    // Protocol unsubscribe is global (clears filter).
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const unsubscribeReq = create(UnsubscribeRequestSchema, {});
+    const clientMessage = create(ClientMessageSchema, {
+      action: { case: 'unsubscribe', value: unsubscribeReq },
+    });
+    ws.send(toBinary(ClientMessageSchema, clientMessage));
+  }, []);
 
   return (
     <WebSocketContext.Provider
