@@ -77,7 +77,7 @@ dotenvy = "0.15"
 sysinfo = { version = "0.38" }
 tracing-appender = "0.2"
 mockall = "0.14.0"
-proptest = "1.4"
+proptest = "1.10"
 rstest = "0.26.1"
 itertools = "0.14.0"
 tokio-tungstenite = { version = "0.28.0", default-features = false, features = ["connect"] }
