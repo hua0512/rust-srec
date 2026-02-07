@@ -76,7 +76,7 @@
   "devDependencies": {
     "@bufbuild/buf": "^1.64.0",
     "@bufbuild/protoc-gen-es": "^2.11.0",
-    "@lingui/cli": "^5.8.0",
+    "@lingui/cli": "^5.9.0",
     "@lingui/macro": "^5.7.0",
     "@lingui/vite-plugin": "^5.7.0",
     "@tanstack/devtools-vite": "^0.5.0",
