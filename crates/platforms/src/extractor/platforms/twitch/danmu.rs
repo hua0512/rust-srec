@@ -13,6 +13,7 @@ use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
 use crate::danmaku::{DanmuItem, DanmuMessage, DanmuType};
 
 use super::URL_REGEX;
+use crate::extractor::utils::capture_group_1;
 
 /// Twitch WebSocket IRC server URL
 const TWITCH_WS_URL: &str = "wss://irc-ws.chat.twitch.tv:443";
@@ -142,10 +143,7 @@ impl DanmuProtocol for TwitchDanmuProtocol {
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        URL_REGEX
-            .captures(url)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_lowercase())
+        capture_group_1(&URL_REGEX, url).map(str::to_lowercase)
     }
 
     async fn websocket_url(&self, _room_id: &str) -> Result<String> {

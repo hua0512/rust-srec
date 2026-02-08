@@ -4,7 +4,7 @@ use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::huya::GetLivingInfoRsp;
 use crate::extractor::platforms::huya::tars::decode_get_cdn_token_info_response;
-use crate::extractor::utils::parse_bool_from_extras;
+use crate::extractor::utils::{extras_get_bool, extras_get_i64, extras_get_str, extras_get_u64};
 use crate::media::MediaFormat;
 use crate::media::formats::StreamFormat;
 use crate::media::media_info::MediaInfo;
@@ -16,7 +16,6 @@ use rand::Rng;
 use rand::seq::IndexedRandom;
 use regex::Regex;
 use reqwest::Client;
-use reqwest::header::HeaderValue;
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -63,19 +62,17 @@ impl Huya {
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
     ) -> Self {
-        let mut extractor = Extractor::new(String::from("Huya"), platform_url, client);
-        let huya_header_value = HeaderValue::from_str(Self::HUYA_URL).unwrap();
-        extractor.add_header_owned(reqwest::header::ORIGIN, huya_header_value.clone());
-        extractor.add_header_owned(reqwest::header::REFERER, huya_header_value);
+        let mut extractor = Extractor::new("Huya", platform_url, client);
+        extractor.set_origin_and_referer_static(Self::HUYA_URL);
         extractor.add_header_typed(reqwest::header::USER_AGENT, Self::WUP_UA);
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
 
         let force_origin_quality =
-            parse_bool_from_extras(extras.as_ref(), "force_origin_quality", false);
-        let use_wup = parse_bool_from_extras(extras.as_ref(), "use_wup", false);
-        let use_wup_v2 = parse_bool_from_extras(extras.as_ref(), "use_wup_v2", true);
+            extras_get_bool(extras.as_ref(), "force_origin_quality").unwrap_or(false);
+        let use_wup = extras_get_bool(extras.as_ref(), "use_wup").unwrap_or(false);
+        let use_wup_v2 = extras_get_bool(extras.as_ref(), "use_wup_v2").unwrap_or(true);
 
         Self {
             extractor,
@@ -157,13 +154,8 @@ impl Huya {
     /// Helper to build query with origin quality if needed
     fn build_stream_query(&self, stream_name: &str, anti_code: &str, presenter_uid: i64) -> String {
         if self.force_origin_quality {
-            build_query(
-                stream_name,
-                anti_code,
-                Some(presenter_uid.try_into().unwrap()),
-                false,
-            )
-            .unwrap_or_else(|_| anti_code.to_string())
+            build_query(stream_name, anti_code, presenter_uid.try_into().ok(), false)
+                .unwrap_or_else(|_| anti_code.to_string())
         } else {
             anti_code.to_string()
         }
@@ -171,21 +163,17 @@ impl Huya {
 
     /// Extract CDN type from extras JSON
     fn extract_cdn_from_extras(extras: &serde_json::Value) -> String {
-        extras
-            .get("cdn")
-            .and_then(|v| v.as_str())
+        extras_get_str(Some(extras), "cdn")
             .unwrap_or("AL")
-            .to_string()
+            .to_owned()
     }
 
     /// Extract stream name from extras JSON
     fn extract_stream_name_from_extras(
         extras: &serde_json::Value,
     ) -> Result<String, ExtractorError> {
-        extras
-            .get("stream_name")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+        extras_get_str(Some(extras), "stream_name")
+            .map(ToOwned::to_owned)
             .ok_or_else(|| {
                 ExtractorError::ValidationError("Stream name not found in extras".to_string())
             })
@@ -193,20 +181,12 @@ impl Huya {
 
     /// Extract presenter UID from extras JSON
     fn extract_presenter_uid_from_extras(extras: &serde_json::Value) -> i64 {
-        extras
-            .get("presenter_uid")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0)
+        extras_get_i64(Some(extras), "presenter_uid").unwrap_or(0)
     }
 
     /// Extract default bitrate from extras JSON
     fn extract_default_bitrate_from_extras(extras: &serde_json::Value) -> u64 {
-        extras
-            .get("default_bitrate")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(10000)
+        extras_get_u64(Some(extras), "default_bitrate").unwrap_or(10000)
     }
 
     async fn get_room_page(&self) -> Result<String, ExtractorError> {
@@ -585,6 +565,7 @@ impl Huya {
 
         let bitrate_info_list = &living_info.t_notice.v_multi_stream_info;
         let default_bitrate = living_info.t_stream_setting_notice.i_bit_rate;
+        let default_bitrate_u64 = u64::try_from(default_bitrate).unwrap_or(0);
 
         for stream_info in living_info.t_notice.v_stream_info.iter() {
             if stream_info.s_stream_name.is_empty() {
@@ -625,7 +606,7 @@ impl Huya {
                     &flv_url,
                     &hls_url,
                     "原画",
-                    default_bitrate.try_into().unwrap(),
+                    default_bitrate_u64,
                     priority,
                     false,
                     &extras,
@@ -641,9 +622,9 @@ impl Huya {
                         &hls_url,
                         &bitrate_info.s_display_name,
                         if add_ratio {
-                            bitrate_info.i_bit_rate.try_into().unwrap()
+                            u64::try_from(bitrate_info.i_bit_rate).unwrap_or(default_bitrate_u64)
                         } else {
-                            default_bitrate.try_into().unwrap()
+                            default_bitrate_u64
                         },
                         priority,
                         add_ratio,

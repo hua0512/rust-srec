@@ -66,21 +66,23 @@ impl Extractor {
         client: Client,
     ) -> Self {
         let mut default_headers = HeaderMap::new();
-        default_headers.insert(reqwest::header::USER_AGENT, DEFAULT_UA.parse().unwrap());
+        default_headers.insert(
+            reqwest::header::USER_AGENT,
+            HeaderValue::from_static(DEFAULT_UA),
+        );
         default_headers.insert(
             reqwest::header::ACCEPT,
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                .parse()
-                .unwrap(),
+            HeaderValue::from_static(
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ),
         );
         default_headers.insert(
             reqwest::header::ACCEPT_LANGUAGE,
-            "zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3".parse().unwrap(),
+            HeaderValue::from_static("zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3"),
         );
-        default_headers.insert(
-            reqwest::header::ACCEPT_ENCODING,
-            "gzip, deflate".parse().unwrap(),
-        );
+        // Do not set `Accept-Encoding` here.
+        // Reqwest auto-adds it (and auto-decompresses) when the corresponding
+        // crate features are enabled, as long as we don't override the header.
 
         Self {
             platform_name: platform_name.into(),
@@ -92,18 +94,56 @@ impl Extractor {
         }
     }
 
+    #[inline]
+    pub fn set_origin_static(&mut self, origin: &'static str) {
+        self.add_header_owned(reqwest::header::ORIGIN, HeaderValue::from_static(origin));
+    }
+
+    #[inline]
+    pub fn set_referer_static(&mut self, referer: &'static str) {
+        self.add_header_owned(reqwest::header::REFERER, HeaderValue::from_static(referer));
+    }
+
+    #[inline]
+    pub fn set_origin_and_referer_static(&mut self, base_url: &'static str) {
+        let v = HeaderValue::from_static(base_url);
+        self.add_header_owned(reqwest::header::ORIGIN, v.clone());
+        self.add_header_owned(reqwest::header::REFERER, v);
+    }
+
+    /// Insert an arbitrary header.
+    ///
+    /// Prefer `add_header_typed` / `add_header_owned` for better type safety.
     pub fn add_header<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
-        self.platform_headers.insert(
-            HeaderName::from_str(&key.into()).unwrap(),
-            HeaderValue::from_str(&value.into()).unwrap(),
-        );
+        match HeaderName::from_str(&key.into()) {
+            Ok(name) => match HeaderValue::from_str(&value.into()) {
+                Ok(value) => {
+                    self.platform_headers.insert(name, value);
+                }
+                Err(e) => {
+                    debug!(error = %e, "Invalid header value; skipping");
+                }
+            },
+            Err(e) => {
+                debug!(error = %e, "Invalid header name; skipping");
+            }
+        }
     }
 
     pub fn add_header_str<K: AsRef<str>, V: AsRef<str>>(&mut self, key: K, value: V) {
-        self.platform_headers.insert(
-            HeaderName::from_str(key.as_ref()).unwrap(),
-            HeaderValue::from_str(value.as_ref()).unwrap(),
-        );
+        match HeaderName::from_str(key.as_ref()) {
+            Ok(name) => match HeaderValue::from_str(value.as_ref()) {
+                Ok(value) => {
+                    self.platform_headers.insert(name, value);
+                }
+                Err(e) => {
+                    debug!(error = %e, "Invalid header value; skipping");
+                }
+            },
+            Err(e) => {
+                debug!(error = %e, "Invalid header name; skipping");
+            }
+        }
     }
 
     pub fn add_header_name<K: Into<HeaderName>, V: Into<HeaderValue>>(&mut self, key: K, value: V) {
@@ -119,8 +159,14 @@ impl Extractor {
     }
 
     pub fn add_header_typed<K: Into<HeaderName>, V: AsRef<str>>(&mut self, key: K, value: V) {
-        self.platform_headers
-            .insert(key.into(), HeaderValue::from_str(value.as_ref()).unwrap());
+        match HeaderValue::from_str(value.as_ref()) {
+            Ok(value) => {
+                self.platform_headers.insert(key.into(), value);
+            }
+            Err(e) => {
+                debug!(error = %e, "Invalid header value; skipping");
+            }
+        }
     }
 
     pub fn add_param<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
@@ -201,11 +247,22 @@ impl Extractor {
     /// extractor.set_cookies_from_string("sessionid=abc123; csrftoken=def456; theme=dark");
     /// ```
     pub fn set_cookies_from_string(&mut self, cookie_string: &str) {
-        for cookie in cookie_string.split(';').map(|s| s.trim()) {
-            if let Some((name, value)) = cookie.split_once('=') {
-                self.cookies
-                    .insert(name.trim().to_owned(), value.trim().to_owned());
+        // Accept common separators: ';' from Cookie headers and '\n' from copy/paste.
+        for part in cookie_string.split(&[';', '\n'][..]).map(str::trim) {
+            if part.is_empty() {
+                continue;
             }
+
+            let Some((name, value)) = part.split_once('=') else {
+                continue;
+            };
+            let name = name.trim();
+            let value = value.trim();
+            if name.is_empty() || value.is_empty() {
+                continue;
+            }
+
+            self.cookies.insert(name.to_owned(), value.to_owned());
         }
     }
 
@@ -273,7 +330,14 @@ impl Extractor {
             return None;
         }
 
-        let mut cookie_string = String::new();
+        // Rough capacity estimate to avoid repeated growth.
+        let mut cookie_string = String::with_capacity(
+            self.cookies
+                .iter()
+                .map(|(k, v)| k.len() + 1 + v.len() + 2)
+                .sum(),
+        );
+
         for (name, value) in &self.cookies {
             if !cookie_string.is_empty() {
                 cookie_string.push_str("; ");
@@ -299,10 +363,13 @@ impl Extractor {
                 && let Some(cookie_part) = cookie_str.split(';').next()
                 && let Some((name, value)) = cookie_part.split_once('=')
             {
-                let name = name.trim().to_string();
-                let value = value.trim().to_string();
+                let name = name.trim();
+                let value = value.trim();
+                if name.is_empty() || value.is_empty() {
+                    continue;
+                }
                 debug!("Auto-storing cookie: {}={}", name, value);
-                self.cookies.insert(name, value);
+                self.cookies.insert(name.to_owned(), value.to_owned());
             }
         }
     }
@@ -331,23 +398,28 @@ impl Extractor {
     ///
     /// RequestBuilder with cookies and platform headers pre-configured
     pub fn request(&self, method: Method, url: &str) -> RequestBuilder {
-        let cookies = self
-            .build_cookie_header()
-            .and_then(|header| {
-                reqwest::header::HeaderValue::from_str(&header)
-                    .inspect(|value| debug!("Adding cookies to request: {:?}", value))
-                    .ok()
-            })
-            .unwrap_or_else(|| reqwest::header::HeaderValue::from_static(""));
+        let mut headers = self.platform_headers.clone();
 
-        let mut builder = self.client.request(method, url);
-        for (key, value) in &self.platform_headers {
-            builder = builder.header(key.clone(), value.clone());
+        if !self.cookies.is_empty()
+            && let Some(cookie_header) = self.build_cookie_header()
+        {
+            match reqwest::header::HeaderValue::from_str(&cookie_header) {
+                Ok(value) => {
+                    debug!("Adding cookies to request: {:?}", value);
+                    headers.insert(reqwest::header::COOKIE, value);
+                }
+                Err(e) => {
+                    // If cookies are malformed, skip the Cookie header instead of sending
+                    // an empty/invalid value.
+                    debug!(error = %e, "Failed to build Cookie header");
+                }
+            }
         }
-        if !self.cookies.is_empty() {
-            builder = builder.header(reqwest::header::COOKIE, cookies);
-        }
-        builder.query(&self.platform_params)
+
+        self.client
+            .request(method, url)
+            .headers(headers)
+            .query(&self.platform_params)
     }
 
     pub fn get_platform_headers(&self) -> &HeaderMap {
@@ -355,10 +427,17 @@ impl Extractor {
     }
 
     pub fn get_platform_headers_map(&self) -> FxHashMap<String, String> {
-        let mut headers_map = FxHashMap::default();
+        // Headers are consumed by callers (MediaInfo stores owned Strings), so we must allocate.
+        // Pre-size to avoid rehashing on repeated calls.
+        let mut headers_map =
+            FxHashMap::with_capacity_and_hasher(self.platform_headers.len(), Default::default());
+
         for (key, value) in &self.platform_headers {
-            headers_map.insert(key.to_string(), value.to_str().unwrap().to_string());
+            if let Ok(value) = value.to_str() {
+                headers_map.insert(key.as_str().to_owned(), value.to_owned());
+            }
         }
+
         headers_map
     }
 }

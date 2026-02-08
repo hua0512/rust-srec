@@ -18,15 +18,18 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
+use crate::danmaku::websocket::ws_headers_origin_referer_ua;
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
 use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::{DEFAULT_UA, default_client};
 use chrono::{TimeZone, Utc};
+use tokio_tungstenite::tungstenite::http::HeaderMap;
 
 use super::URL_REGEX;
 use super::cookie_utils::{extract_cookie_value, strip_refresh_token};
 use super::utils::generate_fake_buvid3;
 use super::wbi::{encode_wbi, get_wbi_keys};
+use crate::extractor::utils::capture_group_1_owned;
 
 /// Default WebSocket URL
 const DEFAULT_WS_URL: &str = "wss://broadcastlv.chat.bilibili.com/sub";
@@ -317,7 +320,9 @@ impl BilibiliDanmuProtocol {
             key: token.to_string(),
         };
 
-        let json_data = serde_json::to_vec(&auth_data).unwrap();
+        // `AuthData` is fully serializable; in the unlikely event of serialization failure,
+        // send an empty payload rather than panic.
+        let json_data = serde_json::to_vec(&auth_data).unwrap_or_default();
         Bytes::from(build_packet(&json_data, op::AUTH))
     }
 
@@ -599,10 +604,7 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        URL_REGEX
-            .captures(url)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string())
+        capture_group_1_owned(&URL_REGEX, url)
     }
 
     async fn websocket_url(&self, room_id: &str) -> Result<String> {
@@ -615,18 +617,12 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
         Ok(ws_url)
     }
 
-    fn headers(&self, _room_id: &str) -> Vec<(String, String)> {
-        vec![
-            ("User-Agent".to_string(), DEFAULT_UA.to_string()),
-            (
-                "Origin".to_string(),
-                "https://live.bilibili.com".to_string(),
-            ),
-            (
-                "Referer".to_string(),
-                "https://live.bilibili.com".to_string(),
-            ),
-        ]
+    fn headers(&self, _room_id: &str) -> HeaderMap {
+        ws_headers_origin_referer_ua(
+            "https://live.bilibili.com",
+            "https://live.bilibili.com",
+            DEFAULT_UA,
+        )
     }
 
     fn cookies(&self) -> Option<String> {

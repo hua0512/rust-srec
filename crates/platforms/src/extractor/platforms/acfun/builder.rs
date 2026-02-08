@@ -12,6 +12,7 @@ use crate::{
             models::{StartPlayResponse, VideoPlayRes, VisitorLoginResponse},
             utils::get_random_name,
         },
+        utils::capture_group_1_or_invalid_url,
     },
     media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
@@ -42,10 +43,7 @@ impl Acfun {
     }
 
     fn extract_rid(&self) -> Result<&str, ExtractorError> {
-        let caps = URL_REGEX.captures(&self.extractor.url);
-        caps.and_then(|c| c.get(1))
-            .map(|m| m.as_str())
-            .ok_or(ExtractorError::InvalidUrl(self.extractor.url.clone()))
+        capture_group_1_or_invalid_url(&URL_REGEX, &self.extractor.url)
     }
 }
 

@@ -20,6 +20,7 @@ use crate::{
             DouyuH5PlayData, DouyuH5PlayResponse, DouyuInteractiveGameResponse,
             DouyuRoomInfoResponse, FallbackSignResult, ParsedStreamInfo,
         },
+        utils::{extras_get_bool, extras_get_i64, extras_get_str, extras_get_u64},
     },
     media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
@@ -88,48 +89,23 @@ impl Douyu {
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
     ) -> Self {
-        let cdn = extras
-            .as_ref()
-            .and_then(|extras| extras.get("cdn").and_then(|v| v.as_str()))
+        let cdn = extras_get_str(extras.as_ref(), "cdn")
             .unwrap_or("hw-h5")
-            .to_string();
+            .to_owned();
 
-        let disable_interactive_game = extras
-            .as_ref()
-            .and_then(|extras| {
-                extras
-                    .get("disable_interactive_game")
-                    .and_then(|v| v.as_bool())
-            })
-            .unwrap_or(false);
+        let disable_interactive_game =
+            extras_get_bool(extras.as_ref(), "disable_interactive_game").unwrap_or(false);
 
-        let rate = extras
-            .as_ref()
-            .and_then(|extras| extras.get("rate").and_then(|v| v.as_i64()))
-            .unwrap_or(0);
+        let rate = extras_get_i64(extras.as_ref(), "rate").unwrap_or(0);
 
-        let force_hs = extras
-            .as_ref()
-            .and_then(|extras| extras.get("force_hs").and_then(|v| v.as_bool()))
-            .unwrap_or(false);
+        let force_hs = extras_get_bool(extras.as_ref(), "force_hs").unwrap_or(false);
 
-        let request_retries = extras
-            .as_ref()
-            .and_then(|extras| extras.get("request_retries").and_then(|v| v.as_u64()))
+        let request_retries = extras_get_u64(extras.as_ref(), "request_retries")
             .map(|v| v as u32)
             .unwrap_or(Self::DEFAULT_RETRIES);
 
-        let mut extractor = Extractor::new("Douyu".to_string(), url, client);
-
-        extractor.add_header(
-            reqwest::header::ORIGIN.to_string(),
-            Self::BASE_URL.to_string(),
-        );
-
-        extractor.add_header(
-            reqwest::header::REFERER.to_string(),
-            Self::BASE_URL.to_string(),
-        );
+        let mut extractor = Extractor::new("Douyu", url, client);
+        extractor.set_origin_and_referer_static(Self::BASE_URL);
 
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
@@ -146,33 +122,48 @@ impl Douyu {
     }
 
     pub(crate) fn extract_rid(&self, response: &str) -> Result<u64, ExtractorError> {
-        let captures = RID_REGEX.captures(response);
-        if let Some(captures) = captures {
-            return Ok(captures.get(1).unwrap().as_str().parse::<u64>().unwrap());
-        }
-        Err(ExtractorError::ValidationError(
-            "Failed to extract rid".to_string(),
-        ))
+        let Some(captures) = RID_REGEX.captures(response) else {
+            return Err(ExtractorError::ValidationError(
+                "Failed to extract rid".to_string(),
+            ));
+        };
+
+        let rid = captures
+            .get(1)
+            .and_then(|m| m.as_str().parse::<u64>().ok())
+            .ok_or_else(|| ExtractorError::ValidationError("Failed to extract rid".to_string()))?;
+
+        Ok(rid)
     }
 
     pub(crate) fn extract_room_status(&self, response: &str) -> Result<u64, ExtractorError> {
-        let captures = ROOM_STATUS_REGEX.captures(response);
-        if let Some(captures) = captures {
-            return Ok(captures.get(1).unwrap().as_str().parse::<u64>().unwrap());
-        }
-        Err(ExtractorError::ValidationError(
-            "Failed to extract room status".to_string(),
-        ))
+        let Some(captures) = ROOM_STATUS_REGEX.captures(response) else {
+            return Err(ExtractorError::ValidationError(
+                "Failed to extract room status".to_string(),
+            ));
+        };
+
+        captures
+            .get(1)
+            .and_then(|m| m.as_str().parse::<u64>().ok())
+            .ok_or_else(|| {
+                ExtractorError::ValidationError("Failed to extract room status".to_string())
+            })
     }
 
     pub(crate) fn extract_video_loop(&self, response: &str) -> Result<u32, ExtractorError> {
-        let captures = VIDEO_LOOP_REGEX.captures(response);
-        if let Some(captures) = captures {
-            return Ok(captures.get(1).unwrap().as_str().parse::<u32>().unwrap());
-        }
-        Err(ExtractorError::ValidationError(
-            "Failed to extract video loop".to_string(),
-        ))
+        let Some(captures) = VIDEO_LOOP_REGEX.captures(response) else {
+            return Err(ExtractorError::ValidationError(
+                "Failed to extract video loop".to_string(),
+            ));
+        };
+
+        captures
+            .get(1)
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .ok_or_else(|| {
+                ExtractorError::ValidationError("Failed to extract video loop".to_string())
+            })
     }
 
     pub(crate) async fn get_web_response(&self) -> Result<String, ExtractorError> {
@@ -524,8 +515,8 @@ impl Douyu {
         let ts = ts.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
         });
 
         let key_data = self.get_encryption_key(did).await?;
@@ -1289,7 +1280,11 @@ impl PlatformExtractor for Douyu {
                         if !extras_value.is_object() {
                             *extras_value = serde_json::json!({});
                         }
-                        let extras_obj = extras_value.as_object_mut().unwrap();
+                        let Some(extras_obj) = extras_value.as_object_mut() else {
+                            // We just enforced object above; if serde_json breaks that invariant,
+                            // skip header injection rather than panic.
+                            return Ok(());
+                        };
 
                         // Backward-compat (older code used host_header string).
                         extras_obj.insert(
@@ -1303,10 +1298,9 @@ impl PlatformExtractor for Douyu {
                         if !headers_value.is_object() {
                             *headers_value = serde_json::json!({});
                         }
-                        headers_value
-                            .as_object_mut()
-                            .unwrap()
-                            .insert("Host".to_string(), serde_json::Value::String(host));
+                        if let Some(headers_obj) = headers_value.as_object_mut() {
+                            headers_obj.insert("Host".to_string(), serde_json::Value::String(host));
+                        }
                     }
                     Err(e) => {
                         debug!("Failed to build hs-h5 URL (fallback to base): {}", e);

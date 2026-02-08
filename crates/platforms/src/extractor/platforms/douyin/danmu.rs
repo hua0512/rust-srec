@@ -17,6 +17,7 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
+use crate::danmaku::websocket::ws_headers_origin_ua;
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
 use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::DEFAULT_UA;
@@ -24,7 +25,9 @@ use crate::extractor::platforms::douyin::apis::LIVE_DOUYIN_URL;
 use crate::extractor::platforms::douyin::douyin_proto;
 use crate::extractor::platforms::douyin::generate_xbogus;
 use crate::extractor::platforms::douyin::utils::{DEFAULT_TTWID, get_common_params};
+use crate::extractor::utils::capture_group_1_owned;
 use chrono::{TimeZone, Utc};
+use tokio_tungstenite::tungstenite::http::HeaderMap;
 
 use super::URL_REGEX;
 
@@ -140,10 +143,11 @@ impl DouyinDanmuProtocol {
         use std::time::{SystemTime, UNIX_EPOCH};
         let base = 7300000000000000000u64;
         let range = 699999999999999999u64;
+        // `SystemTime` can be before UNIX_EPOCH on misconfigured systems; default to 0.
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as u64;
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
         let id = base + (ts % range);
         id.to_string()
     }
@@ -282,10 +286,7 @@ impl DanmuProtocol for DouyinDanmuProtocol {
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        URL_REGEX
-            .captures(url)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string())
+        capture_group_1_owned(&URL_REGEX, url)
     }
 
     async fn websocket_url(&self, room_id: &str) -> Result<String> {
@@ -294,11 +295,8 @@ impl DanmuProtocol for DouyinDanmuProtocol {
         Self::build_websocket_url(room_id, &user_id)
     }
 
-    fn headers(&self, _room_id: &str) -> Vec<(String, String)> {
-        vec![
-            ("User-Agent".to_string(), DEFAULT_UA.to_string()),
-            ("Origin".to_string(), "https://live.douyin.com".to_string()),
-        ]
+    fn headers(&self, _room_id: &str) -> HeaderMap {
+        ws_headers_origin_ua("https://live.douyin.com", DEFAULT_UA)
     }
 
     fn cookies(&self) -> Option<String> {

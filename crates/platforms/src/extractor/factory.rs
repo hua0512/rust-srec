@@ -20,85 +20,36 @@ struct PlatformEntry {
     constructor: ExtractorConstructor,
 }
 
-// Static platform registry
-// Macro to create a constructor function for a given platform
-macro_rules! create_constructor {
-    ($name:ident, $builder:expr) => {
-        fn $name(
-            url: String,
-            client: Client,
-            cookies: Option<String>,
-            extras: Option<serde_json::Value>,
-        ) -> Box<dyn PlatformExtractor> {
-            Box::new($builder(url, client, cookies, extras))
-        }
+macro_rules! platform_registry {
+    ( $( $regex:path => $builder:path ),+ $(,)? ) => {
+        &[
+            $(
+                PlatformEntry {
+                    regex: &$regex,
+                    constructor: |url, client, cookies, extras| {
+                        Box::new($builder(url, client, cookies, extras))
+                            as Box<dyn PlatformExtractor>
+                    },
+                },
+            )+
+        ]
     };
 }
 
-// Create constructor functions using the macro
-create_constructor!(new_huya, Huya::new);
-create_constructor!(new_douyin, Douyin::new);
-create_constructor!(new_douyu, Douyu::new);
-create_constructor!(new_pandatv, PandaTV::new);
-create_constructor!(new_weibo, Weibo::new);
-create_constructor!(new_twitch, Twitch::new);
-create_constructor!(new_redbook, RedBook::new);
-create_constructor!(new_bilibili, Bilibili::new);
-create_constructor!(new_picarto, Picarto::new);
-create_constructor!(new_tiktok, TikTok::new);
-create_constructor!(new_twitcasting, Twitcasting::new);
-create_constructor!(new_acfun, Acfun::new);
-
-// Static platform registry
-static PLATFORMS: &[PlatformEntry] = &[
-    PlatformEntry {
-        regex: &platforms::huya::URL_REGEX,
-        constructor: new_huya,
-    },
-    PlatformEntry {
-        regex: &platforms::douyin::URL_REGEX,
-        constructor: new_douyin,
-    },
-    PlatformEntry {
-        regex: &platforms::douyu::URL_REGEX,
-        constructor: new_douyu,
-    },
-    PlatformEntry {
-        regex: &platforms::pandatv::URL_REGEX,
-        constructor: new_pandatv,
-    },
-    PlatformEntry {
-        regex: &platforms::weibo::URL_REGEX,
-        constructor: new_weibo,
-    },
-    PlatformEntry {
-        regex: &platforms::twitch::URL_REGEX,
-        constructor: new_twitch,
-    },
-    PlatformEntry {
-        regex: &platforms::redbook::URL_REGEX,
-        constructor: new_redbook,
-    },
-    PlatformEntry {
-        regex: &platforms::bilibili::URL_REGEX,
-        constructor: new_bilibili,
-    },
-    PlatformEntry {
-        regex: &platforms::picarto::URL_REGEX,
-        constructor: new_picarto,
-    },
-    PlatformEntry {
-        regex: &platforms::tiktok::URL_REGEX,
-        constructor: new_tiktok,
-    },
-    PlatformEntry {
-        regex: &platforms::twitcasting::URL_REGEX,
-        constructor: new_twitcasting,
-    },
-    PlatformEntry {
-        regex: &platforms::acfun::URL_REGEX,
-        constructor: new_acfun,
-    },
+// Static platform registry.
+static PLATFORMS: &[PlatformEntry] = platform_registry![
+    platforms::huya::URL_REGEX => Huya::new,
+    platforms::douyin::URL_REGEX => Douyin::new,
+    platforms::douyu::URL_REGEX => Douyu::new,
+    platforms::pandatv::URL_REGEX => PandaTV::new,
+    platforms::weibo::URL_REGEX => Weibo::new,
+    platforms::twitch::URL_REGEX => Twitch::new,
+    platforms::redbook::URL_REGEX => RedBook::new,
+    platforms::bilibili::URL_REGEX => Bilibili::new,
+    platforms::picarto::URL_REGEX => Picarto::new,
+    platforms::tiktok::URL_REGEX => TikTok::new,
+    platforms::twitcasting::URL_REGEX => Twitcasting::new,
+    platforms::acfun::URL_REGEX => Acfun::new,
 ];
 
 /// A factory for creating platform-specific extractors.

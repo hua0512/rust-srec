@@ -13,6 +13,7 @@ use crate::{
     extractor::{
         error::ExtractorError,
         platform_extractor::{Extractor, PlatformExtractor},
+        utils::capture_group_1_owned,
     },
     media::MediaInfo,
 };
@@ -39,15 +40,8 @@ impl PandaTV {
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
     ) -> Self {
-        let mut extractor = Extractor::new("pandatv".to_string(), url, client);
-        extractor.add_header(
-            reqwest::header::ORIGIN.to_string(),
-            Self::BASE_URL.to_string(),
-        );
-        extractor.add_header(
-            reqwest::header::REFERER.to_string(),
-            Self::BASE_URL.to_string(),
-        );
+        let mut extractor = Extractor::new("pandatv", url, client);
+        extractor.set_origin_and_referer_static(Self::BASE_URL);
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
@@ -58,12 +52,8 @@ impl PandaTV {
     }
 
     fn extract_room_id(&self) -> Result<String, ExtractorError> {
-        let url = &self.extractor.url.clone();
-        let caps = URL_REGEX
-            .captures(url)
-            .ok_or(ExtractorError::InvalidUrl(url.clone()))?;
-        let room_id = caps.get(1).unwrap().as_str();
-        Ok(room_id.to_string())
+        capture_group_1_owned(&URL_REGEX, &self.extractor.url)
+            .ok_or_else(|| ExtractorError::InvalidUrl(self.extractor.url.clone()))
     }
 
     async fn get_room_info(&self, room_id: &str) -> Result<PandaTvBjResponse, ExtractorError> {
@@ -101,22 +91,24 @@ impl PandaTV {
         let title = bj_info.channel_title.to_string();
         let artist = bj_info.nick.to_string();
 
-        let media = response.media;
+        let Some(media) = response.media else {
+            return Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
+                .is_live(false)
+                .build());
+        };
 
-        let is_live = media.is_some() && media.as_ref().unwrap().is_live;
-
-        if !is_live {
+        if !media.is_live {
             return Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
                 .is_live(false)
                 .build());
         }
 
-        let media = media.as_ref().unwrap();
         // is live
         let artist_url = media.user_img.to_string();
         let cover_url = Some(media.thumb_url.to_string());
 
-        let url = Url::parse(&self.extractor.url).unwrap();
+        let url = Url::parse(&self.extractor.url)
+            .map_err(|_| ExtractorError::InvalidUrl(self.extractor.url.clone()))?;
 
         let pwd = url
             .query_pairs()
@@ -152,11 +144,11 @@ impl PandaTV {
             .clone();
 
         let mut extras = FxHashMap::default();
-        extras.insert("token".to_string(), live_info.token);
+        // Keep the historical meaning of "token" (chat server token). The live token is still
+        // available in the response model if needed.
         // extras.insert("chat_server".to_string(), live_info.chat_server.url);
         extras.insert("t".to_string(), live_info.chat_server.t.to_string());
         extras.insert("token".to_string(), live_info.chat_server.token);
-        extras.insert("rid".to_string(), bj_info.id.to_string());
         extras.insert("rid".to_string(), bj_info.id.to_string());
         // extras.extend(self.extractor.get_platform_headers_map());
 
@@ -169,7 +161,7 @@ impl PandaTV {
             .category_opt(category)
             .artist_url(artist_url)
             .cover_url_opt(cover_url)
-            .is_live(is_live)
+            .is_live(true)
             .streams(streams)
             .headers(self.extractor.get_platform_headers_map())
             .extras(extras);

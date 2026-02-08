@@ -34,8 +34,8 @@ pub fn gen_verify_fp() -> String {
     // Get current time in milliseconds
     let milliseconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("System time before UNIX epoch")
-        .as_millis() as u64;
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
 
     // Pre-calculate the base36 timestamp
     let mut base36_buf = [0u8; MAX_BASE36_LEN];

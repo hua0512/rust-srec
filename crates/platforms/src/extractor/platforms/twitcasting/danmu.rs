@@ -17,11 +17,14 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{debug, warn};
 
 use crate::danmaku::error::{DanmakuError, Result};
+use crate::danmaku::websocket::ws_headers_origin_referer;
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
 use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::default::default_client;
+use tokio_tungstenite::tungstenite::http::HeaderMap;
 
 use super::URL_REGEX;
+use crate::extractor::utils::capture_group_1_owned;
 
 /// TwitCasting stream server API (same as builder uses)
 const STREAM_SERVER_API: &str = "https://twitcasting.tv/streamserver.php";
@@ -354,10 +357,7 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        URL_REGEX
-            .captures(url)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string())
+        capture_group_1_owned(&URL_REGEX, url)
     }
 
     async fn websocket_url(&self, room_id: &str) -> Result<String> {
@@ -379,11 +379,8 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
         self.cookies.clone()
     }
 
-    fn headers(&self, _room_id: &str) -> Vec<(String, String)> {
-        vec![
-            ("Origin".to_string(), "https://twitcasting.tv".to_string()),
-            ("Referer".to_string(), "https://twitcasting.tv".to_string()),
-        ]
+    fn headers(&self, _room_id: &str) -> HeaderMap {
+        ws_headers_origin_referer("https://twitcasting.tv", "https://twitcasting.tv")
     }
 
     async fn handshake_messages(&self, _room_id: &str) -> Result<Vec<Message>> {

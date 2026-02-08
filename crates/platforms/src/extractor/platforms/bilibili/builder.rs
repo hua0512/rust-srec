@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::LazyLock};
 
 use async_trait::async_trait;
 use regex::Regex;
-use reqwest::{Client, header::HeaderValue};
+use reqwest::Client;
 use tracing::debug;
 
 use crate::{
@@ -13,6 +13,8 @@ use crate::{
             models::{RoomInfo, RoomInfoAnchorInfo, RoomInfoDetails, RoomPlayInfo},
             wbi::{encode_wbi, get_wbi_keys},
         },
+        utils::capture_group_1_or_invalid_url,
+        utils::extras_get_u64,
     },
     media::{MediaInfo, StreamFormat, StreamInfo, formats::MediaFormat},
 };
@@ -112,13 +114,9 @@ impl Bilibili {
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
-        let base_url_value = HeaderValue::from_str(Self::BASE_URL).unwrap();
-        extractor.add_header_owned(reqwest::header::REFERER, base_url_value);
+        extractor.set_referer_static(Self::BASE_URL);
 
-        let quality = extras
-            .as_ref()
-            .and_then(|extras| extras.get("quality"))
-            .and_then(|v| v.as_u64())
+        let quality = extras_get_u64(extras.as_ref(), "quality")
             .and_then(|num| BilibiliQuality::try_from(num as u32).ok())
             .unwrap_or(BilibiliQuality::DolbyVision);
 
@@ -126,10 +124,7 @@ impl Bilibili {
     }
 
     pub fn extract_room_id(&self) -> Result<&str, ExtractorError> {
-        let caps = URL_REGEX.captures(&self.extractor.url);
-        caps.and_then(|c| c.get(1))
-            .map(|m| m.as_str())
-            .ok_or(ExtractorError::InvalidUrl(self.extractor.url.clone()))
+        capture_group_1_or_invalid_url(&URL_REGEX, &self.extractor.url)
     }
 
     async fn get_bilibili_api<T: serde::de::DeserializeOwned>(
@@ -413,7 +408,10 @@ impl PlatformExtractor for Bilibili {
                 ExtractorError::ValidationError("No matching codec found".to_string())
             })?;
 
-        let current_qn: u64 = codec.current_qn.try_into().unwrap();
+        let current_qn: u64 = codec
+            .current_qn
+            .try_into()
+            .map_err(|_| ExtractorError::ValidationError("Invalid current_qn".to_string()))?;
         if current_qn != qn {
             return Err(ExtractorError::ValidationError(
                 "Failed to get the stream for the requested quality.".to_string(),

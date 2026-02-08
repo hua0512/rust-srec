@@ -4,6 +4,7 @@ use crate::{
         hls_extractor::HlsExtractor,
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::twitcasting::models::{StreamContainer, TwitcastingData},
+        utils::capture_group_1_or_invalid_url,
     },
     media::{MediaInfo, stream_info::StreamInfo},
 };
@@ -45,23 +46,15 @@ impl Twitcasting {
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
-        extractor.add_header(
-            reqwest::header::ACCEPT_LANGUAGE.to_string(),
-            "en-US, en;q=0.9",
-        );
-
-        extractor.add_header(reqwest::header::REFERER.to_string(), BASE_URL);
+        extractor.add_header_typed(reqwest::header::ACCEPT_LANGUAGE, "en-US, en;q=0.9");
+        extractor.set_referer_static(BASE_URL);
 
         Self { extractor }
     }
 
     /// Extract room ID from URL without cloning
     pub fn extract_room_id(&self) -> Result<&str, ExtractorError> {
-        URL_REGEX
-            .captures(&self.extractor.url)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str())
-            .ok_or_else(|| ExtractorError::InvalidUrl("Room ID not found in URL".to_string()))
+        capture_group_1_or_invalid_url(&URL_REGEX, &self.extractor.url)
     }
 
     /// Build query parameters for API request

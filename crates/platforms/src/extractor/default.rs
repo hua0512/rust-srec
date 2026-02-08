@@ -38,11 +38,13 @@ pub fn create_client_builder(proxy_config: Option<ProxyConfig>) -> reqwest::Clie
         .with_safe_default_protocol_versions()
         .expect("Failed to configure default TLS protocol versions")
         .with_platform_verifier()
-        .unwrap()
+        .expect("Failed to configure platform TLS verifier")
         .with_no_client_auth();
 
     let mut builder = Client::builder()
         .use_preconfigured_tls(tls_config)
+        // Reqwest auto-decompression is enabled by default when the corresponding
+        // crate features are enabled (gzip/deflate/brotli).
         .timeout(std::time::Duration::from_secs(30));
 
     if let Some(config) = proxy_config {

@@ -275,7 +275,7 @@ impl BrowserFingerprintGenerator {
         let outer_width = inner_width + rng.random_range(24..=32);
         let outer_height = inner_height + rng.random_range(75..=90);
         let screen_x = 0;
-        let screen_y = *[0, 30].choose(&mut rng).unwrap();
+        let screen_y = [0, 30].choose(&mut rng).copied().unwrap_or(0);
         let size_width = rng.random_range(1024..=1920);
         let size_height = rng.random_range(768..=1080);
         let avail_width = rng.random_range(1280..=1920);
@@ -360,8 +360,8 @@ impl ABogus {
 
         let start_encryption = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
         // Hash(Hash(params))
         let params_hash_1 = self.crypto_utility.params_to_array(params, true);
         let array1 = CryptoUtility::sm3_to_array(&params_hash_1);
@@ -378,8 +378,8 @@ impl ABogus {
 
         let end_encryption = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(start_encryption);
 
         // Populate ab_dir with dynamic values
         ab_dir.insert(20, (start_encryption >> 24) & 255);
@@ -415,7 +415,8 @@ impl ABogus {
         ab_dir.insert(45, (end_encryption >> 16) & 255);
         ab_dir.insert(46, (end_encryption >> 8) & 255);
         ab_dir.insert(47, end_encryption & 255);
-        ab_dir.insert(48, *ab_dir.get(&8).unwrap());
+        // Key 8 is inserted above and should exist; fall back to 0 to avoid panic.
+        ab_dir.insert(48, *ab_dir.get(&8).unwrap_or(&0));
         ab_dir.insert(49, end_encryption / 0x100000000);
         ab_dir.insert(50, end_encryption / 0x10000000000);
 

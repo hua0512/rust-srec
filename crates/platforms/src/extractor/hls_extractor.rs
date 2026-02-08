@@ -91,8 +91,9 @@ fn process_master_playlist(
     playlist
         .variants
         .into_iter()
-        .map(|variant| {
-            let stream_url = base_url.join(&variant.uri).unwrap();
+        .filter_map(|variant| {
+            // Some playlists contain invalid/odd URIs; skip those rather than panicking.
+            let stream_url = base_url.join(&variant.uri).ok()?;
             let bitrate = variant.bandwidth / 1000;
 
             // debug!("variant: {:?}", variant);
@@ -108,13 +109,15 @@ fn process_master_playlist(
                 .map(|r| format!("{} - {}x{}", video, r.width, r.height))
                 .unwrap_or(video);
 
-            StreamInfo::builder(stream_url.to_string(), StreamFormat::Hls, MediaFormat::Ts)
-                .quality(quality)
-                .bitrate(bitrate)
-                .extras_opt(extras.as_ref().cloned())
-                .codec(variant.codecs.unwrap_or_default())
-                .fps(variant.frame_rate.unwrap_or(0.0))
-                .build()
+            Some(
+                StreamInfo::builder(stream_url.to_string(), StreamFormat::Hls, MediaFormat::Ts)
+                    .quality(quality)
+                    .bitrate(bitrate)
+                    .extras_opt(extras.as_ref().cloned())
+                    .codec(variant.codecs.unwrap_or_default())
+                    .fps(variant.frame_rate.unwrap_or(0.0))
+                    .build(),
+            )
         })
         .collect()
 }

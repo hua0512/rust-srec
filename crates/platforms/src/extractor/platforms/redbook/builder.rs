@@ -75,7 +75,7 @@ impl RedBook {
         ];
 
         for (key, value) in headers {
-            extractor.add_header(key.to_string(), value.to_string());
+            extractor.add_header_str(key, value);
         }
     }
 
@@ -204,7 +204,10 @@ impl RedBook {
         debug!("live_info: {:?}", live_info);
 
         let room_data = &live_info.live_stream.room_data;
-        let pull_config = room_data.room_info.pull_config.as_ref().unwrap();
+        let pull_config =
+            room_data.room_info.pull_config.as_ref().ok_or_else(|| {
+                ExtractorError::ValidationError("Missing pull_config".to_string())
+            })?;
 
         // Extract metadata
         let artist = &room_data.host_info.nick_name;

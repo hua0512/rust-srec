@@ -555,7 +555,7 @@ mod tests {
 
         let result: Result<DouyinStreamUrl, _> = serde_json::from_str(json_str);
         assert!(result.is_ok());
-        let stream_url = result.unwrap();
+        let stream_url = result.expect("Should deserialize DouyinStreamUrl");
         assert!(stream_url.pull_datas.data.is_empty());
     }
 
@@ -659,7 +659,7 @@ mod tests {
 
         let result: Result<DouyinStreamUrl, _> = serde_json::from_str(json_str);
         assert!(result.is_ok());
-        let stream_url = result.unwrap();
+        let stream_url = result.expect("Should deserialize DouyinStreamUrl");
         assert_eq!(stream_url.pull_datas.data.len(), 2);
         assert!(stream_url.pull_datas.data.contains_key("stream1"));
         assert!(stream_url.pull_datas.data.contains_key("stream2"));
@@ -695,7 +695,7 @@ mod tests {
         let result: Result<DouyinSdkPullData, _> = serde_json::from_str(empty_data);
         assert!(result.is_ok(), "Should deserialize empty stream_data");
 
-        let pull_data = result.unwrap();
+        let pull_data = result.expect("Should deserialize DouyinSdkPullData");
         assert!(pull_data.stream_data.common.is_none());
         assert!(pull_data.stream_data.data.is_empty());
     }
@@ -726,11 +726,15 @@ mod tests {
             "Should deserialize stream_data with content"
         );
 
-        let pull_data = result.unwrap();
+        let pull_data = result.expect("Should deserialize DouyinSdkPullData");
         assert!(pull_data.stream_data.common.is_some());
         assert!(!pull_data.stream_data.data.is_empty());
 
-        let common = pull_data.stream_data.common.as_ref().unwrap();
+        let common = pull_data
+            .stream_data
+            .common
+            .as_ref()
+            .expect("Expected common stream data");
         assert_eq!(common.ts, "1751545222");
         assert_eq!(common.session_id, "test-session");
 

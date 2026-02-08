@@ -36,14 +36,7 @@ impl Picarto {
         _extras: Option<serde_json::Value>,
     ) -> Self {
         let mut extractor = Extractor::new("Picarto", url, client);
-        extractor.add_header(
-            reqwest::header::ORIGIN.to_string(),
-            Self::BASE_URL.to_string(),
-        );
-        extractor.add_header(
-            reqwest::header::REFERER.to_string(),
-            Self::BASE_URL.to_string(),
-        );
+        extractor.set_origin_and_referer_static(Self::BASE_URL);
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
@@ -69,11 +62,9 @@ impl Picarto {
 
         debug!("Picarto response: {:?}", data);
 
-        if data.channel.is_none() {
+        let Some(channel) = data.channel else {
             return Err(ExtractorError::StreamerNotFound);
-        }
-
-        let channel = data.channel.unwrap();
+        };
         let id = channel.id;
 
         let artist = channel.name;
@@ -90,20 +81,13 @@ impl Picarto {
             );
         }
 
-        if data.load_balancer.is_none() {
-            return Err(ExtractorError::ValidationError(
-                "Load balancer not found".to_string(),
-            ));
-        }
+        let load_balancer = data.load_balancer.ok_or_else(|| {
+            ExtractorError::ValidationError("Load balancer not found".to_string())
+        })?;
 
-        if data.get_multi_streams.is_none() {
-            return Err(ExtractorError::ValidationError(
-                "Get multi streams not found".to_string(),
-            ));
-        }
-
-        let load_balancer = data.load_balancer.unwrap();
-        let get_multi_streams = data.get_multi_streams.unwrap();
+        let get_multi_streams = data.get_multi_streams.ok_or_else(|| {
+            ExtractorError::ValidationError("Get multi streams not found".to_string())
+        })?;
 
         let stream = get_multi_streams
             .streams

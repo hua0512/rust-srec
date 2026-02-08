@@ -26,6 +26,7 @@ use crate::extractor::platforms::huya::{
 };
 
 use super::URL_REGEX;
+use crate::extractor::utils::capture_group_1_owned;
 
 /// Huya WebSocket server URL
 const HUYA_WS_URL: &str = "wss://cdnws.api.huya.com:443";
@@ -76,10 +77,7 @@ impl DanmuProtocol for HuyaDanmuProtocol {
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        URL_REGEX
-            .captures(url)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string())
+        capture_group_1_owned(&URL_REGEX, url)
     }
 
     async fn websocket_url(&self, _room_id: &str) -> Result<String> {

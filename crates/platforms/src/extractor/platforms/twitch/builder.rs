@@ -5,6 +5,7 @@ use crate::extractor::error::ExtractorError;
 use crate::extractor::hls_extractor::HlsExtractor;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::twitch::models::TwitchResponse;
+use crate::extractor::utils::{capture_group_1_or_invalid_url, extras_get_str};
 use crate::media::StreamInfo;
 use crate::media::media_info::MediaInfo;
 use async_trait::async_trait;
@@ -31,25 +32,16 @@ impl Twitch {
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
     ) -> Self {
-        let mut extractor = Extractor::new("Twitch".to_string(), platform_url, client);
+        let mut extractor = Extractor::new("Twitch", platform_url, client);
 
-        extractor.add_header(
-            reqwest::header::ACCEPT_LANGUAGE.to_string(),
-            "en-US,en;q=0.9",
-        );
-        extractor.add_header(
-            reqwest::header::ACCEPT.to_string(),
-            "application/vnd.twitchtv.v5+json",
-        );
-        extractor.add_header(reqwest::header::REFERER.to_string(), Self::BASE_URL);
-        extractor.add_header("device-id", Self::get_device_id());
-        extractor.add_header("Client-Id", "kimne78kx3ncx6brgo4mv6wki5h1ko");
+        extractor.add_header_typed(reqwest::header::ACCEPT_LANGUAGE, "en-US,en;q=0.9");
+        extractor.add_header_typed(reqwest::header::ACCEPT, "application/vnd.twitchtv.v5+json");
+        extractor.set_referer_static(Self::BASE_URL);
+        extractor.add_header_str("device-id", Self::get_device_id());
+        extractor.add_header_str("Client-Id", "kimne78kx3ncx6brgo4mv6wki5h1ko");
 
-        if let Some(extras) = extras {
-            extractor.add_header(
-                reqwest::header::AUTHORIZATION.to_string(),
-                format!("OAuth {}", extras.get("oauth_token").unwrap()),
-            );
+        if let Some(token) = extras_get_str(extras.as_ref(), "oauth_token") {
+            extractor.add_header_typed(reqwest::header::AUTHORIZATION, format!("OAuth {token}"));
         }
 
         if let Some(cookies) = cookies {
@@ -71,16 +63,7 @@ impl Twitch {
     }
 
     pub fn extract_room_id(&self) -> Result<&str, ExtractorError> {
-        let url =
-            URL_REGEX
-                .captures(&self.extractor.url)
-                .ok_or(ExtractorError::ValidationError(
-                    "Twitch URL is invalid".to_string(),
-                ))?;
-        let room_id = url.get(1).ok_or(ExtractorError::ValidationError(
-            "Twitch URL is invalid".to_string(),
-        ))?;
-        Ok(room_id.as_str())
+        capture_group_1_or_invalid_url(&URL_REGEX, &self.extractor.url)
     }
 
     fn build_persisted_query_request(
@@ -99,7 +82,7 @@ impl Twitch {
             },
             "variables": variables,
         }))
-        .unwrap()
+        .unwrap_or_else(|_| "{}".to_string())
     }
 
     const GPL_API_URL: &str = "https://gql.twitch.tv/gql";
@@ -185,8 +168,7 @@ impl Twitch {
         // Determine if the stream is live
         let is_live = match user_opt {
             Some(user) => {
-                user.stream.is_some()
-                    && user.stream.as_ref().unwrap().stream_type == Some("live".to_string())
+                user.stream.as_ref().and_then(|s| s.stream_type.as_deref()) == Some("live")
             }
             None => {
                 // Fallback to user_or_error stream info
@@ -194,7 +176,7 @@ impl Twitch {
             }
         };
 
-        let artist = user_or_error.display_name.to_string();
+        let artist = user_or_error.display_name.clone();
 
         // Get title from user's last_broadcast if available, otherwise use empty string
         let title = user_opt
@@ -203,7 +185,7 @@ impl Twitch {
             .unwrap_or_default();
 
         // Get profile image URL, prefer from user_or_error
-        let avatar_url = user_or_error.profile_image_url.to_string();
+        let avatar_url = user_or_error.profile_image_url.clone();
 
         let stream = user_opt
             .and_then(|u| u.stream.as_ref())

@@ -11,6 +11,7 @@ use crate::{
         error::ExtractorError,
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::tiktok::models::{SdkParams, StreamData, StreamDataInfo, TiktokResponse},
+        utils::capture_group_1_or_invalid_url,
     },
     media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
@@ -47,22 +48,14 @@ impl TikTok {
             extractor.set_cookies_from_string(&cookies);
         }
 
-        // Use static string slices for header names to avoid allocations
-        extractor.add_header(
-            reqwest::header::ACCEPT_LANGUAGE.as_str().to_owned(),
-            "en-US,en;q=0.9".to_owned(),
-        );
-        extractor.add_header(reqwest::header::REFERER.as_str().to_owned(), Self::BASE_URL);
-        extractor.add_header(reqwest::header::ORIGIN.as_str().to_owned(), Self::BASE_URL);
+        extractor.add_header_typed(reqwest::header::ACCEPT_LANGUAGE, "en-US,en;q=0.9");
+        extractor.set_origin_and_referer_static(Self::BASE_URL);
 
         Self { extractor }
     }
 
     pub fn extract_room_id(&self, url: &str) -> Result<String, ExtractorError> {
-        if let Some(captures) = URL_REGEX.captures(url) {
-            return Ok(captures.get(1).unwrap().as_str().to_string());
-        }
-        Err(ExtractorError::InvalidUrl(url.to_string()))
+        Ok(capture_group_1_or_invalid_url(&URL_REGEX, url)?.to_owned())
     }
 
     async fn fetch_page_content(&self) -> Result<String, ExtractorError> {
@@ -83,15 +76,11 @@ impl TikTok {
     }
 
     fn extract_json_from_html<'a>(&self, html: &'a str) -> Result<&'a str, ExtractorError> {
-        LIVE_INFO_REGEX
-            .captures(html)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str())
-            .ok_or_else(|| {
-                ExtractorError::ValidationError(
-                    "Failed to find live info data in page. Cookies may be required.".to_string(),
-                )
-            })
+        capture_group_1_or_invalid_url(&LIVE_INFO_REGEX, html).map_err(|_| {
+            ExtractorError::ValidationError(
+                "Failed to find live info data in page. Cookies may be required.".to_string(),
+            )
+        })
     }
 
     fn process_stream_data(

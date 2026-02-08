@@ -14,7 +14,7 @@ use crate::extractor::platforms::douyin::utils::{
     GlobalTtwidManager, extract_rid, fetch_ttwid, generate_ms_token, generate_nonce,
     generate_odin_ttid, get_common_params,
 };
-use crate::extractor::utils::parse_bool_from_extras;
+use crate::extractor::utils::{extras_get_bool, extras_get_str};
 use crate::media::formats::{MediaFormat, StreamFormat};
 use crate::media::media_info::MediaInfo;
 use crate::media::stream_info::StreamInfo;
@@ -79,12 +79,9 @@ impl Douyin {
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
     ) -> Self {
-        let mut extractor = Extractor::new("Douyin".to_string(), url, client);
+        let mut extractor = Extractor::new("Douyin", url, client);
 
-        extractor.add_header(
-            reqwest::header::REFERER.to_string(),
-            LIVE_DOUYIN_URL.to_string(),
-        );
+        extractor.set_referer_static(LIVE_DOUYIN_URL);
 
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
@@ -96,30 +93,24 @@ impl Douyin {
         // }
 
         let force_origin_quality =
-            parse_bool_from_extras(extras.as_ref(), "force_origin_quality", false);
+            extras_get_bool(extras.as_ref(), "force_origin_quality").unwrap_or(false);
 
-        let double_screen = parse_bool_from_extras(extras.as_ref(), "double_screen", true);
+        let double_screen = extras_get_bool(extras.as_ref(), "double_screen").unwrap_or(true);
 
-        let ttwid_management_mode_str = extras
-            .as_ref()
-            .and_then(|extras| extras.get("ttwid_management_mode").and_then(|v| v.as_str()))
-            .map(|v| v.to_string())
-            .unwrap_or("global".to_string());
+        let ttwid_management_mode_str =
+            extras_get_str(extras.as_ref(), "ttwid_management_mode").unwrap_or("global");
 
-        let ttwid_management_mode = if ttwid_management_mode_str == "global" {
-            TtwidManagementMode::Global
-        } else {
-            TtwidManagementMode::PerExtractor
+        let ttwid_management_mode = match ttwid_management_mode_str {
+            "global" => TtwidManagementMode::Global,
+            _ => TtwidManagementMode::PerExtractor,
         };
 
-        let ttwid = extras
-            .as_ref()
-            .and_then(|extras| extras.get("ttwid").and_then(|v| v.as_str()))
-            .map(|v| v.to_string());
+        let ttwid = extras_get_str(extras.as_ref(), "ttwid").map(ToOwned::to_owned);
 
-        let force_mobile_api = parse_bool_from_extras(extras.as_ref(), "force_mobile_api", false);
+        let force_mobile_api =
+            extras_get_bool(extras.as_ref(), "force_mobile_api").unwrap_or(false);
         let skip_interactive_games =
-            parse_bool_from_extras(extras.as_ref(), "skip_interactive_games", true);
+            extras_get_bool(extras.as_ref(), "skip_interactive_games").unwrap_or(true);
 
         Self {
             extractor,
@@ -348,7 +339,10 @@ impl<'a> DouyinRequest<'a> {
     async fn get_app_response(&mut self) -> Result<String, ExtractorError> {
         let default_room_id = "2";
         let room_id = self.id_str.as_ref().map_or(default_room_id, |v| v.as_str());
-        let sec_rid = self.sec_rid.as_ref().unwrap().as_str();
+        let sec_rid = self
+            .sec_rid
+            .as_deref()
+            .ok_or_else(|| ExtractorError::ValidationError("Missing sec_user_id".to_string()))?;
         let mut params = HashMap::new();
         params.insert("room_id", room_id);
         params.insert("sec_user_id", sec_rid);
@@ -366,6 +360,9 @@ impl<'a> DouyinRequest<'a> {
         let url = format!("{APP_REFLOW_URL}?{abogus}");
         debug!("url: {}", url);
 
+        // Build request directly (avoid `Extractor::request()` which applies `platform_params`
+        // via `.query(&self.platform_params)`. For signed URLs, extra query params can
+        // invalidate the signature.
         let mut builder = self
             .config
             .extractor
@@ -382,6 +379,7 @@ impl<'a> DouyinRequest<'a> {
                 .map(|(name, value)| format!("{name}={value}"))
                 .collect::<Vec<_>>()
                 .join("; ");
+
             builder = builder.header(reqwest::header::COOKIE, cookie_string);
         }
         debug!("builder: {:?}", builder);
@@ -395,13 +393,18 @@ impl<'a> DouyinRequest<'a> {
 
     /// Parses and stores cookies from response headers.
     fn parse_and_store_cookies(&mut self, headers: &reqwest::header::HeaderMap) {
+        // Keep behavior aligned with `Extractor::parse_and_store_cookies`.
         for value in headers.get_all("set-cookie").iter() {
             if let Ok(cookie_str) = value.to_str()
                 && let Some(cookie_part) = cookie_str.split(';').next()
                 && let Some((name, value)) = cookie_part.split_once('=')
             {
-                self.cookies
-                    .insert(name.trim().to_string(), value.trim().to_string());
+                let name = name.trim();
+                let value = value.trim();
+                if name.is_empty() || value.is_empty() {
+                    continue;
+                }
+                self.cookies.insert(name.to_owned(), value.to_owned());
             }
         }
     }
@@ -535,7 +538,9 @@ impl<'a> DouyinRequest<'a> {
 
         self._validate_response(&response)?;
 
-        let user = response.data.user.as_ref().unwrap();
+        let user = response.data.user.as_ref().ok_or_else(|| {
+            ExtractorError::ValidationError("User data not available".to_string())
+        })?;
         self.id_str = response.data.enter_room_id.map(|v| v.to_string());
         self.sec_rid = Some(user.sec_uid.to_string());
 
@@ -623,7 +628,9 @@ impl<'a> DouyinRequest<'a> {
         }
 
         let data = &response.data.room;
-        let user = response.data.user.as_ref().unwrap();
+        let user = response.data.user.as_ref().ok_or_else(|| {
+            ExtractorError::ValidationError("User data not available".to_string())
+        })?;
 
         self._build_media_info(
             data.as_ref().ok_or_else(|| {

@@ -10,6 +10,9 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, mpsc};
 use tokio::task::JoinHandle;
+use tokio_tungstenite::tungstenite::http::HeaderMap;
+use tokio_tungstenite::tungstenite::http::HeaderValue;
+use tokio_tungstenite::tungstenite::http::header;
 use tokio_tungstenite::{
     Connector, MaybeTlsStream, WebSocketStream, connect_async_tls_with_config,
     tungstenite::protocol::Message,
@@ -25,6 +28,35 @@ use crate::danmaku::provider::{DanmuConnection, DanmuProvider};
 const MAX_ACTIVE_CONNECTIONS: usize = 1024;
 
 const ENV_NATIVE_TLS_HOSTS: &str = "RUST_SREC_NATIVE_TLS_HOSTS";
+
+#[inline]
+pub(crate) fn ws_headers_origin_referer(origin: &'static str, referer: &'static str) -> HeaderMap {
+    let mut headers = HeaderMap::with_capacity(2);
+    headers.insert(header::ORIGIN, HeaderValue::from_static(origin));
+    headers.insert(header::REFERER, HeaderValue::from_static(referer));
+    headers
+}
+
+#[inline]
+pub(crate) fn ws_headers_origin_ua(origin: &'static str, user_agent: &'static str) -> HeaderMap {
+    let mut headers = HeaderMap::with_capacity(2);
+    headers.insert(header::ORIGIN, HeaderValue::from_static(origin));
+    headers.insert(header::USER_AGENT, HeaderValue::from_static(user_agent));
+    headers
+}
+
+#[inline]
+pub(crate) fn ws_headers_origin_referer_ua(
+    origin: &'static str,
+    referer: &'static str,
+    user_agent: &'static str,
+) -> HeaderMap {
+    let mut headers = HeaderMap::with_capacity(3);
+    headers.insert(header::ORIGIN, HeaderValue::from_static(origin));
+    headers.insert(header::REFERER, HeaderValue::from_static(referer));
+    headers.insert(header::USER_AGENT, HeaderValue::from_static(user_agent));
+    headers
+}
 
 fn default_native_tls_hosts() -> Vec<String> {
     // Douyu danmu uses legacy TLS configs on some POPs.
@@ -211,9 +243,8 @@ pub trait DanmuProtocol: Send + Sync + 'static {
     async fn websocket_url(&self, room_id: &str) -> Result<String>;
 
     /// Get custom headers for the WebSocket connection
-    /// Returns a list of (header_name, header_value) pairs
-    fn headers(&self, _room_id: &str) -> Vec<(String, String)> {
-        vec![]
+    fn headers(&self, _room_id: &str) -> HeaderMap {
+        HeaderMap::new()
     }
 
     /// Get cookies for the danmu connection.
@@ -410,29 +441,33 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
 
                             if protocol.send_cookie_header() {
                                 // Add or merge cookies into headers
-                                if let Some(cookie_str) = merged_cookies.clone() {
-                                    // Check if Cookie header already exists
-                                    let mut found = false;
-                                    for (name, value) in headers.iter_mut() {
-                                        if name.eq_ignore_ascii_case("Cookie") {
-                                            // Merge with existing cookie
-                                            let merged = merge_cookie_headers(
-                                                Some(value.as_str()),
-                                                Some(cookie_str.as_str()),
-                                            )
-                                            .unwrap_or_else(|| cookie_str.clone());
-                                            *value = protocol.normalize_cookies(&merged);
-                                            found = true;
-                                            break;
+                                if let Some(cookie_str) = merged_cookies.as_deref() {
+                                    let cookie_str = cookie_str.trim();
+                                    if !cookie_str.is_empty() {
+                                        let merged = headers
+                                            .get(header::COOKIE)
+                                            .and_then(|v| v.to_str().ok())
+                                            .and_then(|existing| {
+                                                merge_cookie_headers(
+                                                    Some(existing),
+                                                    Some(cookie_str),
+                                                )
+                                            })
+                                            .unwrap_or_else(|| cookie_str.to_string());
+                                        let normalized = protocol.normalize_cookies(&merged);
+                                        match HeaderValue::from_str(&normalized) {
+                                            Ok(v) => {
+                                                headers.insert(header::COOKIE, v);
+                                            }
+                                            Err(e) => {
+                                                warn!(error = %e, "Failed to build Cookie header; skipping");
+                                            }
                                         }
-                                    }
-                                    if !found {
-                                        headers.push(("Cookie".to_string(), cookie_str));
                                     }
                                 }
                             } else {
                                 // Explicitly drop any Cookie header to avoid leakage.
-                                headers.retain(|(name, _)| !name.eq_ignore_ascii_case("Cookie"));
+                                headers.remove(header::COOKIE);
                             }
 
                             let connect_result = if headers.is_empty() {
@@ -443,18 +478,27 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                                 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
                                 use tokio_tungstenite::tungstenite::http::Request;
 
-                                // Extract host from URL for Host header
-                                let uri: tokio_tungstenite::tungstenite::http::Uri =
-                                    url.parse().unwrap();
-                                let host = uri.host().unwrap_or("localhost");
-                                let port = uri.port_u16();
-                                let host_header = if let Some(p) = port {
-                                    format!("{}:{}", host, p)
-                                } else {
-                                    host.to_string()
+                                // Extract host from URL for Host header (avoid panics on invalid URLs).
+                                let parsed = match Url::parse(&url) {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        error!(error = %e, %url, "Failed to parse WebSocket URL");
+                                        continue;
+                                    }
+                                };
+                                let host = match parsed.host_str() {
+                                    Some(v) => v,
+                                    None => {
+                                        error!(%url, "WebSocket URL is missing host");
+                                        continue;
+                                    }
+                                };
+                                let host_header = match parsed.port() {
+                                    Some(p) => format!("{host}:{p}"),
+                                    None => host.to_string(),
                                 };
 
-                                let mut builder = Request::builder()
+                                let builder = Request::builder()
                                     .uri(&url)
                                     .header("Host", host_header)
                                     .header("Connection", "Upgrade")
@@ -462,11 +506,13 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                                     .header("Sec-WebSocket-Version", "13")
                                     .header("Sec-WebSocket-Key", generate_key());
 
-                                for (name, value) in headers {
-                                    builder = builder.header(name, value);
-                                }
                                 match builder.body(()) {
                                     Ok(request) => {
+                                        // Insert protocol headers after constructing the base upgrade request.
+                                        let mut request = request;
+                                        for (name, value) in headers.iter() {
+                                            request.headers_mut().insert(name, value.clone());
+                                        }
                                         let connector = connector_for_url(&url);
                                         connect_async_tls_with_config(
                                             request,

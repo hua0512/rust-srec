@@ -38,10 +38,7 @@ impl Weibo {
     ) -> Self {
         let mut extractor = Extractor::new("weibo", platform_url, client);
         extractor.set_cookies_from_string(Self::DEFAULT_COOKIES);
-        extractor.add_header(
-            reqwest::header::REFERER.to_string(),
-            Self::BASE_URL.to_string(),
-        );
+        extractor.set_referer_static(Self::BASE_URL);
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
@@ -57,7 +54,8 @@ impl Weibo {
          * https://weibo.com/u/6034381748
          * https://weibo.com/l/wblive/p/show/1022:2321325026370190442592
          */
-        let url = Url::parse(&self.extractor.url).unwrap();
+        let url = Url::parse(&self.extractor.url)
+            .map_err(|_| ExtractorError::InvalidUrl(self.extractor.url.clone()))?;
 
         // check if 'show' is in the url
         if url.path().contains("show") {
@@ -86,7 +84,15 @@ impl Weibo {
 
             // debug!("response: {:?}", response);
 
-            for item in response["data"]["list"].as_array().unwrap() {
+            let list = response
+                .get("data")
+                .and_then(|v| v.get("list"))
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| {
+                    ExtractorError::ValidationError("Unexpected response format".to_string())
+                })?;
+
+            for item in list {
                 if let Some(page_info) = item["page_info"].as_object()
                     && let Some(object_type) = page_info.get("object_type")
                     && object_type == "live"
@@ -143,7 +149,14 @@ impl Weibo {
                 .build());
         }
 
-        let data = response.data.unwrap();
+        let data = match response.data {
+            Some(v) => v,
+            None => {
+                return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")
+                    .is_live(false)
+                    .build());
+            }
+        };
         let user_info = data.user_info;
 
         let artist = user_info.screen_name;

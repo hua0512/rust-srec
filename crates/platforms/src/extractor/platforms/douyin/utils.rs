@@ -13,19 +13,16 @@ use crate::extractor::{
     default::DEFAULT_UA,
     error::ExtractorError,
     platforms::douyin::apis::{BASE_URL, UNION_REGISTER_URL},
+    utils::capture_group_1_owned,
 };
 
 pub static GLOBAL_TTWID: LazyLock<Arc<Mutex<Option<String>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
 
 pub(crate) fn extract_rid(url: &str) -> Result<String, ExtractorError> {
-    URL_REGEX
-        .captures(url)
-        .and_then(|captures| captures.get(1))
-        .map(|m| m.as_str().to_string())
-        .ok_or(ExtractorError::ValidationError(
-            "Failed to extract rid from url".to_string(),
-        ))
+    capture_group_1_owned(&URL_REGEX, url).ok_or(ExtractorError::ValidationError(
+        "Failed to extract rid from url".to_string(),
+    ))
 }
 
 pub(crate) fn get_common_params() -> HashMap<&'static str, &'static str> {
@@ -40,10 +37,8 @@ pub(crate) fn get_common_params() -> HashMap<&'static str, &'static str> {
     let browser_version = ua
         .split("Chrome/")
         .nth(1)
-        .unwrap()
-        .split(" ")
-        .next()
-        .unwrap();
+        .and_then(|s| s.split(' ').next())
+        .unwrap_or("0.0.0.0");
     params.insert("browser_version", browser_version);
     params.insert("aid", "6383");
     params.insert("live_id", "1");
@@ -169,18 +164,22 @@ impl GlobalTtwidManager {
 
     /// Get the current global ttwid if it exists
     pub fn get_global_ttwid() -> Option<String> {
-        GLOBAL_TTWID.lock().unwrap().clone()
+        GLOBAL_TTWID.lock().ok().and_then(|g| g.clone())
     }
 
     /// Set the global ttwid
     pub fn set_global_ttwid(ttwid: &str) {
-        *GLOBAL_TTWID.lock().unwrap() = Some(ttwid.to_string());
+        if let Ok(mut guard) = GLOBAL_TTWID.lock() {
+            *guard = Some(ttwid.to_string());
+        }
     }
 
     /// Clear the global ttwid
     #[allow(dead_code)]
     pub fn clear_global_ttwid() {
-        *GLOBAL_TTWID.lock().unwrap() = None;
+        if let Ok(mut guard) = GLOBAL_TTWID.lock() {
+            *guard = None;
+        }
     }
 
     /// Fetch a fresh ttwid from Douyin's servers and store it globally.

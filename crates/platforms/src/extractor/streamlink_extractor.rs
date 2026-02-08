@@ -39,7 +39,28 @@ impl StreamlinkConfig {
         let Some(v) = extras.get("streamlink") else {
             return Self::default();
         };
-        serde_json::from_value(v.clone()).unwrap_or_default()
+
+        // Parse manually to avoid cloning large JSON values.
+        let Some(obj) = v.as_object() else {
+            return Self::default();
+        };
+
+        let mut cfg = Self::default();
+        if let Some(binary_path) = obj.get("binary_path").and_then(|v| v.as_str()) {
+            cfg.binary_path = Some(binary_path.to_owned());
+        }
+        if let Some(quality) = obj.get("quality").and_then(|v| v.as_str()) {
+            cfg.quality = Some(quality.to_owned());
+        }
+        if let Some(args) = obj.get("extra_args").and_then(|v| v.as_array()) {
+            cfg.extra_args = args
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(ToOwned::to_owned)
+                .collect();
+        }
+
+        cfg
     }
 
     fn binary_path(&self) -> String {
@@ -100,14 +121,20 @@ impl StreamlinkExtractor {
 
     fn build_cookie_args(cookie_string: &str) -> Vec<String> {
         // Streamlink expects repeated `--http-cookie name=value`.
-        cookie_string
+        let pairs = cookie_string
             .split(&[';', '\n'][..])
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .filter_map(|kv| kv.split_once('=').map(|(k, v)| (k.trim(), v.trim())))
             .filter(|(k, v)| !k.is_empty() && !v.is_empty())
-            .flat_map(|(k, v)| ["--http-cookie".to_string(), format!("{k}={v}")])
-            .collect()
+            .collect::<Vec<_>>();
+
+        let mut args = Vec::with_capacity(pairs.len() * 2);
+        for (k, v) in pairs {
+            args.push("--http-cookie".to_owned());
+            args.push(format!("{k}={v}"));
+        }
+        args
     }
 
     async fn run_streamlink_json(&self) -> Result<StreamlinkJson, ExtractorError> {
@@ -119,7 +146,7 @@ impl StreamlinkExtractor {
             cmd.args(Self::build_cookie_args(cookies));
         }
 
-        cmd.args(self.config.extra_args.iter().cloned());
+        cmd.args(&self.config.extra_args);
 
         let out = cmd
             .stdout(Stdio::piped())
@@ -153,7 +180,7 @@ impl StreamlinkExtractor {
             cmd.args(Self::build_cookie_args(cookies));
         }
 
-        cmd.args(self.config.extra_args.iter().cloned());
+        cmd.args(&self.config.extra_args);
 
         let out = cmd
             .stdout(Stdio::piped())

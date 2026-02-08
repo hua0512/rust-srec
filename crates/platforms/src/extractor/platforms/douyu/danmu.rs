@@ -12,10 +12,13 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
+use crate::danmaku::websocket::ws_headers_origin_referer_ua;
 use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
 use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::douyu::stt;
+use crate::extractor::utils::capture_group_1_owned;
+use tokio_tungstenite::tungstenite::http::HeaderMap;
 
 use super::URL_REGEX;
 use super::danmu_models::{
@@ -116,22 +119,15 @@ impl DanmuProtocol for DouyuDanmuProtocol {
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        URL_REGEX
-            .captures(url)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string())
+        capture_group_1_owned(&URL_REGEX, url)
     }
 
     async fn websocket_url(&self, _room_id: &str) -> Result<String> {
         Ok(DOUYU_WS_URL.to_string())
     }
 
-    fn headers(&self, _room_id: &str) -> Vec<(String, String)> {
-        vec![
-            ("Origin".to_string(), "https://www.douyu.com".to_string()),
-            ("Referer".to_string(), "https://www.douyu.com".to_string()),
-            ("User-Agent".to_string(), DEFAULT_UA.to_string()),
-        ]
+    fn headers(&self, _room_id: &str) -> HeaderMap {
+        ws_headers_origin_referer_ua("https://www.douyu.com", "https://www.douyu.com", DEFAULT_UA)
     }
 
     fn cookies(&self) -> Option<String> {
