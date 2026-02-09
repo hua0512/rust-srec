@@ -168,149 +168,285 @@ mod tests {
 }
 
 #[cfg(test)]
-mod property_tests {
+mod new_user_defaults_tests {
     use super::*;
-    use proptest::prelude::*;
 
-    // Property 21: Must change password flag for new users
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+    #[test]
+    fn test_new_user_must_change_password_short_username() {
+        let username = "user";
+        let password_hash = "$2b$12$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123";
+        let roles = vec!["viewer".to_string()];
+        let user = UserDbModel::new(username, password_hash, roles);
 
-        #[test]
-        fn prop_must_change_password_flag_for_new_users(
-            username in "[a-zA-Z][a-zA-Z0-9_]{3,20}",
-            password_hash in "[a-zA-Z0-9$./]{60,100}",
-            roles in prop::collection::vec("[a-zA-Z]{3,10}", 1..5)
-        ) {
-            let user = UserDbModel::new(&username, &password_hash, roles.clone());
+        assert!(
+            user.must_change_password,
+            "New users should have must_change_password=true"
+        );
+        assert!(user.is_active, "New users should be active by default");
+        assert!(
+            user.last_login_at.is_none(),
+            "New users should have no last_login_at"
+        );
+    }
 
-            // Property: New users should have must_change_password=true
-            prop_assert!(
-                user.must_change_password,
-                "New users should have must_change_password=true"
+    #[test]
+    fn test_new_user_must_change_password_long_username() {
+        let username = "verylongusername1234";
+        let password_hash = "$argon2id$v=19$m=65536,t=3,p=4$abcdefghijklmnopqrstuvwxyz$ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let roles = vec![
+            "admin".to_string(),
+            "editor".to_string(),
+            "viewer".to_string(),
+        ];
+        let user = UserDbModel::new(username, password_hash, roles);
+
+        assert!(
+            user.must_change_password,
+            "New users should have must_change_password=true"
+        );
+        assert!(user.is_active, "New users should be active by default");
+        assert!(
+            user.last_login_at.is_none(),
+            "New users should have no last_login_at"
+        );
+    }
+
+    #[test]
+    fn test_new_user_defaults_single_role() {
+        let username = "testuser";
+        let password_hash = "$2y$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+        let roles = vec!["moderator".to_string()];
+        let user = UserDbModel::new(username, password_hash, roles);
+
+        assert!(user.must_change_password);
+        assert!(user.is_active);
+        assert!(user.last_login_at.is_none());
+    }
+}
+
+#[cfg(test)]
+mod user_creation_tests {
+    use super::*;
+
+    #[test]
+    fn test_user_creation_preserves_fields_minimal() {
+        let username = "alice";
+        let password_hash = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYKKVgKKKKK";
+        let roles = vec!["user".to_string()];
+        let user = UserDbModel::new(username, password_hash, roles.clone());
+
+        assert_eq!(&user.username, username, "Username should be preserved");
+        assert_eq!(
+            &user.password_hash, password_hash,
+            "Password hash should be preserved"
+        );
+
+        let retrieved_roles = user.get_roles();
+        assert_eq!(
+            retrieved_roles.len(),
+            roles.len(),
+            "Role count should be preserved"
+        );
+        for role in &roles {
+            assert!(
+                retrieved_roles.contains(role),
+                "Role {} should be preserved",
+                role
             );
+        }
 
-            // Property: New users should be active by default
-            prop_assert!(user.is_active, "New users should be active by default");
+        assert!(
+            uuid::Uuid::parse_str(&user.id).is_ok(),
+            "ID should be a valid UUID"
+        );
+    }
 
-            // Property: New users should have no last_login_at
-            prop_assert!(
-                user.last_login_at.is_none(),
-                "New users should have no last_login_at"
+    #[test]
+    fn test_user_creation_preserves_fields_multiple_roles() {
+        let username = "bob_admin";
+        let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$iWh06vD8Fy27wf9npn6FXWiCX4K6pW6Ue1Bnzz07Z8A";
+        let roles = vec![
+            "admin".to_string(),
+            "editor".to_string(),
+            "moderator".to_string(),
+        ];
+        let user = UserDbModel::new(username, password_hash, roles.clone());
+
+        assert_eq!(&user.username, username);
+        assert_eq!(&user.password_hash, password_hash);
+
+        let retrieved_roles = user.get_roles();
+        assert_eq!(retrieved_roles.len(), roles.len());
+        for role in &roles {
+            assert!(retrieved_roles.contains(role));
+        }
+
+        assert!(uuid::Uuid::parse_str(&user.id).is_ok());
+    }
+
+    #[test]
+    fn test_user_creation_uuid_uniqueness() {
+        let username = "charlie";
+        let password_hash = "$2y$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let roles = vec!["guest".to_string()];
+
+        let user1 = UserDbModel::new(username, password_hash, roles.clone());
+        let user2 = UserDbModel::new(username, password_hash, roles);
+
+        assert_ne!(user1.id, user2.id, "Each user should have unique UUID");
+        assert!(uuid::Uuid::parse_str(&user1.id).is_ok());
+        assert!(uuid::Uuid::parse_str(&user2.id).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod user_update_tests {
+    use super::*;
+
+    #[test]
+    fn test_update_roles_preserves_other_fields() {
+        let username = "dave";
+        let password_hash = "$2b$12$xyz123abc456def789ghi012jkl345mno678pqr901stu234vwx567";
+        let roles = vec!["viewer".to_string()];
+        let new_roles = vec!["editor".to_string()];
+
+        let mut user = UserDbModel::new(username, password_hash, roles);
+        let original_id = user.id.clone();
+        let original_username = user.username.clone();
+        let original_password_hash = user.password_hash.clone();
+        let original_created_at = user.created_at;
+
+        user.set_roles(new_roles.clone());
+
+        assert_eq!(&user.id, &original_id, "ID should not change on update");
+        assert_eq!(
+            &user.username, &original_username,
+            "Username should not change"
+        );
+        assert_eq!(
+            &user.password_hash, &original_password_hash,
+            "Password hash should not change"
+        );
+        assert_eq!(
+            &user.created_at, &original_created_at,
+            "created_at should not change"
+        );
+
+        let updated_roles = user.get_roles();
+        assert_eq!(
+            updated_roles.len(),
+            new_roles.len(),
+            "Roles should be updated"
+        );
+    }
+
+    #[test]
+    fn test_update_roles_from_single_to_multiple() {
+        let username = "eve";
+        let password_hash = "$argon2id$v=19$m=65536,t=3,p=4$saltsaltsalt$hashhashhashhashhashhash";
+        let roles = vec!["basic".to_string()];
+        let new_roles = vec!["admin".to_string(), "moderator".to_string()];
+
+        let mut user = UserDbModel::new(username, password_hash, roles);
+        let original_id = user.id.clone();
+        let original_created_at = user.created_at;
+
+        user.set_roles(new_roles.clone());
+
+        assert_eq!(&user.id, &original_id);
+        assert_eq!(&user.created_at, &original_created_at);
+
+        let updated_roles = user.get_roles();
+        assert_eq!(updated_roles.len(), new_roles.len());
+    }
+
+    #[test]
+    fn test_update_roles_empty_to_populated() {
+        let username = "frank";
+        let password_hash = "$2y$10$EmptyRolesTestHashValue123456789012345678901234567890";
+        let roles = vec!["temp".to_string()];
+        let new_roles = vec!["permanent".to_string(), "verified".to_string()];
+
+        let mut user = UserDbModel::new(username, password_hash, roles);
+        let original_username = user.username.clone();
+        let original_password_hash = user.password_hash.clone();
+
+        user.set_roles(new_roles.clone());
+
+        assert_eq!(&user.username, &original_username);
+        assert_eq!(&user.password_hash, &original_password_hash);
+
+        let updated_roles = user.get_roles();
+        assert_eq!(updated_roles.len(), new_roles.len());
+    }
+}
+
+#[cfg(test)]
+mod role_checking_tests {
+    use super::*;
+
+    #[test]
+    fn test_has_role_returns_true_for_assigned_roles() {
+        let username = "grace";
+        let password_hash = "$2b$12$RoleCheckingTestHashValue1234567890123456789012345678";
+        let roles = vec![
+            "admin".to_string(),
+            "editor".to_string(),
+            "viewer".to_string(),
+        ];
+        let user = UserDbModel::new(username, password_hash, roles.clone());
+
+        for role in &roles {
+            assert!(
+                user.has_role(role),
+                "has_role should return true for assigned role: {}",
+                role
             );
         }
     }
 
-    // Property 2: User creation round-trip
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+    #[test]
+    fn test_has_role_returns_false_for_nonexistent_role() {
+        let username = "henry";
+        let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$NonExistentRoleTest$HashValue123";
+        let roles = vec!["user".to_string(), "guest".to_string()];
+        let user = UserDbModel::new(username, password_hash, roles);
 
-        #[test]
-        fn prop_user_creation_round_trip(
-            username in "[a-zA-Z][a-zA-Z0-9_]{3,20}",
-            password_hash in "[a-zA-Z0-9$./]{60,100}",
-            roles in prop::collection::vec("[a-zA-Z]{3,10}", 1..5)
-        ) {
-            let user = UserDbModel::new(&username, &password_hash, roles.clone());
-
-            // Property: Username should be preserved
-            prop_assert_eq!(&user.username, &username, "Username should be preserved");
-
-            // Property: Password hash should be preserved
-            prop_assert_eq!(&user.password_hash, &password_hash, "Password hash should be preserved");
-
-            // Property: Roles should be preserved (round-trip through JSON)
-            let retrieved_roles = user.get_roles();
-            prop_assert_eq!(
-                retrieved_roles.len(),
-                roles.len(),
-                "Role count should be preserved"
-            );
-            for role in &roles {
-                prop_assert!(
-                    retrieved_roles.contains(role),
-                    "Role {} should be preserved", role
-                );
-            }
-
-            // Property: ID should be a valid UUID
-            prop_assert!(
-                uuid::Uuid::parse_str(&user.id).is_ok(),
-                "ID should be a valid UUID"
-            );
-        }
+        assert!(
+            !user.has_role("nonexistent_role_xyz"),
+            "has_role should return false for non-assigned role"
+        );
+        assert!(!user.has_role("admin"));
+        assert!(!user.has_role("superuser"));
     }
 
-    // Property 4: User update preserves unmodified fields
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+    #[test]
+    fn test_is_admin_consistency_with_admin_role() {
+        let username = "admin_user";
+        let password_hash = "$2y$10$AdminConsistencyTestHashValue123456789012345678901234";
+        let roles = vec!["admin".to_string(), "moderator".to_string()];
+        let user = UserDbModel::new(username, password_hash, roles);
 
-        #[test]
-        fn prop_user_update_preserves_unmodified_fields(
-            username in "[a-zA-Z][a-zA-Z0-9_]{3,20}",
-            password_hash in "[a-zA-Z0-9$./]{60,100}",
-            roles in prop::collection::vec("[a-zA-Z]{3,10}", 1..3),
-            new_roles in prop::collection::vec("[a-zA-Z]{3,10}", 1..3)
-        ) {
-            let mut user = UserDbModel::new(&username, &password_hash, roles);
-            let original_id = user.id.clone();
-            let original_username = user.username.clone();
-            let original_password_hash = user.password_hash.clone();
-            let original_created_at = user.created_at;
-
-            // Update roles
-            user.set_roles(new_roles.clone());
-
-            // Property: ID should not change
-            prop_assert_eq!(&user.id, &original_id, "ID should not change on update");
-
-            // Property: Username should not change
-            prop_assert_eq!(&user.username, &original_username, "Username should not change");
-
-            // Property: Password hash should not change
-            prop_assert_eq!(&user.password_hash, &original_password_hash, "Password hash should not change");
-
-            // Property: created_at should not change
-            prop_assert_eq!(&user.created_at, &original_created_at, "created_at should not change");
-
-            // Property: Roles should be updated
-            let updated_roles = user.get_roles();
-            prop_assert_eq!(updated_roles.len(), new_roles.len(), "Roles should be updated");
-        }
+        assert_eq!(
+            user.is_admin(),
+            user.has_role("admin"),
+            "is_admin should equal has_role('admin')"
+        );
+        assert!(user.is_admin());
     }
 
-    // Property: Role checking consistency
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+    #[test]
+    fn test_is_admin_consistency_without_admin_role() {
+        let username = "regular_user";
+        let password_hash = "$2b$12$RegularUserTestHashValue1234567890123456789012345678";
+        let roles = vec!["editor".to_string(), "viewer".to_string()];
+        let user = UserDbModel::new(username, password_hash, roles);
 
-        #[test]
-        fn prop_role_checking_consistency(
-            username in "[a-zA-Z][a-zA-Z0-9_]{3,20}",
-            password_hash in "[a-zA-Z0-9$./]{60,100}",
-            roles in prop::collection::vec("[a-zA-Z]{3,10}", 1..5)
-        ) {
-            let user = UserDbModel::new(&username, &password_hash, roles.clone());
-
-            // Property: has_role should return true for all assigned roles
-            for role in &roles {
-                prop_assert!(
-                    user.has_role(role),
-                    "has_role should return true for assigned role: {}", role
-                );
-            }
-
-            // Property: has_role should return false for non-assigned roles
-            prop_assert!(
-                !user.has_role("nonexistent_role_xyz"),
-                "has_role should return false for non-assigned role"
-            );
-
-            // Property: is_admin should be consistent with has_role("admin")
-            prop_assert_eq!(
-                user.is_admin(),
-                user.has_role("admin"),
-                "is_admin should equal has_role('admin')"
-            );
-        }
+        assert_eq!(
+            user.is_admin(),
+            user.has_role("admin"),
+            "is_admin should equal has_role('admin')"
+        );
+        assert!(!user.is_admin());
     }
 }

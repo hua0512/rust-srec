@@ -246,40 +246,174 @@ mod tests {
 #[cfg(test)]
 mod property_tests {
     use super::*;
-    use proptest::prelude::*;
 
     // **Feature: jwt-auth-and-api-implementation, Property 1: JWT Token Contains Required Claims**
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+    // Test: Simple user_id with empty roles
+    #[test]
+    fn test_jwt_token_simple_user_empty_roles() {
+        let service = JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(3600),
+        );
 
-        #[test]
-        fn prop_jwt_token_contains_required_claims(
-            user_id in "[a-zA-Z0-9_-]{1,50}",
-            roles in prop::collection::vec("[a-zA-Z0-9_]{1,20}", 0..5),
-        ) {
-            let service = JwtService::new(
-                "test-secret-key-32-chars-long!!",
-                "test-issuer",
-                "test-audience",
-                Some(3600),
-            );
+        let user_id = "test_user_123".to_string();
+        let roles = vec![];
 
-            let token = service
-                .generate_token(&user_id, roles.clone())
-                .expect("Token generation should succeed");
+        let token = service
+            .generate_token(&user_id, roles.clone())
+            .expect("Token generation should succeed");
 
-            let claims = service
-                .validate_token(&token)
-                .expect("Token validation should succeed");
+        let claims = service
+            .validate_token(&token)
+            .expect("Token validation should succeed");
 
-            // Property: All required claims must be present and correct
-            prop_assert_eq!(&claims.sub, &user_id, "sub claim must match user_id");
-            prop_assert_eq!(&claims.roles, &roles, "roles claim must match input roles");
-            prop_assert_eq!(&claims.iss, "test-issuer", "iss claim must match issuer");
-            prop_assert_eq!(&claims.aud, "test-audience", "aud claim must match audience");
-            prop_assert!(claims.exp > 0, "exp claim must be set");
-            prop_assert!(claims.iat > 0, "iat claim must be set");
-            prop_assert!(claims.exp > claims.iat, "exp must be after iat");
-        }
+        assert_eq!(&claims.sub, &user_id, "sub claim must match user_id");
+        assert_eq!(&claims.roles, &roles, "roles claim must match input roles");
+        assert_eq!(&claims.iss, "test-issuer", "iss claim must match issuer");
+        assert_eq!(
+            &claims.aud, "test-audience",
+            "aud claim must match audience"
+        );
+        assert!(claims.exp > 0, "exp claim must be set");
+        assert!(claims.iat > 0, "iat claim must be set");
+        assert!(claims.exp > claims.iat, "exp must be after iat");
+    }
+
+    // Test: Complex user_id with special chars and multiple roles
+    #[test]
+    fn test_jwt_token_complex_user_multiple_roles() {
+        let service = JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(3600),
+        );
+
+        let user_id = "user-id_456".to_string();
+        let roles = vec![
+            "admin".to_string(),
+            "user".to_string(),
+            "moderator".to_string(),
+        ];
+
+        let token = service
+            .generate_token(&user_id, roles.clone())
+            .expect("Token generation should succeed");
+
+        let claims = service
+            .validate_token(&token)
+            .expect("Token validation should succeed");
+
+        assert_eq!(&claims.sub, &user_id, "sub claim must match user_id");
+        assert_eq!(&claims.roles, &roles, "roles claim must match input roles");
+        assert_eq!(&claims.iss, "test-issuer", "iss claim must match issuer");
+        assert_eq!(
+            &claims.aud, "test-audience",
+            "aud claim must match audience"
+        );
+        assert!(claims.exp > 0, "exp claim must be set");
+        assert!(claims.iat > 0, "iat claim must be set");
+        assert!(claims.exp > claims.iat, "exp must be after iat");
+    }
+
+    // Test: Long user_id with alphanumeric chars and roles
+    #[test]
+    fn test_jwt_token_long_user_with_roles() {
+        let service = JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(3600),
+        );
+
+        let user_id = "test_user_1234567890123456789012345678901234567890".to_string();
+        let roles = vec!["superadmin".to_string()];
+
+        let token = service
+            .generate_token(&user_id, roles.clone())
+            .expect("Token generation should succeed");
+
+        let claims = service
+            .validate_token(&token)
+            .expect("Token validation should succeed");
+
+        assert_eq!(&claims.sub, &user_id, "sub claim must match user_id");
+        assert_eq!(&claims.roles, &roles, "roles claim must match input roles");
+        assert_eq!(&claims.iss, "test-issuer", "iss claim must match issuer");
+        assert_eq!(
+            &claims.aud, "test-audience",
+            "aud claim must match audience"
+        );
+        assert!(claims.exp > 0, "exp claim must be set");
+        assert!(claims.iat > 0, "iat claim must be set");
+        assert!(claims.exp > claims.iat, "exp must be after iat");
+    }
+
+    // Test: User_id with underscores and numbers only
+    #[test]
+    fn test_jwt_token_numeric_user_with_roles() {
+        let service = JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(3600),
+        );
+
+        let user_id = "user_007_agent".to_string();
+        let roles = vec!["viewer".to_string(), "guest".to_string()];
+
+        let token = service
+            .generate_token(&user_id, roles.clone())
+            .expect("Token generation should succeed");
+
+        let claims = service
+            .validate_token(&token)
+            .expect("Token validation should succeed");
+
+        assert_eq!(&claims.sub, &user_id, "sub claim must match user_id");
+        assert_eq!(&claims.roles, &roles, "roles claim must match input roles");
+        assert_eq!(&claims.iss, "test-issuer", "iss claim must match issuer");
+        assert_eq!(
+            &claims.aud, "test-audience",
+            "aud claim must match audience"
+        );
+        assert!(claims.exp > 0, "exp claim must be set");
+        assert!(claims.iat > 0, "iat claim must be set");
+        assert!(claims.exp > claims.iat, "exp must be after iat");
+    }
+
+    // Test: User_id with alphanumeric only
+    #[test]
+    fn test_jwt_token_alphanumeric_user_multiple_roles() {
+        let service = JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(3600),
+        );
+
+        let user_id = "User123".to_string();
+        let roles = vec!["admin".to_string(), "user".to_string()];
+
+        let token = service
+            .generate_token(&user_id, roles.clone())
+            .expect("Token generation should succeed");
+
+        let claims = service
+            .validate_token(&token)
+            .expect("Token validation should succeed");
+
+        assert_eq!(&claims.sub, &user_id, "sub claim must match user_id");
+        assert_eq!(&claims.roles, &roles, "roles claim must match input roles");
+        assert_eq!(&claims.iss, "test-issuer", "iss claim must match issuer");
+        assert_eq!(
+            &claims.aud, "test-audience",
+            "aud claim must match audience"
+        );
+        assert!(claims.exp > 0, "exp claim must be set");
+        assert!(claims.iat > 0, "iat claim must be set");
+        assert!(claims.exp > claims.iat, "exp must be after iat");
     }
 }

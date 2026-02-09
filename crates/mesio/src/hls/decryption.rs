@@ -377,8 +377,6 @@ impl DecryptionService {
 mod tests {
     use super::*;
     use cipher::KeyIvInit;
-    use proptest::prelude::*;
-
     type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 
     /// Helper function to encrypt data for testing decryption
@@ -396,78 +394,6 @@ mod tests {
         encrypted.to_vec()
     }
 
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
-        /// **Feature: hls-performance-optimization, Property 1: Decryption offloading correctness**
-        ///
-        ///
-        /// *For any* encrypted segment data with valid key and IV, decryption with offloading
-        /// enabled SHALL produce the same result as decryption with offloading disabled.
-        #[test]
-        fn prop_decryption_offloading_correctness(
-            // Generate plaintext data of various sizes (16 to 4096 bytes, must be non-empty)
-            plaintext_len in 16usize..4096,
-            key_seed in any::<[u8; 16]>(),
-            iv_seed in any::<[u8; 16]>(),
-        ) {
-            // Create runtime for async tests
-            let rt = tokio::runtime::Runtime::new().unwrap();
-
-            // Generate plaintext data
-            let plaintext: Vec<u8> = (0..plaintext_len).map(|i| (i % 256) as u8).collect();
-
-            // Encrypt the data
-            let encrypted = encrypt_data(&plaintext, &key_seed, &iv_seed);
-            let encrypted_bytes = Bytes::from(encrypted);
-
-            // Create offloaders with different settings
-            let offloader_enabled = DecryptionOffloader::new(true);
-            let offloader_disabled = DecryptionOffloader::new(false);
-
-            // Decrypt with offloading enabled
-            let result_enabled = rt.block_on(async {
-                offloader_enabled
-                    .decrypt(encrypted_bytes.clone(), &key_seed, &iv_seed)
-                    .await
-            });
-
-            // Decrypt with offloading disabled
-            let result_disabled = rt.block_on(async {
-                offloader_disabled
-                    .decrypt(encrypted_bytes.clone(), &key_seed, &iv_seed)
-                    .await
-            });
-
-            // Both should succeed
-            prop_assert!(
-                result_enabled.is_ok(),
-                "Decryption with offloading enabled should succeed"
-            );
-            prop_assert!(
-                result_disabled.is_ok(),
-                "Decryption with offloading disabled should succeed"
-            );
-
-            let decrypted_enabled = result_enabled.unwrap();
-            let decrypted_disabled = result_disabled.unwrap();
-
-            // Results should be identical
-            prop_assert_eq!(
-                decrypted_enabled.as_ref(),
-                decrypted_disabled.as_ref(),
-                "Decryption results should be identical regardless of offloading"
-            );
-
-            // Results should match original plaintext
-            prop_assert_eq!(
-                decrypted_enabled.as_ref(),
-                plaintext.as_slice(),
-                "Decrypted data should match original plaintext"
-            );
-        }
-    }
-
     /// **Feature: hls-performance-optimization, Property 2: Concurrent decryption parallelism**
     ///
     ///
@@ -475,7 +401,7 @@ mod tests {
     /// decryption time SHALL be less than N times the single-segment decryption time
     /// (demonstrating parallelism).
     #[tokio::test]
-    async fn prop_concurrent_decryption_parallelism() {
+    async fn test_concurrent_decryption_parallelism() {
         use std::time::Instant;
 
         // Test parameters

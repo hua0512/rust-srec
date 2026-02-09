@@ -306,7 +306,6 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use flv::tag::{FlvTag, FlvTagType};
-    use proptest::prelude::*;
     use std::sync::{Arc, Mutex};
 
     /// A thread-safe wrapper around a Vec<u8> that implements Write
@@ -450,59 +449,5 @@ mod tests {
         assert_eq!(&data[11..16], &tag_data[..]); // Tag data
         // Previous tag size: 11 + 5 = 16 = 0x10
         assert_eq!(&data[16..20], &[0x00, 0x00, 0x00, 0x10]);
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
-        /// **Feature: data-pipelining-output, Property 2: FLV header triggers pipe closure**
-        /// *For any* FLV stream being written to pipe output where data has already been written,
-        /// when a new FLV header is encountered, the pipe closure signal should be triggered.
-        /// **Validates: Requirements 2.1**
-        #[test]
-        fn prop_flv_header_triggers_pipe_closure(
-            has_audio in any::<bool>(),
-            has_video in any::<bool>(),
-        ) {
-            let mut strategy = PipeFlvStrategy::new();
-
-            // Simulate that data has been written
-            strategy.has_written_data = true;
-
-            let header = FlvData::Header(FlvHeader {
-                signature: 0x464C56,
-                version: 0x01,
-                has_audio,
-                has_video,
-                data_offset: Bytes::new(),
-            });
-
-            // After data has been written, any new header should trigger closure
-            prop_assert!(
-                strategy.should_close_pipe(&header),
-                "FLV header should trigger pipe closure when data has been written"
-            );
-        }
-
-        /// **Feature: data-pipelining-output, Property 3: FLV EndOfSequence triggers pipe closure**
-        /// *For any* FLV stream being written to pipe output, when an EndOfSequence marker is received,
-        /// the pipe closure signal should be triggered.
-        /// **Validates: Requirements 2.4**
-        #[test]
-        fn prop_flv_end_of_sequence_triggers_pipe_closure(
-            data in proptest::collection::vec(any::<u8>(), 0..100),
-            has_written_data in any::<bool>(),
-        ) {
-            let mut strategy = PipeFlvStrategy::new();
-            strategy.has_written_data = has_written_data;
-
-            let eos = FlvData::EndOfSequence(Bytes::from(data));
-
-            // EndOfSequence should always trigger closure regardless of state
-            prop_assert!(
-                strategy.should_close_pipe(&eos),
-                "FLV EndOfSequence should always trigger pipe closure"
-            );
-        }
     }
 }

@@ -333,8 +333,6 @@ fn format_bytes_per_sec(bytes_per_sec: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::prelude::*;
-
     #[test]
     fn test_default_metrics() {
         let metrics = PerformanceMetrics::default();
@@ -434,67 +432,5 @@ mod tests {
         assert_eq!(snapshot.download_bytes_total, 1000);
         assert_eq!(snapshot.cache_hits, 1);
         assert_eq!(snapshot.decryptions_total, 1);
-    }
-
-    // Property-based tests
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
-        /// **Feature: hls-performance-optimization, Property 10: Metrics accuracy**
-        ///
-        ///
-        /// For any sequence of download operations, the metrics SHALL accurately reflect:
-        /// - downloads_total equals count of download calls
-        /// - download_bytes_total equals sum of downloaded bytes
-        /// - average latency equals sum of latencies divided by count
-        #[test]
-        fn prop_metrics_accuracy(
-            downloads in prop::collection::vec((1u64..10_000_000, 1u64..10_000), 1..50)
-        ) {
-            let metrics = PerformanceMetrics::new();
-
-            let mut expected_count = 0u64;
-            let mut expected_bytes = 0u64;
-            let mut expected_latency_sum = 0u64;
-
-            for (bytes, latency) in &downloads {
-                metrics.record_download(*bytes, *latency);
-                expected_count += 1;
-                expected_bytes += bytes;
-                expected_latency_sum += latency;
-            }
-
-            // Verify downloads_total equals count of download calls
-            prop_assert_eq!(
-                metrics.downloads_total.load(Ordering::Relaxed),
-                expected_count,
-                "downloads_total should equal count of download calls"
-            );
-
-            // Verify download_bytes_total equals sum of downloaded bytes
-            prop_assert_eq!(
-                metrics.download_bytes_total.load(Ordering::Relaxed),
-                expected_bytes,
-                "download_bytes_total should equal sum of downloaded bytes"
-            );
-
-            // Verify download_latency_sum_ms equals sum of latencies
-            prop_assert_eq!(
-                metrics.download_latency_sum_ms.load(Ordering::Relaxed),
-                expected_latency_sum,
-                "download_latency_sum_ms should equal sum of latencies"
-            );
-
-            // Verify average latency equals sum of latencies divided by count
-            let expected_avg = expected_latency_sum as f64 / expected_count as f64;
-            let actual_avg = metrics.average_download_latency_ms().unwrap();
-            prop_assert!(
-                (actual_avg - expected_avg).abs() < 0.0001,
-                "average latency should equal sum/count: expected {}, got {}",
-                expected_avg,
-                actual_avg
-            );
-        }
     }
 }

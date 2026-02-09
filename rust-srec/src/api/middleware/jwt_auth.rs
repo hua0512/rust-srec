@@ -239,8 +239,6 @@ mod tests {
 mod property_tests {
     use super::*;
     use crate::api::jwt::JwtService;
-    use axum::http::Request;
-    use proptest::prelude::*;
 
     fn create_test_service() -> Arc<JwtService> {
         Arc::new(JwtService::new(
@@ -251,7 +249,6 @@ mod property_tests {
         ))
     }
 
-    /// Create an expired token directly using jsonwebtoken
     fn create_expired_token(user_id: &str, roles: Vec<String>) -> String {
         use jsonwebtoken::{EncodingKey, Header, encode};
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -261,14 +258,13 @@ mod property_tests {
             .unwrap()
             .as_secs();
 
-        // Create claims with expiration 2 minutes in the past (beyond default leeway)
         let claims = Claims {
             sub: user_id.to_string(),
             roles,
             iss: "test-issuer".to_string(),
             aud: "test-audience".to_string(),
-            exp: now.saturating_sub(120), // 2 minutes ago
-            iat: now.saturating_sub(180), // 3 minutes ago
+            exp: now.saturating_sub(120),
+            iat: now.saturating_sub(180),
         };
 
         encode(
@@ -279,132 +275,269 @@ mod property_tests {
         .expect("Token encoding should succeed")
     }
 
-    // **Feature: jwt-auth-and-api-implementation, Property 2: Valid JWT Token Authentication**
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+    #[test]
+    fn test_valid_jwt_token_authentication_no_roles() {
+        let jwt_service = create_test_service();
+        let user_id = "testuser123";
+        let roles = vec![];
 
-        #[test]
-        fn prop_valid_jwt_token_authentication(
-            user_id in "[a-zA-Z0-9_-]{1,50}",
-            roles in prop::collection::vec("[a-zA-Z0-9_]{1,20}", 0..5),
-        ) {
-            let jwt_service = create_test_service();
+        let token = jwt_service
+            .generate_token(user_id, roles.clone())
+            .expect("Token generation should succeed");
 
-            // Generate a valid token
-            let token = jwt_service
-                .generate_token(&user_id, roles.clone())
-                .expect("Token generation should succeed");
+        let request = Request::builder()
+            .header(AUTHORIZATION, format!("Bearer {}", token))
+            .body(Body::empty())
+            .unwrap();
 
-            // Create request with valid Bearer token
-            let request = Request::builder()
-                .header(AUTHORIZATION, format!("Bearer {}", token))
-                .body(Body::empty())
-                .unwrap();
+        let extracted_token =
+            extract_bearer_token(&request).expect("Token extraction should succeed");
 
-            // Extract and validate token
-            let extracted_token = extract_bearer_token(&request)
-                .expect("Token extraction should succeed");
+        let claims = jwt_service
+            .validate_token(extracted_token)
+            .expect("Token validation should succeed");
 
-            let claims = jwt_service
-                .validate_token(extracted_token)
-                .expect("Token validation should succeed");
+        assert_eq!(&claims.sub, user_id, "User ID should match");
+        assert_eq!(&claims.roles, &roles, "Roles should match");
+    }
 
-            // Property: Valid tokens should authenticate and extract correct claims
-            prop_assert_eq!(&claims.sub, &user_id, "User ID should match");
-            prop_assert_eq!(&claims.roles, &roles, "Roles should match");
+    #[test]
+    fn test_valid_jwt_token_authentication_with_roles() {
+        let jwt_service = create_test_service();
+        let user_id = "admin_user";
+        let roles = vec!["admin".to_string(), "moderator".to_string()];
+
+        let token = jwt_service
+            .generate_token(user_id, roles.clone())
+            .expect("Token generation should succeed");
+
+        let request = Request::builder()
+            .header(AUTHORIZATION, format!("Bearer {}", token))
+            .body(Body::empty())
+            .unwrap();
+
+        let extracted_token =
+            extract_bearer_token(&request).expect("Token extraction should succeed");
+
+        let claims = jwt_service
+            .validate_token(extracted_token)
+            .expect("Token validation should succeed");
+
+        assert_eq!(&claims.sub, user_id, "User ID should match");
+        assert_eq!(&claims.roles, &roles, "Roles should match");
+    }
+
+    #[test]
+    fn test_valid_jwt_token_authentication_complex_user_id() {
+        let jwt_service = create_test_service();
+        let user_id = "user-id_with_special-chars_123";
+        let roles = vec!["viewer".to_string()];
+
+        let token = jwt_service
+            .generate_token(user_id, roles.clone())
+            .expect("Token generation should succeed");
+
+        let request = Request::builder()
+            .header(AUTHORIZATION, format!("Bearer {}", token))
+            .body(Body::empty())
+            .unwrap();
+
+        let extracted_token =
+            extract_bearer_token(&request).expect("Token extraction should succeed");
+
+        let claims = jwt_service
+            .validate_token(extracted_token)
+            .expect("Token validation should succeed");
+
+        assert_eq!(&claims.sub, user_id, "User ID should match");
+        assert_eq!(&claims.roles, &roles, "Roles should match");
+    }
+
+    #[test]
+    fn test_expired_jwt_token_rejection_no_roles() {
+        let jwt_service = create_test_service();
+        let user_id = "expireduser";
+        let roles = vec![];
+
+        let token = create_expired_token(user_id, roles);
+
+        let request = Request::builder()
+            .header(AUTHORIZATION, format!("Bearer {}", token))
+            .body(Body::empty())
+            .unwrap();
+
+        let extracted_token =
+            extract_bearer_token(&request).expect("Token extraction should succeed");
+
+        let result = jwt_service.validate_token(extracted_token);
+        assert!(
+            matches!(result, Err(crate::api::jwt::JwtError::TokenExpired)),
+            "Expired tokens should be rejected with TokenExpired error"
+        );
+    }
+
+    #[test]
+    fn test_expired_jwt_token_rejection_with_roles() {
+        let jwt_service = create_test_service();
+        let user_id = "expired_admin";
+        let roles = vec!["admin".to_string(), "user".to_string()];
+
+        let token = create_expired_token(user_id, roles);
+
+        let request = Request::builder()
+            .header(AUTHORIZATION, format!("Bearer {}", token))
+            .body(Body::empty())
+            .unwrap();
+
+        let extracted_token =
+            extract_bearer_token(&request).expect("Token extraction should succeed");
+
+        let result = jwt_service.validate_token(extracted_token);
+        assert!(
+            matches!(result, Err(crate::api::jwt::JwtError::TokenExpired)),
+            "Expired tokens should be rejected with TokenExpired error"
+        );
+    }
+
+    #[test]
+    fn test_expired_jwt_token_rejection_complex_user() {
+        let jwt_service = create_test_service();
+        let user_id = "complex-user_123-expired";
+        let roles = vec!["viewer".to_string(), "guest".to_string()];
+
+        let token = create_expired_token(user_id, roles);
+
+        let request = Request::builder()
+            .header(AUTHORIZATION, format!("Bearer {}", token))
+            .body(Body::empty())
+            .unwrap();
+
+        let extracted_token =
+            extract_bearer_token(&request).expect("Token extraction should succeed");
+
+        let result = jwt_service.validate_token(extracted_token);
+        assert!(
+            matches!(result, Err(crate::api::jwt::JwtError::TokenExpired)),
+            "Expired tokens should be rejected with TokenExpired error"
+        );
+    }
+
+    #[test]
+    fn test_invalid_jwt_token_rejection_short() {
+        let jwt_service = create_test_service();
+        let invalid_token = "invalidtoken";
+
+        let request = Request::builder()
+            .header(AUTHORIZATION, format!("Bearer {}", invalid_token))
+            .body(Body::empty())
+            .unwrap();
+
+        let extracted_token =
+            extract_bearer_token(&request).expect("Token extraction should succeed");
+
+        let result = jwt_service.validate_token(extracted_token);
+        assert!(result.is_err(), "Invalid tokens should be rejected");
+    }
+
+    #[test]
+    fn test_invalid_jwt_token_rejection_long() {
+        let jwt_service = create_test_service();
+        let invalid_token = "thisisaverylonginvalidtokenthatdoesnotconformtojwtformat1234567890";
+
+        let request = Request::builder()
+            .header(AUTHORIZATION, format!("Bearer {}", invalid_token))
+            .body(Body::empty())
+            .unwrap();
+
+        let extracted_token =
+            extract_bearer_token(&request).expect("Token extraction should succeed");
+
+        let result = jwt_service.validate_token(extracted_token);
+        assert!(result.is_err(), "Invalid tokens should be rejected");
+    }
+
+    #[test]
+    fn test_invalid_jwt_token_rejection_random() {
+        let jwt_service = create_test_service();
+        let invalid_token = "abc123XYZ789randomstring";
+
+        let request = Request::builder()
+            .header(AUTHORIZATION, format!("Bearer {}", invalid_token))
+            .body(Body::empty())
+            .unwrap();
+
+        let extracted_token =
+            extract_bearer_token(&request).expect("Token extraction should succeed");
+
+        let result = jwt_service.validate_token(extracted_token);
+        assert!(result.is_err(), "Invalid tokens should be rejected");
+    }
+
+    #[test]
+    fn test_tampered_jwt_token_rejection_beginning() {
+        let jwt_service = create_test_service();
+        let user_id = "tampertest";
+        let roles = vec!["user".to_string()];
+
+        let token = jwt_service
+            .generate_token(user_id, roles)
+            .expect("Token generation should succeed");
+
+        let mut tampered_token: Vec<char> = token.chars().collect();
+        if tampered_token.len() > 10 {
+            tampered_token[10] = 'X';
+        }
+        let tampered_token: String = tampered_token.into_iter().collect();
+
+        if tampered_token != token {
+            let result = jwt_service.validate_token(&tampered_token);
+            assert!(result.is_err(), "Tampered tokens should be rejected");
         }
     }
 
-    // **Feature: jwt-auth-and-api-implementation, Property 3: Expired JWT Token Rejection**
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+    #[test]
+    fn test_tampered_jwt_token_rejection_middle() {
+        let jwt_service = create_test_service();
+        let user_id = "tampertest2";
+        let roles = vec!["admin".to_string()];
 
-        #[test]
-        fn prop_expired_jwt_token_rejection(
-            user_id in "[a-zA-Z0-9_-]{1,50}",
-            roles in prop::collection::vec("[a-zA-Z0-9_]{1,20}", 0..5),
-        ) {
-            let jwt_service = create_test_service();
+        let token = jwt_service
+            .generate_token(user_id, roles)
+            .expect("Token generation should succeed");
 
-            // Create a token that is already expired (2 minutes in the past)
-            let token = create_expired_token(&user_id, roles);
+        let mut tampered_token: Vec<char> = token.chars().collect();
+        let mid_pos = tampered_token.len() / 2;
+        if mid_pos < tampered_token.len() {
+            tampered_token[mid_pos] = 'Z';
+        }
+        let tampered_token: String = tampered_token.into_iter().collect();
 
-            // Create request with expired token
-            let request = Request::builder()
-                .header(AUTHORIZATION, format!("Bearer {}", token))
-                .body(Body::empty())
-                .unwrap();
-
-            let extracted_token = extract_bearer_token(&request)
-                .expect("Token extraction should succeed");
-
-            // Property: Expired tokens should be rejected
-            let result = jwt_service.validate_token(extracted_token);
-            prop_assert!(
-                matches!(result, Err(crate::api::jwt::JwtError::TokenExpired)),
-                "Expired tokens should be rejected with TokenExpired error"
-            );
+        if tampered_token != token {
+            let result = jwt_service.validate_token(&tampered_token);
+            assert!(result.is_err(), "Tampered tokens should be rejected");
         }
     }
 
-    // **Feature: jwt-auth-and-api-implementation, Property 4: Invalid JWT Token Rejection**
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
+    #[test]
+    fn test_tampered_jwt_token_rejection_end() {
+        let jwt_service = create_test_service();
+        let user_id = "tampertest3";
+        let roles = vec!["moderator".to_string()];
 
-        #[test]
-        fn prop_invalid_jwt_token_rejection(
-            // Generate random strings that are NOT valid JWT tokens
-            invalid_token in "[a-zA-Z0-9]{10,100}",
-        ) {
-            let jwt_service = create_test_service();
+        let token = jwt_service
+            .generate_token(user_id, roles)
+            .expect("Token generation should succeed");
 
-            // Create request with invalid token
-            let request = Request::builder()
-                .header(AUTHORIZATION, format!("Bearer {}", invalid_token))
-                .body(Body::empty())
-                .unwrap();
-
-            let extracted_token = extract_bearer_token(&request)
-                .expect("Token extraction should succeed");
-
-            // Property: Invalid tokens should be rejected
-            let result = jwt_service.validate_token(extracted_token);
-            prop_assert!(
-                result.is_err(),
-                "Invalid tokens should be rejected"
-            );
+        let mut tampered_token: Vec<char> = token.chars().collect();
+        if tampered_token.len() > 20 {
+            let pos = tampered_token.len() - 20;
+            tampered_token[pos] = '0';
         }
+        let tampered_token: String = tampered_token.into_iter().collect();
 
-        #[test]
-        fn prop_tampered_jwt_token_rejection(
-            user_id in "[a-zA-Z0-9_-]{1,50}",
-            roles in prop::collection::vec("[a-zA-Z0-9_]{1,20}", 0..5),
-            tamper_char in prop::sample::select(vec!['X', 'Y', 'Z', '0', '1', '2']),
-            tamper_pos in 10usize..50usize,
-        ) {
-            let jwt_service = create_test_service();
-
-            // Generate a valid token
-            let token = jwt_service
-                .generate_token(&user_id, roles)
-                .expect("Token generation should succeed");
-
-            // Tamper with the token (modify a character in the middle)
-            let mut tampered_token: Vec<char> = token.chars().collect();
-            if tamper_pos < tampered_token.len() {
-                tampered_token[tamper_pos] = tamper_char;
-            }
-            let tampered_token: String = tampered_token.into_iter().collect();
-
-            // Only test if we actually changed the token
-            if tampered_token != token {
-                // Property: Tampered tokens should be rejected
-                let result = jwt_service.validate_token(&tampered_token);
-                prop_assert!(
-                    result.is_err(),
-                    "Tampered tokens should be rejected"
-                );
-            }
+        if tampered_token != token {
+            let result = jwt_service.validate_token(&tampered_token);
+            assert!(result.is_err(), "Tampered tokens should be rejected");
         }
     }
 }

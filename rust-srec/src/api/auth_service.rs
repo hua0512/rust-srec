@@ -1063,149 +1063,218 @@ mod tests {
 #[cfg(test)]
 mod property_tests {
     use super::*;
-    use proptest::prelude::*;
 
-    // Property 1: Password hashing preserves security
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(10))]
+    #[test]
+    fn test_password_hashing_argon2id_format() {
+        let password = "TestPass123!";
+        let hash = AuthService::hash_password(password).expect("Hashing should succeed");
 
-        #[test]
-        fn prop_password_hashing_preserves_security(
-            password in "[a-zA-Z0-9!@#$%^&*]{8,64}"
-        ) {
-            let hash = AuthService::hash_password(&password)
-                .expect("Hashing should succeed");
+        assert!(
+            hash.starts_with("$argon2id$"),
+            "Hash should be Argon2id format"
+        );
+        assert_ne!(&hash, password, "Hash should not equal password");
 
-            // Property: Hash should be a valid Argon2id hash
-            prop_assert!(hash.starts_with("$argon2id$"), "Hash should be Argon2id format");
-
-            // Property: Hash should not equal the original password
-            prop_assert_ne!(&hash, &password, "Hash should not equal password");
-
-            // Property: Hash should be deterministically verifiable
-            let verified = AuthService::verify_password(&password, &hash)
-                .expect("Verification should succeed");
-            prop_assert!(verified, "Correct password should verify");
-        }
+        let verified =
+            AuthService::verify_password(password, &hash).expect("Verification should succeed");
+        assert!(verified, "Correct password should verify");
     }
 
-    // Property 7: Password verification correctness
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(10))]
+    #[test]
+    fn test_password_hashing_with_special_chars() {
+        let password = "P@ssw0rd!#$%^&*";
+        let hash = AuthService::hash_password(password).expect("Hashing should succeed");
 
-        #[test]
-        fn prop_password_verification_correctness(
-            password in "[a-zA-Z0-9!@#$%^&*]{8,32}",
-            wrong_password in "[a-zA-Z0-9!@#$%^&*]{8,32}"
-        ) {
-            let hash = AuthService::hash_password(&password)
-                .expect("Hashing should succeed");
+        assert!(hash.starts_with("$argon2id$"));
+        assert_ne!(&hash, password);
 
-            // Property: Correct password should verify
-            let correct_result = AuthService::verify_password(&password, &hash)
-                .expect("Verification should succeed");
-            prop_assert!(correct_result, "Correct password should verify");
-
-            // Property: Wrong password should not verify (if different)
-            if password != wrong_password {
-                let wrong_result = AuthService::verify_password(&wrong_password, &hash)
-                    .expect("Verification should succeed");
-                prop_assert!(!wrong_result, "Wrong password should not verify");
-            }
-        }
+        let verified =
+            AuthService::verify_password(password, &hash).expect("Verification should succeed");
+        assert!(verified);
     }
 
-    // Property 9: Refresh token hashing
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(10))]
+    #[test]
+    fn test_password_hashing_long_password() {
+        let password = "ThisIsAVeryLongPasswordWith123NumbersAndSpecialChars!@#$%^&*()";
+        let hash = AuthService::hash_password(password).expect("Hashing should succeed");
 
-        #[test]
-        fn prop_refresh_token_hashing(
-            token in "[a-zA-Z0-9]{32,128}"
-        ) {
-            let hash = AuthService::hash_refresh_token(&token);
+        assert!(hash.starts_with("$argon2id$"));
+        assert_ne!(&hash, password);
 
-            // Property: Hash should be SHA-256 (64 hex characters)
-            prop_assert_eq!(hash.len(), 64, "SHA-256 hash should be 64 hex chars");
-
-            // Property: Hash should not equal the original token
-            prop_assert_ne!(&hash, &token, "Hash should not equal token");
-
-            // Property: Same input should produce same hash (deterministic)
-            let hash2 = AuthService::hash_refresh_token(&token);
-            prop_assert_eq!(&hash, &hash2, "Hashing should be deterministic");
-        }
+        let verified =
+            AuthService::verify_password(password, &hash).expect("Verification should succeed");
+        assert!(verified);
     }
 
-    // Property 13: Refresh token entropy
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(10))]
+    #[test]
+    fn test_password_verification_correct_password() {
+        let password = "CorrectPass123";
+        let hash = AuthService::hash_password(password).expect("Hashing should succeed");
 
-        #[test]
-        fn prop_refresh_token_entropy(_seed in 0u64..1000000u64) {
-            let token1 = AuthService::generate_refresh_token();
-            let token2 = AuthService::generate_refresh_token();
+        let correct_result =
+            AuthService::verify_password(password, &hash).expect("Verification should succeed");
+        assert!(correct_result, "Correct password should verify");
+    }
 
-            // Property: Tokens should be 64 hex characters (256 bits)
-            prop_assert_eq!(token1.len(), 64, "Token should be 64 hex chars (256 bits)");
-            prop_assert_eq!(token2.len(), 64, "Token should be 64 hex chars (256 bits)");
+    #[test]
+    fn test_password_verification_wrong_password() {
+        let password = "RightPass123";
+        let wrong_password = "WrongPass456";
+        let hash = AuthService::hash_password(password).expect("Hashing should succeed");
 
-            // Property: Tokens should be unique (with overwhelming probability)
-            prop_assert_ne!(&token1, &token2, "Generated tokens should be unique");
+        let correct_result =
+            AuthService::verify_password(password, &hash).expect("Verification should succeed");
+        assert!(correct_result, "Correct password should verify");
 
-            // Property: Tokens should be valid hex
-            prop_assert!(
-                token1.chars().all(|c| c.is_ascii_hexdigit()),
-                "Token should be valid hex"
+        let wrong_result = AuthService::verify_password(wrong_password, &hash)
+            .expect("Verification should succeed");
+        assert!(!wrong_result, "Wrong password should not verify");
+    }
+
+    #[test]
+    fn test_password_verification_case_sensitive() {
+        let password = "CaseSensitive123";
+        let wrong_case = "casesensitive123";
+        let hash = AuthService::hash_password(password).expect("Hashing should succeed");
+
+        let correct_result =
+            AuthService::verify_password(password, &hash).expect("Verification should succeed");
+        assert!(correct_result);
+
+        let wrong_result =
+            AuthService::verify_password(wrong_case, &hash).expect("Verification should succeed");
+        assert!(
+            !wrong_result,
+            "Password verification should be case-sensitive"
+        );
+    }
+
+    #[test]
+    fn test_refresh_token_hashing_sha256_length() {
+        let token = "abcdef1234567890abcdef1234567890";
+        let hash = AuthService::hash_refresh_token(token);
+
+        assert_eq!(hash.len(), 64, "SHA-256 hash should be 64 hex chars");
+        assert_ne!(&hash, token, "Hash should not equal token");
+    }
+
+    #[test]
+    fn test_refresh_token_hashing_deterministic() {
+        let token = "deterministictoken123456789012345678901234567890";
+        let hash1 = AuthService::hash_refresh_token(token);
+        let hash2 = AuthService::hash_refresh_token(token);
+
+        assert_eq!(&hash1, &hash2, "Hashing should be deterministic");
+    }
+
+    #[test]
+    fn test_refresh_token_hashing_long_token() {
+        let token = "verylongtokenstring1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz";
+        let hash = AuthService::hash_refresh_token(token);
+
+        assert_eq!(hash.len(), 64);
+        assert_ne!(&hash, token);
+
+        let hash2 = AuthService::hash_refresh_token(token);
+        assert_eq!(&hash, &hash2);
+    }
+
+    #[test]
+    fn test_refresh_token_generation_length() {
+        let token1 = AuthService::generate_refresh_token();
+        let token2 = AuthService::generate_refresh_token();
+
+        assert_eq!(token1.len(), 64, "Token should be 64 hex chars (256 bits)");
+        assert_eq!(token2.len(), 64, "Token should be 64 hex chars (256 bits)");
+    }
+
+    #[test]
+    fn test_refresh_token_generation_uniqueness() {
+        let token1 = AuthService::generate_refresh_token();
+        let token2 = AuthService::generate_refresh_token();
+
+        assert_ne!(&token1, &token2, "Generated tokens should be unique");
+    }
+
+    #[test]
+    fn test_refresh_token_generation_valid_hex() {
+        let token1 = AuthService::generate_refresh_token();
+        let token2 = AuthService::generate_refresh_token();
+
+        assert!(
+            token1.chars().all(|c| c.is_ascii_hexdigit()),
+            "Token should be valid hex"
+        );
+        assert!(
+            token2.chars().all(|c| c.is_ascii_hexdigit()),
+            "Token should be valid hex"
+        );
+    }
+
+    #[test]
+    fn test_password_validation_valid_password() {
+        let config = AuthConfig::default();
+        let service = create_test_service_for_props(config);
+
+        let valid_passwords = vec!["abcd1234", "TestPass123", "LongerPassword9876"];
+
+        for password in valid_passwords {
+            assert!(
+                service.validate_password_strength(password).is_ok(),
+                "Valid password should be accepted: {}",
+                password
             );
         }
     }
 
-    // Property 25: Password validation rules
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(10))]
+    #[test]
+    fn test_password_validation_too_short() {
+        let config = AuthConfig::default();
+        let service = create_test_service_for_props(config);
 
-        #[test]
-        fn prop_password_validation_rules(
-            // Valid passwords: 8+ chars with letter and number
-            valid_password in "[a-zA-Z]{4,8}[0-9]{4,8}",
-            // Too short passwords
-            short_password in "[a-zA-Z0-9]{1,7}",
-            // No letter passwords
-            no_letter in "[0-9]{8,16}",
-            // No number passwords
-            no_number in "[a-zA-Z]{8,16}"
-        ) {
-            let config = AuthConfig::default();
-            let service = create_test_service_for_props(config);
+        let short_passwords = vec!["a1", "ab12", "test1", "Pass12"];
 
-            // Property: Valid passwords should be accepted
-            prop_assert!(
-                service.validate_password_strength(&valid_password).is_ok(),
-                "Valid password should be accepted: {}", valid_password
-            );
-
-            // Property: Too short passwords should be rejected
-            prop_assert!(
-                service.validate_password_strength(&short_password).is_err(),
-                "Short password should be rejected: {}", short_password
-            );
-
-            // Property: Passwords without letters should be rejected
-            prop_assert!(
-                service.validate_password_strength(&no_letter).is_err(),
-                "Password without letter should be rejected: {}", no_letter
-            );
-
-            // Property: Passwords without numbers should be rejected
-            prop_assert!(
-                service.validate_password_strength(&no_number).is_err(),
-                "Password without number should be rejected: {}", no_number
+        for password in short_passwords {
+            assert!(
+                service.validate_password_strength(password).is_err(),
+                "Short password should be rejected: {}",
+                password
             );
         }
     }
 
-    // Helper to create AuthService for property tests
+    #[test]
+    fn test_password_validation_no_letter() {
+        let config = AuthConfig::default();
+        let service = create_test_service_for_props(config);
+
+        let no_letter_passwords = vec!["12345678", "987654321", "0000000000"];
+
+        for password in no_letter_passwords {
+            assert!(
+                service.validate_password_strength(password).is_err(),
+                "Password without letter should be rejected: {}",
+                password
+            );
+        }
+    }
+
+    #[test]
+    fn test_password_validation_no_number() {
+        let config = AuthConfig::default();
+        let service = create_test_service_for_props(config);
+
+        let no_number_passwords = vec!["abcdefgh", "TestPassword", "OnlyLetters"];
+
+        for password in no_number_passwords {
+            assert!(
+                service.validate_password_strength(password).is_err(),
+                "Password without number should be rejected: {}",
+                password
+            );
+        }
+    }
+
     fn create_test_service_for_props(config: AuthConfig) -> AuthService {
         use crate::database::models::UserDbModel;
         use std::sync::Arc;
