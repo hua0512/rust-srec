@@ -818,7 +818,7 @@ impl<'a> DouyinRequest<'a> {
             StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
                 .quality(quality_name.to_string())
                 .bitrate(bitrate as u64)
-                .priority(100)
+                .priority(0)
                 .extras_opt(extras)
                 .codec(codec)
                 .fps(fps as f64)
@@ -988,7 +988,7 @@ impl<'a> DouyinRequest<'a> {
             StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
                 .quality(quality_name.to_string())
                 .bitrate(bitrate as u64)
-                .priority(100)
+                .priority(0)
                 .extras_opt(extras)
                 .codec(codec)
                 .fps(fps as f64)
@@ -1080,7 +1080,7 @@ impl<'a> DouyinRequest<'a> {
     ) {
         if !url.is_empty() {
             // Set higher priority for origin quality streams
-            let priority = if sdk_key == "origin" { 100 } else { 0 };
+            let priority = if sdk_key == "origin" { 0 } else { 10 };
             // Mark audio-only streams
             let is_audio_only = sdk_key == "ao";
 
@@ -1149,6 +1149,7 @@ mod tests {
     };
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
+    use crate::media::formats::{MediaFormat, StreamFormat};
 
     const TEST_URL: &str = "https://live.douyin.com/PenguinVal";
 
@@ -1335,5 +1336,49 @@ mod tests {
         );
         let media_info = result.unwrap();
         assert!(!media_info.is_live);
+    }
+
+    #[test]
+    fn test_priority_assignment() {
+        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
+        let request =
+            DouyinRequest::new(config.extractor.cookies.clone(), &config, "123".to_string());
+
+        let mut streams = Vec::new();
+
+        // Test origin priority
+        request._add_stream_if_url_present(
+            "http://example.com/origin.flv",
+            StreamFormat::Flv,
+            MediaFormat::Flv,
+            "原画",
+            8000000,
+            "h264",
+            30,
+            None,
+            "origin",
+            &mut streams,
+        );
+
+        // Test other priority
+        request._add_stream_if_url_present(
+            "http://example.com/uhd.flv",
+            StreamFormat::Flv,
+            MediaFormat::Flv,
+            "蓝光",
+            10000000,
+            "h264",
+            30,
+            None,
+            "uhd",
+            &mut streams,
+        );
+
+        assert_eq!(streams.len(), 2);
+        assert_eq!(streams[0].quality, "原画");
+        assert_eq!(streams[0].priority, 0); // Origin should be 0 (highest)
+
+        assert_eq!(streams[1].quality, "蓝光");
+        assert_eq!(streams[1].priority, 10); // Others should be 10
     }
 }
