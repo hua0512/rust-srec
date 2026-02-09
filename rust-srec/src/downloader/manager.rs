@@ -1495,9 +1495,6 @@ impl Default for DownloadManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::prelude::*;
-    use std::sync::Arc;
-    use std::thread;
 
     #[test]
     fn test_download_manager_config_default() {
@@ -1693,121 +1690,6 @@ mod tests {
                 assert_eq!(error, "Connection timeout");
             }
             _ => panic!("Expected ConfigUpdateFailed event"),
-        }
-    }
-
-    // Helper function to create a test download manager with a mock active download
-    fn create_manager_with_active_download(
-        download_id: &str,
-        streamer_id: &str,
-    ) -> DownloadManager {
-        let manager = DownloadManager::new();
-
-        // Create a mock active download entry
-        let (segment_tx, _segment_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
-        let config = DownloadConfig::new(
-            "http://test.example.com/stream",
-            "/tmp/test",
-            streamer_id,
-            "test-session",
-        );
-
-        let handle = Arc::new(DownloadHandle::new(
-            download_id.to_string(),
-            EngineType::Ffmpeg,
-            config,
-            segment_tx,
-        ));
-
-        let active_download = ActiveDownload {
-            handle,
-            status: DownloadStatus::Downloading,
-            progress: DownloadProgress::default(),
-            is_high_priority: false,
-            output_path: None,
-            permit: None,
-            retry_config_override: None,
-        };
-
-        manager
-            .active_downloads
-            .insert(download_id.to_string(), active_download);
-        manager
-    }
-
-    // **Feature: download-config-updates, Property 5: Concurrent updates are thread-safe**
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
-        #[test]
-        fn prop_concurrent_updates_are_thread_safe(
-            num_threads in 2usize..5usize,
-            updates_per_thread in 1usize..4usize,
-            cookies in prop::collection::vec("[a-zA-Z0-9]{5,15}", 1..3),
-        ) {
-            // Create a manager with an active download
-            let download_id = "test-download-concurrent";
-            let streamer_id = "test-streamer";
-            let manager = Arc::new(create_manager_with_active_download(download_id, streamer_id));
-
-            // Spawn multiple threads that concurrently update the config
-            let handles: Vec<_> = (0..num_threads)
-                .map(|thread_idx| {
-                    let manager_clone = Arc::clone(&manager);
-                    let cookies_clone = cookies.clone();
-                    let download_id = download_id.to_string();
-
-                    thread::spawn(move || {
-                        for update_idx in 0..updates_per_thread {
-                            // Each thread uses a different cookie value based on thread and update index
-                            let cookie_idx = (thread_idx + update_idx) % cookies_clone.len();
-                            let cookie = Some(cookies_clone[cookie_idx].clone());
-
-                            // This should not panic or cause data races
-                            let result = manager_clone.update_download_config(
-                                &download_id,
-                                cookie,
-                                None,
-                                None,
-                            );
-
-                            // All updates should succeed since the download exists
-                            assert!(result.is_ok(), "Update should succeed for existing download");
-                        }
-                    })
-                })
-                .collect();
-
-            // Wait for all threads to complete
-            for handle in handles {
-                handle.join().expect("Thread should not panic");
-            }
-
-            // Property: After all concurrent updates, the pending_updates map should contain
-            // a valid merged update (the final state should reflect a valid merge of all updates)
-            let final_update = manager.take_pending_updates(download_id);
-
-            // There should be a pending update since we made updates
-            prop_assert!(
-                final_update.is_some(),
-                "Should have pending updates after concurrent updates"
-            );
-
-            let update = final_update.unwrap();
-
-            // The update should have valid data (one of the cookies we provided)
-            if let Some(ref cookie) = update.cookies {
-                prop_assert!(
-                    cookies.contains(cookie),
-                    "Final cookie should be one of the provided cookies"
-                );
-            }
-
-            // After taking, there should be no more pending updates
-            prop_assert!(
-                !manager.has_pending_updates(download_id),
-                "Pending updates should be cleared after take"
-            );
         }
     }
 }

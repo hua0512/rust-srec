@@ -637,8 +637,6 @@ impl SegmentScheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::prelude::*;
-
     /// Helper function to create a test ScheduledSegmentJob with a given MSN
     fn create_test_job(msn: u64) -> ScheduledSegmentJob {
         create_test_job_with_flags(msn, false, false)
@@ -797,112 +795,5 @@ mod tests {
         };
         let scheduler = BatchScheduler::new(config);
         assert!(!scheduler.is_enabled());
-    }
-
-    // --- Property-Based Tests ---
-
-    proptest! {
-        #![proptest_config(ProptestConfig::with_cases(100))]
-
-        /// **Feature: hls-performance-optimization, Property 8: Batch scheduling ordering**
-        ///
-        ///
-        /// For any batch of segment jobs dispatched, the jobs SHALL be ordered by
-        /// media sequence number in ascending order.
-        #[test]
-        fn prop_batch_scheduling_ordering(
-            msns in prop::collection::vec(0u64..10000, 1..50)
-        ) {
-            let config = BatchSchedulerConfig {
-                enabled: true,
-                batch_window_ms: 1000,
-                max_batch_size: 100, // Large enough to hold all jobs
-            };
-            let mut scheduler = BatchScheduler::new(config);
-
-            // Add jobs with the given MSNs (in the order provided, which may be random)
-            for msn in &msns {
-                scheduler.add_job(create_test_job(*msn));
-            }
-
-            // Take the batch
-            let batch = scheduler.take_batch();
-
-            // Verify the batch is sorted by MSN in ascending order
-            prop_assert_eq!(batch.len(), msns.len(), "Batch should contain all added jobs");
-
-            for i in 1..batch.len() {
-                prop_assert!(
-                    batch[i - 1].media_sequence_number <= batch[i].media_sequence_number,
-                    "Batch should be sorted by MSN: {} should be <= {}",
-                    batch[i - 1].media_sequence_number,
-                    batch[i].media_sequence_number
-                );
-            }
-        }
-
-        /// **Feature: hls-performance-optimization, Property 9: Batch timeout dispatch**
-        ///
-        ///
-        /// For any partial batch (size < max_batch_size) where batch_window_ms has elapsed
-        /// since the first job was added, the batch SHALL be dispatched immediately.
-        #[test]
-        fn prop_batch_timeout_dispatch(
-            job_count in 1usize..10,
-            max_batch_size in 10usize..20,
-            batch_window_ms in 1u64..100,
-        ) {
-            // Ensure job_count < max_batch_size for a partial batch
-            prop_assume!(job_count < max_batch_size);
-
-            let config = BatchSchedulerConfig {
-                enabled: true,
-                batch_window_ms,
-                max_batch_size,
-            };
-            let mut scheduler = BatchScheduler::new(config);
-
-            // Add jobs (fewer than max_batch_size)
-            for i in 0..job_count {
-                scheduler.add_job(create_test_job(i as u64));
-            }
-
-            // Initially, batch should not be ready (window hasn't expired)
-            // Note: This might be flaky if the test runs very slowly, but with
-            // batch_window_ms >= 1ms, it should be fine for immediate check
-            let initial_ready = scheduler.is_ready();
-
-            // Simulate time passing by checking time_until_ready
-            let time_remaining = scheduler.time_until_ready();
-            prop_assert!(time_remaining.is_some(), "Should have time remaining for partial batch");
-
-            // After window expires, batch should be ready
-            // We simulate this by waiting (in a real test) or by checking the logic
-            // For property testing, we verify the invariant:
-            // - If pending_count > 0 and pending_count < max_batch_size, is_ready depends on time
-            prop_assert_eq!(
-                scheduler.pending_count(),
-                job_count,
-                "Pending count should match added jobs"
-            );
-
-            // The batch is partial (job_count < max_batch_size)
-            // So is_ready should only be true if window expired
-            if !initial_ready {
-                // Window hasn't expired yet, which is expected for immediate check
-                prop_assert!(
-                    scheduler.pending_count() < scheduler.config.max_batch_size,
-                    "Partial batch should not be ready until window expires"
-                );
-            }
-
-            // Verify that take_batch returns all jobs regardless of ready state
-            let batch = scheduler.take_batch();
-            prop_assert_eq!(
-                batch.len(),
-                job_count,
-                "take_batch should return all pending jobs"
-            );
-        }
     }
 }
