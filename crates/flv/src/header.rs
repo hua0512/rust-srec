@@ -139,12 +139,6 @@ impl FlvHeader {
             data_offset,
         })
     }
-
-    /// Legacy compatibility method that specifically works with Cursor<Bytes>
-    #[deprecated(since = "0.2.0", note = "Use the generic parse method instead")]
-    pub fn parse_bytes(reader: &mut io::Cursor<bytes::Bytes>) -> io::Result<Self> {
-        Self::parse(reader)
-    }
 }
 
 #[cfg(test)]

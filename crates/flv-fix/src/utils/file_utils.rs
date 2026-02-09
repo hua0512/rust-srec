@@ -1,4 +1,4 @@
-use byteorder::{BigEndian, WriteBytesExt};
+use bytes::Bytes;
 use flv::{tag::FlvTagType, writer::FlvWriter};
 use std::{
     fs,
@@ -10,7 +10,6 @@ use tracing::debug;
 // Common constants used across the crate
 pub const FLV_HEADER_SIZE: usize = 9;
 pub const FLV_PREVIOUS_TAG_SIZE: usize = 4;
-pub const FLV_TAG_HEADER_SIZE: usize = 11;
 pub const DEFAULT_BUFFER_SIZE: usize = 64 * 1024; // 64KB chunks
 
 /// Helper function to shift file content forward (when inserting larger data)
@@ -114,17 +113,10 @@ pub fn write_flv_tag<T: Write + Seek>(
 ) -> io::Result<()> {
     file_handle.seek(SeekFrom::Start(position))?;
 
-    // Write tag header
+    // Write a full FLV tag (header + payload + PreviousTagSize)
     let mut flv_writer = FlvWriter::new(file_handle)?;
-    flv_writer.write_tag_header(tag_type, data.len() as u32, timestamp)?;
-
-    // Write data
+    flv_writer.write_tag(tag_type, Bytes::copy_from_slice(data), timestamp)?;
     let file = flv_writer.into_inner()?;
-    file.write_all(data)?;
-
-    // Write previous tag size
-    let tag_size = data.len() as u32 + FLV_TAG_HEADER_SIZE as u32;
-    file.write_u32::<BigEndian>(tag_size)?;
     file.flush()?;
 
     Ok(())

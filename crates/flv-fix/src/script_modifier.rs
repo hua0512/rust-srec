@@ -204,7 +204,7 @@ pub fn inject_stats_into_script_data(
 
                 // Calculate new position for the next tag
                 let new_next_tag_pos = start_pos
-                    + utils::FLV_TAG_HEADER_SIZE as u64
+                    + flv::framing::TAG_HEADER_SIZE as u64
                     + new_payload_size as u64
                     + utils::FLV_PREVIOUS_TAG_SIZE as u64;
 

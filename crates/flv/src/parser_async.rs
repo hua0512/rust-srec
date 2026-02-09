@@ -21,8 +21,8 @@ const BUFFER_SIZE: usize = 8 * 1024;
 // 16 MiB sanity limit for tag data size
 const MAX_TAG_DATA_SIZE: u32 = 16 * 1024 * 1024;
 const FLV_HEADER_SIZE: usize = 9;
-const PREV_TAG_SIZE_FIELD_SIZE: usize = 4;
-const TAG_HEADER_SIZE: usize = 11;
+const PREV_TAG_SIZE_FIELD_SIZE: usize = framing::PREV_TAG_SIZE_FIELD_SIZE;
+const TAG_HEADER_SIZE: usize = framing::TAG_HEADER_SIZE;
 // Need at least a tag header and the *next* prev tag size
 const MIN_REQUIRED_AFTER_RESYNC: usize = TAG_HEADER_SIZE + PREV_TAG_SIZE_FIELD_SIZE;
 

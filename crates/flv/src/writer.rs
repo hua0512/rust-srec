@@ -76,28 +76,6 @@ impl<W: Write + Seek> FlvWriter<W> {
         Ok(())
     }
 
-    /// Writes an FLV tag header to the output
-    ///
-    /// # Arguments
-    ///
-    /// * `tag_type` - The type of the tag (audio, video, script)
-    /// * `data_size` - The size of the tag data in bytes
-    /// * `timestamp_ms` - The timestamp in milliseconds
-    ///
-    /// # Returns
-    ///
-    /// A Result indicating success or an IO error
-    pub fn write_tag_header(
-        &mut self,
-        tag_type: FlvTagType,
-        data_size: u32,
-        timestamp_ms: u32,
-    ) -> io::Result<()> {
-        let bytes = encode::encode_tag_header_bytes(tag_type, false, data_size, timestamp_ms, 0)?;
-        self.writer.write_all(&bytes)?;
-        Ok(())
-    }
-
     /// Writes an FLV tag to the output
     ///
     /// # Arguments
