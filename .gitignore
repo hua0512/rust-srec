@@ -6,7 +6,7 @@ rust-toolchain.toml
 
 # Logs
 *.log
-*/logs/
+**/logs/
 
 # Env
 .env
@@ -37,6 +37,7 @@ desktop.ini
 .kiro/
 .roo/
 .claude/
+.sisyphus/
 .roomodes
 .cursorrules
 .rules
