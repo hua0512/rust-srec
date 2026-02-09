@@ -131,9 +131,10 @@ impl ResourceMonitor {
 
         for disk in self.disks.list() {
             let mount_point = disk.mount_point().to_string_lossy();
+            let mount_point_str: &str = mount_point.as_ref();
 
             // Check if the path starts with this mount point
-            if path_str.starts_with(mount_point.as_ref()) {
+            if path_str.starts_with(mount_point_str) {
                 let mount_len = mount_point.len();
 
                 // Keep the longest match (most specific mount point)

@@ -13,6 +13,7 @@
 //! - `pipeline`: HLS processing pipeline implementation
 
 pub mod analyzer;
+mod crc32;
 pub mod operators;
 pub mod pipeline;
 mod writer_task;

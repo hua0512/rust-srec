@@ -25,6 +25,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tracing::debug;
 
+use crate::crc32;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct TagKey(u64);
 
@@ -49,7 +51,7 @@ impl TagKey {
         let tag_type: u8 = tag.tag_type.into();
         let ts = timestamp_ms as u64;
         let len = tag.data.len() as u64;
-        let crc = crc32fast::hash(tag.data.as_ref()) as u64;
+        let crc = crc32::crc32(tag.data.as_ref()) as u64;
 
         let x = ((tag_type as u64) << 56) ^ (len.rotate_left(17)) ^ ts ^ (crc.rotate_left(1));
         TagKey(mix64(x))
@@ -60,7 +62,7 @@ impl FingerprintKey {
     fn new(tag: &FlvTag) -> Self {
         let tag_type: u8 = tag.tag_type.into();
         let len = tag.data.len() as u64;
-        let crc = crc32fast::hash(tag.data.as_ref()) as u64;
+        let crc = crc32::crc32(tag.data.as_ref()) as u64;
         let x = ((tag_type as u64) << 56) ^ (len.rotate_left(17)) ^ (crc.rotate_left(1));
         FingerprintKey(mix64(x))
     }

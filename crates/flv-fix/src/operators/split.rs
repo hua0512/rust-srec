@@ -38,6 +38,8 @@ use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info};
 
+use crate::crc32;
+
 /// Controls how `SplitOperator` decides whether a sequence header "changed".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SequenceHeaderChangeMode {
@@ -138,9 +140,9 @@ impl SplitOperator {
         }
     }
 
-    /// Calculate CRC32 for a byte slice using crc32fast.
+    /// Calculate CRC32 for a byte slice.
     fn calculate_crc32(data: &[u8]) -> u32 {
-        crc32fast::hash(data)
+        crc32::crc32(data)
     }
 
     fn video_change_key(&self, tag: &FlvTag) -> u32 {
@@ -179,29 +181,29 @@ impl SplitOperator {
         }
 
         let enhanced = (data[0] & 0b1000_0000) != 0;
-        let mut hasher = crc32fast::Hasher::new();
+        let mut state = 0u32;
 
         if enhanced {
             // Layout: [flags+packet_type][fourcc(4)][codec_config...]
             if data.len() >= 5 {
-                hasher.update(&data[1..5]);
-                hasher.update(&data[5..]);
+                state = crc32::crc32_update(state, &data[1..5]);
+                state = crc32::crc32_update(state, &data[5..]);
             } else {
-                hasher.update(data);
+                state = crc32::crc32_update(state, data);
             }
         } else {
             // Layout: [frame_type+codec_id][packet_type][cts(3)][codec_config...]
             let codec_id = data[0] & 0x0F;
-            hasher.update(&[codec_id]);
+            state = crc32::crc32_update(state, &[codec_id]);
 
             if data.len() > 5 {
-                hasher.update(&data[5..]);
+                state = crc32::crc32_update(state, &data[5..]);
             } else {
-                hasher.update(data);
+                state = crc32::crc32_update(state, data);
             }
         }
 
-        hasher.finalize()
+        state
     }
 
     /// Compute a "semantic signature" for AAC sequence headers.
@@ -210,22 +212,22 @@ impl SplitOperator {
     /// We ignore the legacy audio header bits and only hash the AAC payload.
     fn calculate_audio_sequence_signature(tag: &FlvTag) -> u32 {
         let data = tag.data.as_ref();
-        let mut hasher = crc32fast::Hasher::new();
+        let mut state = 0u32;
 
         if data.len() >= 2 {
             // Keep the sound_format nibble to avoid accidentally equating future
             // non-AAC sequence headers if we extend detection.
             let sound_format = (data[0] >> 4) & 0x0F;
-            hasher.update(&[sound_format]);
+            state = crc32::crc32_update(state, &[sound_format]);
 
             if data.len() > 2 {
-                hasher.update(&data[2..]);
+                state = crc32::crc32_update(state, &data[2..]);
             }
         } else {
-            hasher.update(data);
+            state = crc32::crc32_update(state, data);
         }
 
-        hasher.finalize()
+        state
     }
 
     // Split stream and re-inject header+sequence data
