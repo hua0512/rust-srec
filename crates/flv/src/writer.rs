@@ -43,8 +43,8 @@
 
 use crate::header::FlvHeader;
 use crate::tag::{FlvTag, FlvTagType};
+use crate::{encode, encode::TAG_HEADER_SIZE};
 use amf0::{Amf0Encoder, Amf0Value, Amf0WriteError};
-use byteorder::{BigEndian, WriteBytesExt};
 use bytes::Bytes;
 use std::borrow::Cow;
 use std::io::{self, Seek, Write};
@@ -71,27 +71,8 @@ impl<W: Write + Seek> FlvWriter<W> {
     }
 
     pub fn write_header(&mut self, header: &FlvHeader) -> io::Result<()> {
-        // Write FLV signature ("FLV")
-        self.writer.write_all(&[0x46, 0x4C, 0x56])?; // "FLV"
-
-        // Write version (0x01)
-        self.writer.write_u8(header.version)?;
-
-        // Write flags (bit 2 for audio, bit 0 for video)
-        let mut flags = 0_u8;
-        if header.has_audio {
-            flags |= 0x04;
-        }
-        if header.has_video {
-            flags |= 0x01;
-        }
-        self.writer.write_u8(flags)?;
-
-        // Write data offset (always 9 for standard FLV header)
-        self.writer.write_u32::<BigEndian>(9)?;
-
-        // Write initial previous tag size (0 before first tag)
-        self.writer.write_u32::<BigEndian>(0)?;
+        let bytes = encode::encode_header_bytes(header)?;
+        self.writer.write_all(&bytes)?;
         Ok(())
     }
 
@@ -112,20 +93,8 @@ impl<W: Write + Seek> FlvWriter<W> {
         data_size: u32,
         timestamp_ms: u32,
     ) -> io::Result<()> {
-        // Write tag type
-        self.writer.write_u8(tag_type.into())?;
-
-        // Write data size (3 bytes)
-        self.writer.write_u24::<BigEndian>(data_size)?;
-
-        // Write timestamp (3 bytes + 1 byte extended)
-        self.writer
-            .write_u24::<BigEndian>(timestamp_ms & 0xFFFFFF)?;
-        self.writer.write_u8((timestamp_ms >> 24) as u8)?;
-
-        // Write stream ID (always 0)
-        self.writer.write_u24::<BigEndian>(0)?;
-
+        let bytes = encode::encode_tag_header_bytes(tag_type, false, data_size, timestamp_ms, 0)?;
+        self.writer.write_all(&bytes)?;
         Ok(())
     }
 
@@ -146,19 +115,32 @@ impl<W: Write + Seek> FlvWriter<W> {
         data: Bytes,
         timestamp_ms: u32,
     ) -> io::Result<()> {
+        self.write_tag_with_filter(tag_type, false, data, timestamp_ms)
+    }
+
+    pub fn write_tag_with_filter(
+        &mut self,
+        tag_type: FlvTagType,
+        is_filtered: bool,
+        data: Bytes,
+        timestamp_ms: u32,
+    ) -> io::Result<()> {
         let data_size = data.len() as u32;
 
         // Write tag header
-        self.write_tag_header(tag_type, data_size, timestamp_ms)?;
+        let header_bytes =
+            encode::encode_tag_header_bytes(tag_type, is_filtered, data_size, timestamp_ms, 0)?;
+        self.writer.write_all(&header_bytes)?;
 
         // Write tag data
         self.writer.write_all(&data)?;
 
         // Update previous tag size
-        self.previous_tag_size = data_size + 11; // data size + tag header size
+        self.previous_tag_size = data_size + TAG_HEADER_SIZE as u32; // data size + tag header size
 
         // Write previous tag size
-        self.writer.write_u32::<BigEndian>(self.previous_tag_size)?;
+        let prev_bytes = encode::encode_prev_tag_size_bytes(self.previous_tag_size);
+        self.writer.write_all(&prev_bytes)?;
 
         // Update timestamp for sequential writing
         self.timestamp = timestamp_ms;
@@ -167,7 +149,12 @@ impl<W: Write + Seek> FlvWriter<W> {
     }
 
     pub fn write_tag_f(&mut self, tag: &FlvTag) -> io::Result<()> {
-        self.write_tag(tag.tag_type, tag.data.clone(), tag.timestamp_ms)?;
+        self.write_tag_with_filter(
+            tag.tag_type,
+            tag.is_filtered,
+            tag.data.clone(),
+            tag.timestamp_ms,
+        )?;
         Ok(())
     }
 

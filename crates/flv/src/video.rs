@@ -329,7 +329,7 @@ pub enum VideoTagBody {
     Command(VideoCommand),
     /// Data we don't know how to parse
     Unknown {
-        codec_id: VideoCodecId,
+        codec_id: u8,
         data: Bytes,
     },
 }
@@ -362,7 +362,7 @@ impl VideoTagBody {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum VideoPacketType {
     /// Codec ID (legacy)
-    CodecId(VideoCodecId),
+    CodecId(u8),
     /// Enhanced (modern)
     Enhanced(EnhancedPacketType),
 }
@@ -372,7 +372,7 @@ impl VideoPacketType {
         if enhanced {
             Self::Enhanced(EnhancedPacketType::from(byte))
         } else {
-            Self::CodecId(VideoCodecId::try_from(byte).unwrap())
+            Self::CodecId(byte)
         }
     }
 }
@@ -482,9 +482,9 @@ impl VideoTagBody {
     /// The reader will consume all the data from the reader.
     pub fn demux(packet_type: VideoPacketType, reader: &mut io::Cursor<Bytes>) -> io::Result<Self> {
         match packet_type {
-            VideoPacketType::CodecId(codec_id) => match codec_id {
-                VideoCodecId::Avc => Ok(VideoTagBody::Avc(AvcPacket::demux(reader)?)),
-                VideoCodecId::LegacyHevc => Ok(VideoTagBody::Hevc(HevcPacket::demux(reader)?)),
+            VideoPacketType::CodecId(codec_id) => match VideoCodecId::try_from(codec_id) {
+                Ok(VideoCodecId::Avc) => Ok(VideoTagBody::Avc(AvcPacket::demux(reader)?)),
+                Ok(VideoCodecId::LegacyHevc) => Ok(VideoTagBody::Hevc(HevcPacket::demux(reader)?)),
                 _ => Ok(VideoTagBody::Unknown {
                     codec_id,
                     data: reader.extract_remaining(),
@@ -621,7 +621,7 @@ impl std::fmt::Display for VideoTagBody {
             VideoTagBody::Unknown { codec_id, data } => {
                 write!(
                     f,
-                    "Unknown Codec: {codec_id:?}, {data_len} bytes",
+                    "Unknown CodecId: {codec_id}, {data_len} bytes",
                     data_len = data.len()
                 )
             }
@@ -795,7 +795,7 @@ mod tests {
                 true,
                 VideoPacketType::Enhanced(EnhancedPacketType::CODED_FRAMES),
             ),
-            (7, false, VideoPacketType::CodecId(VideoCodecId::Avc)),
+            (7, false, VideoPacketType::CodecId(7)),
         ];
 
         for (value, enhanced, expected) in cases {
@@ -889,7 +889,7 @@ mod tests {
             VideoData {
                 frame_type: VideoFrameType::KeyFrame,
                 body: VideoTagBody::Unknown {
-                    codec_id: VideoCodecId::SorensonH263,
+                    codec_id: 2,
                     data: Bytes::from_static(&[0, 1, 2, 3]),
                 },
             }
@@ -943,7 +943,7 @@ mod tests {
         ]));
 
         // Create packet type for legacy HEVC
-        let packet_type = VideoPacketType::CodecId(VideoCodecId::LegacyHevc);
+        let packet_type = VideoPacketType::CodecId(VideoCodecId::LegacyHevc as u8);
 
         // Parse the data
         let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
@@ -964,7 +964,7 @@ mod tests {
         ]));
 
         // Create packet type for legacy HEVC
-        let packet_type = VideoPacketType::CodecId(VideoCodecId::LegacyHevc);
+        let packet_type = VideoPacketType::CodecId(VideoCodecId::LegacyHevc as u8);
 
         // Parse the data
         let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();

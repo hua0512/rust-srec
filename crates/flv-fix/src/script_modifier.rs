@@ -24,7 +24,6 @@ use std::{
     path::Path,
 };
 
-use amf0::Amf0Value;
 use flv::tag::FlvTagType;
 use tracing::{debug, info, trace, warn};
 
@@ -70,7 +69,7 @@ pub fn inject_stats_into_script_data(
         // Use the non-owned parser to avoid fully demuxing audio/video payloads while scanning.
         // Some upstream streams can have non-standard codec headers; we only need raw bytes until
         // we hit the script tag.
-        let parsed = match flv::parser::FlvParserRef::parse_tag(&mut reader)? {
+        let parsed = match flv::parser::FlvParser::parse_tag(&mut reader)? {
             Some(v) => v,
             None => {
                 warn!("No onMetaData script tag found in file, skipping stats injection.");
@@ -119,7 +118,7 @@ pub fn inject_stats_into_script_data(
     }
 
     // Generate new script data buffer
-    if let Amf0Value::Object(props) = &amf_data[0] {
+    if let Some(props) = amf_data[0].as_object_properties() {
         // current script data model
         let script_data_model = AmfScriptData::from_amf_object_ref(props)?;
 
@@ -232,7 +231,8 @@ pub fn inject_stats_into_script_data(
 
 #[cfg(test)]
 mod tests {
-    use flv::{FlvTagType, FlvUtil, parser::FlvParserRef, script::ScriptData};
+    use amf0::Amf0Value;
+    use flv::{FlvTagType, parser::FlvParser, script::ScriptData};
     use std::{fs::File, io::Cursor};
     use tracing::trace;
     use tracing_subscriber::fmt;
@@ -312,10 +312,10 @@ mod tests {
         // Re-parse file and validate that onMetaData exists and duration was updated.
         let file = File::open(&path).unwrap();
         let mut reader = std::io::BufReader::new(file);
-        let _header = FlvParserRef::parse_header(&mut reader).unwrap();
+        let _header = FlvParser::parse_header(&mut reader).unwrap();
 
         let mut found = None;
-        FlvParserRef::parse_tags(
+        FlvParser::parse_tags(
             &mut reader,
             |tag, tag_type, _position| {
                 if tag_type == RawTagType::ScriptData && found.is_none() {
@@ -374,14 +374,14 @@ mod tests {
         // First, analyze the header
         let file = std::fs::File::open(input_path).unwrap();
         let mut reader = std::io::BufReader::new(file);
-        let header = FlvParserRef::parse_header(&mut reader).unwrap();
+        let header = FlvParser::parse_header(&mut reader).unwrap();
         analyzer.analyze_header(&header).unwrap();
 
         // The position after the header
         let current_position = 9u64;
 
         // Parse tags using the same reader
-        FlvParserRef::parse_tags(
+        FlvParser::parse_tags(
             &mut reader,
             |tag, tag_type, position| {
                 analyzer.analyze_tag(tag).unwrap();

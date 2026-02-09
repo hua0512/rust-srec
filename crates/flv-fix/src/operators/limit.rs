@@ -34,7 +34,7 @@
 
 use flv::data::FlvData;
 use flv::header::FlvHeader;
-use flv::tag::{FlvTag, FlvUtil};
+use flv::tag::FlvTag;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use std::time::Instant;
@@ -786,6 +786,7 @@ mod tests {
                 timestamp_ms: timestamp,
                 stream_id: 0,
                 tag_type: FlvTagType::Audio,
+                is_filtered: false,
                 data: Bytes::from(data),
             })
         };
@@ -970,6 +971,7 @@ mod tests {
                 timestamp_ms: timestamp,
                 stream_id: 0,
                 tag_type: FlvTagType::Audio,
+                is_filtered: false,
                 data: Bytes::from(data),
             })
         };

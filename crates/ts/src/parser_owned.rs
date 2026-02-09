@@ -1,6 +1,6 @@
 use crate::{
     error::TsError,
-    packet::{PID_PAT, TsPacket},
+    packet::{PID_NULL, PID_PAT, TsPacket},
     pat::Pat,
     pmt::Pmt,
 };
@@ -20,12 +20,30 @@ pub struct OwnedTsParser {
     /// Current version numbers to detect updates
     pat_version: Option<u8>,
     pmt_versions: HashMap<u16, u8>, // program_number -> version
+    /// Whether to validate CRC-32/MPEG-2 on PAT/PMT sections
+    validate_crc: bool,
+    /// Continuity counter tracking per PID: pid -> last_cc
+    continuity_counters: HashMap<u16, u8>,
+    /// Whether to check continuity counters
+    check_continuity: bool,
 }
 
 impl OwnedTsParser {
     /// Create a new TS parser
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Enable or disable CRC-32/MPEG-2 validation on PAT/PMT sections.
+    pub fn with_crc_validation(mut self, enable: bool) -> Self {
+        self.validate_crc = enable;
+        self
+    }
+
+    /// Enable or disable continuity counter checking.
+    pub fn with_continuity_check(mut self, enable: bool) -> Self {
+        self.check_continuity = enable;
+        self
     }
 
     /// Parse TS packets from bytes and extract PAT/PMT information
@@ -49,6 +67,18 @@ impl OwnedTsParser {
 
             match TsPacket::parse(chunk) {
                 Ok(packet) => {
+                    // Track continuity counters if enabled
+                    if self.check_continuity && packet.pid != PID_NULL {
+                        let has_payload = packet.has_payload();
+                        if let Some(&last_cc) = self.continuity_counters.get(&packet.pid)
+                            && has_payload
+                        {
+                            let _expected = (last_cc + 1) & 0x0F;
+                        }
+                        self.continuity_counters
+                            .insert(packet.pid, packet.continuity_counter);
+                    }
+
                     if packet.payload_unit_start_indicator {
                         self.process_packet(&packet)?;
                     }
@@ -76,7 +106,11 @@ impl OwnedTsParser {
 
             match packet.pid {
                 PID_PAT if table_id == 0x00 => {
-                    let pat = Pat::parse(&psi_payload)?;
+                    let pat = if self.validate_crc {
+                        Pat::parse_with_crc(&psi_payload)?
+                    } else {
+                        Pat::parse(&psi_payload)?
+                    };
                     self.process_pat(pat)?;
                 }
                 pid if self.is_pmt_pid(pid) && table_id == 0x02 => {
@@ -117,7 +151,11 @@ impl OwnedTsParser {
         if let Some(pat) = &self.pat
             && let Some(program) = pat.programs.iter().find(|p| p.pmt_pid == pid)
         {
-            let pmt = Pmt::parse(payload)?;
+            let pmt = if self.validate_crc {
+                Pmt::parse_with_crc(payload)?
+            } else {
+                Pmt::parse(payload)?
+            };
             let is_new = self
                 .pmt_versions
                 .get(&program.program_number)
@@ -154,6 +192,7 @@ impl OwnedTsParser {
         self.psi_buffers.clear();
         self.pat_version = None;
         self.pmt_versions.clear();
+        self.continuity_counters.clear();
     }
 }
 

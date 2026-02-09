@@ -548,7 +548,11 @@ mod tests {
             packet[i] = 0xE0 | ((pmt_pid >> 8) as u8 & 0x1F);
             packet[i + 1] = (pmt_pid & 0xFF) as u8;
             i += 2;
-            packet[i..i + 4].copy_from_slice(&[0, 0, 0, 0]); // CRC32 (dummy)
+            packet[i..i + 4].copy_from_slice(&[0, 0, 0, 0]); // CRC32 placeholder
+            // Compute real MPEG-2 CRC-32 over the section (table_id through before CRC)
+            let section_start = 5; // after pointer_field
+            let crc = ts::mpeg2_crc32(&packet[section_start..i]);
+            packet[i..i + 4].copy_from_slice(&crc.to_be_bytes());
             packet
         }
 
@@ -592,7 +596,11 @@ mod tests {
             packet[i] = 0xF0; // ES_info_length = 0
             packet[i + 1] = 0x00;
             i += 2;
-            packet[i..i + 4].copy_from_slice(&[0, 0, 0, 0]); // CRC32 (dummy)
+            packet[i..i + 4].copy_from_slice(&[0, 0, 0, 0]); // CRC32 placeholder
+            // Compute real MPEG-2 CRC-32 over the section (table_id through before CRC)
+            let section_start = 5; // after pointer_field
+            let crc = ts::mpeg2_crc32(&packet[section_start..i]);
+            packet[i..i + 4].copy_from_slice(&crc.to_be_bytes());
             packet
         }
 

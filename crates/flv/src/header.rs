@@ -1,10 +1,13 @@
 use std::fmt::Display;
 use std::io;
+use std::io::Read;
 
 use byteorder::{BigEndian, ReadBytesExt};
-use bytes::Bytes;
 
 const FLV_HEADER_SIZE: usize = 9;
+// DataOffset is a 32-bit header length field. In practice it is 9 for standard FLV.
+// Put a conservative bound to avoid buffering unbounded data for a bogus header.
+const MAX_DATA_OFFSET: u32 = 64 * 1024;
 
 // Struct representing the FLV header, 9 bytes in total
 #[derive(Debug, Clone, PartialEq)]
@@ -17,7 +20,7 @@ pub struct FlvHeader {
     // Whether the FLV file contains video data, 1 byte
     pub has_video: bool,
     // Total size of the header, 4 bytes, always 0x09
-    pub data_offset: Bytes,
+    pub data_offset: u32,
 }
 
 impl Display for FlvHeader {
@@ -38,87 +41,8 @@ impl Display for FlvHeader {
             Has Audio: {}\n\
             Has Video: {}\n\
             Data Offset: {}",
-            signature_string,
-            self.version,
-            self.has_audio,
-            self.has_video,
-            self.data_offset.len()
+            signature_string, self.version, self.has_audio, self.has_video, self.data_offset
         )
-    }
-}
-
-// Define a trait for readers that can provide the necessary data for FlvHeader parsing
-pub trait FlvHeaderReader {
-    fn read_signature(&mut self) -> io::Result<u32>;
-    fn read_version(&mut self) -> io::Result<u8>;
-    fn read_flags(&mut self) -> io::Result<u8>;
-    fn read_data_offset(&mut self) -> io::Result<usize>;
-    fn get_header_bytes(&self, offset: usize) -> Bytes;
-    fn get_position(&self) -> usize;
-    fn set_position(&mut self, pos: usize);
-}
-
-// Implement for Cursor<Bytes> (existing implementation)
-impl FlvHeaderReader for io::Cursor<Bytes> {
-    fn read_signature(&mut self) -> io::Result<u32> {
-        self.read_u24::<BigEndian>()
-    }
-
-    fn read_version(&mut self) -> io::Result<u8> {
-        self.read_u8()
-    }
-
-    fn read_flags(&mut self) -> io::Result<u8> {
-        self.read_u8()
-    }
-
-    fn read_data_offset(&mut self) -> io::Result<usize> {
-        Ok(self.read_u32::<BigEndian>()? as usize)
-    }
-
-    fn get_header_bytes(&self, offset: usize) -> Bytes {
-        let end = self.position() as usize;
-        self.get_ref().slice(offset..end)
-    }
-
-    fn get_position(&self) -> usize {
-        self.position() as usize
-    }
-
-    fn set_position(&mut self, pos: usize) {
-        self.set_position(pos as u64);
-    }
-}
-
-// Implement for Cursor<&[u8]> (new implementation)
-impl FlvHeaderReader for io::Cursor<&[u8]> {
-    fn read_signature(&mut self) -> io::Result<u32> {
-        self.read_u24::<BigEndian>()
-    }
-
-    fn read_version(&mut self) -> io::Result<u8> {
-        self.read_u8()
-    }
-
-    fn read_flags(&mut self) -> io::Result<u8> {
-        self.read_u8()
-    }
-
-    fn read_data_offset(&mut self) -> io::Result<usize> {
-        Ok(self.read_u32::<BigEndian>()? as usize)
-    }
-
-    fn get_header_bytes(&self, offset: usize) -> Bytes {
-        let end = self.position() as usize;
-        Bytes::copy_from_slice(&self.get_ref()[offset..end])
-    }
-
-    fn get_position(&self) -> usize {
-        self.position() as usize
-    }
-
-    fn set_position(&mut self, pos: usize) {
-        self.set_position(pos as u64);
     }
 }
 
@@ -131,7 +55,7 @@ impl FlvHeader {
             version: 0x01,
             has_audio,
             has_video,
-            data_offset: Bytes::new(),
+            data_offset: FLV_HEADER_SIZE as u32,
         }
     }
 
@@ -143,61 +67,82 @@ impl FlvHeader {
     ///
     /// This function can return an `io::Error` if buffer is not enough or if the header is invalid.
     /// Arguments:
-    /// - `reader`: A mutable reference to a reader implementing the FlvHeaderReader trait.
-    ///   The reader will be advanced to the end of the header.
-    pub fn parse<R: FlvHeaderReader>(reader: &mut R) -> io::Result<Self> {
-        let start = reader.get_position();
-
+    /// - `reader`: A reader positioned at the start of an FLV header.
+    ///   The reader will be advanced to `data_offset`.
+    pub fn parse<R: Read>(reader: &mut R) -> io::Result<Self> {
         // Signature is a 3-byte string 'FLV'
-        let signature = reader.read_signature()?;
+        let signature = reader.read_u24::<BigEndian>()?;
 
-        // compare if signature is 'FLV'
         if signature != 0x464C56 {
-            // move the cursor back to the start position
-            reader.set_position(start);
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid FLV signature",
             ));
         }
 
-        // Version is a 1-byte value
-        let version = reader.read_version()?;
-        // Flags is a 1-byte value
-        let flags = reader.read_flags()?;
-        // Has audio and video flags
-        let has_audio = flags & 0b00000100 != 0;
-        let has_video = flags & 0b00000001 != 0;
-
-        // Data offset is a 4-byte value
-        let data_offset = reader.read_data_offset()?;
-
-        let end = reader.get_position();
-        // Check if the data offset is valid
-        let size = end - start;
-
-        if size < FLV_HEADER_SIZE || data_offset != FLV_HEADER_SIZE {
+        // Version is a 1-byte value. Legacy FLV files are version 1.
+        let version = reader.read_u8()?;
+        if version != 0x01 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid FLV header size: {size}, {data_offset}"),
+                format!("Unsupported FLV version: {version}"),
             ));
         }
 
-        // Get the bytes for data_offset
-        let offset = reader.get_header_bytes(data_offset);
+        // Flags is a 1-byte value. Reserved bits MUST be 0.
+        let flags = reader.read_u8()?;
+        // Reserved bits are: bits 7..=3 and bit 1.
+        if (flags & 0b1111_1010) != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid FLV header flags (reserved bits set): 0x{flags:02X}"),
+            ));
+        }
+
+        let has_audio = (flags & 0b0000_0100) != 0;
+        let has_video = (flags & 0b0000_0001) != 0;
+
+        // DataOffset is a 4-byte value specifying the length of the header.
+        let data_offset = reader.read_u32::<BigEndian>()?;
+        if data_offset < (FLV_HEADER_SIZE as u32) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid FLV DataOffset: {data_offset}"),
+            ));
+        }
+
+        if data_offset > MAX_DATA_OFFSET {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("FLV DataOffset too large: {data_offset}"),
+            ));
+        }
+
+        // Skip any extra header bytes.
+        let extra = (data_offset as usize).saturating_sub(FLV_HEADER_SIZE);
+        if extra > 0 {
+            let mut limited = reader.take(extra as u64);
+            io::copy(&mut limited, &mut io::sink())?;
+            if limited.limit() != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "Unexpected EOF while skipping extended FLV header bytes",
+                ));
+            }
+        }
 
         Ok(FlvHeader {
             signature,
             version,
             has_audio,
             has_video,
-            data_offset: offset,
+            data_offset,
         })
     }
 
     /// Legacy compatibility method that specifically works with Cursor<Bytes>
     #[deprecated(since = "0.2.0", note = "Use the generic parse method instead")]
-    pub fn parse_bytes(reader: &mut io::Cursor<Bytes>) -> io::Result<Self> {
+    pub fn parse_bytes(reader: &mut io::Cursor<bytes::Bytes>) -> io::Result<Self> {
         Self::parse(reader)
     }
 }
@@ -206,7 +151,6 @@ impl FlvHeader {
 mod tests {
     use super::*;
     use byteorder::{BigEndian, WriteBytesExt};
-    use bytes::Bytes;
     use std::io::Cursor;
 
     fn create_valid_header_bytes() -> Vec<u8> {
@@ -228,8 +172,7 @@ mod tests {
         let buffer = create_valid_header_bytes();
 
         // Test with Bytes cursor (original implementation)
-        let bytes = Bytes::from(buffer.clone());
-        let mut reader = Cursor::new(bytes);
+        let mut reader = Cursor::new(&buffer[..]);
 
         // Parse the header
         let header = FlvHeader::parse(&mut reader).unwrap();
@@ -239,6 +182,7 @@ mod tests {
         assert_eq!(header.version, 0x01);
         assert!(header.has_audio);
         assert!(header.has_video);
+        assert_eq!(header.data_offset, 9);
         assert_eq!(reader.position(), 9); // Reader should be at position 9
 
         // Test with slice cursor (new implementation)
@@ -250,6 +194,7 @@ mod tests {
         assert_eq!(slice_header.version, 0x01);
         assert!(slice_header.has_audio);
         assert!(slice_header.has_video);
+        assert_eq!(slice_header.data_offset, 9);
         assert_eq!(slice_reader.position(), 9);
     }
 
@@ -272,9 +217,6 @@ mod tests {
         // Parse should fail with invalid signature
         let result = FlvHeader::parse(&mut reader);
         assert!(result.is_err());
-
-        // Verify reader position is reset to start
-        assert_eq!(reader.position(), 0);
     }
 
     // Additional tests remain mostly unchanged

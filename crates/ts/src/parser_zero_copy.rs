@@ -1,7 +1,7 @@
 use crate::{Result, StreamType, TsError};
 use bytes::{Buf, Bytes};
 use memchr::memchr;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Zero-copy TS packet parser
 #[derive(Debug, Clone)]
@@ -127,6 +127,12 @@ impl TsPacketRef {
         }
         false
     }
+
+    /// Parse the adaptation field into a structured type.
+    pub fn parse_adaptation_field(&self) -> Option<crate::adaptation_field::AdaptationFieldRef> {
+        self.adaptation_field()
+            .and_then(crate::adaptation_field::AdaptationFieldRef::parse)
+    }
 }
 
 /// Zero-copy PAT parser
@@ -200,6 +206,31 @@ impl PatRef {
             programs_offset,
             programs_length,
         })
+    }
+
+    /// Parse PAT from PSI section data with CRC-32/MPEG-2 validation.
+    pub fn parse_with_crc(data: Bytes) -> Result<Self> {
+        if data.len() >= 7 {
+            let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
+            let section_end = 3 + section_length as usize;
+            if section_end <= data.len()
+                && section_end >= 4
+                && !crate::crc32::validate_section_crc32(&data[..section_end])
+            {
+                let stored = u32::from_be_bytes([
+                    data[section_end - 4],
+                    data[section_end - 3],
+                    data[section_end - 2],
+                    data[section_end - 1],
+                ]);
+                let calculated = crate::crc32::mpeg2_crc32(&data[..section_end - 4]);
+                return Err(TsError::Crc32Mismatch {
+                    expected: stored,
+                    calculated,
+                });
+            }
+        }
+        Self::parse(data)
     }
 
     /// Iterator over programs without allocating
@@ -342,6 +373,31 @@ impl PmtRef {
         })
     }
 
+    /// Parse PMT from PSI section data with CRC-32/MPEG-2 validation.
+    pub fn parse_with_crc(data: Bytes) -> Result<Self> {
+        if data.len() >= 7 {
+            let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
+            let section_end = 3 + section_length as usize;
+            if section_end <= data.len()
+                && section_end >= 4
+                && !crate::crc32::validate_section_crc32(&data[..section_end])
+            {
+                let stored = u32::from_be_bytes([
+                    data[section_end - 4],
+                    data[section_end - 3],
+                    data[section_end - 2],
+                    data[section_end - 1],
+                ]);
+                let calculated = crate::crc32::mpeg2_crc32(&data[..section_end - 4]);
+                return Err(TsError::Crc32Mismatch {
+                    expected: stored,
+                    calculated,
+                });
+            }
+        }
+        Self::parse(data)
+    }
+
     /// Get program info descriptors
     #[inline]
     pub fn program_info(&self) -> Bytes {
@@ -356,6 +412,11 @@ impl PmtRef {
                 .data
                 .slice(self.streams_offset..self.streams_offset + self.streams_length),
         }
+    }
+
+    /// Iterate over program info descriptors.
+    pub fn program_descriptors(&self) -> crate::descriptor::DescriptorIterator {
+        crate::descriptor::DescriptorIterator::new(self.program_info())
     }
 }
 
@@ -405,6 +466,13 @@ pub struct PmtStreamRef {
     pub es_info: Bytes,
 }
 
+impl PmtStreamRef {
+    /// Iterate over ES info descriptors.
+    pub fn descriptors(&self) -> crate::descriptor::DescriptorIterator {
+        crate::descriptor::DescriptorIterator::new(self.es_info.clone())
+    }
+}
+
 /// Zero-copy streaming TS parser with minimal memory footprint
 #[derive(Debug, Default)]
 pub struct TsParser {
@@ -415,6 +483,14 @@ pub struct TsParser {
     /// Current version numbers to detect updates
     pat_version: Option<u8>,
     pmt_versions: HashMap<u16, u8>, // program_number -> version
+    /// Whether to validate CRC-32/MPEG-2 on PAT/PMT sections
+    validate_crc: bool,
+    /// Continuity counter tracking per PID: pid -> last_cc
+    continuity_counters: HashMap<u16, u8>,
+    /// Whether to check continuity counters
+    check_continuity: bool,
+    /// Detected SCTE-35 PIDs (from PMT registration descriptors)
+    scte35_pids: HashSet<u16>,
 }
 
 impl TsParser {
@@ -422,18 +498,121 @@ impl TsParser {
         Self::default()
     }
 
+    /// Enable or disable CRC-32/MPEG-2 validation on PAT/PMT sections.
+    pub fn with_crc_validation(mut self, enable: bool) -> Self {
+        self.validate_crc = enable;
+        self
+    }
+
+    /// Enable or disable continuity counter checking.
+    pub fn with_continuity_check(mut self, enable: bool) -> Self {
+        self.check_continuity = enable;
+        self
+    }
+
+    /// Check continuity counter for a packet. Returns the status.
+    fn check_cc(&mut self, packet: &TsPacketRef) -> crate::packet::ContinuityStatus {
+        use crate::packet::ContinuityStatus;
+
+        // Skip null packets
+        if packet.pid == crate::packet::PID_NULL {
+            return ContinuityStatus::Ok;
+        }
+
+        let has_payload =
+            packet.adaptation_field_control == 0x01 || packet.adaptation_field_control == 0x03;
+
+        if let Some(&last_cc) = self.continuity_counters.get(&packet.pid) {
+            if has_payload {
+                let expected = (last_cc + 1) & 0x0F;
+                if packet.continuity_counter == expected {
+                    self.continuity_counters
+                        .insert(packet.pid, packet.continuity_counter);
+                    ContinuityStatus::Ok
+                } else if packet.continuity_counter == last_cc {
+                    ContinuityStatus::Duplicate
+                } else {
+                    self.continuity_counters
+                        .insert(packet.pid, packet.continuity_counter);
+                    ContinuityStatus::Discontinuity {
+                        expected,
+                        actual: packet.continuity_counter,
+                    }
+                }
+            } else {
+                // Adaptation-only: CC should not change
+                if packet.continuity_counter == last_cc {
+                    ContinuityStatus::Ok
+                } else {
+                    ContinuityStatus::Discontinuity {
+                        expected: last_cc,
+                        actual: packet.continuity_counter,
+                    }
+                }
+            }
+        } else {
+            self.continuity_counters
+                .insert(packet.pid, packet.continuity_counter);
+            ContinuityStatus::Initial
+        }
+    }
+
     /// Parse TS packets with zero-copy approach and call handlers for found PSI
     pub fn parse_packets<F, G, H>(
         &mut self,
-        mut data: Bytes,
-        mut on_pat: F,
-        mut on_pmt: G,
-        mut on_packet: Option<H>,
+        data: Bytes,
+        on_pat: F,
+        on_pmt: G,
+        on_packet: Option<H>,
     ) -> Result<()>
     where
         F: FnMut(PatRef) -> Result<()>,
         G: FnMut(PmtRef) -> Result<()>,
         H: FnMut(&TsPacketRef) -> Result<()>,
+    {
+        self.parse_packets_inner(
+            data,
+            on_pat,
+            on_pmt,
+            on_packet,
+            None::<fn(crate::scte35::SpliceInfoSectionRef) -> Result<()>>,
+        )
+    }
+
+    /// Parse TS packets with SCTE-35 splice information support.
+    ///
+    /// SCTE-35 PIDs are auto-detected from PMT entries with a registration
+    /// descriptor containing format identifier "CUEI".
+    pub fn parse_packets_with_scte35<F, G, H, S>(
+        &mut self,
+        data: Bytes,
+        on_pat: F,
+        on_pmt: G,
+        on_packet: Option<H>,
+        on_scte35: S,
+    ) -> Result<()>
+    where
+        F: FnMut(PatRef) -> Result<()>,
+        G: FnMut(PmtRef) -> Result<()>,
+        H: FnMut(&TsPacketRef) -> Result<()>,
+        S: FnMut(crate::scte35::SpliceInfoSectionRef) -> Result<()>,
+    {
+        self.parse_packets_inner(data, on_pat, on_pmt, on_packet, Some(on_scte35))
+    }
+
+    fn parse_packets_inner<F, G, H, S>(
+        &mut self,
+        mut data: Bytes,
+        mut on_pat: F,
+        mut on_pmt: G,
+        mut on_packet: Option<H>,
+        mut on_scte35: Option<S>,
+    ) -> Result<()>
+    where
+        F: FnMut(PatRef) -> Result<()>,
+        G: FnMut(PmtRef) -> Result<()>,
+        H: FnMut(&TsPacketRef) -> Result<()>,
+        S: FnMut(crate::scte35::SpliceInfoSectionRef) -> Result<()>,
     {
         while !data.is_empty() {
             // Fast path: if we're already at a sync byte, we don't need to search
@@ -458,6 +637,11 @@ impl TsParser {
             // At this point, data[0] is 0x47.
             let chunk = data.slice(0..188);
             if let Ok(packet) = TsPacketRef::parse(chunk) {
+                // Check continuity counter if enabled
+                if self.check_continuity {
+                    let _status = self.check_cc(&packet);
+                }
+
                 // Successfully parsed a packet.
                 if let Some(on_packet_cb) = &mut on_packet {
                     on_packet_cb(&packet)?;
@@ -466,7 +650,13 @@ impl TsParser {
                 if packet.payload_unit_start_indicator
                     && let Some(psi_payload) = packet.psi_payload()
                 {
-                    self.process_psi_payload(packet.pid, psi_payload, &mut on_pat, &mut on_pmt)?;
+                    self.process_psi_payload_inner(
+                        packet.pid,
+                        psi_payload,
+                        &mut on_pat,
+                        &mut on_pmt,
+                        &mut on_scte35,
+                    )?;
                 }
                 data.advance(188);
             } else {
@@ -478,21 +668,37 @@ impl TsParser {
         Ok(())
     }
 
-    /// Process a PSI payload from a packet
-    fn process_psi_payload<F, G>(
+    /// Internal PSI payload processing with optional SCTE-35 support.
+    fn process_psi_payload_inner<F, G, S>(
         &mut self,
         pid: u16,
         psi_payload: Bytes,
         on_pat: &mut F,
         on_pmt: &mut G,
+        on_scte35: &mut Option<S>,
     ) -> Result<()>
     where
         F: FnMut(PatRef) -> Result<()>,
         G: FnMut(PmtRef) -> Result<()>,
+        S: FnMut(crate::scte35::SpliceInfoSectionRef) -> Result<()>,
     {
         if pid == 0x0000 {
-            if let Ok(pat) = PatRef::parse(psi_payload) {
+            let parse_result = if self.validate_crc {
+                PatRef::parse_with_crc(psi_payload)
+            } else {
+                PatRef::parse(psi_payload)
+            };
+            if let Ok(pat) = parse_result {
                 self.process_pat(pat, on_pat)?;
+            }
+        } else if self.scte35_pids.contains(&pid) {
+            // SCTE-35 splice info
+            if let Some(on_scte35_cb) = on_scte35
+                && !psi_payload.is_empty()
+                && psi_payload[0] == crate::scte35::SCTE35_TABLE_ID
+                && let Ok(section) = crate::scte35::SpliceInfoSectionRef::parse(psi_payload)
+            {
+                on_scte35_cb(section)?;
             }
         } else if self.pmt_pids.contains_key(&pid) {
             // It could be a PAT on a PMT PID, check table_id
@@ -502,13 +708,23 @@ impl TsParser {
             match psi_payload[0] {
                 0x00 => {
                     // PAT packet on a PMT PID, re-process PAT
-                    if let Ok(pat) = PatRef::parse(psi_payload) {
+                    let parse_result = if self.validate_crc {
+                        PatRef::parse_with_crc(psi_payload)
+                    } else {
+                        PatRef::parse(psi_payload)
+                    };
+                    if let Ok(pat) = parse_result {
                         self.process_pat(pat, on_pat)?;
                     }
                 }
                 0x02 => {
                     // PMT packet
-                    if let Ok(pmt) = PmtRef::parse(psi_payload) {
+                    let parse_result = if self.validate_crc {
+                        PmtRef::parse_with_crc(psi_payload)
+                    } else {
+                        PmtRef::parse(psi_payload)
+                    };
+                    if let Ok(pmt) = parse_result {
                         let program_number = self.pmt_pids.get(&pid).cloned().unwrap_or(0);
                         let is_new = self
                             .pmt_versions
@@ -516,6 +732,8 @@ impl TsParser {
                             .is_none_or(|&v| v != pmt.version_number);
                         if is_new {
                             self.pmt_versions.insert(program_number, pmt.version_number);
+                            // Detect SCTE-35 PIDs from this PMT
+                            self.detect_scte35_pids(&pmt);
                             on_pmt(pmt)?;
                         }
                     }
@@ -526,6 +744,23 @@ impl TsParser {
             }
         }
         Ok(())
+    }
+
+    /// Detect SCTE-35 PIDs from a PMT by looking for streams with
+    /// registration descriptor format identifier "CUEI".
+    fn detect_scte35_pids(&mut self, pmt: &PmtRef) {
+        for stream in pmt.streams().flatten() {
+            // Check ES info descriptors for registration descriptor "CUEI"
+            for desc in stream.descriptors() {
+                if desc.tag == crate::descriptor::TAG_REGISTRATION
+                    && let Some(format_id) =
+                        crate::descriptor::parse_registration_descriptor(&desc.data)
+                    && &format_id == b"CUEI"
+                {
+                    self.scte35_pids.insert(stream.elementary_pid);
+                }
+            }
+        }
     }
 
     /// Process a parsed PAT
@@ -541,6 +776,7 @@ impl TsParser {
             self.program_pids.clear();
             self.pmt_pids.clear();
             self.pmt_versions.clear();
+            self.scte35_pids.clear();
 
             // Populate the maps with the new program data.
             for program in pat.programs() {
@@ -563,6 +799,8 @@ impl TsParser {
         self.pmt_pids.clear();
         self.pat_version = None;
         self.pmt_versions.clear();
+        self.continuity_counters.clear();
+        self.scte35_pids.clear();
     }
 
     /// Get estimated memory usage for the parser (for debugging/profiling)

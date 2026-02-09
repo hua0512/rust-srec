@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use hls::segment::{HlsData, M4sData, M4sInitSegmentData, M4sSegmentData, TsSegmentData};
+use hls::{HlsData, M4sData, M4sInitSegmentData, M4sSegmentData, TsSegmentData};
 use m3u8_rs::MediaSegment;
 use url::Url;
 
@@ -26,6 +26,11 @@ pub fn create_hls_data(segment: MediaSegment, data: Bytes, url: &Url, is_init: b
         }
     } else {
         // Default to TS segment
-        HlsData::TsData(TsSegmentData { segment, data })
+        HlsData::TsData(TsSegmentData {
+            segment,
+            data,
+            validate_crc: false,
+            check_continuity: false,
+        })
     }
 }

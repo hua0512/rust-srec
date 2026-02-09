@@ -1,10 +1,9 @@
 use crate::amf::model::{AmfScriptData, KeyframeData};
 use crate::analyzer::FlvStats;
-use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, Amf0WriteError, write_amf_property_key};
+use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, Amf0WriteError};
 use byteorder::{BigEndian, WriteBytesExt};
 use flv::{audio::SoundFormat, video::VideoCodecId};
 use std::borrow::Cow;
-use std::io::Write;
 use tracing::debug;
 
 const NATURAL_METADATA_KEY_ORDER: &[&str] = &[
@@ -180,13 +179,13 @@ impl OnMetaDataBuilder {
                 continue;
             }
             if let Some(value) = self.get_amf_value_for_key(key) {
-                write_amf_property_key!(&mut buf, key);
+                Amf0Encoder::write_property_key(&mut buf, key)?;
                 Amf0Encoder::encode(&mut buf, &value)?;
             }
         }
 
         for (key, value) in &self.data.custom_properties {
-            write_amf_property_key!(&mut buf, key);
+            Amf0Encoder::write_property_key(&mut buf, key)?;
             Amf0Encoder::encode(&mut buf, value)?;
         }
 
@@ -457,7 +456,7 @@ impl OnMetaDataBuilder {
         low_latency_mode: bool,
     ) -> Result<(), Amf0WriteError> {
         let start_position = buf.len();
-        write_amf_property_key!(buf, "keyframes");
+        Amf0Encoder::write_property_key(buf, "keyframes")?;
         buf.write_u8(Amf0Marker::Object as u8)?;
 
         match keyframes {
@@ -466,7 +465,7 @@ impl OnMetaDataBuilder {
                 filepositions,
             } => {
                 // Write times array
-                write_amf_property_key!(buf, "times");
+                Amf0Encoder::write_property_key(buf, "times")?;
                 buf.write_u8(Amf0Marker::StrictArray as u8)?;
                 buf.write_u32::<BigEndian>(times.len() as u32)?;
                 for time in &times {
@@ -474,7 +473,7 @@ impl OnMetaDataBuilder {
                 }
 
                 // Write filepositions array
-                write_amf_property_key!(buf, "filepositions");
+                Amf0Encoder::write_property_key(buf, "filepositions")?;
                 buf.write_u8(Amf0Marker::StrictArray as u8)?;
                 buf.write_u32::<BigEndian>(filepositions.len() as u32)?;
                 for pos in &filepositions {
@@ -499,7 +498,7 @@ impl OnMetaDataBuilder {
                     debug!("Remaining spacer size: {remaining_spacer_size}");
                     if remaining_spacer_size > 0 {
                         // Write spacer array
-                        write_amf_property_key!(buf, "spacer");
+                        Amf0Encoder::write_property_key(buf, "spacer")?;
                         buf.write_u8(Amf0Marker::StrictArray as u8)?;
                         buf.write_u32::<BigEndian>(remaining_spacer_size as u32)?;
                         for _ in 0..remaining_spacer_size {
@@ -510,17 +509,17 @@ impl OnMetaDataBuilder {
             }
             KeyframeData::Placeholder { spacer_size } => {
                 // Write empty times array
-                write_amf_property_key!(buf, "times");
+                Amf0Encoder::write_property_key(buf, "times")?;
                 buf.write_u8(Amf0Marker::StrictArray as u8)?;
                 buf.write_u32::<BigEndian>(0)?;
 
                 // Write empty filepositions array
-                write_amf_property_key!(buf, "filepositions");
+                Amf0Encoder::write_property_key(buf, "filepositions")?;
                 buf.write_u8(Amf0Marker::StrictArray as u8)?;
                 buf.write_u32::<BigEndian>(0)?;
 
                 if spacer_size > 0 {
-                    write_amf_property_key!(buf, "spacer");
+                    Amf0Encoder::write_property_key(buf, "spacer")?;
                     buf.write_u8(Amf0Marker::StrictArray as u8)?;
                     buf.write_u32::<BigEndian>(spacer_size as u32)?;
                     for _ in 0..spacer_size {

@@ -61,201 +61,29 @@ pub enum KeyframeData {
     Placeholder { spacer_size: usize },
 }
 
+/// Extract f64 values from a StrictArray-like value.
+fn extract_f64_array(value: &Amf0Value<'_>) -> Option<Vec<f64>> {
+    Some(
+        value
+            .as_array()?
+            .iter()
+            .filter_map(|v| v.as_number())
+            .collect(),
+    )
+}
+
+/// Extract u64 values (cast from f64) from a StrictArray-like value.
+fn extract_u64_array(value: &Amf0Value<'_>) -> Option<Vec<u64>> {
+    Some(
+        value
+            .as_array()?
+            .iter()
+            .filter_map(|v| v.as_number().map(|n| n as u64))
+            .collect(),
+    )
+}
+
 impl AmfScriptData {
-    pub fn from_amf_object(obj: &mut Vec<(String, Amf0Value<'_>)>) -> Result<Self, Amf0WriteError> {
-        let mut data = AmfScriptData::default();
-        let mut custom_properties = HashMap::new();
-
-        for (key, value) in obj.drain(..) {
-            match key.as_str() {
-                "duration" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.duration = Some(v)
-                    }
-                }
-                "width" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.width = Some(v)
-                    }
-                }
-                "height" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.height = Some(v)
-                    }
-                }
-                "framerate" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.framerate = Some(v)
-                    }
-                }
-                "videocodecid" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.videocodecid = VideoCodecId::try_from(v as u8).ok()
-                    }
-                }
-                "videodatarate" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.videodatarate = Some(v)
-                    }
-                }
-                "audiocodecid" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiocodecid = SoundFormat::try_from(v as u8).ok()
-                    }
-                }
-                "audiodatarate" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiodatarate = Some(v)
-                    }
-                }
-                "audiosamplerate" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiosamplerate = Some(v)
-                    }
-                }
-                "audiosamplesize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiosamplesize = Some(v)
-                    }
-                }
-                "stereo" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.stereo = Some(v)
-                    }
-                }
-                "filesize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.filesize = Some(v as u64)
-                    }
-                }
-                "datasize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.datasize = Some(v as u64)
-                    }
-                }
-                "videosize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.videosize = Some(v as u64)
-                    }
-                }
-                "audiosize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiosize = Some(v as u64)
-                    }
-                }
-                "lasttimestamp" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.lasttimestamp = Some(v as u32)
-                    }
-                }
-                "lastkeyframetimestamp" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.lastkeyframetimestamp = Some(v as u32)
-                    }
-                }
-                "lastkeyframelocation" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.lastkeyframelocation = Some(v as u64)
-                    }
-                }
-                "hasVideo" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.has_video = Some(v)
-                    }
-                }
-                "hasAudio" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.has_audio = Some(v)
-                    }
-                }
-                "hasMetadata" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.has_metadata = Some(v)
-                    }
-                }
-                "hasKeyframes" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.has_keyframes = Some(v)
-                    }
-                }
-                "canSeekToEnd" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.can_seek_to_end = Some(v)
-                    }
-                }
-                "metadatacreator" => {
-                    if let Amf0Value::String(v) = value {
-                        data.metadatacreator = Some(v.to_string())
-                    }
-                }
-                "creationdate" => {
-                    if let Amf0Value::String(v) = value {
-                        data.metadatadate = OffsetDateTime::parse(
-                            &v,
-                            &time::format_description::well_known::Rfc3339,
-                        )
-                        .ok()
-                    }
-                }
-                "keyframes" => {
-                    if let Amf0Value::Object(props) = value {
-                        let times = props.iter().find(|(k, _)| k == "times").and_then(|(_, v)| {
-                            if let Amf0Value::StrictArray(arr) = v {
-                                Some(
-                                    arr.iter()
-                                        .filter_map(|v| {
-                                            if let Amf0Value::Number(n) = v {
-                                                Some(*n)
-                                            } else {
-                                                None
-                                            }
-                                        })
-                                        .collect(),
-                                )
-                            } else {
-                                None
-                            }
-                        });
-
-                        let filepositions = props
-                            .iter()
-                            .find(|(k, _)| k == "filepositions")
-                            .and_then(|(_, v)| {
-                                if let Amf0Value::StrictArray(arr) = v {
-                                    Some(
-                                        arr.iter()
-                                            .filter_map(|v| {
-                                                if let Amf0Value::Number(n) = v {
-                                                    Some(*n as u64)
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .collect(),
-                                    )
-                                } else {
-                                    None
-                                }
-                            });
-
-                        if let (Some(times), Some(filepositions)) = (times, filepositions) {
-                            data.keyframes = Some(KeyframeData::Final {
-                                times,
-                                filepositions,
-                            });
-                        }
-                    }
-                }
-                _ => {
-                    custom_properties.insert(key, value.to_owned());
-                }
-            }
-        }
-
-        data.custom_properties = custom_properties;
-        Ok(data)
-    }
-
     pub fn from_amf_object_ref(
         obj: &[(impl AsRef<str>, Amf0Value<'_>)],
     ) -> Result<Self, Amf0WriteError> {
@@ -264,189 +92,66 @@ impl AmfScriptData {
 
         for (key, value) in obj {
             match key.as_ref() {
-                "duration" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.duration = Some(*v)
-                    }
-                }
-                "width" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.width = Some(*v)
-                    }
-                }
-                "height" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.height = Some(*v)
-                    }
-                }
-                "framerate" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.framerate = Some(*v)
-                    }
-                }
+                "duration" => data.duration = value.as_number(),
+                "width" => data.width = value.as_number(),
+                "height" => data.height = value.as_number(),
+                "framerate" => data.framerate = value.as_number(),
                 "videocodecid" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.videocodecid = VideoCodecId::try_from(*v as u8).ok()
-                    }
+                    data.videocodecid = value
+                        .as_number()
+                        .and_then(|v| VideoCodecId::try_from(v as u8).ok())
                 }
-                "videodatarate" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.videodatarate = Some(*v)
-                    }
-                }
+                "videodatarate" => data.videodatarate = value.as_number(),
                 "audiocodecid" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiocodecid = SoundFormat::try_from(*v as u8).ok()
-                    }
+                    data.audiocodecid = value
+                        .as_number()
+                        .and_then(|v| SoundFormat::try_from(v as u8).ok())
                 }
-                "audiodatarate" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiodatarate = Some(*v)
-                    }
-                }
-                "audiosamplerate" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiosamplerate = Some(*v)
-                    }
-                }
-                "audiosamplesize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiosamplesize = Some(*v)
-                    }
-                }
-                "stereo" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.stereo = Some(*v)
-                    }
-                }
-                "filesize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.filesize = Some(*v as u64)
-                    }
-                }
-                "datasize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.datasize = Some(*v as u64)
-                    }
-                }
-                "videosize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.videosize = Some(*v as u64)
-                    }
-                }
-                "audiosize" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.audiosize = Some(*v as u64)
-                    }
-                }
-                "lasttimestamp" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.lasttimestamp = Some(*v as u32)
-                    }
-                }
+                "audiodatarate" => data.audiodatarate = value.as_number(),
+                "audiosamplerate" => data.audiosamplerate = value.as_number(),
+                "audiosamplesize" => data.audiosamplesize = value.as_number(),
+                "stereo" => data.stereo = value.as_bool(),
+                "filesize" => data.filesize = value.as_number().map(|v| v as u64),
+                "datasize" => data.datasize = value.as_number().map(|v| v as u64),
+                "videosize" => data.videosize = value.as_number().map(|v| v as u64),
+                "audiosize" => data.audiosize = value.as_number().map(|v| v as u64),
+                "lasttimestamp" => data.lasttimestamp = value.as_number().map(|v| v as u32),
                 "lastkeyframetimestamp" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.lastkeyframetimestamp = Some(*v as u32)
-                    }
+                    data.lastkeyframetimestamp = value.as_number().map(|v| v as u32)
                 }
                 "lastkeyframelocation" => {
-                    if let Amf0Value::Number(v) = value {
-                        data.lastkeyframelocation = Some(*v as u64)
-                    }
+                    data.lastkeyframelocation = value.as_number().map(|v| v as u64)
                 }
-                "hasVideo" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.has_video = Some(*v)
-                    }
-                }
-                "hasAudio" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.has_audio = Some(*v)
-                    }
-                }
-                "hasMetadata" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.has_metadata = Some(*v)
-                    }
-                }
-                "hasKeyframes" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.has_keyframes = Some(*v)
-                    }
-                }
-                "canSeekToEnd" => {
-                    if let Amf0Value::Boolean(v) = value {
-                        data.can_seek_to_end = Some(*v)
-                    }
-                }
+                "hasVideo" => data.has_video = value.as_bool(),
+                "hasAudio" => data.has_audio = value.as_bool(),
+                "hasMetadata" => data.has_metadata = value.as_bool(),
+                "hasKeyframes" => data.has_keyframes = value.as_bool(),
+                "canSeekToEnd" => data.can_seek_to_end = value.as_bool(),
                 "creationdate" => {
-                    if let Amf0Value::String(v) = value {
-                        data.metadatadate =
-                            OffsetDateTime::parse(v, &time::format_description::well_known::Rfc3339)
-                                .ok()
-                    }
+                    data.metadatadate = value.as_str().and_then(|s| {
+                        OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
+                            .ok()
+                    })
                 }
-                "metadatacreator" => {
-                    if let Amf0Value::String(v) = value {
-                        data.metadatacreator = Some(v.to_string())
-                    }
-                }
+                "metadatacreator" => data.metadatacreator = value.as_str().map(|s| s.to_string()),
                 "keyframes" => {
-                    if let Amf0Value::Object(props) = value {
-                        let times =
-                            props
-                                .iter()
-                                .find(|(k, _)| k.as_ref() == "times")
-                                .and_then(|(_, v)| {
-                                    if let Amf0Value::StrictArray(arr) = v {
-                                        Some(
-                                            arr.iter()
-                                                .filter_map(|v| {
-                                                    if let Amf0Value::Number(n) = v {
-                                                        Some(*n)
-                                                    } else {
-                                                        None
-                                                    }
-                                                })
-                                                .collect(),
-                                        )
-                                    } else {
-                                        None
-                                    }
-                                });
+                    if let Some(props) = value.as_object_properties() {
+                        let mut times = None;
+                        let mut filepositions = None;
+                        let mut spacer_size = None;
 
-                        let filepositions = props
-                            .iter()
-                            .find(|(k, _)| k.as_ref() == "filepositions")
-                            .and_then(|(_, v)| {
-                                if let Amf0Value::StrictArray(arr) = v {
-                                    Some(
-                                        arr.iter()
-                                            .filter_map(|v| {
-                                                if let Amf0Value::Number(n) = v {
-                                                    Some(*n as u64)
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .collect(),
-                                    )
-                                } else {
-                                    None
+                        for (k, v) in props {
+                            match k.as_ref() {
+                                "times" if times.is_none() => times = extract_f64_array(v),
+                                "filepositions" if filepositions.is_none() => {
+                                    filepositions = extract_u64_array(v)
                                 }
-                            });
-
-                        // retrieve our custom defined spacer size
-                        let spacer_size = props
-                            .iter()
-                            .find(|(k, _)| k.as_ref() == "spacer")
-                            .and_then(|(_, v)| {
-                                if let Amf0Value::StrictArray(arr) = v {
-                                    Some(arr.len())
-                                } else {
-                                    None
+                                "spacer" if spacer_size.is_none() => {
+                                    spacer_size = v.as_array().map(|a| a.len())
                                 }
-                            });
+                                _ => {}
+                            }
+                        }
 
                         data.spacer_size = spacer_size;
 
@@ -459,7 +164,7 @@ impl AmfScriptData {
                     }
                 }
                 _ => {
-                    custom_properties.insert(key.as_ref().to_string(), value.to_owned());
+                    custom_properties.insert(key.as_ref().to_string(), value.into_owned());
                 }
             }
         }

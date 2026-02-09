@@ -123,7 +123,7 @@ impl ScriptData {
 
         Ok(Self {
             name: name.into_owned(),
-            data: data.into_iter().map(|v| v.to_owned()).collect(),
+            data: data.into_iter().map(|v| v.into_owned()).collect(),
         })
     }
 }

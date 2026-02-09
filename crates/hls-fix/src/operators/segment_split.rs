@@ -63,7 +63,7 @@ impl SegmentSplitOperator {
         }
     }
 
-    // Calculate CRC32 for byte content
+    // Calculate CRC32 for byte content (zlib CRC-32 for data fingerprinting, not MPEG-2 CRC-32)
     fn calculate_crc(data: &[u8]) -> u32 {
         crc32::crc32(data)
     }
@@ -129,7 +129,7 @@ impl SegmentSplitOperator {
     // Returns true if a split is needed
     fn handle_ts_segment(&mut self, input: &HlsData) -> Result<bool, PipelineError> {
         let (current_stream_info, packets) = match input {
-            HlsData::TsData(ts_data) => match ts_data.parse_stream_and_packets_zero_copy() {
+            HlsData::TsData(ts_data) => match ts_data.parse_stream_and_packets() {
                 Ok((info, packets)) => (info, packets),
                 Err(e) => {
                     warn!("{} Failed to parse TS packets: {}", self.context.name, e);
@@ -628,6 +628,8 @@ mod tests {
         let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data1),
+            validate_crc: false,
+            check_continuity: false,
         });
 
         // Process the initial segment
@@ -640,6 +642,8 @@ mod tests {
         let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data2),
+            validate_crc: false,
+            check_continuity: false,
         });
 
         // Process the modified segment
@@ -673,6 +677,8 @@ mod tests {
         let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data1),
+            validate_crc: false,
+            check_continuity: false,
         });
 
         // Process the initial segment
@@ -685,6 +691,8 @@ mod tests {
         let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data2),
+            validate_crc: false,
+            check_continuity: false,
         });
 
         // Process the segment with different program
@@ -719,6 +727,8 @@ mod tests {
         let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data1),
+            validate_crc: false,
+            check_continuity: false,
         });
 
         // Process the initial segment
@@ -731,6 +741,8 @@ mod tests {
         let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data2),
+            validate_crc: false,
+            check_continuity: false,
         });
 
         // Process the segment with different codec (and implied resolution)

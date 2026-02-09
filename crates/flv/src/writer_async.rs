@@ -1,13 +1,13 @@
 use crate::data::FlvData;
+use crate::encode;
 use bytes::{BufMut, BytesMut};
 use std::io;
 use tokio_util::codec::Encoder;
 
 /// Maximum allowed data size for a single FLV tag payload (24 bits).
 const MAX_TAG_DATA_SIZE: usize = 0xFFFFFF; // 16,777,215 bytes
-const FLV_HEADER_SIZE: usize = 9;
-const PREV_TAG_FIELD_SIZE: usize = 4;
-const TAG_HEADER_SIZE: usize = 11;
+const PREV_TAG_FIELD_SIZE: usize = encode::PREV_TAG_SIZE_FIELD_SIZE;
+const TAG_HEADER_SIZE: usize = encode::TAG_HEADER_SIZE;
 
 /// Encodes `FlvData` (Header or Tag) into the FLV byte format.
 ///
@@ -18,9 +18,14 @@ const TAG_HEADER_SIZE: usize = 11;
 /// Use with `tokio_util::codec::FramedWrite` for buffered asynchronous writing.
 #[derive(Debug, Default)]
 pub struct FlvEncoder {
-    /// Stores the total size (PreviousTagSize field + Header + Data)
-    /// of the *last* tag structure written to the buffer.
-    /// This is needed to write the correct `PreviousTagSize` for the *next* tag.
+    /// Stores the size of the *previous* tag (tag header + tag payload), in bytes.
+    ///
+    /// FLV `PreviousTagSize` values do NOT include the 4-byte `PreviousTagSize` field itself.
+    /// The value for an FLV v1 tag is `11 + DataSize`.
+    ///
+    /// We write `PreviousTagSize` before each tag, which matches the on-wire layout:
+    /// `Header(9) + PrevTagSize0(4) + Tag1 + PrevTagSize1 + Tag2 + ...`.
+    /// This field tracks the value to write for the next tag.
     last_tag_size_written: u32,
     /// Tracks if the FLV header has already been written.
     header_written: bool,
@@ -31,9 +36,11 @@ impl Encoder<FlvData> for FlvEncoder {
 
     /// Encodes an `FlvData` item into the provided `BytesMut` buffer.
     ///
-    /// - For `FlvData::Header`, writes the 9-byte FLV header. Must be the first item.
+    /// - For `FlvData::Header`, writes the 9-byte FLV header followed by `PreviousTagSize0` (=0).
+    ///   This must be the first item.
     /// - For `FlvData::Tag`, writes the 4-byte `PreviousTagSize`, the 11-byte tag header,
     ///   and the tag data payload. Requires the header to have been written previously.
+    /// - For `FlvData::EndOfSequence`, does nothing (control signal only).
     fn encode(&mut self, item: FlvData, dst: &mut BytesMut) -> Result<(), Self::Error> {
         match item {
             FlvData::Header(header) => {
@@ -45,27 +52,9 @@ impl Encoder<FlvData> for FlvEncoder {
                     ));
                 }
 
-                dst.reserve(FLV_HEADER_SIZE);
-
-                // 1. FLV Signature (3 bytes)
-                dst.put_slice(b"FLV");
-                // 2. Version (1 byte)
-                dst.put_u8(header.version);
-                // 3. Flags (TypeFlags) (1 byte)
-                let mut flags = 0u8;
-                // Bit 0: Video tags are present
-                if header.has_video {
-                    flags |= 0x01;
-                }
-                // Bit 2: Audio tags are present
-                if header.has_audio {
-                    flags |= 0x04;
-                }
-                // Other bits (1, 3-7) must be 0
-                dst.put_u8(flags);
-                // 4. Data Offset (4 bytes, BigEndian)
-                // Specifies the size of the header, usually 9.
-                dst.put_u32(FLV_HEADER_SIZE as u32);
+                let bytes = encode::encode_header_bytes(&header)?;
+                dst.reserve(bytes.len());
+                dst.put_slice(&bytes);
 
                 // Update state: Header is now written, next tag's prev size is 0.
                 self.last_tag_size_written = 0;
@@ -83,6 +72,15 @@ impl Encoder<FlvData> for FlvEncoder {
 
                 let data_len = tag.data.len();
 
+                // FLV tag StreamID is defined as UI24 and, for FLV files, SHALL always be 0.
+                // (Multitrack in E-RTMP is signaled in the payload, not via StreamID.)
+                if tag.stream_id != 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("FLV tag stream_id must be 0 (got {})", tag.stream_id),
+                    ));
+                }
+
                 // Validate tag data size fits within 24 bits
                 if data_len > MAX_TAG_DATA_SIZE {
                     return Err(io::Error::new(
@@ -92,59 +90,43 @@ impl Encoder<FlvData> for FlvEncoder {
                         ),
                     ));
                 }
-                // Cast safely after check
                 let data_len_u32 = data_len as u32;
 
-                // Calculate total size for the entire structure being written NOW
-                // (PrevTagSize field + Tag Header + Tag Data)
-                let current_tag_structure_size = PREV_TAG_FIELD_SIZE + TAG_HEADER_SIZE + data_len;
-                dst.reserve(current_tag_structure_size);
+                // Calculate total bytes written for this call:
+                // `PreviousTagSize` field (4) + Tag Header (11) + Tag Data.
+                let current_write_size = PREV_TAG_FIELD_SIZE + TAG_HEADER_SIZE + data_len;
+                dst.reserve(current_write_size);
 
-                // 1. Write PreviousTagSize Field (4 bytes, BigEndian)
-                // This contains the size of the complete previous tag structure.
-                dst.put_u32(self.last_tag_size_written);
+                // 1. PreviousTagSize
+                let prev_bytes = encode::encode_prev_tag_size_bytes(self.last_tag_size_written);
+                dst.put_slice(&prev_bytes);
 
-                // 2. Write Tag Header (11 bytes)
-                //    a. Tag Type (1 byte)
-                dst.put_u8(tag.tag_type.into());
-
-                //    b. Data Size (3 bytes, BigEndian)
-                //       Size of the tag data payload *only*.
-                dst.put_u8((data_len_u32 >> 16) as u8); // MSB
-                dst.put_u8((data_len_u32 >> 8) as u8); // Middle
-                dst.put_u8(data_len_u32 as u8); // LSB
-
-                //    c. Timestamp (3 bytes, BigEndian) + Timestamp Extended (1 byte) = 4 bytes total
-                //       Combined to form a 32-bit millisecond timestamp.
-                let timestamp = tag.timestamp_ms;
-                dst.put_u8((timestamp >> 16) as u8); // Timestamp lower bytes [16:23]
-                dst.put_u8((timestamp >> 8) as u8); // Timestamp lower bytes [8:15]
-                dst.put_u8(timestamp as u8); // Timestamp lower bytes [0:7]
-                dst.put_u8((timestamp >> 24) as u8); // Timestamp upper bytes [24:31] (Extended)
-
-                //    d. Stream ID (3 bytes, BigEndian, usually 0)
-                dst.put_u8((tag.stream_id >> 16) as u8);
-                dst.put_u8((tag.stream_id >> 8) as u8);
-                dst.put_u8(tag.stream_id as u8);
+                // 2. Tag header
+                let header_bytes = encode::encode_tag_header_bytes(
+                    tag.tag_type,
+                    tag.is_filtered,
+                    data_len_u32,
+                    tag.timestamp_ms,
+                    0,
+                )?;
+                dst.put_slice(&header_bytes);
 
                 // 3. Write Tag Data (Variable size)
                 //    Append the raw bytes payload efficiently.
                 dst.put(tag.data);
 
                 // --- Update State for Next Tag ---
-                // The *next* tag's PreviousTagSize field needs the total size
-                // of the structure we just finished writing.
-                self.last_tag_size_written = current_tag_structure_size as u32;
+                // The *next* tag's PreviousTagSize field needs the size of the tag we just wrote
+                // (tag header + tag payload), excluding the PreviousTagSize field itself.
+                self.last_tag_size_written = (TAG_HEADER_SIZE + data_len) as u32;
                 Ok(())
             }
             // Handle other FlvData variants if they exist
             #[allow(unreachable_patterns)] // Silence warning if FlvData only has Header/Tag
             _ => {
-                // Example: Could error, log, or ignore unknown variants
-                Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "Unsupported FlvData variant for encoding",
-                ))
+                // `FlvData::EndOfSequence` is a control signal in our pipeline and does not have a
+                // corresponding on-disk FLV representation. Treat it as a no-op.
+                Ok(())
             }
         }
     }
@@ -158,6 +140,8 @@ mod tests {
     use crate::tag::{FlvTag, FlvTagType};
     use bytes::{Bytes, BytesMut};
     use tokio_util::codec::Encoder; // Bring trait into scope
+
+    const FLV_HEADER_SIZE: usize = encode::FLV_HEADER_SIZE;
 
     // Helper to create a default valid header
     fn default_header() -> FlvHeader {
@@ -173,7 +157,7 @@ mod tests {
         let result = encoder.encode(FlvData::Header(header), &mut buf);
 
         assert!(result.is_ok());
-        assert_eq!(buf.len(), FLV_HEADER_SIZE);
+        assert_eq!(buf.len(), FLV_HEADER_SIZE + PREV_TAG_FIELD_SIZE);
         assert_eq!(
             &buf[..],
             &[
@@ -181,7 +165,8 @@ mod tests {
                 0x46, 0x4C, 0x56, // Version 1
                 0x01, // Flags (Audio + Video)
                 0x05, // Data Offset 9 (BigEndian)
-                0x00, 0x00, 0x00, 0x09,
+                0x00, 0x00, 0x00, 0x09, // PreviousTagSize0
+                0x00, 0x00, 0x00, 0x00,
             ]
         );
         assert!(encoder.header_written);
@@ -195,6 +180,7 @@ mod tests {
             tag_type: FlvTagType::Video,
             timestamp_ms: 100,
             stream_id: 0,
+            is_filtered: false,
             data: Bytes::from_static(&[0x01, 0x02]),
         };
         let mut buf = BytesMut::new();
@@ -218,7 +204,7 @@ mod tests {
                 .encode(FlvData::Header(header.clone()), &mut buf)
                 .is_ok()
         );
-        assert_eq!(buf.len(), FLV_HEADER_SIZE);
+        assert_eq!(buf.len(), FLV_HEADER_SIZE + PREV_TAG_FIELD_SIZE);
 
         // Second encode should fail
         let result = encoder.encode(FlvData::Header(header), &mut buf);
@@ -226,7 +212,7 @@ mod tests {
         let err = result.err().unwrap();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("written once"));
-        assert_eq!(buf.len(), FLV_HEADER_SIZE); // Buffer unchanged by second call
+        assert_eq!(buf.len(), FLV_HEADER_SIZE + PREV_TAG_FIELD_SIZE); // Buffer unchanged by second call
     }
 
     #[test]
@@ -237,10 +223,12 @@ mod tests {
             tag_type: FlvTagType::Video,
             timestamp_ms: 100, // 0x64
             stream_id: 0,
+            is_filtered: false,
             data: Bytes::from_static(&[0xAA, 0xBB, 0xCC, 0xDD]), // 4 bytes data
         };
         let data_len = 4;
         let expected_tag_structure_size = PREV_TAG_FIELD_SIZE + TAG_HEADER_SIZE + data_len; // 4 + 11 + 4 = 19
+        let expected_tag_size = TAG_HEADER_SIZE + data_len; // 11 + 4 = 15
 
         let mut buf = BytesMut::new();
 
@@ -268,10 +256,7 @@ mod tests {
         assert_eq!(&buf[..], &expected_bytes);
 
         // Check state update
-        assert_eq!(
-            encoder.last_tag_size_written,
-            expected_tag_structure_size as u32
-        );
+        assert_eq!(encoder.last_tag_size_written, expected_tag_size as u32);
     }
 
     #[test]
@@ -282,14 +267,16 @@ mod tests {
             tag_type: FlvTagType::Video,
             timestamp_ms: 100,
             stream_id: 0,
+            is_filtered: false,
             data: Bytes::from_static(&[0xAA, 0xBB, 0xCC, 0xDD]), // 4 bytes data
         };
-        let tag1_structure_size = PREV_TAG_FIELD_SIZE + TAG_HEADER_SIZE + 4; // 19
+        let tag1_size = TAG_HEADER_SIZE + 4; // 15
 
         let tag2 = FlvTag {
             tag_type: FlvTagType::Audio,
             timestamp_ms: 120, // 0x78
             stream_id: 0,
+            is_filtered: false,
             data: Bytes::from_static(&[0xEE, 0xFF]), // 2 bytes data
         };
         let tag2_data_len = 2;
@@ -300,7 +287,7 @@ mod tests {
         // Encode Header and Tag 1
         assert!(encoder.encode(FlvData::Header(header), &mut buf).is_ok());
         assert!(encoder.encode(FlvData::Tag(tag1), &mut buf).is_ok());
-        assert_eq!(encoder.last_tag_size_written, tag1_structure_size as u32); // State updated correctly
+        assert_eq!(encoder.last_tag_size_written, tag1_size as u32); // State updated correctly
         buf.clear(); // Clear buffer to only test the second tag part
 
         // Encode Tag 2
@@ -310,8 +297,8 @@ mod tests {
         assert_eq!(buf.len(), expected_tag2_structure_size);
 
         let expected_bytes = [
-            // PreviousTagSize (should be size of tag1 structure = 19 = 0x13)
-            0x00, 0x00, 0x00, 0x13, // Tag Header (11 bytes)
+            // PreviousTagSize (should be size of tag1 = 15 = 0x0F)
+            0x00, 0x00, 0x00, 0x0F, // Tag Header (11 bytes)
             0x08, // Type: Audio
             0x00, 0x00, 0x02, // Data Size: 2
             0x00, 0x00, 0x78, // Timestamp: 120 (lower 24 bits)
@@ -325,7 +312,7 @@ mod tests {
         // Check state update after tag 2
         assert_eq!(
             encoder.last_tag_size_written,
-            expected_tag2_structure_size as u32
+            (TAG_HEADER_SIZE + tag2_data_len) as u32
         );
     }
 
@@ -340,6 +327,7 @@ mod tests {
             tag_type: FlvTagType::Video,
             timestamp_ms: 100,
             stream_id: 0,
+            is_filtered: false,
             data: Bytes::from(large_data),
         };
 
@@ -363,6 +351,7 @@ mod tests {
             tag_type: FlvTagType::Video,
             timestamp_ms: large_timestamp,
             stream_id: 0,
+            is_filtered: false,
             data: Bytes::from_static(&[0x01]), // 1 byte data
         };
         let data_len = 1;
@@ -395,7 +384,7 @@ mod tests {
         assert_eq!(&buf[..], &expected_bytes);
         assert_eq!(
             encoder.last_tag_size_written,
-            expected_tag_structure_size as u32
+            (TAG_HEADER_SIZE + data_len) as u32
         );
     }
 }
@@ -417,6 +406,7 @@ async fn write_example() -> Result<(), Box<dyn Error>> {
             tag_type: FlvTagType::ScriptData, // Usually the first tag
             timestamp_ms: 0,
             stream_id: 0,
+            is_filtered: false,
             // A minimal valid onMetaData structure
             data: Bytes::from_static(&[
                 0x02, 0x00, 0x0A, // String "onMetaData"
@@ -429,12 +419,14 @@ async fn write_example() -> Result<(), Box<dyn Error>> {
             tag_type: FlvTagType::Video,
             timestamp_ms: 40,
             stream_id: 0,
+            is_filtered: false,
             data: Bytes::from_static(&[0x17, 0x01, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef]), // Example video data
         },
         FlvTag {
             tag_type: FlvTagType::Audio,
             timestamp_ms: 42,
             stream_id: 0,
+            is_filtered: false,
             data: Bytes::from_static(&[0xaf, 0x01, 0xfe, 0xed]), // Example audio data
         },
     ];

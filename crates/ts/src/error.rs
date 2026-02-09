@@ -29,4 +29,21 @@ pub enum TsError {
 
     #[error("Parse error: {0}")]
     ParseError(String),
+
+    #[error(
+        "Continuity counter discontinuity on PID 0x{pid:04x}: expected {expected}, got {actual}"
+    )]
+    ContinuityError { pid: u16, expected: u8, actual: u8 },
+
+    #[error("Duplicate packet detected on PID 0x{pid:04x} with continuity counter {cc}")]
+    DuplicatePacket { pid: u16, cc: u8 },
+
+    #[error("Invalid PES start code")]
+    InvalidPesStartCode,
+
+    #[error("Invalid PTS/DTS flags: 0x{0:02x}")]
+    InvalidPtsDtsFlags(u8),
+
+    #[error("Invalid SCTE-35 section: {0}")]
+    InvalidScte35(String),
 }

@@ -19,7 +19,7 @@
 //! This is intentionally conservative to avoid false positives on legitimate
 //! repeated content (e.g. identical AAC frames at different timestamps).
 use flv::data::FlvData;
-use flv::tag::{FlvTag, FlvUtil};
+use flv::tag::FlvTag;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;

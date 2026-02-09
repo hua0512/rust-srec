@@ -293,6 +293,8 @@ mod tests {
                 ..MediaSegment::empty()
             },
             data: Bytes::from(data),
+            validate_crc: false,
+            check_continuity: false,
         })
     }
 

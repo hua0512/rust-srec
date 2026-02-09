@@ -7,6 +7,22 @@ pub const PID_PAT: u16 = 0x0000;
 /// NULL PID (always 0x1FFF)
 pub const PID_NULL: u16 = 0x1FFF;
 
+/// CAT PID (always 0x0001)
+pub const PID_CAT: u16 = 0x0001;
+
+/// Continuity counter status for a packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContinuityStatus {
+    /// First packet seen for this PID
+    Initial,
+    /// Continuity is correct
+    Ok,
+    /// Discontinuity detected
+    Discontinuity { expected: u8, actual: u8 },
+    /// Duplicate packet (same CC as previous)
+    Duplicate,
+}
+
 /// Transport Stream packet structure
 #[derive(Debug, Clone)]
 pub struct TsPacket {
@@ -143,6 +159,13 @@ impl TsPacket {
             }
         }
         None
+    }
+
+    /// Parse the adaptation field into a structured type.
+    pub fn parse_adaptation_field(&self) -> Option<crate::adaptation_field::AdaptationField> {
+        self.adaptation_field
+            .as_ref()
+            .and_then(|af| crate::adaptation_field::AdaptationField::parse(af))
     }
 }
 

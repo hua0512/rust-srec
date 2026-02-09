@@ -1,4 +1,5 @@
 use crate::{Result, TsError};
+use bytes::Bytes;
 
 /// Stream types defined in MPEG-2 and other standards
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -369,8 +370,6 @@ impl Pmt {
             });
         }
 
-        // TODO: Verify CRC32 if needed
-
         Ok(Pmt {
             table_id,
             program_number,
@@ -382,6 +381,31 @@ impl Pmt {
             program_info,
             streams,
         })
+    }
+
+    /// Parse PMT from PSI section data with CRC-32/MPEG-2 validation.
+    pub fn parse_with_crc(data: &[u8]) -> Result<Self> {
+        if data.len() >= 7 {
+            let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
+            let section_end = 3 + section_length as usize;
+            if section_end <= data.len()
+                && section_end >= 4
+                && !crate::crc32::validate_section_crc32(&data[..section_end])
+            {
+                let stored = u32::from_be_bytes([
+                    data[section_end - 4],
+                    data[section_end - 3],
+                    data[section_end - 2],
+                    data[section_end - 1],
+                ]);
+                let calculated = crate::crc32::mpeg2_crc32(&data[..section_end - 4]);
+                return Err(TsError::Crc32Mismatch {
+                    expected: stored,
+                    calculated,
+                });
+            }
+        }
+        Self::parse(data)
     }
 
     /// Get all video streams
@@ -410,6 +434,20 @@ impl Pmt {
         let mut pids = vec![self.pcr_pid];
         pids.extend(self.streams.iter().map(|s| s.elementary_pid));
         pids
+    }
+}
+
+impl PmtStream {
+    /// Iterate over ES info descriptors.
+    pub fn descriptors(&self) -> crate::descriptor::DescriptorIterator {
+        crate::descriptor::DescriptorIterator::new(Bytes::from(self.es_info.clone()))
+    }
+}
+
+impl Pmt {
+    /// Iterate over program info descriptors.
+    pub fn program_descriptors(&self) -> crate::descriptor::DescriptorIterator {
+        crate::descriptor::DescriptorIterator::new(Bytes::from(self.program_info.clone()))
     }
 }
 

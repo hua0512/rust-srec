@@ -353,7 +353,7 @@ mod tests {
             version: 0x01,
             has_audio,
             has_video,
-            data_offset: Bytes::new(),
+            data_offset: 9,
         }
     }
 
@@ -363,6 +363,7 @@ mod tests {
             timestamp_ms,
             stream_id: 0,
             tag_type,
+            is_filtered: false,
             data: Bytes::from(data),
         }
     }

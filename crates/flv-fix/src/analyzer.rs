@@ -2,7 +2,7 @@ use flv::{
     audio::{AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
     header::FlvHeader,
     resolution::Resolution,
-    tag::{FlvTag, FlvUtil},
+    tag::FlvTag,
     video::VideoCodecId,
 };
 

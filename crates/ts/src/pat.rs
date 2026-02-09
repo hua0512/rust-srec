@@ -89,14 +89,6 @@ impl Pat {
             offset += 4;
         }
 
-        // TODO: Verify CRC32 if needed
-        // let crc32 = u32::from_be_bytes([
-        //     data[programs_end],
-        //     data[programs_end + 1],
-        //     data[programs_end + 2],
-        //     data[programs_end + 3],
-        // ]);
-
         Ok(Pat {
             table_id,
             transport_stream_id,
@@ -106,6 +98,32 @@ impl Pat {
             last_section_number,
             programs,
         })
+    }
+
+    /// Parse PAT from PSI section data with CRC-32/MPEG-2 validation.
+    pub fn parse_with_crc(data: &[u8]) -> Result<Self> {
+        // Validate CRC before parsing
+        if data.len() >= 7 {
+            let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
+            let section_end = 3 + section_length as usize;
+            if section_end <= data.len()
+                && section_end >= 4
+                && !crate::crc32::validate_section_crc32(&data[..section_end])
+            {
+                let stored = u32::from_be_bytes([
+                    data[section_end - 4],
+                    data[section_end - 3],
+                    data[section_end - 2],
+                    data[section_end - 1],
+                ]);
+                let calculated = crate::crc32::mpeg2_crc32(&data[..section_end - 4]);
+                return Err(TsError::Crc32Mismatch {
+                    expected: stored,
+                    calculated,
+                });
+            }
+        }
+        Self::parse(data)
     }
 
     /// Get the Network PID (program number 0)

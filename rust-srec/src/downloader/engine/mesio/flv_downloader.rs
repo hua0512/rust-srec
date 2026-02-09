@@ -575,6 +575,7 @@ mod tests {
             timestamp_ms: 0,
             stream_id: 0,
             tag_type: FlvTagType::ScriptData,
+            is_filtered: false,
             data: Bytes::new(),
         });
 

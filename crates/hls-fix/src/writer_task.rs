@@ -313,7 +313,7 @@ impl ProtocolWriter for HlsWriter {
                         continue;
                     }
                     saw_payload |= !matches!(hls_data, HlsData::EndMarker);
-                    trace!("Received HLS data: {:?}", hls_data.tag_type());
+                    trace!("Received HLS data: {:?}", hls_data.segment_type());
                     self.writer_task.process_item(hls_data)?;
                 }
                 Err(e) => {
