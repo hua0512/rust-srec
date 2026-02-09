@@ -255,8 +255,10 @@ pub struct RegexFilterConfig {
 
 impl FilterConfigValidator for RegexFilterConfig {
     fn validate(&self) -> Result<(), FilterValidationError> {
-        // Validate regex pattern using the regex crate
-        regex::Regex::new(&self.pattern)
+        // Keep validation behavior aligned with runtime evaluation.
+        regex::RegexBuilder::new(&self.pattern)
+            .case_insensitive(self.case_insensitive)
+            .build()
             .map_err(|e| FilterValidationError::InvalidRegexPattern(e.to_string()))?;
 
         Ok(())
