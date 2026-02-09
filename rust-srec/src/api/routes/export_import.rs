@@ -292,6 +292,20 @@ pub struct GlobalConfigExport {
     pub paired_segment_pipeline: Option<serde_json::Value>,
     pub log_filter_directive: Option<String>,
     pub auto_thumbnail: bool,
+
+    /// Maximum execution time (seconds) for a single CPU-bound pipeline job.
+    #[serde(default = "default_pipeline_job_timeout_secs")]
+    pub pipeline_cpu_job_timeout_secs: i64,
+    /// Maximum execution time (seconds) for a single IO-bound pipeline job.
+    #[serde(default = "default_pipeline_job_timeout_secs")]
+    pub pipeline_io_job_timeout_secs: i64,
+    /// Maximum execution time (seconds) for the `execute` processor command.
+    #[serde(default = "default_pipeline_job_timeout_secs")]
+    pub pipeline_execute_timeout_secs: i64,
+}
+
+fn default_pipeline_job_timeout_secs() -> i64 {
+    3600
 }
 
 /// Template for export (uses name as identifier).
@@ -686,6 +700,10 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             paired_segment_pipeline: global_config.paired_segment_pipeline.map(parse_db_config),
             log_filter_directive: Some(global_config.log_filter_directive),
             auto_thumbnail: global_config.auto_thumbnail,
+
+            pipeline_cpu_job_timeout_secs: global_config.pipeline_cpu_job_timeout_secs,
+            pipeline_io_job_timeout_secs: global_config.pipeline_io_job_timeout_secs,
+            pipeline_execute_timeout_secs: global_config.pipeline_execute_timeout_secs,
         },
         templates: templates
             .iter()
@@ -876,6 +894,9 @@ pub async fn import_config(
     global.default_download_engine = config.global_config.default_download_engine;
     global.max_concurrent_cpu_jobs = config.global_config.max_concurrent_cpu_jobs;
     global.max_concurrent_io_jobs = config.global_config.max_concurrent_io_jobs;
+    global.pipeline_cpu_job_timeout_secs = config.global_config.pipeline_cpu_job_timeout_secs;
+    global.pipeline_io_job_timeout_secs = config.global_config.pipeline_io_job_timeout_secs;
+    global.pipeline_execute_timeout_secs = config.global_config.pipeline_execute_timeout_secs;
     global.job_history_retention_days = config.global_config.job_history_retention_days;
     global.notification_event_log_retention_days =
         config.global_config.notification_event_log_retention_days;
@@ -1992,6 +2013,10 @@ mod tests {
             paired_segment_pipeline: None,
             log_filter_directive: Some("rust_srec=debug".to_string()),
             auto_thumbnail: false,
+
+            pipeline_cpu_job_timeout_secs: 3600,
+            pipeline_io_job_timeout_secs: 3600,
+            pipeline_execute_timeout_secs: 3600,
         };
         let json = serde_json::to_string(&export).unwrap();
         assert!(json.contains("rust_srec=debug"));

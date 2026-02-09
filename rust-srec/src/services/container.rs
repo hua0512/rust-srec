@@ -242,6 +242,15 @@ impl ServiceContainer {
             autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
         pipeline_config.io_pool.max_workers =
             autoscale_concurrency_limit(global_config.max_concurrent_io_jobs);
+
+        // Pipeline job timeouts are configured via global config.
+        // NOTE: These are applied at startup; changing them at runtime requires restart.
+        pipeline_config.cpu_pool.job_timeout_secs =
+            global_config.pipeline_cpu_job_timeout_secs.max(1) as u64;
+        pipeline_config.io_pool.job_timeout_secs =
+            global_config.pipeline_io_job_timeout_secs.max(1) as u64;
+        pipeline_config.execute_timeout_secs =
+            global_config.pipeline_execute_timeout_secs.max(1) as u64;
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(pipeline_config, job_repo)
                 .with_session_repository(session_repo)
@@ -439,6 +448,14 @@ impl ServiceContainer {
             autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
         effective_pipeline_config.io_pool.max_workers =
             autoscale_concurrency_limit(global_config.max_concurrent_io_jobs);
+
+        // Apply global-config pipeline timeouts (startup-only).
+        effective_pipeline_config.cpu_pool.job_timeout_secs =
+            global_config.pipeline_cpu_job_timeout_secs.max(1) as u64;
+        effective_pipeline_config.io_pool.job_timeout_secs =
+            global_config.pipeline_io_job_timeout_secs.max(1) as u64;
+        effective_pipeline_config.execute_timeout_secs =
+            global_config.pipeline_execute_timeout_secs.max(1) as u64;
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(effective_pipeline_config, job_repo)
                 .with_session_repository(session_repo.clone())

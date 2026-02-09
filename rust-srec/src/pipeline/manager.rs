@@ -141,6 +141,16 @@ pub struct PipelineManagerConfig {
     /// Job purge service configuration.
     #[serde(default)]
     pub purge: PurgeConfig,
+
+    /// Timeout in seconds for the `execute` processor.
+    ///
+    /// This is enforced inside the processor (in addition to worker pool timeouts).
+    #[serde(default = "default_execute_timeout_secs")]
+    pub execute_timeout_secs: u64,
+}
+
+fn default_execute_timeout_secs() -> u64 {
+    3600
 }
 
 impl Default for PipelineManagerConfig {
@@ -158,6 +168,7 @@ impl Default for PipelineManagerConfig {
 
             throttle: ThrottleConfig::default(),
             purge: PurgeConfig::default(),
+            execute_timeout_secs: default_execute_timeout_secs(),
         }
     }
 }
@@ -310,6 +321,8 @@ where
         let (event_tx, _) = broadcast::channel(256);
         let job_queue = Arc::new(JobQueue::with_config(config.job_queue.clone()));
 
+        let execute_timeout_secs = config.execute_timeout_secs;
+
         // Create default processors
         let processors: Vec<Arc<dyn Processor>> = vec![
             Arc::new(RemuxProcessor::new()),
@@ -317,7 +330,7 @@ where
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
             Arc::new(TdlUploadProcessor::new()),
-            Arc::new(ExecuteCommandProcessor::new()),
+            Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
             Arc::new(AudioExtractProcessor::new()),
@@ -375,6 +388,8 @@ where
             job_repository.clone(),
         ));
 
+        let execute_timeout_secs = config.execute_timeout_secs;
+
         // Create purge service if retention is enabled
         let purge_service = if config.purge.retention_days > 0 {
             Some(Arc::new(JobPurgeService::new(
@@ -392,7 +407,7 @@ where
             Arc::new(AssBurnInProcessor::new()),
             Arc::new(RcloneProcessor::new()),
             Arc::new(TdlUploadProcessor::new()),
-            Arc::new(ExecuteCommandProcessor::new()),
+            Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
             Arc::new(AudioExtractProcessor::new()),
@@ -3769,6 +3784,7 @@ mod tests {
         let config = PipelineManagerConfig::default();
         assert_eq!(config.cpu_pool.max_workers, 2);
         assert_eq!(config.io_pool.max_workers, 4);
+        assert_eq!(config.execute_timeout_secs, 3600);
         // Verify throttle config defaults
         assert!(!config.throttle.enabled);
         assert_eq!(config.throttle.critical_threshold, 500);
