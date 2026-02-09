@@ -102,6 +102,10 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         paired_segment_pipeline: config.paired_segment_pipeline,
         log_filter_directive: config.log_filter_directive,
         auto_thumbnail: config.auto_thumbnail,
+
+        pipeline_cpu_job_timeout_secs: config.pipeline_cpu_job_timeout_secs.max(0) as u64,
+        pipeline_io_job_timeout_secs: config.pipeline_io_job_timeout_secs.max(0) as u64,
+        pipeline_execute_timeout_secs: config.pipeline_execute_timeout_secs.max(0) as u64,
     }
 }
 
@@ -218,6 +222,9 @@ pub async fn update_global_config(
         session_complete_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
         paired_segment_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
         auto_thumbnail: |v: serde_json::Value| v.as_bool(),
+        pipeline_cpu_job_timeout_secs: |v: serde_json::Value| v.as_i64().map(|n| n.max(1)),
+        pipeline_io_job_timeout_secs: |v: serde_json::Value| v.as_i64().map(|n| n.max(1)),
+        pipeline_execute_timeout_secs: |v: serde_json::Value| v.as_i64().map(|n| n.max(1)),
     ]);
 
     debug!(
@@ -424,6 +431,10 @@ mod tests {
             paired_segment_pipeline: None,
             log_filter_directive: "rust_srec=info".to_string(),
             auto_thumbnail: true,
+
+            pipeline_cpu_job_timeout_secs: 3600,
+            pipeline_io_job_timeout_secs: 3600,
+            pipeline_execute_timeout_secs: 3600,
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -472,6 +483,11 @@ mod property_tests {
                 pipeline: |v: serde_json::Value| v.as_str().map(String::from),
                 session_complete_pipeline: |v: serde_json::Value| v.as_str().map(String::from),
                 paired_segment_pipeline: |v: serde_json::Value| v.as_str().map(String::from)
+                ,
+                auto_thumbnail: |v: serde_json::Value| v.as_bool(),
+                pipeline_cpu_job_timeout_secs: |v: serde_json::Value| v.as_i64(),
+                pipeline_io_job_timeout_secs: |v: serde_json::Value| v.as_i64(),
+                pipeline_execute_timeout_secs: |v: serde_json::Value| v.as_i64()
             ]
         );
     }
@@ -550,7 +566,7 @@ mod property_tests {
             let original_config = config.clone();
 
             // Create update request with generated values
-            let update_request = UpdateGlobalConfigRequest {
+        let update_request = UpdateGlobalConfigRequest {
                 output_folder: output_folder.clone().map(|v| serde_json::json!(v)),
                 output_filename_template: output_filename_template.clone().map(|v| serde_json::json!(v)),
                 output_file_format: output_file_format.clone().map(|v| serde_json::json!(v)),
@@ -572,10 +588,13 @@ mod property_tests {
                 session_gap_time_secs: None,
                 pipeline: None,
                 session_complete_pipeline: None,
-                paired_segment_pipeline: None,
-                log_filter_directive: None,
-                auto_thumbnail: None,
-            };
+            paired_segment_pipeline: None,
+            log_filter_directive: None,
+            auto_thumbnail: None,
+            pipeline_cpu_job_timeout_secs: None,
+            pipeline_io_job_timeout_secs: None,
+            pipeline_execute_timeout_secs: None,
+        };
 
             // Apply the update
             apply_global_config_update(&mut config, &update_request);

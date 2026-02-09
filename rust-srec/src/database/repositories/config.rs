@@ -97,7 +97,10 @@ impl ConfigRepository for SqlxConfigRepository {
                 session_complete_pipeline = ?,
                 paired_segment_pipeline = ?,
                 log_filter_directive = ?,
-                auto_thumbnail = ?
+                auto_thumbnail = ?,
+                pipeline_cpu_job_timeout_secs = ?,
+                pipeline_io_job_timeout_secs = ?,
+                pipeline_execute_timeout_secs = ?
             WHERE id = ?
             "#,
         )
@@ -125,6 +128,9 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.paired_segment_pipeline)
         .bind(&config.log_filter_directive)
         .bind(config.auto_thumbnail)
+        .bind(config.pipeline_cpu_job_timeout_secs)
+        .bind(config.pipeline_io_job_timeout_secs)
+        .bind(config.pipeline_execute_timeout_secs)
         .bind(&config.id)
         .execute(&self.pool)
         .await?;
@@ -143,8 +149,11 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_concurrent_io_jobs, job_history_retention_days, notification_event_log_retention_days,
                 session_gap_time_secs,
                 pipeline, session_complete_pipeline, paired_segment_pipeline, log_filter_directive,
-                auto_thumbnail
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                auto_thumbnail,
+                pipeline_cpu_job_timeout_secs,
+                pipeline_io_job_timeout_secs,
+                pipeline_execute_timeout_secs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -172,6 +181,9 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.paired_segment_pipeline)
         .bind(&config.log_filter_directive)
         .bind(config.auto_thumbnail)
+        .bind(config.pipeline_cpu_job_timeout_secs)
+        .bind(config.pipeline_io_job_timeout_secs)
+        .bind(config.pipeline_execute_timeout_secs)
         .execute(&self.pool)
         .await?;
         Ok(())

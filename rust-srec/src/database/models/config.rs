@@ -40,6 +40,17 @@ pub struct GlobalConfigDbModel {
     pub log_filter_directive: String,
     /// Whether to automatically generate thumbnails for new sessions (default: true)
     pub auto_thumbnail: bool,
+
+    // --- Pipeline runtime knobs (global) ---
+    /// Maximum execution time (seconds) for a single CPU-bound pipeline job.
+    /// When exceeded, the job's processor future is cancelled.
+    pub pipeline_cpu_job_timeout_secs: i64,
+    /// Maximum execution time (seconds) for a single IO-bound pipeline job.
+    /// When exceeded, the job's processor future is cancelled.
+    pub pipeline_io_job_timeout_secs: i64,
+    /// Maximum execution time (seconds) for the `execute` processor command.
+    /// This is enforced inside the processor in addition to the worker pool timeout.
+    pub pipeline_execute_timeout_secs: i64,
 }
 
 impl Default for GlobalConfigDbModel {
@@ -71,6 +82,11 @@ impl Default for GlobalConfigDbModel {
             log_filter_directive: "rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info"
                 .to_string(),
             auto_thumbnail: true,
+
+            // Pipeline timeouts (match pipeline defaults)
+            pipeline_cpu_job_timeout_secs: 3600,
+            pipeline_io_job_timeout_secs: 3600,
+            pipeline_execute_timeout_secs: 3600,
         }
     }
 }

@@ -326,11 +326,11 @@ export interface FileRoutesByFullPath {
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewRoute
   '/system/health': typeof AuthedDashboardSystemHealthRoute
-  '/notifications': typeof AuthedDashboardNotificationsIndexRoute
-  '/pipeline': typeof AuthedDashboardPipelineIndexRoute
-  '/player': typeof AuthedDashboardPlayerIndexRoute
-  '/sessions': typeof AuthedDashboardSessionsIndexRoute
-  '/streamers': typeof AuthedDashboardStreamersIndexRoute
+  '/notifications/': typeof AuthedDashboardNotificationsIndexRoute
+  '/pipeline/': typeof AuthedDashboardPipelineIndexRoute
+  '/player/': typeof AuthedDashboardPlayerIndexRoute
+  '/sessions/': typeof AuthedDashboardSessionsIndexRoute
+  '/streamers/': typeof AuthedDashboardStreamersIndexRoute
   '/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdRoute
   '/config/engines/create': typeof AuthedDashboardConfigEnginesCreateRoute
   '/config/platforms/$platformId': typeof AuthedDashboardConfigPlatformsPlatformIdRoute
@@ -344,12 +344,12 @@ export interface FileRoutesByFullPath {
   '/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdRoute
   '/pipeline/workflows/create': typeof AuthedDashboardPipelineWorkflowsCreateRoute
   '/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditRoute
-  '/config/engines': typeof AuthedDashboardConfigEnginesIndexRoute
-  '/config/platforms': typeof AuthedDashboardConfigPlatformsIndexRoute
-  '/config/templates': typeof AuthedDashboardConfigTemplatesIndexRoute
-  '/pipeline/jobs': typeof AuthedDashboardPipelineJobsIndexRoute
-  '/pipeline/presets': typeof AuthedDashboardPipelinePresetsIndexRoute
-  '/pipeline/workflows': typeof AuthedDashboardPipelineWorkflowsIndexRoute
+  '/config/engines/': typeof AuthedDashboardConfigEnginesIndexRoute
+  '/config/platforms/': typeof AuthedDashboardConfigPlatformsIndexRoute
+  '/config/templates/': typeof AuthedDashboardConfigTemplatesIndexRoute
+  '/pipeline/jobs/': typeof AuthedDashboardPipelineJobsIndexRoute
+  '/pipeline/presets/': typeof AuthedDashboardPipelinePresetsIndexRoute
+  '/pipeline/workflows/': typeof AuthedDashboardPipelineWorkflowsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -461,11 +461,11 @@ export interface FileRouteTypes {
     | '/sessions/$sessionId'
     | '/streamers/new'
     | '/system/health'
-    | '/notifications'
-    | '/pipeline'
-    | '/player'
-    | '/sessions'
-    | '/streamers'
+    | '/notifications/'
+    | '/pipeline/'
+    | '/player/'
+    | '/sessions/'
+    | '/streamers/'
     | '/config/engines/$engineId'
     | '/config/engines/create'
     | '/config/platforms/$platformId'
@@ -479,12 +479,12 @@ export interface FileRouteTypes {
     | '/pipeline/workflows/$workflowId'
     | '/pipeline/workflows/create'
     | '/streamers/$id/edit'
-    | '/config/engines'
-    | '/config/platforms'
-    | '/config/templates'
-    | '/pipeline/jobs'
-    | '/pipeline/presets'
-    | '/pipeline/workflows'
+    | '/config/engines/'
+    | '/config/platforms/'
+    | '/config/templates/'
+    | '/pipeline/jobs/'
+    | '/pipeline/presets/'
+    | '/pipeline/workflows/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -603,14 +603,14 @@ declare module '@tanstack/react-router' {
     '/_public': {
       id: '/_public'
       path: ''
-      fullPath: ''
+      fullPath: '/'
       preLoaderRoute: typeof PublicRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed': {
       id: '/_authed'
       path: ''
-      fullPath: ''
+      fullPath: '/'
       preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
@@ -638,7 +638,7 @@ declare module '@tanstack/react-router' {
     '/_authed/_dashboard': {
       id: '/_authed/_dashboard'
       path: ''
-      fullPath: ''
+      fullPath: '/'
       preLoaderRoute: typeof AuthedDashboardRouteImport
       parentRoute: typeof AuthedRoute
     }
@@ -659,35 +659,35 @@ declare module '@tanstack/react-router' {
     '/_authed/_dashboard/streamers/': {
       id: '/_authed/_dashboard/streamers/'
       path: '/streamers'
-      fullPath: '/streamers'
+      fullPath: '/streamers/'
       preLoaderRoute: typeof AuthedDashboardStreamersIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/sessions/': {
       id: '/_authed/_dashboard/sessions/'
       path: '/sessions'
-      fullPath: '/sessions'
+      fullPath: '/sessions/'
       preLoaderRoute: typeof AuthedDashboardSessionsIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/player/': {
       id: '/_authed/_dashboard/player/'
       path: '/player'
-      fullPath: '/player'
+      fullPath: '/player/'
       preLoaderRoute: typeof AuthedDashboardPlayerIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/pipeline/': {
       id: '/_authed/_dashboard/pipeline/'
       path: '/pipeline'
-      fullPath: '/pipeline'
+      fullPath: '/pipeline/'
       preLoaderRoute: typeof AuthedDashboardPipelineIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/notifications/': {
       id: '/_authed/_dashboard/notifications/'
       path: '/notifications'
-      fullPath: '/notifications'
+      fullPath: '/notifications/'
       preLoaderRoute: typeof AuthedDashboardNotificationsIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
@@ -764,42 +764,42 @@ declare module '@tanstack/react-router' {
     '/_authed/_dashboard/pipeline/workflows/': {
       id: '/_authed/_dashboard/pipeline/workflows/'
       path: '/pipeline/workflows'
-      fullPath: '/pipeline/workflows'
+      fullPath: '/pipeline/workflows/'
       preLoaderRoute: typeof AuthedDashboardPipelineWorkflowsIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/pipeline/presets/': {
       id: '/_authed/_dashboard/pipeline/presets/'
       path: '/pipeline/presets'
-      fullPath: '/pipeline/presets'
+      fullPath: '/pipeline/presets/'
       preLoaderRoute: typeof AuthedDashboardPipelinePresetsIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/pipeline/jobs/': {
       id: '/_authed/_dashboard/pipeline/jobs/'
       path: '/pipeline/jobs'
-      fullPath: '/pipeline/jobs'
+      fullPath: '/pipeline/jobs/'
       preLoaderRoute: typeof AuthedDashboardPipelineJobsIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/config/templates/': {
       id: '/_authed/_dashboard/config/templates/'
       path: '/templates'
-      fullPath: '/config/templates'
+      fullPath: '/config/templates/'
       preLoaderRoute: typeof AuthedDashboardConfigTemplatesIndexRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
     '/_authed/_dashboard/config/platforms/': {
       id: '/_authed/_dashboard/config/platforms/'
       path: '/platforms'
-      fullPath: '/config/platforms'
+      fullPath: '/config/platforms/'
       preLoaderRoute: typeof AuthedDashboardConfigPlatformsIndexRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
     '/_authed/_dashboard/config/engines/': {
       id: '/_authed/_dashboard/config/engines/'
       path: '/engines'
-      fullPath: '/config/engines'
+      fullPath: '/config/engines/'
       preLoaderRoute: typeof AuthedDashboardConfigEnginesIndexRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
@@ -1042,3 +1042,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

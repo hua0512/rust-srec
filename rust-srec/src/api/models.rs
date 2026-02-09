@@ -253,6 +253,13 @@ pub struct GlobalConfigResponse {
     pub log_filter_directive: String,
     /// Whether to automatically generate thumbnails for new sessions
     pub auto_thumbnail: bool,
+
+    /// Maximum execution time (seconds) for a single CPU-bound pipeline job.
+    pub pipeline_cpu_job_timeout_secs: u64,
+    /// Maximum execution time (seconds) for a single IO-bound pipeline job.
+    pub pipeline_io_job_timeout_secs: u64,
+    /// Maximum execution time (seconds) for the `execute` processor command.
+    pub pipeline_execute_timeout_secs: u64,
 }
 
 /// Request to update global configuration.
@@ -288,6 +295,10 @@ pub struct UpdateGlobalConfigRequest {
     pub log_filter_directive: Option<serde_json::Value>,
     /// Whether to automatically generate thumbnails for new sessions
     pub auto_thumbnail: Option<serde_json::Value>,
+
+    pub pipeline_cpu_job_timeout_secs: Option<serde_json::Value>,
+    pub pipeline_io_job_timeout_secs: Option<serde_json::Value>,
+    pub pipeline_execute_timeout_secs: Option<serde_json::Value>,
 }
 
 /// Platform configuration response.
