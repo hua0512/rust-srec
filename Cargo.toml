@@ -44,7 +44,7 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json", "fmt"] }
 async-trait = "0.1.89"
 rand = "0.9.2"
-regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl"] }
+regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
 futures = "0.3.31"
 chrono = { version = "0.4.43", features = ["serde"] }
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
@@ -54,7 +54,7 @@ prost-build = "0.14.3"
 parking_lot = "0.12.3"
 sha2 = "0.10.8"
 hex = "0.4.3"
-flate2 = "1.1.8"
+flate2 = { version = "1.1.9", features = ["zlib-rs"], default-features = false }
 url = "2.5.8"
 anyhow = "1.0.95"
 tower = { version = "0.5.3", features = ["full"] }
@@ -67,7 +67,7 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 mimalloc = "0.1.48"
 argon2 = "0.5"
-zip = { version = "7.1", default-features = false, features = ["deflate"] }
+zip = { version = "7.4", default-features = false, features = ["deflate"] }
 tar = "0.4"
 strum = { version = "0.27.2", features = ["derive"] }
 json-patch = "4.1"
@@ -95,6 +95,13 @@ rsa = { version = "0.9.10", features = ["sha2"] }
 rustc-hash = "2.1"
 memchr = "2.7.6"
 criterion = "0.8.1"
+zlib-rs = "0.6.0"
+
+[patch.crates-io]
+# Workaround for zip 7.4.x pulling in typed-path, which introduces an additional
+# `AsRef` impl for `Cow<'_, str>` and triggers ambiguous inference in utoipa
+# macro-generated code. PR: https://github.com/juhaku/utoipa/pull/1519
+utoipa-gen = { git = "https://github.com/cfilipescu/utoipa", rev = "4faea27e72e314007eb65afdac9e867ffbf85afe" }
 
 [profile.dev]
 incremental = true

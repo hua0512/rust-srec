@@ -1,4 +1,3 @@
-use crc32fast::Hasher;
 use hls::{
     HlsData, M4sData, M4sInitSegmentData, Resolution, ResolutionDetector, StreamProfile,
     TsStreamInfo,
@@ -6,6 +5,8 @@ use hls::{
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
+
+use crate::crc32;
 
 /// An operator that splits HLS segments when meaningful stream parameters change.
 ///
@@ -64,9 +65,7 @@ impl SegmentSplitOperator {
 
     // Calculate CRC32 for byte content
     fn calculate_crc(data: &[u8]) -> u32 {
-        let mut hasher = Hasher::new();
-        hasher.update(data);
-        hasher.finalize()
+        crc32::crc32(data)
     }
 
     // Handle MP4 init segment - returns true if a split is needed
