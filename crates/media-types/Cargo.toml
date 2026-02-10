@@ -1,0 +1,9 @@
+[package]
+name = "media-types"
+version = "0.1.0"
+edition = "2024"
+description = "Shared media domain types"
+license = "MIT OR Apache-2.0"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

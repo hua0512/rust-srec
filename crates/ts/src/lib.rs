@@ -20,7 +20,7 @@ pub use adaptation_field::{AdaptationField, AdaptationFieldRef, Pcr};
 pub use crc32::{mpeg2_crc32, validate_section_crc32};
 pub use descriptor::{Ac3Descriptor, DescriptorIterator, DescriptorRef, LanguageEntry};
 pub use error::TsError;
-pub use packet::{ContinuityStatus, PID_CAT, PID_NULL, PID_PAT, TsPacket};
+pub use packet::{ContinuityMode, ContinuityStatus, PID_CAT, PID_NULL, PID_PAT, TsPacket};
 pub use parser_owned::OwnedTsParser;
 pub use parser_zero_copy::{
     PatProgramIterator, PatProgramRef, PatRef, PmtRef, PmtStreamIterator, PmtStreamRef,

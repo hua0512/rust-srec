@@ -88,6 +88,81 @@ pub struct NaluArray {
 }
 
 impl HEVCDecoderConfigurationRecord {
+    /// Returns the first SPS NAL unit as a zero-copy `Bytes` slice.
+    ///
+    /// This is a lightweight helper for callers that only need the SPS payload
+    /// (e.g. to derive resolution) and want to avoid allocating vectors for all
+    /// VPS/SPS/PPS entries.
+    pub fn first_sps_nalu_bytes(data: &Bytes) -> io::Result<Bytes> {
+        // Fixed header up through `num_of_arrays`.
+        // See `demux()` for the field layout; `num_of_arrays` is the 23rd byte.
+        if data.len() < 23 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "HEVC decoder configuration record is too short",
+            ));
+        }
+
+        let configuration_version = data[0];
+        if configuration_version != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid configuration version",
+            ));
+        }
+
+        let num_of_arrays = data[22] as usize;
+        let mut offset = 23;
+
+        for _ in 0..num_of_arrays {
+            if offset + 3 > data.len() {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "truncated HEVC NALU array header",
+                ));
+            }
+
+            let array_header = data[offset];
+            offset += 1;
+
+            let nal_unit_type = array_header & 0b0011_1111;
+            let num_nalus = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
+            offset += 2;
+
+            for _ in 0..num_nalus {
+                if offset + 2 > data.len() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "truncated HEVC NAL unit length field",
+                    ));
+                }
+
+                let nal_unit_length = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
+                offset += 2;
+
+                if offset + nal_unit_length > data.len() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "truncated HEVC NAL unit payload",
+                    ));
+                }
+
+                let nalu = data.slice(offset..offset + nal_unit_length);
+                offset += nal_unit_length;
+
+                // SPS NAL unit type is 33.
+                if nal_unit_type == 33 {
+                    return Ok(nalu);
+                }
+            }
+        }
+
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "no SPS entries in HEVC decoder configuration record",
+        ))
+    }
+
     /// Demuxes an [`HEVCDecoderConfigurationRecord`] from a byte stream.
     ///
     /// Returns a demuxed [`HEVCDecoderConfigurationRecord`].
@@ -355,5 +430,36 @@ mod tests {
         config.mux(&mut buf).unwrap();
 
         assert_eq!(buf, data.to_vec());
+    }
+
+    #[test]
+    fn test_first_sps_nalu_bytes_matches_demux() {
+        let data = Bytes::from(b"\x01\x01@\0\0\0\x90\0\0\0\0\0\x99\xf0\0\xfc\xfd\xf8\xf8\0\0\x0f\x03 \0\x01\0\x18@\x01\x0c\x01\xff\xff\x01@\0\0\x03\0\x90\0\0\x03\0\0\x03\0\x99\x95@\x90!\0\x01\0=B\x01\x01\x01@\0\0\x03\0\x90\0\0\x03\0\0\x03\0\x99\xa0\x01@ \x05\xa1e\x95R\x90\x84d_\xf8\xc0Z\x80\x80\x80\x82\0\0\x03\0\x02\0\0\x03\x01 \xc0\x0b\xbc\xa2\0\x02bX\0\x011-\x08\"\0\x01\0\x07D\x01\xc0\x93|\x0c\xc9".to_vec());
+
+        let sps_fast = HEVCDecoderConfigurationRecord::first_sps_nalu_bytes(&data).unwrap();
+        let parsed =
+            HEVCDecoderConfigurationRecord::demux(&mut io::Cursor::new(data.clone())).unwrap();
+
+        let sps_array = parsed
+            .arrays
+            .iter()
+            .find(|a| a.nal_unit_type == NALUnitType::SpsNut)
+            .unwrap();
+        assert!(!sps_array.nalus.is_empty());
+        assert_eq!(sps_fast, sps_array.nalus[0]);
+    }
+
+    #[test]
+    fn test_first_sps_nalu_bytes_too_short() {
+        let data = Bytes::from_static(b"\x01\x00\x00\x00");
+        let err = HEVCDecoderConfigurationRecord::first_sps_nalu_bytes(&data).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn test_first_sps_nalu_bytes_invalid_version() {
+        let data = Bytes::from(vec![2u8; 23]);
+        let err = HEVCDecoderConfigurationRecord::first_sps_nalu_bytes(&data).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 }

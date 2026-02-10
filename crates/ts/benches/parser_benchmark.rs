@@ -2,28 +2,64 @@ use std::hint::black_box;
 
 use bytes::Bytes;
 use criterion::{Criterion, criterion_group, criterion_main};
-use ts::{OwnedTsParser, TsParser};
+use ts::TsParser;
 
 fn benchmark_parsers(c: &mut Criterion) {
     let mut group = c.benchmark_group("Parser Performance");
 
-    let ts_data = create_complex_ts_data();
-    let ts_data_bytes = Bytes::from(ts_data.clone());
+    let base_data = Bytes::from(create_complex_ts_data());
+    let mixed_format_data = Bytes::from(create_mixed_packet_size_data());
+    let noisy_resync_data = Bytes::from(create_noisy_resync_data());
+    let continuity_heavy_data = Bytes::from(create_continuity_heavy_data());
 
-    let mut parser = OwnedTsParser::new();
-    group.bench_function("Original Parser", |b| {
-        b.iter(|| {
-            parser
-                .parse_packets(black_box(ts_data_bytes.clone()))
-                .unwrap();
-        })
-    });
     let mut parser = TsParser::new();
-    group.bench_function("Zero-Copy Parser", |b| {
+    group.bench_function("Zero-Copy Parser (Base)", |b| {
         b.iter(|| {
             parser
                 .parse_packets(
-                    black_box(ts_data_bytes.clone()),
+                    black_box(base_data.clone()),
+                    |_| Ok(()),
+                    |_| Ok(()),
+                    None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
+                )
+                .unwrap();
+        })
+    });
+
+    let mut parser = TsParser::new();
+    group.bench_function("Zero-Copy Parser (Mixed 188/192/204)", |b| {
+        b.iter(|| {
+            parser
+                .parse_packets(
+                    black_box(mixed_format_data.clone()),
+                    |_| Ok(()),
+                    |_| Ok(()),
+                    None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
+                )
+                .unwrap();
+        })
+    });
+
+    let mut parser = TsParser::new();
+    group.bench_function("Zero-Copy Parser (Noisy Resync)", |b| {
+        b.iter(|| {
+            parser
+                .parse_packets(
+                    black_box(noisy_resync_data.clone()),
+                    |_| Ok(()),
+                    |_| Ok(()),
+                    None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
+                )
+                .unwrap();
+        })
+    });
+
+    let mut parser = TsParser::new().with_continuity_mode(ts::ContinuityMode::Warn);
+    group.bench_function("Zero-Copy Parser (Continuity Heavy)", |b| {
+        b.iter(|| {
+            parser
+                .parse_packets(
+                    black_box(continuity_heavy_data.clone()),
                     |_| Ok(()),
                     |_| Ok(()),
                     None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
@@ -165,4 +201,71 @@ fn create_complex_ts_data() -> Vec<u8> {
     }
 
     ts_data
+}
+
+fn wrap_m2ts_packet(ts_packet: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(192);
+    out.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    out.extend_from_slice(ts_packet);
+    out
+}
+
+fn wrap_204_packet(ts_packet: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(204);
+    out.extend_from_slice(ts_packet);
+    out.extend_from_slice(&[0xAA; 16]);
+    out
+}
+
+fn create_mixed_packet_size_data() -> Vec<u8> {
+    let base = create_complex_ts_data();
+    let mut out = Vec::new();
+
+    for (idx, packet) in base.chunks_exact(188).enumerate() {
+        // Use packet pairs per format so format probing can lock and step.
+        match (idx / 2) % 3 {
+            0 => out.extend_from_slice(packet),
+            1 => out.extend_from_slice(&wrap_m2ts_packet(packet)),
+            _ => out.extend_from_slice(&wrap_204_packet(packet)),
+        }
+    }
+
+    out
+}
+
+fn create_noisy_resync_data() -> Vec<u8> {
+    let base = create_complex_ts_data();
+    let mut out = Vec::new();
+
+    for (idx, packet) in base.chunks_exact(188).enumerate() {
+        // Alternate format by pairs and inject noise at pair boundaries.
+        if (idx / 2) % 2 == 0 {
+            out.extend_from_slice(&wrap_m2ts_packet(packet));
+        } else {
+            out.extend_from_slice(packet);
+        }
+
+        if idx % 2 == 1 {
+            // Noise includes decoy sync bytes and random bytes to stress resync.
+            out.extend_from_slice(&[0x47, 0x13, 0x37, 0x99, 0x47, 0x00, 0x12]);
+        }
+    }
+
+    out
+}
+
+fn create_continuity_heavy_data() -> Vec<u8> {
+    let mut out = Vec::new();
+
+    for i in 0..400 {
+        let mut packet = vec![0u8; 188];
+        packet[0] = 0x47;
+        packet[1] = 0x01;
+        packet[2] = 0x00; // PID 0x100
+        // Force frequent discontinuities by jumping counters.
+        packet[3] = 0x10 | (((i * 3) & 0x0F) as u8);
+        out.extend_from_slice(&packet);
+    }
+
+    out
 }

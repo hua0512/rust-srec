@@ -74,6 +74,7 @@ use bytes::Bytes;
 
 use av1::{AV1CodecConfigurationRecord, AV1VideoDescriptor};
 use bytes_util::BytesCursorExt;
+use h264::AVCDecoderConfigurationRecord;
 use h265::HEVCDecoderConfigurationRecord;
 use tracing::debug;
 
@@ -293,15 +294,23 @@ impl std::fmt::Display for VideoFourCC {
     }
 }
 
-impl From<[u8; 4]> for VideoFourCC {
-    fn from(bytes: [u8; 4]) -> Self {
+impl TryFrom<[u8; 4]> for VideoFourCC {
+    type Error = io::Error;
+
+    fn try_from(bytes: [u8; 4]) -> Result<Self, Self::Error> {
         match bytes {
-            [b'a', b'v', b'c', b'1'] => Self::Avc1,
-            [b'h', b'v', b'c', b'1'] => Self::Hvc1,
-            [b'v', b'p', b'0', b'8'] => Self::Vp08,
-            [b'v', b'p', b'0', b'9'] => Self::Vp09,
-            [b'a', b'v', b'0', b'1'] => Self::Av01,
-            _ => Self::Av01, // Default case
+            [b'a', b'v', b'c', b'1'] => Ok(Self::Avc1),
+            [b'h', b'v', b'c', b'1'] => Ok(Self::Hvc1),
+            [b'v', b'p', b'0', b'8'] => Ok(Self::Vp08),
+            [b'v', b'p', b'0', b'9'] => Ok(Self::Vp09),
+            [b'a', b'v', b'0', b'1'] => Ok(Self::Av01),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unknown video FourCC: {:?}",
+                    std::str::from_utf8(&bytes).unwrap_or("????")
+                ),
+            )),
         }
     }
 }
@@ -338,11 +347,18 @@ impl VideoTagBody {
     pub fn is_sequence_header(&self) -> bool {
         match self {
             VideoTagBody::Avc(avc_data) => {
-                // Check if the data is a sequence header
                 matches!(avc_data, AvcPacket::SequenceHeader(_))
             }
             VideoTagBody::Hevc(hevc_data) => {
-                // Check if the data is a sequence header
+                matches!(hevc_data, HevcPacket::SequenceStart(_))
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(av1_data)) => {
+                matches!(av1_data, Av1Packet::SequenceStart(_))
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Avc(avc_data)) => {
+                matches!(avc_data, AvcPacket::SequenceHeader(_))
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Hevc(hevc_data)) => {
                 matches!(hevc_data, HevcPacket::SequenceStart(_))
             }
             _ => false,
@@ -432,6 +448,8 @@ pub enum EnhancedPacket {
     },
     /// Sequence End
     SequenceEnd { video_codec: VideoFourCC },
+    /// Avc (H.264) Video Packet (enhanced)
+    Avc(AvcPacket),
     /// Av1 Video Packet
     Av1(Av1Packet),
     /// Hevc (H.265) Video Packet
@@ -494,12 +512,15 @@ impl VideoTagBody {
             VideoPacketType::Enhanced(packet_type) => {
                 let mut video_codec = [0; 4];
                 reader.read_exact(&mut video_codec)?;
-                let video_codec = VideoFourCC::from(video_codec);
+                let video_codec = VideoFourCC::try_from(video_codec)?;
 
                 match packet_type {
                     EnhancedPacketType::SEQUENCE_END => {
-                        return Ok(VideoTagBody::Enhanced(EnhancedPacket::SequenceEnd {
-                            video_codec,
+                        return Ok(VideoTagBody::Enhanced(match video_codec {
+                            VideoFourCC::Avc1 => EnhancedPacket::Avc(AvcPacket::EndOfSequence),
+                            VideoFourCC::Av01 => EnhancedPacket::Av1(Av1Packet::EndOfSequence),
+                            VideoFourCC::Hvc1 => EnhancedPacket::Hevc(HevcPacket::EndOfSequence),
+                            _ => EnhancedPacket::SequenceEnd { video_codec },
                         }));
                     }
                     EnhancedPacketType::METADATA => {
@@ -515,21 +536,23 @@ impl VideoTagBody {
                 debug!("Packet type: {:?}", packet_type);
 
                 match (video_codec, packet_type) {
-                    (VideoFourCC::Avc1, EnhancedPacketType::SEQUENCE_START) => {
-                        Ok(VideoTagBody::Enhanced(EnhancedPacket::Av1(
-                            Av1Packet::SequenceStart(AV1CodecConfigurationRecord::demux(reader)?),
-                        )))
-                    }
-                    (VideoFourCC::Avc1, EnhancedPacketType::MPEG2_SEQUENCE_START) => Ok(
-                        VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(
-                            AV1VideoDescriptor::demux(reader)?.codec_configuration_record,
+                    (VideoFourCC::Avc1, EnhancedPacketType::SEQUENCE_START) => Ok(
+                        VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::SequenceHeader(
+                            AVCDecoderConfigurationRecord::parse(reader)?,
                         ))),
                     ),
-                    (VideoFourCC::Avc1, EnhancedPacketType::CODED_FRAMES) => {
-                        Ok(VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(
-                            reader.extract_remaining(),
-                        ))))
-                    }
+                    (VideoFourCC::Avc1, EnhancedPacketType::CODED_FRAMES) => Ok(
+                        VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::Nalu {
+                            composition_time: reader.read_i24::<BigEndian>()?,
+                            data: reader.extract_remaining(),
+                        })),
+                    ),
+                    (VideoFourCC::Avc1, EnhancedPacketType::CODED_FRAMES_X) => Ok(
+                        VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::Nalu {
+                            composition_time: 0,
+                            data: reader.extract_remaining(),
+                        })),
+                    ),
                     (VideoFourCC::Hvc1, EnhancedPacketType::SEQUENCE_START) => Ok(
                         VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::SequenceStart(
                             HEVCDecoderConfigurationRecord::demux(reader)?,
@@ -588,6 +611,15 @@ impl VideoTagBody {
         match self {
             VideoTagBody::Avc(avc_data) => avc_data.get_video_resolution(),
             VideoTagBody::Hevc(hevc_data) => hevc_data.get_video_resolution(),
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(av1_data)) => {
+                av1_data.get_video_resolution()
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Avc(avc_data)) => {
+                avc_data.get_video_resolution()
+            }
+            VideoTagBody::Enhanced(EnhancedPacket::Hevc(hevc_data)) => {
+                hevc_data.get_video_resolution()
+            }
             _ => None,
         }
     }
@@ -638,6 +670,7 @@ impl std::fmt::Display for EnhancedPacket {
             EnhancedPacket::SequenceEnd { video_codec } => {
                 write!(f, "Sequence End [{video_codec}]")
             }
+            EnhancedPacket::Avc(packet) => write!(f, "AVC {packet}"),
             EnhancedPacket::Av1(packet) => write!(f, "AV1 {packet}"),
             EnhancedPacket::Hevc(packet) => write!(f, "HEVC {packet}"),
             EnhancedPacket::Unknown {
@@ -670,9 +703,12 @@ mod tests {
         ];
 
         for (expected, bytes, name) in cases {
-            assert_eq!(VideoFourCC::from(bytes), expected);
-            assert_eq!(format!("{:?}", VideoFourCC::from(bytes)), name);
+            assert_eq!(VideoFourCC::try_from(bytes).unwrap(), expected);
+            assert_eq!(format!("{:?}", VideoFourCC::try_from(bytes).unwrap()), name);
         }
+
+        // Unknown FourCC should error
+        assert!(VideoFourCC::try_from(*b"xxxx").is_err());
     }
 
     #[test]
@@ -971,5 +1007,252 @@ mod tests {
 
         // Verify the parsed data
         assert_eq!(body, VideoTagBody::Hevc(HevcPacket::EndOfSequence));
+    }
+
+    #[test]
+    fn test_av1_sequence_end() {
+        // Enhanced packet type SEQUENCE_END (2) with AV1 FourCC
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            b'a', b'v', b'0', b'1', // video codec
+        ]));
+        let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::SEQUENCE_END);
+        let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
+        assert_eq!(
+            body,
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::EndOfSequence))
+        );
+    }
+
+    #[test]
+    fn test_av1_coded_frames_x() {
+        // Enhanced packet type CODED_FRAMES_X (3) with AV1 FourCC — no composition time
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            b'a', b'v', b'0', b'1', // video codec
+            0xDE, 0xAD, 0xBE, 0xEF, // raw OBU data
+        ]));
+        let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::CODED_FRAMES_X);
+        let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
+        assert_eq!(
+            body,
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::from_static(&[
+                0xDE, 0xAD, 0xBE, 0xEF
+            ]))))
+        );
+    }
+
+    #[test]
+    fn test_av1_coded_frames() {
+        // Enhanced packet type CODED_FRAMES (1) with AV1 FourCC
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            b'a', b'v', b'0', b'1', // video codec
+            0x01, 0x02, 0x03, // raw OBU data
+        ]));
+        let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::CODED_FRAMES);
+        let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
+        assert_eq!(
+            body,
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::from_static(&[
+                0x01, 0x02, 0x03
+            ]))))
+        );
+    }
+
+    #[test]
+    fn test_av1_is_sequence_header() {
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(
+            AV1CodecConfigurationRecord {
+                seq_profile: 0,
+                seq_level_idx_0: 0,
+                seq_tier_0: false,
+                high_bitdepth: false,
+                twelve_bit: false,
+                monochrome: false,
+                chroma_subsampling_x: false,
+                chroma_subsampling_y: false,
+                chroma_sample_position: 0,
+                hdr_wcg_idc: 0,
+                initial_presentation_delay_minus_one: None,
+                config_obu: Bytes::new(),
+            },
+        )));
+        assert!(body.is_sequence_header());
+
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::new())));
+        assert!(!body.is_sequence_header());
+
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::EndOfSequence));
+        assert!(!body.is_sequence_header());
+    }
+
+    #[test]
+    fn test_av1_get_video_resolution() {
+        // Use the same real config_obu from test_av1_mpeg2_sequence_start
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(
+            AV1CodecConfigurationRecord {
+                seq_profile: 0,
+                seq_level_idx_0: 13,
+                seq_tier_0: false,
+                high_bitdepth: false,
+                twelve_bit: false,
+                monochrome: false,
+                chroma_subsampling_x: true,
+                chroma_subsampling_y: true,
+                chroma_sample_position: 0,
+                hdr_wcg_idc: 0,
+                initial_presentation_delay_minus_one: None,
+                config_obu: Bytes::from_static(
+                    b"\n\x0f\0\0\0j\xef\xbf\xe1\xbc\x02\x19\x90\x10\x10\x10@",
+                ),
+            },
+        )));
+        let resolution = body.get_video_resolution().unwrap();
+        assert!(resolution.width > 0.0);
+        assert!(resolution.height > 0.0);
+
+        // Non-sequence-start returns None
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::new())));
+        assert!(body.get_video_resolution().is_none());
+
+        // Empty config_obu returns None
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(
+            AV1CodecConfigurationRecord {
+                seq_profile: 0,
+                seq_level_idx_0: 0,
+                seq_tier_0: false,
+                high_bitdepth: false,
+                twelve_bit: false,
+                monochrome: false,
+                chroma_subsampling_x: false,
+                chroma_subsampling_y: false,
+                chroma_sample_position: 0,
+                hdr_wcg_idc: 0,
+                initial_presentation_delay_minus_one: None,
+                config_obu: Bytes::new(),
+            },
+        )));
+        assert!(body.get_video_resolution().is_none());
+    }
+
+    #[test]
+    fn test_enhanced_avc_sequence_end() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            b'a', b'v', b'c', b'1', // video codec
+        ]));
+        let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::SEQUENCE_END);
+        let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
+        assert_eq!(
+            body,
+            VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::EndOfSequence))
+        );
+    }
+
+    #[test]
+    fn test_enhanced_hevc_sequence_end() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            b'h', b'v', b'c', b'1', // video codec
+        ]));
+        let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::SEQUENCE_END);
+        let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
+        assert_eq!(
+            body,
+            VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::EndOfSequence))
+        );
+    }
+
+    #[test]
+    fn test_enhanced_avc_coded_frames() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            b'a', b'v', b'c', b'1', // video codec
+            0x00, 0x12, 0x34, // composition time
+            0xAA, 0xBB, 0xCC, // NALU data
+        ]));
+        let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::CODED_FRAMES);
+        let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
+        assert_eq!(
+            body,
+            VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::Nalu {
+                composition_time: 0x001234,
+                data: Bytes::from_static(&[0xAA, 0xBB, 0xCC]),
+            }))
+        );
+    }
+
+    #[test]
+    fn test_enhanced_avc_coded_frames_x() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            b'a', b'v', b'c', b'1', // video codec
+            0xAA, 0xBB, 0xCC, // NALU data (no composition time)
+        ]));
+        let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::CODED_FRAMES_X);
+        let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
+        assert_eq!(
+            body,
+            VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::Nalu {
+                composition_time: 0,
+                data: Bytes::from_static(&[0xAA, 0xBB, 0xCC]),
+            }))
+        );
+    }
+
+    #[test]
+    fn test_enhanced_avc_is_sequence_header() {
+        // Create a minimal AVCDecoderConfigurationRecord for testing
+        // We can't easily construct one, so test via is_sequence_header on non-seqhdr types
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::EndOfSequence));
+        assert!(!body.is_sequence_header());
+
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::Nalu {
+            composition_time: 0,
+            data: Bytes::new(),
+        }));
+        assert!(!body.is_sequence_header());
+    }
+
+    #[test]
+    fn test_enhanced_hevc_is_sequence_header() {
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::EndOfSequence));
+        assert!(!body.is_sequence_header());
+
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::Nalu {
+            composition_time: None,
+            data: Bytes::new(),
+        }));
+        assert!(!body.is_sequence_header());
+    }
+
+    #[test]
+    fn test_enhanced_metadata() {
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            b'a', b'v', b'0', b'1', // video codec
+            0x01, 0x02, 0x03, // metadata payload
+        ]));
+        let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::METADATA);
+        let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
+        assert_eq!(
+            body,
+            VideoTagBody::Enhanced(EnhancedPacket::Metadata {
+                video_codec: VideoFourCC::Av01,
+                data: Bytes::from_static(&[0x01, 0x02, 0x03]),
+            })
+        );
+    }
+
+    #[test]
+    fn test_enhanced_unknown_codec() {
+        // VP9 with CODED_FRAMES_X falls through to Unknown
+        let mut reader = io::Cursor::new(Bytes::from_static(&[
+            b'v', b'p', b'0', b'9', // video codec
+            0x01, 0x02, // data
+        ]));
+        let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::CODED_FRAMES_X);
+        let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
+        assert_eq!(
+            body,
+            VideoTagBody::Enhanced(EnhancedPacket::Unknown {
+                packet_type: EnhancedPacketType::CODED_FRAMES_X,
+                video_codec: VideoFourCC::Vp09,
+                data: Bytes::from_static(&[0x01, 0x02]),
+            })
+        );
     }
 }

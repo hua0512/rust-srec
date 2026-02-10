@@ -23,6 +23,18 @@ pub enum ContinuityStatus {
     Duplicate,
 }
 
+/// Continuity counter handling mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContinuityMode {
+    /// Do not evaluate continuity counters.
+    #[default]
+    Disabled,
+    /// Validate continuity counters and continue parsing while reporting issues.
+    Warn,
+    /// Validate continuity counters and fail parsing on the first issue.
+    Strict,
+}
+
 /// Transport Stream packet structure
 #[derive(Debug, Clone)]
 pub struct TsPacket {

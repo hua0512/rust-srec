@@ -1,27 +1,9 @@
+pub use media_types::Resolution;
+
 use bytes::BytesMut;
 use memchr::memchr;
 use tracing::debug;
 use ts::{PesHeader, StreamType, TsPacketRef};
-
-/// Represents video resolution information
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub struct Resolution {
-    pub width: u32,
-    pub height: u32,
-}
-
-impl Resolution {
-    #[inline]
-    pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height }
-    }
-}
-
-impl std::fmt::Display for Resolution {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}x{}", self.width, self.height)
-    }
-}
 
 /// Resolution detector for HLS segments
 ///

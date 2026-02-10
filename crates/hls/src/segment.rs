@@ -3,9 +3,10 @@ use m3u8_rs::MediaSegment;
 use ts::StreamType;
 
 use crate::mp4::{M4sData, M4sInitSegmentData, M4sSegmentData};
-use crate::profile::{SegmentType, StreamProfile};
+use crate::profile::{SegmentType, StreamProfile, StreamProfileOptions};
 use crate::resolution::ResolutionDetector;
 use crate::ts::{TsSegmentData, TsStreamInfo};
+use mp4::isobmff;
 
 /// Main HLS data type representing various segment types
 #[derive(Debug, Clone)]
@@ -23,7 +24,7 @@ impl HlsData {
             segment,
             data,
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Warn,
         })
     }
 
@@ -133,18 +134,26 @@ impl HlsData {
     pub fn has_keyframe(&self) -> bool {
         match self {
             HlsData::TsData(ts) => {
-                let bytes = ts.data.as_ref();
-                // Iterate 188-byte-aligned packets looking for any with RAI set
-                let mut offset = 0;
-                while offset + 188 <= bytes.len() {
-                    if let Ok(packet) = ts::TsPacketRef::parse(ts.data.slice(offset..offset + 188))
-                        && packet.has_random_access_indicator()
-                    {
-                        return true;
-                    }
-                    offset += 188;
+                let mut parser = ts::TsParser::new();
+                let mut found_keyframe = false;
+
+                let parse_result = parser.parse_packets(
+                    ts.data.clone(),
+                    |_pat| Ok(()),
+                    |_pmt| Ok(()),
+                    Some(|packet: &ts::TsPacketRef| {
+                        if packet.has_random_access_indicator() {
+                            found_keyframe = true;
+                        }
+
+                        Ok(())
+                    }),
+                );
+
+                match parse_result {
+                    Ok(()) => found_keyframe,
+                    Err(_) => false,
                 }
-                false
             }
             HlsData::M4sData(M4sData::Segment(seg)) => {
                 let bytes = seg.data.as_ref();
@@ -161,7 +170,8 @@ impl HlsData {
     pub fn is_discontinuity(&self) -> bool {
         match self {
             HlsData::TsData(ts) => ts.segment.discontinuity,
-            HlsData::M4sData(m4s) => m4s.media_segment().unwrap().discontinuity,
+            HlsData::M4sData(M4sData::InitSegment(init)) => init.segment.discontinuity,
+            HlsData::M4sData(M4sData::Segment(seg)) => seg.segment.discontinuity,
             HlsData::EndMarker => false,
         }
     }
@@ -294,11 +304,27 @@ impl HlsData {
 
     /// Get a compact stream profile for this segment
     pub fn get_stream_profile(&self) -> Option<StreamProfile> {
-        let ts_data = match self {
-            HlsData::TsData(ts_data) => ts_data,
-            _ => return None,
-        };
+        self.get_stream_profile_with_options(StreamProfileOptions::default())
+    }
 
+    /// Get a compact stream profile for this segment with options.
+    pub fn get_stream_profile_with_options(
+        &self,
+        options: StreamProfileOptions,
+    ) -> Option<StreamProfile> {
+        match self {
+            HlsData::TsData(ts_data) => Self::get_ts_stream_profile(ts_data, options),
+            HlsData::M4sData(M4sData::InitSegment(init)) => {
+                Self::get_mp4_init_stream_profile(&init.data, options)
+            }
+            _ => None,
+        }
+    }
+
+    fn get_ts_stream_profile(
+        ts_data: &TsSegmentData,
+        options: StreamProfileOptions,
+    ) -> Option<StreamProfile> {
         let (stream_info, packets) = match ts_data.parse_stream_and_packets() {
             Ok(data) => data,
             Err(_) => return None,
@@ -338,7 +364,7 @@ impl HlsData {
             }
         }
 
-        let resolution = if has_video {
+        let resolution = if has_video && options.include_resolution {
             let video_streams: Vec<_> = stream_info
                 .programs
                 .iter()
@@ -369,8 +395,60 @@ impl HlsData {
             has_audio,
             has_h264,
             has_h265,
+            has_av1: false,
             has_aac,
             has_ac3,
+            resolution,
+            summary,
+        })
+    }
+
+    fn get_mp4_init_stream_profile(
+        data: &Bytes,
+        options: StreamProfileOptions,
+    ) -> Option<StreamProfile> {
+        let info = isobmff::parse_init_segment_with_options(
+            data,
+            isobmff::ParseOptions {
+                include_resolution: options.include_resolution,
+            },
+        );
+
+        let has_video = info.has_av1 || info.has_h264 || info.has_h265;
+        let has_audio = info.has_aac || info.has_ac3;
+
+        let resolution = info.video_resolution;
+
+        let mut video_count = 0u32;
+        let mut audio_count = 0u32;
+        if has_video {
+            video_count = 1;
+        }
+        if has_audio {
+            audio_count = 1;
+        }
+
+        let mut summary_parts = Vec::new();
+        if video_count > 0 {
+            summary_parts.push(format!("{video_count} video stream(s)"));
+        }
+        if audio_count > 0 {
+            summary_parts.push(format!("{audio_count} audio stream(s)"));
+        }
+        let summary = if summary_parts.is_empty() {
+            "No recognized streams".to_string()
+        } else {
+            summary_parts.join(", ")
+        };
+
+        Some(StreamProfile {
+            has_video,
+            has_audio,
+            has_h264: info.has_h264,
+            has_h265: info.has_h265,
+            has_av1: info.has_av1,
+            has_aac: info.has_aac,
+            has_ac3: info.has_ac3,
             resolution,
             summary,
         })
@@ -398,6 +476,17 @@ mod tests {
             duration: 6.0,
             ..Default::default()
         }
+    }
+
+    fn make_ts_packet_with_rai(rai: bool) -> Vec<u8> {
+        let mut packet = vec![0xFFu8; 188];
+        packet[0] = 0x47;
+        packet[1] = 0x00;
+        packet[2] = 0x00;
+        packet[3] = 0x20;
+        packet[4] = 1;
+        packet[5] = if rai { 0x40 } else { 0x00 };
+        packet
     }
 
     #[test]
@@ -477,10 +566,62 @@ mod tests {
         let ts = HlsData::ts(seg, Bytes::new());
         assert!(ts.is_discontinuity());
 
+        let mut seg = make_media_segment();
+        seg.discontinuity = true;
+        let mp4_init = HlsData::mp4_init(seg, Bytes::new());
+        assert!(mp4_init.is_discontinuity());
+
+        let mut seg = make_media_segment();
+        seg.discontinuity = true;
+        let mp4_seg = HlsData::mp4_segment(seg, Bytes::new());
+        assert!(mp4_seg.is_discontinuity());
+
         let ts_no_disc = HlsData::ts(make_media_segment(), Bytes::new());
         assert!(!ts_no_disc.is_discontinuity());
 
+        let mp4_init_no_disc = HlsData::mp4_init(make_media_segment(), Bytes::new());
+        assert!(!mp4_init_no_disc.is_discontinuity());
+
+        let mp4_seg_no_disc = HlsData::mp4_segment(make_media_segment(), Bytes::new());
+        assert!(!mp4_seg_no_disc.is_discontinuity());
+
         let end = HlsData::end_marker();
         assert!(!end.is_discontinuity());
+    }
+
+    #[test]
+    fn test_hlsdata_has_keyframe_detects_rai_across_ts_layouts() {
+        let ts_packet = make_ts_packet_with_rai(true);
+
+        let ts_188 = HlsData::ts(make_media_segment(), Bytes::from(ts_packet.clone()));
+        assert!(ts_188.has_keyframe());
+
+        let mut m2ts_192 = vec![0u8; 4];
+        m2ts_192.extend_from_slice(&ts_packet);
+        let ts_192 = HlsData::ts(make_media_segment(), Bytes::from(m2ts_192));
+        assert!(ts_192.has_keyframe());
+
+        let mut ts_204 = ts_packet;
+        ts_204.extend_from_slice(&[0xAA; 16]);
+        let ts_204_data = HlsData::ts(make_media_segment(), Bytes::from(ts_204));
+        assert!(ts_204_data.has_keyframe());
+    }
+
+    #[test]
+    fn test_hlsdata_has_keyframe_returns_false_without_rai_across_ts_layouts() {
+        let ts_packet = make_ts_packet_with_rai(false);
+
+        let ts_188 = HlsData::ts(make_media_segment(), Bytes::from(ts_packet.clone()));
+        assert!(!ts_188.has_keyframe());
+
+        let mut m2ts_192 = vec![0u8; 4];
+        m2ts_192.extend_from_slice(&ts_packet);
+        let ts_192 = HlsData::ts(make_media_segment(), Bytes::from(m2ts_192));
+        assert!(!ts_192.has_keyframe());
+
+        let mut ts_204 = ts_packet;
+        ts_204.extend_from_slice(&[0xAA; 16]);
+        let ts_204_data = HlsData::ts(make_media_segment(), Bytes::from(ts_204));
+        assert!(!ts_204_data.has_keyframe());
     }
 }
