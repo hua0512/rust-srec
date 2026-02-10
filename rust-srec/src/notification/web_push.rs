@@ -155,7 +155,7 @@ impl WebPushService {
         min_priority: NotificationPriority,
     ) -> Result<WebPushSubscriptionDbModel> {
         let id = uuid::Uuid::new_v4().to_string();
-        let now = Utc::now().to_rfc3339();
+        let now = Utc::now().timestamp_millis();
         let min_priority = min_priority.to_string();
 
         sqlx::query(
