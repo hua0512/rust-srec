@@ -2,13 +2,14 @@
 //!
 //! Delegates to the platforms crate for actual implementation:
 //! - QR code login: via qr_login utilities
-//! - Cookie refresh: via cookie_refresh utilities
+//! - Token refresh: via token_refresh utilities (OAuth2/APP flow)
+//! - Fallback validation: via NAV API for cookie-only users
 
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use reqwest::Client;
 use std::sync::OnceLock;
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, warn};
 
 use crate::credentials::error::CredentialError;
 use crate::credentials::manager::{
@@ -21,35 +22,36 @@ pub use platforms_parser::extractor::platforms::bilibili::{
     generate_qr as platforms_generate_qr, poll_qr as platforms_poll_qr,
 };
 
-// Import cookie refresh utilities from platforms crate
+// Import token refresh utilities from platforms crate
 use platforms_parser::extractor::platforms::bilibili::{
-    CookieRefreshError as PlatformsCookieRefreshError, CookieStatus as PlatformsCookieStatus,
-    check_cookie_status as platforms_check_status, refresh_cookies as platforms_refresh,
-    validate_cookies as platforms_validate,
+    TokenRefreshError, refresh_token as platforms_refresh_token,
+    validate_token as platforms_validate_token,
 };
+
+// NAV API URL for cookie-only validation fallback
+const NAV_URL: &str = "https://api.bilibili.com/x/web-interface/nav";
 
 /// Bilibili credential manager.
 pub struct BilibiliCredentialManager {
     client: OnceLock<Client>,
 }
 
-fn map_platform_refresh_error(err: PlatformsCookieRefreshError) -> CredentialError {
+fn map_token_refresh_error(err: TokenRefreshError) -> CredentialError {
     match err {
-        PlatformsCookieRefreshError::Network(e) => CredentialError::Network(e),
-        PlatformsCookieRefreshError::Parse(e) => CredentialError::ParseError(e),
-        PlatformsCookieRefreshError::Crypto(e) => CredentialError::CryptoError(e),
-        PlatformsCookieRefreshError::MissingCookie(name) => CredentialError::MissingCookie(name),
-        PlatformsCookieRefreshError::MissingRefreshToken => CredentialError::MissingRefreshToken,
-        PlatformsCookieRefreshError::Api { code, message, .. } => match code {
+        TokenRefreshError::Network(e) => CredentialError::Network(e),
+        TokenRefreshError::Parse(e) => CredentialError::ParseError(e),
+        TokenRefreshError::Api { code, message } => match code {
             -101 => CredentialError::InvalidCredentials(message),
             -111 => CredentialError::InvalidCredentials(message),
-            86095 => CredentialError::InvalidRefreshToken,
-            _ => {
-                CredentialError::RefreshFailed(format!("Bilibili API error {}: {}", code, message))
-            }
+            -663 => CredentialError::InvalidRefreshToken,
+            _ => CredentialError::RefreshFailed(format!(
+                "Bilibili API error {}: {}",
+                code, message
+            )),
         },
-        PlatformsCookieRefreshError::RefreshFailed(e) => CredentialError::RefreshFailed(e),
-        PlatformsCookieRefreshError::Internal(e) => CredentialError::Internal(e),
+        TokenRefreshError::SystemTime => {
+            CredentialError::Internal("System time error".to_string())
+        }
     }
 }
 
@@ -91,6 +93,39 @@ impl BilibiliCredentialManager {
             .await
             .map_err(|e| CredentialError::RefreshFailed(e.to_string()))
     }
+
+    /// Validate cookies using NAV API (fallback for cookie-only users without access_token).
+    async fn validate_via_nav(&self, cookies: &str) -> Result<bool, CredentialError> {
+        let response = self
+            .client()
+            .get(NAV_URL)
+            .header("Cookie", cookies)
+            .header(
+                "User-Agent",
+                platforms_parser::extractor::DEFAULT_UA,
+            )
+            .header(reqwest::header::REFERER, "https://www.bilibili.com")
+            .send()
+            .await?;
+
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| CredentialError::ParseError(e.to_string()))?;
+
+        let code = body.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+        Ok(code == 0)
+    }
+
+    /// Extract access_token from RefreshState.extra JSON.
+    fn extract_access_token(state: &RefreshState) -> Option<String> {
+        state
+            .extra
+            .as_ref()
+            .and_then(|v| v.get("access_token"))
+            .and_then(|t| t.as_str())
+            .map(String::from)
+    }
 }
 
 #[async_trait]
@@ -101,30 +136,28 @@ impl CredentialManager for BilibiliCredentialManager {
 
     #[instrument(skip(self, cookies))]
     async fn check_status(&self, cookies: &str) -> Result<CredentialStatus, CredentialError> {
-        debug!("Checking Bilibili cookie status");
+        debug!("Checking Bilibili credential status");
 
-        let result = platforms_check_status(self.client(), cookies)
-            .await
-            .map_err(map_platform_refresh_error)?;
+        // We can't check token validity without an access_token from this interface.
+        // The check_status method only receives cookies; the access_token is passed via
+        // RefreshState.extra during refresh. So here we fall back to the NAV API check.
+        //
+        // The service layer calls check_status before refresh, so this just validates
+        // that the cookies are still working. The actual token staleness check happens
+        // implicitly during refresh (validate_token is called there).
+        let is_valid = self.validate_via_nav(cookies).await?;
 
-        match result {
-            PlatformsCookieStatus::Valid => {
-                debug!("Bilibili credentials are valid");
-                Ok(CredentialStatus::Valid)
-            }
-            PlatformsCookieStatus::NeedsRefresh { deadline_timestamp } => {
-                debug!(?deadline_timestamp, "Bilibili credentials need refresh");
-                Ok(CredentialStatus::NeedsRefresh {
-                    refresh_deadline: deadline_timestamp,
-                })
-            }
-            PlatformsCookieStatus::Invalid { reason, code } => {
-                debug!(?reason, ?code, "Bilibili credentials invalid");
-                Ok(CredentialStatus::Invalid {
-                    reason,
-                    error_code: code.map(|c| c as i32),
-                })
-            }
+        if is_valid {
+            debug!("Bilibili credentials are valid (NAV check)");
+            Ok(CredentialStatus::Valid)
+        } else {
+            // Cookies are invalid — if there's an access_token + refresh_token,
+            // the refresh flow may still recover. Signal NeedsRefresh rather than Invalid
+            // to give the refresh path a chance.
+            debug!("Bilibili NAV check failed, signaling NeedsRefresh");
+            Ok(CredentialStatus::NeedsRefresh {
+                refresh_deadline: None,
+            })
         }
     }
 
@@ -135,28 +168,59 @@ impl CredentialManager for BilibiliCredentialManager {
             .as_ref()
             .ok_or(CredentialError::MissingRefreshToken)?;
 
-        debug!("Performing Bilibili cookie refresh");
+        let access_token = Self::extract_access_token(state);
 
-        let result = platforms_refresh(self.client(), &state.cookies, refresh_token)
-            .await
-            .map_err(map_platform_refresh_error)?;
+        // If we have both access_token and refresh_token, use the OAuth2 flow.
+        if let Some(ref access_token) = access_token {
+            debug!("Performing Bilibili OAuth2 token refresh");
 
-        debug!("Bilibili refresh completed successfully");
-        Ok(RefreshedCredentials {
-            cookies: result.cookies,
-            refresh_token: Some(result.refresh_token),
-            expires_at: Some(Utc::now() + Duration::days(30)),
-        })
+            // Validate first to confirm refresh is needed
+            match platforms_validate_token(self.client(), access_token).await {
+                Ok(needs_refresh) => {
+                    if !needs_refresh {
+                        debug!("Token validation says no refresh needed; returning current cookies");
+                        return Ok(RefreshedCredentials {
+                            cookies: state.cookies.clone(),
+                            refresh_token: state.refresh_token.clone(),
+                            access_token: Some(access_token.clone()),
+                            expires_at: Some(Utc::now() + Duration::days(30)),
+                        });
+                    }
+                }
+                Err(e) => {
+                    // Validation failed — token may be expired. Still try refreshing.
+                    warn!(error = %e, "Token validation failed, attempting refresh anyway");
+                }
+            }
+
+            let result =
+                platforms_refresh_token(self.client(), access_token, refresh_token)
+                    .await
+                    .map_err(map_token_refresh_error)?;
+
+            debug!("Bilibili OAuth2 refresh completed successfully");
+            Ok(RefreshedCredentials {
+                cookies: result.cookies,
+                refresh_token: Some(result.refresh_token),
+                access_token: Some(result.access_token),
+                expires_at: Some(
+                    Utc::now() + Duration::seconds(result.expires_in as i64),
+                ),
+            })
+        } else {
+            // No access_token — cannot use OAuth2 flow.
+            // This happens when users manually paste cookies without going through QR login.
+            warn!("No access_token available; OAuth2 refresh not possible. Re-login via QR required.");
+            Err(CredentialError::MissingRefreshToken)
+        }
     }
 
     #[instrument(skip(self, cookies))]
     async fn validate(&self, cookies: &str) -> Result<bool, CredentialError> {
-        platforms_validate(self.client(), cookies)
-            .await
-            .map_err(map_platform_refresh_error)
+        self.validate_via_nav(cookies).await
     }
 
     fn required_refresh_fields(&self) -> &'static [&'static str] {
-        &["refresh_token", "SESSDATA", "bili_jct"]
+        &["refresh_token", "access_token", "SESSDATA", "bili_jct"]
     }
 }

@@ -8,7 +8,8 @@ pub mod streamlink_extractor;
 pub mod utils;
 
 pub use default::{
-    ProxyConfig, create_client, create_client_builder, default_factory, factory_with_proxy,
+    DEFAULT_UA, ProxyConfig, create_client, create_client_builder, default_factory,
+    factory_with_proxy,
 };
 
 pub mod hls_extractor;

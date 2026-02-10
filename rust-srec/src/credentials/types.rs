@@ -88,6 +88,8 @@ pub struct CredentialSource {
     pub cookies: String,
     /// Refresh token (if available).
     pub refresh_token: Option<String>,
+    /// OAuth2 access token (if available, e.g. from Bilibili TV QR login).
+    pub access_token: Option<String>,
     /// Platform name for this credential (e.g., "bilibili").
     pub platform_name: String,
 }
@@ -104,8 +106,15 @@ impl CredentialSource {
             scope,
             cookies,
             refresh_token,
+            access_token: None,
             platform_name,
         }
+    }
+
+    /// Create a new credential source with an access token.
+    pub fn with_access_token(mut self, access_token: Option<String>) -> Self {
+        self.access_token = access_token;
+        self
     }
 
     /// Check if this credential has a refresh token.
