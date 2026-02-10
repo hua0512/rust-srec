@@ -517,15 +517,9 @@ impl VideoTagBody {
                 match packet_type {
                     EnhancedPacketType::SEQUENCE_END => {
                         return Ok(VideoTagBody::Enhanced(match video_codec {
-                            VideoFourCC::Avc1 => {
-                                EnhancedPacket::Avc(AvcPacket::EndOfSequence)
-                            }
-                            VideoFourCC::Av01 => {
-                                EnhancedPacket::Av1(Av1Packet::EndOfSequence)
-                            }
-                            VideoFourCC::Hvc1 => {
-                                EnhancedPacket::Hevc(HevcPacket::EndOfSequence)
-                            }
+                            VideoFourCC::Avc1 => EnhancedPacket::Avc(AvcPacket::EndOfSequence),
+                            VideoFourCC::Av01 => EnhancedPacket::Av1(Av1Packet::EndOfSequence),
+                            VideoFourCC::Hvc1 => EnhancedPacket::Hevc(HevcPacket::EndOfSequence),
                             _ => EnhancedPacket::SequenceEnd { video_codec },
                         }));
                     }
@@ -1040,9 +1034,9 @@ mod tests {
         let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
         assert_eq!(
             body,
-            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::from_static(
-                &[0xDE, 0xAD, 0xBE, 0xEF]
-            ))))
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::from_static(&[
+                0xDE, 0xAD, 0xBE, 0xEF
+            ]))))
         );
     }
 
@@ -1057,9 +1051,9 @@ mod tests {
         let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
         assert_eq!(
             body,
-            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::from_static(
-                &[0x01, 0x02, 0x03]
-            ))))
+            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::from_static(&[
+                0x01, 0x02, 0x03
+            ]))))
         );
     }
 
@@ -1086,8 +1080,7 @@ mod tests {
         let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::new())));
         assert!(!body.is_sequence_header());
 
-        let body =
-            VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::EndOfSequence));
+        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::EndOfSequence));
         assert!(!body.is_sequence_header());
     }
 

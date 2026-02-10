@@ -7,6 +7,7 @@
 //! - IVF container format parsing and writing
 //! - Low-overhead OBU bitstream parsing and writing
 //! - Annex B length-delimited bitstream parsing and writing
+//! - ISOBMFF sample payload parsing helpers
 //!
 //! ## License
 //!
@@ -25,6 +26,7 @@ pub mod error;
 pub mod ivf;
 mod obu;
 pub mod obu_stream;
+pub mod sample;
 
 pub use config::{AV1CodecConfigurationRecord, AV1VideoDescriptor};
 pub use error::{Av1Error, Result};

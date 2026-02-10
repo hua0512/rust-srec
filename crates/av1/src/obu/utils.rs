@@ -138,7 +138,11 @@ mod tests {
         for value in values {
             let mut buf = Vec::new();
             let written = write_leb128(&mut buf, value).unwrap();
-            assert_eq!(written, leb128_size(value), "leb128_size mismatch for {value}");
+            assert_eq!(
+                written,
+                leb128_size(value),
+                "leb128_size mismatch for {value}"
+            );
 
             let mut cursor = std::io::Cursor::new(buf);
             let mut reader = BitReader::new(&mut cursor);

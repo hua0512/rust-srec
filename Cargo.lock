@@ -2526,12 +2526,13 @@ dependencies = [
 name = "hls"
 version = "0.1.1"
 dependencies = [
- "av1",
  "bytes",
  "h264",
  "h265",
  "m3u8-rs",
+ "media-types",
  "memchr",
+ "mp4",
  "tracing",
  "ts",
 ]
@@ -2541,8 +2542,11 @@ name = "hls-fix"
 version = "0.1.6"
 dependencies = [
  "bytes",
+ "bytes-util",
+ "expgolomb",
  "hls",
  "m3u8-rs",
+ "mp4",
  "pipeline-common",
  "tempfile",
  "thiserror 2.0.18",
@@ -3365,6 +3369,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "media-types"
+version = "0.1.0"
+
+[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3538,6 +3546,19 @@ dependencies = [
  "smallvec",
  "tagptr",
  "uuid",
+]
+
+[[package]]
+name = "mp4"
+version = "0.1.1"
+dependencies = [
+ "av1",
+ "bytes",
+ "criterion",
+ "h264",
+ "h265",
+ "media-types",
+ "tracing",
 ]
 
 [[package]]
@@ -7432,6 +7453,7 @@ dependencies = [
  "criterion",
  "memchr",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

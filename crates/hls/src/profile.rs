@@ -40,6 +40,24 @@ pub struct StreamProfile {
     pub summary: String,
 }
 
+/// Options controlling how stream profiling is performed.
+///
+/// Some profile fields (like resolution) may require parsing codec
+/// configuration data and can be skipped for performance.
+#[derive(Debug, Clone, Copy)]
+pub struct StreamProfileOptions {
+    /// If `true`, attempt to parse and populate [`StreamProfile::resolution`].
+    pub include_resolution: bool,
+}
+
+impl Default for StreamProfileOptions {
+    fn default() -> Self {
+        Self {
+            include_resolution: true,
+        }
+    }
+}
+
 impl StreamProfile {
     /// Check if this profile indicates a complete multimedia stream
     pub fn is_complete(&self) -> bool {

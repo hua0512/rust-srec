@@ -8,8 +8,12 @@
 //! pure low-overhead format. However, some container formats (ISO BMFF/MP4,
 //! Matroska/WebM) allow the **last** OBU in a sample/block to have
 //! `obu_has_size_field=0`, since the container frame boundary implies
-//! the remaining size. This module enforces the strict requirement
-//! (`obu_has_size_field=1` for all OBUs).
+//! the remaining size.
+//!
+//! This module provides two iterators:
+//! - [`ObuIterator`] for strict low-overhead streams (`obu_has_size_field=1`)
+//! - [`ContainerObuIterator`] for container sample/block payloads
+//!   (allows last OBU without a size field)
 
 use std::io;
 
@@ -57,6 +61,35 @@ impl Iterator for ObuIterator<'_> {
     }
 }
 
+/// Iterator over OBUs in a container sample/block payload.
+///
+/// This accepts OBUs with `obu_has_size_field=1` and additionally allows the
+/// last OBU to omit the size field (`obu_has_size_field=0`), in which case
+/// the payload is assumed to consume the remaining bytes.
+pub struct ContainerObuIterator<'a> {
+    reader: &'a mut io::Cursor<Bytes>,
+}
+
+impl<'a> ContainerObuIterator<'a> {
+    /// Creates a new iterator over OBUs in a container sample/block payload.
+    pub fn new(reader: &'a mut io::Cursor<Bytes>) -> Self {
+        Self { reader }
+    }
+}
+
+impl Iterator for ContainerObuIterator<'_> {
+    type Item = Result<Obu>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let remaining = self.reader.get_ref().len() as u64 - self.reader.position();
+        if remaining == 0 {
+            return None;
+        }
+
+        Some(parse_container_obu(self.reader))
+    }
+}
+
 /// Parses a single OBU from a `Cursor<Bytes>`, using zero-copy for the payload.
 fn parse_obu(reader: &mut io::Cursor<Bytes>) -> Result<Obu> {
     let header = ObuHeader::parse(reader)?;
@@ -65,10 +98,33 @@ fn parse_obu(reader: &mut io::Cursor<Bytes>) -> Result<Obu> {
         Av1Error::InvalidObu("obu_has_size_field must be 1 in low-overhead bitstream".into())
     })?;
 
-    let data = reader.extract_bytes(size as usize).map_err(|_| Av1Error::UnexpectedEof {
-        expected: size as usize,
-        actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
-    })?;
+    let data = reader
+        .extract_bytes(size as usize)
+        .map_err(|_| Av1Error::UnexpectedEof {
+            expected: size as usize,
+            actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
+        })?;
+
+    Ok(Obu { header, data })
+}
+
+/// Parses a single OBU from a container sample/block payload.
+///
+/// If `obu_has_size_field=1`, payload size comes from `obu_size`.
+/// If `obu_has_size_field=0`, payload consumes the remaining bytes.
+fn parse_container_obu(reader: &mut io::Cursor<Bytes>) -> Result<Obu> {
+    let header = ObuHeader::parse(reader)?;
+
+    let size = header
+        .size
+        .unwrap_or_else(|| reader.get_ref().len() as u64 - reader.position());
+
+    let data = reader
+        .extract_bytes(size as usize)
+        .map_err(|_| Av1Error::UnexpectedEof {
+            expected: size as usize,
+            actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
+        })?;
 
     Ok(Obu { header, data })
 }
@@ -100,7 +156,10 @@ pub fn write_obu<W: io::Write>(
 /// Computes the total encoded size of an OBU in low-overhead bitstream format.
 ///
 /// This includes the header bytes, the LEB128 size field, and the payload.
-pub fn obu_encoded_size(extension_header: Option<&ObuExtensionHeader>, payload_len: usize) -> usize {
+pub fn obu_encoded_size(
+    extension_header: Option<&ObuExtensionHeader>,
+    payload_len: usize,
+) -> usize {
     let base = if extension_header.is_some() { 2 } else { 1 };
     let size_field = leb128_size(payload_len as u64);
     base + size_field + payload_len
@@ -113,7 +172,12 @@ pub fn obu_encoded_size(extension_header: Option<&ObuExtensionHeader>, payload_l
 ///
 /// Returns the total number of bytes written.
 pub fn write_raw_obu<W: io::Write>(writer: &mut W, obu: &Obu) -> Result<usize> {
-    write_obu(writer, obu.header.obu_type, obu.header.extension_header, &obu.data)
+    write_obu(
+        writer,
+        obu.header.obu_type,
+        obu.header.extension_header,
+        &obu.data,
+    )
 }
 
 #[cfg(test)]
@@ -231,5 +295,53 @@ mod tests {
         let mut iter = ObuIterator::new(&mut cursor);
         let err = iter.next().unwrap().unwrap_err();
         assert!(matches!(err, Av1Error::InvalidObu(_)));
+    }
+
+    #[test]
+    fn test_container_iterator_allows_last_obu_without_size() {
+        let mut data = Vec::new();
+        write_obu(&mut data, ObuType::TemporalDelimiter, None, &[]).unwrap();
+
+        let header_without_size = ObuHeader {
+            obu_type: ObuType::Frame,
+            size: None,
+            extension_header: None,
+        };
+        header_without_size.mux(&mut data).unwrap();
+        data.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
+
+        let mut cursor = io::Cursor::new(Bytes::from(data));
+        let mut iter = ContainerObuIterator::new(&mut cursor);
+
+        let obu1 = iter.next().unwrap().unwrap();
+        assert_eq!(obu1.header.obu_type, ObuType::TemporalDelimiter);
+        assert_eq!(obu1.data.len(), 0);
+
+        let obu2 = iter.next().unwrap().unwrap();
+        assert_eq!(obu2.header.obu_type, ObuType::Frame);
+        assert_eq!(obu2.header.size, None);
+        assert_eq!(obu2.data.as_ref(), &[0xAA, 0xBB, 0xCC]);
+
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_container_iterator_with_all_sized_obus() {
+        let mut data = Vec::new();
+        write_obu(&mut data, ObuType::Metadata, None, &[0x01, 0x02]).unwrap();
+        write_obu(&mut data, ObuType::TileGroup, None, &[0x03]).unwrap();
+
+        let mut cursor = io::Cursor::new(Bytes::from(data));
+        let mut iter = ContainerObuIterator::new(&mut cursor);
+
+        let obu1 = iter.next().unwrap().unwrap();
+        assert_eq!(obu1.header.obu_type, ObuType::Metadata);
+        assert_eq!(obu1.data.as_ref(), &[0x01, 0x02]);
+
+        let obu2 = iter.next().unwrap().unwrap();
+        assert_eq!(obu2.header.obu_type, ObuType::TileGroup);
+        assert_eq!(obu2.data.as_ref(), &[0x03]);
+
+        assert!(iter.next().is_none());
     }
 }

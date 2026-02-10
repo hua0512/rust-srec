@@ -30,11 +30,7 @@ impl FlvParser {
         FlvHeader::parse(reader)
     }
 
-    pub fn parse_tags<R, F>(
-        reader: &mut R,
-        mut on_tag: F,
-        current_position: u64,
-    ) -> io::Result<u32>
+    pub fn parse_tags<R, F>(reader: &mut R, mut on_tag: F, current_position: u64) -> io::Result<u32>
     where
         R: Read,
         F: FnMut(&FlvTag, FlvTagType, u64),

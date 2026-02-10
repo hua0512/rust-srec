@@ -48,12 +48,24 @@ impl ObuHeader {
         let extension_flag = bit_reader.read_bit()?;
         let has_size_field = bit_reader.read_bit()?;
 
-        bit_reader.read_bit()?; // reserved_1bit
+        let reserved_1bit = bit_reader.read_bit()?;
+        if reserved_1bit {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "obu_reserved_1bit is not 0",
+            ));
+        }
 
         let extension_header = if extension_flag {
             let temporal_id = bit_reader.read_bits(3)?;
             let spatial_id = bit_reader.read_bits(2)?;
-            bit_reader.read_bits(3)?; // reserved_3bits
+            let reserved_3bits = bit_reader.read_bits(3)?;
+            if reserved_3bits != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "obu_extension_header_reserved_3bits are not 0",
+                ));
+            }
             Some(ObuExtensionHeader {
                 temporal_id: temporal_id as u8,
                 spatial_id: spatial_id as u8,
@@ -104,7 +116,11 @@ impl ObuHeader {
             bit_writer.write_bits(0, 3)?; // extension_header_reserved_3bits
         }
 
-        let mut bytes_written = if self.extension_header.is_some() { 2 } else { 1 };
+        let mut bytes_written = if self.extension_header.is_some() {
+            2
+        } else {
+            1
+        };
 
         let writer = bit_writer.finish()?;
 
@@ -117,7 +133,11 @@ impl ObuHeader {
 
     /// Returns the encoded size of this OBU header in bytes.
     pub fn header_size(&self) -> usize {
-        let base = if self.extension_header.is_some() { 2 } else { 1 };
+        let base = if self.extension_header.is_some() {
+            2
+        } else {
+            1
+        };
         let size_field = self.size.map_or(0, utils::leb128_size);
         base + size_field
     }
@@ -260,6 +280,31 @@ mod tests {
         Custom {
             kind: InvalidData,
             error: "obu_forbidden_bit is not 0",
+        }
+        "#);
+    }
+
+    #[test]
+    fn test_obu_header_reserved_1bit_set() {
+        // forbidden=0, type=0, extension=0, has_size=0, reserved_1bit=1
+        let err = ObuHeader::parse(&mut std::io::Cursor::new([0x01])).unwrap_err();
+        insta::assert_debug_snapshot!(err, @r#"
+        Custom {
+            kind: InvalidData,
+            error: "obu_reserved_1bit is not 0",
+        }
+        "#);
+    }
+
+    #[test]
+    fn test_obu_header_extension_reserved_3bits_set() {
+        // Byte0: forbidden=0, type=0, extension=1, has_size=0, reserved_1bit=0
+        // Byte1: temporal_id=0, spatial_id=0, reserved_3bits=001 (invalid)
+        let err = ObuHeader::parse(&mut std::io::Cursor::new([0x04, 0x01])).unwrap_err();
+        insta::assert_debug_snapshot!(err, @r#"
+        Custom {
+            kind: InvalidData,
+            error: "obu_extension_header_reserved_3bits are not 0",
         }
         "#);
     }

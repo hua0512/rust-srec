@@ -32,7 +32,7 @@
 //!
 use std::sync::Arc;
 
-use hls::{HlsData, M4sData, SegmentType, StreamProfile};
+use hls::{HlsData, M4sData, SegmentType, StreamProfile, StreamProfileOptions};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use tracing::{debug, info, warn};
 
@@ -105,7 +105,9 @@ impl DefragmentOperator {
                 self.context.name
             );
 
-            if let Some(profile) = data.get_stream_profile() {
+            if let Some(profile) = data.get_stream_profile_with_options(StreamProfileOptions {
+                include_resolution: false,
+            }) {
                 debug!(
                     "{} Stream profile: {} (complete: {})",
                     self.context.name,

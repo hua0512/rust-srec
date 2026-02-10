@@ -10,6 +10,7 @@ m3u8-rs = { workspace = true }
 hls = { path = "../hls" }
 pipeline-common = { path = "../pipeline-common" }
 ts = { path = "../ts" }
+mp4 = { path = "../mp4" }
 zlib-rs = { workspace = true }
 tracing = { workspace = true }
 tracing-indicatif = "0.3"
@@ -20,6 +21,9 @@ tokio = { workspace = true, features = ["sync"] }
 tracing-subscriber = { workspace = true }
 tokio-util = { workspace = true }
 tempfile = { workspace = true }
+bytes-util = { path = "../bytes-util" }
+expgolomb = { path = "../expgolomb" }
+mp4 = { path = "../mp4", features = ["test-utils"] }
 
 
 [lints.rust]

@@ -30,8 +30,8 @@ use bytes::Bytes;
 use bytes_util::BytesCursorExt;
 
 use crate::error::{Av1Error, Result};
-use crate::obu::utils::{leb128_size, write_leb128};
 use crate::obu::ObuHeader;
+use crate::obu::utils::{leb128_size, write_leb128};
 use crate::obu_stream::Obu;
 
 /// A temporal unit parsed from an Annex B bitstream.
@@ -128,12 +128,13 @@ fn parse_frame_unit(reader: &mut io::Cursor<Bytes>) -> Result<FrameUnit> {
             });
         }
 
-        let data = reader.extract_bytes(payload_size as usize).map_err(|_| {
-            Av1Error::UnexpectedEof {
-                expected: payload_size as usize,
-                actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
-            }
-        })?;
+        let data =
+            reader
+                .extract_bytes(payload_size as usize)
+                .map_err(|_| Av1Error::UnexpectedEof {
+                    expected: payload_size as usize,
+                    actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
+                })?;
 
         obus.push(Obu { header, data });
     }
@@ -384,9 +385,7 @@ mod tests {
         };
 
         let tu = TemporalUnit {
-            frame_units: vec![FrameUnit {
-                obus: vec![obu],
-            }],
+            frame_units: vec![FrameUnit { obus: vec![obu] }],
         };
 
         let mut buf = Vec::new();

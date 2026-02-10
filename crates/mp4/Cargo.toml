@@ -1,0 +1,28 @@
+[package]
+name = "mp4"
+version = "0.1.1"
+edition = "2024"
+description = "Minimal MP4/fMP4 helpers (ISOBMFF init parsing)"
+license = "MIT OR Apache-2.0"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+
+[features]
+test-utils = []
+
+[dependencies]
+bytes = { workspace = true }
+tracing = { workspace = true }
+media-types = { path = "../media-types" }
+
+av1 = { path = "../av1" }
+h264 = { path = "../h264" }
+h265 = { path = "../h265" }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "fragment_validation_benchmark"
+harness = false

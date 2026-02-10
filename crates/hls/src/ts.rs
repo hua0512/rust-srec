@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use m3u8_rs::MediaSegment;
-use std::collections::HashMap;
+use std::cell::{Cell, RefCell};
+use tracing::warn;
 use ts::descriptor::{
     TAG_ISO_639_LANGUAGE, TAG_REGISTRATION, parse_iso639_language, parse_registration_descriptor,
 };
@@ -15,11 +16,13 @@ pub struct TsSegmentData {
     pub data: Bytes,
     /// Whether to validate CRC-32/MPEG-2 on PAT/PMT sections
     pub validate_crc: bool,
-    /// Whether to check continuity counters
-    pub check_continuity: bool,
+    /// Continuity counter handling mode
+    pub continuity_mode: ts::ContinuityMode,
 }
 
 impl TsSegmentData {
+    const PID_SPACE: usize = 8192;
+
     /// Enable or disable CRC-32/MPEG-2 validation on PAT/PMT sections.
     pub fn with_crc_validation(mut self, enable: bool) -> Self {
         self.validate_crc = enable;
@@ -28,7 +31,27 @@ impl TsSegmentData {
 
     /// Enable or disable continuity counter checking.
     pub fn with_continuity_check(mut self, enable: bool) -> Self {
-        self.check_continuity = enable;
+        self.continuity_mode = if enable {
+            ts::ContinuityMode::Warn
+        } else {
+            ts::ContinuityMode::Disabled
+        };
+        self
+    }
+
+    /// Enable or disable strict continuity handling (fail on discontinuity).
+    pub fn with_strict_continuity(mut self, enable: bool) -> Self {
+        if enable {
+            self.continuity_mode = ts::ContinuityMode::Strict;
+        } else if self.continuity_mode == ts::ContinuityMode::Strict {
+            self.continuity_mode = ts::ContinuityMode::Warn;
+        }
+        self
+    }
+
+    /// Set continuity counter handling mode.
+    pub fn with_continuity_mode(mut self, mode: ts::ContinuityMode) -> Self {
+        self.continuity_mode = mode;
         self
     }
 
@@ -52,16 +75,145 @@ impl TsSegmentData {
         if self.validate_crc {
             parser = parser.with_crc_validation(true);
         }
-        if self.check_continuity {
-            parser = parser.with_continuity_check(true);
-        }
+        parser = parser.with_continuity_mode(self.continuity_mode);
         parser
+    }
+
+    fn report_continuity_warnings(&self, parser: &TsParser) {
+        if self.continuity_mode == ts::ContinuityMode::Warn {
+            let issues = parser.continuity_issue_count();
+            if issues > 0 {
+                warn!(
+                    issues,
+                    duplicate = parser.continuity_duplicate_count(),
+                    discontinuity = parser.continuity_discontinuity_count(),
+                    segment_uri = %self.segment.uri,
+                    "TS continuity issues detected"
+                );
+            }
+        }
+    }
+
+    fn fill_program_streams(program_info: &mut ProgramInfo, pmt: PmtRef) {
+        for stream in pmt.streams().flatten() {
+            let mut language = None;
+            let mut is_scte35 = false;
+
+            for desc in stream.descriptors() {
+                if desc.tag == TAG_ISO_639_LANGUAGE {
+                    let entries = parse_iso639_language(&desc.data);
+                    if let Some(entry) = entries.first() {
+                        language = Some(String::from_utf8_lossy(&entry.language_code).into_owned());
+                    }
+                }
+
+                if desc.tag == TAG_REGISTRATION
+                    && let Some(id) = parse_registration_descriptor(&desc.data)
+                    && &id == b"CUEI"
+                {
+                    is_scte35 = true;
+                }
+            }
+
+            if is_scte35 {
+                program_info.scte35_pids.push(stream.elementary_pid);
+            }
+
+            let stream_entry = StreamEntry {
+                pid: stream.elementary_pid,
+                stream_type: stream.stream_type,
+                language,
+                first_pts: None,
+            };
+
+            if stream.stream_type.is_video() {
+                program_info.video_streams.push(stream_entry);
+            } else if stream.stream_type.is_audio() {
+                program_info.audio_streams.push(stream_entry);
+            } else {
+                program_info.other_streams.push(stream_entry);
+            }
+        }
+    }
+
+    /// Parse TS segments returning stream information only (without packet capture).
+    pub fn parse_stream_info_only(&self) -> Result<TsStreamInfo, ts::TsError> {
+        let mut parser = self.make_parser();
+        let transport_stream_id = Cell::new(0u16);
+        let program_count = Cell::new(0usize);
+        let found_pat = Cell::new(false);
+        let completed = Cell::new(false);
+        let programs = RefCell::new(Vec::<ProgramInfo>::new());
+        let scte35_events = RefCell::new(Vec::<SpliceInfoSection>::new());
+
+        let parse_result = parser.parse_packets_with_scte35(
+            self.data.clone(),
+            |pat: PatRef| {
+                if completed.get() {
+                    return Ok(());
+                }
+
+                transport_stream_id.set(pat.transport_stream_id);
+                program_count.set(pat.program_count());
+                found_pat.set(true);
+
+                if program_count.get() == 0 {
+                    completed.set(true);
+                }
+
+                if program_count.get() > 0 && programs.borrow().len() >= program_count.get() {
+                    completed.set(true);
+                }
+
+                Ok(())
+            },
+            |pmt: PmtRef| {
+                if completed.get() {
+                    return Ok(());
+                }
+
+                let mut program_info = ProgramInfo {
+                    program_number: pmt.program_number,
+                    pcr_pid: pmt.pcr_pid,
+                    video_streams: Vec::new(),
+                    audio_streams: Vec::new(),
+                    other_streams: Vec::new(),
+                    scte35_pids: Vec::new(),
+                };
+                Self::fill_program_streams(&mut program_info, pmt);
+                programs.borrow_mut().push(program_info);
+
+                if found_pat.get() && programs.borrow().len() >= program_count.get() {
+                    completed.set(true);
+                }
+
+                Ok(())
+            },
+            None::<fn(&TsPacketRef) -> ts::Result<()>>,
+            |scte35_ref| {
+                scte35_events.borrow_mut().push(scte35_ref.inner.clone());
+                Ok(())
+            },
+        );
+
+        parse_result?;
+
+        let stream_info = TsStreamInfo {
+            transport_stream_id: transport_stream_id.get(),
+            program_count: program_count.get(),
+            programs: programs.into_inner(),
+            scte35_events: scte35_events.into_inner(),
+            first_pcr: None,
+            last_pcr: None,
+        };
+
+        self.report_continuity_warnings(&parser);
+        Ok(stream_info)
     }
 
     /// Parse TS segments returning lightweight stream information
     pub fn parse_psi_tables(&self) -> Result<TsStreamInfo, ts::TsError> {
-        let (stream_info, _) = self.parse_stream_and_packets()?;
-        Ok(stream_info)
+        self.parse_stream_info_only()
     }
 
     /// Parse TS segments returning both stream info and raw packets
@@ -70,13 +222,20 @@ impl TsSegmentData {
     ) -> Result<(TsStreamInfo, Vec<TsPacketRef>), ts::TsError> {
         let mut parser = self.make_parser();
         let mut stream_info = TsStreamInfo::default();
+        let mut transport_stream_id = 0u16;
+        let mut program_count = 0usize;
+        let mut programs: Vec<ProgramInfo> = Vec::new();
+        let mut scte35_events: Vec<SpliceInfoSection> = Vec::new();
         let mut packets = Vec::new();
+        let is_pcr_pid = RefCell::new([false; Self::PID_SPACE]);
+        let is_stream_pid = RefCell::new([false; Self::PID_SPACE]);
+        let mut first_pts_by_pid = [None; Self::PID_SPACE];
 
         parser.parse_packets_with_scte35(
             self.data.clone(),
             |pat: PatRef| {
-                stream_info.transport_stream_id = pat.transport_stream_id;
-                stream_info.program_count = pat.program_count();
+                transport_stream_id = pat.transport_stream_id;
+                program_count = pat.program_count();
                 Ok(())
             },
             |pmt: PmtRef| {
@@ -88,90 +247,69 @@ impl TsSegmentData {
                     other_streams: Vec::new(),
                     scte35_pids: Vec::new(),
                 };
+                Self::fill_program_streams(&mut program_info, pmt);
 
-                for stream in pmt.streams().flatten() {
-                    // Extract language from ISO 639 descriptor
-                    let mut language = None;
-                    let mut is_scte35 = false;
+                let pcr_idx = program_info.pcr_pid as usize;
+                if pcr_idx < Self::PID_SPACE {
+                    is_pcr_pid.borrow_mut()[pcr_idx] = true;
+                }
 
-                    for desc in stream.descriptors() {
-                        if desc.tag == TAG_ISO_639_LANGUAGE {
-                            let entries = parse_iso639_language(&desc.data);
-                            if let Some(entry) = entries.first() {
-                                language = Some(
-                                    String::from_utf8_lossy(&entry.language_code).into_owned(),
-                                );
-                            }
-                        }
-                        if desc.tag == TAG_REGISTRATION
-                            && let Some(id) = parse_registration_descriptor(&desc.data)
-                            && &id == b"CUEI"
-                        {
-                            is_scte35 = true;
-                        }
-                    }
-
-                    if is_scte35 {
-                        program_info.scte35_pids.push(stream.elementary_pid);
-                    }
-
-                    let stream_entry = StreamEntry {
-                        pid: stream.elementary_pid,
-                        stream_type: stream.stream_type,
-                        language,
-                        first_pts: None,
-                    };
-
-                    if stream.stream_type.is_video() {
-                        program_info.video_streams.push(stream_entry);
-                    } else if stream.stream_type.is_audio() {
-                        program_info.audio_streams.push(stream_entry);
-                    } else {
-                        program_info.other_streams.push(stream_entry);
+                for stream in program_info
+                    .video_streams
+                    .iter()
+                    .chain(program_info.audio_streams.iter())
+                    .chain(program_info.other_streams.iter())
+                {
+                    let idx = stream.pid as usize;
+                    if idx < Self::PID_SPACE {
+                        is_stream_pid.borrow_mut()[idx] = true;
                     }
                 }
 
-                stream_info.programs.push(program_info);
+                programs.push(program_info);
                 Ok(())
             },
             Some(|packet: &TsPacketRef| {
+                let pid_idx = packet.pid as usize;
+
+                if pid_idx < Self::PID_SPACE
+                    && is_pcr_pid.borrow()[pid_idx]
+                    && let Some(af) = packet.parse_adaptation_field()
+                    && let Some(pcr) = af.pcr()
+                {
+                    let seconds = pcr.as_seconds();
+                    if stream_info.first_pcr.is_none() {
+                        stream_info.first_pcr = Some(seconds);
+                    }
+                    stream_info.last_pcr = Some(seconds);
+                }
+
+                if packet.payload_unit_start_indicator
+                    && pid_idx < Self::PID_SPACE
+                    && is_stream_pid.borrow()[pid_idx]
+                    && first_pts_by_pid[pid_idx].is_none()
+                    && let Some(payload) = packet.payload()
+                    && let Ok(pes) = PesHeader::parse(&payload)
+                    && let Some(pts) = pes.pts
+                {
+                    first_pts_by_pid[pid_idx] = Some(pts);
+                }
+
                 packets.push(packet.clone());
                 Ok(())
             }),
             |scte35_ref| {
-                stream_info.scte35_events.push(scte35_ref.inner.clone());
+                scte35_events.push(scte35_ref.inner.clone());
                 Ok(())
             },
         )?;
 
-        // Post-processing: extract PCR and PTS from collected packets
-        let pcr_pids: Vec<u16> = stream_info.programs.iter().map(|p| p.pcr_pid).collect();
-        let mut first_pts_map: HashMap<u16, u64> = HashMap::new();
+        stream_info.transport_stream_id = transport_stream_id;
+        stream_info.program_count = program_count;
+        stream_info.programs = programs;
+        stream_info.scte35_events = scte35_events;
 
-        for packet in &packets {
-            // Extract PCR from adaptation fields on PCR PIDs
-            if pcr_pids.contains(&packet.pid)
-                && let Some(af) = packet.parse_adaptation_field()
-                && let Some(pcr) = af.pcr()
-            {
-                let seconds = pcr.as_seconds();
-                if stream_info.first_pcr.is_none() {
-                    stream_info.first_pcr = Some(seconds);
-                }
-                stream_info.last_pcr = Some(seconds);
-            }
-
-            // Extract first PTS per PID from PES headers
-            if packet.payload_unit_start_indicator
-                && let Some(payload) = packet.payload()
-                && let std::collections::hash_map::Entry::Vacant(e) =
-                    first_pts_map.entry(packet.pid)
-                && let Ok(pes) = PesHeader::parse(&payload)
-                && let Some(pts) = pes.pts
-            {
-                e.insert(pts);
-            }
-        }
+        self.report_continuity_warnings(&parser);
 
         // Fill in first_pts on stream entries
         for program in &mut stream_info.programs {
@@ -181,7 +319,12 @@ impl TsSegmentData {
                 .chain(program.audio_streams.iter_mut())
                 .chain(program.other_streams.iter_mut())
             {
-                stream.first_pts = first_pts_map.get(&stream.pid).copied();
+                let idx = stream.pid as usize;
+                stream.first_pts = if idx < Self::PID_SPACE {
+                    first_pts_by_pid[idx]
+                } else {
+                    None
+                };
             }
         }
 
@@ -275,8 +418,6 @@ impl TsSegmentData {
 
     /// Check if this segment contains PAT/PMT tables
     pub fn has_psi_tables(&self) -> bool {
-        use std::cell::Cell;
-
         let mut parser = self.make_parser();
         let found_psi = Cell::new(false);
 
@@ -293,7 +434,12 @@ impl TsSegmentData {
             None::<fn(&ts::TsPacketRef) -> ts::Result<()>>,
         );
 
-        result.is_ok() && found_psi.get()
+        self.report_continuity_warnings(&parser);
+
+        match result {
+            Ok(()) => found_psi.get(),
+            Err(_) => found_psi.get(),
+        }
     }
 }
 
@@ -364,14 +510,14 @@ mod tests {
             segment: make_media_segment(),
             data: Bytes::new(),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Disabled,
         };
         // Empty data should return an error or empty result
         let result = segment.parse_psi_tables();
         // Empty bytes should parse without error but produce no programs
-        match result {
-            Ok(info) => assert!(info.programs.is_empty()),
-            Err(_) => {} // Also acceptable for empty data
+        // An error is also acceptable for empty data.
+        if let Ok(info) = result {
+            assert!(info.programs.is_empty());
         }
     }
 
@@ -381,7 +527,7 @@ mod tests {
             segment: make_media_segment(),
             data: Bytes::new(),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Disabled,
         };
         assert!(!segment.has_psi_tables());
     }
@@ -392,7 +538,7 @@ mod tests {
             segment: make_media_segment(),
             data: Bytes::from_static(b"this is not ts data"),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Disabled,
         };
         assert!(!segment.has_psi_tables());
     }
@@ -403,11 +549,11 @@ mod tests {
             segment: make_media_segment(),
             data: Bytes::new(),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Disabled,
         };
-        match segment.get_video_streams() {
-            Ok(streams) => assert!(streams.is_empty()),
-            Err(_) => {} // Also acceptable
+        // An error is also acceptable for empty data.
+        if let Ok(streams) = segment.get_video_streams() {
+            assert!(streams.is_empty());
         }
     }
 

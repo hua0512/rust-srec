@@ -12,9 +12,10 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 bytes = { workspace = true }
 m3u8-rs = { workspace = true }
 ts = { path = "../ts" }
+mp4 = { path = "../mp4" }
 h264 = { path = "../h264" }
 h265 = { path = "../h265" }
-av1 = { path = "../av1" }
+media-types = { path = "../media-types" }
 tracing = { workspace = true }
 memchr = { workspace = true }
 

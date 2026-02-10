@@ -174,13 +174,12 @@ impl IvfFrame {
     /// Uses zero-copy slicing for the frame data.
     pub fn demux(reader: &mut io::Cursor<Bytes>) -> Result<Self> {
         let header = IvfFrameHeader::demux(reader)?;
-        let data =
-            reader
-                .extract_bytes(header.frame_size as usize)
-                .map_err(|_| Av1Error::UnexpectedEof {
-                    expected: header.frame_size as usize,
-                    actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
-                })?;
+        let data = reader
+            .extract_bytes(header.frame_size as usize)
+            .map_err(|_| Av1Error::UnexpectedEof {
+                expected: header.frame_size as usize,
+                actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
+            })?;
         Ok(IvfFrame { header, data })
     }
 }
@@ -429,7 +428,13 @@ mod tests {
 
         let mut cursor = io::Cursor::new(Bytes::from(buf));
         let err = IvfFrame::demux(&mut cursor).unwrap_err();
-        assert!(matches!(err, Av1Error::UnexpectedEof { expected: 100, actual: 5 }));
+        assert!(matches!(
+            err,
+            Av1Error::UnexpectedEof {
+                expected: 100,
+                actual: 5
+            }
+        ));
     }
 
     #[test]

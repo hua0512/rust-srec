@@ -44,6 +44,11 @@ pub struct SegmentSplitOperator {
     last_ts_stream_info: Option<TsStreamInfo>,
     last_resolution: Option<Resolution>,
     last_init_segment: Option<M4sInitSegmentData>,
+    /// Best-effort budget for TS resolution probing until we establish a baseline.
+    ///
+    /// Some streams only carry SPS intermittently; once we have a baseline
+    /// resolution, we only probe when we can compare against it.
+    resolution_probe_remaining: u8,
 }
 
 impl SegmentSplitOperator {
@@ -60,6 +65,7 @@ impl SegmentSplitOperator {
             last_ts_stream_info: None,
             last_resolution: None,
             last_init_segment: None,
+            resolution_probe_remaining: 50,
         }
     }
 
@@ -190,8 +196,35 @@ impl SegmentSplitOperator {
             }
         }
 
+        // For TS, SPS (and thus resolution) is most likely to appear on random access points.
+        // We can use the adaptation-field Random Access Indicator (RAI) as a cheap signal.
+        let has_random_access = packets.iter().any(|p| p.has_random_access_indicator());
+
+        // Resolution parsing is relatively expensive and not every TS segment contains SPS data.
+        // Strategy:
+        // - Before we have a baseline, probe (bounded) to try to learn one.
+        // - After we have a baseline, only probe on random access segments.
         let resolution = if has_video {
-            ResolutionDetector::extract_from_ts_packets(packets.iter(), &video_streams)
+            let should_probe = if self.last_resolution.is_some() {
+                has_random_access
+            } else {
+                self.resolution_probe_remaining > 0
+            };
+
+            if should_probe {
+                let res =
+                    ResolutionDetector::extract_from_ts_packets(packets.iter(), &video_streams);
+                if res.is_none()
+                    && self.last_resolution.is_none()
+                    && self.resolution_probe_remaining > 0
+                {
+                    self.resolution_probe_remaining =
+                        self.resolution_probe_remaining.saturating_sub(1);
+                }
+                res
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -468,6 +501,7 @@ impl SegmentSplitOperator {
         self.last_ts_stream_info = None;
         self.last_resolution = None;
         self.last_init_segment = None;
+        self.resolution_probe_remaining = 50;
     }
 }
 
@@ -611,6 +645,127 @@ mod tests {
         ts_data
     }
 
+    fn make_ts_packet_header(pid: u16, pusi: bool, adaptation_field_control: u8) -> [u8; 4] {
+        // sync
+        let mut header = [0u8; 4];
+        header[0] = 0x47;
+        header[1] = ((pusi as u8) << 6) | ((pid >> 8) as u8 & 0x1F);
+        header[2] = (pid & 0xFF) as u8;
+        // no scrambling, afc + continuity 0
+        header[3] = adaptation_field_control << 4;
+        header
+    }
+
+    fn make_ts_packet_with_rai(pid: u16, rai: bool, payload: &[u8]) -> [u8; 188] {
+        // adaptation_field_control=0x03 (adaptation + payload)
+        let mut pkt = [0u8; 188];
+        let header = make_ts_packet_header(pid, true, 0x03);
+        pkt[..4].copy_from_slice(&header);
+
+        // Adaptation field: length + flags byte.
+        // We only need the flags byte for RAI; no PCR.
+        pkt[4] = 1; // adaptation_field_length
+        pkt[5] = if rai { 0x40 } else { 0x00 };
+
+        let payload_start = 6;
+        let max_payload = 188 - payload_start;
+        let payload_len = payload.len().min(max_payload);
+        pkt[payload_start..payload_start + payload_len].copy_from_slice(&payload[..payload_len]);
+        for b in &mut pkt[payload_start + payload_len..] {
+            *b = 0xFF;
+        }
+        pkt
+    }
+
+    fn make_fake_h264_sps_nal(width: u32, height: u32) -> Vec<u8> {
+        // Generate a valid H.264 SPS NAL unit that our h264 crate can parse.
+        // Start code is NOT included here.
+        use bytes_util::BitWriter;
+        use expgolomb::BitWriterExpGolombExt;
+
+        let mut out = Vec::new();
+        let mut w = BitWriter::new(&mut out);
+
+        // NAL header (forbidden_zero_bit=0, nal_ref_idc=0, nal_unit_type=7)
+        w.write_bit(false).unwrap();
+        w.write_bits(0, 2).unwrap();
+        w.write_bits(7, 5).unwrap();
+
+        // profile_idc 77 (Main), constraint flags 0, level_idc 0
+        w.write_bits(77, 8).unwrap();
+        w.write_bits(0, 8).unwrap();
+        w.write_bits(0, 8).unwrap();
+
+        // seq_parameter_set_id
+        w.write_exp_golomb(0).unwrap();
+        // log2_max_frame_num_minus4
+        w.write_exp_golomb(0).unwrap();
+        // pic_order_cnt_type
+        w.write_exp_golomb(0).unwrap();
+        // log2_max_pic_order_cnt_lsb_minus4
+        w.write_exp_golomb(0).unwrap();
+
+        // max_num_ref_frames
+        w.write_exp_golomb(0).unwrap();
+        // gaps_in_frame_num_value_allowed_flag
+        w.write_bit(false).unwrap();
+
+        // pic_width_in_mbs_minus1, pic_height_in_map_units_minus1
+        let width_mbs = (width / 16).saturating_sub(1) as u64;
+        let height_map_units = (height / 16).saturating_sub(1) as u64;
+        w.write_exp_golomb(width_mbs).unwrap();
+        w.write_exp_golomb(height_map_units).unwrap();
+
+        // frame_mbs_only_flag (progressive)
+        w.write_bit(true).unwrap();
+        // direct_8x8_inference_flag
+        w.write_bit(false).unwrap();
+        // frame_cropping_flag
+        w.write_bit(false).unwrap();
+        // vui_parameters_present_flag
+        w.write_bit(false).unwrap();
+
+        w.finish().unwrap();
+        out
+    }
+
+    fn make_fake_h264_pes_with_sps(width: u32, height: u32) -> Vec<u8> {
+        // Minimal PES header + start code prefix + SPS NAL.
+        // Our detector scans payloads for start codes.
+        let mut out = Vec::new();
+        // PES start code prefix
+        out.extend_from_slice(&[0x00, 0x00, 0x01]);
+        // stream_id (video)
+        out.push(0xE0);
+        // PES_packet_length = 0 (unknown)
+        out.extend_from_slice(&[0x00, 0x00]);
+        // flags: '10' + no scrambling etc.
+        out.push(0x80);
+        // PTS/DTS flags 00
+        out.push(0x00);
+        // header_data_length 0
+        out.push(0x00);
+
+        // Annex B start code + SPS
+        out.extend_from_slice(&[0x00, 0x00, 0x01]);
+        out.extend_from_slice(&make_fake_h264_sps_nal(width, height));
+        out
+    }
+
+    fn create_ts_data_with_rai_and_sps(
+        video_pid: u16,
+        rai: bool,
+        width: u32,
+        height: u32,
+    ) -> Vec<u8> {
+        // Reuse PAT/PMT from helper, then append one video packet with PES/SPS.
+        let mut ts_data = create_ts_data_with_codecs(0x1B, 0x0F, 1);
+        let pes = make_fake_h264_pes_with_sps(width, height);
+        let video_packet = make_ts_packet_with_rai(video_pid, rai, &pes);
+        ts_data.extend_from_slice(&video_packet);
+        ts_data
+    }
+
     #[test]
     fn test_stream_change_detection() {
         let token = CancellationToken::new();
@@ -630,7 +785,7 @@ mod tests {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data1),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Warn,
         });
 
         // Process the initial segment
@@ -644,7 +799,7 @@ mod tests {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data2),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Warn,
         });
 
         // Process the modified segment
@@ -679,7 +834,7 @@ mod tests {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data1),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Warn,
         });
 
         // Process the initial segment
@@ -693,7 +848,7 @@ mod tests {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data2),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Warn,
         });
 
         // Process the segment with different program
@@ -729,7 +884,7 @@ mod tests {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data1),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Warn,
         });
 
         // Process the initial segment
@@ -743,7 +898,7 @@ mod tests {
             segment: MediaSegment::empty(),
             data: Bytes::from(ts_data2),
             validate_crc: false,
-            check_continuity: false,
+            continuity_mode: ts::ContinuityMode::Warn,
         });
 
         // Process the segment with different codec (and implied resolution)
@@ -758,5 +913,100 @@ mod tests {
             HlsData::EndMarker => {}
             _ => panic!("Expected EndMarker after resolution change"),
         }
+    }
+
+    #[test]
+    fn test_resolution_probe_gated_by_rai_when_baseline_exists() {
+        init_test_tracing!();
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = SegmentSplitOperator::new(context.clone());
+        let mut output_items = Vec::new();
+
+        let mut output_fn = |item: HlsData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        // Segment 1: establish baseline resolution with RAI + 640x352 SPS.
+        // Video PID in our test PMT helper is 0x100.
+        let ts_data1 = create_ts_data_with_rai_and_sps(0x0100, true, 640, 352);
+        let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
+            segment: MediaSegment::empty(),
+            data: Bytes::from(ts_data1),
+            validate_crc: false,
+            continuity_mode: ts::ContinuityMode::Warn,
+        });
+        operator
+            .process(&context, ts_segment1, &mut output_fn)
+            .unwrap();
+        assert_eq!(operator.last_resolution, Some(Resolution::new(640, 352)));
+
+        // Segment 2: contains a different SPS (1280x720) but NO RAI.
+        // With baseline existing, resolution probing should be skipped; no split.
+        let ts_data2 = create_ts_data_with_rai_and_sps(0x0100, false, 1280, 720);
+        let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
+            segment: MediaSegment::empty(),
+            data: Bytes::from(ts_data2),
+            validate_crc: false,
+            continuity_mode: ts::ContinuityMode::Warn,
+        });
+        operator
+            .process(&context, ts_segment2, &mut output_fn)
+            .unwrap();
+
+        // No end marker should have been emitted.
+        assert!(
+            output_items
+                .iter()
+                .all(|i| !matches!(i, HlsData::EndMarker))
+        );
+        // Baseline should remain unchanged.
+        assert_eq!(operator.last_resolution, Some(Resolution::new(640, 352)));
+    }
+
+    #[test]
+    fn test_resolution_change_with_rai_triggers_split() {
+        init_test_tracing!();
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = SegmentSplitOperator::new(context.clone());
+        let mut output_items = Vec::new();
+
+        // Establish baseline resolution (RAI + SPS).
+        let ts_data1 = create_ts_data_with_rai_and_sps(0x0100, true, 640, 352);
+        let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
+            segment: MediaSegment::empty(),
+            data: Bytes::from(ts_data1),
+            validate_crc: false,
+            continuity_mode: ts::ContinuityMode::Warn,
+        });
+        operator
+            .process(&context, ts_segment1, &mut |item: HlsData| {
+                output_items.push(item);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(operator.last_resolution, Some(Resolution::new(640, 352)));
+        assert_eq!(output_items.len(), 1);
+
+        // Second segment: RAI present and SPS indicates a different resolution.
+        // With baseline established, this should be probed and should trigger a split.
+        let ts_data2 = create_ts_data_with_rai_and_sps(0x0100, true, 1280, 720);
+        let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
+            segment: MediaSegment::empty(),
+            data: Bytes::from(ts_data2),
+            validate_crc: false,
+            continuity_mode: ts::ContinuityMode::Warn,
+        });
+        operator
+            .process(&context, ts_segment2, &mut |item: HlsData| {
+                output_items.push(item);
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(output_items.len(), 3);
+        assert!(matches!(&output_items[1], HlsData::EndMarker));
     }
 }
