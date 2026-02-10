@@ -136,15 +136,26 @@ impl SegmentTransformer for SegmentProcessor {
             raw_data_input
         };
 
-        // Construct HlsData
-        let segment_url = url::Url::parse(&job.media_segment.uri)
-            .map_err(|e| HlsDownloaderError::SegmentProcessError(format!("Invalid URL: {e}")))?;
+        // Construct HlsData.
+        // Avoid cloning `Url` when it's already pre-parsed on the job.
+        let segment_url_storage = if job.parsed_url.is_some() {
+            None
+        } else {
+            Some(url::Url::parse(&job.media_segment.uri).map_err(|e| {
+                HlsDownloaderError::SegmentProcessError(format!("Invalid URL: {e}"))
+            })?)
+        };
+        let segment_url: &url::Url = job.parsed_url.as_deref().unwrap_or_else(|| {
+            segment_url_storage
+                .as_ref()
+                .expect("segment_url_storage set")
+        });
         let len = current_data.len();
         let current_data_clone = current_data.clone();
         let hls_data = create_hls_data(
             job.media_segment.as_ref().clone(),
             current_data,
-            &segment_url,
+            segment_url,
             job.is_init_segment,
         );
 
@@ -211,6 +222,7 @@ mod tests {
             }),
             is_init_segment: false,
             is_prefetch: false,
+            parsed_url: url::Url::parse(uri).ok().map(Arc::new),
         }
     }
 

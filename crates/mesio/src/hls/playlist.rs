@@ -812,6 +812,7 @@ impl PlaylistEngine {
                             media_segment: Arc::new(init_media_segment),
                             is_init_segment: true,
                             is_prefetch: false,
+                            parsed_url: Url::parse(&final_map_uri).ok().map(Arc::new),
                         };
                         jobs_to_send.push(init_job);
                         *last_map_uri = Some(final_map_uri);
@@ -908,6 +909,7 @@ impl PlaylistEngine {
                                     media_segment: Arc::new(segment_for_job),
                                     is_init_segment: false,
                                     is_prefetch: segment.title.as_deref() == Some("PREFETCH_SEGMENT"),
+                                    parsed_url: Url::parse(&final_segment_uri).ok().map(Arc::new),
                                 };
                                 jobs_to_send.push(job);
                             }

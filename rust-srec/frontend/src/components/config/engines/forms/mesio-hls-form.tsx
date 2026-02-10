@@ -730,24 +730,6 @@ const HlsPerformanceSettings = React.memo(
             </FormItem>
           )}
         />
-        <FormField
-          control={control}
-          name={`${hlsPath}.performance_config.buffer_pool.enabled`}
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 p-3 py-2 self-end shadow-sm">
-              <FormLabel className="text-xs font-normal">
-                <Trans>Buffer Pool (Default: On)</Trans>
-              </FormLabel>
-              <FormControl>
-                <Switch
-                  checked={field.value ?? true}
-                  onCheckedChange={field.onChange}
-                  className="scale-75 origin-right"
-                />
-              </FormControl>
-            </FormItem>
-          )}
-        />
       </div>
 
       <div className="space-y-3">

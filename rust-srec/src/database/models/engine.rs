@@ -377,11 +377,15 @@ pub struct MesioHlsFetcherConfigOverride {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segment_retry_delay_base_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_segment_retry_delay_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_download_timeout_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_key_retries: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_retry_delay_base_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_key_retry_delay_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segment_raw_cache_ttl_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -463,23 +467,11 @@ pub struct MesioHlsPerformanceConfigOverride {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefetch: Option<MesioPrefetchOverride>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub buffer_pool: Option<MesioBufferPoolOverride>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub batch_scheduler: Option<MesioBatchSchedulerOverride>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zero_copy_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metrics_enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MesioBufferPoolOverride {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pool_size: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_capacity: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

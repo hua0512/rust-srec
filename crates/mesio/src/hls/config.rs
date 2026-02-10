@@ -25,27 +25,6 @@ impl Default for PrefetchConfig {
     }
 }
 
-/// Configuration for buffer pooling
-#[derive(Debug, Clone)]
-pub struct BufferPoolConfig {
-    /// Enable buffer pooling
-    pub enabled: bool,
-    /// Maximum buffers to keep in pool
-    pub pool_size: usize,
-    /// Default buffer capacity
-    pub default_capacity: usize,
-}
-
-impl Default for BufferPoolConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            pool_size: 10,
-            default_capacity: 2 * 1024 * 1024, // 2MB
-        }
-    }
-}
-
 /// Configuration for batch scheduling
 #[derive(Debug, Clone)]
 pub struct BatchSchedulerConfig {
@@ -70,12 +49,8 @@ impl Default for BatchSchedulerConfig {
 /// Aggregated performance configuration for HLS pipeline
 #[derive(Debug, Clone)]
 pub struct HlsPerformanceConfig {
-    /// Decryption offloading to blocking thread pool
-    pub decryption_offload_enabled: bool,
     /// Prefetch configuration
     pub prefetch: PrefetchConfig,
-    /// Buffer pool configuration
-    pub buffer_pool: BufferPoolConfig,
     /// Batch scheduler configuration
     pub batch_scheduler: BatchSchedulerConfig,
     /// Zero-copy forwarding enabled
@@ -87,9 +62,7 @@ pub struct HlsPerformanceConfig {
 impl Default for HlsPerformanceConfig {
     fn default() -> Self {
         Self {
-            decryption_offload_enabled: true,
             prefetch: PrefetchConfig::default(),
-            buffer_pool: BufferPoolConfig::default(),
             batch_scheduler: BatchSchedulerConfig::default(),
             zero_copy_enabled: true,
             metrics_enabled: true,
@@ -230,9 +203,11 @@ pub struct HlsFetcherConfig {
     pub segment_download_timeout: Duration,
     pub max_segment_retries: u32,
     pub segment_retry_delay_base: Duration, // Base for exponential backoff
+    pub max_segment_retry_delay: Duration,  // Hard cap on exponential backoff growth
     pub key_download_timeout: Duration,
     pub max_key_retries: u32,
     pub key_retry_delay_base: Duration,
+    pub max_key_retry_delay: Duration, // Hard cap on key retry backoff growth
     pub segment_raw_cache_ttl: Duration, // TTL for caching raw (undecrypted) segments
     /// Threshold in bytes above which segments are streamed instead of buffered entirely
     /// This reduces memory spikes for large segments (default: 2MB)
@@ -245,9 +220,11 @@ impl Default for HlsFetcherConfig {
             segment_download_timeout: Duration::from_secs(10),
             max_segment_retries: 3,
             segment_retry_delay_base: Duration::from_millis(500),
+            max_segment_retry_delay: Duration::from_secs(10),
             key_download_timeout: Duration::from_secs(5),
             max_key_retries: 3,
             key_retry_delay_base: Duration::from_millis(200),
+            max_key_retry_delay: Duration::from_secs(5),
             segment_raw_cache_ttl: Duration::from_secs(60), // Default 1 minutes for raw segments
             streaming_threshold_bytes: 2 * 1024 * 1024,     // 2MB threshold for streaming
         }
@@ -281,7 +258,7 @@ impl Default for HlsDecryptionConfig {
     fn default() -> Self {
         Self {
             key_cache_ttl: Duration::from_secs(60 * 60), // Default to 1 hour TTL for keys
-            offload_decryption_to_cpu_pool: false,       // Default to inline async decryption
+            offload_decryption_to_cpu_pool: true,        // Default: offload crypto to blocking pool
         }
     }
 }

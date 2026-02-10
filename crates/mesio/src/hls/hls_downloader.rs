@@ -109,7 +109,7 @@ impl HlsDownloader {
                 playlist_engine_handle,
                 scheduler_handle,
                 output_manager_handle,
-                http2_stats,
+                performance_metrics,
             } = handles;
 
             // It's important to await all handles to ensure cleanup.
@@ -126,8 +126,8 @@ impl HlsDownloader {
                 warn!("Output manager task finished with error: {:?}", e);
             }
 
-            // Log HTTP/2 connection statistics
-            http2_stats.log_summary();
+            // Log performance summary (includes HTTP connection statistics)
+            performance_metrics.log_summary();
 
             debug!("All HLS pipeline tasks have completed.");
         });

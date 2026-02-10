@@ -189,12 +189,6 @@ export const MesioPrefetchOverrideSchema = z.object({
   max_buffer_before_skip: optionalInt(0),
 });
 
-export const MesioBufferPoolOverrideSchema = z.object({
-  enabled: z.boolean().optional(),
-  pool_size: optionalInt(0),
-  default_capacity: optionalInt(0),
-});
-
 export const MesioBatchSchedulerOverrideSchema = z.object({
   enabled: z.boolean().optional(),
   batch_window_ms: optionalInt(0),
@@ -204,7 +198,6 @@ export const MesioBatchSchedulerOverrideSchema = z.object({
 export const MesioHlsPerformanceConfigOverrideSchema = z.object({
   decryption_offload_enabled: z.boolean().optional(),
   prefetch: MesioPrefetchOverrideSchema.optional(),
-  buffer_pool: MesioBufferPoolOverrideSchema.optional(),
   batch_scheduler: MesioBatchSchedulerOverrideSchema.optional(),
   zero_copy_enabled: z.boolean().optional(),
   metrics_enabled: z.boolean().optional(),

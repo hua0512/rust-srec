@@ -217,6 +217,9 @@ fn apply_hls_engine_overrides(
         if let Some(v) = fc.segment_retry_delay_base_ms {
             hls_config.fetcher_config.segment_retry_delay_base = ms(v);
         }
+        if let Some(v) = fc.max_segment_retry_delay_ms {
+            hls_config.fetcher_config.max_segment_retry_delay = ms(v);
+        }
         if let Some(v) = fc.key_download_timeout_ms {
             hls_config.fetcher_config.key_download_timeout = ms(v);
         }
@@ -225,6 +228,9 @@ fn apply_hls_engine_overrides(
         }
         if let Some(v) = fc.key_retry_delay_base_ms {
             hls_config.fetcher_config.key_retry_delay_base = ms(v);
+        }
+        if let Some(v) = fc.max_key_retry_delay_ms {
+            hls_config.fetcher_config.max_key_retry_delay = ms(v);
         }
         if let Some(v) = fc.segment_raw_cache_ttl_ms {
             hls_config.fetcher_config.segment_raw_cache_ttl = ms(v);
@@ -302,7 +308,7 @@ fn apply_hls_engine_overrides(
 
     if let Some(ref pc) = cfg.performance_config {
         if let Some(v) = pc.decryption_offload_enabled {
-            hls_config.performance_config.decryption_offload_enabled = v;
+            hls_config.decryption_config.offload_decryption_to_cpu_pool = v;
         }
         if let Some(ref prefetch) = pc.prefetch {
             if let Some(v) = prefetch.enabled {
@@ -316,17 +322,6 @@ fn apply_hls_engine_overrides(
                     .performance_config
                     .prefetch
                     .max_buffer_before_skip = v;
-            }
-        }
-        if let Some(ref bp) = pc.buffer_pool {
-            if let Some(v) = bp.enabled {
-                hls_config.performance_config.buffer_pool.enabled = v;
-            }
-            if let Some(v) = bp.pool_size {
-                hls_config.performance_config.buffer_pool.pool_size = v;
-            }
-            if let Some(v) = bp.default_capacity {
-                hls_config.performance_config.buffer_pool.default_capacity = v;
             }
         }
         if let Some(ref bs) = pc.batch_scheduler {
@@ -887,6 +882,8 @@ mod tests {
                 },
                 "fetcher_config": {
                   "max_segment_retries": 42,
+                  "max_segment_retry_delay_ms": 5555,
+                  "max_key_retry_delay_ms": 6666,
                   "streaming_threshold_bytes": 314159
                 },
                 "processor_config": {
@@ -948,6 +945,14 @@ mod tests {
         ));
 
         assert_eq!(hls_config.fetcher_config.max_segment_retries, 42);
+        assert_eq!(
+            hls_config.fetcher_config.max_segment_retry_delay,
+            std::time::Duration::from_millis(5555)
+        );
+        assert_eq!(
+            hls_config.fetcher_config.max_key_retry_delay,
+            std::time::Duration::from_millis(6666)
+        );
         assert_eq!(hls_config.fetcher_config.streaming_threshold_bytes, 314159);
         assert_eq!(
             hls_config.processor_config.processed_segment_ttl,

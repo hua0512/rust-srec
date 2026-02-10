@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
+use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct ScheduledSegmentJob {
@@ -25,6 +26,8 @@ pub struct ScheduledSegmentJob {
     pub is_init_segment: bool,
     /// Whether this job is a prefetch request (lower priority)
     pub is_prefetch: bool,
+    /// Pre-parsed segment URL to avoid re-parsing in fetcher and processor
+    pub parsed_url: Option<Arc<Url>>,
 }
 
 /// Batches segment jobs for efficient dispatch.
@@ -360,9 +363,102 @@ impl SegmentScheduler {
         prefetch_jobs
     }
 
+    /// Take all pending jobs from the batch scheduler and push them into the
+    /// `FuturesUnordered` work-set, respecting `max_concurrency`. Any jobs that
+    /// cannot be dispatched because the concurrency limit has been reached are
+    /// re-queued into the batch scheduler for the next dispatch cycle.
+    fn dispatch_batch_to_futures<F>(
+        batch_scheduler: &mut BatchScheduler,
+        futures: &mut FuturesUnordered<F>,
+        buffer_size: &mut usize,
+        in_flight_segments: &mut HashSet<u64>,
+        segment_fetcher: &Arc<dyn SegmentDownloader>,
+        segment_processor: &Arc<dyn SegmentTransformer>,
+        max_concurrency: usize,
+    ) where
+        F: From<
+            std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = (
+                                u64,
+                                bool,
+                                bool,
+                                Result<ProcessedSegmentOutput, HlsDownloaderError>,
+                            ),
+                        > + Send,
+                >,
+            >,
+        >,
+    {
+        let batch = batch_scheduler.take_batch();
+        let mut leftovers = Vec::new();
+        for job in batch {
+            if futures.len() >= max_concurrency {
+                leftovers.push(job);
+                continue;
+            }
+            *buffer_size += 1;
+            in_flight_segments.insert(job.media_sequence_number);
+            futures.push(F::from(Box::pin(Self::perform_segment_processing(
+                Arc::clone(segment_fetcher),
+                Arc::clone(segment_processor),
+                job,
+            ))));
+        }
+        batch_scheduler.requeue_ready_jobs(leftovers);
+    }
+
+    /// Push a single job directly into the futures work-set (no batching).
+    fn dispatch_single_to_futures<F>(
+        job: ScheduledSegmentJob,
+        futures: &mut FuturesUnordered<F>,
+        buffer_size: &mut usize,
+        in_flight_segments: &mut HashSet<u64>,
+        segment_fetcher: &Arc<dyn SegmentDownloader>,
+        segment_processor: &Arc<dyn SegmentTransformer>,
+    ) where
+        F: From<
+            std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = (
+                                u64,
+                                bool,
+                                bool,
+                                Result<ProcessedSegmentOutput, HlsDownloaderError>,
+                            ),
+                        > + Send,
+                >,
+            >,
+        >,
+    {
+        *buffer_size += 1;
+        in_flight_segments.insert(job.media_sequence_number);
+        futures.push(F::from(Box::pin(Self::perform_segment_processing(
+            Arc::clone(segment_fetcher),
+            Arc::clone(segment_processor),
+            job,
+        ))));
+    }
+
     pub async fn run(&mut self) {
+        // Type alias for the future returned by perform_segment_processing
+        type SegmentFuture = std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = (
+                            u64,
+                            bool,
+                            bool,
+                            Result<ProcessedSegmentOutput, HlsDownloaderError>,
+                        ),
+                    > + Send,
+            >,
+        >;
+
         info!("SegmentScheduler started.");
-        let mut futures = FuturesUnordered::new();
+        let mut futures: FuturesUnordered<SegmentFuture> = FuturesUnordered::new();
         let mut draining = false;
         let batch_enabled = self.batch_scheduler.is_enabled();
         let prefetch_enabled = self.prefetch_manager.is_enabled();
@@ -392,51 +488,31 @@ impl SegmentScheduler {
 
                     // Dispatch any remaining batched jobs before draining
                     if batch_enabled && self.batch_scheduler.pending_count() > 0 {
-                        let batch = self.batch_scheduler.take_batch();
-                        let max_concurrency = self.config.scheduler_config.download_concurrency;
-                        let mut leftovers = Vec::new();
-                        for job in batch {
-                            if futures.len() >= max_concurrency {
-                                leftovers.push(job);
-                                continue;
-                            }
-                            self.buffer_size += 1;
-                            self.in_flight_segments.insert(job.media_sequence_number);
-                            let fetcher_clone = Arc::clone(&self.segment_fetcher);
-                            let processor_clone = Arc::clone(&self.segment_processor);
-                            futures.push(Self::perform_segment_processing(
-                                fetcher_clone,
-                                processor_clone,
-                                job,
-                            ));
-                        }
-                        self.batch_scheduler.requeue_ready_jobs(leftovers);
+                        Self::dispatch_batch_to_futures(
+                            &mut self.batch_scheduler,
+                            &mut futures,
+                            &mut self.buffer_size,
+                            &mut self.in_flight_segments,
+                            &self.segment_fetcher,
+                            &self.segment_processor,
+                            self.config.scheduler_config.download_concurrency,
+                        );
                     }
                 }
 
                 // 2. Batch window timeout - dispatch partial batch when window expires
                 _ = tokio::time::sleep(batch_timeout.unwrap_or(Duration::MAX)), if batch_enabled && batch_timeout.is_some() && can_accept_more => {
                     if self.batch_scheduler.is_ready() {
-                        let batch = self.batch_scheduler.take_batch();
-                        trace!(batch_size = batch.len(), "Batch window expired, dispatching partial batch");
-                        let max_concurrency = self.config.scheduler_config.download_concurrency;
-                        let mut leftovers = Vec::new();
-                        for job in batch {
-                            if futures.len() >= max_concurrency {
-                                leftovers.push(job);
-                                continue;
-                            }
-                            self.buffer_size += 1;
-                            self.in_flight_segments.insert(job.media_sequence_number);
-                            let fetcher_clone = Arc::clone(&self.segment_fetcher);
-                            let processor_clone = Arc::clone(&self.segment_processor);
-                            futures.push(Self::perform_segment_processing(
-                                fetcher_clone,
-                                processor_clone,
-                                job,
-                            ));
-                        }
-                        self.batch_scheduler.requeue_ready_jobs(leftovers);
+                        trace!(batch_size = self.batch_scheduler.pending_count(), "Batch window expired, dispatching partial batch");
+                        Self::dispatch_batch_to_futures(
+                            &mut self.batch_scheduler,
+                            &mut futures,
+                            &mut self.buffer_size,
+                            &mut self.in_flight_segments,
+                            &self.segment_fetcher,
+                            &self.segment_processor,
+                            self.config.scheduler_config.download_concurrency,
+                        );
                     }
                 }
 
@@ -461,38 +537,27 @@ impl SegmentScheduler {
 
                             // Check if batch is ready (max size reached)
                             if self.batch_scheduler.is_ready() {
-                                let batch = self.batch_scheduler.take_batch();
-                                trace!(batch_size = batch.len(), "Batch ready (max size), dispatching");
-                                let max_concurrency = self.config.scheduler_config.download_concurrency;
-                                let mut leftovers = Vec::new();
-                                for job in batch {
-                                    if futures.len() >= max_concurrency {
-                                        leftovers.push(job);
-                                        continue;
-                                    }
-                                    self.buffer_size += 1;
-                                    self.in_flight_segments.insert(job.media_sequence_number);
-                                    let fetcher_clone = Arc::clone(&self.segment_fetcher);
-                                    let processor_clone = Arc::clone(&self.segment_processor);
-                                    futures.push(Self::perform_segment_processing(
-                                        fetcher_clone,
-                                        processor_clone,
-                                        job,
-                                    ));
-                                }
-                                self.batch_scheduler.requeue_ready_jobs(leftovers);
+                                trace!(batch_size = self.batch_scheduler.pending_count(), "Batch ready (max size), dispatching");
+                                Self::dispatch_batch_to_futures(
+                                    &mut self.batch_scheduler,
+                                    &mut futures,
+                                    &mut self.buffer_size,
+                                    &mut self.in_flight_segments,
+                                    &self.segment_fetcher,
+                                    &self.segment_processor,
+                                    self.config.scheduler_config.download_concurrency,
+                                );
                             }
                         } else {
                             // Direct dispatch without batching
-                            self.buffer_size += 1;
-                            self.in_flight_segments.insert(job_request.media_sequence_number);
-                            let fetcher_clone = Arc::clone(&self.segment_fetcher);
-                            let processor_clone = Arc::clone(&self.segment_processor);
-                            futures.push(Self::perform_segment_processing(
-                                fetcher_clone,
-                                processor_clone,
+                            Self::dispatch_single_to_futures(
                                 job_request,
-                            ));
+                                &mut futures,
+                                &mut self.buffer_size,
+                                &mut self.in_flight_segments,
+                                &self.segment_fetcher,
+                                &self.segment_processor,
+                            );
                         }
                     } else {
                         // The input channel was closed by the PlaylistEngine.
@@ -502,26 +567,16 @@ impl SegmentScheduler {
 
                         // Dispatch any remaining batched jobs
                         if batch_enabled && self.batch_scheduler.pending_count() > 0 {
-                            let batch = self.batch_scheduler.take_batch();
-                            debug!(batch_size = batch.len(), "Dispatching remaining batch on channel close");
-                            let max_concurrency = self.config.scheduler_config.download_concurrency;
-                            let mut leftovers = Vec::new();
-                            for job in batch {
-                                if futures.len() >= max_concurrency {
-                                    leftovers.push(job);
-                                    continue;
-                                }
-                                self.buffer_size += 1;
-                                self.in_flight_segments.insert(job.media_sequence_number);
-                                let fetcher_clone = Arc::clone(&self.segment_fetcher);
-                                let processor_clone = Arc::clone(&self.segment_processor);
-                                futures.push(Self::perform_segment_processing(
-                                    fetcher_clone,
-                                    processor_clone,
-                                    job,
-                                ));
-                            }
-                            self.batch_scheduler.requeue_ready_jobs(leftovers);
+                            debug!(batch_size = self.batch_scheduler.pending_count(), "Dispatching remaining batch on channel close");
+                            Self::dispatch_batch_to_futures(
+                                &mut self.batch_scheduler,
+                                &mut futures,
+                                &mut self.buffer_size,
+                                &mut self.in_flight_segments,
+                                &self.segment_fetcher,
+                                &self.segment_processor,
+                                self.config.scheduler_config.download_concurrency,
+                            );
                         }
                     }
                 }
@@ -565,18 +620,17 @@ impl SegmentScheduler {
 
                             if should_prefetch {
                                 let prefetch_jobs = self.get_prefetch_jobs(completed_msn);
+                                let max_concurrency = self.config.scheduler_config.download_concurrency;
                                 for prefetch_job in prefetch_jobs {
-                                    // Only dispatch if we have capacity
-                                    if futures.len() < self.config.scheduler_config.download_concurrency {
-                                        self.buffer_size += 1;
-                                        self.in_flight_segments.insert(prefetch_job.media_sequence_number);
-                                        let fetcher_clone = Arc::clone(&self.segment_fetcher);
-                                        let processor_clone = Arc::clone(&self.segment_processor);
-                                        futures.push(Self::perform_segment_processing(
-                                            fetcher_clone,
-                                            processor_clone,
+                                    if futures.len() < max_concurrency {
+                                        Self::dispatch_single_to_futures(
                                             prefetch_job,
-                                        ));
+                                            &mut futures,
+                                            &mut self.buffer_size,
+                                            &mut self.in_flight_segments,
+                                            &self.segment_fetcher,
+                                            &self.segment_processor,
+                                        );
                                     }
                                 }
                             }
@@ -656,6 +710,7 @@ mod tests {
             }),
             is_init_segment,
             is_prefetch,
+            parsed_url: None,
         }
     }
 
