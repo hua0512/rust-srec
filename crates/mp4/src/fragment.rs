@@ -285,19 +285,22 @@ fn parse_tfhd(data: &Bytes, start: usize, end: usize, moof_start: usize) -> io::
     })
 }
 
+#[derive(Debug, Default)]
+struct TrunValidationState {
+    next_sample_offset: Option<usize>,
+    checked_samples: usize,
+}
+
 fn parse_trun_and_validate_samples(
     data: &Bytes,
     start: usize,
     end: usize,
-    default_sample_size: Option<u32>,
-    mdat_start: usize,
-    mdat_end: usize,
-    base_data_offset: u64,
-    track_id: u32,
+    tfhd_info: TfhdInfo,
+    mdat_range: (usize, usize),
     options: Av1ValidationOptions,
-    next_sample_offset: &mut Option<usize>,
-    checked_samples: &mut usize,
+    state: &mut TrunValidationState,
 ) -> io::Result<()> {
+    let (mdat_start, mdat_end) = mdat_range;
     let body = &data[start..end];
     if body.len() < 8 {
         return Err(io::Error::new(
@@ -340,7 +343,7 @@ fn parse_trun_and_validate_samples(
     let has_sample_cto = flags & 0x000800 != 0;
 
     let mut sample_offset = if let Some(data_offset) = data_offset {
-        let offset = base_data_offset as i64 + data_offset as i64;
+        let offset = tfhd_info.base_data_offset as i64 + data_offset as i64;
         if offset < 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -348,7 +351,7 @@ fn parse_trun_and_validate_samples(
             ));
         }
         offset as usize
-    } else if let Some(offset) = *next_sample_offset {
+    } else if let Some(offset) = state.next_sample_offset {
         offset
     } else {
         return Err(io::Error::new(
@@ -380,7 +383,7 @@ fn parse_trun_and_validate_samples(
             idx += 4;
             value
         } else {
-            default_sample_size.ok_or_else(|| {
+            tfhd_info.default_sample_size.ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
                     "trun sample has no explicit size and tfhd has no default_sample_size",
@@ -410,12 +413,12 @@ fn parse_trun_and_validate_samples(
                 io::ErrorKind::InvalidData,
                 format!(
                     "AV1 sample conformance failure on track {}: {}",
-                    track_id, e
+                    tfhd_info.track_id, e
                 ),
             )
         })?;
 
-        *checked_samples += 1;
+        state.checked_samples += 1;
         sample_offset = sample_end;
 
         if has_sample_flags {
@@ -439,7 +442,7 @@ fn parse_trun_and_validate_samples(
         }
     }
 
-    *next_sample_offset = Some(sample_offset);
+    state.next_sample_offset = Some(sample_offset);
 
     Ok(())
 }
@@ -489,7 +492,10 @@ fn validate_av1_tracks_in_fragment(
             let mut tfhd: Option<TfhdInfo> = None;
             let mut is_av1_track = false;
             let mut counted_track = false;
-            let mut next_sample_offset: Option<usize> = None;
+            let mut trun_state = TrunValidationState {
+                checked_samples: summary.checked_samples,
+                ..TrunValidationState::default()
+            };
             let mut pending_truns: Vec<(usize, usize)> = Vec::new();
 
             let mut traf_offset = traf_start;
@@ -518,14 +524,10 @@ fn validate_av1_tracks_in_fragment(
                                 data,
                                 pending_start,
                                 pending_end,
-                                parsed_tfhd.default_sample_size,
-                                mdat_start,
-                                mdat_end,
-                                parsed_tfhd.base_data_offset,
-                                parsed_tfhd.track_id,
+                                parsed_tfhd,
+                                (mdat_start, mdat_end),
                                 options,
-                                &mut next_sample_offset,
-                                &mut summary.checked_samples,
+                                &mut trun_state,
                             )?;
                         }
                     }
@@ -538,14 +540,10 @@ fn validate_av1_tracks_in_fragment(
                                 data,
                                 traf_child.body_start,
                                 traf_child.end,
-                                tfhd_info.default_sample_size,
-                                mdat_start,
-                                mdat_end,
-                                tfhd_info.base_data_offset,
-                                tfhd_info.track_id,
+                                tfhd_info,
+                                (mdat_start, mdat_end),
                                 options,
-                                &mut next_sample_offset,
-                                &mut summary.checked_samples,
+                                &mut trun_state,
                             )?;
                         }
                     } else {
@@ -564,17 +562,15 @@ fn validate_av1_tracks_in_fragment(
                         data,
                         pending_start,
                         pending_end,
-                        tfhd_info.default_sample_size,
-                        mdat_start,
-                        mdat_end,
-                        tfhd_info.base_data_offset,
-                        tfhd_info.track_id,
+                        tfhd_info,
+                        (mdat_start, mdat_end),
                         options,
-                        &mut next_sample_offset,
-                        &mut summary.checked_samples,
+                        &mut trun_state,
                     )?;
                 }
             }
+
+            summary.checked_samples = trun_state.checked_samples;
         }
 
         moof_offset = child.end;

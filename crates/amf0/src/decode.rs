@@ -476,7 +476,7 @@ mod tests {
 
         // Empty input
         let empty: Vec<u8> = vec![];
-        let mut reader = Amf0Decoder::new(&empty);
+        let reader = Amf0Decoder::new(&empty);
         assert!(reader.is_empty());
 
         // Truncated string (claims 11 bytes but only has 3)

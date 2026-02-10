@@ -1012,9 +1012,7 @@ mod tests {
     #[test]
     fn test_av1_sequence_end() {
         // Enhanced packet type SEQUENCE_END (2) with AV1 FourCC
-        let mut reader = io::Cursor::new(Bytes::from_static(&[
-            b'a', b'v', b'0', b'1', // video codec
-        ]));
+        let mut reader = io::Cursor::new(Bytes::from_static(b"av01"));
         let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::SEQUENCE_END);
         let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
         assert_eq!(
@@ -1135,9 +1133,7 @@ mod tests {
 
     #[test]
     fn test_enhanced_avc_sequence_end() {
-        let mut reader = io::Cursor::new(Bytes::from_static(&[
-            b'a', b'v', b'c', b'1', // video codec
-        ]));
+        let mut reader = io::Cursor::new(Bytes::from_static(b"avc1"));
         let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::SEQUENCE_END);
         let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
         assert_eq!(
@@ -1148,9 +1144,7 @@ mod tests {
 
     #[test]
     fn test_enhanced_hevc_sequence_end() {
-        let mut reader = io::Cursor::new(Bytes::from_static(&[
-            b'h', b'v', b'c', b'1', // video codec
-        ]));
+        let mut reader = io::Cursor::new(Bytes::from_static(b"hvc1"));
         let packet_type = VideoPacketType::Enhanced(EnhancedPacketType::SEQUENCE_END);
         let body = VideoTagBody::demux(packet_type, &mut reader).unwrap();
         assert_eq!(
