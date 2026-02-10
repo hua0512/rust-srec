@@ -131,6 +131,16 @@ fn extract_platform_refresh_token(platform_specific_config: Option<&str>) -> Opt
         })
 }
 
+fn extract_platform_access_token(platform_specific_config: Option<&str>) -> Option<String> {
+    platform_specific_config
+        .and_then(|config| serde_json::from_str::<serde_json::Value>(config).ok())
+        .and_then(|v| {
+            v.get("access_token")
+                .and_then(|t| t.as_str())
+                .map(String::from)
+        })
+}
+
 fn extract_template_refresh_token(
     platform_overrides: Option<&str>,
     platform_name: &str,
@@ -139,6 +149,17 @@ fn extract_template_refresh_token(
         .and_then(|overrides| serde_json::from_str::<serde_json::Value>(overrides).ok())
         .and_then(|v| v.get(platform_name).cloned())
         .and_then(|p| p.get("refresh_token").cloned())
+        .and_then(|t| t.as_str().map(String::from))
+}
+
+fn extract_template_access_token(
+    platform_overrides: Option<&str>,
+    platform_name: &str,
+) -> Option<String> {
+    platform_overrides
+        .and_then(|overrides| serde_json::from_str::<serde_json::Value>(overrides).ok())
+        .and_then(|v| v.get(platform_name).cloned())
+        .and_then(|p| p.get("access_token").cloned())
         .and_then(|t| t.as_str().map(String::from))
 }
 
@@ -259,6 +280,8 @@ pub async fn get_platform_credential_source(
 
     let refresh_token =
         extract_platform_refresh_token(platform.platform_specific_config.as_deref());
+    let access_token =
+        extract_platform_access_token(platform.platform_specific_config.as_deref());
     let source = CredentialSource::new(
         CredentialScope::Platform {
             platform_id: platform.id,
@@ -267,7 +290,8 @@ pub async fn get_platform_credential_source(
         cookies.to_string(),
         refresh_token,
         platform.platform_name,
-    );
+    )
+    .with_access_token(access_token);
 
     Ok(Json(CredentialSourceResponse::from_source(&source)))
 }
@@ -315,6 +339,8 @@ pub async fn get_template_credential_source(
     .unwrap_or_else(|| "unknown".to_string());
     let refresh_token =
         extract_template_refresh_token(template.platform_overrides.as_deref(), &platform_name);
+    let access_token =
+        extract_template_access_token(template.platform_overrides.as_deref(), &platform_name);
 
     let source = CredentialSource::new(
         CredentialScope::Template {
@@ -324,7 +350,8 @@ pub async fn get_template_credential_source(
         cookies.to_string(),
         refresh_token,
         platform_name,
-    );
+    )
+    .with_access_token(access_token);
 
     Ok(Json(CredentialSourceResponse::from_source(&source)))
 }
@@ -441,6 +468,8 @@ pub async fn refresh_platform_credentials(
 
     let refresh_token =
         extract_platform_refresh_token(platform.platform_specific_config.as_deref());
+    let access_token =
+        extract_platform_access_token(platform.platform_specific_config.as_deref());
     let source = CredentialSource::new(
         CredentialScope::Platform {
             platform_id: platform.id.clone(),
@@ -449,7 +478,8 @@ pub async fn refresh_platform_credentials(
         cookies.to_string(),
         refresh_token,
         platform.platform_name,
-    );
+    )
+    .with_access_token(access_token);
 
     match credential_service.check_and_refresh_source(&source).await {
         Ok(Some(_new_cookies)) => {
@@ -527,6 +557,8 @@ pub async fn refresh_template_credentials(
     })?;
     let refresh_token =
         extract_template_refresh_token(template.platform_overrides.as_deref(), &platform_name);
+    let access_token =
+        extract_template_access_token(template.platform_overrides.as_deref(), &platform_name);
 
     let source = CredentialSource::new(
         CredentialScope::Template {
@@ -536,7 +568,8 @@ pub async fn refresh_template_credentials(
         cookies.to_string(),
         refresh_token,
         platform_name,
-    );
+    )
+    .with_access_token(access_token);
 
     match credential_service.check_and_refresh_source(&source).await {
         Ok(Some(_new_cookies)) => {
@@ -647,6 +680,8 @@ pub async fn bilibili_qr_poll(
     if result.status == QrPollStatus::Success
         && let (Some(cookies), Some(refresh_token)) = (&result.cookies, &result.refresh_token)
     {
+        let access_token = result.access_token.as_deref();
+
         match &body.scope {
             CredentialSaveScope::Platform { id } => {
                 let cs = state
@@ -676,6 +711,12 @@ pub async fn bilibili_qr_poll(
                         "refresh_token".to_string(),
                         serde_json::Value::String(refresh_token.clone()),
                     );
+                    if let Some(at) = access_token {
+                        map.insert(
+                            "access_token".to_string(),
+                            serde_json::Value::String(at.to_string()),
+                        );
+                    }
                     map.insert(
                         "last_cookie_check_date".to_string(),
                         serde_json::Value::String(
@@ -731,6 +772,12 @@ pub async fn bilibili_qr_poll(
                             "refresh_token".to_string(),
                             serde_json::Value::String(refresh_token.clone()),
                         );
+                        if let Some(at) = access_token {
+                            obj.insert(
+                                "access_token".to_string(),
+                                serde_json::Value::String(at.to_string()),
+                            );
+                        }
                     }
                 }
 
@@ -788,6 +835,12 @@ pub async fn bilibili_qr_poll(
                         "refresh_token".to_string(),
                         serde_json::Value::String(refresh_token.clone()),
                     );
+                    if let Some(at) = access_token {
+                        map.insert(
+                            "access_token".to_string(),
+                            serde_json::Value::String(at.to_string()),
+                        );
+                    }
                 }
 
                 streamer.streamer_specific_config = serde_json::to_string(&config).ok();

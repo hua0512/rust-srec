@@ -45,11 +45,6 @@ tars-codec = { path = "../tars-codec"}
 rustc-hash = { workspace = true }
 rand = { workspace = true }
 
-# RSA for Bilibili cookie refresh
-rsa = { workspace = true, features = ["sha2"] }
-sha2 = { workspace = true }
-hex = { workspace = true }
-
 # JavaScript engine
 rquickjs = { version = "0.11.0", optional = true, features = ["full-async"] }
 

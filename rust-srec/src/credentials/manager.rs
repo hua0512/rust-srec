@@ -50,6 +50,8 @@ pub struct RefreshedCredentials {
     pub cookies: String,
     /// New refresh token (if applicable).
     pub refresh_token: Option<String>,
+    /// New OAuth2 access token (if applicable).
+    pub access_token: Option<String>,
     /// Expected expiration time (if known).
     pub expires_at: Option<DateTime<Utc>>,
 }
