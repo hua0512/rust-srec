@@ -177,8 +177,8 @@ impl WebPushService {
         .bind(p256dh)
         .bind(auth)
         .bind(&min_priority)
-        .bind(&now)
-        .bind(&now)
+        .bind(now)
+        .bind(now)
         .execute(&self.pool)
         .await?;
 
