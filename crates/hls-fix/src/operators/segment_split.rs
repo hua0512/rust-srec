@@ -214,6 +214,7 @@ impl SegmentSplitOperator {
             has_audio,
             has_h264,
             has_h265,
+            has_av1: false,
             has_aac,
             has_ac3,
             resolution,

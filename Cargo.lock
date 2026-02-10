@@ -392,6 +392,7 @@ dependencies = [
  "bytes",
  "bytes-util",
  "insta",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2525,6 +2526,7 @@ dependencies = [
 name = "hls"
 version = "0.1.1"
 dependencies = [
+ "av1",
  "bytes",
  "h264",
  "h265",

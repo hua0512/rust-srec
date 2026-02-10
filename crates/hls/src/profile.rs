@@ -33,6 +33,7 @@ pub struct StreamProfile {
     pub has_audio: bool,
     pub has_h264: bool,
     pub has_h265: bool,
+    pub has_av1: bool,
     pub has_aac: bool,
     pub has_ac3: bool,
     pub resolution: Option<resolution::Resolution>,
@@ -47,7 +48,9 @@ impl StreamProfile {
 
     /// Get primary video codec
     pub fn primary_video_codec(&self) -> Option<&'static str> {
-        if self.has_h265 {
+        if self.has_av1 {
+            Some("AV1")
+        } else if self.has_h265 {
             Some("H.265/HEVC")
         } else if self.has_h264 {
             Some("H.264/AVC")
@@ -94,6 +97,7 @@ mod tests {
             has_audio: true,
             has_h264: true,
             has_h265: false,
+            has_av1: false,
             has_aac: true,
             has_ac3: false,
             resolution: None,
@@ -106,6 +110,7 @@ mod tests {
             has_audio: false,
             has_h264: true,
             has_h265: false,
+            has_av1: false,
             has_aac: false,
             has_ac3: false,
             resolution: None,
@@ -121,6 +126,7 @@ mod tests {
             has_audio: true,
             has_h264: true,
             has_h265: false,
+            has_av1: false,
             has_aac: true,
             has_ac3: false,
             resolution: None,
@@ -133,6 +139,7 @@ mod tests {
             has_audio: true,
             has_h264: false,
             has_h265: true,
+            has_av1: false,
             has_aac: false,
             has_ac3: true,
             resolution: None,
@@ -148,6 +155,7 @@ mod tests {
             has_audio: false,
             has_h264: false,
             has_h265: false,
+            has_av1: false,
             has_aac: false,
             has_ac3: false,
             resolution: None,
@@ -167,6 +175,7 @@ mod tests {
             has_audio: true,
             has_h264: true,
             has_h265: true,
+            has_av1: false,
             has_aac: true,
             has_ac3: true,
             resolution: None,
@@ -174,5 +183,22 @@ mod tests {
         };
         assert_eq!(both.primary_video_codec(), Some("H.265/HEVC"));
         assert_eq!(both.primary_audio_codec(), Some("AAC"));
+    }
+
+    #[test]
+    fn test_stream_profile_av1_priority() {
+        let profile = StreamProfile {
+            has_video: true,
+            has_audio: true,
+            has_h264: true,
+            has_h265: true,
+            has_av1: true,
+            has_aac: true,
+            has_ac3: false,
+            resolution: None,
+            summary: String::new(),
+        };
+        assert_eq!(profile.primary_video_codec(), Some("AV1"));
+        assert_eq!(profile.codec_description(), "Video: AV1, Audio: AAC");
     }
 }

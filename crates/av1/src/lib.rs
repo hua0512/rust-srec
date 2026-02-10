@@ -1,4 +1,12 @@
-//! A crate for decoding and encoding AV1 video headers.
+//! A crate for decoding and encoding AV1 video headers and container formats.
+//!
+//! Supports:
+//! - OBU (Open Bitstream Unit) header parsing and writing
+//! - AV1 Codec Configuration Record (ISO BMFF / MPEG-2 TS)
+//! - Sequence header OBU parsing
+//! - IVF container format parsing and writing
+//! - Low-overhead OBU bitstream parsing and writing
+//! - Annex B length-delimited bitstream parsing and writing
 //!
 //! ## License
 //!
@@ -11,8 +19,14 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+pub mod annex_b;
 mod config;
+pub mod error;
+pub mod ivf;
 mod obu;
+pub mod obu_stream;
 
 pub use config::{AV1CodecConfigurationRecord, AV1VideoDescriptor};
-pub use obu::{ObuHeader, ObuType, seq};
+pub use error::{Av1Error, Result};
+pub use obu::utils::{leb128_size, write_leb128};
+pub use obu::{ObuExtensionHeader, ObuHeader, ObuType, seq};

@@ -1,6 +1,6 @@
 mod aac;
 pub mod audio;
-mod av1;
+pub mod av1;
 pub mod avc;
 pub mod data;
 pub mod encode;

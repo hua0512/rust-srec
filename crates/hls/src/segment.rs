@@ -6,6 +6,7 @@ use crate::mp4::{M4sData, M4sInitSegmentData, M4sSegmentData};
 use crate::profile::{SegmentType, StreamProfile};
 use crate::resolution::ResolutionDetector;
 use crate::ts::{TsSegmentData, TsStreamInfo};
+use crate::{isobmff, resolution};
 
 /// Main HLS data type representing various segment types
 #[derive(Debug, Clone)]
@@ -294,11 +295,16 @@ impl HlsData {
 
     /// Get a compact stream profile for this segment
     pub fn get_stream_profile(&self) -> Option<StreamProfile> {
-        let ts_data = match self {
-            HlsData::TsData(ts_data) => ts_data,
-            _ => return None,
-        };
+        match self {
+            HlsData::TsData(ts_data) => Self::get_ts_stream_profile(ts_data),
+            HlsData::M4sData(M4sData::InitSegment(init)) => {
+                Self::get_mp4_init_stream_profile(&init.data)
+            }
+            _ => None,
+        }
+    }
 
+    fn get_ts_stream_profile(ts_data: &TsSegmentData) -> Option<StreamProfile> {
         let (stream_info, packets) = match ts_data.parse_stream_and_packets() {
             Ok(data) => data,
             Err(_) => return None,
@@ -369,8 +375,69 @@ impl HlsData {
             has_audio,
             has_h264,
             has_h265,
+            has_av1: false,
             has_aac,
             has_ac3,
+            resolution,
+            summary,
+        })
+    }
+
+    fn get_mp4_init_stream_profile(data: &Bytes) -> Option<StreamProfile> {
+        let info = isobmff::parse_init_segment(data);
+
+        let has_video = info.has_av1 || info.has_h264 || info.has_h265;
+        let has_audio = info.has_aac || info.has_ac3;
+
+        let resolution = if info.has_av1 {
+            info.av1c_data.as_ref().and_then(|av1c_bytes| {
+                let mut cursor = std::io::Cursor::new(av1c_bytes.clone());
+                let config = av1::AV1CodecConfigurationRecord::demux(&mut cursor).ok()?;
+                if config.config_obu.is_empty() {
+                    return None;
+                }
+                let mut obu_cursor = std::io::Cursor::new(config.config_obu.clone());
+                let header = av1::ObuHeader::parse(&mut obu_cursor).ok()?;
+                let seq = av1::seq::SequenceHeaderObu::parse(header, &mut obu_cursor).ok()?;
+                Some(resolution::Resolution::new(
+                    seq.max_frame_width as u32,
+                    seq.max_frame_height as u32,
+                ))
+            })
+        } else {
+            None
+        };
+
+        let mut video_count = 0u32;
+        let mut audio_count = 0u32;
+        if has_video {
+            video_count = 1;
+        }
+        if has_audio {
+            audio_count = 1;
+        }
+
+        let mut summary_parts = Vec::new();
+        if video_count > 0 {
+            summary_parts.push(format!("{video_count} video stream(s)"));
+        }
+        if audio_count > 0 {
+            summary_parts.push(format!("{audio_count} audio stream(s)"));
+        }
+        let summary = if summary_parts.is_empty() {
+            "No recognized streams".to_string()
+        } else {
+            summary_parts.join(", ")
+        };
+
+        Some(StreamProfile {
+            has_video,
+            has_audio,
+            has_h264: info.has_h264,
+            has_h265: info.has_h265,
+            has_av1: info.has_av1,
+            has_aac: info.has_aac,
+            has_ac3: info.has_ac3,
             resolution,
             summary,
         })
