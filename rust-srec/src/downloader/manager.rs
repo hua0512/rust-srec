@@ -15,8 +15,9 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
 use super::engine::{
-    DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, DownloadProgress, DownloadStatus,
-    EngineType, FfmpegEngine, MesioEngine, SegmentEvent, StreamlinkEngine,
+    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
+    DownloadProgress, DownloadStatus, EngineType, FfmpegEngine, MesioEngine, SegmentEvent,
+    StreamlinkEngine,
 };
 use super::resilience::{CircuitBreakerManager, EngineKey, RetryConfig};
 use crate::Result;
@@ -329,6 +330,7 @@ pub enum DownloadManagerEvent {
         download_id: String,
         streamer_id: String,
         session_id: String,
+        kind: DownloadFailureKind,
         error: String,
         recoverable: bool,
     },
@@ -788,8 +790,8 @@ impl DownloadManager {
                 let _ = handle_clone
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
-                        error: format!("Engine start error: {}", e),
-                        recoverable: false,
+                        kind: DownloadFailureKind::Other,
+                        message: format!("Engine start error: {}", e),
                     })
                     .await;
             }
@@ -917,17 +919,12 @@ impl DownloadManager {
                         );
                         break;
                     }
-                    SegmentEvent::DownloadFailed { error, recoverable } => {
-                        // Skip circuit breaker for permanent HTTP failures that indicate
-                        // the resource is unavailable (not transient network issues).
-                        // The error format is "Server returned status code XXX" from mesio.
-                        let is_permanent_http_error = error.contains("status code 404")
-                            || error.contains("status code 403")
-                            || error.contains("status code 410");
-
-                        if !is_permanent_http_error {
+                    SegmentEvent::DownloadFailed { kind, message } => {
+                        if kind.affects_circuit_breaker() {
                             circuit_breakers_ref.record_failure();
                         }
+
+                        let recoverable = kind.is_recoverable();
 
                         // Emit one final progress update (best-effort) before the failure event.
                         if let Some(download) = active_downloads.get(&download_id_clone) {
@@ -953,7 +950,8 @@ impl DownloadManager {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
                             session_id: session_id.clone(),
-                            error,
+                            kind,
+                            error: message,
                             recoverable,
                         });
 

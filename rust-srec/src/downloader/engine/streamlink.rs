@@ -11,7 +11,8 @@ use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use super::traits::{
-    DownloadConfig, DownloadEngine, DownloadHandle, EngineType, SegmentEvent, SegmentInfo,
+    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, EngineType, SegmentEvent,
+    SegmentInfo,
 };
 use super::utils::{
     OutputRecordReader, ensure_output_dir, is_segment_start, parse_opened_path, parse_progress,
@@ -225,8 +226,8 @@ impl DownloadEngine for StreamlinkEngine {
         if let Err(e) = ensure_output_dir(&config.output_dir).await {
             let msg = e.to_string();
             let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
-                error: msg.clone(),
-                recoverable: false,
+                kind: DownloadFailureKind::Io,
+                message: msg.clone(),
             });
             return Err(crate::Error::Other(msg));
         }
@@ -619,16 +620,16 @@ impl DownloadEngine for StreamlinkEngine {
                     // Non-zero exit code - failure
                     let _ = event_tx_clone
                         .send(SegmentEvent::DownloadFailed {
-                            error: format!("Streamlink/FFmpeg exited with code {}", code),
-                            recoverable: true,
+                            kind: DownloadFailureKind::ProcessExit { code: Some(code) },
+                            message: format!("Streamlink/FFmpeg exited with code {}", code),
                         })
                         .await;
                 }
                 None => {
                     let _ = event_tx_clone
                         .send(SegmentEvent::DownloadFailed {
-                            error: "Streamlink/FFmpeg exited without an exit code".to_string(),
-                            recoverable: true,
+                            kind: DownloadFailureKind::ProcessExit { code: None },
+                            message: "Streamlink/FFmpeg exited without an exit code".to_string(),
                         })
                         .await;
                 }

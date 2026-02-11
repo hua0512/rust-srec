@@ -15,7 +15,8 @@ mod resilience;
 mod stream_selector;
 
 pub use engine::{
-    DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, SegmentEvent, SegmentInfo,
+    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
+    SegmentEvent, SegmentInfo,
 };
 
 pub use manager::{

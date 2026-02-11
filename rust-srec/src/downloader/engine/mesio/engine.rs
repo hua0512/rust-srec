@@ -22,7 +22,9 @@ use super::flv_downloader::FlvDownloader;
 use super::hls_downloader::HlsDownloader;
 use crate::Result;
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{DownloadEngine, DownloadHandle, EngineType, SegmentEvent};
+use crate::downloader::engine::traits::{
+    DownloadEngine, DownloadFailureKind, DownloadHandle, EngineType, SegmentEvent,
+};
 
 /// Native Mesio download engine.
 ///
@@ -149,8 +151,8 @@ impl DownloadEngine for MesioEngine {
                 let _ = handle
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
-                        error: error_msg.clone(),
-                        recoverable: false,
+                        kind: DownloadFailureKind::Configuration,
+                        message: error_msg.clone(),
                     })
                     .await;
                 return Err(crate::Error::Other(error_msg));

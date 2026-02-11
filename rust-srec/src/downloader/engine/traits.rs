@@ -334,6 +334,61 @@ pub struct SegmentInfo {
     pub completed_at: DateTime<Utc>,
 }
 
+/// Classified error kind for download failures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DownloadFailureKind {
+    /// HTTP 4xx client error (not rate-limiting). Resource permanently unavailable at this URL.
+    HttpClientError { status: u16 },
+    /// HTTP 429 Too Many Requests.
+    RateLimited,
+    /// HTTP 5xx server error (transient).
+    HttpServerError { status: u16 },
+    /// Network-level failure: connection refused/reset, DNS, TLS, timeout.
+    Network,
+    /// Local filesystem I/O error (write failure, disk full).
+    Io,
+    /// Stream source unavailable (all sources failed, playlist empty, stream ended).
+    SourceUnavailable,
+    /// Configuration/protocol error (invalid URL, unsupported protocol).
+    Configuration,
+    /// External process exited abnormally (FFmpeg, Streamlink).
+    ProcessExit { code: Option<i32> },
+    /// Writer/pipeline processing error (FLV decode, segment processing).
+    Processing,
+    /// Download was cancelled.
+    Cancelled,
+    /// Catch-all.
+    Other,
+}
+
+impl DownloadFailureKind {
+    /// Whether this failure should count toward the circuit breaker.
+    ///
+    /// Permanent HTTP client errors (4xx except 429) and configuration errors
+    /// are NOT counted because they indicate the specific resource is gone or
+    /// misconfigured, not that the engine is malfunctioning.
+    pub fn affects_circuit_breaker(&self) -> bool {
+        !matches!(
+            self,
+            Self::HttpClientError { .. } | Self::Configuration | Self::Cancelled
+        )
+    }
+
+    /// Whether the download could succeed if retried.
+    pub fn is_recoverable(&self) -> bool {
+        matches!(
+            self,
+            Self::RateLimited
+                | Self::HttpServerError { .. }
+                | Self::Network
+                | Self::Io
+                | Self::SourceUnavailable
+                | Self::ProcessExit { .. }
+                | Self::Other
+        )
+    }
+}
+
 /// Events emitted by download engines.
 #[derive(Debug, Clone)]
 pub enum SegmentEvent {
@@ -355,7 +410,12 @@ pub enum SegmentEvent {
         total_segments: u32,
     },
     /// Download failed.
-    DownloadFailed { error: String, recoverable: bool },
+    DownloadFailed {
+        /// Classified error kind for programmatic decisions.
+        kind: DownloadFailureKind,
+        /// Human-readable error message for logging and display.
+        message: String,
+    },
 }
 
 /// Handle to an active download.

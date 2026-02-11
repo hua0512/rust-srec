@@ -17,11 +17,12 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
+use super::classify_download_error;
 use super::config::build_hls_config;
 use crate::Result;
 use crate::database::models::engine::MesioEngineConfig;
 use crate::downloader::engine::traits::{
-    DownloadConfig, DownloadProgress, SegmentEvent, SegmentInfo,
+    DownloadConfig, DownloadFailureKind, DownloadProgress, SegmentEvent, SegmentInfo,
 };
 
 /// Statistics returned after download completes.
@@ -146,11 +147,12 @@ impl HlsDownloader {
                 }
                 Some(Ok(segment)) => break segment,
                 Some(Err(e)) => {
+                    let kind = classify_download_error(&e);
                     let _ = self
                         .event_tx
                         .send(SegmentEvent::DownloadFailed {
-                            error: format!("Failed to get first HLS segment: {}", e),
-                            recoverable: true,
+                            kind,
+                            message: format!("Failed to get first HLS segment: {}", e),
                         })
                         .await;
                     return Err(crate::Error::Other(format!(
@@ -162,8 +164,8 @@ impl HlsDownloader {
                     let _ = self
                         .event_tx
                         .send(SegmentEvent::DownloadFailed {
-                            error: "HLS stream is empty".to_string(),
-                            recoverable: false,
+                            kind: DownloadFailureKind::SourceUnavailable,
+                            message: "HLS stream is empty".to_string(),
                         })
                         .await;
                     return Err(crate::Error::Other("HLS stream is empty".to_string()));
@@ -313,7 +315,7 @@ impl HlsDownloader {
 
         // Consume the rest of the HLS stream and send to pipeline
         let mut stream = std::pin::pin!(hls_stream);
-        let mut stream_error: Option<String> = None;
+        let mut stream_error: Option<(DownloadFailureKind, String)> = None;
 
         while let Some(result) = stream.next().await {
             // Check for cancellation
@@ -332,10 +334,11 @@ impl HlsDownloader {
                 }
                 Err(e) => {
                     error!("HLS stream error for {}: {}", streamer_id, e);
-                    let err = e.to_string();
-                    stream_error = Some(err.clone());
+                    let kind = classify_download_error(&e);
+                    let msg = e.to_string();
+                    stream_error = Some((kind, msg.clone()));
                     let _ = pipeline_input_tx
-                        .send(Err(PipelineError::Processing(err)))
+                        .send(Err(PipelineError::Processing(msg)))
                         .await;
                     break;
                 }
@@ -374,15 +377,15 @@ impl HlsDownloader {
                     files_created: files_created + 1,
                 };
 
-                if let Some(err) = &stream_error {
+                if let Some((kind, msg)) = stream_error {
                     let _ = self
                         .event_tx
                         .send(SegmentEvent::DownloadFailed {
-                            error: err.clone(),
-                            recoverable: true,
+                            kind,
+                            message: msg.clone(),
                         })
                         .await;
-                    return Err(crate::Error::Other(format!("HLS stream error: {}", err)));
+                    return Err(crate::Error::Other(format!("HLS stream error: {}", msg)));
                 }
 
                 let _ = self
@@ -402,21 +405,21 @@ impl HlsDownloader {
                 Ok(stats)
             }
             Err(e) => {
-                if let Some(err) = stream_error {
+                if let Some((kind, msg)) = stream_error {
                     let _ = self
                         .event_tx
                         .send(SegmentEvent::DownloadFailed {
-                            error: err.clone(),
-                            recoverable: true,
+                            kind,
+                            message: msg.clone(),
                         })
                         .await;
-                    return Err(crate::Error::Other(format!("HLS stream error: {}", err)));
+                    return Err(crate::Error::Other(format!("HLS stream error: {}", msg)));
                 }
                 let _ = self
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
-                        error: e.to_string(),
-                        recoverable: false,
+                        kind: DownloadFailureKind::Processing,
+                        message: e.to_string(),
                     })
                     .await;
                 Err(crate::Error::Other(format!("HLS writer error: {}", e)))
@@ -527,7 +530,7 @@ impl HlsDownloader {
 
         // Consume the rest of the HLS stream and send to writer
         let mut stream = std::pin::pin!(hls_stream);
-        let mut stream_error: Option<String> = None;
+        let mut stream_error: Option<(DownloadFailureKind, String)> = None;
 
         while let Some(result) = stream.next().await {
             // Check for cancellation
@@ -547,9 +550,10 @@ impl HlsDownloader {
                 Err(e) => {
                     // Stream error - send error to writer and emit failure event
                     error!("HLS stream error for {}: {}", streamer_id, e);
-                    let err = e.to_string();
-                    stream_error = Some(err.clone());
-                    let _ = tx.send(Err(PipelineError::Processing(err))).await;
+                    let kind = classify_download_error(&e);
+                    let msg = e.to_string();
+                    stream_error = Some((kind, msg.clone()));
+                    let _ = tx.send(Err(PipelineError::Processing(msg))).await;
                     break;
                 }
             }
@@ -573,15 +577,15 @@ impl HlsDownloader {
                     files_created: files_created + 1,
                 };
 
-                if let Some(err) = &stream_error {
+                if let Some((kind, msg)) = stream_error {
                     let _ = self
                         .event_tx
                         .send(SegmentEvent::DownloadFailed {
-                            error: err.clone(),
-                            recoverable: true,
+                            kind,
+                            message: msg.clone(),
                         })
                         .await;
-                    return Err(crate::Error::Other(format!("HLS stream error: {}", err)));
+                    return Err(crate::Error::Other(format!("HLS stream error: {}", msg)));
                 }
 
                 // Emit completion event with stats from writer
@@ -602,21 +606,21 @@ impl HlsDownloader {
                 Ok(stats)
             }
             Err(e) => {
-                if let Some(err) = stream_error {
+                if let Some((kind, msg)) = stream_error {
                     let _ = self
                         .event_tx
                         .send(SegmentEvent::DownloadFailed {
-                            error: err.clone(),
-                            recoverable: true,
+                            kind,
+                            message: msg.clone(),
                         })
                         .await;
-                    return Err(crate::Error::Other(format!("HLS stream error: {}", err)));
+                    return Err(crate::Error::Other(format!("HLS stream error: {}", msg)));
                 }
                 let _ = self
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
-                        error: e.to_string(),
-                        recoverable: false,
+                        kind: DownloadFailureKind::Processing,
+                        message: e.to_string(),
                     })
                     .await;
                 Err(crate::Error::Other(format!("HLS writer error: {}", e)))

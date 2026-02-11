@@ -378,6 +378,7 @@ fn map_event_to_protobuf(
             session_id,
             error,
             recoverable,
+            ..
         } => {
             let payload = DownloadFailed {
                 download_id: download_id.clone(),
@@ -555,10 +556,13 @@ mod tests {
 
     #[test]
     fn test_download_failed_event_mapping() {
+        use crate::downloader::DownloadFailureKind;
+
         let event = DownloadManagerEvent::DownloadFailed {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             session_id: "session-1".to_string(),
+            kind: DownloadFailureKind::Network,
             error: "Connection timeout".to_string(),
             recoverable: true,
         };
