@@ -4,7 +4,6 @@
 //! downloading, including stream consumption, writer management, and event emission.
 //! It supports both pipeline-processed and raw download modes.
 
-use chrono::Utc;
 use futures::StreamExt;
 use hls::HlsData;
 use hls_fix::{HlsPipeline, HlsWriter};
@@ -15,28 +14,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
 use super::classify_download_error;
 use super::config::build_hls_config;
+use super::helpers::{self, DownloadStats};
 use crate::Result;
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{
-    DownloadConfig, DownloadFailureKind, DownloadProgress, SegmentEvent, SegmentInfo,
-};
-
-/// Statistics returned after download completes.
-#[derive(Debug, Clone, Default)]
-pub struct DownloadStats {
-    /// Total bytes written across all files.
-    pub total_bytes: u64,
-    /// Total items (segments/tags) written.
-    pub total_items: usize,
-    /// Total media duration in seconds.
-    pub total_duration_secs: f64,
-    /// Number of files created.
-    pub files_created: u32,
-}
+use crate::downloader::engine::traits::{DownloadConfig, DownloadFailureKind, SegmentEvent};
 
 /// HLS-specific download orchestrator.
 ///
@@ -198,6 +183,20 @@ impl HlsDownloader {
         }
     }
 
+    /// Build HLS writer extras from config.
+    fn build_hls_extras(config: &DownloadConfig) -> Option<HashMap<String, String>> {
+        if config.max_segment_size_bytes > 0 {
+            let mut map = HashMap::new();
+            map.insert(
+                "max_file_size".to_string(),
+                config.max_segment_size_bytes.to_string(),
+            );
+            Some(map)
+        } else {
+            None
+        }
+    }
+
     /// Download HLS stream with pipeline processing enabled.
     ///
     /// Routes the stream through HlsPipeline for defragmentation, segment splitting,
@@ -244,64 +243,11 @@ impl HlsDownloader {
         let output_dir = config.output_dir.clone();
         let base_name = config.filename_template.clone();
         let ext = extension.to_string();
-
-        // Build extras for max_file_size if configured
-        let extras = if config.max_segment_size_bytes > 0 {
-            let mut map = HashMap::new();
-            map.insert(
-                "max_file_size".to_string(),
-                config.max_segment_size_bytes.to_string(),
-            );
-            Some(map)
-        } else {
-            None
-        };
+        let extras = Self::build_hls_extras(&config);
 
         let mut writer = HlsWriter::new(output_dir, base_name, ext, extras);
 
-        // SegmentStarted/SegmentCompleted must not be dropped (danmu segmentation + pipelines rely on it).
-        // These callbacks run on a blocking thread; use `blocking_send` to apply backpressure
-        // rather than unbounded buffering.
-        let event_tx_start = self.event_tx.clone();
-        let event_tx_complete = self.event_tx.clone();
-
-        writer.set_on_segment_start_callback(move |path, sequence| {
-            let event = SegmentEvent::SegmentStarted {
-                path: path.to_path_buf(),
-                sequence,
-            };
-            let _ = event_tx_start.blocking_send(event);
-        });
-
-        writer.set_on_segment_complete_callback(
-            move |path, sequence, duration_secs, size_bytes| {
-                // Ensure path is absolute
-                let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-                let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                    path: abs_path,
-                    duration_secs,
-                    size_bytes,
-                    index: sequence,
-                    completed_at: Utc::now(),
-                });
-                let _ = event_tx_complete.blocking_send(event);
-            },
-        );
-
-        // Setup progress callback
-        let event_tx_progress = self.event_tx.clone();
-        writer.set_progress_callback(move |progress| {
-            let download_progress = DownloadProgress {
-                bytes_downloaded: progress.bytes_written_total,
-                duration_secs: progress.elapsed_secs,
-                speed_bytes_per_sec: progress.speed_bytes_per_sec,
-                segments_completed: progress.current_file_sequence,
-                current_segment: None,
-                media_duration_secs: progress.media_duration_secs_total,
-                playback_ratio: progress.playback_ratio,
-            };
-            let _ = event_tx_progress.try_send(SegmentEvent::Progress(download_progress));
-        });
+        helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 
         // Spawn blocking writer task that reads from pipeline output
         let writer_task = tokio::task::spawn_blocking(move || writer.run(pipeline_output_rx));
@@ -314,36 +260,16 @@ impl HlsDownloader {
         }
 
         // Consume the rest of the HLS stream and send to pipeline
-        let mut stream = std::pin::pin!(hls_stream);
-        let mut stream_error: Option<(DownloadFailureKind, String)> = None;
-
-        while let Some(result) = stream.next().await {
-            // Check for cancellation
-            if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!("HLS download cancelled for {}", streamer_id);
-                break;
-            }
-
-            match result {
-                Ok(hls_data) => {
-                    // Send to pipeline input
-                    if pipeline_input_tx.send(Ok(hls_data)).await.is_err() {
-                        warn!("Pipeline input channel closed, stopping HLS download");
-                        break;
-                    }
-                }
-                Err(e) => {
-                    error!("HLS stream error for {}: {}", streamer_id, e);
-                    let kind = classify_download_error(&e);
-                    let msg = e.to_string();
-                    stream_error = Some((kind, msg.clone()));
-                    let _ = pipeline_input_tx
-                        .send(Err(PipelineError::Processing(msg)))
-                        .await;
-                    break;
-                }
-            }
-        }
+        let stream_error = helpers::consume_stream(
+            hls_stream,
+            &pipeline_input_tx,
+            &self.cancellation_token,
+            &token,
+            &streamer_id,
+            "HLS",
+            classify_download_error,
+        )
+        .await;
 
         // Close the pipeline input channel to signal completion
         drop(pipeline_input_tx);
@@ -353,78 +279,15 @@ impl HlsDownloader {
             .await
             .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
 
-        // Wait for processing tasks to complete
-        for task in processing_tasks {
-            let task_result = task
-                .await
-                .map_err(|e| crate::Error::Other(format!("Pipeline task panicked: {}", e)))?;
-
-            // Only report task errors if writer succeeded
-            if writer_result.is_ok()
-                && let Err(e) = task_result
-            {
-                warn!("Pipeline processing task error: {}", e);
-            }
-        }
-
-        match writer_result {
-            Ok((items_written, files_created, total_bytes, total_duration)) => {
-                // Get final stats from writer state
-                let stats = DownloadStats {
-                    total_bytes,
-                    total_items: items_written,
-                    total_duration_secs: total_duration,
-                    files_created: files_created + 1,
-                };
-
-                if let Some((kind, msg)) = stream_error {
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind,
-                            message: msg.clone(),
-                        })
-                        .await;
-                    return Err(crate::Error::Other(format!("HLS stream error: {}", msg)));
-                }
-
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadCompleted {
-                        total_bytes: stats.total_bytes,
-                        total_duration_secs: stats.total_duration_secs,
-                        total_segments: stats.files_created,
-                    })
-                    .await;
-
-                info!(
-                    "HLS download with pipeline completed for {}: {} items, {} files",
-                    streamer_id, items_written, stats.files_created
-                );
-
-                Ok(stats)
-            }
-            Err(e) => {
-                if let Some((kind, msg)) = stream_error {
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind,
-                            message: msg.clone(),
-                        })
-                        .await;
-                    return Err(crate::Error::Other(format!("HLS stream error: {}", msg)));
-                }
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        kind: DownloadFailureKind::Processing,
-                        message: e.to_string(),
-                    })
-                    .await;
-                Err(crate::Error::Other(format!("HLS writer error: {}", e)))
-            }
-        }
+        helpers::handle_writer_result(
+            writer_result,
+            stream_error,
+            processing_tasks,
+            &self.event_tx,
+            &streamer_id,
+            "HLS",
+        )
+        .await
     }
 
     /// Download HLS stream without pipeline processing (raw mode).
@@ -459,64 +322,11 @@ impl HlsDownloader {
         let output_dir = config.output_dir.clone();
         let base_name = config.filename_template.clone();
         let ext = extension.to_string();
-
-        // Build extras for max_file_size if configured
-        let extras = if config.max_segment_size_bytes > 0 {
-            let mut map = HashMap::new();
-            map.insert(
-                "max_file_size".to_string(),
-                config.max_segment_size_bytes.to_string(),
-            );
-            Some(map)
-        } else {
-            None
-        };
+        let extras = Self::build_hls_extras(&config);
 
         let mut writer = HlsWriter::new(output_dir, base_name, ext, extras);
 
-        // SegmentStarted/SegmentCompleted must not be dropped (danmu segmentation + pipelines rely on it).
-        // These callbacks run on a blocking thread; use `blocking_send` to apply backpressure
-        // rather than unbounded buffering.
-        let event_tx_start = self.event_tx.clone();
-        let event_tx_complete = self.event_tx.clone();
-
-        writer.set_on_segment_start_callback(move |path, sequence| {
-            let event = SegmentEvent::SegmentStarted {
-                path: path.to_path_buf(),
-                sequence,
-            };
-            let _ = event_tx_start.blocking_send(event);
-        });
-
-        writer.set_on_segment_complete_callback(
-            move |path, sequence, duration_secs, size_bytes| {
-                // Ensure path is absolute
-                let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-                let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                    path: abs_path,
-                    duration_secs,
-                    size_bytes,
-                    index: sequence,
-                    completed_at: Utc::now(),
-                });
-                let _ = event_tx_complete.blocking_send(event);
-            },
-        );
-
-        // Setup progress callback
-        let event_tx_progress = self.event_tx.clone();
-        writer.set_progress_callback(move |progress| {
-            let download_progress = DownloadProgress {
-                bytes_downloaded: progress.bytes_written_total,
-                duration_secs: progress.elapsed_secs,
-                speed_bytes_per_sec: progress.speed_bytes_per_sec,
-                segments_completed: progress.current_file_sequence,
-                current_segment: None,
-                media_duration_secs: progress.media_duration_secs_total,
-                playback_ratio: progress.playback_ratio,
-            };
-            let _ = event_tx_progress.try_send(SegmentEvent::Progress(download_progress));
-        });
+        helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 
         // Spawn blocking writer task
         let writer_task = tokio::task::spawn_blocking(move || writer.run(rx));
@@ -529,35 +339,16 @@ impl HlsDownloader {
         }
 
         // Consume the rest of the HLS stream and send to writer
-        let mut stream = std::pin::pin!(hls_stream);
-        let mut stream_error: Option<(DownloadFailureKind, String)> = None;
-
-        while let Some(result) = stream.next().await {
-            // Check for cancellation
-            if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!("HLS download cancelled for {}", streamer_id);
-                break;
-            }
-
-            match result {
-                Ok(hls_data) => {
-                    // Send to writer
-                    if tx.send(Ok(hls_data)).await.is_err() {
-                        warn!("Writer channel closed, stopping HLS download");
-                        break;
-                    }
-                }
-                Err(e) => {
-                    // Stream error - send error to writer and emit failure event
-                    error!("HLS stream error for {}: {}", streamer_id, e);
-                    let kind = classify_download_error(&e);
-                    let msg = e.to_string();
-                    stream_error = Some((kind, msg.clone()));
-                    let _ = tx.send(Err(PipelineError::Processing(msg))).await;
-                    break;
-                }
-            }
-        }
+        let stream_error = helpers::consume_stream(
+            hls_stream,
+            &tx,
+            &self.cancellation_token,
+            &token,
+            &streamer_id,
+            "HLS",
+            classify_download_error,
+        )
+        .await;
 
         // Close the channel to signal writer to finish
         drop(tx);
@@ -567,65 +358,15 @@ impl HlsDownloader {
             .await
             .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
 
-        match writer_result {
-            Ok((items_written, files_created, total_bytes, total_duration)) => {
-                // Get final stats from writer state
-                let stats = DownloadStats {
-                    total_bytes,
-                    total_items: items_written,
-                    total_duration_secs: total_duration,
-                    files_created: files_created + 1,
-                };
-
-                if let Some((kind, msg)) = stream_error {
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind,
-                            message: msg.clone(),
-                        })
-                        .await;
-                    return Err(crate::Error::Other(format!("HLS stream error: {}", msg)));
-                }
-
-                // Emit completion event with stats from writer
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadCompleted {
-                        total_bytes: stats.total_bytes,
-                        total_duration_secs: stats.total_duration_secs,
-                        total_segments: stats.files_created,
-                    })
-                    .await;
-
-                info!(
-                    "HLS download completed for {}: {} items, {} files",
-                    streamer_id, items_written, stats.files_created
-                );
-
-                Ok(stats)
-            }
-            Err(e) => {
-                if let Some((kind, msg)) = stream_error {
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind,
-                            message: msg.clone(),
-                        })
-                        .await;
-                    return Err(crate::Error::Other(format!("HLS stream error: {}", msg)));
-                }
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        kind: DownloadFailureKind::Processing,
-                        message: e.to_string(),
-                    })
-                    .await;
-                Err(crate::Error::Other(format!("HLS writer error: {}", e)))
-            }
-        }
+        helpers::handle_writer_result(
+            writer_result,
+            stream_error,
+            vec![],
+            &self.event_tx,
+            &streamer_id,
+            "HLS",
+        )
+        .await
     }
 }
 

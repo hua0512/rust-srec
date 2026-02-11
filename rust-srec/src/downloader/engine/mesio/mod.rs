@@ -27,11 +27,13 @@
 pub mod config;
 mod engine;
 mod flv_downloader;
+mod helpers;
 mod hls_downloader;
 
 pub use engine::MesioEngine;
 pub use flv_downloader::FlvDownloader;
-pub use hls_downloader::{DownloadStats, HlsDownloader};
+pub use helpers::DownloadStats;
+pub use hls_downloader::HlsDownloader;
 
 use crate::downloader::engine::traits::DownloadFailureKind;
 use mesio::DownloadError;

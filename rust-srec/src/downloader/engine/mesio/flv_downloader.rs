@@ -4,10 +4,8 @@
 //! downloading, including stream consumption, writer management, and event emission.
 //! It supports both pipeline-processed and raw download modes.
 
-use chrono::Utc;
 use flv::data::FlvData;
 use flv_fix::{FlvPipeline, FlvPipelineConfig, FlvWriter};
-use futures::StreamExt;
 use mesio::flv::FlvProtocolConfig;
 use mesio::flv::error::FlvDownloadError;
 use mesio::{DownloadStream, MesioDownloaderFactory, ProtocolType};
@@ -17,16 +15,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::info;
 
 use super::classify_flv_error;
 use super::config::build_flv_config;
-use super::hls_downloader::DownloadStats;
+use super::helpers::{self, DownloadStats};
 use crate::Result;
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{
-    DownloadConfig, DownloadFailureKind, DownloadProgress, SegmentEvent, SegmentInfo,
-};
+use crate::downloader::engine::traits::{DownloadConfig, SegmentEvent};
 
 /// FLV-specific download orchestrator.
 ///
@@ -197,84 +193,22 @@ impl FlvDownloader {
 
         let mut writer = FlvWriter::new(output_dir, base_name, "flv".to_string(), extras);
 
-        // SegmentStarted/SegmentCompleted must not be dropped (danmu segmentation + pipelines rely on it).
-        // These callbacks run on a blocking thread; use `blocking_send` to apply backpressure
-        // rather than unbounded buffering.
-        let event_tx_start = self.event_tx.clone();
-        let event_tx_complete = self.event_tx.clone();
-
-        writer.set_on_segment_start_callback(move |path, sequence| {
-            let event = SegmentEvent::SegmentStarted {
-                path: path.to_path_buf(),
-                sequence,
-            };
-            let _ = event_tx_start.blocking_send(event);
-        });
-
-        writer.set_on_segment_complete_callback(
-            move |path, sequence, duration_secs, size_bytes| {
-                // Ensure path is absolute
-                let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-                let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                    path: abs_path,
-                    duration_secs,
-                    size_bytes,
-                    index: sequence,
-                    completed_at: Utc::now(),
-                });
-                let _ = event_tx_complete.blocking_send(event);
-            },
-        );
-
-        // Setup progress callback
-        let event_tx_progress = self.event_tx.clone();
-        writer.set_progress_callback(move |progress| {
-            let download_progress = DownloadProgress {
-                bytes_downloaded: progress.bytes_written_total,
-                duration_secs: progress.elapsed_secs,
-                speed_bytes_per_sec: progress.speed_bytes_per_sec,
-                segments_completed: progress.current_file_sequence,
-                current_segment: None,
-                media_duration_secs: progress.media_duration_secs_total,
-                playback_ratio: progress.playback_ratio,
-            };
-            let _ = event_tx_progress.try_send(SegmentEvent::Progress(download_progress));
-        });
+        helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 
         // Spawn blocking writer task that reads from pipeline output
         let writer_task = tokio::task::spawn_blocking(move || writer.run(pipeline_output_rx));
 
         // Consume the FLV stream and send to pipeline
-        let mut stream = std::pin::pin!(flv_stream);
-        let mut stream_error: Option<(DownloadFailureKind, String)> = None;
-
-        while let Some(result) = stream.next().await {
-            // Check for cancellation
-            if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!("FLV download cancelled for {}", streamer_id);
-                break;
-            }
-
-            match result {
-                Ok(flv_data) => {
-                    // Send to pipeline input
-                    if pipeline_input_tx.send(Ok(flv_data)).await.is_err() {
-                        warn!("Pipeline input channel closed, stopping FLV download");
-                        break;
-                    }
-                }
-                Err(e) => {
-                    error!("FLV stream error for {}: {}", streamer_id, e);
-                    let kind = classify_flv_error(&e);
-                    let msg = e.to_string();
-                    stream_error = Some((kind, msg.clone()));
-                    let _ = pipeline_input_tx
-                        .send(Err(PipelineError::Processing(msg)))
-                        .await;
-                    break;
-                }
-            }
-        }
+        let stream_error = helpers::consume_stream(
+            flv_stream,
+            &pipeline_input_tx,
+            &self.cancellation_token,
+            &token,
+            &streamer_id,
+            "FLV",
+            classify_flv_error,
+        )
+        .await;
 
         // Close the pipeline input channel to signal completion
         drop(pipeline_input_tx);
@@ -284,78 +218,15 @@ impl FlvDownloader {
             .await
             .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
 
-        // Wait for processing tasks to complete
-        for task in processing_tasks {
-            let task_result = task
-                .await
-                .map_err(|e| crate::Error::Other(format!("Pipeline task panicked: {}", e)))?;
-
-            // Only report task errors if writer succeeded
-            if writer_result.is_ok()
-                && let Err(e) = task_result
-            {
-                warn!("Pipeline processing task error: {}", e);
-            }
-        }
-
-        match writer_result {
-            Ok((items_written, files_created, total_bytes, total_duration)) => {
-                // Get final stats from writer state
-                let stats = DownloadStats {
-                    total_bytes,
-                    total_items: items_written,
-                    total_duration_secs: total_duration,
-                    files_created: files_created + 1,
-                };
-
-                if let Some((kind, msg)) = stream_error {
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind,
-                            message: msg.clone(),
-                        })
-                        .await;
-                    return Err(crate::Error::Other(format!("FLV stream error: {}", msg)));
-                }
-
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadCompleted {
-                        total_bytes: stats.total_bytes,
-                        total_duration_secs: stats.total_duration_secs,
-                        total_segments: stats.files_created,
-                    })
-                    .await;
-
-                info!(
-                    "FLV download with pipeline completed for {}: {} items, {} files",
-                    streamer_id, items_written, stats.files_created
-                );
-
-                Ok(stats)
-            }
-            Err(e) => {
-                if let Some((kind, msg)) = stream_error {
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind,
-                            message: msg.clone(),
-                        })
-                        .await;
-                    return Err(crate::Error::Other(format!("FLV stream error: {}", msg)));
-                }
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        kind: DownloadFailureKind::Processing,
-                        message: e.to_string(),
-                    })
-                    .await;
-                Err(crate::Error::Other(format!("FLV writer error: {}", e)))
-            }
-        }
+        helpers::handle_writer_result(
+            writer_result,
+            stream_error,
+            processing_tasks,
+            &self.event_tx,
+            &streamer_id,
+            "FLV",
+        )
+        .await
     }
 
     /// Download FLV stream without pipeline processing (raw mode).
@@ -396,83 +267,22 @@ impl FlvDownloader {
 
         let mut writer = FlvWriter::new(output_dir, base_name, "flv".to_string(), extras);
 
-        // SegmentStarted/SegmentCompleted must not be dropped (danmu segmentation + pipelines rely on it).
-        // These callbacks run on a blocking thread; use `blocking_send` to apply backpressure
-        // rather than unbounded buffering.
-        let event_tx_start = self.event_tx.clone();
-        let event_tx_complete = self.event_tx.clone();
-
-        writer.set_on_segment_start_callback(move |path, sequence| {
-            let event = SegmentEvent::SegmentStarted {
-                path: path.to_path_buf(),
-                sequence,
-            };
-            let _ = event_tx_start.blocking_send(event);
-        });
-
-        writer.set_on_segment_complete_callback(
-            move |path, sequence, duration_secs, size_bytes| {
-                // Ensure path is absolute
-                let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-                let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-                    path: abs_path,
-                    duration_secs,
-                    size_bytes,
-                    index: sequence,
-                    completed_at: Utc::now(),
-                });
-                let _ = event_tx_complete.blocking_send(event);
-            },
-        );
-
-        // Setup progress callback
-        let event_tx_progress = self.event_tx.clone();
-        writer.set_progress_callback(move |progress| {
-            let download_progress = DownloadProgress {
-                bytes_downloaded: progress.bytes_written_total,
-                duration_secs: progress.elapsed_secs,
-                speed_bytes_per_sec: progress.speed_bytes_per_sec,
-                segments_completed: progress.current_file_sequence,
-                current_segment: None,
-                media_duration_secs: progress.media_duration_secs_total,
-                playback_ratio: progress.playback_ratio,
-            };
-            let _ = event_tx_progress.try_send(SegmentEvent::Progress(download_progress));
-        });
+        helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 
         // Spawn blocking writer task
         let writer_task = tokio::task::spawn_blocking(move || writer.run(rx));
 
         // Consume the FLV stream and send to writer
-        let mut stream = std::pin::pin!(flv_stream);
-        let mut stream_error: Option<(DownloadFailureKind, String)> = None;
-
-        while let Some(result) = stream.next().await {
-            // Check for cancellation
-            if self.cancellation_token.is_cancelled() || token.is_cancelled() {
-                debug!("FLV download cancelled for {}", streamer_id);
-                break;
-            }
-
-            match result {
-                Ok(flv_data) => {
-                    // Send to writer
-                    if tx.send(Ok(flv_data)).await.is_err() {
-                        warn!("Writer channel closed, stopping FLV download");
-                        break;
-                    }
-                }
-                Err(e) => {
-                    // Stream error - send error to writer and emit failure event
-                    error!("FLV stream error for {}: {}", streamer_id, e);
-                    let kind = classify_flv_error(&e);
-                    let msg = e.to_string();
-                    stream_error = Some((kind, msg.clone()));
-                    let _ = tx.send(Err(PipelineError::Processing(msg))).await;
-                    break;
-                }
-            }
-        }
+        let stream_error = helpers::consume_stream(
+            flv_stream,
+            &tx,
+            &self.cancellation_token,
+            &token,
+            &streamer_id,
+            "FLV",
+            classify_flv_error,
+        )
+        .await;
 
         // Close the channel to signal writer to finish
         drop(tx);
@@ -482,65 +292,15 @@ impl FlvDownloader {
             .await
             .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
 
-        match writer_result {
-            Ok((items_written, files_created, total_bytes, total_duration)) => {
-                // Get final stats from writer state
-                let stats = DownloadStats {
-                    total_bytes,
-                    total_items: items_written,
-                    total_duration_secs: total_duration,
-                    files_created: files_created + 1,
-                };
-
-                if let Some((kind, msg)) = stream_error {
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind,
-                            message: msg.clone(),
-                        })
-                        .await;
-                    return Err(crate::Error::Other(format!("FLV stream error: {}", msg)));
-                }
-
-                // Emit completion event with stats from writer
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadCompleted {
-                        total_bytes: stats.total_bytes,
-                        total_duration_secs: stats.total_duration_secs,
-                        total_segments: stats.files_created,
-                    })
-                    .await;
-
-                info!(
-                    "FLV download completed for {}: {} items, {} files",
-                    streamer_id, items_written, stats.files_created
-                );
-
-                Ok(stats)
-            }
-            Err(e) => {
-                if let Some((kind, msg)) = stream_error {
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind,
-                            message: msg.clone(),
-                        })
-                        .await;
-                    return Err(crate::Error::Other(format!("FLV stream error: {}", msg)));
-                }
-                let _ = self
-                    .event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        kind: DownloadFailureKind::Processing,
-                        message: e.to_string(),
-                    })
-                    .await;
-                Err(crate::Error::Other(format!("FLV writer error: {}", e)))
-            }
-        }
+        helpers::handle_writer_result(
+            writer_result,
+            stream_error,
+            vec![],
+            &self.event_tx,
+            &streamer_id,
+            "FLV",
+        )
+        .await
     }
 }
 
