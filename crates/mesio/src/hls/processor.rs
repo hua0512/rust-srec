@@ -14,7 +14,7 @@ use bytes::Bytes;
 use hls::HlsData;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{error, trace};
+use tracing::{trace, warn};
 
 #[async_trait]
 pub trait SegmentTransformer: Send + Sync {
@@ -179,8 +179,8 @@ impl SegmentTransformer for SegmentProcessor {
                 .put(cache_key, current_data_clone, metadata)
                 .await
             {
-                error!(
-                    "Warning: Failed to cache decrypted segment {}: {}",
+                warn!(
+                    "Failed to cache decrypted segment {}: {}",
                     job.media_segment.uri, e
                 );
             }

@@ -457,7 +457,7 @@ impl SegmentScheduler {
             >,
         >;
 
-        info!("SegmentScheduler started.");
+        info!("Segment scheduler started.");
         let mut futures: FuturesUnordered<SegmentFuture> = FuturesUnordered::new();
         let mut draining = false;
         let batch_enabled = self.batch_scheduler.is_enabled();
@@ -480,7 +480,7 @@ impl SegmentScheduler {
 
                 // 1. Cancellation Token
                 _ = self.token.cancelled(), if !draining => {
-                    info!("Cancellation token received. SegmentScheduler entering draining state.");
+                    info!("Segment scheduler received cancellation token; entering drain mode.");
                     draining = true;
                     // Close the segment request channel to prevent new jobs from being added
                     // while we drain the existing ones.
@@ -562,7 +562,7 @@ impl SegmentScheduler {
                     } else {
                         // The input channel was closed by the PlaylistEngine.
                         // This is a natural end, so we start draining.
-                        info!("Segment request channel closed. No new jobs will be accepted. Draining in-progress tasks.");
+                        info!("Segment request channel closed; no new jobs will be accepted. Draining in-progress tasks.");
                         draining = true;
 
                         // Dispatch any remaining batched jobs
@@ -636,7 +636,7 @@ impl SegmentScheduler {
                             }
 
                             if self.output_tx.send(Ok(processed_output)).await.is_err() {
-                                error!("Output channel closed while trying to send processed segment. Shutting down scheduler.");
+                                error!("Output channel closed while sending processed segment. Shutting down scheduler.");
                                 break;
                             }
                         }
@@ -657,7 +657,7 @@ impl SegmentScheduler {
                             // Also don't propagate SegmentFetchErrors - treat them as gaps.
                             if !is_prefetch && !should_ignore
                                 && self.output_tx.send(Err(e)).await.is_err() {
-                                    error!("Output channel closed while trying to send segment processing error. Shutting down scheduler.");
+                                    error!("Output channel closed while sending segment-processing error. Shutting down scheduler.");
                                     break;
                                 }
                         }
@@ -672,11 +672,9 @@ impl SegmentScheduler {
                 // This is our signal to exit the loop.
                 else => {
                     if draining && futures.is_empty() {
-                        info!("Draining complete. SegmentScheduler shutting down.");
                         break;
                     }
                     if !draining && self.segment_request_rx.is_closed() && futures.is_empty() {
-                        info!("All pending segments processed and input is closed. SegmentScheduler shutting down.");
                         break;
                     }
                     // If we get here, it means we are waiting for new jobs or for futures to complete.
@@ -684,7 +682,7 @@ impl SegmentScheduler {
                 }
             }
         }
-        info!("SegmentScheduler finished.");
+        info!("Segment scheduler finished.");
     }
 }
 

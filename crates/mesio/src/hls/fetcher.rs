@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use indicatif::ProgressStyle;
 use std::sync::Arc;
-use tracing::{Span, debug, error, instrument, trace};
+use tracing::{Span, debug, instrument, trace, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use url::Url;
 
@@ -320,10 +320,7 @@ impl SegmentDownloader for SegmentFetcher {
                     }
                 }
                 Err(e) => {
-                    error!(
-                        "Warning: Failed to read segment {} from cache: {}",
-                        segment_url, e
-                    );
+                    warn!("Failed to read segment {} from cache: {}", segment_url, e);
                     // Treat cache error as a miss
                     if let Some(metrics) = &self.performance_metrics {
                         metrics.record_cache_miss();
@@ -350,14 +347,11 @@ impl SegmentDownloader for SegmentFetcher {
                     .put(cache_key, downloaded_bytes.clone(), metadata)
                     .await
                 {
-                    error!(
-                        "Warning: Failed to cache raw segment {}: {}",
-                        segment_url, e
-                    );
+                    warn!("Failed to cache raw segment {}: {}", segment_url, e);
                 }
             }
 
-            debug!(
+            trace!(
                 msn = job.media_sequence_number,
                 size = downloaded_bytes.len(),
                 "Downloaded segment"

@@ -326,7 +326,7 @@ impl PlaylistProvider for PlaylistEngine {
                     ))
                 })?,
             HlsVariantSelectionPolicy::Custom(name) => {
-                error!("Warning: Custom policy '{name}' selecting first variant.");
+                warn!("Custom policy '{name}' selected; falling back to first variant.");
                 master_playlist_ref.variants.first().ok_or_else(|| {
                     HlsDownloaderError::PlaylistError("No variants for Custom policy".to_string())
                 })?
@@ -469,7 +469,7 @@ impl PlaylistProvider for PlaylistEngine {
                     last_playlist_bytes = Some(new_playlist_bytes);
 
                     if current_playlist.end_list {
-                        info!("ENDLIST for {playlist_url}. Stopping monitoring.");
+                        info!("Playlist monitoring finished (ENDLIST): {playlist_url}.");
                         return Ok(());
                     }
                 }
@@ -487,7 +487,7 @@ impl PlaylistProvider for PlaylistEngine {
                     tokio::select! {
                         biased;
                         _ = token.cancelled() => {
-                            info!("Cancellation token received during retry sleep for {}.", playlist_url_str);
+                            info!("Playlist monitoring cancelled during retry backoff: {}.", playlist_url_str);
                             return Ok(());
                         }
                         _ = tokio::time::sleep(
@@ -506,7 +506,7 @@ impl PlaylistProvider for PlaylistEngine {
             tokio::select! {
                 biased;
                 _ = token.cancelled() => {
-                    info!("Cancellation token received during monitoring for {}.", playlist_url_str);
+                    info!("Playlist monitoring cancelled: {}.", playlist_url_str);
                     return Ok(());
                 }
                 _ = tokio::time::sleep(refresh_delay) => {

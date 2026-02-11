@@ -154,7 +154,6 @@ impl HlsStreamCoordinator {
 
         let output_manager_handle = tokio::spawn(async move {
             output_manager.run().await;
-            debug!("OutputManager task finished.");
         });
 
         let scheduler_parent_span = parent_span.clone();
