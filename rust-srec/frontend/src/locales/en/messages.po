@@ -426,8 +426,8 @@ msgstr "Alerts when disk space is running low."
 #: src/routes/_authed/_dashboard/notifications/events.tsx:156
 #: src/routes/_authed/_dashboard/notifications/index.tsx:355
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:105
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:199
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:279
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:200
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:280
 #: src/routes/_authed/_dashboard/sessions/index.tsx:186
 #: src/routes/_authed/_dashboard/sessions/index.tsx:506
 #: src/routes/_authed/_dashboard/streamers/index.tsx:69
@@ -488,7 +488,7 @@ msgstr "Apply template settings."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:40
 #: src/components/pipeline/presets/preset-card.tsx:90
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:66
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:67
 msgid "Archive"
 msgstr "Archive"
 
@@ -569,7 +569,7 @@ msgstr "Attempts to get origin quality by replacing the audio stream. May result
 #: src/components/pipeline/presets/default-presets-i18n.ts:39
 #: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:133
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:66
 msgid "Audio"
 msgstr "Audio"
 
@@ -720,7 +720,7 @@ msgstr "Backup"
 msgid "Backup & Restore"
 msgstr "Backup & Restore"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:983
+#: src/components/config/engines/forms/mesio-hls-form.tsx:965
 msgid "Base"
 msgstr "Base"
 
@@ -816,7 +816,7 @@ msgstr "Brand Colors"
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "Browse and download application log files. Filter by date range or download all."
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:160
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:161
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "Browse generated media artifacts from pipeline jobs"
 
@@ -829,13 +829,9 @@ msgstr "Browser Notifications"
 msgid "Browser Status"
 msgstr "Browser Status"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:912
+#: src/components/config/engines/forms/mesio-hls-form.tsx:894
 msgid "Buffer Limits"
 msgstr "Buffer Limits"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:739
-msgid "Buffer Pool (Default: On)"
-msgstr "Buffer Pool (Default: On)"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:79
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
@@ -867,9 +863,9 @@ msgstr "Caching"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:195
 #: src/components/streamers/streamer-form.tsx:224
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:271
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:256
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:162
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:502
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:500
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -1018,7 +1014,7 @@ msgstr "Choose your display language"
 #: src/components/pipeline/presets/preset-card.tsx:92
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:239
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:68
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:69
 msgid "Cleanup"
 msgstr "Cleanup"
 
@@ -1034,21 +1030,21 @@ msgstr "Click to add. You can reorder steps in the editor."
 
 #: src/components/config/templates/template-card.tsx:120
 #: src/components/pipeline/presets/preset-card.tsx:180
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:280
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:511
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:265
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:509
 msgid "Clone"
 msgstr "Clone"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:476
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:474
 msgid "Clone Preset"
 msgstr "Clone Preset"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:248
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:233
 msgid "Clone Template"
 msgstr "Clone Template"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:278
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:509
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:263
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:507
 msgid "Cloning..."
 msgstr "Cloning..."
 
@@ -1123,7 +1119,7 @@ msgstr "Compress video for storage, upload to cloud, then delete local file to s
 #: src/components/pipeline/presets/default-presets-i18n.ts:37
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
 #: src/components/pipeline/presets/preset-card.tsx:87
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:63
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:64
 msgid "Compression"
 msgstr "Compression"
 
@@ -1383,8 +1379,8 @@ msgstr "Create"
 
 #. placeholder {0}: presetToClone?.name
 #. placeholder {0}: templateToClone?.name
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:251
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:479
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:236
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:477
 msgid "Create a copy of \"{0}\" with a new name."
 msgstr "Create a copy of \"{0}\" with a new name."
 
@@ -1392,7 +1388,7 @@ msgstr "Create a copy of \"{0}\" with a new name."
 msgid "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
 msgstr "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:224
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:209
 msgid "Create a template to define reusable download configurations."
 msgstr "Create a template to define reusable download configurations."
 
@@ -1438,7 +1434,7 @@ msgstr "Create New Workflow"
 msgid "Create Pipeline"
 msgstr "Create Pipeline"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:389
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:387
 msgid "Create Preset"
 msgstr "Create Preset"
 
@@ -1447,7 +1443,7 @@ msgid "Create Streamer"
 msgstr "Create Streamer"
 
 #: src/components/config/templates/template-editor.tsx:163
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:235
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:220
 msgid "Create Template"
 msgstr "Create Template"
 
@@ -1455,7 +1451,7 @@ msgstr "Create Template"
 msgid "Create Workflow"
 msgstr "Create Workflow"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:379
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:377
 msgid "Create your first job preset to define reusable processor configurations for your pipelines."
 msgstr "Create your first job preset to define reusable processor configurations for your pipelines."
 
@@ -1540,7 +1536,7 @@ msgstr "Current Password"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/preset-card.tsx:94
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:70
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:71
 #: src/routes/_authed/_dashboard/sessions/index.tsx:366
 msgid "Custom"
 msgstr "Custom"
@@ -1603,7 +1599,7 @@ msgstr "DAG Graph"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:46
 #: src/components/pipeline/presets/preset-card.tsx:96
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:72
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:73
 msgid "Danmaku"
 msgstr "Danmaku"
 
@@ -2159,7 +2155,7 @@ msgstr "Enable recording of danmu/chat messages along with the video."
 msgid "Enabled"
 msgstr "Enabled"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:771
+#: src/components/config/engines/forms/mesio-hls-form.tsx:753
 msgid "Enabled (Default: Off)"
 msgstr "Enabled (Default: Off)"
 
@@ -2238,8 +2234,8 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 msgid "Engines"
 msgstr "Engines"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:265
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:493
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:250
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:491
 msgid "Enter a unique name"
 msgstr "Enter a unique name"
 
@@ -2274,12 +2270,12 @@ msgstr "Environment Variables"
 #: src/components/config/engines/engine-card.tsx:150
 #: src/components/streamers/card/use-streamer-status.tsx:40
 #: src/routes/_authed/_dashboard/config/engines/$engineId.tsx:49
-#: src/routes/_authed/_dashboard/config/engines/index.tsx:34
+#: src/routes/_authed/_dashboard/config/engines/index.tsx:35
 #: src/routes/_authed/_dashboard/config/platforms/index.tsx:63
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:112
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:335
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:143
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:229
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:144
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:230
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:144
 #: src/routes/_authed/_dashboard/streamers/index.tsx:72
 msgid "Error"
@@ -2515,7 +2511,7 @@ msgid "Failed to check TDL status: {0}"
 msgstr "Failed to check TDL status: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:190
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:191
 msgid "Failed to clone preset: {0}"
 msgstr "Failed to clone preset: {0}"
 
@@ -2576,7 +2572,7 @@ msgid "Failed to delete pipeline"
 msgstr "Failed to delete pipeline"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:172
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:173
 msgid "Failed to delete preset: {0}"
 msgstr "Failed to delete preset: {0}"
 
@@ -2633,7 +2629,7 @@ msgid "Failed to load engine: {0}"
 msgstr "Failed to load engine: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/engines/index.tsx:37
+#: src/routes/_authed/_dashboard/config/engines/index.tsx:38
 msgid "Failed to load engines: {0}"
 msgstr "Failed to load engines: {0}"
 
@@ -2647,7 +2643,7 @@ msgid "Failed to load jobs: {0}"
 msgstr "Failed to load jobs: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:146
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:147
 msgid "Failed to load outputs: {0}"
 msgstr "Failed to load outputs: {0}"
 
@@ -2657,7 +2653,7 @@ msgid "Failed to load platforms: {0}"
 msgstr "Failed to load platforms: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:232
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:233
 msgid "Failed to load presets: {0}"
 msgstr "Failed to load presets: {0}"
 
@@ -2788,7 +2784,7 @@ msgstr "Fetch"
 msgid "Fetch Delay"
 msgstr "Fetch Delay"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1001
+#: src/components/config/engines/forms/mesio-hls-form.tsx:983
 msgid "Fetcher"
 msgstr "Fetcher"
 
@@ -2822,7 +2818,7 @@ msgid "File Operations"
 msgstr "File Operations"
 
 #: src/components/pipeline/presets/preset-card.tsx:93
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:69
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:70
 msgid "File Ops"
 msgstr "File Ops"
 
@@ -2840,7 +2836,7 @@ msgid "Filename Template"
 msgstr "Filename Template"
 
 #: src/components/logging/log-file-browser.tsx:237
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:178
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:179
 msgid "files"
 msgstr "files"
 
@@ -3009,13 +3005,13 @@ msgstr "Full multimedia processing: Remux video, extract audio and thumbnail in 
 msgid "Full Processing"
 msgstr "Full Processing"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:874
+#: src/components/config/engines/forms/mesio-hls-form.tsx:856
 msgid "Gap Eval Interval (ms)"
 msgstr "Gap Eval Interval (ms)"
 
 #: src/components/config/engines/forms/mesio-form.tsx:268
 #: src/components/config/platforms/platform-editor.tsx:189
-#: src/components/config/templates/tabs/platform-override-card.tsx:62
+#: src/components/config/templates/tabs/platform-override-card.tsx:64
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
@@ -3859,11 +3855,11 @@ msgstr "Match Strategy"
 msgid "Max Bitrate (bps)"
 msgstr "Max Bitrate (bps)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:804
+#: src/components/config/engines/forms/mesio-hls-form.tsx:786
 msgid "Max Buffer Before Skip"
 msgstr "Max Buffer Before Skip"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:941
+#: src/components/config/engines/forms/mesio-hls-form.tsx:923
 msgid "Max Bytes"
 msgstr "Max Bytes"
 
@@ -3933,11 +3929,11 @@ msgstr "Max Retries"
 msgid "Max Segment Retries"
 msgstr "Max Segment Retries"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:921
+#: src/components/config/engines/forms/mesio-hls-form.tsx:903
 msgid "Max Segments"
 msgstr "Max Segments"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:894
+#: src/components/config/engines/forms/mesio-hls-form.tsx:876
 msgid "Max Stall Duration (ms)"
 msgstr "Max Stall Duration (ms)"
 
@@ -3976,11 +3972,11 @@ msgid "MB/s"
 msgstr "MB/s"
 
 #: src/components/sessions/recordings-tab.tsx:45
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:158
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:159
 msgid "Media Outputs"
 msgstr "Media Outputs"
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:293
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:291
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
@@ -4000,7 +3996,7 @@ msgstr "Message"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:72
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:71
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:72
 msgid "Metadata"
 msgstr "Metadata"
 
@@ -4183,11 +4179,11 @@ msgstr "New Password"
 msgid "New password (min 8 chars)"
 msgstr "New password (min 8 chars)"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:487
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:485
 msgid "New Preset Name"
 msgstr "New Preset Name"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:259
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:244
 msgid "New Template Name"
 msgstr "New Template Name"
 
@@ -4306,7 +4302,7 @@ msgstr "No matching events found"
 msgid "No media outputs generated yet."
 msgstr "No media outputs generated yet."
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:286
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:284
 msgid "No media outputs yet"
 msgstr "No media outputs yet"
 
@@ -4326,7 +4322,7 @@ msgstr "No other steps available to depend on."
 msgid "No output generated"
 msgstr "No output generated"
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:284
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:282
 msgid "No outputs found"
 msgstr "No outputs found"
 
@@ -4355,11 +4351,11 @@ msgstr "No platform found."
 msgid "No platform overrides configured"
 msgstr "No platform overrides configured"
 
-#: src/routes/_authed/_dashboard/config/platforms/index.tsx:161
+#: src/routes/_authed/_dashboard/config/platforms/index.tsx:146
 msgid "No platforms configured"
 msgstr "No platforms configured"
 
-#: src/routes/_authed/_dashboard/config/platforms/index.tsx:159
+#: src/routes/_authed/_dashboard/config/platforms/index.tsx:144
 msgid "No platforms found"
 msgstr "No platforms found"
 
@@ -4372,11 +4368,11 @@ msgid "No playable streams found"
 msgstr "No playable streams found"
 
 #: src/components/pipeline/workflows/step-library.tsx:426
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:370
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:368
 msgid "No presets found"
 msgstr "No presets found"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:372
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:370
 msgid "No presets yet"
 msgstr "No presets yet"
 
@@ -4408,11 +4404,11 @@ msgstr "No steps defined"
 msgid "No streamers found"
 msgstr "No streamers found"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:215
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:200
 msgid "No templates found"
 msgstr "No templates found"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:217
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:202
 msgid "No templates yet"
 msgstr "No templates yet"
 
@@ -4660,7 +4656,7 @@ msgstr "Options"
 msgid "Out of Space"
 msgstr "Out of Space"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1019
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1001
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:164
 #: src/components/config/templates/template-card.tsx:161
@@ -4896,8 +4892,8 @@ msgid "Pending Jobs"
 msgstr "Pending Jobs"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:539
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:309
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:401
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:307
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:399
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:286
 msgid "Per page:"
 msgstr "Per page:"
@@ -4918,7 +4914,7 @@ msgstr "Per-segment Pipeline"
 msgid "Per-Streamer"
 msgstr "Per-Streamer"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1010
+#: src/components/config/engines/forms/mesio-hls-form.tsx:992
 msgid "Perf"
 msgstr "Perf"
 
@@ -5034,7 +5030,7 @@ msgstr "Platform Configuration"
 msgid "Platform configuration updated successfully"
 msgstr "Platform configuration updated successfully"
 
-#: src/routes/_authed/_dashboard/config/platforms/index.tsx:168
+#: src/routes/_authed/_dashboard/config/platforms/index.tsx:153
 msgid "Platform configurations will appear here when available."
 msgstr "Platform configurations will appear here when available."
 
@@ -5050,7 +5046,7 @@ msgstr "Platform name"
 msgid "Platform not found"
 msgstr "Platform not found"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:118
+#: src/components/config/templates/tabs/platform-override-card.tsx:120
 msgid "Platform Override Settings"
 msgstr "Platform Override Settings"
 
@@ -5088,7 +5084,7 @@ msgstr "Play"
 msgid "Player"
 msgstr "Player"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:992
+#: src/components/config/engines/forms/mesio-hls-form.tsx:974
 msgid "Playlist"
 msgstr "Playlist"
 
@@ -5180,11 +5176,11 @@ msgstr "Preferred Qualities"
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:784
+#: src/components/config/engines/forms/mesio-hls-form.tsx:766
 msgid "Prefetch Count"
 msgstr "Prefetch Count"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:755
+#: src/components/config/engines/forms/mesio-hls-form.tsx:737
 msgid "Prefetching"
 msgstr "Prefetching"
 
@@ -5196,7 +5192,7 @@ msgstr "Preserve Paths"
 msgid "preset"
 msgstr "preset"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:178
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:179
 msgid "Preset cloned successfully"
 msgstr "Preset cloned successfully"
 
@@ -5204,7 +5200,7 @@ msgstr "Preset cloned successfully"
 msgid "Preset created successfully"
 msgstr "Preset created successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:168
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:169
 msgid "Preset deleted successfully"
 msgstr "Preset deleted successfully"
 
@@ -5224,7 +5220,7 @@ msgstr "Preset Step"
 msgid "Preset updated successfully"
 msgstr "Preset updated successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:264
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:265
 msgid "presets"
 msgstr "presets"
 
@@ -5233,7 +5229,7 @@ msgstr "presets"
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:244
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:245
 msgid "Presets"
 msgstr "Presets"
 
@@ -5560,7 +5556,7 @@ msgstr "Remove source on success"
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
 #: src/components/pipeline/presets/default-presets-i18n.ts:36
 #: src/components/pipeline/presets/preset-card.tsx:86
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:62
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:63
 msgid "Remux"
 msgstr "Remux"
 
@@ -5598,11 +5594,11 @@ msgstr "Remux to MP4 without re-encoding. Fast and lossless - just changes the c
 msgid "Remux with Faststart"
 msgstr "Remux with Faststart"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:834
+#: src/components/config/engines/forms/mesio-hls-form.tsx:816
 msgid "Reorder Duration (ms)"
 msgstr "Reorder Duration (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:854
+#: src/components/config/engines/forms/mesio-hls-form.tsx:836
 msgid "Reorder Max Segments"
 msgstr "Reorder Max Segments"
 
@@ -5721,7 +5717,7 @@ msgstr "Retry Policy"
 msgid "Return Previous Page"
 msgstr "Return Previous Page"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:246
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:247
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "Reusable processor configurations for pipeline steps"
 
@@ -5923,7 +5919,7 @@ msgstr "Search jobs..."
 msgid "Search logs..."
 msgstr "Search logs..."
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:168
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:169
 msgid "Search outputs..."
 msgstr "Search outputs..."
 
@@ -5931,7 +5927,7 @@ msgstr "Search outputs..."
 msgid "Search platforms..."
 msgstr "Search platforms..."
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:254
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:255
 msgid "Search presets..."
 msgstr "Search presets..."
 
@@ -6317,7 +6313,7 @@ msgid "Space Saver"
 msgstr "Space Saver"
 
 #: src/components/config/platforms/platform-editor.tsx:199
-#: src/components/config/templates/tabs/platform-override-card.tsx:68
+#: src/components/config/templates/tabs/platform-override-card.tsx:70
 msgid "Specific"
 msgstr "Specific"
 
@@ -6570,7 +6566,7 @@ msgstr "Subscriptions updated"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:47
 #: src/components/pipeline/presets/preset-card.tsx:97
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:73
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:74
 msgid "Subtitle"
 msgstr "Subtitle"
 
@@ -6885,7 +6881,7 @@ msgstr "This will permanently remove the \"{0}\" configuration. This action cann
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:64
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
 msgid "Thumbnail"
 msgstr "Thumbnail"
 
@@ -7107,13 +7103,13 @@ msgid "Try adjusting your search or filters, or add a new streamer to start moni
 msgstr "Try adjusting your search or filters, or add a new streamer to start monitoring."
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:522
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:291
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:377
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:289
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:375
 msgid "Try adjusting your search or filters."
 msgstr "Try adjusting your search or filters."
 
-#: src/routes/_authed/_dashboard/config/platforms/index.tsx:166
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:222
+#: src/routes/_authed/_dashboard/config/platforms/index.tsx:151
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:207
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:262
 msgid "Try adjusting your search."
 msgstr "Try adjusting your search."
@@ -7230,7 +7226,7 @@ msgstr "Updates existing items and creates new ones. Nothing is deleted."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:41
 #: src/components/pipeline/presets/preset-card.tsx:91
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:67
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:68
 msgid "Upload"
 msgstr "Upload"
 

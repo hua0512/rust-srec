@@ -4,6 +4,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import { listPipelineOutputs } from '@/server/functions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CardSkeleton } from '@/components/shared/card-skeleton';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
@@ -227,10 +228,7 @@ function PipelineOutputsPage() {
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
             >
               {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                <div
-                  key={i}
-                  className="h-[220px] border rounded-xl bg-muted/10 animate-pulse flex flex-col p-6 space-y-4 shadow-sm"
-                >
+                <CardSkeleton key={i}>
                   <div className="flex justify-between items-start">
                     <Skeleton className="h-10 w-10 rounded-full" />
                     <Skeleton className="h-6 w-12" />
@@ -243,7 +241,7 @@ function PipelineOutputsPage() {
                     <Skeleton className="h-12 w-full rounded-md" />
                     <Skeleton className="h-12 w-full rounded-md" />
                   </div>
-                </div>
+                </CardSkeleton>
               ))}
             </motion.div>
           ) : displayedOutputs.length > 0 ? (

@@ -44,14 +44,11 @@ fn map_token_refresh_error(err: TokenRefreshError) -> CredentialError {
             -101 => CredentialError::InvalidCredentials(message),
             -111 => CredentialError::InvalidCredentials(message),
             -663 => CredentialError::InvalidRefreshToken,
-            _ => CredentialError::RefreshFailed(format!(
-                "Bilibili API error {}: {}",
-                code, message
-            )),
+            _ => {
+                CredentialError::RefreshFailed(format!("Bilibili API error {}: {}", code, message))
+            }
         },
-        TokenRefreshError::SystemTime => {
-            CredentialError::Internal("System time error".to_string())
-        }
+        TokenRefreshError::SystemTime => CredentialError::Internal("System time error".to_string()),
     }
 }
 
@@ -100,10 +97,7 @@ impl BilibiliCredentialManager {
             .client()
             .get(NAV_URL)
             .header("Cookie", cookies)
-            .header(
-                "User-Agent",
-                platforms_parser::extractor::DEFAULT_UA,
-            )
+            .header("User-Agent", platforms_parser::extractor::DEFAULT_UA)
             .header(reqwest::header::REFERER, "https://www.bilibili.com")
             .send()
             .await?;
@@ -178,7 +172,9 @@ impl CredentialManager for BilibiliCredentialManager {
             match platforms_validate_token(self.client(), access_token).await {
                 Ok(needs_refresh) => {
                     if !needs_refresh {
-                        debug!("Token validation says no refresh needed; returning current cookies");
+                        debug!(
+                            "Token validation says no refresh needed; returning current cookies"
+                        );
                         return Ok(RefreshedCredentials {
                             cookies: state.cookies.clone(),
                             refresh_token: state.refresh_token.clone(),
@@ -193,24 +189,23 @@ impl CredentialManager for BilibiliCredentialManager {
                 }
             }
 
-            let result =
-                platforms_refresh_token(self.client(), access_token, refresh_token)
-                    .await
-                    .map_err(map_token_refresh_error)?;
+            let result = platforms_refresh_token(self.client(), access_token, refresh_token)
+                .await
+                .map_err(map_token_refresh_error)?;
 
             debug!("Bilibili OAuth2 refresh completed successfully");
             Ok(RefreshedCredentials {
                 cookies: result.cookies,
                 refresh_token: Some(result.refresh_token),
                 access_token: Some(result.access_token),
-                expires_at: Some(
-                    Utc::now() + Duration::seconds(result.expires_in as i64),
-                ),
+                expires_at: Some(Utc::now() + Duration::seconds(result.expires_in as i64)),
             })
         } else {
             // No access_token — cannot use OAuth2 flow.
             // This happens when users manually paste cookies without going through QR login.
-            warn!("No access_token available; OAuth2 refresh not possible. Re-login via QR required.");
+            warn!(
+                "No access_token available; OAuth2 refresh not possible. Re-login via QR required."
+            );
             Err(CredentialError::MissingRefreshToken)
         }
     }

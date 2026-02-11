@@ -227,10 +227,7 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
     let refresh_token = token_info
         .and_then(|ti| ti.get("refresh_token"))
         .and_then(|t| t.as_str())
-        .or_else(|| {
-            data.get("refresh_token")
-                .and_then(|t| t.as_str())
-        })
+        .or_else(|| data.get("refresh_token").and_then(|t| t.as_str()))
         .map(String::from);
 
     let cookies = data.get("cookie_info").and_then(|ci| {

@@ -304,8 +304,8 @@ mod tests {
         // pts_adjustment = 0 (remaining 4 bytes)
         data.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
         data.push(0x00); // cw_index
-                         // tier (12 bits) + splice_command_length (12 bits)
-                         // tier=0xFFF (all 1s), splice_command_length=5
+        // tier (12 bits) + splice_command_length (12 bits)
+        // tier=0xFFF (all 1s), splice_command_length=5
         data.push(0xFF); // tier high 8
         data.push(0xF0); // tier low 4 | cmd_length high 4
         data.push(0x05); // cmd_length low 8

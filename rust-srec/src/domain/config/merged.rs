@@ -544,6 +544,27 @@ impl MergedConfigBuilder {
         self
     }
 
+    /// Override the per-segment pipeline (used by template platform overrides).
+    pub fn override_pipeline(mut self, pipeline: DagPipelineDefinition) -> Self {
+        debug!("Template platform override: pipeline");
+        self.pipeline = Some(pipeline);
+        self
+    }
+
+    /// Override the session-complete pipeline (used by template platform overrides).
+    pub fn override_session_complete_pipeline(mut self, pipeline: DagPipelineDefinition) -> Self {
+        debug!("Template platform override: session_complete_pipeline");
+        self.session_complete_pipeline = Some(pipeline);
+        self
+    }
+
+    /// Override the paired-segment pipeline (used by template platform overrides).
+    pub fn override_paired_segment_pipeline(mut self, pipeline: DagPipelineDefinition) -> Self {
+        debug!("Template platform override: paired_segment_pipeline");
+        self.paired_segment_pipeline = Some(pipeline);
+        self
+    }
+
     /// Build the final MergedConfig.
     pub fn build(self) -> MergedConfig {
         let output_folder = self

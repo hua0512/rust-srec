@@ -58,7 +58,10 @@ impl SqlxCredentialStore {
 
             json_expr = format!("json_set({}, '$.last_cookie_check_date', ?)", json_expr);
             binds.push(today);
-            json_expr = format!("json_set({}, '$.last_cookie_check_result', 'valid')", json_expr);
+            json_expr = format!(
+                "json_set({}, '$.last_cookie_check_result', 'valid')",
+                json_expr
+            );
 
             let sql = format!(
                 "UPDATE platform_config SET platform_specific_config = {} WHERE id = ?",
@@ -87,57 +90,56 @@ impl SqlxCredentialStore {
 
         let now = crate::database::time::now_ms();
 
-        let overrides_to_store = if credentials.refresh_token.is_some()
-            || credentials.access_token.is_some()
-        {
-            let existing_overrides: Option<String> = sqlx::query_scalar(
-                r#"
+        let overrides_to_store =
+            if credentials.refresh_token.is_some() || credentials.access_token.is_some() {
+                let existing_overrides: Option<String> = sqlx::query_scalar(
+                    r#"
                 SELECT platform_overrides
                 FROM template_config
                 WHERE id = ?
                 "#,
-            )
-            .bind(template_id)
-            .fetch_one(&self.pool)
-            .await?;
-
-            let mut overrides: serde_json::Value = match existing_overrides.as_deref() {
-                Some(s) if !s.trim().is_empty() => serde_json::from_str(s)?,
-                _ => serde_json::Value::Object(serde_json::Map::new()),
-            };
-
-            let root = overrides.as_object_mut().ok_or_else(|| {
-                CredentialError::Internal(
-                    "template_config.platform_overrides must be a JSON object".to_string(),
                 )
-            })?;
+                .bind(template_id)
+                .fetch_one(&self.pool)
+                .await?;
 
-            let entry = root
-                .entry(platform_name.to_string())
-                .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-            let platform_obj = entry.as_object_mut().ok_or_else(|| {
+                let mut overrides: serde_json::Value = match existing_overrides.as_deref() {
+                    Some(s) if !s.trim().is_empty() => serde_json::from_str(s)?,
+                    _ => serde_json::Value::Object(serde_json::Map::new()),
+                };
+
+                let root = overrides.as_object_mut().ok_or_else(|| {
+                    CredentialError::Internal(
+                        "template_config.platform_overrides must be a JSON object".to_string(),
+                    )
+                })?;
+
+                let entry = root
+                    .entry(platform_name.to_string())
+                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                let platform_obj = entry.as_object_mut().ok_or_else(|| {
                 CredentialError::Internal(format!(
                     "template_config.platform_overrides['{platform_name}'] must be a JSON object"
                 ))
             })?;
 
-            if let Some(ref token) = credentials.refresh_token {
-                platform_obj.insert(
-                    "refresh_token".to_string(),
-                    serde_json::Value::String(token.clone()),
-                );
-            }
-            if let Some(ref token) = credentials.access_token {
-                platform_obj.insert(
-                    "access_token".to_string(),
-                    serde_json::Value::String(token.clone()),
-                );
-            }
+                if let Some(ref token) = credentials.refresh_token {
+                    platform_obj.insert(
+                        "refresh_token".to_string(),
+                        serde_json::Value::String(token.clone()),
+                    );
+                }
+                if let Some(ref token) = credentials.access_token {
+                    platform_obj.insert(
+                        "access_token".to_string(),
+                        serde_json::Value::String(token.clone()),
+                    );
+                }
 
-            Some(serde_json::to_string(&overrides)?)
-        } else {
-            None
-        };
+                Some(serde_json::to_string(&overrides)?)
+            } else {
+                None
+            };
 
         // Update cookies + (optional) refresh_token atomically.
         match overrides_to_store {

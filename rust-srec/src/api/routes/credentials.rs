@@ -280,8 +280,7 @@ pub async fn get_platform_credential_source(
 
     let refresh_token =
         extract_platform_refresh_token(platform.platform_specific_config.as_deref());
-    let access_token =
-        extract_platform_access_token(platform.platform_specific_config.as_deref());
+    let access_token = extract_platform_access_token(platform.platform_specific_config.as_deref());
     let source = CredentialSource::new(
         CredentialScope::Platform {
             platform_id: platform.id,
@@ -468,8 +467,7 @@ pub async fn refresh_platform_credentials(
 
     let refresh_token =
         extract_platform_refresh_token(platform.platform_specific_config.as_deref());
-    let access_token =
-        extract_platform_access_token(platform.platform_specific_config.as_deref());
+    let access_token = extract_platform_access_token(platform.platform_specific_config.as_deref());
     let source = CredentialSource::new(
         CredentialScope::Platform {
             platform_id: platform.id.clone(),

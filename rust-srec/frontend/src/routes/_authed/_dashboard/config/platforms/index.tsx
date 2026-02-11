@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import { listPlatformConfigs } from '@/server/functions';
-import { Skeleton } from '@/components/ui/skeleton';
+import { CardSkeleton } from '@/components/shared/card-skeleton';
 import { PlatformCard } from '@/components/config/platforms/platform-card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -100,22 +100,7 @@ function PlatformsConfigPage() {
             className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6"
           >
             {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="h-[220px] border rounded-xl bg-muted/10 animate-pulse flex flex-col p-6 space-y-4 shadow-sm"
-              >
-                <div className="flex justify-between items-start">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <Skeleton className="h-6 w-16" />
-                </div>
-                <div className="space-y-2 pt-2">
-                  <Skeleton className="h-6 w-3/4" />
-                  <Skeleton className="h-4 w-1/2" />
-                </div>
-                <div className="pt-4 mt-auto">
-                  <Skeleton className="h-16 w-full rounded-md" />
-                </div>
-              </div>
+              <CardSkeleton key={i} />
             ))}
           </motion.div>
         ) : filteredPlatforms.length > 0 ? (

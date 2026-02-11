@@ -351,9 +351,26 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 .and_then(|entry| entry.get("refresh_token"))
                 .and_then(|t| t.as_str())
                 .map(String::from);
+
+            let mut tpl_po_pipeline: Option<DagPipelineDefinition> = None;
+            let mut tpl_po_session_complete: Option<DagPipelineDefinition> = None;
+            let mut tpl_po_paired_segment: Option<DagPipelineDefinition> = None;
             let template_platform_extras: Option<serde_json::Value> = template_platform_overrides
                 .and_then(|map| map.get(&platform_config.platform_name).cloned())
-                .map(strip_credential_fields_from_platform_extras);
+                .map(|mut entry| {
+                    if let Some(obj) = entry.as_object_mut() {
+                        tpl_po_pipeline = obj
+                            .remove("pipeline")
+                            .and_then(|v| serde_json::from_value(v).ok());
+                        tpl_po_session_complete = obj
+                            .remove("session_complete_pipeline")
+                            .and_then(|v| serde_json::from_value(v).ok());
+                        tpl_po_paired_segment = obj
+                            .remove("paired_segment_pipeline")
+                            .and_then(|v| serde_json::from_value(v).ok());
+                    }
+                    strip_credential_fields_from_platform_extras(entry)
+                });
 
             let template_credential_candidate = if credential_source.is_none() {
                 if let Some(cookies) = template_config.cookies.as_ref()
@@ -428,6 +445,18 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 template_paired_segment_pipeline,
                 template_platform_extras, // platform_extras from platform_overrides
             );
+
+            // Template platform overrides are more specific than top-level template
+            // pipeline fields, so apply them after with_template().
+            if let Some(pipe) = tpl_po_pipeline {
+                builder = builder.override_pipeline(pipe);
+            }
+            if let Some(pipe) = tpl_po_session_complete {
+                builder = builder.override_session_complete_pipeline(pipe);
+            }
+            if let Some(pipe) = tpl_po_paired_segment {
+                builder = builder.override_paired_segment_pipeline(pipe);
+            }
 
             if credential_source.is_none() {
                 credential_source = template_credential_candidate;

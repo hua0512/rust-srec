@@ -182,10 +182,7 @@ pub async fn refresh_token(
         .ok_or_else(|| TokenRefreshError::Parse("No refresh_token in token_info".to_string()))?
         .to_string();
 
-    let mid = token_info
-        .get("mid")
-        .and_then(|m| m.as_u64())
-        .unwrap_or(0);
+    let mid = token_info.get("mid").and_then(|m| m.as_u64()).unwrap_or(0);
 
     let expires_in = token_info
         .get("expires_in")
@@ -225,11 +222,7 @@ pub async fn refresh_token(
         cookies
     };
 
-    tracing::debug!(
-        mid,
-        expires_in,
-        "Bilibili OAuth2 token refresh successful"
-    );
+    tracing::debug!(mid, expires_in, "Bilibili OAuth2 token refresh successful");
 
     Ok(RefreshedTokens {
         cookies,
