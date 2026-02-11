@@ -34,7 +34,7 @@ tabled = { version = "0.20", optional = true }
 
 # Simplified configuration
 confy = "2.0"
-toml = "0.9"
+toml = "1.0"
 
 # Logging
 tracing = { workspace = true }
