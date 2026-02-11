@@ -80,9 +80,10 @@ impl SegmentSplitOperator {
         let data = match input {
             HlsData::M4sData(M4sData::InitSegment(init)) => init,
             _ => {
-                return Err(PipelineError::Processing(
-                    "Expected MP4 init segment".to_string(),
-                ));
+                return Err(PipelineError::Strategy(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Expected MP4 init segment",
+                ))));
             }
         };
 

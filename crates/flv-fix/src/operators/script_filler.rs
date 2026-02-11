@@ -143,8 +143,12 @@ impl ScriptKeyframesFillerOperator {
 
         let original_payload_size = tag.data.len() as u32;
 
-        let script_data_model = AmfScriptData::from_amf_object_ref(props)
-            .map_err(|e| PipelineError::Processing(e.to_string()))?;
+        let script_data_model = AmfScriptData::from_amf_object_ref(props).map_err(|e| {
+            PipelineError::Strategy(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )))
+        })?;
 
         trace!("Script data model: {:?}", script_data_model);
 
@@ -152,7 +156,12 @@ impl ScriptKeyframesFillerOperator {
         let (buffer, _) = OnMetaDataBuilder::from_script_data(script_data_model)
             .with_placeholder_keyframes(spacer_size)
             .build_bytes(original_payload_size, false)
-            .map_err(|e| PipelineError::Processing(e.to_string()))?;
+            .map_err(|e| {
+                PipelineError::Strategy(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    e.to_string(),
+                )))
+            })?;
 
         debug!("New script data payload size: {}", buffer.len());
 

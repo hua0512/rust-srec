@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use hls::HlsData;
 use pipeline_common::{ChannelPipeline, PipelineProvider, StreamerContext, config::PipelineConfig};
@@ -54,8 +54,7 @@ impl Default for HlsPipelineConfigBuilder {
 pub struct HlsPipeline {
     context: Arc<StreamerContext>,
     config: HlsPipelineConfig,
-    max_file_size: u64,
-    max_duration: Option<Duration>,
+    common_config: PipelineConfig,
 }
 
 impl PipelineProvider for HlsPipeline {
@@ -63,15 +62,14 @@ impl PipelineProvider for HlsPipeline {
     type Config = HlsPipelineConfig;
 
     fn with_config(
-        context: StreamerContext,
+        context: Arc<StreamerContext>,
         common_config: &PipelineConfig,
         config: Self::Config,
     ) -> Self {
         Self {
-            context: Arc::new(context),
+            context,
             config,
-            max_file_size: common_config.max_file_size,
-            max_duration: common_config.max_duration,
+            common_config: common_config.clone(),
         }
     }
 
@@ -90,8 +88,8 @@ impl PipelineProvider for HlsPipeline {
 
         if self.config.segment_limiter {
             sync_pipeline = sync_pipeline.add_processor(SegmentLimiterOperator::new(
-                self.max_duration,
-                Some(self.max_file_size),
+                self.common_config.max_duration,
+                Some(self.common_config.max_file_size),
             ));
         }
 

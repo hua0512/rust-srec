@@ -1,4 +1,4 @@
-use pipeline_common::{Pipeline, PipelineError, Processor, StreamerContext};
+use pipeline_common::{CancellationToken, Pipeline, PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 
 // Demo data type for our example
@@ -93,7 +93,7 @@ impl Processor<MediaData> for MetadataEnricher {
 
 fn main() -> Result<(), PipelineError> {
     // Create a shared context
-    let context = Arc::new(StreamerContext::default());
+    let context = Arc::new(StreamerContext::new(CancellationToken::new()));
 
     // Build a pipeline with multiple processors
     let pipeline = Pipeline::new(context)

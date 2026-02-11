@@ -5,7 +5,7 @@ use std::path::Path;
 
 use chrono::Utc;
 use futures::StreamExt;
-use pipeline_common::{PipelineError, WriterProgress};
+use pipeline_common::{PipelineError, WriterError, WriterProgress, WriterStats};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -188,7 +188,11 @@ pub(super) async fn consume_stream<T, E: Display>(
                 let kind = classify(&e);
                 let msg = e.to_string();
                 stream_error = Some((kind, msg.clone()));
-                let _ = tx.send(Err(PipelineError::Processing(msg))).await;
+                let _ = tx
+                    .send(Err(PipelineError::Strategy(Box::new(
+                        std::io::Error::other(msg.clone()),
+                    ))))
+                    .await;
                 break;
             }
         }
@@ -207,8 +211,8 @@ pub(super) async fn consume_stream<T, E: Display>(
 /// `processing_tasks` should be empty for raw-mode calls.
 ///
 /// Replaces 4 identical ~40-line match blocks (plus 2 pipeline-await blocks).
-pub(super) async fn handle_writer_result<E: Display>(
-    writer_result: std::result::Result<(usize, u32, u64, f64), E>,
+pub(super) async fn handle_writer_result(
+    writer_result: std::result::Result<WriterStats, WriterError>,
     stream_error: Option<(DownloadFailureKind, String)>,
     processing_tasks: Vec<tokio::task::JoinHandle<std::result::Result<(), PipelineError>>>,
     event_tx: &mpsc::Sender<SegmentEvent>,
@@ -222,18 +226,20 @@ pub(super) async fn handle_writer_result<E: Display>(
             .map_err(|e| crate::Error::Other(format!("Pipeline task panicked: {}", e)))?;
 
         // Only report task errors if writer succeeded
-        if writer_result.is_ok() && let Err(e) = task_result {
+        if writer_result.is_ok()
+            && let Err(e) = task_result
+        {
             warn!("Pipeline processing task error: {}", e);
         }
     }
 
     match writer_result {
-        Ok((items_written, files_created, total_bytes, total_duration)) => {
-            let stats = DownloadStats {
-                total_bytes,
-                total_items: items_written,
-                total_duration_secs: total_duration,
-                files_created: files_created + 1,
+        Ok(stats) => {
+            let download_stats = DownloadStats {
+                total_bytes: stats.bytes_written,
+                total_items: stats.items_written,
+                total_duration_secs: stats.duration_secs,
+                files_created: stats.files_created,
             };
 
             if let Some((kind, msg)) = stream_error {
@@ -251,18 +257,18 @@ pub(super) async fn handle_writer_result<E: Display>(
 
             let _ = event_tx
                 .send(SegmentEvent::DownloadCompleted {
-                    total_bytes: stats.total_bytes,
-                    total_duration_secs: stats.total_duration_secs,
-                    total_segments: stats.files_created,
+                    total_bytes: download_stats.total_bytes,
+                    total_duration_secs: download_stats.total_duration_secs,
+                    total_segments: download_stats.files_created,
                 })
                 .await;
 
             info!(
                 "{} download completed for {}: {} items, {} files",
-                protocol, streamer_id, items_written, stats.files_created
+                protocol, streamer_id, stats.items_written, download_stats.files_created
             );
 
-            Ok(stats)
+            Ok(download_stats)
         }
         Err(e) => {
             if let Some((kind, msg)) = stream_error {

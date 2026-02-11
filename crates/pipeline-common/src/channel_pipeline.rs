@@ -84,9 +84,7 @@ where
                         Ok(item) => {
                             let mut output_fn = |processed_item: T| {
                                 if tx.blocking_send(Ok(processed_item)).is_err() {
-                                    return Err(PipelineError::Processing(
-                                        "Downstream channel closed".to_string(),
-                                    ));
+                                    return Err(PipelineError::ChannelClosed("downstream"));
                                 }
                                 Ok(())
                             };
@@ -94,8 +92,8 @@ where
                             if let Err(e) = processor.process(&context, item, &mut output_fn) {
                                 error!(processor = processor_name, error = ?e, "Processor failed");
                                 let _ = tx.blocking_send(Err(e));
-                                return Err(PipelineError::Processing(
-                                    "Processor failed".to_string(),
+                                return Err(PipelineError::Strategy(
+                                    format!("{} failed", processor_name).into(),
                                 ));
                             }
                         }
@@ -111,9 +109,7 @@ where
                 // Finalize processor
                 let mut output_fn = |processed_item: T| {
                     if tx.blocking_send(Ok(processed_item)).is_err() {
-                        return Err(PipelineError::Processing(
-                            "Downstream channel closed during finish".to_string(),
-                        ));
+                        return Err(PipelineError::ChannelClosed("downstream during finish"));
                     }
                     Ok(())
                 };
@@ -121,8 +117,8 @@ where
                 if let Err(e) = processor.finish(&context, &mut output_fn) {
                     error!(processor = processor_name, error = ?e, "Processor finish failed");
                     let _ = tx.blocking_send(Err(e));
-                    return Err(PipelineError::Processing(
-                        "Processor finish failed".to_string(),
+                    return Err(PipelineError::Strategy(
+                        format!("{} finish failed", processor_name).into(),
                     ));
                 }
 
@@ -289,7 +285,10 @@ mod tests {
             _input: String,
             _output: &mut dyn FnMut(String) -> Result<(), PipelineError>,
         ) -> Result<(), PipelineError> {
-            Err(PipelineError::Processing("Intentional failure".to_string()))
+            Err(PipelineError::Strategy(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Intentional failure",
+            ))))
         }
 
         fn finish(
@@ -318,7 +317,7 @@ mod tests {
         let result = pipeline_task.await.unwrap();
         assert!(result.is_err());
         match result {
-            Err(PipelineError::Processing(msg)) => assert_eq!(msg, "Intentional failure"),
+            Err(PipelineError::Strategy(e)) => assert_eq!(e.to_string(), "Intentional failure"),
             _ => panic!("Expected Processing error, got {:?}", result),
         }
     }

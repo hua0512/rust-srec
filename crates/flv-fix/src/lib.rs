@@ -15,7 +15,6 @@
 //!
 //! ## Component Overview
 //!
-//! - `adapter`: Adapters for integrating with the generic pipeline infrastructure
 //! - `analyzer`: Tools for analyzing FLV stream structure and content
 //! - `constants`: String constants to avoid repeated allocations
 //! - `operators`: Modular pipeline operators for stream transformations
@@ -24,7 +23,6 @@
 //! - `utils`: Helper functions and utilities
 //! - `writer`: Asynchronous FLV writing functionality
 
-mod adapter;
 pub mod amf;
 mod analyzer;
 mod constants;
@@ -39,7 +37,6 @@ mod writer_task;
 #[cfg(test)]
 pub mod test_utils;
 
-pub use adapter::flv_error_to_pipeline_error;
 pub use analyzer::{AnalyzerError, FlvAnalyzer};
 pub use constants::*;
 pub use operators::*;
@@ -48,4 +45,4 @@ pub use script_modifier::*;
 pub use utils::*;
 
 pub use crate::writer::FlvWriter;
-pub use crate::writer_task::{FlvFormatStrategy, FlvStrategyError};
+pub use crate::writer_task::{FlvFormatStrategy, FlvStrategyError, FlvWriterConfig};

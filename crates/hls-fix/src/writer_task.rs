@@ -1,18 +1,16 @@
 use std::{
-    collections::HashMap,
     fs::OpenOptions,
     io::{BufWriter, Write},
     path::PathBuf,
 };
 
 use hls::{HlsData, M4sData};
-use pipeline_common::WriterError;
 use pipeline_common::{
-    FormatStrategy, PostWriteAction, ProgressConfig, ProtocolWriter, WriterConfig, WriterProgress,
-    WriterState, WriterTask, expand_filename_template,
+    FormatStrategy, PipelineError, PostWriteAction, ProgressConfig, ProtocolWriter, WriterConfig,
+    WriterError, WriterProgress, WriterState, WriterStats, WriterTask, expand_filename_template,
 };
 
-use tracing::{Span, debug, info, trace};
+use tracing::{Span, debug, info};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::analyzer::HlsAnalyzer;
@@ -30,8 +28,6 @@ pub enum HlsStrategyError {
     Io(#[from] std::io::Error),
     #[error("Analyzer error: {0}")]
     Analyzer(String),
-    #[error("Pipeline error: {0}")]
-    Pipeline(#[from] pipeline_common::PipelineError),
 }
 
 impl HlsFormatStrategy {
@@ -216,15 +212,28 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
     }
 }
 
+/// Typed configuration for HLS writer.
+pub struct HlsWriterConfig {
+    pub output_dir: PathBuf,
+    pub base_name: String,
+    pub extension: String,
+    pub max_file_size: Option<u64>,
+}
+
 pub struct HlsWriter {
     writer_task: WriterTask<HlsData, HlsFormatStrategy>,
 }
 
 impl HlsWriter {
+    pub fn new(config: HlsWriterConfig) -> Self {
+        let writer_config =
+            WriterConfig::new(config.output_dir, config.base_name, config.extension);
+        let strategy = HlsFormatStrategy::new(config.max_file_size);
+        let writer_task = WriterTask::new(writer_config, strategy);
+        Self { writer_task }
+    }
+
     /// Set a callback to be invoked when a new segment starts recording.
-    ///
-    /// The callback receives the file path and sequence number (0-based).
-    /// This is useful for emitting `SegmentEvent::SegmentStarted` notifications.
     pub fn set_on_segment_start_callback<F>(&mut self, callback: F)
     where
         F: Fn(&std::path::Path, u32) + Send + Sync + 'static,
@@ -233,9 +242,6 @@ impl HlsWriter {
     }
 
     /// Set a callback to be invoked when a segment is completed.
-    ///
-    /// The callback receives the file path, sequence number (0-based), duration in seconds, and size in bytes.
-    /// This callback provides the segment's media duration for tracking purposes.
     pub fn set_on_segment_complete_callback<F>(&mut self, callback: F)
     where
         F: Fn(&std::path::Path, u32, f64, u64) + Send + Sync + 'static,
@@ -244,9 +250,6 @@ impl HlsWriter {
     }
 
     /// Set a progress callback with default intervals (1MB bytes, 1000ms time).
-    ///
-    /// The callback receives a `WriterProgress` struct containing metrics about
-    /// bytes written, items processed, media duration, and performance.
     pub fn set_progress_callback<F>(&mut self, callback: F)
     where
         F: Fn(WriterProgress) + Send + Sync + 'static,
@@ -255,9 +258,6 @@ impl HlsWriter {
     }
 
     /// Set a progress callback with custom intervals.
-    ///
-    /// The callback receives a `WriterProgress` struct containing metrics about
-    /// bytes written, items processed, media duration, and performance.
     pub fn set_progress_callback_with_config<F>(&mut self, callback: F, config: ProgressConfig)
     where
         F: Fn(WriterProgress) + Send + Sync + 'static,
@@ -274,27 +274,6 @@ impl HlsWriter {
 
 impl ProtocolWriter for HlsWriter {
     type Item = HlsData;
-    type Stats = (usize, u32, u64, f64);
-    type Error = WriterError<HlsStrategyError>;
-
-    fn new(
-        output_dir: PathBuf,
-        base_name: String,
-        extension: String,
-        extras: Option<HashMap<String, String>>,
-    ) -> Self {
-        let writer_config = WriterConfig::new(output_dir, base_name, extension);
-
-        // Extract max_file_size from extras if provided
-        let max_file_size = extras
-            .as_ref()
-            .and_then(|e| e.get("max_file_size"))
-            .and_then(|s| s.parse::<u64>().ok());
-
-        let strategy = HlsFormatStrategy::new(max_file_size);
-        let writer_task = WriterTask::new(writer_config, strategy);
-        Self { writer_task }
-    }
 
     fn get_state(&self) -> &WriterState {
         self.writer_task.get_state()
@@ -302,46 +281,16 @@ impl ProtocolWriter for HlsWriter {
 
     fn run(
         &mut self,
-        mut receiver: tokio::sync::mpsc::Receiver<Result<HlsData, pipeline_common::PipelineError>>,
-    ) -> Result<(usize, u32, u64, f64), WriterError<HlsStrategyError>> {
+        input: tokio::sync::mpsc::Receiver<Result<HlsData, PipelineError>>,
+    ) -> Result<WriterStats, WriterError> {
         let mut saw_payload = false;
-        while let Some(result) = receiver.blocking_recv() {
-            match result {
-                Ok(hls_data) => {
-                    if !saw_payload && matches!(hls_data, HlsData::EndMarker) {
-                        // Avoid creating an empty file if the stream begins with a boundary marker.
-                        continue;
-                    }
-                    saw_payload |= !matches!(hls_data, HlsData::EndMarker);
-                    trace!("Received HLS data: {:?}", hls_data.segment_type());
-                    self.writer_task.process_item(hls_data)?;
-                }
-                Err(e) => {
-                    tracing::error!("Error in received HLS data: {}", e);
-                    if let Err(close_err) = self.writer_task.close() {
-                        tracing::error!(
-                            "Failed to close writer task after input error: {}",
-                            close_err
-                        );
-                    }
-                    return Err(WriterError::InputError(e.to_string()));
-                }
+        self.writer_task.run_from_channel(input, |item, _state| {
+            if !saw_payload && matches!(item, HlsData::EndMarker) {
+                return false;
             }
-        }
-        self.writer_task.close()?;
-
-        let final_state = self.get_state();
-        let total_tags_written = final_state.items_written_total;
-        let files_created = final_state.file_sequence_number;
-        let total_bytes_written = final_state.bytes_written_total;
-        let total_duration_secs = final_state.media_duration_secs_total;
-
-        Ok((
-            total_tags_written,
-            files_created,
-            total_bytes_written,
-            total_duration_secs,
-        ))
+            saw_payload |= !matches!(item, HlsData::EndMarker);
+            true
+        })
     }
 }
 
@@ -356,15 +305,12 @@ mod tests {
     fn rotates_on_max_file_size_between_items() {
         let tempdir = tempfile::tempdir().expect("create temp dir");
 
-        let mut extras = HashMap::new();
-        extras.insert("max_file_size".to_string(), "15".to_string());
-
-        let mut writer = HlsWriter::new(
-            tempdir.path().to_path_buf(),
-            "test-%i".to_string(),
-            "ts".to_string(),
-            Some(extras),
-        );
+        let mut writer = HlsWriter::new(HlsWriterConfig {
+            output_dir: tempdir.path().to_path_buf(),
+            base_name: "test-%i".to_string(),
+            extension: "ts".to_string(),
+            max_file_size: Some(15),
+        });
 
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<HlsData, PipelineError>>(16);
 
@@ -385,14 +331,12 @@ mod tests {
         tx.blocking_send(seg(&[2u8; 10])).unwrap();
         drop(tx);
 
-        let result = handle
+        let stats = handle
             .join()
             .expect("writer thread join")
             .expect("writer ok");
-        let (_items_written, files_created, _total_bytes, _total_duration) = result;
 
-        // One rotation means file sequence number increments once.
-        assert_eq!(files_created, 1);
+        assert_eq!(stats.files_created, 2);
 
         let file_count = std::fs::read_dir(tempdir.path())
             .expect("read_dir")
@@ -406,12 +350,12 @@ mod tests {
     fn ignores_leading_end_markers() {
         let tempdir = tempfile::tempdir().expect("create temp dir");
 
-        let mut writer = HlsWriter::new(
-            tempdir.path().to_path_buf(),
-            "test-%i".to_string(),
-            "ts".to_string(),
-            None,
-        );
+        let mut writer = HlsWriter::new(HlsWriterConfig {
+            output_dir: tempdir.path().to_path_buf(),
+            base_name: "test-%i".to_string(),
+            extension: "ts".to_string(),
+            max_file_size: None,
+        });
 
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<HlsData, PipelineError>>(16);
 
@@ -421,14 +365,13 @@ mod tests {
         tx.blocking_send(Ok(HlsData::EndMarker)).unwrap();
         drop(tx);
 
-        let result = handle
+        let stats = handle
             .join()
             .expect("writer thread join")
             .expect("writer ok");
-        let (_items_written, files_created, total_bytes, total_duration) = result;
-        assert_eq!(files_created, 0);
-        assert_eq!(total_bytes, 0);
-        assert_eq!(total_duration, 0.0);
+        assert_eq!(stats.files_created, 0);
+        assert_eq!(stats.bytes_written, 0);
+        assert_eq!(stats.duration_secs, 0.0);
 
         let file_count = std::fs::read_dir(tempdir.path())
             .expect("read_dir")

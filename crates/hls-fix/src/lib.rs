@@ -19,4 +19,4 @@ pub mod pipeline;
 mod writer_task;
 
 pub use pipeline::{HlsPipeline, HlsPipelineConfig};
-pub use writer_task::HlsWriter;
+pub use writer_task::{HlsWriter, HlsWriterConfig};

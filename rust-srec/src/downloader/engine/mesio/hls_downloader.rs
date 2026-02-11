@@ -6,11 +6,10 @@
 
 use futures::StreamExt;
 use hls::HlsData;
-use hls_fix::{HlsPipeline, HlsWriter};
+use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
 use mesio::{DownloadStream, MesioDownloaderFactory, ProtocolType};
 use parking_lot::RwLock;
 use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -183,20 +182,6 @@ impl HlsDownloader {
         }
     }
 
-    /// Build HLS writer extras from config.
-    fn build_hls_extras(config: &DownloadConfig) -> Option<HashMap<String, String>> {
-        if config.max_segment_size_bytes > 0 {
-            let mut map = HashMap::new();
-            map.insert(
-                "max_file_size".to_string(),
-                config.max_segment_size_bytes.to_string(),
-            );
-            Some(map)
-        } else {
-            None
-        }
-    }
-
     /// Download HLS stream with pipeline processing enabled.
     ///
     /// Routes the stream through HlsPipeline for defragmentation, segment splitting,
@@ -223,7 +208,7 @@ impl HlsDownloader {
         let hls_pipeline_config = config.build_hls_pipeline_config();
 
         // Create StreamerContext with cancellation token
-        let context = StreamerContext::with_name(&streamer_id, token.clone());
+        let context = Arc::new(StreamerContext::with_name(&streamer_id, token.clone()));
 
         // Create HlsPipeline using PipelineProvider::with_config
         let pipeline_provider =
@@ -240,12 +225,18 @@ impl HlsDownloader {
         } = pipeline.spawn();
 
         // Create HlsWriter with callbacks
-        let output_dir = config.output_dir.clone();
-        let base_name = config.filename_template.clone();
-        let ext = extension.to_string();
-        let extras = Self::build_hls_extras(&config);
+        let max_file_size = if config.max_segment_size_bytes > 0 {
+            Some(config.max_segment_size_bytes)
+        } else {
+            None
+        };
 
-        let mut writer = HlsWriter::new(output_dir, base_name, ext, extras);
+        let mut writer = HlsWriter::new(HlsWriterConfig {
+            output_dir: config.output_dir.clone(),
+            base_name: config.filename_template.clone(),
+            extension: extension.to_string(),
+            max_file_size,
+        });
 
         helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 
@@ -319,12 +310,18 @@ impl HlsDownloader {
             tokio::sync::mpsc::channel::<std::result::Result<HlsData, PipelineError>>(channel_size);
 
         // Create HlsWriter with callbacks
-        let output_dir = config.output_dir.clone();
-        let base_name = config.filename_template.clone();
-        let ext = extension.to_string();
-        let extras = Self::build_hls_extras(&config);
+        let max_file_size = if config.max_segment_size_bytes > 0 {
+            Some(config.max_segment_size_bytes)
+        } else {
+            None
+        };
 
-        let mut writer = HlsWriter::new(output_dir, base_name, ext, extras);
+        let mut writer = HlsWriter::new(HlsWriterConfig {
+            output_dir: config.output_dir.clone(),
+            base_name: config.filename_template.clone(),
+            extension: extension.to_string(),
+            max_file_size,
+        });
 
         helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 

@@ -5,13 +5,12 @@
 //! It supports both pipeline-processed and raw download modes.
 
 use flv::data::FlvData;
-use flv_fix::{FlvPipeline, FlvPipelineConfig, FlvWriter};
+use flv_fix::{FlvPipeline, FlvPipelineConfig, FlvWriter, FlvWriterConfig};
 use mesio::flv::FlvProtocolConfig;
 use mesio::flv::error::FlvDownloadError;
 use mesio::{DownloadStream, MesioDownloaderFactory, ProtocolType};
 use parking_lot::RwLock;
 use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -164,7 +163,7 @@ impl FlvDownloader {
         };
 
         // Create StreamerContext with streamer name and cancellation token
-        let context = StreamerContext::with_name(&streamer_id, token.clone());
+        let context = Arc::new(StreamerContext::with_name(&streamer_id, token.clone()));
 
         // Create FlvPipeline using PipelineProvider::with_config
         let pipeline_provider =
@@ -184,14 +183,11 @@ impl FlvDownloader {
         let output_dir = config.output_dir.clone();
         let base_name = config.filename_template.clone();
 
-        // Build extras for enable_low_latency
-        let extras = {
-            let mut map = HashMap::new();
-            map.insert("enable_low_latency".to_string(), "true".to_string());
-            Some(map)
-        };
-
-        let mut writer = FlvWriter::new(output_dir, base_name, "flv".to_string(), extras);
+        let mut writer = FlvWriter::new(FlvWriterConfig {
+            output_dir,
+            base_name,
+            enable_low_latency: true,
+        });
 
         helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 
@@ -258,14 +254,11 @@ impl FlvDownloader {
         let output_dir = config.output_dir.clone();
         let base_name = config.filename_template.clone();
 
-        // Build extras for enable_low_latency
-        let extras = {
-            let mut map = HashMap::new();
-            map.insert("enable_low_latency".to_string(), "true".to_string());
-            Some(map)
-        };
-
-        let mut writer = FlvWriter::new(output_dir, base_name, "flv".to_string(), extras);
+        let mut writer = FlvWriter::new(FlvWriterConfig {
+            output_dir,
+            base_name,
+            enable_low_latency: true,
+        });
 
         helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 
