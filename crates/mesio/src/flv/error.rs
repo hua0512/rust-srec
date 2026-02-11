@@ -21,8 +21,8 @@ impl From<FlvDownloadError> for DownloadError {
     fn from(err: FlvDownloadError) -> Self {
         match err {
             FlvDownloadError::Download(e) => e,
-            FlvDownloadError::Decoder(e) => DownloadError::FlvError(e.to_string()),
-            FlvDownloadError::AllSourcesFailed(msg) => DownloadError::NoSource(msg),
+            FlvDownloadError::Decoder(e) => DownloadError::FlvDecode { source: e },
+            FlvDownloadError::AllSourcesFailed(msg) => DownloadError::source_exhausted(msg),
         }
     }
 }

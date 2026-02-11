@@ -112,10 +112,12 @@ impl SegmentTransformer for SegmentProcessor {
         } else if let Some(key_info) = &job.media_segment.key {
             // Key exists but method is not AES128
             if key_info.method != m3u8_rs::KeyMethod::None {
-                return Err(HlsDownloaderError::DecryptionError(format!(
-                    "Segment processing encountered unsupported encryption method: {:?}",
-                    key_info.method
-                )));
+                return Err(HlsDownloaderError::Decryption {
+                    reason: format!(
+                        "Segment processing encountered unsupported encryption method: {:?}",
+                        key_info.method
+                    ),
+                });
             }
             // KeyMethod::None - no decryption needed, use zero-copy if enabled
             if zero_copy_enabled {
@@ -142,7 +144,9 @@ impl SegmentTransformer for SegmentProcessor {
             None
         } else {
             Some(url::Url::parse(&job.media_segment.uri).map_err(|e| {
-                HlsDownloaderError::SegmentProcessError(format!("Invalid URL: {e}"))
+                HlsDownloaderError::SegmentProcess {
+                    reason: format!("Invalid URL: {e}"),
+                }
             })?)
         };
         let segment_url: &url::Url = job.parsed_url.as_deref().unwrap_or_else(|| {

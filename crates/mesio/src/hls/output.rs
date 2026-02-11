@@ -558,9 +558,9 @@ impl OutputManager {
                                     "Live stream stalled for more than configured max duration ({:?}). No new segments or events received.",
                                     max_stall_duration
                                 );
-                                let _ = self.event_tx.send(Err(HlsDownloaderError::TimeoutError(
-                                    "Stalled: No input received for max duration.".to_string()
-                                ))).await;
+                                let _ = self.event_tx.send(Err(HlsDownloaderError::Timeout {
+                                    reason: "Stalled: No input received for max duration.".to_string()
+                                })).await;
                                 break; // Exit loop for live stream stall
                     }
 

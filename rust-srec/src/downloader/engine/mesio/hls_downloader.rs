@@ -671,9 +671,9 @@ mod tests {
                 },
                 Bytes::from_static(&[1_u8; 188]),
             )),
-            Err(mesio::hls::HlsDownloaderError::PlaylistError(
-                "simulated stream error".to_string(),
-            )),
+            Err(mesio::hls::HlsDownloaderError::Playlist {
+                reason: "simulated stream error".to_string(),
+            }),
         ]);
 
         let events_task = tokio::spawn(async move {

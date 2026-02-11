@@ -97,8 +97,7 @@ impl HlsDownloader {
             token,
             parent_span,
         )
-        .await
-        .map_err(DownloadError::HlsError)?;
+        .await?;
 
         let stream = ReceiverStream::new(client_event_rx);
 
@@ -195,8 +194,7 @@ impl MultiSource for HlsDownloader {
                 }
             }
         }
-        Err(last_error
-            .unwrap_or_else(|| DownloadError::NoSource("No source available".to_string())))
+        Err(last_error.unwrap_or_else(|| DownloadError::source_exhausted("No source available")))
     }
 }
 

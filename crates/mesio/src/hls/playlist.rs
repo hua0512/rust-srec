@@ -153,8 +153,8 @@ impl PlaylistProvider for PlaylistEngine {
         &self,
         url_str: &str,
     ) -> Result<InitialPlaylist, HlsDownloaderError> {
-        let playlist_url = Url::parse(url_str).map_err(|e| {
-            HlsDownloaderError::PlaylistError(format!("Invalid playlist URL {url_str}: {e}"))
+        let playlist_url = Url::parse(url_str).map_err(|e| HlsDownloaderError::Playlist {
+            reason: format!("Invalid playlist URL {url_str}: {e}"),
         })?;
         let cache_key = CacheKey::new(CacheResourceType::Playlist, playlist_url.as_str(), None);
 
@@ -162,9 +162,9 @@ impl PlaylistProvider for PlaylistEngine {
             && let Ok(Some((cached_data, _, _))) = cache_service.get(&cache_key).await
         {
             let playlist_content = std::str::from_utf8(cached_data.as_ref()).map_err(|e| {
-                HlsDownloaderError::PlaylistError(format!(
-                    "Failed to parse cached playlist from UTF-8: {e}"
-                ))
+                HlsDownloaderError::Playlist {
+                    reason: format!("Failed to parse cached playlist from UTF-8: {e}"),
+                }
             })?;
             let playlist_bytes_to_parse: Cow<[u8]> =
                 if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
@@ -173,9 +173,12 @@ impl PlaylistProvider for PlaylistEngine {
                 } else {
                     Cow::Borrowed(cached_data.as_ref())
                 };
-            let base_url_obj = playlist_url.join(".").map_err(|e| {
-                HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
-            })?;
+            let base_url_obj =
+                playlist_url
+                    .join(".")
+                    .map_err(|e| HlsDownloaderError::Playlist {
+                        reason: format!("Failed to determine base URL: {e}"),
+                    })?;
             let base_url = base_url_obj.to_string();
             debug!(
                 "Derived base URL from playlist: {} -> {}",
@@ -188,9 +191,9 @@ impl PlaylistProvider for PlaylistEngine {
                 Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => {
                     Ok(InitialPlaylist::Media(pl, base_url))
                 }
-                Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
-                    "Failed to parse cached playlist: {e}"
-                ))),
+                Err(e) => Err(HlsDownloaderError::Playlist {
+                    reason: format!("Failed to parse cached playlist: {e}"),
+                }),
             };
         }
 
@@ -201,22 +204,19 @@ impl PlaylistProvider for PlaylistEngine {
             .query(&self.config.base.params)
             .send()
             .await
-            .map_err(|e| HlsDownloaderError::NetworkError {
-                source: Arc::new(e),
-            })?;
+            .map_err(|e| HlsDownloaderError::Network { source: e })?;
         if !response.status().is_success() {
-            return Err(HlsDownloaderError::PlaylistError(format!(
-                "Failed to fetch playlist {playlist_url}: HTTP {}",
-                response.status()
-            )));
+            return Err(HlsDownloaderError::Playlist {
+                reason: format!(
+                    "Failed to fetch playlist {playlist_url}: HTTP {}",
+                    response.status()
+                ),
+            });
         }
-        let playlist_bytes =
-            response
-                .bytes()
-                .await
-                .map_err(|e| HlsDownloaderError::NetworkError {
-                    source: Arc::new(e),
-                })?;
+        let playlist_bytes = response
+            .bytes()
+            .await
+            .map_err(|e| HlsDownloaderError::Network { source: e })?;
 
         if let Some(cache_service) = &self.cache_service {
             let metadata = CacheMetadata::new(playlist_bytes.len() as u64)
@@ -227,7 +227,9 @@ impl PlaylistProvider for PlaylistEngine {
                 .await?;
         }
         let playlist_content = std::str::from_utf8(playlist_bytes.as_ref()).map_err(|e| {
-            HlsDownloaderError::PlaylistError(format!("Playlist content is not valid UTF-8: {e}"))
+            HlsDownloaderError::Playlist {
+                reason: format!("Playlist content is not valid UTF-8: {e}"),
+            }
         })?;
         let playlist_bytes_to_parse: Cow<[u8]> =
             if TwitchPlaylistProcessor::is_twitch_playlist(playlist_url.as_str()) {
@@ -236,9 +238,11 @@ impl PlaylistProvider for PlaylistEngine {
             } else {
                 Cow::Borrowed(playlist_bytes.as_ref())
             };
-        let base_url_obj = playlist_url.join(".").map_err(|e| {
-            HlsDownloaderError::PlaylistError(format!("Failed to determine base URL: {e}"))
-        })?;
+        let base_url_obj = playlist_url
+            .join(".")
+            .map_err(|e| HlsDownloaderError::Playlist {
+                reason: format!("Failed to determine base URL: {e}"),
+            })?;
         let base_url = base_url_obj.to_string();
         debug!(
             "Derived base URL from playlist: {} -> {}",
@@ -247,9 +251,9 @@ impl PlaylistProvider for PlaylistEngine {
         match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MasterPlaylist(pl)) => Ok(InitialPlaylist::Master(pl, base_url)),
             Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => Ok(InitialPlaylist::Media(pl, base_url)),
-            Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
-                "Failed to parse fetched playlist: {e}"
-            ))),
+            Err(e) => Err(HlsDownloaderError::Playlist {
+                reason: format!("Failed to parse fetched playlist: {e}"),
+            }),
         }
     }
 
@@ -258,42 +262,42 @@ impl PlaylistProvider for PlaylistEngine {
         initial_playlist_with_base_url: &InitialPlaylist,
         policy: &HlsVariantSelectionPolicy,
     ) -> Result<MediaPlaylistDetails, HlsDownloaderError> {
-        let (master_playlist_ref, master_base_url_str) =
-            match initial_playlist_with_base_url {
-                InitialPlaylist::Master(pl, base) => (pl, base),
-                InitialPlaylist::Media(_, _) => return Err(HlsDownloaderError::PlaylistError(
-                    "select_media_playlist called with a MediaPlaylist, expected MasterPlaylist"
-                        .to_string(),
-                )),
-            };
+        let (master_playlist_ref, master_base_url_str) = match initial_playlist_with_base_url {
+            InitialPlaylist::Master(pl, base) => (pl, base),
+            InitialPlaylist::Media(_, _) => {
+                return Err(HlsDownloaderError::Playlist {
+                    reason:
+                        "select_media_playlist called with a MediaPlaylist, expected MasterPlaylist"
+                            .to_string(),
+                });
+            }
+        };
         if master_playlist_ref.variants.is_empty() {
-            return Err(HlsDownloaderError::PlaylistError(
-                "Master playlist has no variants".to_string(),
-            ));
+            return Err(HlsDownloaderError::Playlist {
+                reason: "Master playlist has no variants".to_string(),
+            });
         }
         let selected_variant = match policy {
             HlsVariantSelectionPolicy::HighestBitrate => master_playlist_ref
                 .variants
                 .iter()
                 .max_by_key(|v| v.bandwidth)
-                .ok_or_else(|| {
-                    HlsDownloaderError::PlaylistError("No variants for HighestBitrate".to_string())
+                .ok_or_else(|| HlsDownloaderError::Playlist {
+                    reason: "No variants for HighestBitrate".to_string(),
                 })?,
             HlsVariantSelectionPolicy::LowestBitrate => master_playlist_ref
                 .variants
                 .iter()
                 .min_by_key(|v| v.bandwidth)
-                .ok_or_else(|| {
-                    HlsDownloaderError::PlaylistError("No variants for LowestBitrate".to_string())
+                .ok_or_else(|| HlsDownloaderError::Playlist {
+                    reason: "No variants for LowestBitrate".to_string(),
                 })?,
             HlsVariantSelectionPolicy::ClosestToBitrate(target_bw) => master_playlist_ref
                 .variants
                 .iter()
                 .min_by_key(|v| (*target_bw as i64 - v.bandwidth as i64).abs())
-                .ok_or_else(|| {
-                    HlsDownloaderError::PlaylistError(format!(
-                        "No variants for ClosestToBitrate: {target_bw}"
-                    ))
+                .ok_or_else(|| HlsDownloaderError::Playlist {
+                    reason: format!("No variants for ClosestToBitrate: {target_bw}"),
                 })?,
             HlsVariantSelectionPolicy::AudioOnly => master_playlist_ref
                 .variants
@@ -303,15 +307,15 @@ impl PlaylistProvider for PlaylistEngine {
                         && v.video.is_none()
                         && v.codecs.as_ref().is_some_and(|c| c.contains("mp4a"))
                 })
-                .ok_or_else(|| {
-                    HlsDownloaderError::PlaylistError("No AudioOnly variant".to_string())
+                .ok_or_else(|| HlsDownloaderError::Playlist {
+                    reason: "No AudioOnly variant".to_string(),
                 })?,
             HlsVariantSelectionPolicy::VideoOnly => master_playlist_ref
                 .variants
                 .iter()
                 .find(|v| v.video.is_some() && v.audio.is_none())
-                .ok_or_else(|| {
-                    HlsDownloaderError::PlaylistError("No VideoOnly variant".to_string())
+                .ok_or_else(|| HlsDownloaderError::Playlist {
+                    reason: "No VideoOnly variant".to_string(),
                 })?,
             HlsVariantSelectionPolicy::MatchingResolution { width, height } => master_playlist_ref
                 .variants
@@ -320,30 +324,29 @@ impl PlaylistProvider for PlaylistEngine {
                     v.resolution
                         .is_some_and(|r| r.width == (*width as u64) && r.height == (*height as u64))
                 })
-                .ok_or_else(|| {
-                    HlsDownloaderError::PlaylistError(format!(
-                        "No variant for resolution {width}x{height}"
-                    ))
+                .ok_or_else(|| HlsDownloaderError::Playlist {
+                    reason: format!("No variant for resolution {width}x{height}"),
                 })?,
             HlsVariantSelectionPolicy::Custom(name) => {
                 warn!("Custom policy '{name}' selected; falling back to first variant.");
                 master_playlist_ref.variants.first().ok_or_else(|| {
-                    HlsDownloaderError::PlaylistError("No variants for Custom policy".to_string())
+                    HlsDownloaderError::Playlist {
+                        reason: "No variants for Custom policy".to_string(),
+                    }
                 })?
             }
         };
-        let master_playlist_url = Url::parse(master_base_url_str).map_err(|e| {
-            HlsDownloaderError::PlaylistError(format!(
-                "Invalid master base URL {master_base_url_str}: {e}"
-            ))
-        })?;
+        let master_playlist_url =
+            Url::parse(master_base_url_str).map_err(|e| HlsDownloaderError::Playlist {
+                reason: format!("Invalid master base URL {master_base_url_str}: {e}"),
+            })?;
         let media_playlist_url = master_playlist_url
             .join(&selected_variant.uri)
-            .map_err(|e| {
-                HlsDownloaderError::PlaylistError(format!(
+            .map_err(|e| HlsDownloaderError::Playlist {
+                reason: format!(
                     "Could not join master URL with variant URI {}: {e}",
                     selected_variant.uri
-                ))
+                ),
             })?;
 
         debug!("Selected media playlist URL: {media_playlist_url}");
@@ -354,24 +357,23 @@ impl PlaylistProvider for PlaylistEngine {
             .query(&self.config.base.params)
             .send()
             .await
-            .map_err(|e| HlsDownloaderError::NetworkError {
-                source: Arc::new(e),
-            })?;
+            .map_err(|e| HlsDownloaderError::Network { source: e })?;
         if !response.status().is_success() {
-            return Err(HlsDownloaderError::PlaylistError(format!(
-                "Failed to fetch media playlist {media_playlist_url}: HTTP {}",
-                response.status()
-            )));
+            return Err(HlsDownloaderError::Playlist {
+                reason: format!(
+                    "Failed to fetch media playlist {media_playlist_url}: HTTP {}",
+                    response.status()
+                ),
+            });
         }
-        let playlist_bytes =
-            response
-                .bytes()
-                .await
-                .map_err(|e| HlsDownloaderError::NetworkError {
-                    source: Arc::new(e),
-                })?;
+        let playlist_bytes = response
+            .bytes()
+            .await
+            .map_err(|e| HlsDownloaderError::Network { source: e })?;
         let playlist_content = std::str::from_utf8(playlist_bytes.as_ref()).map_err(|e| {
-            HlsDownloaderError::PlaylistError(format!("Media playlist not UTF-8: {e}"))
+            HlsDownloaderError::Playlist {
+                reason: format!("Media playlist not UTF-8: {e}"),
+            }
         })?;
         let playlist_bytes_to_parse: Cow<[u8]> =
             if TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str()) {
@@ -380,9 +382,12 @@ impl PlaylistProvider for PlaylistEngine {
             } else {
                 Cow::Borrowed(playlist_bytes.as_ref())
             };
-        let base_url_obj = media_playlist_url.join(".").map_err(|e| {
-            HlsDownloaderError::PlaylistError(format!("Bad base URL for media playlist: {e}"))
-        })?;
+        let base_url_obj =
+            media_playlist_url
+                .join(".")
+                .map_err(|e| HlsDownloaderError::Playlist {
+                    reason: format!("Bad base URL for media playlist: {e}"),
+                })?;
         let media_base_url = base_url_obj.to_string();
         debug!(
             "Derived base URL from media playlist: {} -> {}",
@@ -394,12 +399,12 @@ impl PlaylistProvider for PlaylistEngine {
                 url: media_playlist_url.to_string(),
                 base_url: media_base_url,
             }),
-            Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => Err(HlsDownloaderError::PlaylistError(
-                "Expected Media Playlist, got Master".to_string(),
-            )),
-            Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
-                "Failed to parse media playlist: {e}",
-            ))),
+            Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => Err(HlsDownloaderError::Playlist {
+                reason: "Expected Media Playlist, got Master".to_string(),
+            }),
+            Err(e) => Err(HlsDownloaderError::Playlist {
+                reason: format!("Failed to parse media playlist: {e}"),
+            }),
         }
     }
 
@@ -411,11 +416,10 @@ impl PlaylistProvider for PlaylistEngine {
         segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
         token: CancellationToken,
     ) -> Result<(), HlsDownloaderError> {
-        let playlist_url = Url::parse(playlist_url_str).map_err(|e| {
-            HlsDownloaderError::PlaylistError(format!(
-                "Invalid playlist URL for monitoring {playlist_url_str}: {e}"
-            ))
-        })?;
+        let playlist_url =
+            Url::parse(playlist_url_str).map_err(|e| HlsDownloaderError::Playlist {
+                reason: format!("Invalid playlist URL for monitoring {playlist_url_str}: {e}"),
+            })?;
 
         let mut last_map_uri: Option<String> = None;
         let mut retries = 0;
@@ -637,15 +641,15 @@ impl PlaylistEngine {
             }
             response = response.send() => response,
         }
-        .map_err(|e| HlsDownloaderError::NetworkError {
-            source: Arc::new(e),
-        })?;
+        .map_err(|e| HlsDownloaderError::Network { source: e })?;
 
         if !response.status().is_success() {
-            return Err(HlsDownloaderError::PlaylistError(format!(
-                "Failed to fetch playlist {playlist_url}: HTTP {}",
-                response.status()
-            )));
+            return Err(HlsDownloaderError::Playlist {
+                reason: format!(
+                    "Failed to fetch playlist {playlist_url}: HTTP {}",
+                    response.status()
+                ),
+            });
         }
 
         let playlist_bytes = tokio::select! {
@@ -654,9 +658,7 @@ impl PlaylistEngine {
             }
             bytes = response.bytes() => bytes,
         }
-        .map_err(|e| HlsDownloaderError::NetworkError {
-            source: Arc::new(e),
-        })?;
+        .map_err(|e| HlsDownloaderError::Network { source: e })?;
 
         // Fast path: check if we have a previous playlist and if lengths differ
         if let Some(last_bytes) = last_playlist_bytes.as_ref()
@@ -683,12 +685,12 @@ impl PlaylistEngine {
 
         match parse_playlist_res(&playlist_bytes_to_parse) {
             Ok(m3u8_rs::Playlist::MediaPlaylist(new_mp)) => Ok(Some((new_mp, playlist_bytes))),
-            Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => Err(HlsDownloaderError::PlaylistError(
-                format!("Expected Media Playlist, got Master for {playlist_url}"),
-            )),
-            Err(e) => Err(HlsDownloaderError::PlaylistError(format!(
-                "Failed to parse refreshed playlist {playlist_url}: {e}"
-            ))),
+            Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => Err(HlsDownloaderError::Playlist {
+                reason: format!("Expected Media Playlist, got Master for {playlist_url}"),
+            }),
+            Err(e) => Err(HlsDownloaderError::Playlist {
+                reason: format!("Failed to parse refreshed playlist {playlist_url}: {e}"),
+            }),
         }
     }
 
@@ -958,9 +960,9 @@ impl PlaylistEngine {
                     "SegmentScheduler request channel closed for {}.",
                     playlist_url_str
                 );
-                return Err(HlsDownloaderError::InternalError(
-                    "SegmentScheduler request channel closed".to_string(),
-                ));
+                return Err(HlsDownloaderError::Internal {
+                    reason: "SegmentScheduler request channel closed".to_string(),
+                });
             }
         }
         Ok(())

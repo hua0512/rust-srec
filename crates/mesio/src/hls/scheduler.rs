@@ -643,7 +643,7 @@ impl SegmentScheduler {
                         Err(e) => {
                             // Check if the error is a SegmentFetchError (e.g. 404)
                             // We should not abort the stream for a single missing segment
-                            let should_ignore = matches!(e, HlsDownloaderError::SegmentFetchError(_));
+                            let should_ignore = matches!(e, HlsDownloaderError::SegmentFetch { .. });
 
                             warn!(
                                 error = %e,

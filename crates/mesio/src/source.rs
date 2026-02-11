@@ -7,7 +7,6 @@
 use crate::DownloadError;
 use rand::Rng;
 use std::collections::HashMap;
-use std::error::Error;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
@@ -334,33 +333,10 @@ impl SourceManager {
     /// Check if an error indicates a non-recoverable condition for a source
     fn is_non_recoverable_error(error: &DownloadError) -> bool {
         match error {
-            DownloadError::StatusCode(status) if status.is_client_error() => true,
-            DownloadError::HttpError(err) => {
-                let mut is_url_error = false;
-                let mut source = err.source();
-                while let Some(e) = source {
-                    if e.downcast_ref::<url::ParseError>().is_some() {
-                        is_url_error = true;
-                        break;
-                    }
-                    source = e.source();
-                }
-                is_url_error
+            DownloadError::Network { source } => {
+                source.status().is_some_and(|s| s.is_client_error())
             }
-            DownloadError::UrlError(_)
-            | DownloadError::UnsupportedProtocol(_)
-            | DownloadError::ProtocolDetectionFailed(_) => true,
-            DownloadError::HlsError(hls_err) => {
-                // Specific handling for HLS errors that might contain a client error
-                match hls_err {
-                    crate::hls::HlsDownloaderError::PlaylistError(msg) => msg.contains("HTTP 4"),
-                    crate::hls::HlsDownloaderError::NetworkError { source } => {
-                        source.status().is_some_and(|s| s.is_client_error())
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
+            _ => error.is_non_recoverable_source_error(),
         }
     }
 

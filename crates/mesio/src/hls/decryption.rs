@@ -49,10 +49,8 @@ impl DecryptionOffloader {
             let iv = *iv;
             tokio::task::spawn_blocking(move || Self::decrypt_sync(data, &key, &iv))
                 .await
-                .map_err(|e| {
-                    HlsDownloaderError::DecryptionError(format!(
-                        "Decryption offload task failed: {e}"
-                    ))
+                .map_err(|e| HlsDownloaderError::Decryption {
+                    reason: format!("Decryption offload task failed: {e}"),
                 })?
         } else {
             // Inline decryption (existing behavior)
@@ -67,13 +65,16 @@ impl DecryptionOffloader {
     ) -> Result<Bytes, HlsDownloaderError> {
         let mut buffer = data.to_vec();
 
-        let cipher = Aes128CbcDec::new_from_slices(key, iv).map_err(|e| {
-            HlsDownloaderError::DecryptionError(format!("Failed to initialize AES decryptor: {e}"))
-        })?;
+        let cipher =
+            Aes128CbcDec::new_from_slices(key, iv).map_err(|e| HlsDownloaderError::Decryption {
+                reason: format!("Failed to initialize AES decryptor: {e}"),
+            })?;
 
         let decrypted_len = cipher
             .decrypt_padded_mut::<Pkcs7>(&mut buffer)
-            .map_err(|e| HlsDownloaderError::DecryptionError(format!("Decryption failed: {e}")))?
+            .map_err(|e| HlsDownloaderError::Decryption {
+                reason: format!("Decryption failed: {e}"),
+            })?
             .len();
 
         // Truncate to actual decrypted length and convert to Bytes (zero-copy).
@@ -154,18 +155,22 @@ impl KeyFetcher {
                                 }
                             }
                         } else if response.status().is_client_error() {
-                            RetryAction::Fail(HlsDownloaderError::DecryptionError(format!(
-                                "Client error {} fetching key from {}",
-                                response.status(),
-                                key_uri
-                            )))
+                            RetryAction::Fail(HlsDownloaderError::Decryption {
+                                reason: format!(
+                                    "Client error {} fetching key from {}",
+                                    response.status(),
+                                    key_uri
+                                ),
+                            })
                         } else {
                             // Server errors (5xx) are retryable
-                            RetryAction::Retry(HlsDownloaderError::DecryptionError(format!(
-                                "Server error {} fetching key from {}",
-                                response.status(),
-                                key_uri
-                            )))
+                            RetryAction::Retry(HlsDownloaderError::Decryption {
+                                reason: format!(
+                                    "Server error {} fetching key from {}",
+                                    response.status(),
+                                    key_uri
+                                ),
+                            })
                         }
                     }
                     Err(e) => {
@@ -217,24 +222,23 @@ impl DecryptionService {
                 if uri.starts_with("http://") || uri.starts_with("https://") {
                     uri.clone()
                 } else {
-                    let base = url::Url::parse(base_url).map_err(|e| {
-                        HlsDownloaderError::PlaylistError(format!(
-                            "Invalid base URL {base_url}: {e}"
-                        ))
-                    })?;
+                    let base =
+                        url::Url::parse(base_url).map_err(|e| HlsDownloaderError::Playlist {
+                            reason: format!("Invalid base URL {base_url}: {e}"),
+                        })?;
                     base.join(uri)
-                        .map_err(|e| {
-                            HlsDownloaderError::PlaylistError(format!(
+                        .map_err(|e| HlsDownloaderError::Playlist {
+                            reason: format!(
                                 "Could not join base URL {base_url} with key URI {uri}: {e}"
-                            ))
+                            ),
                         })?
                         .to_string()
                 }
             }
             None => {
-                return Err(HlsDownloaderError::DecryptionError(
-                    "Key URI is missing".to_string(),
-                ));
+                return Err(HlsDownloaderError::Decryption {
+                    reason: "Key URI is missing".to_string(),
+                });
             }
         };
 
@@ -242,10 +246,13 @@ impl DecryptionService {
 
         let key = CacheKey::new(CacheResourceType::Key, key_uri_str, None);
         if let Some(cache_manager) = &self.cache_manager
-            && let Some(cached_key) = cache_manager
-                .get(&key)
-                .await
-                .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {e}")))?
+            && let Some(cached_key) =
+                cache_manager
+                    .get(&key)
+                    .await
+                    .map_err(|e| HlsDownloaderError::Cache {
+                        reason: format!("Cache error: {e}"),
+                    })?
         {
             return Ok(cached_key.0);
         }
@@ -253,11 +260,13 @@ impl DecryptionService {
         let fetched_key_bytes = self.key_fetcher.fetch_key(&key.url).await?;
         if fetched_key_bytes.len() != 16 {
             // AES-128 keys are 16 bytes
-            return Err(HlsDownloaderError::DecryptionError(format!(
-                "Fetched decryption key from {} has incorrect length: {} bytes (expected 16)",
-                key.url,
-                fetched_key_bytes.len()
-            )));
+            return Err(HlsDownloaderError::Decryption {
+                reason: format!(
+                    "Fetched decryption key from {} has incorrect length: {} bytes (expected 16)",
+                    key.url,
+                    fetched_key_bytes.len()
+                ),
+            });
         }
         let len = fetched_key_bytes.len();
 
@@ -269,7 +278,9 @@ impl DecryptionService {
             cache_manager
                 .put(key, fetched_key_bytes.clone(), metadata)
                 .await
-                .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {e}")))?;
+                .map_err(|e| HlsDownloaderError::Cache {
+                    reason: format!("Cache error: {e}"),
+                })?;
         }
 
         Ok(fetched_key_bytes)
@@ -279,7 +290,9 @@ impl DecryptionService {
         let iv_str = iv_hex_str.trim_start_matches("0x");
         let mut iv_bytes = [0u8; 16];
         hex::decode_to_slice(iv_str, &mut iv_bytes).map_err(|e| {
-            HlsDownloaderError::DecryptionError(format!("Failed to parse IV '{iv_hex_str}': {e}"))
+            HlsDownloaderError::Decryption {
+                reason: format!("Failed to parse IV '{iv_hex_str}': {e}"),
+            }
         })?;
         Ok(iv_bytes)
     }
@@ -297,9 +310,9 @@ impl DecryptionService {
         if key_info.method != m3u8_rs::KeyMethod::AES128 {
             // Changed to AES128 (all caps)
             // For now, only support AES-128. SAMPLE-AES would need different handling.
-            return Err(HlsDownloaderError::DecryptionError(format!(
-                "Unsupported decryption method: {key_info:?}"
-            )));
+            return Err(HlsDownloaderError::Decryption {
+                reason: format!("Unsupported decryption method: {key_info:?}"),
+            });
         }
 
         let key_data = self.get_key_data(key_info, base_url).await?;
@@ -310,17 +323,20 @@ impl DecryptionService {
             (None, None) => {
                 // This case should ideally be handled by the caller by providing iv_override
                 // based on media_sequence for AES-128 CBC if IV is not in playlist.
-                return Err(HlsDownloaderError::DecryptionError(
-                    "IV is missing and not overridden for AES-128 decryption".to_string(),
-                ));
+                return Err(HlsDownloaderError::Decryption {
+                    reason: "IV is missing and not overridden for AES-128 decryption".to_string(),
+                });
             }
         };
 
         // Decrypt using the offloader (handles both inline and offloaded decryption)
-        let key_array: [u8; 16] = key_data
-            .as_ref()
-            .try_into()
-            .map_err(|_| HlsDownloaderError::DecryptionError("Invalid key length".to_string()))?;
+        let key_array: [u8; 16] =
+            key_data
+                .as_ref()
+                .try_into()
+                .map_err(|_| HlsDownloaderError::Decryption {
+                    reason: "Invalid key length".to_string(),
+                })?;
 
         self.offloader.decrypt(data, &key_array, &iv_bytes).await
     }

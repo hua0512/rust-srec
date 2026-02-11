@@ -191,18 +191,24 @@ impl SegmentFetcher {
                         if let Some(metrics) = &self.performance_metrics {
                             metrics.record_download_error();
                         }
-                        RetryAction::Fail(HlsDownloaderError::SegmentFetchError(format!(
-                            "Client error {} for segment {}",
-                            response.status(),
-                            segment_url
-                        )))
+                        RetryAction::Fail(HlsDownloaderError::SegmentFetch {
+                            reason: format!(
+                                "Client error {} for segment {}",
+                                response.status(),
+                                segment_url
+                            ),
+                            retryable: false,
+                        })
                     } else {
                         // Server errors (5xx) are retryable
-                        RetryAction::Retry(HlsDownloaderError::SegmentFetchError(format!(
-                            "Server error {} for segment {}",
-                            response.status(),
-                            segment_url
-                        )))
+                        RetryAction::Retry(HlsDownloaderError::SegmentFetch {
+                            reason: format!(
+                                "Server error {} for segment {}",
+                                response.status(),
+                                segment_url
+                            ),
+                            retryable: true,
+                        })
                     }
                 }
                 Err(e) => {
@@ -274,12 +280,11 @@ impl SegmentDownloader for SegmentFetcher {
         let segment_url_storage = if job.parsed_url.is_some() {
             None
         } else {
-            Some(Url::parse(&job.media_segment.uri).map_err(|e| {
-                HlsDownloaderError::PlaylistError(format!(
-                    "Invalid segment URL {}: {}",
-                    job.media_segment.uri, e
-                ))
-            })?)
+            Some(
+                Url::parse(&job.media_segment.uri).map_err(|e| HlsDownloaderError::Playlist {
+                    reason: format!("Invalid segment URL {}: {}", job.media_segment.uri, e),
+                })?,
+            )
         };
         let segment_url: &Url = job.parsed_url.as_deref().unwrap_or_else(|| {
             segment_url_storage

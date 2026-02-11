@@ -111,9 +111,9 @@ where
     }
 
     // Unreachable: the loop covers 0..=max_retries and the last iteration returns on Retry.
-    Err(HlsDownloaderError::InternalError(
-        "retry loop exited without result".to_string(),
-    ))
+    Err(HlsDownloaderError::Internal {
+        reason: "retry loop exited without result".to_string(),
+    })
 }
 
 /// Classify a reqwest error as retryable or non-retryable.
@@ -212,9 +212,10 @@ mod tests {
         let result: Result<u32, _> = retry_with_backoff(&policy, &token, |_| {
             attempts.fetch_add(1, Ordering::Relaxed);
             async {
-                RetryAction::Fail(HlsDownloaderError::SegmentFetchError(
-                    "404 not found".to_string(),
-                ))
+                RetryAction::Fail(HlsDownloaderError::SegmentFetch {
+                    reason: "404 not found".to_string(),
+                    retryable: false,
+                })
             }
         })
         .await;
@@ -235,9 +236,10 @@ mod tests {
         let result: Result<u32, _> = retry_with_backoff(&policy, &token, |_| {
             attempts.fetch_add(1, Ordering::Relaxed);
             async {
-                RetryAction::Retry(HlsDownloaderError::SegmentFetchError(
-                    "500 internal".to_string(),
-                ))
+                RetryAction::Retry(HlsDownloaderError::SegmentFetch {
+                    reason: "500 internal".to_string(),
+                    retryable: true,
+                })
             }
         })
         .await;
@@ -260,7 +262,10 @@ mod tests {
             attempts.fetch_add(1, Ordering::Relaxed);
             async move {
                 if attempt == 0 {
-                    RetryAction::Retry(HlsDownloaderError::SegmentFetchError("timeout".to_string()))
+                    RetryAction::Retry(HlsDownloaderError::SegmentFetch {
+                        reason: "timeout".to_string(),
+                        retryable: true,
+                    })
                 } else {
                     RetryAction::Success(99u32)
                 }

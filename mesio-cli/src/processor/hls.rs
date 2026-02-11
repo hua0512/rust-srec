@@ -81,8 +81,8 @@ pub async fn process_hls_stream(
         }
         None => {
             info!("HLS stream is empty.");
-            return Err(AppError::Download(DownloadError::NoSource(
-                "HLS stream is empty".to_string(),
+            return Err(AppError::Download(DownloadError::source_exhausted(
+                "HLS stream is empty",
             )));
         }
     };

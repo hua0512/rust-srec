@@ -37,6 +37,27 @@ pub struct FlvDownloader {
 }
 
 impl FlvDownloader {
+    fn log_unexpected_status(url: &Url, status: StatusCode, context: &'static str) {
+        let reason = status.canonical_reason().unwrap_or("unknown");
+        if status == StatusCode::NOT_FOUND {
+            warn!(
+                url = %url,
+                status = %status,
+                reason,
+                context,
+                "FLV request returned 404 Not Found; stream may be offline or URL may be expired"
+            );
+        } else {
+            warn!(
+                url = %url,
+                status = %status,
+                reason,
+                context,
+                "FLV request failed with non-success HTTP status"
+            );
+        }
+    }
+
     /// Create a new FlvDownloader with default configuration
     pub fn new() -> Result<Self, DownloadError> {
         Self::with_config(FlvProtocolConfig::default())
@@ -57,7 +78,7 @@ impl FlvDownloader {
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
         let url = url_str
             .parse::<Url>()
-            .map_err(|_| DownloadError::UrlError(url_str.to_string()))?;
+            .map_err(|e| DownloadError::invalid_url(url_str, e.to_string()))?;
         self.download_url(url, token).await
     }
 
@@ -70,7 +91,7 @@ impl FlvDownloader {
     ) -> Result<BoxMediaStream<Bytes, FlvDownloadError>, DownloadError> {
         let url = url_str
             .parse::<Url>()
-            .map_err(|e| DownloadError::UrlError(format!("{url_str}: {e}")))?;
+            .map_err(|e| DownloadError::invalid_url(url_str, e.to_string()))?;
         self.download_url_raw(url, token).await
     }
 
@@ -88,7 +109,12 @@ impl FlvDownloader {
 
         // Check response status
         if !response.status().is_success() {
-            return Err(DownloadError::StatusCode(response.status()));
+            Self::log_unexpected_status(url, response.status(), "initial_request");
+            return Err(DownloadError::http_status(
+                response.status(),
+                url.to_string(),
+                "initial_request",
+            ));
         }
 
         // Fast path: Check Content-Type header if present
@@ -111,10 +137,13 @@ impl FlvDownloader {
                     content_type = %ct_str,
                     "Response has text Content-Type, likely not FLV data"
                 );
-                return Err(DownloadError::FlvError(format!(
-                    "Invalid Content-Type: {}. Expected video/x-flv or binary content",
-                    ct_str
-                )));
+                return Err(DownloadError::InvalidContent {
+                    protocol: "flv",
+                    reason: format!(
+                        "Invalid Content-Type: {}. Expected video/x-flv or binary content",
+                        ct_str
+                    ),
+                });
             }
 
             debug!(url = %url, content_type = %ct_str, "Content-Type check passed");
@@ -181,17 +210,21 @@ impl FlvDownloader {
                 // Read the first chunk to validate it's FLV binary data
                 let first_chunk = match byte_stream.next().await {
                     Some(Ok(chunk)) => chunk,
-                    Some(Err(e)) => return Err(DownloadError::HttpError(e)),
-                    None => return Err(DownloadError::FlvError("Empty response received".to_string())),
+                    Some(Err(e)) => return Err(DownloadError::Network { source: e }),
+                    None => return Err(DownloadError::InvalidContent {
+                        protocol: "flv",
+                        reason: "Empty response received".to_string(),
+                    }),
                 };
 
                 // Validate FLV signature (first 3 bytes should be "FLV" = 0x46 0x4C 0x56)
                 // OR first byte is a valid FLV tag type (for mid-stream CDN joins)
                 if first_chunk.is_empty() {
                     warn!(url = %url, "Empty first chunk received");
-                    return Err(DownloadError::FlvError(
-                        "Empty response received".to_string()
-                    ));
+                    return Err(DownloadError::InvalidContent {
+                        protocol: "flv",
+                        reason: "Empty response received".to_string(),
+                    });
                 }
 
                 // Check for FLV magic bytes OR valid FLV tag types
@@ -231,9 +264,13 @@ impl FlvDownloader {
                         is_text = is_text,
                         "Invalid FLV content: expected FLV signature or valid tag type"
                     );
-                    return Err(DownloadError::FlvError(
-                        format!("Invalid FLV content: expected FLV signature or valid tag type: 0x{:02X}", first_byte)
-                    ));
+                    return Err(DownloadError::InvalidContent {
+                        protocol: "flv",
+                        reason: format!(
+                            "Invalid FLV content: expected FLV signature or valid tag type: 0x{:02X}",
+                            first_byte
+                        ),
+                    });
                 }
 
                 // Log validation result once (header vs mid-stream)
@@ -317,7 +354,11 @@ impl FlvDownloader {
                                         }
                                     }
                                     Some(Err(e)) => {
-                                        let _ = tx.send(Err(FlvDownloadError::Download(DownloadError::HttpError(e)))).await;
+                                        let _ = tx
+                                            .send(Err(FlvDownloadError::Download(
+                                                DownloadError::Network { source: e },
+                                            )))
+                                            .await;
                                         break;
                                     }
                                     None => break,
@@ -358,7 +399,12 @@ impl FlvDownloader {
 
         // Content was modified
         if !response.status().is_success() {
-            return Err(DownloadError::StatusCode(response.status()));
+            Self::log_unexpected_status(url, response.status(), "cache_revalidation");
+            return Err(DownloadError::http_status(
+                response.status(),
+                url.to_string(),
+                "cache_revalidation",
+            ));
         }
 
         Ok(Some(response))
@@ -375,7 +421,7 @@ impl FlvDownloader {
         // Validate URL
         let url = url_str
             .parse::<Url>()
-            .map_err(|_| DownloadError::UrlError(url_str.to_string()))?;
+            .map_err(|e| DownloadError::invalid_url(url_str, e.to_string()))?;
 
         // Check cache first
         let cache_key = CacheKey::new(CacheResourceType::Response, url_str.to_string(), None);
@@ -435,7 +481,12 @@ impl FlvDownloader {
 
         // Check response status
         if !response.status().is_success() {
-            return Err(DownloadError::StatusCode(response.status()));
+            Self::log_unexpected_status(&url, response.status(), "cache_miss_download");
+            return Err(DownloadError::http_status(
+                response.status(),
+                url.to_string(),
+                "cache_miss_download",
+            ));
         }
 
         // Extract caching headers
@@ -499,7 +550,7 @@ impl FlvDownloader {
     ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
         let url = url_str
             .parse::<Url>()
-            .map_err(|_| DownloadError::UrlError(url_str.to_string()))?;
+            .map_err(|e| DownloadError::invalid_url(url_str, e.to_string()))?;
 
         info!(
             url = %url,
@@ -525,7 +576,12 @@ impl FlvDownloader {
 
         // Check response status - should be 206 Partial Content
         if response.status() != StatusCode::PARTIAL_CONTENT && response.status() != StatusCode::OK {
-            return Err(DownloadError::StatusCode(response.status()));
+            Self::log_unexpected_status(&url, response.status(), "ranged_download");
+            return Err(DownloadError::http_status(
+                response.status(),
+                url.to_string(),
+                "ranged_download",
+            ));
         }
 
         // Get the bytes stream from the response
@@ -607,7 +663,7 @@ impl FlvDownloader {
     ) -> Result<BoxMediaStream<Bytes, FlvDownloadError>, DownloadError> {
         let url = url_str
             .parse::<Url>()
-            .map_err(|_| DownloadError::UrlError(url_str.to_string()))?;
+            .map_err(|e| DownloadError::invalid_url(url_str, e.to_string()))?;
 
         info!(
             url = %url,
@@ -633,14 +689,19 @@ impl FlvDownloader {
 
         // Check response status - should be 206 Partial Content
         if response.status() != StatusCode::PARTIAL_CONTENT && response.status() != StatusCode::OK {
-            return Err(DownloadError::StatusCode(response.status()));
+            Self::log_unexpected_status(&url, response.status(), "ranged_raw_download");
+            return Err(DownloadError::http_status(
+                response.status(),
+                url.to_string(),
+                "ranged_raw_download",
+            ));
         }
 
         // Transform the reqwest bytes stream into our raw byte stream
         let raw_stream = response
             .bytes_stream()
             .map(|result| {
-                result.map_err(|e| FlvDownloadError::Download(DownloadError::HttpError(e)))
+                result.map_err(|e| FlvDownloadError::Download(DownloadError::Network { source: e }))
             })
             .boxed();
 
@@ -739,8 +800,7 @@ impl MultiSource for FlvDownloader {
         }
 
         // All sources failed
-        Err(last_error
-            .unwrap_or_else(|| DownloadError::NoSource("No source available".to_string())))
+        Err(last_error.unwrap_or_else(|| DownloadError::source_exhausted("No source available")))
     }
 }
 
