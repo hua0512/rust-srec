@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import { Trans } from '@lingui/react/macro';
 import { Tv } from 'lucide-react';
+import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-stream-on-danmu-close-field';
 
 interface BilibiliConfigFieldsProps {
   form: UseFormReturn<any>;
@@ -88,6 +89,11 @@ export function BilibiliConfigFields({
                 </FormDescription>
               </FormItem>
             )}
+          />
+
+          <EndStreamOnDanmuCloseField
+            form={form}
+            name={`${fieldName}.end_stream_on_danmu_stream_closed`}
           />
         </div>
       </section>

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-stream-on-danmu-close-field';
 
 interface DouyinConfigFieldsProps {
   form: UseFormReturn<any>;
@@ -252,6 +253,20 @@ export function DouyinConfigFields({
             )}
           />
         </div>
+      </section>
+
+      <section className="space-y-6">
+        <div className="flex items-center gap-3 border-b border-border/40 pb-3">
+          <Shield className="w-5 h-5 text-indigo-500" />
+          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground/80">
+            <Trans>Danmu Control</Trans>
+          </h4>
+        </div>
+
+        <EndStreamOnDanmuCloseField
+          form={form}
+          name={`${fieldName}.end_stream_on_danmu_stream_closed`}
+        />
       </section>
     </div>
   );

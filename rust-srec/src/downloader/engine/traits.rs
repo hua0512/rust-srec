@@ -13,6 +13,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use std::fmt::Display;
+
 use crate::Result;
 
 /// Type of download engine.
@@ -335,7 +337,7 @@ pub struct SegmentInfo {
 }
 
 /// Classified error kind for download failures.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DownloadFailureKind {
     /// HTTP 4xx client error (not rate-limiting). Resource permanently unavailable at this URL.
     HttpClientError { status: u16 },
@@ -386,6 +388,44 @@ impl DownloadFailureKind {
                 | Self::ProcessExit { .. }
                 | Self::Other
         )
+    }
+}
+
+/// Error returned by [`DownloadEngine::start`] carrying a classified
+/// [`DownloadFailureKind`] so the manager can make informed retry and
+/// circuit-breaker decisions without hardcoding `Other`.
+#[derive(Debug)]
+pub struct EngineStartError {
+    /// Classified failure kind.
+    pub kind: DownloadFailureKind,
+    /// Human-readable error message.
+    pub message: String,
+}
+
+impl EngineStartError {
+    /// Create a new `EngineStartError`.
+    pub fn new(kind: DownloadFailureKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+}
+
+impl Display for EngineStartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for EngineStartError {}
+
+impl From<crate::Error> for EngineStartError {
+    fn from(err: crate::Error) -> Self {
+        Self {
+            kind: DownloadFailureKind::Other,
+            message: err.to_string(),
+        }
     }
 }
 
@@ -508,7 +548,8 @@ pub trait DownloadEngine: Send + Sync {
     ///
     /// Returns a handle that can be used to monitor and cancel the download.
     /// The engine should emit events through the handle's event channel.
-    async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()>;
+    async fn start(&self, handle: Arc<DownloadHandle>)
+    -> std::result::Result<(), EngineStartError>;
 
     /// Stop a download.
     ///

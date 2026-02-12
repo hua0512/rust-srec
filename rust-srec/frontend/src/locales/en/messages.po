@@ -562,7 +562,7 @@ msgstr "At least one input path is required"
 msgid "Attempt to get the highest original quality available."
 msgstr "Attempt to get the highest original quality available."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:63
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 
@@ -901,7 +901,7 @@ msgstr "Capture Mode"
 msgid "Capture real-time comments and chat messages if available."
 msgstr "Capture real-time comments and chat messages if available."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:93
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:94
 msgid "Capture separate stream data."
 msgstr "Capture separate stream data."
 
@@ -1621,6 +1621,10 @@ msgstr "DanmakuFactory"
 msgid "Danmu"
 msgstr "Danmu"
 
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:262
+msgid "Danmu Control"
+msgstr "Danmu Control"
+
 #: src/routes/_authed/_dashboard/system/health.tsx:329
 msgid "Danmu Service"
 msgstr "Danmu Service"
@@ -1899,7 +1903,7 @@ msgstr "Done"
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:90
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:91
 msgid "Double Screen Data"
 msgstr "Double Screen Data"
 
@@ -2179,6 +2183,10 @@ msgstr "End"
 msgid "End of History"
 msgstr "End of History"
 
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:29
+msgid "End Stream On Danmu Close"
+msgstr "End Stream On Danmu Close"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:599
 msgid "End Time"
 msgstr "End Time"
@@ -2404,7 +2412,7 @@ msgstr "Executions"
 msgid "Exit Immersive"
 msgstr "Exit Immersive"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:59
 msgid "Experimental"
 msgstr "Experimental"
 
@@ -2412,7 +2420,7 @@ msgstr "Experimental"
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "Expert mode: Edit the raw platform-specific configuration directly."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:247
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:248
 msgid "Explicit TTWID cookie value to use for all requests."
 msgstr "Explicit TTWID cookie value to use for all requests."
 
@@ -2462,8 +2470,8 @@ msgstr "Extract high-quality audio for podcast distribution and upload."
 msgid "Extract MP3"
 msgstr "Extract MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:40
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:27
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:29
 msgid "Extraction Settings"
@@ -2952,11 +2960,11 @@ msgstr "Force IPv4 (Default: Off)"
 msgid "Force IPv6 (Default: Off)"
 msgstr "Force IPv6 (Default: Off)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:120
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
 msgid "Force Mobile API"
 msgstr "Force Mobile API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:113
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
 msgid "Force Origin Quality"
@@ -3066,7 +3074,7 @@ msgstr "Generating QR code..."
 msgid "Get Started"
 msgstr "Get Started"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:206
 #: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.tsx:50
@@ -3483,7 +3491,7 @@ msgstr "IO Job"
 msgid "IO Job Timeout"
 msgstr "IO Job Timeout"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:217
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:218
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "Isolation level for tracking identifiers. Global is usually best."
 
@@ -4910,7 +4918,7 @@ msgstr "Per-segment"
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:211
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:212
 msgid "Per-Streamer"
 msgstr "Per-Streamer"
 
@@ -5172,7 +5180,7 @@ msgstr "Preferred Formats"
 msgid "Preferred Qualities"
 msgstr "Preferred Qualities"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:58
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
 
@@ -5968,7 +5976,7 @@ msgstr "secret"
 msgid "secs"
 msgstr "secs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:179
 msgid "Security & Identity"
 msgstr "Security & Identity"
 
@@ -6077,7 +6085,7 @@ msgstr "Select the days required for this filter to apply."
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:84
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:85
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "Select the highest quality level you want to attempt capturing."
 
@@ -6284,7 +6292,7 @@ msgstr "Size"
 msgid "Size and duration constraints for recordings."
 msgstr "Size and duration constraints for recordings."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:150
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
 msgid "Skip Interactive Games"
 msgstr "Skip Interactive Games"
 
@@ -6321,7 +6329,7 @@ msgstr "Specific"
 msgid "Specific settings for the platform."
 msgstr "Specific settings for the platform."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:236
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:237
 msgid "Specific TTWID Cookie"
 msgstr "Specific TTWID Cookie"
 
@@ -6428,6 +6436,10 @@ msgstr "Step Library"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:321
 msgid "Steps List"
 msgstr "Steps List"
+
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:32
+msgid "Stop recording when danmu control signals stream closed."
+msgstr "Stop recording when danmu control signals stream closed."
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:289
 msgid "Storage"
@@ -7002,7 +7014,7 @@ msgstr "Track Information"
 msgid "Transcode H.264"
 msgstr "Transcode H.264"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:153
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:154
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "Treat interactive game streams (互动玩法) as offline."
 
@@ -7124,7 +7136,7 @@ msgstr "Try again"
 msgid "Try Again"
 msgstr "Try Again"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:191
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:192
 msgid "TTWID Management Mode"
 msgstr "TTWID Management Mode"
 
@@ -7285,7 +7297,7 @@ msgstr "Use 0 for original quality."
 msgid "Use danmu_inputs from job manifest"
 msgstr "Use danmu_inputs from job manifest"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:123
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:124
 msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
 

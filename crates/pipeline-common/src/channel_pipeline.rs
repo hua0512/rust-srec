@@ -120,10 +120,8 @@ where
                             if let Err(e) = processor.process(&context, item, &mut output_fn) {
                                 error!(processor = processor_name, error = ?e, "Processor failed");
                                 let msg = e.to_string();
-                                let _ = tx.blocking_send(Err(stage_process_error(
-                                    processor_name,
-                                    std::io::Error::other(msg.clone()),
-                                )));
+                                // Channel gets the original typed error; task return gets a string copy
+                                let _ = tx.blocking_send(Err(e));
                                 return Err(stage_process_error(
                                     processor_name,
                                     std::io::Error::other(msg),
@@ -158,10 +156,8 @@ where
                 if let Err(e) = processor.finish(&context, &mut output_fn) {
                     error!(processor = processor_name, error = ?e, "Processor finish failed");
                     let msg = e.to_string();
-                    let _ = tx.blocking_send(Err(stage_finish_error(
-                        processor_name,
-                        std::io::Error::other(msg.clone()),
-                    )));
+                    // Channel gets the original typed error; task return gets a string copy
+                    let _ = tx.blocking_send(Err(e));
                     return Err(stage_finish_error(
                         processor_name,
                         std::io::Error::other(msg),
@@ -361,12 +357,12 @@ mod tests {
 
         let result = pipeline_task.await.unwrap();
         assert!(result.is_err());
+        // run() returns the original error from the channel (not the StageProcess wrapper)
         match result {
-            Err(PipelineError::StageProcess { stage, source }) => {
-                assert_eq!(stage, "FailingProcessor");
+            Err(PipelineError::Strategy(source)) => {
                 assert_eq!(source.to_string(), "Intentional failure");
             }
-            _ => panic!("Expected StageProcess error, got {:?}", result),
+            _ => panic!("Expected Strategy error, got {:?}", result),
         }
     }
 
@@ -412,12 +408,97 @@ mod tests {
 
         let result = pipeline_task.await.unwrap();
         assert!(result.is_err());
+        // run() returns the original error from the channel (not the StageFinish wrapper)
         match result {
+            Err(PipelineError::Strategy(source)) => {
+                assert_eq!(source.to_string(), "Intentional finish failure");
+            }
+            _ => panic!("Expected Strategy error, got {:?}", result),
+        }
+    }
+
+    /// Test that spawn() task handles return StageProcess with the original error type preserved
+    /// in the channel output.
+    #[tokio::test]
+    async fn test_spawn_process_error_preserves_type_on_channel() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+
+        let pipeline = ChannelPipeline::new(context).add_processor(FailingProcessor);
+        let SpawnedPipeline {
+            input_tx,
+            mut output_rx,
+            tasks,
+        } = pipeline.spawn();
+
+        // Send an item to trigger the processor failure
+        input_tx.send(Ok("item1".to_string())).await.unwrap();
+
+        // The channel should receive the original Strategy error (not StageProcess)
+        let channel_item = output_rx.recv().await.unwrap();
+        match channel_item {
+            Err(PipelineError::Strategy(source)) => {
+                assert_eq!(source.to_string(), "Intentional failure");
+            }
+            other => panic!("Expected Strategy error on channel, got {:?}", other),
+        }
+
+        drop(input_tx);
+        drop(output_rx);
+
+        // The task handle should return StageProcess
+        assert_eq!(tasks.len(), 1);
+        let task_result = tasks.into_iter().next().unwrap().await.unwrap();
+        match task_result {
+            Err(PipelineError::StageProcess { stage, source }) => {
+                assert_eq!(stage, "FailingProcessor");
+                assert_eq!(source.to_string(), "Intentional failure");
+            }
+            other => panic!("Expected StageProcess error on task, got {:?}", other),
+        }
+    }
+
+    /// Test that spawn() task handles return StageFinish with the original error type preserved
+    /// in the channel output.
+    #[tokio::test]
+    async fn test_spawn_finish_error_preserves_type_on_channel() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+
+        let pipeline = ChannelPipeline::new(context).add_processor(FinishFailingProcessor);
+        let SpawnedPipeline {
+            input_tx,
+            mut output_rx,
+            tasks,
+        } = pipeline.spawn();
+
+        // Send an item that passes through, then close input to trigger finish()
+        input_tx.send(Ok("item1".to_string())).await.unwrap();
+        drop(input_tx);
+
+        // Drain: first the processed item, then the finish error
+        let first = output_rx.recv().await.unwrap();
+        assert!(first.is_ok(), "Expected processed item, got {:?}", first);
+
+        let channel_item = output_rx.recv().await.unwrap();
+        match channel_item {
+            Err(PipelineError::Strategy(source)) => {
+                assert_eq!(source.to_string(), "Intentional finish failure");
+            }
+            other => panic!("Expected Strategy error on channel, got {:?}", other),
+        }
+
+        drop(output_rx);
+
+        // The task handle should return StageFinish
+        assert_eq!(tasks.len(), 1);
+        let task_result = tasks.into_iter().next().unwrap().await.unwrap();
+        match task_result {
             Err(PipelineError::StageFinish { stage, source }) => {
                 assert_eq!(stage, "FinishFailingProcessor");
                 assert_eq!(source.to_string(), "Intentional finish failure");
             }
-            _ => panic!("Expected StageFinish error, got {:?}", result),
+            other => panic!("Expected StageFinish error on task, got {:?}", other),
         }
     }
 }

@@ -19,9 +19,10 @@ use tracing::info;
 use super::classify_flv_error;
 use super::config::build_flv_config;
 use super::helpers::{self, DownloadStats};
-use crate::Result;
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{DownloadConfig, SegmentEvent};
+use crate::downloader::engine::traits::{
+    DownloadConfig, DownloadFailureKind, EngineStartError, SegmentEvent,
+};
 
 /// FLV-specific download orchestrator.
 ///
@@ -92,7 +93,7 @@ impl FlvDownloader {
     /// 7. Handles cancellation, progress tracking, and error reporting
     ///
     /// Returns download statistics on success.
-    pub async fn run(self) -> Result<DownloadStats> {
+    pub async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
         let token = CancellationToken::new();
 
         // Create factory with configuration
@@ -104,23 +105,27 @@ impl FlvDownloader {
         let mut downloader = factory
             .create_for_url(&url, ProtocolType::Flv)
             .await
-            .map_err(|e| crate::Error::Other(format!("Failed to create FLV downloader: {}", e)))?;
+            .map_err(|e| {
+                let kind = super::classify_download_error(&e);
+                EngineStartError::new(kind, format!("Failed to create FLV downloader: {}", e))
+            })?;
 
         // Add the source URL
         downloader.add_source(&url, 0);
 
         // Get the download stream
-        let download_stream = downloader
-            .download_with_sources(&url)
-            .await
-            .map_err(|e| crate::Error::Other(format!("Failed to start FLV download: {}", e)))?;
+        let download_stream = downloader.download_with_sources(&url).await.map_err(|e| {
+            let kind = super::classify_download_error(&e);
+            EngineStartError::new(kind, format!("Failed to start FLV download: {}", e))
+        })?;
 
         // Extract the FLV stream from the DownloadStream enum
         let flv_stream = match download_stream {
             DownloadStream::Flv(stream) => stream,
             _ => {
-                return Err(crate::Error::Other(
-                    "Expected FLV stream but got different protocol".to_string(),
+                return Err(EngineStartError::new(
+                    DownloadFailureKind::Configuration,
+                    "Expected FLV stream but got different protocol",
                 ));
             }
         };
@@ -145,7 +150,7 @@ impl FlvDownloader {
         flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, FlvDownloadError>>
         + Send
         + Unpin,
-    ) -> Result<DownloadStats> {
+    ) -> std::result::Result<DownloadStats, EngineStartError> {
         let config = self.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(streamer_id = %streamer_id, "Starting FLV download with pipeline processing");
@@ -223,6 +228,7 @@ impl FlvDownloader {
             "FLV",
         )
         .await
+        .map_err(EngineStartError::from)
     }
 
     /// Download FLV stream without pipeline processing (raw mode).
@@ -234,7 +240,7 @@ impl FlvDownloader {
         flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, FlvDownloadError>>
         + Send
         + Unpin,
-    ) -> Result<DownloadStats> {
+    ) -> std::result::Result<DownloadStats, EngineStartError> {
         let config = self.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(
@@ -294,6 +300,7 @@ impl FlvDownloader {
             "FLV",
         )
         .await
+        .map_err(EngineStartError::from)
     }
 }
 

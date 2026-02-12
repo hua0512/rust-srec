@@ -562,7 +562,7 @@ msgstr "至少需要一个输入路径"
 msgid "Attempt to get the highest original quality available."
 msgstr "尝试获取可用的最高原画质量。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:63
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
@@ -901,7 +901,7 @@ msgstr "采集模式"
 msgid "Capture real-time comments and chat messages if available."
 msgstr "如果可用，采集实时评论和聊天消息。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:93
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:94
 msgid "Capture separate stream data."
 msgstr "采集分离的流数据。"
 
@@ -1621,6 +1621,10 @@ msgstr "DanmakuFactory"
 msgid "Danmu"
 msgstr "弹幕"
 
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:262
+msgid "Danmu Control"
+msgstr "弹幕控制"
+
 #: src/routes/_authed/_dashboard/system/health.tsx:329
 msgid "Danmu Service"
 msgstr "弹幕服务"
@@ -1899,7 +1903,7 @@ msgstr "已完成"
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:90
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:91
 msgid "Double Screen Data"
 msgstr "双屏数据"
 
@@ -2179,6 +2183,10 @@ msgstr "结束"
 msgid "End of History"
 msgstr "历史结束"
 
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:29
+msgid "End Stream On Danmu Close"
+msgstr "弹幕关闭时结束录制"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:599
 msgid "End Time"
 msgstr "结束时间"
@@ -2404,7 +2412,7 @@ msgstr "执行记录"
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:59
 msgid "Experimental"
 msgstr "实验性"
 
@@ -2412,7 +2420,7 @@ msgstr "实验性"
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:247
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:248
 msgid "Explicit TTWID cookie value to use for all requests."
 msgstr "用于所有请求的显式 TTWID Cookie 值。"
 
@@ -2462,8 +2470,8 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:40
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:27
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:29
 msgid "Extraction Settings"
@@ -2952,11 +2960,11 @@ msgstr "强制 IPv4（默认：关闭）"
 msgid "Force IPv6 (Default: Off)"
 msgstr "强制 IPv6（默认：关闭）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:120
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
 msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:113
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
 msgid "Force Origin Quality"
@@ -3066,7 +3074,7 @@ msgstr "正在生成二维码..."
 msgid "Get Started"
 msgstr "开始使用"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:206
 #: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.tsx:50
@@ -3483,7 +3491,7 @@ msgstr "IO 任务"
 msgid "IO Job Timeout"
 msgstr "IO 任务超时"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:217
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:218
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 
@@ -4910,7 +4918,7 @@ msgstr "逐段"
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:211
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:212
 msgid "Per-Streamer"
 msgstr "按主播"
 
@@ -5172,7 +5180,7 @@ msgstr "首选格式"
 msgid "Preferred Qualities"
 msgstr "首选画质"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:58
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
@@ -5968,7 +5976,7 @@ msgstr "secret"
 msgid "secs"
 msgstr "秒"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:179
 msgid "Security & Identity"
 msgstr "安全与身份"
 
@@ -6077,7 +6085,7 @@ msgstr "选择此过滤器生效的日期。"
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:84
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:85
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "选择你想要尝试采集的最高质量等级。"
 
@@ -6284,7 +6292,7 @@ msgstr "大小"
 msgid "Size and duration constraints for recordings."
 msgstr "录制的大小与时长限制。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:150
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
 
@@ -6321,7 +6329,7 @@ msgstr "特定"
 msgid "Specific settings for the platform."
 msgstr "平台的特定设置。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:236
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:237
 msgid "Specific TTWID Cookie"
 msgstr "特定 TTWID Cookie"
 
@@ -6428,6 +6436,10 @@ msgstr "步骤库"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:321
 msgid "Steps List"
 msgstr "步骤列表"
+
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:32
+msgid "Stop recording when danmu control signals stream closed."
+msgstr "当弹幕控制信号指示直播已关闭时，停止录制。"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:289
 msgid "Storage"
@@ -7002,7 +7014,7 @@ msgstr "轨道信息"
 msgid "Transcode H.264"
 msgstr "转码 H.264"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:153
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:154
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
@@ -7124,7 +7136,7 @@ msgstr "重试"
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:191
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:192
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
@@ -7285,7 +7297,7 @@ msgstr "使用 0 表示原画质量。"
 msgid "Use danmu_inputs from job manifest"
 msgstr "使用任务清单中的 danmu_inputs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:123
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:124
 msgid "Use mobile endpoint for extraction."
 msgstr "使用移动端端点进行提取。"
 

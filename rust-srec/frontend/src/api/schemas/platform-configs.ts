@@ -6,6 +6,7 @@ export const HuyaConfigSchema = z
     use_wup: z.boolean().nullable().optional(),
     use_wup_v2: z.boolean().nullable().optional(),
     force_origin_quality: z.boolean().nullable().optional(),
+    end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -18,6 +19,7 @@ export const DouyinConfigSchema = z
     ttwid: z.string().nullable().optional(),
     force_mobile_api: z.boolean().default(false).nullable().optional(),
     skip_interactive_games: z.boolean().default(true).nullable().optional(),
+    end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -25,6 +27,7 @@ export const DouyinConfigSchema = z
 export const BilibiliConfigSchema = z
   .object({
     quality: z.number().nullable().optional(),
+    end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -36,6 +39,7 @@ export const DouyuConfigSchema = z
     rate: z.number().nullable().optional(),
     force_hs: z.boolean().nullable().optional(),
     request_retries: z.number().nullable().optional(),
+    end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -43,6 +47,7 @@ export const DouyuConfigSchema = z
 export const TwitchConfigSchema = z
   .object({
     oauth_token: z.string().nullable().optional(),
+    end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -50,6 +55,7 @@ export const TwitchConfigSchema = z
 export const TikTokConfigSchema = z
   .object({
     force_origin_quality: z.boolean().nullable().optional(),
+    end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -57,6 +63,7 @@ export const TikTokConfigSchema = z
 export const TwitcastingConfigSchema = z
   .object({
     password: z.string().nullable().optional(),
+    end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();
 

@@ -99,16 +99,14 @@ pub fn make_media_segment_for_track(track_id: u32, sample: &[u8]) -> Bytes {
     trun_payload.extend_from_slice(&(sample.len() as u32).to_be_bytes());
     let mut trun = make_full_box(b"trun", 0, trun_flags, &trun_payload);
 
-    let mut traf_body = Vec::new();
-    traf_body.extend_from_slice(&tfhd);
-    traf_body.extend_from_slice(&trun);
-    let traf = make_box(b"traf", &traf_body);
+    // Compute data_offset from the sizes we already know (no need to build moof twice).
+    // moof = box header (8) + traf
+    // traf = box header (8) + tfhd + trun
+    // data_offset points past moof to the mdat payload, i.e. moof.len() + 8 (mdat header).
+    let moof_len = 8 + 8 + tfhd.len() + trun.len();
+    let data_offset = (moof_len + 8) as i32;
 
-    let moof = make_box(b"moof", &traf);
-    let mdat = make_box(b"mdat", sample);
-
-    let data_offset = (moof.len() + 8) as i32;
-    let trun_data_offset_pos = 8 /* header */ + 4 /* fullbox */ + 4 /* sample_count */;
+    let trun_data_offset_pos = 8 /* box header */ + 4 /* fullbox flags */ + 4 /* sample_count */;
     trun[trun_data_offset_pos..trun_data_offset_pos + 4]
         .copy_from_slice(&data_offset.to_be_bytes());
 
@@ -117,6 +115,7 @@ pub fn make_media_segment_for_track(track_id: u32, sample: &[u8]) -> Bytes {
     traf_body.extend_from_slice(&trun);
     let traf = make_box(b"traf", &traf_body);
     let moof = make_box(b"moof", &traf);
+    let mdat = make_box(b"mdat", sample);
 
     let mut out = Vec::new();
     out.extend_from_slice(&moof);

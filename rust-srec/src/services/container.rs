@@ -53,6 +53,17 @@ use crate::streamer::StreamerManager;
 use crate::utils::filename::sanitize_filename;
 use pipeline_common::expand_path_template;
 
+fn should_end_stream_on_danmu_stream_closed(platform_specific_config: Option<&str>) -> bool {
+    platform_specific_config
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+        .and_then(|value| {
+            value
+                .get("end_stream_on_danmu_stream_closed")
+                .and_then(|v| v.as_bool())
+        })
+        .unwrap_or(true)
+}
+
 /// Default cache TTL (1 hour).
 const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
 
@@ -1390,6 +1401,7 @@ impl ServiceContainer {
         let pipeline_manager = self.pipeline_manager.clone();
         let download_manager = self.download_manager.clone();
         let streamer_manager = self.streamer_manager.clone();
+        let config_service = self.config_service.clone();
         let stream_monitor = self.stream_monitor.clone();
         let discarded_segment_keys = self.discarded_segment_keys.clone();
         let cancellation_token = self.cancellation_token.clone();
@@ -1469,6 +1481,36 @@ impl ServiceContainer {
                                         // - stop downloads promptly
                                         // - end session and bypass resume hysteresis
                                         if matches!(control, crate::danmu::DanmuControlEvent::StreamClosed { .. }) {
+                                            let should_end_stream = match config_service
+                                                .get_platform_config_by_name(platform)
+                                                .await
+                                            {
+                                                Ok(platform_config) => {
+                                                    should_end_stream_on_danmu_stream_closed(
+                                                        platform_config
+                                                            .platform_specific_config
+                                                            .as_deref(),
+                                                    )
+                                                }
+                                                Err(e) => {
+                                                    warn!(
+                                                        "Failed to load platform config for '{}' while handling danmu stream closed: {}",
+                                                        platform, e
+                                                    );
+                                                    true
+                                                }
+                                            };
+
+                                            if !should_end_stream {
+                                                info!(
+                                                    session_id = %session_id,
+                                                    streamer_id = %streamer_id,
+                                                    platform = %platform,
+                                                    "Ignoring danmu stream-closed signal due to platform config"
+                                                );
+                                                continue;
+                                            }
+
                                             debug!(
                                                 session_id = %session_id,
                                                 streamer_id = %streamer_id,
@@ -2523,5 +2565,21 @@ pub struct ServiceStats {
 
 #[cfg(test)]
 mod tests {
-    // Integration tests would go here with a test database
+    use super::should_end_stream_on_danmu_stream_closed;
+
+    #[test]
+    fn test_should_end_stream_on_danmu_stream_closed_defaults_true() {
+        assert!(should_end_stream_on_danmu_stream_closed(None));
+        assert!(should_end_stream_on_danmu_stream_closed(Some("{}")));
+        assert!(should_end_stream_on_danmu_stream_closed(Some(
+            "{invalid json"
+        )));
+    }
+
+    #[test]
+    fn test_should_end_stream_on_danmu_stream_closed_honors_false() {
+        assert!(!should_end_stream_on_danmu_stream_closed(Some(
+            r#"{"end_stream_on_danmu_stream_closed":false}"#,
+        )));
+    }
 }

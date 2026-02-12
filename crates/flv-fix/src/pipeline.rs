@@ -390,9 +390,9 @@ mod test {
                 && !matches!(err, PipelineError::Cancelled)
             {
                 output_tx
-                    .blocking_send(Err(PipelineError::Strategy(Box::new(std::io::Error::other(
-                        format!("Pipeline error: {err}"),
-                    )))))
+                    .blocking_send(Err(PipelineError::Strategy(Box::new(
+                        std::io::Error::other(format!("Pipeline error: {err}")),
+                    ))))
                     .ok();
             }
         }));

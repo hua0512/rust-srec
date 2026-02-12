@@ -790,7 +790,7 @@ impl DownloadManager {
                 let _ = handle_clone
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
-                        kind: DownloadFailureKind::Other,
+                        kind: e.kind,
                         message: format!("Engine start error: {}", e),
                     })
                     .await;

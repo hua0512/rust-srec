@@ -30,5 +30,5 @@ pub use mesio::{DownloadStats, FlvDownloader, HlsDownloader, MesioEngine, config
 pub use streamlink::StreamlinkEngine;
 pub use traits::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
-    DownloadProgress, DownloadStatus, EngineType, SegmentEvent, SegmentInfo,
+    DownloadProgress, DownloadStatus, EngineStartError, EngineType, SegmentEvent, SegmentInfo,
 };

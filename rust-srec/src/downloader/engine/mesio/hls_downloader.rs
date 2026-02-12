@@ -18,9 +18,10 @@ use tracing::{debug, info};
 use super::classify_download_error;
 use super::config::build_hls_config;
 use super::helpers::{self, DownloadStats};
-use crate::Result;
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{DownloadConfig, DownloadFailureKind, SegmentEvent};
+use crate::downloader::engine::traits::{
+    DownloadConfig, DownloadFailureKind, EngineStartError, SegmentEvent,
+};
 
 /// HLS-specific download orchestrator.
 ///
@@ -92,7 +93,7 @@ impl HlsDownloader {
     /// 8. Handles cancellation, progress tracking, and error reporting
     ///
     /// Returns download statistics on success.
-    pub async fn run(self) -> Result<DownloadStats> {
+    pub async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
         let token = self.cancellation_token.child_token();
 
         // Create factory with configuration
@@ -104,20 +105,24 @@ impl HlsDownloader {
         let mut downloader = factory
             .create_for_url(&url, ProtocolType::Hls)
             .await
-            .map_err(|e| crate::Error::Other(format!("Failed to create HLS downloader: {}", e)))?;
+            .map_err(|e| {
+                let kind = classify_download_error(&e);
+                EngineStartError::new(kind, format!("Failed to create HLS downloader: {}", e))
+            })?;
 
         // Get the download stream
-        let download_stream = downloader
-            .download_with_sources(&url)
-            .await
-            .map_err(|e| crate::Error::Other(format!("Failed to start HLS download: {}", e)))?;
+        let download_stream = downloader.download_with_sources(&url).await.map_err(|e| {
+            let kind = classify_download_error(&e);
+            EngineStartError::new(kind, format!("Failed to start HLS download: {}", e))
+        })?;
 
         // Extract the HLS stream from the DownloadStream enum
         let mut hls_stream = match download_stream {
             DownloadStream::Hls(stream) => stream,
             _ => {
-                return Err(crate::Error::Other(
-                    "Expected HLS stream but got different protocol".to_string(),
+                return Err(EngineStartError::new(
+                    DownloadFailureKind::Configuration,
+                    "Expected HLS stream but got different protocol",
                 ));
             }
         };
@@ -139,10 +144,10 @@ impl HlsDownloader {
                             message: format!("Failed to get first HLS segment: {}", e),
                         })
                         .await;
-                    return Err(crate::Error::Other(format!(
-                        "Failed to get first HLS segment: {}",
-                        e
-                    )));
+                    return Err(EngineStartError::new(
+                        kind,
+                        format!("Failed to get first HLS segment: {}", e),
+                    ));
                 }
                 None => {
                     let _ = self
@@ -152,7 +157,10 @@ impl HlsDownloader {
                             message: "HLS stream is empty".to_string(),
                         })
                         .await;
-                    return Err(crate::Error::Other("HLS stream is empty".to_string()));
+                    return Err(EngineStartError::new(
+                        DownloadFailureKind::SourceUnavailable,
+                        "HLS stream is empty",
+                    ));
                 }
             }
         };
@@ -195,7 +203,7 @@ impl HlsDownloader {
         + Unpin,
         first_segment: HlsData,
         extension: &str,
-    ) -> Result<DownloadStats> {
+    ) -> std::result::Result<DownloadStats, EngineStartError> {
         let config = self.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(
@@ -245,8 +253,9 @@ impl HlsDownloader {
 
         // Send first segment to pipeline input
         if pipeline_input_tx.send(Ok(first_segment)).await.is_err() {
-            return Err(crate::Error::Other(
-                "Pipeline input channel closed unexpectedly".to_string(),
+            return Err(EngineStartError::new(
+                DownloadFailureKind::Other,
+                "Pipeline input channel closed unexpectedly",
             ));
         }
 
@@ -279,6 +288,7 @@ impl HlsDownloader {
             "HLS",
         )
         .await
+        .map_err(EngineStartError::from)
     }
 
     /// Download HLS stream without pipeline processing (raw mode).
@@ -293,7 +303,7 @@ impl HlsDownloader {
         + Unpin,
         first_segment: HlsData,
         extension: &str,
-    ) -> Result<DownloadStats> {
+    ) -> std::result::Result<DownloadStats, EngineStartError> {
         let config = self.config_snapshot();
         let streamer_id = config.streamer_id.clone();
         info!(
@@ -330,8 +340,9 @@ impl HlsDownloader {
 
         // Send first segment to writer
         if tx.send(Ok(first_segment)).await.is_err() {
-            return Err(crate::Error::Other(
-                "Writer channel closed unexpectedly".to_string(),
+            return Err(EngineStartError::new(
+                DownloadFailureKind::Other,
+                "Writer channel closed unexpectedly",
             ));
         }
 
@@ -364,6 +375,7 @@ impl HlsDownloader {
             "HLS",
         )
         .await
+        .map_err(EngineStartError::from)
     }
 }
 

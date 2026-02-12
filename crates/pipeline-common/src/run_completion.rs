@@ -25,6 +25,7 @@ pub async fn settle_run<WriterOut, WriterErr>(
     for task in processing_tasks {
         let task_result = match task.await {
             Ok(result) => result,
+            Err(join_error) if join_error.is_cancelled() => Err(PipelineError::Cancelled),
             Err(join_error) => Err(PipelineError::Strategy(Box::new(std::io::Error::other(
                 format!("Pipeline task panicked: {join_error}"),
             )))),
