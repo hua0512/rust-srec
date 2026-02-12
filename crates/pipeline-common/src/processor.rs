@@ -18,6 +18,11 @@ use std::sync::Arc;
 /// Processors form the building blocks of a pipeline. Each processor takes
 /// an input item, processes it, and emits zero or more outputs through a
 /// callback function.
+///
+/// Runtime contract:
+/// - Implementations are expected to be synchronous and non-async.
+/// - `ChannelPipeline` runs each processor stage on a dedicated blocking task.
+/// - Do not hold long-lived locks or perform blocking network I/O in hot loops.
 pub trait Processor<T> {
     /// Process an input item and produce output.
     ///

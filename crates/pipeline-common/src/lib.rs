@@ -30,15 +30,17 @@ mod context;
 pub mod pipeline;
 pub mod processor;
 pub mod progress;
+mod run_completion;
 mod utils;
 mod writer_task;
 
-pub use channel_pipeline::ChannelPipeline;
 /// Re-export key traits and types
+pub use channel_pipeline::ChannelPipeline;
 pub use context::StreamerContext;
 pub use pipeline::Pipeline;
 pub use processor::Processor;
 pub use progress::{Progress, ProgressEvent};
+pub use run_completion::{RunCompletionError, settle_run};
 pub use utils::{
     expand_filename_template, expand_path_template, expand_path_template_at, sanitize_filename,
 };
@@ -65,6 +67,20 @@ pub enum PipelineError {
 
     #[error("{0}")]
     Strategy(#[source] Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("Stage process failed ({stage}): {source}")]
+    StageProcess {
+        stage: &'static str,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    #[error("Stage finish failed ({stage}): {source}")]
+    StageFinish {
+        stage: &'static str,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 pub trait ProtocolWriter: Send + 'static {

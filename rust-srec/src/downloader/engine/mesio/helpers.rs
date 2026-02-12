@@ -5,7 +5,9 @@ use std::path::Path;
 
 use chrono::Utc;
 use futures::StreamExt;
-use pipeline_common::{PipelineError, WriterError, WriterProgress, WriterStats};
+use pipeline_common::{
+    PipelineError, RunCompletionError, WriterError, WriterProgress, WriterStats, settle_run,
+};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -219,21 +221,7 @@ pub(super) async fn handle_writer_result(
     streamer_id: &str,
     protocol: &str,
 ) -> crate::Result<DownloadStats> {
-    // Wait for processing tasks to complete
-    for task in processing_tasks {
-        let task_result = task
-            .await
-            .map_err(|e| crate::Error::Other(format!("Pipeline task panicked: {}", e)))?;
-
-        // Only report task errors if writer succeeded
-        if writer_result.is_ok()
-            && let Err(e) = task_result
-        {
-            warn!("Pipeline processing task error: {}", e);
-        }
-    }
-
-    match writer_result {
+    match settle_run(writer_result, processing_tasks).await {
         Ok(stats) => {
             let download_stats = DownloadStats {
                 total_bytes: stats.bytes_written,
@@ -270,7 +258,7 @@ pub(super) async fn handle_writer_result(
 
             Ok(download_stats)
         }
-        Err(e) => {
+        Err(RunCompletionError::Writer(e)) => {
             if let Some((kind, msg)) = stream_error {
                 let _ = event_tx
                     .send(SegmentEvent::DownloadFailed {
@@ -291,6 +279,31 @@ pub(super) async fn handle_writer_result(
                 .await;
             Err(crate::Error::Other(format!(
                 "{} writer error: {}",
+                protocol, e
+            )))
+        }
+        Err(RunCompletionError::Pipeline(e)) => {
+            if let Some((kind, msg)) = stream_error {
+                let _ = event_tx
+                    .send(SegmentEvent::DownloadFailed {
+                        kind,
+                        message: msg.clone(),
+                    })
+                    .await;
+                return Err(crate::Error::Other(format!(
+                    "{} stream error: {}",
+                    protocol, msg
+                )));
+            }
+            warn!("Pipeline processing task error: {}", e);
+            let _ = event_tx
+                .send(SegmentEvent::DownloadFailed {
+                    kind: DownloadFailureKind::Processing,
+                    message: e.to_string(),
+                })
+                .await;
+            Err(crate::Error::Other(format!(
+                "{} pipeline error: {}",
                 protocol, e
             )))
         }
