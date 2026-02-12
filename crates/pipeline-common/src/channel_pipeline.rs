@@ -331,8 +331,7 @@ mod tests {
             _input: String,
             _output: &mut dyn FnMut(String) -> Result<(), PipelineError>,
         ) -> Result<(), PipelineError> {
-            Err(PipelineError::Strategy(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(PipelineError::Strategy(Box::new(std::io::Error::other(
                 "Intentional failure",
             ))))
         }
