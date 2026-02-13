@@ -21,6 +21,7 @@ use crate::database::repositories::{
     ConfigRepository, FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository,
     SessionTxOps, StreamerRepository, StreamerTxOps,
 };
+use crate::database::retry::retry_on_sqlite_busy;
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
 use crate::streamer::{StreamerManager, StreamerMetadata};
@@ -108,8 +109,8 @@ pub struct StreamMonitor<
     cleanup_tx: mpsc::Sender<String>,
     /// Event broadcaster for notifications.
     event_broadcaster: MonitorEventBroadcaster,
-    /// Database pool for transactional updates + outbox.
-    pool: SqlitePool,
+    /// Database pool for transactional updates + outbox (serialized write pool).
+    write_pool: SqlitePool,
     /// Notifies the outbox publisher that new events are available.
     outbox_notify: Arc<Notify>,
     /// Cancellation token for background tasks (outbox publisher and cleanup worker).
@@ -158,14 +159,14 @@ impl<
         filter_repo: Arc<FR>,
         session_repo: Arc<SSR>,
         config_service: Arc<crate::config::ConfigService<CR, SR>>,
-        pool: SqlitePool,
+        write_pool: SqlitePool,
     ) -> Self {
         Self::with_config(
             streamer_manager,
             filter_repo,
             session_repo,
             config_service,
-            pool,
+            write_pool,
             StreamMonitorConfig::default(),
         )
     }
@@ -176,7 +177,7 @@ impl<
         filter_repo: Arc<FR>,
         session_repo: Arc<SSR>,
         config_service: Arc<crate::config::ConfigService<CR, SR>>,
-        pool: SqlitePool,
+        write_pool: SqlitePool,
         config: StreamMonitorConfig,
     ) -> Self {
         // Create rate limiter with platform-specific configs
@@ -248,7 +249,7 @@ impl<
             hard_ended_sessions: Arc::new(DashMap::new()),
             cleanup_tx,
             event_broadcaster: MonitorEventBroadcaster::new(),
-            pool,
+            write_pool,
             outbox_notify: outbox_notify.clone(),
             cancellation: cancellation.clone(),
             config,
@@ -367,7 +368,7 @@ impl<
         outbox_notify: Arc<Notify>,
         cancellation_token: CancellationToken,
     ) {
-        let pool = self.pool.clone();
+        let pool = self.write_pool.clone();
         let broadcaster = self.event_broadcaster.clone();
 
         tokio::spawn(async move {
@@ -401,9 +402,12 @@ impl<
 
     /// Start an immediate transaction to prevent locking issues.
     async fn begin_immediate(&self) -> Result<ImmediateTransaction> {
-        let mut conn = self.pool.acquire().await?;
-        sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
-        Ok(ImmediateTransaction(conn))
+        retry_on_sqlite_busy("monitor_begin_immediate", || async {
+            crate::database::begin_immediate(&self.write_pool)
+                .await
+                .map_err(Into::into)
+        })
+        .await
     }
 
     /// Check the status of a single streamer.
@@ -1315,6 +1319,8 @@ async fn flush_outbox_once(
 
     let fetched = entries.len();
     let mut needs_wait = false;
+    let mut delivered_ids = Vec::with_capacity(fetched);
+    let mut failed_entries: Vec<(i64, String)> = Vec::new();
 
     for entry in entries {
         match serde_json::from_str::<MonitorEvent>(&entry.payload) {
@@ -1324,7 +1330,7 @@ async fn flush_outbox_once(
                     Ok(receiver_count) => {
                         // Event was successfully sent to `receiver_count` receivers
                         debug!("Published event to {} receivers", receiver_count);
-                        MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
+                        delivered_ids.push(entry.id);
                     }
                     Err(e) => {
                         // No receivers available - keep events briefly to handle listener startup.
@@ -1343,14 +1349,13 @@ async fn flush_outbox_once(
                                 "Monitor outbox event id={} has no receivers after {} attempts or {}s, discarding: {:?}",
                                 entry.id, entry.attempts, age_secs, e.0
                             );
-                            MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
+                            delivered_ids.push(entry.id);
                         } else {
                             debug!(
                                 "Monitor outbox event id={} has no receivers, retrying later",
                                 entry.id
                             );
-                            MonitorOutboxOps::record_failure(pool, entry.id, "no receivers")
-                                .await?;
+                            failed_entries.push((entry.id, "no receivers".to_string()));
                             needs_wait = true;
                         }
                     }
@@ -1363,10 +1368,13 @@ async fn flush_outbox_once(
                     "Invalid monitor outbox payload id={}, discarding: {}",
                     entry.id, e
                 );
-                MonitorOutboxOps::mark_delivered(pool, entry.id).await?;
+                delivered_ids.push(entry.id);
             }
         }
     }
+
+    MonitorOutboxOps::mark_delivered_batch(pool, &delivered_ids).await?;
+    MonitorOutboxOps::record_failure_batch(pool, &failed_entries).await?;
 
     Ok(FlushOutboxResult {
         fetched,

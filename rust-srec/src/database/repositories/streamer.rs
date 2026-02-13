@@ -50,11 +50,12 @@ pub trait StreamerRepository: Send + Sync {
 /// SQLx implementation of StreamerRepository.
 pub struct SqlxStreamerRepository {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxStreamerRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -168,7 +169,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.last_error)
         .bind(streamer.created_at)
         .bind(streamer.updated_at)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await;
 
         match result {
@@ -214,7 +215,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(&streamer.last_error)
         .bind(streamer.updated_at)
         .bind(&streamer.id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await;
 
         match result {
@@ -230,7 +231,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         sqlx::query("UPDATE streamers SET state = ? WHERE id = ?")
             .bind(state)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -239,7 +240,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         sqlx::query("UPDATE streamers SET priority = ? WHERE id = ?")
             .bind(priority)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -249,7 +250,7 @@ impl StreamerRepository for SqlxStreamerRepository {
             "UPDATE streamers SET consecutive_error_count = COALESCE(consecutive_error_count, 0) + 1 WHERE id = ?",
         )
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         let result: (i32,) = sqlx::query_as(
@@ -267,7 +268,7 @@ impl StreamerRepository for SqlxStreamerRepository {
             "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL WHERE id = ?",
         )
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -276,7 +277,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         sqlx::query("UPDATE streamers SET disabled_until = ? WHERE id = ?")
             .bind(until)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -285,7 +286,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         sqlx::query("UPDATE streamers SET last_live_time = ? WHERE id = ?")
             .bind(time)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -294,7 +295,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         sqlx::query("UPDATE streamers SET avatar = ? WHERE id = ?")
             .bind(avatar_url)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -302,7 +303,7 @@ impl StreamerRepository for SqlxStreamerRepository {
     async fn delete_streamer(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM streamers WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -321,7 +322,7 @@ impl StreamerRepository for SqlxStreamerRepository {
             "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = 'NOT_LIVE' WHERE id = ?",
         )
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -347,7 +348,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(disabled_until_ms)
         .bind(error)
         .bind(id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -364,14 +365,14 @@ impl StreamerRepository for SqlxStreamerRepository {
             )
             .bind(time_ms)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         } else {
             sqlx::query(
                 "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ?",
             )
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         }
         Ok(())

@@ -941,7 +941,7 @@ mod streamer_manager_tests {
         insert_streamer(&pool, &platform_id, "Streamer3", "NOT_LIVE", "LOW").await;
 
         // Create manager and hydrate
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(repo, broadcaster);
 
@@ -961,7 +961,7 @@ mod streamer_manager_tests {
         insert_streamer(&pool, &platform_id, "Inactive1", "CANCELLED", "NORMAL").await;
         insert_streamer(&pool, &platform_id, "Inactive2", "FATAL_ERROR", "NORMAL").await;
 
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(repo, broadcaster);
         manager.hydrate().await.expect("Failed to hydrate");
@@ -977,7 +977,7 @@ mod streamer_manager_tests {
         let streamer_id =
             insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
 
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(repo, broadcaster);
         manager.hydrate().await.expect("Failed to hydrate");
@@ -1010,7 +1010,7 @@ mod streamer_manager_tests {
         let streamer_id =
             insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
 
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::with_error_threshold(repo, broadcaster, 2);
         manager.hydrate().await.expect("Failed to hydrate");
@@ -1045,7 +1045,7 @@ mod streamer_manager_tests {
         let streamer_id =
             insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
 
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::with_error_threshold(repo, broadcaster, 1);
         manager.hydrate().await.expect("Failed to hydrate");
@@ -1088,7 +1088,10 @@ mod streamer_manager_tests {
             .await;
         }
 
-        let repo = Arc::new(SqlxStreamerRepository::new((*pool).clone()));
+        let repo = Arc::new(SqlxStreamerRepository::new(
+            (*pool).clone(),
+            (*pool).clone(),
+        ));
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = Arc::new(StreamerManager::new(repo, broadcaster));
         manager.hydrate().await.expect("Failed to hydrate");
@@ -1133,7 +1136,7 @@ mod streamer_manager_tests {
         insert_streamer(&pool, &platform1, "P1S2", "NOT_LIVE", "NORMAL").await;
         insert_streamer(&pool, &platform2, "P2S1", "NOT_LIVE", "NORMAL").await;
 
-        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
         let manager = StreamerManager::new(repo, broadcaster);
         manager.hydrate().await.expect("Failed to hydrate");
@@ -1221,16 +1224,16 @@ mod end_to_end_tests {
             .expect("Failed to insert streamer");
 
         // Create services
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
 
         let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
         streamer_manager.hydrate().await.expect("Failed to hydrate");
 
         // Create config service
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
         let cache = ConfigCache::new();
         let config_service = Arc::new(ConfigService::with_cache(
             config_repo,
@@ -1321,16 +1324,16 @@ mod end_to_end_tests {
             .expect("Failed to insert streamer");
 
         // Create services
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
 
         let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
         streamer_manager.hydrate().await.expect("Failed to hydrate");
 
         // Create config service
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
         let cache = ConfigCache::new();
         let config_service = Arc::new(ConfigService::with_cache(
             config_repo,
@@ -1410,16 +1413,16 @@ mod end_to_end_tests {
             .expect("Failed to insert streamer");
 
         // Create services
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
 
         let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
         streamer_manager.hydrate().await.expect("Failed to hydrate");
 
         // Create config service
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
         let cache = ConfigCache::new();
         let config_service = Arc::new(ConfigService::with_cache(
             config_repo,
@@ -1485,16 +1488,16 @@ mod end_to_end_tests {
             .expect("Failed to insert streamer");
 
         // Create services
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
         let broadcaster = ConfigEventBroadcaster::new();
 
         let streamer_manager = Arc::new(StreamerManager::new(streamer_repo.clone(), broadcaster));
         streamer_manager.hydrate().await.expect("Failed to hydrate");
 
         // Create config service
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
         let cache = ConfigCache::new();
         let config_service = Arc::new(ConfigService::with_cache(
             config_repo,

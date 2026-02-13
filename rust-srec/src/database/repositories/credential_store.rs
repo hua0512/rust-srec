@@ -13,11 +13,12 @@ use crate::credentials::{
 /// SQLx-backed credential store.
 pub struct SqlxCredentialStore {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxCredentialStore {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 
     async fn update_platform_credentials(
@@ -36,7 +37,7 @@ impl SqlxCredentialStore {
         )
         .bind(&credentials.cookies)
         .bind(platform_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         // Update refresh_token, access_token, and last_cookie_check_* in platform_specific_config JSON.
@@ -73,7 +74,7 @@ impl SqlxCredentialStore {
                 query = query.bind(bind);
             }
             query = query.bind(platform_id);
-            query.execute(&self.pool).await?;
+            query.execute(&self.write_pool).await?;
         }
 
         debug!("Platform credentials updated successfully");
@@ -157,7 +158,7 @@ impl SqlxCredentialStore {
                 .bind(overrides_json)
                 .bind(now)
                 .bind(template_id)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await?;
             }
             None => {
@@ -172,7 +173,7 @@ impl SqlxCredentialStore {
                 .bind(&credentials.cookies)
                 .bind(now)
                 .bind(template_id)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await?;
             }
         }
@@ -205,7 +206,7 @@ impl SqlxCredentialStore {
         .bind(&credentials.cookies)
         .bind(now)
         .bind(streamer_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         if let Some(ref token) = credentials.refresh_token {
@@ -222,7 +223,7 @@ impl SqlxCredentialStore {
             )
             .bind(token)
             .bind(streamer_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         }
 
@@ -240,7 +241,7 @@ impl SqlxCredentialStore {
             )
             .bind(token)
             .bind(streamer_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         }
 
@@ -303,7 +304,7 @@ impl CredentialStore for SqlxCredentialStore {
             .bind(&today)
             .bind(result)
             .bind(platform_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         }
         Ok(())

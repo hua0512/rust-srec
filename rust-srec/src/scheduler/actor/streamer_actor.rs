@@ -595,6 +595,13 @@ impl StreamerActor {
                     && let Err(e) = self.status_checker.process_status(&metadata, status).await
                 {
                     warn!("StreamerActor {} failed to process status: {}", self.id, e);
+                    // Revert Live state to prevent the actor from getting stuck in
+                    // the watchdog path when no session/download was actually created.
+                    if self.state.streamer_state == StreamerState::Live {
+                        self.state.streamer_state = StreamerState::NotLive;
+                        self.state.last_download_activity_at = None;
+                        self.state.schedule_immediate_check();
+                    }
                 }
 
                 // Check for fatal states - actor should stop monitoring
@@ -831,6 +838,13 @@ impl StreamerActor {
                     "StreamerActor {} failed to process batch status: {}",
                     self.id, e
                 );
+                // Revert Live state to prevent the actor from getting stuck in
+                // the watchdog path when no session/download was actually created.
+                if self.state.streamer_state == StreamerState::Live {
+                    self.state.streamer_state = StreamerState::NotLive;
+                    self.state.last_download_activity_at = None;
+                    self.state.schedule_immediate_check();
+                }
             }
         }
 

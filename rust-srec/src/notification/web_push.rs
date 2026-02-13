@@ -1,5 +1,5 @@
-use crate::database::DbPool;
 use crate::database::models::WebPushSubscriptionDbModel;
+use crate::database::{DbPool, WritePool};
 use crate::notification::events::{NotificationEvent, NotificationPriority};
 use crate::{Error, Result};
 use aes_gcm::aead::Aead;
@@ -106,6 +106,7 @@ impl WebPushConfig {
 #[derive(Debug, Clone)]
 pub struct WebPushService {
     pool: DbPool,
+    write_pool: WritePool,
     config: WebPushConfig,
     client: reqwest::Client,
     subscription_cache: SubscriptionCache,
@@ -116,13 +117,14 @@ pub struct WebPushService {
 }
 
 impl WebPushService {
-    pub fn new(pool: DbPool, config: WebPushConfig) -> Result<Self> {
+    pub fn new(pool: DbPool, write_pool: WritePool, config: WebPushConfig) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
             .build()
             .map_err(|e| Error::Other(format!("Failed to build reqwest client: {}", e)))?;
         Ok(Self {
             pool,
+            write_pool,
             config,
             client,
             subscription_cache: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
@@ -131,11 +133,11 @@ impl WebPushService {
         })
     }
 
-    pub fn from_env(pool: DbPool) -> Result<Option<Self>> {
+    pub fn from_env(pool: DbPool, write_pool: WritePool) -> Result<Option<Self>> {
         let Some(config) = WebPushConfig::from_env()? else {
             return Ok(None);
         };
-        Ok(Some(Self::new(pool, config)?))
+        Ok(Some(Self::new(pool, write_pool, config)?))
     }
 
     pub fn vapid_public_key(&self) -> &str {
@@ -179,7 +181,7 @@ impl WebPushService {
         .bind(&min_priority)
         .bind(now)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         *self.subscription_cache.write().await = None;
@@ -198,7 +200,7 @@ impl WebPushService {
         sqlx::query("DELETE FROM web_push_subscription WHERE user_id = ? AND endpoint = ?")
             .bind(user_id)
             .bind(endpoint)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         *self.subscription_cache.write().await = None;
         Ok(())
@@ -241,7 +243,7 @@ impl WebPushService {
     async fn delete_subscription_by_endpoint(&self, endpoint: &str) -> Result<()> {
         sqlx::query("DELETE FROM web_push_subscription WHERE endpoint = ?")
             .bind(endpoint)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         *self.subscription_cache.write().await = None;
         Ok(())
@@ -471,7 +473,7 @@ impl WebPushService {
         .bind(now_ms)
         .bind(now_ms)
         .bind(endpoint)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         *self.subscription_cache.write().await = None;
@@ -485,7 +487,7 @@ impl WebPushService {
         )
         .bind(now_ms)
         .bind(endpoint)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
 
         *self.subscription_cache.write().await = None;

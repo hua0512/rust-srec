@@ -44,11 +44,12 @@ pub trait ConfigRepository: Send + Sync {
 /// SQLx implementation of ConfigRepository.
 pub struct SqlxConfigRepository {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxConfigRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -132,7 +133,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.pipeline_io_job_timeout_secs)
         .bind(config.pipeline_execute_timeout_secs)
         .bind(&config.id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -184,7 +185,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.pipeline_cpu_job_timeout_secs)
         .bind(config.pipeline_io_job_timeout_secs)
         .bind(config.pipeline_execute_timeout_secs)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -249,7 +250,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -302,7 +303,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
         .bind(&config.id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -310,7 +311,7 @@ impl ConfigRepository for SqlxConfigRepository {
     async fn delete_platform_config(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM platform_config WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -377,7 +378,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.paired_segment_pipeline)
         .bind(config.created_at)
         .bind(config.updated_at)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -432,7 +433,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.paired_segment_pipeline)
         .bind(Utc::now())
         .bind(&config.id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -440,7 +441,7 @@ impl ConfigRepository for SqlxConfigRepository {
     async fn delete_template_config(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM template_config WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -475,7 +476,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.name)
         .bind(&config.engine_type)
         .bind(&config.config)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -494,7 +495,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.engine_type)
         .bind(&config.config)
         .bind(&config.id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -502,7 +503,7 @@ impl ConfigRepository for SqlxConfigRepository {
     async fn delete_engine_config(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM engine_configuration WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }

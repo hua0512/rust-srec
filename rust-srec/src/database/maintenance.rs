@@ -61,6 +61,7 @@ impl Default for MaintenanceConfig {
 /// Database maintenance scheduler.
 pub struct MaintenanceScheduler {
     pool: DbPool,
+    write_pool: DbPool,
     config: MaintenanceConfig,
     running: Arc<AtomicBool>,
     last_vacuum: Arc<Mutex<Option<DateTime<Utc>>>>,
@@ -70,9 +71,10 @@ pub struct MaintenanceScheduler {
 
 impl MaintenanceScheduler {
     /// Create a new maintenance scheduler.
-    pub fn new(pool: DbPool, config: MaintenanceConfig) -> Self {
+    pub fn new(pool: DbPool, write_pool: DbPool, config: MaintenanceConfig) -> Self {
         Self {
             pool,
+            write_pool,
             config,
             running: Arc::new(AtomicBool::new(false)),
             last_vacuum: Arc::new(Mutex::new(None)),
@@ -185,7 +187,7 @@ impl MaintenanceScheduler {
             - chrono::Duration::days(self.config.monitor_outbox_delivered_retention_days as i64)
                 .num_milliseconds();
 
-        MonitorOutboxOps::prune_delivered_before(&self.pool, cutoff_ms).await
+        MonitorOutboxOps::prune_delivered_before(&self.write_pool, cutoff_ms).await
     }
 
     async fn cleanup_notification_event_logs(&self) -> Result<i32, crate::Error> {
@@ -199,7 +201,7 @@ impl MaintenanceScheduler {
 
         let result = sqlx::query("DELETE FROM notification_event_log WHERE created_at < ?")
             .bind(cutoff_ms)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|e| crate::Error::Database(e.to_string()))?;
 
@@ -248,7 +250,7 @@ impl MaintenanceScheduler {
         tracing::info!("Running WAL checkpoint (TRUNCATE)");
         // WAL checkpoint returns (checkpointed_frames, remaining_frames, busy)
         let _res: (i64, i64, i64) = sqlx::query_as("PRAGMA wal_checkpoint(TRUNCATE)")
-            .fetch_one(&self.pool)
+            .fetch_one(&self.write_pool)
             .await
             .map_err(|e| crate::Error::Database(e.to_string()))?;
 
@@ -317,7 +319,7 @@ impl MaintenanceScheduler {
 
         // Use incremental vacuum to avoid blocking
         sqlx::query("PRAGMA incremental_vacuum")
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|e| crate::Error::Database(e.to_string()))?;
 
@@ -356,13 +358,13 @@ impl MaintenanceScheduler {
         // First delete execution logs for old jobs
         sqlx::query(
             "DELETE FROM job_execution_logs WHERE job_id IN (
-                SELECT id FROM job 
-                WHERE status IN ('COMPLETED', 'FAILED') 
+                SELECT id FROM job
+                WHERE status IN ('COMPLETED', 'FAILED')
                 AND updated_at < ?
             )",
         )
         .bind(cutoff_ms)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|e| crate::Error::Database(e.to_string()))?;
 
@@ -371,7 +373,7 @@ impl MaintenanceScheduler {
             "DELETE FROM job WHERE status IN ('COMPLETED', 'FAILED') AND updated_at < ?",
         )
         .bind(cutoff_ms)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await
         .map_err(|e| crate::Error::Database(e.to_string()))?;
 
@@ -386,7 +388,7 @@ impl MaintenanceScheduler {
 
         let result = sqlx::query("DELETE FROM notification_dead_letter WHERE created_at < ?")
             .bind(cutoff_ms)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await
             .map_err(|e| crate::Error::Database(e.to_string()))?;
 

@@ -19,7 +19,7 @@ async fn update_execution_info_persists_logs_to_job_execution_logs() {
     let pool = database::init_pool(&db_url).await.unwrap();
     database::run_migrations(&pool).await.unwrap();
 
-    let repo = Arc::new(SqlxJobRepository::new(pool));
+    let repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool));
     let queue = JobQueue::with_repository(JobQueueConfig::default(), repo.clone());
 
     let job = Job::new(

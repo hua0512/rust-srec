@@ -9,9 +9,9 @@ use tracing::debug;
 
 use crate::{Error, Result};
 
-const SQLITE_BUSY_MAX_RETRIES: usize = 8;
+const SQLITE_BUSY_MAX_RETRIES: usize = 12;
 const SQLITE_BUSY_BASE_DELAY_MS: u64 = 10;
-const SQLITE_BUSY_MAX_DELAY_MS: u64 = 250;
+const SQLITE_BUSY_MAX_DELAY_MS: u64 = 2000;
 
 fn is_sqlite_busy_error(err: &Error) -> bool {
     let Error::DatabaseSqlx(sqlx_err) = err else {

@@ -25,11 +25,12 @@ pub trait FilterRepository: Send + Sync {
 /// SQLx implementation of FilterRepository.
 pub struct SqlxFilterRepository {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxFilterRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -64,7 +65,7 @@ impl FilterRepository for SqlxFilterRepository {
         .bind(&filter.streamer_id)
         .bind(&filter.filter_type)
         .bind(&filter.config)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -83,7 +84,7 @@ impl FilterRepository for SqlxFilterRepository {
         .bind(&filter.filter_type)
         .bind(&filter.config)
         .bind(&filter.id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -91,7 +92,7 @@ impl FilterRepository for SqlxFilterRepository {
     async fn delete_filter(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM filters WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -99,7 +100,7 @@ impl FilterRepository for SqlxFilterRepository {
     async fn delete_filters_for_streamer(&self, streamer_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM filters WHERE streamer_id = ?")
             .bind(streamer_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }

@@ -87,8 +87,10 @@ fn autoscale_concurrency_limit(raw: i32) -> usize {
 
 /// Service container holding all application services.
 pub struct ServiceContainer {
-    /// Database connection pool.
+    /// Database connection pool (read-heavy).
     pub pool: SqlitePool,
+    /// Serialized write pool (max_connections=1) for contention-free writes.
+    write_pool: SqlitePool,
     /// Configuration service.
     pub config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
     /// Streamer manager.
@@ -143,21 +145,25 @@ pub struct ServiceContainer {
 
 impl ServiceContainer {
     /// Create a new service container with the given database pool.
-    pub async fn new(pool: SqlitePool) -> Result<Self> {
-        Self::with_config(pool, DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY).await
+    pub async fn new(pool: SqlitePool, write_pool: SqlitePool) -> Result<Self> {
+        Self::with_config(pool, write_pool, DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY).await
     }
 
     /// Create a new service container with custom configuration.
     pub async fn with_config(
         pool: SqlitePool,
+        write_pool: SqlitePool,
         cache_ttl: Duration,
         event_capacity: usize,
     ) -> Result<Self> {
         info!("Initializing service container");
 
         // Create repositories
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), write_pool.clone()));
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(
+            pool.clone(),
+            write_pool.clone(),
+        ));
 
         // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
         let global_config = config_repo.get_global_config().await?;
@@ -166,8 +172,8 @@ impl ServiceContainer {
         let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
 
         // Create additional repositories for StreamMonitor
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), write_pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
 
         // Create config service with custom cache
         let cache = ConfigCache::with_ttl(cache_ttl);
@@ -190,12 +196,15 @@ impl ServiceContainer {
             filter_repo,
             session_repo.clone(),
             config_service.clone(),
-            pool.clone(),
+            write_pool.clone(),
         );
 
         // Create notification service with default config (also used for credential events).
-        let notification_repository = Arc::new(SqlxNotificationRepository::new(pool.clone()));
-        let web_push_service = WebPushService::from_env(pool.clone())
+        let notification_repository = Arc::new(SqlxNotificationRepository::new(
+            pool.clone(),
+            write_pool.clone(),
+        ));
+        let web_push_service = WebPushService::from_env(pool.clone(), write_pool.clone())
             .unwrap_or_else(|e| {
                 warn!(error = %e, "Web push service disabled due to configuration error");
                 None
@@ -214,7 +223,7 @@ impl ServiceContainer {
 
         // Build credential refresh service (shared between StreamMonitor + API).
         let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
-        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone()));
+        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone(), write_pool.clone()));
         let mut credential_service =
             CredentialRefreshService::new(credential_resolver, credential_store);
         credential_service.set_notification_service(Arc::clone(&notification_service));
@@ -237,14 +246,19 @@ impl ServiceContainer {
         );
 
         // Create job repository for pipeline persistence
-        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
+        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
 
         // Create job preset repository
-        let preset_repo = Arc::new(SqliteJobPresetRepository::new(pool.clone().into()));
+        let preset_repo = Arc::new(SqliteJobPresetRepository::new(
+            pool.clone().into(),
+            write_pool.clone().into(),
+        ));
 
         // Create pipeline preset repository
-        let pipeline_preset_repo =
-            Arc::new(SqlitePipelinePresetRepository::new(pool.clone().into()));
+        let pipeline_preset_repo = Arc::new(SqlitePipelinePresetRepository::new(
+            pool.clone().into(),
+            write_pool.clone().into(),
+        ));
 
         // Create pipeline manager with job repository for database persistence.
         // Wire global-config concurrency knobs into CPU/IO worker pool sizes.
@@ -269,7 +283,10 @@ impl ServiceContainer {
                 .with_preset_repository(preset_repo)
                 .with_pipeline_preset_repository(pipeline_preset_repo)
                 .with_config_service(config_service.clone())
-                .with_dag_repository(Arc::new(SqlxDagRepository::new(pool.clone()))),
+                .with_dag_repository(Arc::new(SqlxDagRepository::new(
+                    pool.clone(),
+                    write_pool.clone(),
+                ))),
         );
 
         // Event broadcaster
@@ -295,8 +312,11 @@ impl ServiceContainer {
                 .max(0),
             ..Default::default()
         };
-        let maintenance_scheduler =
-            Arc::new(MaintenanceScheduler::new(pool.clone(), maintenance_config));
+        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
+            pool.clone(),
+            write_pool.clone(),
+            maintenance_config,
+        ));
 
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
         let cancellation_token = CancellationToken::new();
@@ -324,6 +344,7 @@ impl ServiceContainer {
 
         Ok(Self {
             pool,
+            write_pool,
             config_service,
             streamer_manager,
             event_broadcaster,
@@ -349,8 +370,10 @@ impl ServiceContainer {
     }
 
     /// Create a new service container with custom download and pipeline configs.
+    #[allow(clippy::too_many_arguments)]
     pub async fn with_full_config(
         pool: SqlitePool,
+        write_pool: SqlitePool,
         cache_ttl: Duration,
         event_capacity: usize,
         download_config: DownloadManagerConfig,
@@ -363,8 +386,11 @@ impl ServiceContainer {
 
         // Create repositories
         let repos_start = Instant::now();
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone()));
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone()));
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), write_pool.clone()));
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(
+            pool.clone(),
+            write_pool.clone(),
+        ));
         let repos_ms = repos_start.elapsed().as_millis();
 
         // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
@@ -379,8 +405,8 @@ impl ServiceContainer {
 
         // Create additional repositories for StreamMonitor
         let monitor_repos_start = Instant::now();
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), write_pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
         let monitor_repos_ms = monitor_repos_start.elapsed().as_millis();
 
         // Create config service with custom cache
@@ -409,14 +435,14 @@ impl ServiceContainer {
             filter_repo,
             session_repo.clone(),
             config_service.clone(),
-            pool.clone(),
+            write_pool.clone(),
         );
         let stream_monitor_ms = stream_monitor_start.elapsed().as_millis();
 
         // Build credential refresh service (shared between StreamMonitor + API).
         let credential_service_start = Instant::now();
         let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
-        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone()));
+        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone(), write_pool.clone()));
         let mut credential_service =
             CredentialRefreshService::new(credential_resolver, credential_store);
         match BilibiliCredentialManager::new_lazy() {
@@ -441,14 +467,19 @@ impl ServiceContainer {
 
         // Create job repository for pipeline persistence
         let pipeline_repo_start = Instant::now();
-        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone()));
+        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
 
         // Create job preset repository
-        let preset_repo = Arc::new(SqliteJobPresetRepository::new(pool.clone().into()));
+        let preset_repo = Arc::new(SqliteJobPresetRepository::new(
+            pool.clone().into(),
+            write_pool.clone().into(),
+        ));
 
         // Create pipeline preset repository (for workflow expansion)
-        let pipeline_preset_repo =
-            Arc::new(SqlitePipelinePresetRepository::new(pool.clone().into()));
+        let pipeline_preset_repo = Arc::new(SqlitePipelinePresetRepository::new(
+            pool.clone().into(),
+            write_pool.clone().into(),
+        ));
         let pipeline_repo_ms = pipeline_repo_start.elapsed().as_millis();
 
         // Create pipeline manager with job repository for database persistence.
@@ -474,7 +505,10 @@ impl ServiceContainer {
                 .with_preset_repository(preset_repo)
                 .with_pipeline_preset_repository(pipeline_preset_repo)
                 .with_config_service(config_service.clone())
-                .with_dag_repository(Arc::new(SqlxDagRepository::new(pool.clone()))),
+                .with_dag_repository(Arc::new(SqlxDagRepository::new(
+                    pool.clone(),
+                    write_pool.clone(),
+                ))),
         );
         let pipeline_manager_ms = pipeline_manager_start.elapsed().as_millis();
 
@@ -490,8 +524,11 @@ impl ServiceContainer {
 
         // Create notification service with default config
         let notification_service_start = Instant::now();
-        let notification_repository = Arc::new(SqlxNotificationRepository::new(pool.clone()));
-        let web_push_service = WebPushService::from_env(pool.clone())
+        let notification_repository = Arc::new(SqlxNotificationRepository::new(
+            pool.clone(),
+            write_pool.clone(),
+        ));
+        let web_push_service = WebPushService::from_env(pool.clone(), write_pool.clone())
             .unwrap_or_else(|e| {
                 warn!(error = %e, "Web push service disabled due to configuration error");
                 None
@@ -532,8 +569,11 @@ impl ServiceContainer {
                 .max(0),
             ..Default::default()
         };
-        let maintenance_scheduler =
-            Arc::new(MaintenanceScheduler::new(pool.clone(), maintenance_config));
+        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
+            pool.clone(),
+            write_pool.clone(),
+            maintenance_config,
+        ));
         let maintenance_scheduler_ms = maintenance_scheduler_start.elapsed().as_millis();
 
         // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
@@ -592,6 +632,7 @@ impl ServiceContainer {
 
         Ok(Self {
             pool,
+            write_pool,
             config_service,
             streamer_manager,
             event_broadcaster,
@@ -765,8 +806,14 @@ impl ServiceContainer {
         // Create AuthService if JWT is configured
         let auth_service = if let Some(ref jwt) = jwt_service {
             // Create user and refresh token repositories
-            let user_repo = Arc::new(SqlxUserRepository::new(self.pool.clone()));
-            let token_repo = Arc::new(SqlxRefreshTokenRepository::new(self.pool.clone()));
+            let user_repo = Arc::new(SqlxUserRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            ));
+            let token_repo = Arc::new(SqlxRefreshTokenRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            ));
 
             let auth_svc = AuthService::new(user_repo, token_repo, jwt.clone(), auth_config);
             info!("AuthService initialized with user database authentication");
@@ -798,15 +845,26 @@ impl ServiceContainer {
 
         // Wire SessionRepository, FilterRepository, and PipelinePresetRepository into AppState
         state = state
-            .with_session_repository(Arc::new(SqlxSessionRepository::new(self.pool.clone())))
-            .with_filter_repository(Arc::new(SqlxFilterRepository::new(self.pool.clone())))
-            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(self.pool.clone())))
+            .with_session_repository(Arc::new(SqlxSessionRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )))
+            .with_filter_repository(Arc::new(SqlxFilterRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )))
+            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )))
             .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
                 Arc::new(self.pool.clone()),
+                Arc::new(self.write_pool.clone()),
             )))
-            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(Arc::new(
-                self.pool.clone(),
-            ))))
+            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(
+                Arc::new(self.pool.clone()),
+                Arc::new(self.write_pool.clone()),
+            )))
             .with_notification_repository(self.notification_repository.clone())
             .with_notification_service(self.notification_service.clone());
 
@@ -863,8 +921,14 @@ impl ServiceContainer {
         ));
 
         // Create AuthService (always enabled when a JWT secret is provided)
-        let user_repo = Arc::new(SqlxUserRepository::new(self.pool.clone()));
-        let token_repo = Arc::new(SqlxRefreshTokenRepository::new(self.pool.clone()));
+        let user_repo = Arc::new(SqlxUserRepository::new(
+            self.pool.clone(),
+            self.write_pool.clone(),
+        ));
+        let token_repo = Arc::new(SqlxRefreshTokenRepository::new(
+            self.pool.clone(),
+            self.write_pool.clone(),
+        ));
         let auth_svc = AuthService::new(user_repo, token_repo, jwt_service.clone(), auth_config);
         info!(
             issuer = %issuer,
@@ -890,15 +954,26 @@ impl ServiceContainer {
 
         // Wire SessionRepository, FilterRepository, and PipelinePresetRepository into AppState
         state = state
-            .with_session_repository(Arc::new(SqlxSessionRepository::new(self.pool.clone())))
-            .with_filter_repository(Arc::new(SqlxFilterRepository::new(self.pool.clone())))
-            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(self.pool.clone())))
+            .with_session_repository(Arc::new(SqlxSessionRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )))
+            .with_filter_repository(Arc::new(SqlxFilterRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )))
+            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )))
             .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
                 Arc::new(self.pool.clone()),
+                Arc::new(self.write_pool.clone()),
             )))
-            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(Arc::new(
-                self.pool.clone(),
-            ))))
+            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(
+                Arc::new(self.pool.clone()),
+                Arc::new(self.write_pool.clone()),
+            )))
             .with_notification_repository(self.notification_repository.clone())
             .with_notification_service(self.notification_service.clone());
 

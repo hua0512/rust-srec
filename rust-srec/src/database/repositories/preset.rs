@@ -59,12 +59,13 @@ pub trait JobPresetRepository: Send + Sync {
 /// SQLite implementation of JobPresetRepository.
 pub struct SqliteJobPresetRepository {
     pool: Arc<SqlitePool>,
+    write_pool: Arc<SqlitePool>,
 }
 
 impl SqliteJobPresetRepository {
     /// Create a new SqliteJobPresetRepository.
-    pub fn new(pool: Arc<SqlitePool>) -> Self {
-        Self { pool }
+    pub fn new(pool: Arc<SqlitePool>, write_pool: Arc<SqlitePool>) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -261,7 +262,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         .bind(&preset.config)
         .bind(preset.created_at)
         .bind(preset.updated_at)
-        .execute(&*self.pool)
+        .execute(&*self.write_pool)
         .await?;
 
         Ok(())
@@ -282,7 +283,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         .bind(&preset.config)
         .bind(chrono::Utc::now())
         .bind(&preset.id)
-        .execute(&*self.pool)
+        .execute(&*self.write_pool)
         .await?;
 
         Ok(())
@@ -295,7 +296,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
             "#,
         )
         .bind(id)
-        .execute(&*self.pool)
+        .execute(&*self.write_pool)
         .await?;
 
         Ok(())
@@ -347,12 +348,13 @@ pub trait PipelinePresetRepository: Send + Sync {
 /// SQLite implementation of PipelinePresetRepository.
 pub struct SqlitePipelinePresetRepository {
     pool: Arc<SqlitePool>,
+    write_pool: Arc<SqlitePool>,
 }
 
 impl SqlitePipelinePresetRepository {
     /// Create a new SqlitePipelinePresetRepository.
-    pub fn new(pool: Arc<SqlitePool>) -> Self {
-        Self { pool }
+    pub fn new(pool: Arc<SqlitePool>, write_pool: Arc<SqlitePool>) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -462,7 +464,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         .bind(&preset.pipeline_type)
         .bind(preset.created_at)
         .bind(preset.updated_at)
-        .execute(&*self.pool)
+        .execute(&*self.write_pool)
         .await?;
 
         Ok(())
@@ -482,7 +484,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         .bind(&preset.pipeline_type)
         .bind(chrono::Utc::now())
         .bind(&preset.id)
-        .execute(&*self.pool)
+        .execute(&*self.write_pool)
         .await?;
 
         Ok(())
@@ -495,7 +497,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
             "#,
         )
         .bind(id)
-        .execute(&*self.pool)
+        .execute(&*self.write_pool)
         .await?;
 
         Ok(())

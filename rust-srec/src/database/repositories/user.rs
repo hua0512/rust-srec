@@ -48,12 +48,13 @@ pub trait UserRepository: Send + Sync {
 /// SQLx implementation of UserRepository.
 pub struct SqlxUserRepository {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxUserRepository {
     /// Create a new SqlxUserRepository with the given connection pool.
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -78,7 +79,7 @@ impl UserRepository for SqlxUserRepository {
         .bind(user.last_login_at)
         .bind(user.created_at)
         .bind(user.updated_at)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -132,7 +133,7 @@ impl UserRepository for SqlxUserRepository {
         .bind(user.last_login_at)
         .bind(now)
         .bind(&user.id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -140,7 +141,7 @@ impl UserRepository for SqlxUserRepository {
     async fn delete(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM users WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -161,7 +162,7 @@ impl UserRepository for SqlxUserRepository {
             .bind(time_ms)
             .bind(crate::database::time::now_ms())
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -180,14 +181,14 @@ impl UserRepository for SqlxUserRepository {
             .bind(password_hash)
             .bind(now)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         } else {
             sqlx::query("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
                 .bind(password_hash)
                 .bind(now)
                 .bind(id)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await?;
         }
         Ok(())
