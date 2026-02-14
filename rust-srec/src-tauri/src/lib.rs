@@ -84,7 +84,7 @@ fn load_or_create_jwt_secret(data_dir: &Path) -> io::Result<String> {
     }
 
     let mut bytes = [0u8; 32];
-    rand::RngCore::fill_bytes(&mut rand::rng(), &mut bytes);
+    rand::Rng::fill_bytes(&mut rand::rng(), &mut bytes);
     let secret = hex::encode(bytes);
 
     let mut opts = OpenOptions::new();

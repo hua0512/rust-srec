@@ -3,7 +3,7 @@
 // Implements exponential backoff with jitter, max delay cap, and smart error classification
 
 use crate::hls::HlsDownloaderError;
-use rand::Rng;
+use rand::RngExt;
 use std::future::Future;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;

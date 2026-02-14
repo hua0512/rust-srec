@@ -3,7 +3,7 @@
 /// Original Python code is licensed under the Apache License 2.0
 /// Credits to Johnserf-Seed
 use libsm::sm3::hash::Sm3Hash;
-use rand::Rng;
+use rand::RngExt;
 use rand::seq::IndexedRandom;
 use std::collections::HashMap;
 

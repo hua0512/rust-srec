@@ -229,7 +229,7 @@ impl AuthService {
 
     /// Generate a cryptographically secure refresh token (256 bits).
     fn generate_refresh_token() -> String {
-        use rand::Rng;
+        use rand::RngExt;
         let bytes: [u8; 32] = rand::rng().random(); // 256 bits
         hex::encode(bytes)
     }
