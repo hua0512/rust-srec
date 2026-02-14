@@ -26,49 +26,44 @@ fn main() {
     // Create HLS data for the TS segment
     let hls_data = HlsData::ts(media_segment, Bytes::from(ts_data));
 
-    println!("✓ Created HLS TS segment data");
+    println!("Created HLS TS segment data");
     println!("  Segment size: {} bytes", hls_data.size());
     println!("  Is TS: {}", hls_data.is_ts());
 
     // Try to parse PSI tables directly from HLS data
     if let Some(result) = hls_data.parse_ts_psi_tables() {
         match result {
-            Ok((pat, pmts)) => {
-                println!("✓ Successfully parsed PSI tables via HLS");
-                if let Some(pat) = pat {
+            Ok(stream_info) => {
+                println!("  Successfully parsed PSI tables via HLS");
+                println!("  Transport Stream ID: {}", stream_info.transport_stream_id);
+                println!("  Programs: {} found", stream_info.programs.len());
+                for program in &stream_info.programs {
                     println!(
-                        "  PAT: Transport Stream ID {}, {} programs",
-                        pat.transport_stream_id,
-                        pat.programs.len()
-                    );
-                }
-                println!("  PMTs: {} found", pmts.len());
-                for pmt in pmts {
-                    println!(
-                        "    Program {}: {} streams",
-                        pmt.program_number,
-                        pmt.streams.len()
+                        "    Program {}: {} video, {} audio, {} other streams",
+                        program.program_number,
+                        program.video_streams.len(),
+                        program.audio_streams.len(),
+                        program.other_streams.len()
                     );
                 }
             }
             Err(e) => {
-                println!("❌ Failed to parse PSI tables via HLS: {e}");
+                println!("  Failed to parse PSI tables via HLS: {e}");
             }
         }
     } else {
-        println!("❌ Not a TS segment");
+        println!("  Not a TS segment");
     }
 
     // Test individual stream methods
     if let Some(Ok(video_streams)) = hls_data.get_ts_video_streams() {
-        println!("✓ Video streams: {} found", video_streams.len());
+        println!("  Video streams: {} found", video_streams.len());
     } else {
-        println!("❌ Failed to get video streams");
+        println!("  Failed to get video streams");
     }
 }
 
 fn create_working_ts_data() -> Vec<u8> {
-    // Use the exact test data format that works in debug_ts
     let mut ts_data = Vec::new();
 
     // PAT packet (188 bytes)
@@ -78,7 +73,7 @@ fn create_working_ts_data() -> Vec<u8> {
     pat_packet[2] = 0x00;
     pat_packet[3] = 0x10; // No scrambling, payload only, continuity = 0
 
-    // Simple PAT payload (based on ts crate test)
+    // Simple PAT payload
     pat_packet[4] = 0x00; // Pointer field
     pat_packet[5] = 0x00; // Table ID (PAT)
     pat_packet[6] = 0x80; // Section syntax indicator + reserved + section length high
@@ -93,7 +88,7 @@ fn create_working_ts_data() -> Vec<u8> {
     pat_packet[14] = 0x01; // Program number low (1)
     pat_packet[15] = 0xE1; // PMT PID high (0x100)
     pat_packet[16] = 0x00; // PMT PID low
-    // CRC32 (4 bytes) - leaving as zeros for now
+    // CRC32 (4 bytes)
     pat_packet[17] = 0x00;
     pat_packet[18] = 0x00;
     pat_packet[19] = 0x00;

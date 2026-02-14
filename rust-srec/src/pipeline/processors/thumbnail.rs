@@ -195,9 +195,13 @@ impl ThumbnailProcessor {
             "1",
         ]);
 
-        // Only apply scale filter if not preserving original resolution
+        // MJPEG requires even dimensions; always ensure width and height are even.
         if !config.preserve_resolution {
-            cmd.args(["-vf", &format!("scale={}:-1", config.width)]);
+            // -2 auto-calculates height rounded to the nearest even number
+            cmd.args(["-vf", &format!("scale={}:-2", config.width)]);
+        } else {
+            // Pad to even dimensions (adds 1px black border only if odd)
+            cmd.args(["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]);
         }
 
         cmd.args([

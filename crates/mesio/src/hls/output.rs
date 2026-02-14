@@ -503,7 +503,10 @@ impl OutputManager {
 
     /// Main loop for the OutputManager.
     pub async fn run(&mut self) {
-        debug!("is_live_stream: {}", self.is_live_stream);
+        debug!(
+            "Output manager started (live_stream: {}).",
+            self.is_live_stream
+        );
 
         // When a gap is detected, we need a periodic wake-up to re-evaluate gap policies
         // (duration-based skipping / VOD timeouts). Otherwise, if no new segments arrive
@@ -537,7 +540,7 @@ impl OutputManager {
 
                 // Branch 1: Cancellation Token
                 _ = self.token.cancelled() => {
-                    debug!("Cancellation token received. Preparing to exit.");
+                    debug!("Output manager received cancellation token; exiting run loop.");
                     break;
                 }
 
@@ -555,9 +558,9 @@ impl OutputManager {
                                     "Live stream stalled for more than configured max duration ({:?}). No new segments or events received.",
                                     max_stall_duration
                                 );
-                                let _ = self.event_tx.send(Err(HlsDownloaderError::TimeoutError(
-                                    "Stalled: No input received for max duration.".to_string()
-                                ))).await;
+                                let _ = self.event_tx.send(Err(HlsDownloaderError::Timeout {
+                                    reason: "Stalled: No input received for max duration.".to_string()
+                                })).await;
                                 break; // Exit loop for live stream stall
                     }
 
@@ -605,7 +608,7 @@ impl OutputManager {
 
                                 // An init segment can unblock emission for already-buffered media.
                                 if self.try_emit_segments().await.is_err() {
-                                    error!("Error emitting segments from buffer after init segment. Exiting.");
+                                    error!("Error emitting segments from reorder buffer after init segment. Exiting.");
                                     break;
                                 }
 
@@ -680,19 +683,18 @@ impl OutputManager {
 
                             // Attempt to emit segments from the buffer.
                             if self.try_emit_segments().await.is_err() {
-                                error!("Error emitting segments from buffer. Exiting.");
+                                error!("Error emitting segments from reorder buffer. Exiting.");
                                 break;
                             }
                         }
                         Some(Err(e)) => {
-                            error!("Error received from input channel: {:?}. Forwarding and exiting.", e);
+                            error!("Received error from input channel: {:?}. Forwarding and exiting.", e);
                             if self.event_tx.send(Err(e)).await.is_err() {
                                 error!("Failed to send error event after receiving input error. Exiting.");
                             }
                             break; // Critical error, always break
                         }
                         None => { // input_rx channel closed by SegmentScheduler
-                            debug!("input_rx channel closed. Natural end of stream or scheduler termination.");
                             // This is the primary condition for VOD to exit the loop gracefully after processing all segments.
                             // For live streams, this also indicates the end of input.
                             break;
@@ -705,7 +707,7 @@ impl OutputManager {
                 // further segments arrive (or input is paused by backpressure).
                 _ = sleep(gap_evaluation_interval), if self.gap_state.is_some() => {
                     if self.try_emit_segments().await.is_err() {
-                        error!("Error emitting segments from buffer during gap evaluation tick. Exiting.");
+                        error!("Error emitting segments from reorder buffer during gap evaluation tick. Exiting.");
                         break;
                     }
                 }
@@ -715,19 +717,11 @@ impl OutputManager {
         // Post-loop operations: Flush any remaining segments for both live and VOD.
         // For VOD, this ensures all segments are emitted if the input channel closed.
         // For Live, this handles segments remaining after a shutdown signal.
-        debug!(
-            "Flushing reorder buffer (if any segments remain) for stream (live: {}).",
-            self.is_live_stream
-        );
-        if !self.reorder_buffer.is_empty() {
-            if self.flush_reorder_buffer().await.is_err() {
-                error!(
-                    "Failed to flush reorder buffer post-loop (live: {}). Event sender likely closed.",
-                    self.is_live_stream
-                );
-            }
-        } else {
-            debug!("Reorder buffer already empty post-loop.");
+        if !self.reorder_buffer.is_empty() && self.flush_reorder_buffer().await.is_err() {
+            error!(
+                "Failed to flush reorder buffer post-loop (live: {}). Event sender likely closed.",
+                self.is_live_stream
+            );
         }
 
         // --- Stream End Cleanup ---
@@ -740,17 +734,14 @@ impl OutputManager {
 
         // Log metrics summary before sending StreamEnded event
         if self.config.output_config.metrics_enabled {
-            debug!("Logging reorder buffer metrics summary on stream end.");
             self.metrics.log_summary();
         }
 
         // Log performance metrics summary on stream end
         if let Some(ref performance_metrics) = self.performance_metrics {
-            debug!("Logging HLS performance metrics summary on stream end.");
             performance_metrics.log_summary();
         }
 
-        debug!("Sending StreamEnded event.");
         if self
             .event_tx
             .send(Ok(HlsStreamEvent::StreamEnded))
@@ -759,7 +750,6 @@ impl OutputManager {
         {
             error!("Failed to send StreamEnded event after loop completion.");
         }
-        debug!("Finished.");
     }
 
     /// Attempts to emit segments from the reorder buffer.
@@ -800,7 +790,7 @@ impl OutputManager {
                     let segment_output = buffered_segment.output;
 
                     if segment_output.discontinuity {
-                        debug!("sending discontinuity tag encountered");
+                        debug!("Discontinuity tag encountered; emitting event.");
 
                         // Pre-discontinuity flush
                         // Ensure all buffered segments with lower MSN are emitted before the discontinuity event
@@ -1235,7 +1225,9 @@ impl OutputManager {
             }
 
             if segment_output.discontinuity {
-                debug!("sending discontinuity tag encountered in flush_reorder_buffer");
+                debug!(
+                    "Discontinuity tag encountered during reorder-buffer flush; emitting event."
+                );
                 // Reset gap state on discontinuity
                 if self.gap_state.is_some() {
                     debug!(
@@ -1297,24 +1289,24 @@ impl OutputManager {
     #[allow(dead_code)]
     pub async fn signal_stream_end_and_flush(&mut self) {
         debug!(
-            "start to signal end, is_live_stream: {}",
+            "Signaling stream end (live_stream: {}).",
             self.is_live_stream
         );
         if self.is_live_stream || !self.reorder_buffer.is_empty() {
             debug!("Flushing reorder buffer.");
             // Also flush for VOD if somehow buffered
             if self.flush_reorder_buffer().await.is_err() {
-                error!("Failed to flush reorder buffer, event_tx likely closed.");
+                error!("Failed to flush reorder buffer; event channel is likely closed.");
                 // event_tx closed, can't send StreamEnded either
                 return;
             }
-            debug!("Reorder buffer flushed.");
+            debug!("Reorder buffer flush completed.");
         } else {
-            debug!("No flush needed (not live or buffer empty).");
+            debug!("No reorder-buffer flush needed (not live or buffer empty).");
         }
         self.playlist_ended = true; // Mark as ended
         // The main run loop will send StreamEnded upon exiting.
-        debug!("Stream end signaled, buffer flushed (if applicable).");
+        debug!("Stream end signaling completed; buffer flushed if applicable.");
     }
 
     // Method to update live status and expected sequence, perhaps called by coordinator during init

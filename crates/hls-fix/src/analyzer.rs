@@ -19,8 +19,24 @@
 //!
 
 use hls::{HlsData, M4sData, SegmentType};
+use mp4::fragment::{
+    Av1ValidationOptions, extract_av1_track_ids_from_init,
+    validate_av1_media_segment_with_track_ids_and_options,
+};
 use std::fmt;
 use tracing::{debug, info};
+
+/// AV1 fMP4 sample validation policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Av1SampleValidationMode {
+    /// Disable AV1 sample-level validation.
+    Off,
+    /// Reject AV1 ISOBMFF "SHOULD NOT" OBU types.
+    #[default]
+    StrictShouldNot,
+    /// Strict mode: also reject reserved OBU types.
+    StrictAll,
+}
 
 // Stats structure to hold all the metrics
 #[derive(Debug, Clone)]
@@ -191,6 +207,8 @@ impl fmt::Display for HlsStats {
 #[derive(Default)]
 pub struct HlsAnalyzer {
     pub stats: HlsStats,
+    last_mp4_av1_track_ids: Option<Vec<u32>>,
+    av1_validation_mode: Av1SampleValidationMode,
 }
 
 impl HlsAnalyzer {
@@ -198,8 +216,16 @@ impl HlsAnalyzer {
         Self::default()
     }
 
+    pub fn with_av1_validation_mode(mode: Av1SampleValidationMode) -> Self {
+        Self {
+            av1_validation_mode: mode,
+            ..Self::default()
+        }
+    }
+
     pub fn reset(&mut self) {
         self.stats.reset();
+        self.last_mp4_av1_track_ids = None;
     }
 
     /// Analyze a segment and update statistics
@@ -226,6 +252,11 @@ impl HlsAnalyzer {
                 self.stats.has_mp4_segments = true;
                 self.stats.mp4_init_segment_count += 1;
 
+                let mut track_ids = extract_av1_track_ids_from_init(&init_segment.data);
+                track_ids.sort_unstable();
+                track_ids.dedup();
+                self.last_mp4_av1_track_ids = Some(track_ids);
+
                 let segment_size = init_segment.data.len() as u64;
                 self.stats.mp4_init_segments_size += segment_size;
                 self.stats.total_size += segment_size;
@@ -236,6 +267,40 @@ impl HlsAnalyzer {
                 self.stats.last_segment_duration = 0.0; // Init segments don't have duration
             }
             HlsData::M4sData(M4sData::Segment(media_segment)) => {
+                if self.av1_validation_mode != Av1SampleValidationMode::Off
+                    && let Some(track_ids) = &self.last_mp4_av1_track_ids
+                {
+                    let options = match self.av1_validation_mode {
+                        Av1SampleValidationMode::Off => Av1ValidationOptions {
+                            enforce_should_not_obus: false,
+                            enforce_reserved_obus: false,
+                        },
+                        Av1SampleValidationMode::StrictShouldNot => Av1ValidationOptions {
+                            enforce_should_not_obus: true,
+                            enforce_reserved_obus: false,
+                        },
+                        Av1SampleValidationMode::StrictAll => Av1ValidationOptions {
+                            enforce_should_not_obus: true,
+                            enforce_reserved_obus: true,
+                        },
+                    };
+
+                    let validation = validate_av1_media_segment_with_track_ids_and_options(
+                        &media_segment.data,
+                        track_ids,
+                        options,
+                    )
+                    .map_err(|e| format!("AV1 fMP4 media-segment validation failed: {e}"))?;
+
+                    if validation.checked_samples > 0 {
+                        debug!(
+                            checked_tracks = validation.checked_tracks,
+                            checked_samples = validation.checked_samples,
+                            "Validated AV1 fMP4 media samples"
+                        );
+                    }
+                }
+
                 self.stats.has_mp4_segments = true;
                 self.stats.mp4_media_segment_count += 1;
 
@@ -280,6 +345,32 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use m3u8_rs::MediaSegment;
+    use mp4::test_support::{make_init_with_video_sample_entry, make_media_segment_for_track};
+
+    fn create_test_mp4_init_segment_with_av1(track_id: u32) -> HlsData {
+        HlsData::M4sData(M4sData::InitSegment(hls::M4sInitSegmentData {
+            segment: MediaSegment {
+                uri: "init-av1.mp4".to_string(),
+                ..MediaSegment::empty()
+            },
+            data: make_init_with_video_sample_entry(track_id, *b"av01"),
+        }))
+    }
+
+    fn create_test_mp4_media_segment_for_track(
+        track_id: u32,
+        sample: &[u8],
+        duration: f32,
+    ) -> HlsData {
+        HlsData::M4sData(M4sData::Segment(hls::M4sSegmentData {
+            segment: MediaSegment {
+                uri: "segment-av1.m4s".to_string(),
+                duration,
+                ..MediaSegment::empty()
+            },
+            data: make_media_segment_for_track(track_id, sample),
+        }))
+    }
 
     fn create_test_ts_segment(duration: f32) -> HlsData {
         let mut data = vec![0u8; 188 * 10]; // 10 TS packets
@@ -293,6 +384,8 @@ mod tests {
                 ..MediaSegment::empty()
             },
             data: Bytes::from(data),
+            validate_crc: false,
+            continuity_mode: ts::ContinuityMode::Disabled,
         })
     }
 
@@ -427,5 +520,65 @@ mod tests {
         assert_eq!(stats.total_duration, 5.0);
         assert!(stats.has_ts_segments);
         assert!(stats.has_mp4_segments);
+    }
+
+    #[test]
+    fn test_analyze_mp4_av1_media_segment_validation_ok() {
+        let mut analyzer = HlsAnalyzer::new();
+
+        let init = create_test_mp4_init_segment_with_av1(1);
+        analyzer.analyze_segment(&init).unwrap();
+
+        // OBU_FRAME with size 1 and payload 0xAA
+        let sample = [0x32, 0x01, 0xAA];
+        let media = create_test_mp4_media_segment_for_track(1, &sample, 1.0);
+        analyzer.analyze_segment(&media).unwrap();
+
+        assert_eq!(analyzer.stats.mp4_init_segment_count, 1);
+        assert_eq!(analyzer.stats.mp4_media_segment_count, 1);
+    }
+
+    #[test]
+    fn test_analyze_mp4_av1_media_segment_validation_rejects_disallowed_obu() {
+        let mut analyzer = HlsAnalyzer::new();
+
+        let init = create_test_mp4_init_segment_with_av1(1);
+        analyzer.analyze_segment(&init).unwrap();
+
+        // OBU_TEMPORAL_DELIMITER with size 0 (disallowed under strict ISOBMFF validation)
+        let sample = [0x12, 0x00];
+        let media = create_test_mp4_media_segment_for_track(1, &sample, 1.0);
+        let err = analyzer.analyze_segment(&media).unwrap_err();
+
+        assert!(err.contains("OBU_TEMPORAL_DELIMITER"));
+    }
+
+    #[test]
+    fn test_analyze_mp4_av1_validation_mode_off_skips_checks() {
+        let mut analyzer = HlsAnalyzer::with_av1_validation_mode(Av1SampleValidationMode::Off);
+
+        let init = create_test_mp4_init_segment_with_av1(1);
+        analyzer.analyze_segment(&init).unwrap();
+
+        // Disallowed under strict modes, but should pass when validation is off.
+        let sample = [0x12, 0x00];
+        let media = create_test_mp4_media_segment_for_track(1, &sample, 1.0);
+        analyzer.analyze_segment(&media).unwrap();
+    }
+
+    #[test]
+    fn test_analyze_mp4_av1_validation_mode_strict_all_rejects_reserved_obu() {
+        let mut analyzer =
+            HlsAnalyzer::with_av1_validation_mode(Av1SampleValidationMode::StrictAll);
+
+        let init = create_test_mp4_init_segment_with_av1(1);
+        analyzer.analyze_segment(&init).unwrap();
+
+        // Header: forbidden=0, type=9 (reserved), extension=0, size=1, reserved=0 => 0x4A
+        let sample = [0x4A, 0x01, 0x00];
+        let media = create_test_mp4_media_segment_for_track(1, &sample, 1.0);
+        let err = analyzer.analyze_segment(&media).unwrap_err();
+
+        assert!(err.contains("Reserved OBU type"));
     }
 }

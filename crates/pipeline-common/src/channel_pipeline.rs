@@ -8,16 +8,40 @@ use crate::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::error;
+use tracing::{debug, error};
 
 /// Default capacity for channels between stages
 const DEFAULT_CHANNEL_CAPACITY: usize = 32;
+
+fn stage_process_error(
+    stage: &'static str,
+    source: impl std::error::Error + Send + Sync + 'static,
+) -> PipelineError {
+    PipelineError::StageProcess {
+        stage,
+        source: Box::new(source),
+    }
+}
+
+fn stage_finish_error(
+    stage: &'static str,
+    source: impl std::error::Error + Send + Sync + 'static,
+) -> PipelineError {
+    PipelineError::StageFinish {
+        stage,
+        source: Box::new(source),
+    }
+}
 
 /// A channel-based pipeline for processing data through a series of processors.
 ///
 /// Unlike the synchronous `Pipeline`, this implementation spawns a Tokio task for
 /// each processor, connecting them with MPSC channels. This allows stages to run
 /// in parallel and provides buffering between stages.
+///
+/// Runtime model:
+/// - Each stage runs in `tokio::task::spawn_blocking`.
+/// - Stage processors are expected to be synchronous (`Processor<T>`).
 pub struct ChannelPipeline<T> {
     processors: Vec<Box<dyn Processor<T> + Send>>,
     context: Arc<StreamerContext>,
@@ -77,6 +101,9 @@ where
             let task = tokio::task::spawn_blocking(move || {
                 let mut input_rx = current_rx;
                 let tx = next_tx;
+                let mut processed_items: usize = 0;
+                let mut emitted_items: usize = 0;
+                let mut next_progress_log_at: usize = 10_000;
 
                 // Process items
                 while let Some(item_result) = input_rx.blocking_recv() {
@@ -84,19 +111,29 @@ where
                         Ok(item) => {
                             let mut output_fn = |processed_item: T| {
                                 if tx.blocking_send(Ok(processed_item)).is_err() {
-                                    return Err(PipelineError::Processing(
-                                        "Downstream channel closed".to_string(),
-                                    ));
+                                    return Err(PipelineError::ChannelClosed("downstream"));
                                 }
+                                emitted_items = emitted_items.saturating_add(1);
                                 Ok(())
                             };
 
                             if let Err(e) = processor.process(&context, item, &mut output_fn) {
                                 error!(processor = processor_name, error = ?e, "Processor failed");
+                                let msg = e.to_string();
+                                // Channel gets the original typed error; task return gets a string copy
                                 let _ = tx.blocking_send(Err(e));
-                                return Err(PipelineError::Processing(
-                                    "Processor failed".to_string(),
+                                return Err(stage_process_error(
+                                    processor_name,
+                                    std::io::Error::other(msg),
                                 ));
+                            }
+                            processed_items = processed_items.saturating_add(1);
+                            if processed_items >= next_progress_log_at {
+                                debug!(
+                                    processor = processor_name,
+                                    processed_items, emitted_items, "Stage progress"
+                                );
+                                next_progress_log_at = next_progress_log_at.saturating_add(10_000);
                             }
                         }
                         Err(e) => {
@@ -111,18 +148,19 @@ where
                 // Finalize processor
                 let mut output_fn = |processed_item: T| {
                     if tx.blocking_send(Ok(processed_item)).is_err() {
-                        return Err(PipelineError::Processing(
-                            "Downstream channel closed during finish".to_string(),
-                        ));
+                        return Err(PipelineError::ChannelClosed("downstream during finish"));
                     }
                     Ok(())
                 };
 
                 if let Err(e) = processor.finish(&context, &mut output_fn) {
                     error!(processor = processor_name, error = ?e, "Processor finish failed");
+                    let msg = e.to_string();
+                    // Channel gets the original typed error; task return gets a string copy
                     let _ = tx.blocking_send(Err(e));
-                    return Err(PipelineError::Processing(
-                        "Processor finish failed".to_string(),
+                    return Err(stage_finish_error(
+                        processor_name,
+                        std::io::Error::other(msg),
                     ));
                 }
 
@@ -289,7 +327,9 @@ mod tests {
             _input: String,
             _output: &mut dyn FnMut(String) -> Result<(), PipelineError>,
         ) -> Result<(), PipelineError> {
-            Err(PipelineError::Processing("Intentional failure".to_string()))
+            Err(PipelineError::Strategy(Box::new(std::io::Error::other(
+                "Intentional failure",
+            ))))
         }
 
         fn finish(
@@ -317,9 +357,148 @@ mod tests {
 
         let result = pipeline_task.await.unwrap();
         assert!(result.is_err());
+        // run() returns the original error from the channel (not the StageProcess wrapper)
         match result {
-            Err(PipelineError::Processing(msg)) => assert_eq!(msg, "Intentional failure"),
-            _ => panic!("Expected Processing error, got {:?}", result),
+            Err(PipelineError::Strategy(source)) => {
+                assert_eq!(source.to_string(), "Intentional failure");
+            }
+            _ => panic!("Expected Strategy error, got {:?}", result),
+        }
+    }
+
+    struct FinishFailingProcessor;
+
+    impl Processor<String> for FinishFailingProcessor {
+        fn name(&self) -> &'static str {
+            "FinishFailingProcessor"
+        }
+
+        fn process(
+            &mut self,
+            _context: &Arc<StreamerContext>,
+            input: String,
+            output: &mut dyn FnMut(String) -> Result<(), PipelineError>,
+        ) -> Result<(), PipelineError> {
+            output(input)
+        }
+
+        fn finish(
+            &mut self,
+            _context: &Arc<StreamerContext>,
+            _output: &mut dyn FnMut(String) -> Result<(), PipelineError>,
+        ) -> Result<(), PipelineError> {
+            Err(PipelineError::Strategy(Box::new(std::io::Error::other(
+                "Intentional finish failure",
+            ))))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_channel_pipeline_finish_error_propagation() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+
+        let pipeline = ChannelPipeline::new(context).add_processor(FinishFailingProcessor);
+        let input = vec![Ok("item1".to_string())];
+
+        let pipeline_task = tokio::task::spawn_blocking(move || {
+            let mut output_fn = |_res: Result<String, PipelineError>| {};
+            pipeline.run(input.into_iter(), &mut output_fn)
+        });
+
+        let result = pipeline_task.await.unwrap();
+        assert!(result.is_err());
+        // run() returns the original error from the channel (not the StageFinish wrapper)
+        match result {
+            Err(PipelineError::Strategy(source)) => {
+                assert_eq!(source.to_string(), "Intentional finish failure");
+            }
+            _ => panic!("Expected Strategy error, got {:?}", result),
+        }
+    }
+
+    /// Test that spawn() task handles return StageProcess with the original error type preserved
+    /// in the channel output.
+    #[tokio::test]
+    async fn test_spawn_process_error_preserves_type_on_channel() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+
+        let pipeline = ChannelPipeline::new(context).add_processor(FailingProcessor);
+        let SpawnedPipeline {
+            input_tx,
+            mut output_rx,
+            tasks,
+        } = pipeline.spawn();
+
+        // Send an item to trigger the processor failure
+        input_tx.send(Ok("item1".to_string())).await.unwrap();
+
+        // The channel should receive the original Strategy error (not StageProcess)
+        let channel_item = output_rx.recv().await.unwrap();
+        match channel_item {
+            Err(PipelineError::Strategy(source)) => {
+                assert_eq!(source.to_string(), "Intentional failure");
+            }
+            other => panic!("Expected Strategy error on channel, got {:?}", other),
+        }
+
+        drop(input_tx);
+        drop(output_rx);
+
+        // The task handle should return StageProcess
+        assert_eq!(tasks.len(), 1);
+        let task_result = tasks.into_iter().next().unwrap().await.unwrap();
+        match task_result {
+            Err(PipelineError::StageProcess { stage, source }) => {
+                assert_eq!(stage, "FailingProcessor");
+                assert_eq!(source.to_string(), "Intentional failure");
+            }
+            other => panic!("Expected StageProcess error on task, got {:?}", other),
+        }
+    }
+
+    /// Test that spawn() task handles return StageFinish with the original error type preserved
+    /// in the channel output.
+    #[tokio::test]
+    async fn test_spawn_finish_error_preserves_type_on_channel() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+
+        let pipeline = ChannelPipeline::new(context).add_processor(FinishFailingProcessor);
+        let SpawnedPipeline {
+            input_tx,
+            mut output_rx,
+            tasks,
+        } = pipeline.spawn();
+
+        // Send an item that passes through, then close input to trigger finish()
+        input_tx.send(Ok("item1".to_string())).await.unwrap();
+        drop(input_tx);
+
+        // Drain: first the processed item, then the finish error
+        let first = output_rx.recv().await.unwrap();
+        assert!(first.is_ok(), "Expected processed item, got {:?}", first);
+
+        let channel_item = output_rx.recv().await.unwrap();
+        match channel_item {
+            Err(PipelineError::Strategy(source)) => {
+                assert_eq!(source.to_string(), "Intentional finish failure");
+            }
+            other => panic!("Expected Strategy error on channel, got {:?}", other),
+        }
+
+        drop(output_rx);
+
+        // The task handle should return StageFinish
+        assert_eq!(tasks.len(), 1);
+        let task_result = tasks.into_iter().next().unwrap().await.unwrap();
+        match task_result {
+            Err(PipelineError::StageFinish { stage, source }) => {
+                assert_eq!(stage, "FinishFailingProcessor");
+                assert_eq!(source.to_string(), "Intentional finish failure");
+            }
+            other => panic!("Expected StageFinish error on task, got {:?}", other),
         }
     }
 }

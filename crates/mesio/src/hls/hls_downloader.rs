@@ -97,8 +97,7 @@ impl HlsDownloader {
             token,
             parent_span,
         )
-        .await
-        .map_err(DownloadError::HlsError)?;
+        .await?;
 
         let stream = ReceiverStream::new(client_event_rx);
 
@@ -109,7 +108,7 @@ impl HlsDownloader {
                 playlist_engine_handle,
                 scheduler_handle,
                 output_manager_handle,
-                http2_stats,
+                ..
             } = handles;
 
             // It's important to await all handles to ensure cleanup.
@@ -126,10 +125,7 @@ impl HlsDownloader {
                 warn!("Output manager task finished with error: {:?}", e);
             }
 
-            // Log HTTP/2 connection statistics
-            http2_stats.log_summary();
-
-            debug!("All HLS pipeline tasks have completed.");
+            debug!("HLS pipeline tasks finished.");
         });
 
         // map receiver stream to BoxMediaStream
@@ -198,8 +194,7 @@ impl MultiSource for HlsDownloader {
                 }
             }
         }
-        Err(last_error
-            .unwrap_or_else(|| DownloadError::NoSource("No source available".to_string())))
+        Err(last_error.unwrap_or_else(|| DownloadError::source_exhausted("No source available")))
     }
 }
 

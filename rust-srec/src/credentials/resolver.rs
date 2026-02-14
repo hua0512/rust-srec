@@ -63,16 +63,23 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                 .get("refresh_token")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let access_token = config
+                .get("access_token")
+                .and_then(|v| v.as_str())
+                .map(String::from);
 
-            return Ok(Some(CredentialSource::new(
-                CredentialScope::Streamer {
-                    streamer_id: streamer.id.clone(),
-                    streamer_name: streamer.name.clone(),
-                },
-                cookies.to_string(),
-                refresh_token,
-                platform_name,
-            )));
+            return Ok(Some(
+                CredentialSource::new(
+                    CredentialScope::Streamer {
+                        streamer_id: streamer.id.clone(),
+                        streamer_name: streamer.name.clone(),
+                    },
+                    cookies.to_string(),
+                    refresh_token,
+                    platform_name,
+                )
+                .with_access_token(access_token),
+            ));
         }
 
         // Layer 3: Template cookies
@@ -87,16 +94,23 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                     template.platform_overrides.as_deref(),
                     &platform_name,
                 );
+                let access_token = Self::extract_template_access_token(
+                    template.platform_overrides.as_deref(),
+                    &platform_name,
+                );
 
-                return Ok(Some(CredentialSource::new(
-                    CredentialScope::Template {
-                        template_id: template_id.clone(),
-                        template_name: template.name.clone(),
-                    },
-                    cookies.clone(),
-                    refresh_token,
-                    platform_name,
-                )));
+                return Ok(Some(
+                    CredentialSource::new(
+                        CredentialScope::Template {
+                            template_id: template_id.clone(),
+                            template_name: template.name.clone(),
+                        },
+                        cookies.clone(),
+                        refresh_token,
+                        platform_name,
+                    )
+                    .with_access_token(access_token),
+                ));
             }
         }
 
@@ -108,16 +122,21 @@ impl<R: ConfigRepository> CredentialResolver<R> {
             // Parse refresh_token from platform_specific_config
             let refresh_token =
                 Self::extract_platform_refresh_token(platform.platform_specific_config.as_deref());
+            let access_token =
+                Self::extract_platform_access_token(platform.platform_specific_config.as_deref());
 
-            return Ok(Some(CredentialSource::new(
-                CredentialScope::Platform {
-                    platform_id: streamer.platform_config_id.clone(),
-                    platform_name: platform.platform_name.clone(),
-                },
-                cookies.clone(),
-                refresh_token,
-                platform.platform_name,
-            )));
+            return Ok(Some(
+                CredentialSource::new(
+                    CredentialScope::Platform {
+                        platform_id: streamer.platform_config_id.clone(),
+                        platform_name: platform.platform_name.clone(),
+                    },
+                    cookies.clone(),
+                    refresh_token,
+                    platform.platform_name,
+                )
+                .with_access_token(access_token),
+            ));
         }
 
         // No cookies configured at any layer
@@ -153,16 +172,23 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                 .get("refresh_token")
                 .and_then(|v| v.as_str())
                 .map(String::from);
+            let access_token = config
+                .get("access_token")
+                .and_then(|v| v.as_str())
+                .map(String::from);
 
-            return Ok(Some(CredentialSource::new(
-                CredentialScope::Streamer {
-                    streamer_id: metadata.id.clone(),
-                    streamer_name: metadata.name.clone(),
-                },
-                cookies.to_string(),
-                refresh_token,
-                platform_name,
-            )));
+            return Ok(Some(
+                CredentialSource::new(
+                    CredentialScope::Streamer {
+                        streamer_id: metadata.id.clone(),
+                        streamer_name: metadata.name.clone(),
+                    },
+                    cookies.to_string(),
+                    refresh_token,
+                    platform_name,
+                )
+                .with_access_token(access_token),
+            ));
         }
 
         // Layer 3: Template cookies
@@ -176,16 +202,23 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                     template.platform_overrides.as_deref(),
                     &platform_name,
                 );
+                let access_token = Self::extract_template_access_token(
+                    template.platform_overrides.as_deref(),
+                    &platform_name,
+                );
 
-                return Ok(Some(CredentialSource::new(
-                    CredentialScope::Template {
-                        template_id: template_id.clone(),
-                        template_name: template.name.clone(),
-                    },
-                    cookies.clone(),
-                    refresh_token,
-                    platform_name,
-                )));
+                return Ok(Some(
+                    CredentialSource::new(
+                        CredentialScope::Template {
+                            template_id: template_id.clone(),
+                            template_name: template.name.clone(),
+                        },
+                        cookies.clone(),
+                        refresh_token,
+                        platform_name,
+                    )
+                    .with_access_token(access_token),
+                ));
             }
         }
 
@@ -196,16 +229,21 @@ impl<R: ConfigRepository> CredentialResolver<R> {
             debug!("Found credentials at platform level");
             let refresh_token =
                 Self::extract_platform_refresh_token(platform.platform_specific_config.as_deref());
+            let access_token =
+                Self::extract_platform_access_token(platform.platform_specific_config.as_deref());
 
-            return Ok(Some(CredentialSource::new(
-                CredentialScope::Platform {
-                    platform_id: metadata.platform_config_id.clone(),
-                    platform_name: platform.platform_name.clone(),
-                },
-                cookies.clone(),
-                refresh_token,
-                platform.platform_name,
-            )));
+            return Ok(Some(
+                CredentialSource::new(
+                    CredentialScope::Platform {
+                        platform_id: metadata.platform_config_id.clone(),
+                        platform_name: platform.platform_name.clone(),
+                    },
+                    cookies.clone(),
+                    refresh_token,
+                    platform.platform_name,
+                )
+                .with_access_token(access_token),
+            ));
         }
 
         debug!("No credentials found at any level");
@@ -223,6 +261,17 @@ impl<R: ConfigRepository> CredentialResolver<R> {
             })
     }
 
+    /// Extract access_token from platform_specific_config JSON.
+    fn extract_platform_access_token(config: Option<&str>) -> Option<String> {
+        config
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok())
+            .and_then(|v| {
+                v.get("access_token")
+                    .and_then(|t| t.as_str())
+                    .map(String::from)
+            })
+    }
+
     /// Extract refresh_token from template's platform_overrides for a specific platform.
     fn extract_template_refresh_token(
         overrides: Option<&str>,
@@ -232,6 +281,18 @@ impl<R: ConfigRepository> CredentialResolver<R> {
             .and_then(|o| serde_json::from_str::<serde_json::Value>(o).ok())
             .and_then(|v| v.get(platform_name).cloned())
             .and_then(|p| p.get("refresh_token").cloned())
+            .and_then(|t| t.as_str().map(String::from))
+    }
+
+    /// Extract access_token from template's platform_overrides for a specific platform.
+    fn extract_template_access_token(
+        overrides: Option<&str>,
+        platform_name: &str,
+    ) -> Option<String> {
+        overrides
+            .and_then(|o| serde_json::from_str::<serde_json::Value>(o).ok())
+            .and_then(|v| v.get(platform_name).cloned())
+            .and_then(|p| p.get("access_token").cloned())
             .and_then(|t| t.as_str().map(String::from))
     }
 }

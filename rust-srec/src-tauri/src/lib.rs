@@ -326,8 +326,10 @@ async fn run_desktop_backend_init(
         tokio::task::spawn_blocking(move || rust_srec::logging::init_logging(&log_dir_str_clone));
 
     let pool_future = rust_srec::database::init_pool(&database_url);
+    let write_pool_future = rust_srec::database::init_write_pool(&database_url);
 
-    let (logging_result, pool_result) = tokio::join!(logging_future, pool_future);
+    let (logging_result, pool_result, write_pool_result) =
+        tokio::join!(logging_future, pool_future, write_pool_future);
 
     // Handle logging result
     let (logging_config, log_guard) = match logging_result {
@@ -353,6 +355,18 @@ async fn run_desktop_backend_init(
         Ok(p) => p,
         Err(e) => {
             show_boot_error_window(&app_handle, &format!("Failed to open database: {e}")).await;
+            return;
+        }
+    };
+
+    let write_pool = match write_pool_result {
+        Ok(p) => p,
+        Err(e) => {
+            show_boot_error_window(
+                &app_handle,
+                &format!("Failed to open write database pool: {e}"),
+            )
+            .await;
             return;
         }
     };
@@ -390,6 +404,7 @@ async fn run_desktop_backend_init(
 
     let container = match rust_srec::services::ServiceContainer::with_full_config(
         pool,
+        write_pool,
         Duration::from_secs(3600),
         256,
         rust_srec::downloader::DownloadManagerConfig::default(),

@@ -6,39 +6,46 @@ use byteorder::{BigEndian, WriteBytesExt};
 use super::define::Amf0Marker;
 use super::{Amf0Value, Amf0WriteError};
 
-/// A macro to encode an AMF property key into a buffer
-#[macro_export]
-macro_rules! write_amf_property_key {
-    ($buffer:expr, $key:expr) => {
-        // write key length (u16 in big endian)
-        $buffer.write_u16::<BigEndian>($key.len() as u16)?;
-        // write key string bytes
-        $buffer.write_all($key.as_bytes())?;
-    };
-}
-
 /// AMF0 encoder.
 ///
-/// Allows for encoding an AMF0 to some writer.
+/// Allows for encoding AMF0 values to any [`io::Write`] implementor.
 pub struct Amf0Encoder;
 
 impl Amf0Encoder {
     /// Encode a generic AMF0 value
     pub fn encode(writer: &mut impl io::Write, value: &Amf0Value) -> Result<(), Amf0WriteError> {
         match value {
-            Amf0Value::Boolean(val) => Self::encode_bool(writer, *val),
-            Amf0Value::Null => Self::encode_null(writer),
             Amf0Value::Number(val) => Self::encode_number(writer, *val),
+            Amf0Value::Boolean(val) => Self::encode_bool(writer, *val),
             Amf0Value::String(val) => Self::encode_string(writer, val),
             Amf0Value::Object(val) => Self::encode_object(writer, val),
+            Amf0Value::Null => Self::encode_null(writer),
+            Amf0Value::Undefined => Self::encode_undefined(writer),
+            Amf0Value::EcmaArray(val) => Self::encode_ecma_array(writer, val),
             Amf0Value::StrictArray(val) => Self::encode_strict_array(writer, val),
-            _ => Err(Amf0WriteError::UnsupportedType(value.marker())),
+            Amf0Value::Date {
+                timestamp,
+                timezone,
+            } => Self::encode_date(writer, *timestamp, *timezone),
+            Amf0Value::LongString(val) => Self::encode_long_string(writer, val),
         }
     }
 
     /// Write object end marker to signify the end of an AMF0 object
     pub fn object_eof(writer: &mut impl io::Write) -> Result<(), Amf0WriteError> {
         writer.write_u24::<BigEndian>(Amf0Marker::ObjectEnd as u32)?;
+        Ok(())
+    }
+
+    /// Write an AMF0 property key (u16 length prefix + UTF-8 bytes).
+    ///
+    /// This is used for object/ecma-array property keys.
+    pub fn write_property_key(
+        writer: &mut impl io::Write,
+        key: &str,
+    ) -> Result<(), Amf0WriteError> {
+        writer.write_u16::<BigEndian>(key.len() as u16)?;
+        writer.write_all(key.as_bytes())?;
         Ok(())
     }
 
@@ -78,13 +85,30 @@ impl Amf0Encoder {
         }
 
         writer.write_u8(Amf0Marker::String as u8)?;
-        write_amf_property_key!(writer, value);
+        Self::write_property_key(writer, value)?;
+        Ok(())
+    }
+
+    /// Encode an AMF0 long string (u32 length prefix)
+    pub fn encode_long_string(
+        writer: &mut impl io::Write,
+        value: &str,
+    ) -> Result<(), Amf0WriteError> {
+        writer.write_u8(Amf0Marker::LongString as u8)?;
+        writer.write_u32::<BigEndian>(value.len() as u32)?;
+        writer.write_all(value.as_bytes())?;
         Ok(())
     }
 
     /// Encode an AMF0 null
     pub fn encode_null(writer: &mut impl io::Write) -> Result<(), Amf0WriteError> {
         writer.write_u8(Amf0Marker::Null as u8)?;
+        Ok(())
+    }
+
+    /// Encode an AMF0 undefined
+    pub fn encode_undefined(writer: &mut impl io::Write) -> Result<(), Amf0WriteError> {
+        writer.write_u8(Amf0Marker::Undefined as u8)?;
         Ok(())
     }
 
@@ -95,7 +119,26 @@ impl Amf0Encoder {
     ) -> Result<(), Amf0WriteError> {
         writer.write_u8(Amf0Marker::Object as u8)?;
         for (key, value) in properties {
-            write_amf_property_key!(writer, key);
+            Self::write_property_key(writer, key)?;
+            Self::encode(writer, value)?;
+        }
+
+        Self::object_eof(writer)?;
+        Ok(())
+    }
+
+    /// Encode an AMF0 ECMA array
+    ///
+    /// ECMA arrays are similar to objects but have a count prefix and are
+    /// identified by marker 0x08 on the wire.
+    pub fn encode_ecma_array(
+        writer: &mut impl io::Write,
+        properties: &[(Cow<'_, str>, Amf0Value<'_>)],
+    ) -> Result<(), Amf0WriteError> {
+        writer.write_u8(Amf0Marker::EcmaArray as u8)?;
+        writer.write_u32::<BigEndian>(properties.len() as u32)?;
+        for (key, value) in properties {
+            Self::write_property_key(writer, key)?;
             Self::encode(writer, value)?;
         }
 
@@ -113,6 +156,20 @@ impl Amf0Encoder {
         for value in values {
             Self::encode(writer, value)?;
         }
+        Ok(())
+    }
+
+    /// Encode an AMF0 date
+    ///
+    /// Writes marker 0x0B + f64 timestamp (ms since epoch) + i16 timezone offset (minutes).
+    pub fn encode_date(
+        writer: &mut impl io::Write,
+        timestamp: f64,
+        timezone: i16,
+    ) -> Result<(), Amf0WriteError> {
+        writer.write_u8(Amf0Marker::Date as u8)?;
+        writer.write_f64::<BigEndian>(timestamp)?;
+        writer.write_i16::<BigEndian>(timezone)?;
         Ok(())
     }
 }
@@ -182,6 +239,17 @@ mod tests {
     }
 
     #[test]
+    fn test_write_long_string() {
+        let mut expected = vec![0x0c, 0x00, 0x00, 0x00, 0x0b];
+        expected.extend_from_slice(b"Hello World");
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode_long_string(&mut vec, "Hello World").unwrap();
+
+        assert_eq!(vec, expected);
+    }
+
+    #[test]
     fn test_write_null() {
         let amf0_null = vec![0x05];
 
@@ -190,6 +258,16 @@ mod tests {
         Amf0Encoder::encode_null(&mut vec).unwrap();
 
         assert_eq!(vec, amf0_null);
+    }
+
+    #[test]
+    fn test_write_undefined() {
+        let expected = vec![0x06];
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode_undefined(&mut vec).unwrap();
+
+        assert_eq!(vec, expected);
     }
 
     #[test]
@@ -204,6 +282,33 @@ mod tests {
         Amf0Encoder::encode_object(&mut vec, &[("test".into(), Amf0Value::Null)]).unwrap();
 
         assert_eq!(vec, amf0_object);
+    }
+
+    #[test]
+    fn test_write_ecma_array() {
+        let mut expected = vec![0x08]; // EcmaArray marker
+        expected.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]); // count = 1
+        expected.extend_from_slice(&[0x00, 0x04]); // key length = 4
+        expected.extend_from_slice(b"test");
+        expected.extend_from_slice(&[0x05]); // Null value
+        expected.extend_from_slice(&[0x00, 0x00, 0x09]); // object_eof
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode_ecma_array(&mut vec, &[("test".into(), Amf0Value::Null)]).unwrap();
+
+        assert_eq!(vec, expected);
+    }
+
+    #[test]
+    fn test_write_date() {
+        let mut expected = vec![0x0b]; // Date marker
+        expected.extend_from_slice(&1234567890.0_f64.to_be_bytes());
+        expected.extend_from_slice(&(-120_i16).to_be_bytes());
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode_date(&mut vec, 1234567890.0, -120).unwrap();
+
+        assert_eq!(vec, expected);
     }
 
     #[test]
@@ -237,11 +342,59 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_generic_error_unsupported_type() {
-        let mut writer = Vec::<u8>::new();
-        let unsupported_marker = Amf0Value::ObjectEnd;
-        let result = Amf0Encoder::encode(&mut writer, &unsupported_marker);
-        assert!(matches!(result, Err(Amf0WriteError::UnsupportedType(_))));
+    fn test_encode_generic_ecma_array() {
+        let mut expected = vec![Amf0Marker::EcmaArray as u8];
+        expected.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]); // count
+        expected.extend_from_slice(&[0x00, 0x04]); // key length
+        expected.extend_from_slice(b"test");
+        expected.push(Amf0Marker::Null as u8);
+        expected.extend_from_slice(&[0x00, 0x00, 0x09]); // object_eof
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode(
+            &mut vec,
+            &Amf0Value::EcmaArray(vec![("test".into(), Amf0Value::Null)].into()),
+        )
+        .unwrap();
+        assert_eq!(vec, expected);
+    }
+
+    #[test]
+    fn test_encode_generic_date() {
+        let mut expected = vec![Amf0Marker::Date as u8];
+        expected.extend_from_slice(&1000.0_f64.to_be_bytes());
+        expected.extend_from_slice(&0_i16.to_be_bytes());
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode(
+            &mut vec,
+            &Amf0Value::Date {
+                timestamp: 1000.0,
+                timezone: 0,
+            },
+        )
+        .unwrap();
+        assert_eq!(vec, expected);
+    }
+
+    #[test]
+    fn test_encode_generic_undefined() {
+        let expected = vec![Amf0Marker::Undefined as u8];
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode(&mut vec, &Amf0Value::Undefined).unwrap();
+        assert_eq!(vec, expected);
+    }
+
+    #[test]
+    fn test_encode_generic_long_string() {
+        let mut expected = vec![Amf0Marker::LongString as u8];
+        expected.extend_from_slice(&(5_u32).to_be_bytes());
+        expected.extend_from_slice(b"hello");
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::encode(&mut vec, &Amf0Value::LongString(Cow::Borrowed("hello"))).unwrap();
+        assert_eq!(vec, expected);
     }
 
     #[test]
@@ -301,5 +454,16 @@ mod tests {
         .unwrap();
 
         assert_eq!(vec, amf0_array);
+    }
+
+    #[test]
+    fn test_write_property_key() {
+        let mut expected = vec![0x00, 0x04];
+        expected.extend_from_slice(b"test");
+
+        let mut vec = Vec::<u8>::new();
+        Amf0Encoder::write_property_key(&mut vec, "test").unwrap();
+
+        assert_eq!(vec, expected);
     }
 }

@@ -22,7 +22,9 @@ use super::flv_downloader::FlvDownloader;
 use super::hls_downloader::HlsDownloader;
 use crate::Result;
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{DownloadEngine, DownloadHandle, EngineType, SegmentEvent};
+use crate::downloader::engine::traits::{
+    DownloadEngine, DownloadFailureKind, DownloadHandle, EngineStartError, EngineType,
+};
 
 /// Native Mesio download engine.
 ///
@@ -107,14 +109,22 @@ impl DownloadEngine for MesioEngine {
         EngineType::Mesio
     }
 
-    async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
+    async fn start(
+        &self,
+        handle: Arc<DownloadHandle>,
+    ) -> std::result::Result<(), EngineStartError> {
         let config_snapshot = handle.config_snapshot();
         let streamer_id = config_snapshot.streamer_id.clone();
 
         info!("Starting mesio download for streamer {}", streamer_id);
 
         // Detect protocol type using MesioDownloaderFactory
-        let protocol_type = Self::detect_protocol(&config_snapshot.url)?;
+        let protocol_type = Self::detect_protocol(&config_snapshot.url).map_err(|e| {
+            EngineStartError::new(
+                DownloadFailureKind::Configuration,
+                format!("Protocol detection failed: {}", e),
+            )
+        })?;
 
         debug!(
             "Detected protocol {:?} for URL: {}",
@@ -146,14 +156,10 @@ impl DownloadEngine for MesioEngine {
             _ => {
                 let error_msg = format!("Unsupported protocol type: {:?}", protocol_type);
                 error!("{}", error_msg);
-                let _ = handle
-                    .event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        error: error_msg.clone(),
-                        recoverable: false,
-                    })
-                    .await;
-                return Err(crate::Error::Other(error_msg));
+                return Err(EngineStartError::new(
+                    DownloadFailureKind::Configuration,
+                    error_msg,
+                ));
             }
         };
 

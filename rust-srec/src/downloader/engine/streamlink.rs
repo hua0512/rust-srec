@@ -11,7 +11,8 @@ use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use super::traits::{
-    DownloadConfig, DownloadEngine, DownloadHandle, EngineType, SegmentEvent, SegmentInfo,
+    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, EngineStartError,
+    EngineType, SegmentEvent, SegmentInfo,
 };
 use super::utils::{
     OutputRecordReader, ensure_output_dir, is_segment_start, parse_opened_path, parse_progress,
@@ -219,16 +220,17 @@ impl DownloadEngine for StreamlinkEngine {
         EngineType::Streamlink
     }
 
-    async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
+    async fn start(
+        &self,
+        handle: Arc<DownloadHandle>,
+    ) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
         // 1. Ensure output directory exists before spawning processes
         if let Err(e) = ensure_output_dir(&config.output_dir).await {
-            let msg = e.to_string();
-            let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
-                error: msg.clone(),
-                recoverable: false,
-            });
-            return Err(crate::Error::Other(msg));
+            return Err(EngineStartError::new(
+                DownloadFailureKind::Io,
+                e.to_string(),
+            ));
         }
 
         let streamlink_args = self.build_streamlink_args(&config);
@@ -251,15 +253,24 @@ impl DownloadEngine for StreamlinkEngine {
             .args(&streamlink_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut streamlink = streamlink_command
-            .spawn()
-            .map_err(|e| crate::Error::Other(format!("Failed to spawn streamlink: {}", e)))?;
+        let mut streamlink = streamlink_command.spawn().map_err(|e| {
+            EngineStartError::new(
+                DownloadFailureKind::Configuration,
+                format!("Failed to spawn streamlink: {}", e),
+            )
+        })?;
 
         let mut streamlink_stdout = streamlink.stdout.take().ok_or_else(|| {
-            crate::Error::Other("Failed to capture streamlink stdout".to_string())
+            EngineStartError::new(
+                DownloadFailureKind::Other,
+                "Failed to capture streamlink stdout",
+            )
         })?;
         let streamlink_stderr = streamlink.stderr.take().ok_or_else(|| {
-            crate::Error::Other("Failed to capture streamlink stderr".to_string())
+            EngineStartError::new(
+                DownloadFailureKind::Other,
+                "Failed to capture streamlink stderr",
+            )
         })?;
 
         // Spawn ffmpeg process with stdin piped
@@ -270,18 +281,22 @@ impl DownloadEngine for StreamlinkEngine {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut ffmpeg = ffmpeg_command
-            .spawn()
-            .map_err(|e| crate::Error::Other(format!("Failed to spawn ffmpeg: {}", e)))?;
+        let mut ffmpeg = ffmpeg_command.spawn().map_err(|e| {
+            EngineStartError::new(
+                DownloadFailureKind::Configuration,
+                format!("Failed to spawn ffmpeg: {}", e),
+            )
+        })?;
 
-        let mut ffmpeg_stdin = ffmpeg
-            .stdin
-            .take()
-            .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stdin".to_string()))?;
-        let ffmpeg_stderr = ffmpeg
-            .stderr
-            .take()
-            .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stderr".to_string()))?;
+        let mut ffmpeg_stdin = ffmpeg.stdin.take().ok_or_else(|| {
+            EngineStartError::new(DownloadFailureKind::Other, "Failed to capture ffmpeg stdin")
+        })?;
+        let ffmpeg_stderr = ffmpeg.stderr.take().ok_or_else(|| {
+            EngineStartError::new(
+                DownloadFailureKind::Other,
+                "Failed to capture ffmpeg stderr",
+            )
+        })?;
 
         let cancellation_token = handle.cancellation_token.clone();
         let started_instant = Instant::now();
@@ -619,16 +634,16 @@ impl DownloadEngine for StreamlinkEngine {
                     // Non-zero exit code - failure
                     let _ = event_tx_clone
                         .send(SegmentEvent::DownloadFailed {
-                            error: format!("Streamlink/FFmpeg exited with code {}", code),
-                            recoverable: true,
+                            kind: DownloadFailureKind::ProcessExit { code: Some(code) },
+                            message: format!("Streamlink/FFmpeg exited with code {}", code),
                         })
                         .await;
                 }
                 None => {
                     let _ = event_tx_clone
                         .send(SegmentEvent::DownloadFailed {
-                            error: "Streamlink/FFmpeg exited without an exit code".to_string(),
-                            recoverable: true,
+                            kind: DownloadFailureKind::ProcessExit { code: None },
+                            message: "Streamlink/FFmpeg exited without an exit code".to_string(),
                         })
                         .await;
                 }

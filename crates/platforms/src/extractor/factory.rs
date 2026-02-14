@@ -11,6 +11,10 @@ use crate::extractor::platforms::{
 use regex::Regex;
 use reqwest::Client;
 
+static REDBOOK_PROFILE_URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:https?://)?(?:www\.)?xiaohongshu\.com/user/profile/").unwrap()
+});
+
 // A type alias for a thread-safe constructor function.
 type ExtractorConstructor =
     fn(String, Client, Option<String>, Option<serde_json::Value>) -> Box<dyn PlatformExtractor>;
@@ -68,6 +72,12 @@ impl ExtractorFactory {
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
     ) -> Result<Box<dyn PlatformExtractor>, ExtractorError> {
+        if REDBOOK_PROFILE_URL_REGEX.is_match(url) {
+            return Err(ExtractorError::ValidationError(
+                "RedBook profile URLs are not supported; use xhslink.com/m share links".to_string(),
+            ));
+        }
+
         for platform in PLATFORMS {
             if platform.regex.is_match(url) {
                 return Ok((platform.constructor)(
@@ -84,5 +94,26 @@ impl ExtractorFactory {
         StreamlinkExtractor::new(url.to_string(), self.client.clone(), cookies, extras)
             .map(|e| Box::new(e) as Box<dyn PlatformExtractor>)
             .or(Err(ExtractorError::UnsupportedExtractor))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::extractor::default::default_client;
+
+    #[test]
+    fn profile_urls_fail_before_streamlink_fallback() {
+        let factory = ExtractorFactory::new(default_client());
+        let err = factory
+            .create_extractor(
+                "https://www.xiaohongshu.com/user/profile/6260c44f0000000010006079",
+                None,
+                None,
+            )
+            .err()
+            .expect("expected error");
+
+        assert!(matches!(err, ExtractorError::ValidationError(_)));
     }
 }

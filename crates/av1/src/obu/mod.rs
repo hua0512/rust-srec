@@ -1,10 +1,10 @@
 use std::io;
 
-use bytes_util::BitReader;
+use bytes_util::{BitReader, BitWriter};
 use utils::read_leb128;
 
 pub mod seq;
-mod utils;
+pub mod utils;
 
 /// OBU Header
 /// AV1-Spec-2 - 5.3.2
@@ -48,12 +48,24 @@ impl ObuHeader {
         let extension_flag = bit_reader.read_bit()?;
         let has_size_field = bit_reader.read_bit()?;
 
-        bit_reader.read_bit()?; // reserved_1bit
+        let reserved_1bit = bit_reader.read_bit()?;
+        if reserved_1bit {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "obu_reserved_1bit is not 0",
+            ));
+        }
 
         let extension_header = if extension_flag {
             let temporal_id = bit_reader.read_bits(3)?;
             let spatial_id = bit_reader.read_bits(2)?;
-            bit_reader.read_bits(3)?; // reserved_3bits
+            let reserved_3bits = bit_reader.read_bits(3)?;
+            if reserved_3bits != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "obu_extension_header_reserved_3bits are not 0",
+                ));
+            }
             Some(ObuExtensionHeader {
                 temporal_id: temporal_id as u8,
                 spatial_id: spatial_id as u8,
@@ -81,6 +93,53 @@ impl ObuHeader {
             size,
             extension_header,
         })
+    }
+
+    /// Writes this OBU header to the given writer.
+    ///
+    /// If `self.size` is `Some`, writes with `obu_has_size_field=1` and
+    /// encodes the size as LEB128. If `None`, writes with `obu_has_size_field=0`.
+    ///
+    /// Returns the number of bytes written.
+    pub fn mux<W: io::Write>(&self, writer: &mut W) -> io::Result<usize> {
+        let mut bit_writer = BitWriter::new(writer);
+
+        bit_writer.write_bit(false)?; // obu_forbidden_bit
+        bit_writer.write_bits(u8::from(self.obu_type) as u64, 4)?;
+        bit_writer.write_bit(self.extension_header.is_some())?;
+        bit_writer.write_bit(self.size.is_some())?;
+        bit_writer.write_bit(false)?; // obu_reserved_1bit
+
+        if let Some(ext) = &self.extension_header {
+            bit_writer.write_bits(ext.temporal_id as u64, 3)?;
+            bit_writer.write_bits(ext.spatial_id as u64, 2)?;
+            bit_writer.write_bits(0, 3)?; // extension_header_reserved_3bits
+        }
+
+        let mut bytes_written = if self.extension_header.is_some() {
+            2
+        } else {
+            1
+        };
+
+        let writer = bit_writer.finish()?;
+
+        if let Some(size) = self.size {
+            bytes_written += utils::write_leb128(writer, size)?;
+        }
+
+        Ok(bytes_written)
+    }
+
+    /// Returns the encoded size of this OBU header in bytes.
+    pub fn header_size(&self) -> usize {
+        let base = if self.extension_header.is_some() {
+            2
+        } else {
+            1
+        };
+        let size_field = self.size.map_or(0, utils::leb128_size);
+        base + size_field
     }
 }
 
@@ -226,6 +285,31 @@ mod tests {
     }
 
     #[test]
+    fn test_obu_header_reserved_1bit_set() {
+        // forbidden=0, type=0, extension=0, has_size=0, reserved_1bit=1
+        let err = ObuHeader::parse(&mut std::io::Cursor::new([0x01])).unwrap_err();
+        insta::assert_debug_snapshot!(err, @r#"
+        Custom {
+            kind: InvalidData,
+            error: "obu_reserved_1bit is not 0",
+        }
+        "#);
+    }
+
+    #[test]
+    fn test_obu_header_extension_reserved_3bits_set() {
+        // Byte0: forbidden=0, type=0, extension=1, has_size=0, reserved_1bit=0
+        // Byte1: temporal_id=0, spatial_id=0, reserved_3bits=001 (invalid)
+        let err = ObuHeader::parse(&mut std::io::Cursor::new([0x04, 0x01])).unwrap_err();
+        insta::assert_debug_snapshot!(err, @r#"
+        Custom {
+            kind: InvalidData,
+            error: "obu_extension_header_reserved_3bits are not 0",
+        }
+        "#);
+    }
+
+    #[test]
     fn test_obu_to_from_u8() {
         let case = [
             (ObuType::SequenceHeader, 1),
@@ -245,5 +329,61 @@ mod tests {
             assert_eq!(u8::from(obu_type), value);
             assert_eq!(ObuType::from(value), obu_type);
         }
+    }
+
+    #[test]
+    fn test_obu_header_mux_round_trip() {
+        // Test with size field, no extension
+        let data = b"\n\x0f\0\0\0j\xef\xbf\xe1\xbc\x02\x19\x90\x10\x10\x10@";
+        let mut cursor = std::io::Cursor::new(data.as_slice());
+        let header = ObuHeader::parse(&mut cursor).unwrap();
+
+        let mut buf = Vec::new();
+        let written = header.mux(&mut buf).unwrap();
+        assert_eq!(written, header.header_size());
+        assert_eq!(&buf, &data[..written]);
+
+        // Parse back and verify
+        let mut cursor2 = std::io::Cursor::new(buf.as_slice());
+        let header2 = ObuHeader::parse(&mut cursor2).unwrap();
+        assert_eq!(header, header2);
+    }
+
+    #[test]
+    fn test_obu_header_mux_no_size_field() {
+        let header = ObuHeader {
+            obu_type: ObuType::TemporalDelimiter,
+            size: None,
+            extension_header: None,
+        };
+
+        let mut buf = Vec::new();
+        let written = header.mux(&mut buf).unwrap();
+        assert_eq!(written, 1);
+        assert_eq!(header.header_size(), 1);
+
+        let mut cursor = std::io::Cursor::new(buf.as_slice());
+        let parsed = ObuHeader::parse(&mut cursor).unwrap();
+        assert_eq!(parsed, header);
+    }
+
+    #[test]
+    fn test_obu_header_mux_with_extension() {
+        let header = ObuHeader {
+            obu_type: ObuType::Frame,
+            size: Some(100),
+            extension_header: Some(ObuExtensionHeader {
+                temporal_id: 3,
+                spatial_id: 1,
+            }),
+        };
+
+        let mut buf = Vec::new();
+        let written = header.mux(&mut buf).unwrap();
+        assert_eq!(written, header.header_size());
+
+        let mut cursor = std::io::Cursor::new(buf.as_slice());
+        let parsed = ObuHeader::parse(&mut cursor).unwrap();
+        assert_eq!(parsed, header);
     }
 }

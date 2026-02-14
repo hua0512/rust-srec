@@ -8,6 +8,7 @@ import {
 } from '@/components/config/engines/engine-card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CardSkeleton } from '@/components/shared/card-skeleton';
 import { AlertCircle } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
@@ -52,10 +53,7 @@ function EnginesConfigPage() {
           className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
         >
           {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-[200px] border rounded-xl bg-muted/10 animate-pulse flex flex-col p-6 space-y-4 shadow-sm"
-            >
+            <CardSkeleton key={i}>
               <div className="flex justify-between items-start">
                 <Skeleton className="h-12 w-12 rounded-xl" />
                 <Skeleton className="h-6 w-16" />
@@ -67,7 +65,7 @@ function EnginesConfigPage() {
               <div className="pt-4 mt-auto">
                 <Skeleton className="h-8 w-full rounded-md" />
               </div>
-            </div>
+            </CardSkeleton>
           ))}
         </motion.div>
       ) : (

@@ -5,10 +5,10 @@ use crate::utils::spans;
 use crate::{config::ProgramConfig, error::AppError, utils::create_dirs, utils::expand_name_url};
 use futures::{StreamExt, stream};
 use hls::HlsData;
-use hls_fix::{HlsPipeline, HlsWriter};
+use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
 use mesio_engine::{DownloadError, DownloaderInstance};
 use pipeline_common::CancellationToken;
-use pipeline_common::{PipelineError, ProtocolWriter};
+use pipeline_common::PipelineError;
 use std::path::Path;
 use std::time::Instant;
 use tracing::{Level, debug, info, span};
@@ -81,8 +81,8 @@ pub async fn process_hls_stream(
         }
         None => {
             info!("HLS stream is empty.");
-            return Err(AppError::Download(DownloadError::NoSource(
-                "HLS stream is empty".to_string(),
+            return Err(AppError::Download(DownloadError::source_exhausted(
+                "HLS stream is empty",
             )));
         }
     };
@@ -92,9 +92,9 @@ pub async fn process_hls_stream(
         HlsData::M4sData(_) => "m4s",
         // should never happen
         HlsData::EndMarker => {
-            return Err(AppError::Pipeline(PipelineError::InvalidData(
+            return Err(AppError::InvalidInput(
                 "First segment is EndMarker".to_string(),
-            )));
+            ));
         }
     };
 
@@ -111,12 +111,12 @@ pub async fn process_hls_stream(
     let hls_pipe_config = config.hls_pipeline_config.clone();
     debug!("Pipeline config: {:?}", hls_pipe_config);
 
-    let stream = stream.map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
+    let stream = stream.map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
     // Use pipe output strategy when stdout mode is active
-    let (total_items_written, files_created, _bytes_written, _elapsed_calc) = if is_pipe_mode {
+    let stats = if is_pipe_mode {
         // Pipe mode: write directly to stdout using PipeHlsStrategy
-        let stats = process_pipe_stream(
+        let pipe_stats = process_pipe_stream(
             Box::pin(stream),
             &config.pipeline_config,
             PipeHlsStrategy::new(),
@@ -129,40 +129,33 @@ pub async fn process_hls_stream(
         info!(
             url = %url_str,
             duration = ?elapsed,
-            items_written = stats.items_written,
-            bytes_written = stats.bytes_written,
-            segment_count = stats.segment_count,
+            items_written = pipe_stats.items_written,
+            bytes_written = pipe_stats.bytes_written,
+            segment_count = pipe_stats.segment_count,
             output_mode = %config.output_format,
             "HLS pipe output complete"
         );
 
-        return Ok(stats.items_written as u64);
+        return Ok(pipe_stats.items_written as u64);
     } else {
+        let max_file_size = if config.pipeline_config.max_file_size > 0 {
+            Some(config.pipeline_config.max_file_size)
+        } else {
+            None
+        };
+
         crate::processor::generic::process_stream_with_span::<HlsPipeline, HlsWriter>(
             &config.pipeline_config,
             hls_pipe_config,
             Box::pin(stream),
             writer_span.clone(),
             |_writer_span| {
-                use std::collections::HashMap;
-                let mut extras = HashMap::new();
-                // Pass max_file_size to writer for progress bar length
-                if config.pipeline_config.max_file_size > 0 {
-                    extras.insert(
-                        "max_file_size".to_string(),
-                        config.pipeline_config.max_file_size.to_string(),
-                    );
-                }
-                HlsWriter::new(
-                    output_dir.to_path_buf(),
-                    base_name.to_string(),
-                    extension.to_string(),
-                    if extras.is_empty() {
-                        None
-                    } else {
-                        Some(extras)
-                    },
-                )
+                HlsWriter::new(HlsWriterConfig {
+                    output_dir: output_dir.to_path_buf(),
+                    base_name: base_name.to_string(),
+                    extension: extension.to_string(),
+                    max_file_size,
+                })
             },
             token.clone(),
         )
@@ -177,23 +170,15 @@ pub async fn process_hls_stream(
 
     let elapsed = start_time.elapsed();
 
-    // Log summary
-    // file_sequence_number starts at 0, so add 1 to get actual file count
-    let actual_files_created = if total_items_written > 0 {
-        files_created + 1
-    } else {
-        0
-    };
-
     // Log completion (goes to stderr in pipe mode)
     info!(
         url = %url_str,
-        items = total_items_written,
-        files = actual_files_created,
+        items = stats.items_written,
+        files = stats.files_created,
         duration = ?elapsed,
         output_mode = %config.output_format,
         "HLS download complete"
     );
 
-    Ok(total_items_written as u64)
+    Ok(stats.items_written as u64)
 }

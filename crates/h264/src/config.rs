@@ -92,6 +92,59 @@ pub struct AvccExtendedConfig {
 }
 
 impl AVCDecoderConfigurationRecord {
+    /// Returns the first SPS NAL unit as a zero-copy `Bytes` slice.
+    ///
+    /// This is a lightweight helper for callers that only need the SPS payload
+    /// (e.g. to derive resolution) and want to avoid allocating vectors for all
+    /// SPS/PPS entries.
+    pub fn first_sps_nalu_bytes(data: &Bytes) -> io::Result<Bytes> {
+        // Need at least the fixed header fields up through num_of_sps.
+        // configurationVersion(1) + profile(1) + compat(1) + level(1)
+        // + lengthSizeMinusOne(1) + numOfSPS(1) = 6 bytes
+        if data.len() < 6 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "AVC decoder configuration record is too short",
+            ));
+        }
+
+        let configuration_version = data[0];
+        if configuration_version != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid configuration version",
+            ));
+        }
+
+        let num_of_sequence_parameter_sets = data[5] & 0b0001_1111;
+        if num_of_sequence_parameter_sets == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "no SPS entries in AVC decoder configuration record",
+            ));
+        }
+
+        let mut offset = 6;
+        if offset + 2 > data.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "truncated SPS length field",
+            ));
+        }
+
+        let sps_length = u16::from_be_bytes([data[offset], data[offset + 1]]) as usize;
+        offset += 2;
+
+        if offset + sps_length > data.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "truncated SPS payload",
+            ));
+        }
+
+        Ok(data.slice(offset..offset + sps_length))
+    }
+
     /// Parses an AVCDecoderConfigurationRecord from a byte stream.
     /// Returns a parsed AVCDecoderConfigurationRecord.
     pub fn parse(reader: &mut io::Cursor<Bytes>) -> io::Result<Self> {
@@ -333,6 +386,32 @@ mod tests {
         config.build(&mut buf).unwrap();
 
         assert_eq!(buf, data.to_vec());
+    }
+
+    #[test]
+    fn test_first_sps_nalu_bytes_matches_parse() {
+        let data = Bytes::from(b"\x01d\0\x1f\xff\xe1\0\x19\x67\x64\x00\x1F\xAC\xD9\x41\xE0\x6D\xF9\xE6\xA0\x20\x20\x28\x00\x00\x03\x00\x08\x00\x00\x03\x01\xE0\x01\0\x06h\xeb\xe3\xcb\"\xc0\xfd\xf8\xf8\0".to_vec());
+
+        let sps_fast = AVCDecoderConfigurationRecord::first_sps_nalu_bytes(&data).unwrap();
+        let parsed =
+            AVCDecoderConfigurationRecord::parse(&mut io::Cursor::new(data.clone())).unwrap();
+
+        assert!(!parsed.sps.is_empty());
+        assert_eq!(sps_fast, parsed.sps[0]);
+    }
+
+    #[test]
+    fn test_first_sps_nalu_bytes_too_short() {
+        let data = Bytes::from_static(b"\x01\x00\x00\x00\x00");
+        let err = AVCDecoderConfigurationRecord::first_sps_nalu_bytes(&data).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn test_first_sps_nalu_bytes_invalid_version() {
+        let data = Bytes::from_static(b"\x02\x00\x00\x00\x00\x00");
+        let err = AVCDecoderConfigurationRecord::first_sps_nalu_bytes(&data).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     #[test]

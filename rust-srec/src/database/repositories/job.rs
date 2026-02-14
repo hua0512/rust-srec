@@ -1,5 +1,6 @@
 //! Job repository.
 
+use crate::database::begin_immediate;
 use crate::database::models::{
     JobCounts, JobDbModel, JobExecutionLogDbModel, JobExecutionProgressDbModel, JobFilters,
     Pagination,
@@ -131,11 +132,12 @@ pub trait JobRepository: Send + Sync {
 /// SQLx implementation of JobRepository.
 pub struct SqlxJobRepository {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxJobRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -179,53 +181,59 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn create_job(&self, job: &JobDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO job (
-                id, job_type, status, config, state, created_at, updated_at,
-                input, outputs, priority, streamer_id, session_id,
-                started_at, completed_at, error, retry_count,
-                 pipeline_id, execution_info,
-                duration_secs, queue_wait_secs, dag_step_execution_id
+        retry_on_sqlite_busy("create_job", || async {
+            sqlx::query(
+                r#"
+                INSERT INTO job (
+                    id, job_type, status, config, state, created_at, updated_at,
+                    input, outputs, priority, streamer_id, session_id,
+                    started_at, completed_at, error, retry_count,
+                     pipeline_id, execution_info,
+                    duration_secs, queue_wait_secs, dag_step_execution_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "#,
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&job.id)
-        .bind(&job.job_type)
-        .bind(&job.status)
-        .bind(&job.config)
-        .bind(&job.state)
-        .bind(job.created_at)
-        .bind(job.updated_at)
-        .bind(&job.input)
-        .bind(&job.outputs)
-        .bind(job.priority)
-        .bind(&job.streamer_id)
-        .bind(&job.session_id)
-        .bind(job.started_at)
-        .bind(job.completed_at)
-        .bind(&job.error)
-        .bind(job.retry_count)
-        .bind(&job.pipeline_id)
-        .bind(&job.execution_info)
-        .bind(job.duration_secs)
-        .bind(job.queue_wait_secs)
-        .bind(&job.dag_step_execution_id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+            .bind(&job.id)
+            .bind(&job.job_type)
+            .bind(&job.status)
+            .bind(&job.config)
+            .bind(&job.state)
+            .bind(job.created_at)
+            .bind(job.updated_at)
+            .bind(&job.input)
+            .bind(&job.outputs)
+            .bind(job.priority)
+            .bind(&job.streamer_id)
+            .bind(&job.session_id)
+            .bind(job.started_at)
+            .bind(job.completed_at)
+            .bind(&job.error)
+            .bind(job.retry_count)
+            .bind(&job.pipeline_id)
+            .bind(&job.execution_info)
+            .bind(job.duration_secs)
+            .bind(job.queue_wait_secs)
+            .bind(&job.dag_step_execution_id)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn update_job_status(&self, id: &str, status: &str) -> Result<()> {
-        let now = crate::database::time::now_ms();
-        sqlx::query("UPDATE job SET status = ?, updated_at = ? WHERE id = ?")
-            .bind(status)
-            .bind(now)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        retry_on_sqlite_busy("update_job_status", || async {
+            let now = crate::database::time::now_ms();
+            sqlx::query("UPDATE job SET status = ?, updated_at = ? WHERE id = ?")
+                .bind(status)
+                .bind(now)
+                .bind(id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64> {
@@ -238,7 +246,7 @@ impl JobRepository for SqlxJobRepository {
             .bind(now)
             .bind(error)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
             Ok(res.rows_affected())
         })
@@ -254,7 +262,7 @@ impl JobRepository for SqlxJobRepository {
             .bind(now)
             .bind(now)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
             Ok(res.rows_affected())
         })
@@ -269,7 +277,7 @@ impl JobRepository for SqlxJobRepository {
             )
             .bind(now)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
 
             if res.rows_affected() == 0 {
@@ -342,7 +350,7 @@ impl JobRepository for SqlxJobRepository {
             .bind(&progress.kind)
             .bind(&progress.progress)
             .bind(progress.updated_at)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
             Ok(())
         })
@@ -427,7 +435,7 @@ impl JobRepository for SqlxJobRepository {
                 .bind(now)
                 .bind(now)
                 .bind(&next_id)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&self.write_pool)
                 .await?;
 
                 if claimed.is_some() {
@@ -455,7 +463,7 @@ impl JobRepository for SqlxJobRepository {
                 .bind(execution_info)
                 .bind(now)
                 .bind(id)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await?;
             Ok(())
         })
@@ -463,181 +471,202 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn update_job_state(&self, id: &str, state: &str) -> Result<()> {
-        let now = crate::database::time::now_ms();
-        sqlx::query("UPDATE job SET state = ?, updated_at = ? WHERE id = ?")
-            .bind(state)
-            .bind(now)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        retry_on_sqlite_busy("update_job_state", || async {
+            let now = crate::database::time::now_ms();
+            sqlx::query("UPDATE job SET state = ?, updated_at = ? WHERE id = ?")
+                .bind(state)
+                .bind(now)
+                .bind(id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn update_job(&self, job: &JobDbModel) -> Result<()> {
-        let now = crate::database::time::now_ms();
-        sqlx::query(
-            r#"
-            UPDATE job SET
-                job_type = ?,
-                status = ?,
-                config = ?,
-                state = ?,
-                updated_at = ?,
-                input = ?,
-                outputs = ?,
-                priority = ?,
-                streamer_id = ?,
-                session_id = ?,
-                started_at = ?,
-                completed_at = ?,
-                error = ?,
-                retry_count = ?,
-                pipeline_id = ?,
-                execution_info = ?,
-                duration_secs = ?,
-                queue_wait_secs = ?,
-                dag_step_execution_id = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(&job.job_type)
-        .bind(&job.status)
-        .bind(&job.config)
-        .bind(&job.state)
-        .bind(now)
-        .bind(&job.input)
-        .bind(&job.outputs)
-        .bind(job.priority)
-        .bind(&job.streamer_id)
-        .bind(&job.session_id)
-        .bind(job.started_at)
-        .bind(job.completed_at)
-        .bind(&job.error)
-        .bind(job.retry_count)
-        .bind(&job.pipeline_id)
-        .bind(&job.execution_info)
-        .bind(job.duration_secs)
-        .bind(job.queue_wait_secs)
-        .bind(&job.dag_step_execution_id)
-        .bind(&job.id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        retry_on_sqlite_busy("update_job", || async {
+            let now = crate::database::time::now_ms();
+            sqlx::query(
+                r#"
+                UPDATE job SET
+                    job_type = ?,
+                    status = ?,
+                    config = ?,
+                    state = ?,
+                    updated_at = ?,
+                    input = ?,
+                    outputs = ?,
+                    priority = ?,
+                    streamer_id = ?,
+                    session_id = ?,
+                    started_at = ?,
+                    completed_at = ?,
+                    error = ?,
+                    retry_count = ?,
+                    pipeline_id = ?,
+                    execution_info = ?,
+                    duration_secs = ?,
+                    queue_wait_secs = ?,
+                    dag_step_execution_id = ?
+                WHERE id = ?
+                "#,
+            )
+            .bind(&job.job_type)
+            .bind(&job.status)
+            .bind(&job.config)
+            .bind(&job.state)
+            .bind(now)
+            .bind(&job.input)
+            .bind(&job.outputs)
+            .bind(job.priority)
+            .bind(&job.streamer_id)
+            .bind(&job.session_id)
+            .bind(job.started_at)
+            .bind(job.completed_at)
+            .bind(&job.error)
+            .bind(job.retry_count)
+            .bind(&job.pipeline_id)
+            .bind(&job.execution_info)
+            .bind(job.duration_secs)
+            .bind(job.queue_wait_secs)
+            .bind(&job.dag_step_execution_id)
+            .bind(&job.id)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn update_job_if_status(&self, job: &JobDbModel, expected_status: &str) -> Result<u64> {
-        let now = crate::database::time::now_ms();
-        let res = sqlx::query(
-            r#"
-            UPDATE job SET
-                job_type = ?,
-                status = ?,
-                config = ?,
-                state = ?,
-                updated_at = ?,
-                input = ?,
-                outputs = ?,
-                priority = ?,
-                streamer_id = ?,
-                session_id = ?,
-                started_at = ?,
-                completed_at = ?,
-                error = ?,
-                retry_count = ?,
-                pipeline_id = ?,
-                execution_info = ?,
-                duration_secs = ?,
-                queue_wait_secs = ?,
-                dag_step_execution_id = ?
-            WHERE id = ? AND status = ?
-            "#,
-        )
-        .bind(&job.job_type)
-        .bind(&job.status)
-        .bind(&job.config)
-        .bind(&job.state)
-        .bind(now)
-        .bind(&job.input)
-        .bind(&job.outputs)
-        .bind(job.priority)
-        .bind(&job.streamer_id)
-        .bind(&job.session_id)
-        .bind(job.started_at)
-        .bind(job.completed_at)
-        .bind(&job.error)
-        .bind(job.retry_count)
-        .bind(&job.pipeline_id)
-        .bind(&job.execution_info)
-        .bind(job.duration_secs)
-        .bind(job.queue_wait_secs)
-        .bind(&job.dag_step_execution_id)
-        .bind(&job.id)
-        .bind(expected_status)
-        .execute(&self.pool)
-        .await?;
+        retry_on_sqlite_busy("update_job_if_status", || async {
+            let now = crate::database::time::now_ms();
+            let res = sqlx::query(
+                r#"
+                UPDATE job SET
+                    job_type = ?,
+                    status = ?,
+                    config = ?,
+                    state = ?,
+                    updated_at = ?,
+                    input = ?,
+                    outputs = ?,
+                    priority = ?,
+                    streamer_id = ?,
+                    session_id = ?,
+                    started_at = ?,
+                    completed_at = ?,
+                    error = ?,
+                    retry_count = ?,
+                    pipeline_id = ?,
+                    execution_info = ?,
+                    duration_secs = ?,
+                    queue_wait_secs = ?,
+                    dag_step_execution_id = ?
+                WHERE id = ? AND status = ?
+                "#,
+            )
+            .bind(&job.job_type)
+            .bind(&job.status)
+            .bind(&job.config)
+            .bind(&job.state)
+            .bind(now)
+            .bind(&job.input)
+            .bind(&job.outputs)
+            .bind(job.priority)
+            .bind(&job.streamer_id)
+            .bind(&job.session_id)
+            .bind(job.started_at)
+            .bind(job.completed_at)
+            .bind(&job.error)
+            .bind(job.retry_count)
+            .bind(&job.pipeline_id)
+            .bind(&job.execution_info)
+            .bind(job.duration_secs)
+            .bind(job.queue_wait_secs)
+            .bind(&job.dag_step_execution_id)
+            .bind(&job.id)
+            .bind(expected_status)
+            .execute(&self.write_pool)
+            .await?;
 
-        Ok(res.rows_affected())
+            Ok(res.rows_affected())
+        })
+        .await
     }
 
     async fn reset_interrupted_jobs(&self) -> Result<i32> {
-        let now = crate::database::time::now_ms();
-        let result = sqlx::query(
-            "UPDATE job SET status = 'PENDING', updated_at = ? WHERE status = 'INTERRUPTED'",
-        )
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-        Ok(result.rows_affected() as i32)
+        retry_on_sqlite_busy("reset_interrupted_jobs", || async {
+            let now = crate::database::time::now_ms();
+            let result = sqlx::query(
+                "UPDATE job SET status = 'PENDING', updated_at = ? WHERE status = 'INTERRUPTED'",
+            )
+            .bind(now)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(result.rows_affected() as i32)
+        })
+        .await
     }
 
     async fn reset_processing_jobs(&self) -> Result<i32> {
-        let now = crate::database::time::now_ms();
-        let result = sqlx::query(
-            "UPDATE job SET status = 'PENDING', started_at = NULL, updated_at = ? WHERE status = 'PROCESSING'",
-        )
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-        Ok(result.rows_affected() as i32)
+        retry_on_sqlite_busy("reset_processing_jobs", || async {
+            let now = crate::database::time::now_ms();
+            let result = sqlx::query(
+                "UPDATE job SET status = 'PENDING', started_at = NULL, updated_at = ? WHERE status = 'PROCESSING'",
+            )
+            .bind(now)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(result.rows_affected() as i32)
+        })
+        .await
     }
 
     async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32> {
-        // First delete execution logs for old completed/failed jobs
-        let cutoff_ms = crate::database::time::now_ms()
-            - chrono::Duration::days(retention_days as i64).num_milliseconds();
+        retry_on_sqlite_busy("cleanup_old_jobs", || async {
+            // First delete execution logs for old completed/failed jobs
+            let cutoff_ms = crate::database::time::now_ms()
+                - chrono::Duration::days(retention_days as i64).num_milliseconds();
 
-        sqlx::query(
-            r#"
-            DELETE FROM job_execution_logs 
-            WHERE job_id IN (
-                SELECT id FROM job 
-                WHERE status IN ('COMPLETED', 'FAILED') 
-                AND updated_at < ?
+            sqlx::query(
+                r#"
+                DELETE FROM job_execution_logs 
+                WHERE job_id IN (
+                    SELECT id FROM job 
+                    WHERE status IN ('COMPLETED', 'FAILED') 
+                    AND updated_at < ?
+                )
+                "#,
             )
-            "#,
-        )
-        .bind(cutoff_ms)
-        .execute(&self.pool)
-        .await?;
+            .bind(cutoff_ms)
+            .execute(&self.write_pool)
+            .await?;
 
-        // Then delete the jobs
-        let result = sqlx::query(
-            "DELETE FROM job WHERE status IN ('COMPLETED', 'FAILED') AND updated_at < ?",
-        )
-        .bind(cutoff_ms)
-        .execute(&self.pool)
-        .await?;
+            // Then delete the jobs
+            let result = sqlx::query(
+                "DELETE FROM job WHERE status IN ('COMPLETED', 'FAILED') AND updated_at < ?",
+            )
+            .bind(cutoff_ms)
+            .execute(&self.write_pool)
+            .await?;
 
-        Ok(result.rows_affected() as i32)
+            Ok(result.rows_affected() as i32)
+        })
+        .await
     }
 
     async fn delete_job(&self, id: &str) -> Result<()> {
-        // Execution logs are deleted via CASCADE
-        sqlx::query("DELETE FROM job WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        retry_on_sqlite_busy("delete_job", || async {
+            // Execution logs are deleted via CASCADE
+            sqlx::query("DELETE FROM job WHERE id = ?")
+                .bind(id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn add_execution_log(&self, log: &JobExecutionLogDbModel) -> Result<()> {
@@ -654,7 +683,7 @@ impl JobRepository for SqlxJobRepository {
             .bind(log.created_at)
             .bind(&log.level)
             .bind(&log.message)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await;
 
             match attempt {
@@ -675,7 +704,7 @@ impl JobRepository for SqlxJobRepository {
                     .bind(&log.job_id)
                     .bind(&log.entry)
                     .bind(log.created_at)
-                    .execute(&self.pool)
+                    .execute(&self.write_pool)
                     .await?;
                     Ok(())
                 }
@@ -690,7 +719,7 @@ impl JobRepository for SqlxJobRepository {
         }
 
         retry_on_sqlite_busy("add_execution_logs", || async {
-            let mut tx = self.pool.begin().await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
             for log in logs {
                 let res = sqlx::query(
                     r#"
@@ -715,7 +744,7 @@ impl JobRepository for SqlxJobRepository {
 
                     // Fallback to legacy schema (no structured columns).
                     tx.rollback().await?;
-                    let mut tx = self.pool.begin().await?;
+                    let mut tx = begin_immediate(&self.write_pool).await?;
                     for log in logs {
                         sqlx::query(
                             r#"
@@ -809,11 +838,14 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM job_execution_logs WHERE job_id = ?")
-            .bind(job_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        retry_on_sqlite_busy("delete_execution_logs_for_job", || async {
+            sqlx::query("DELETE FROM job_execution_logs WHERE job_id = ?")
+                .bind(job_id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn list_jobs_filtered(
@@ -1114,25 +1146,28 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
-        let now = crate::database::time::now_ms();
+        retry_on_sqlite_busy("cancel_jobs_by_pipeline", || async {
+            let now = crate::database::time::now_ms();
 
-        let result = sqlx::query(
-            r#"
-            UPDATE job SET
-                status = 'INTERRUPTED',
-                completed_at = ?,
-                updated_at = ?
-            WHERE pipeline_id = ?
-              AND status IN ('PENDING', 'PROCESSING')
-            "#,
-        )
-        .bind(now)
-        .bind(now)
-        .bind(pipeline_id)
-        .execute(&self.pool)
-        .await?;
+            let result = sqlx::query(
+                r#"
+                UPDATE job SET
+                    status = 'INTERRUPTED',
+                    completed_at = ?,
+                    updated_at = ?
+                WHERE pipeline_id = ?
+                  AND status IN ('PENDING', 'PROCESSING')
+                "#,
+            )
+            .bind(now)
+            .bind(now)
+            .bind(pipeline_id)
+            .execute(&self.write_pool)
+            .await?;
 
-        Ok(result.rows_affected())
+            Ok(result.rows_affected())
+        })
+        .await
     }
 
     async fn get_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<Vec<JobDbModel>> {
@@ -1147,13 +1182,16 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn delete_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
-        // Delete the jobs (logs and progress omitted, they are deleted via CASCADE)
-        let result = sqlx::query("DELETE FROM job WHERE pipeline_id = ?")
-            .bind(pipeline_id)
-            .execute(&self.pool)
-            .await?;
+        retry_on_sqlite_busy("delete_jobs_by_pipeline", || async {
+            // Delete the jobs (logs and progress omitted, they are deleted via CASCADE)
+            let result = sqlx::query("DELETE FROM job WHERE pipeline_id = ?")
+                .bind(pipeline_id)
+                .execute(&self.write_pool)
+                .await?;
 
-        Ok(result.rows_affected())
+            Ok(result.rows_affected())
+        })
+        .await
     }
 
     /// Purge completed/failed jobs older than the specified number of days.
@@ -1189,18 +1227,26 @@ impl JobRepository for SqlxJobRepository {
 
             // Delete execution logs for these jobs first
             for job_id in &job_ids {
-                sqlx::query("DELETE FROM job_execution_logs WHERE job_id = ?")
-                    .bind(job_id)
-                    .execute(&self.pool)
-                    .await?;
+                retry_on_sqlite_busy("purge_jobs_older_than_delete_execution_logs", || async {
+                    sqlx::query("DELETE FROM job_execution_logs WHERE job_id = ?")
+                        .bind(job_id)
+                        .execute(&self.write_pool)
+                        .await?;
+                    Ok(())
+                })
+                .await?;
             }
 
             // Delete the jobs
             for job_id in &job_ids {
-                sqlx::query("DELETE FROM job WHERE id = ?")
-                    .bind(job_id)
-                    .execute(&self.pool)
-                    .await?;
+                retry_on_sqlite_busy("purge_jobs_older_than_delete_jobs", || async {
+                    sqlx::query("DELETE FROM job WHERE id = ?")
+                        .bind(job_id)
+                        .execute(&self.write_pool)
+                        .await?;
+                    Ok(())
+                })
+                .await?;
             }
 
             total_deleted += batch_count;
@@ -1262,7 +1308,7 @@ mod stress_tests {
         let pool = crate::database::init_pool(&db_url).await.unwrap();
         crate::database::run_migrations(&pool).await.unwrap();
 
-        let repo = Arc::new(SqlxJobRepository::new(pool));
+        let repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool));
 
         for i in 0..JOBS {
             let mut job = JobDbModel::new_with_input(

@@ -74,8 +74,11 @@ impl MesioDownloaderFactory {
     /// Detect protocol type from URL
     pub fn detect_protocol(url: &str) -> Result<ProtocolType, DownloadError> {
         // Parse URL
-        let url = Url::parse(url).map_err(|_| {
-            DownloadError::UrlError(format!("Failed to parse URL for protocol detection: {url}",))
+        let url = Url::parse(url).map_err(|e| {
+            DownloadError::invalid_url(
+                format!("Failed to parse URL for protocol detection: {url}"),
+                e.to_string(),
+            )
         })?;
 
         // Check for HLS indicators first
@@ -103,7 +106,9 @@ impl MesioDownloaderFactory {
         }
 
         // If we can't detect, return error
-        Err(DownloadError::ProtocolDetectionFailed(url.to_string()))
+        Err(DownloadError::ProtocolDetectionFailed {
+            url: url.to_string(),
+        })
     }
 
     /// Create appropriate download manager for the given URL and protocol type
@@ -230,7 +235,7 @@ impl DownloaderInstance {
 // #[derive(Debug)]
 pub enum DownloadStream {
     Flv(BoxMediaStream<flv::data::FlvData, crate::flv::error::FlvDownloadError>),
-    Hls(BoxMediaStream<hls::segment::HlsData, crate::hls::HlsDownloaderError>),
+    Hls(BoxMediaStream<hls::HlsData, crate::hls::HlsDownloaderError>),
 }
 
 /// Helper macro to process streams with type-specific handling

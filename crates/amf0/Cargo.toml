@@ -1,14 +1,11 @@
 [package]
 name = "amf0"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [dependencies]
-bytes = { workspace = true }
 byteorder = { workspace = true }
-num-traits = "0.2"
-num-derive = "0.4"
 thiserror = { workspace = true }

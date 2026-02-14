@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 
+use crate::database::begin_immediate;
 use crate::database::models::{
     DagExecutionDbModel, DagExecutionStats, DagStepExecutionDbModel, DagStepStatus, ReadyStep,
 };
@@ -131,11 +132,12 @@ pub trait DagRepository: Send + Sync {
 /// SQLx implementation of DagRepository.
 pub struct SqlxDagRepository {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxDagRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -170,7 +172,7 @@ impl DagRepository for SqlxDagRepository {
         .bind(dag.total_steps)
         .bind(dag.completed_steps)
         .bind(dag.failed_steps)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -204,7 +206,7 @@ impl DagRepository for SqlxDagRepository {
             .bind(completed_at)
             .bind(error)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
             Ok(())
         })
@@ -219,7 +221,7 @@ impl DagRepository for SqlxDagRepository {
             )
             .bind(now)
             .bind(dag_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
             Ok(())
         })
@@ -234,7 +236,7 @@ impl DagRepository for SqlxDagRepository {
             )
             .bind(now)
             .bind(dag_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
             Ok(())
         })
@@ -315,7 +317,7 @@ impl DagRepository for SqlxDagRepository {
         // CASCADE will delete associated steps
         sqlx::query("DELETE FROM dag_execution WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -343,7 +345,7 @@ impl DagRepository for SqlxDagRepository {
         .bind(&step.outputs)
         .bind(step.created_at)
         .bind(step.updated_at)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -353,7 +355,7 @@ impl DagRepository for SqlxDagRepository {
             return Ok(());
         }
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = begin_immediate(&self.write_pool).await?;
 
         for step in steps {
             sqlx::query(
@@ -432,7 +434,7 @@ impl DagRepository for SqlxDagRepository {
             .bind(&step.outputs)
             .bind(now)
             .bind(&step.id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
             Ok(())
         })
@@ -446,7 +448,7 @@ impl DagRepository for SqlxDagRepository {
                 .bind(status)
                 .bind(now)
                 .bind(id)
-                .execute(&self.pool)
+                .execute(&self.write_pool)
                 .await?;
             Ok(())
         })
@@ -479,7 +481,7 @@ impl DagRepository for SqlxDagRepository {
             .bind(job_id)
             .bind(now)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
 
             if updated.rows_affected() == 0 {
@@ -532,7 +534,7 @@ impl DagRepository for SqlxDagRepository {
         outputs: &[String],
     ) -> Result<Vec<ReadyStep>> {
         retry_on_sqlite_busy("complete_step_and_check_dependents", || async {
-            let mut tx = self.pool.begin().await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
             let now = crate::database::time::now_ms();
             let outputs_json = serde_json::to_string(outputs)?;
 
@@ -726,7 +728,7 @@ impl DagRepository for SqlxDagRepository {
 
     async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>> {
         retry_on_sqlite_busy("fail_dag_and_cancel_steps", || async {
-            let mut tx = self.pool.begin().await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
             let now = crate::database::time::now_ms();
 
             // 1. Get job IDs of processing steps (for cancellation)
@@ -790,7 +792,7 @@ impl DagRepository for SqlxDagRepository {
 
     async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
         retry_on_sqlite_busy("reset_dag_for_retry", || async {
-            let mut tx = self.pool.begin().await?;
+            let mut tx = begin_immediate(&self.write_pool).await?;
             let now = crate::database::time::now_ms();
 
             // Un-cancel downstream work so it can be scheduled again.
@@ -1033,7 +1035,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_get_dag() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool);
 
         let dag_def = DagPipelineDefinition::new(
             "test-dag",
@@ -1053,7 +1055,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_get_steps() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool);
 
         let dag_def = DagPipelineDefinition::new(
             "test-dag",
@@ -1097,7 +1099,7 @@ mod tests {
     #[tokio::test]
     async fn test_complete_step_and_check_dependents() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool);
 
         // Create DAG: A -> B
         let dag_def = DagPipelineDefinition::new(
@@ -1137,7 +1139,7 @@ mod tests {
     #[tokio::test]
     async fn test_fan_in_complete() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool);
 
         // Create DAG: [A, B] -> C (fan-in)
         let dag_def = DagPipelineDefinition::new(
@@ -1189,7 +1191,7 @@ mod tests {
     #[tokio::test]
     async fn test_complete_step_is_idempotent() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool);
 
         // Create DAG: A -> B
         let dag_def = DagPipelineDefinition::new(
@@ -1241,7 +1243,7 @@ mod tests {
     #[tokio::test]
     async fn test_fail_dag_and_cancel_steps() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool);
 
         // Create DAG: A -> B -> C
         let dag_def = DagPipelineDefinition::new(
@@ -1298,7 +1300,7 @@ mod tests {
     #[tokio::test]
     async fn test_fail_dag_cancels_processing_steps() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool);
 
         // Create DAG: A -> B
         let dag_def = DagPipelineDefinition::new(
@@ -1344,7 +1346,7 @@ mod tests {
     #[tokio::test]
     async fn test_reset_dag_for_retry_unblocks_downstream() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool);
 
         // Create DAG: A -> B
         let dag_def = DagPipelineDefinition::new(

@@ -4,18 +4,14 @@
 //! for Bilibili login using the TV endpoint, which directly provides
 //! cookies and refresh_token.
 
-use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 use super::cookie_utils::{extract_cookie_value, rebuild_cookies, urls};
+use super::utils::{TV_APPKEY, TV_APPSEC, sign_params};
 use crate::extractor::default::DEFAULT_UA;
-
-/// AppKey for TV login (云视听小电视).
-const TV_APPKEY: &str = "4409e2ce8ffd12b8";
-const TV_APPSEC: &str = "59b43e04ad6965f34319062b478f83dd";
 
 const TV_QR_GENERATE_URL: &str =
     "https://passport.bilibili.com/x/passport-tv-login/qrcode/auth_code";
@@ -66,20 +62,8 @@ pub struct QrPollResult {
     pub cookies: Option<String>,
     /// Refresh token (if success)
     pub refresh_token: Option<String>,
-}
-
-/// Sign parameters using MD5 for TV API.
-fn sign_params(params: &mut Vec<(&str, String)>) -> String {
-    params.sort_by(|a, b| a.0.cmp(b.0));
-    let query: String = params
-        .iter()
-        .map(|(k, v)| format!("{}={}", k, v))
-        .collect::<Vec<_>>()
-        .join("&");
-    let to_sign = format!("{}{}", query, TV_APPSEC);
-    let mut hasher = Md5::new();
-    hasher.update(to_sign.as_bytes());
-    format!("{:x}", hasher.finalize())
+    /// OAuth2 access token (if success, from token_info)
+    pub access_token: Option<String>,
 }
 
 /// Generate a QR code for Bilibili TV login.
@@ -97,7 +81,7 @@ pub async fn generate_qr(client: &Client) -> Result<QrGenerateResponse, QrLoginE
         ("local_id", "0".to_string()),
         ("ts", ts),
     ];
-    let sign = sign_params(&mut params);
+    let sign = sign_params(&mut params, TV_APPSEC);
     params.push(("sign", sign));
 
     let response = client
@@ -155,7 +139,7 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
         ("local_id", "0".to_string()),
         ("ts", ts),
     ];
-    let sign = sign_params(&mut params);
+    let sign = sign_params(&mut params, TV_APPSEC);
     params.push(("sign", sign));
 
     let response = client
@@ -187,6 +171,7 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
                 message,
                 cookies: None,
                 refresh_token: None,
+                access_token: None,
             });
         }
         86090 => {
@@ -195,6 +180,7 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
                 message,
                 cookies: None,
                 refresh_token: None,
+                access_token: None,
             });
         }
         86039 => {
@@ -203,6 +189,7 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
                 message,
                 cookies: None,
                 refresh_token: None,
+                access_token: None,
             });
         }
         _ => {
@@ -221,13 +208,26 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
                 message,
                 cookies: None,
                 refresh_token: None,
+                access_token: None,
             });
         }
     };
 
-    let refresh_token = data
-        .get("refresh_token")
+    // Extract token_info fields (access_token, mid)
+    let token_info = data.get("token_info");
+    let access_token = token_info
+        .and_then(|ti| ti.get("access_token"))
         .and_then(|t| t.as_str())
+        .map(String::from);
+    let token_mid = token_info
+        .and_then(|ti| ti.get("mid"))
+        .and_then(|m| m.as_u64());
+
+    // Prefer refresh_token from token_info, fall back to top-level
+    let refresh_token = token_info
+        .and_then(|ti| ti.get("refresh_token"))
+        .and_then(|t| t.as_str())
+        .or_else(|| data.get("refresh_token").and_then(|t| t.as_str()))
         .map(String::from);
 
     let cookies = data.get("cookie_info").and_then(|ci| {
@@ -246,11 +246,18 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
             })
     });
 
+    // Ensure DedeUserID is present in cookies — use mid from token_info first,
+    // then fall back to a live API call.
     let cookies = if let Some(cookies) = cookies {
-        // Best-effort: persist uid (DedeUserID) into cookies so downstream refresh/storage can rely on it.
         if extract_cookie_value(&cookies, "DedeUserID").is_some() {
             Some(cookies)
+        } else if let Some(mid) = token_mid {
+            // Use mid from token_info directly — no extra API call needed.
+            let mut updates = std::collections::HashMap::new();
+            updates.insert("DedeUserID".to_string(), mid.to_string());
+            Some(rebuild_cookies(&cookies, &updates))
         } else {
+            // Fallback: fetch uid from live API
             let maybe_uid = match client
                 .get(urls::USER_INFO)
                 .header("Cookie", &cookies)
@@ -287,6 +294,7 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
             message,
             cookies,
             refresh_token,
+            access_token,
         })
     } else {
         Ok(QrPollResult {
@@ -294,6 +302,7 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
             message,
             cookies: None,
             refresh_token: None,
+            access_token: None,
         })
     }
 }
@@ -309,7 +318,7 @@ mod tests {
             ("local_id", "0".to_string()),
             ("ts", "1234567890".to_string()),
         ];
-        let sign = sign_params(&mut params);
+        let sign = sign_params(&mut params, TV_APPSEC);
         // Just verify it produces a 32-char hex string
         assert_eq!(sign.len(), 32);
         assert!(sign.chars().all(|c| c.is_ascii_hexdigit()));

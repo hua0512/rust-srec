@@ -11,7 +11,7 @@ use crate::resolution::Resolution;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AvcPacket {
     /// AVC NALU
-    Nalu { composition_time: u32, data: Bytes },
+    Nalu { composition_time: i32, data: Bytes },
     /// AVC Sequence Header
     SequenceHeader(AVCDecoderConfigurationRecord),
     /// AVC End of Sequence
@@ -19,7 +19,7 @@ pub enum AvcPacket {
     /// AVC Unknown (we don't know how to parse it)
     Unknown {
         avc_packet_type: AvcPacketType,
-        composition_time: u32,
+        composition_time: i32,
         data: Bytes,
     },
 }
@@ -27,7 +27,8 @@ pub enum AvcPacket {
 impl AvcPacket {
     pub fn demux(reader: &mut io::Cursor<Bytes>) -> io::Result<Self> {
         let avc_packet_type = AvcPacketType::try_from(reader.read_u8()?)?;
-        let composition_time = reader.read_u24::<BigEndian>()?;
+        // CompositionTime is SI24 in the legacy FLV spec.
+        let composition_time = reader.read_i24::<BigEndian>()?;
 
         match avc_packet_type {
             AvcPacketType::SeqHdr => Ok(Self::SequenceHeader(

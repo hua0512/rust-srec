@@ -10,6 +10,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 bytes = { workspace = true }
 byteorder = { workspace = true }
 bytes-util = { path = "../bytes-util" }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 insta = "1.46"

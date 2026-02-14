@@ -55,11 +55,12 @@ pub trait NotificationRepository: Send + Sync {
 /// SQLx implementation of NotificationRepository.
 pub struct SqlxNotificationRepository {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxNotificationRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -95,7 +96,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         .bind(&channel.name)
         .bind(&channel.channel_type)
         .bind(&channel.settings)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -114,7 +115,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         .bind(&channel.channel_type)
         .bind(&channel.settings)
         .bind(&channel.id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -123,12 +124,12 @@ impl NotificationRepository for SqlxNotificationRepository {
         // Delete subscriptions first (no CASCADE in schema)
         sqlx::query("DELETE FROM notification_subscription WHERE channel_id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
 
         sqlx::query("DELETE FROM notification_channel WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -170,7 +171,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         )
         .bind(channel_id)
         .bind(event_name)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -181,7 +182,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         )
         .bind(channel_id)
         .bind(event_name)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -189,7 +190,7 @@ impl NotificationRepository for SqlxNotificationRepository {
     async fn unsubscribe_all(&self, channel_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM notification_subscription WHERE channel_id = ?")
             .bind(channel_id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -212,7 +213,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         .bind(entry.first_attempt_at)
         .bind(entry.last_attempt_at)
         .bind(entry.created_at)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -254,7 +255,7 @@ impl NotificationRepository for SqlxNotificationRepository {
     async fn delete_dead_letter(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM notification_dead_letter WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -265,7 +266,7 @@ impl NotificationRepository for SqlxNotificationRepository {
 
         let result = sqlx::query("DELETE FROM notification_dead_letter WHERE created_at < ?")
             .bind(cutoff_ms)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
 
         Ok(result.rows_affected() as i32)
@@ -285,7 +286,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         .bind(&entry.payload)
         .bind(&entry.streamer_id)
         .bind(entry.created_at)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }

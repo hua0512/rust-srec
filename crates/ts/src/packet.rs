@@ -7,6 +7,34 @@ pub const PID_PAT: u16 = 0x0000;
 /// NULL PID (always 0x1FFF)
 pub const PID_NULL: u16 = 0x1FFF;
 
+/// CAT PID (always 0x0001)
+pub const PID_CAT: u16 = 0x0001;
+
+/// Continuity counter status for a packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContinuityStatus {
+    /// First packet seen for this PID
+    Initial,
+    /// Continuity is correct
+    Ok,
+    /// Discontinuity detected
+    Discontinuity { expected: u8, actual: u8 },
+    /// Duplicate packet (same CC as previous)
+    Duplicate,
+}
+
+/// Continuity counter handling mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContinuityMode {
+    /// Do not evaluate continuity counters.
+    #[default]
+    Disabled,
+    /// Validate continuity counters and continue parsing while reporting issues.
+    Warn,
+    /// Validate continuity counters and fail parsing on the first issue.
+    Strict,
+}
+
 /// Transport Stream packet structure
 #[derive(Debug, Clone)]
 pub struct TsPacket {
@@ -144,6 +172,13 @@ impl TsPacket {
         }
         None
     }
+
+    /// Parse the adaptation field into a structured type.
+    pub fn parse_adaptation_field(&self) -> Option<crate::adaptation_field::AdaptationField> {
+        self.adaptation_field
+            .as_ref()
+            .and_then(|af| crate::adaptation_field::AdaptationField::parse(af))
+    }
 }
 
 #[cfg(test)]
@@ -176,5 +211,60 @@ mod tests {
         assert_eq!(packet.continuity_counter, 0);
         assert!(packet.has_payload());
         assert!(!packet.has_adaptation_field());
+    }
+
+    #[test]
+    fn test_parse_adaptation_field_returns_none_when_no_af() {
+        // adaptation_field_control = 0x01 (payload only, no AF)
+        let mut data = vec![0u8; 188];
+        data[0] = 0x47;
+        data[3] = 0x10; // payload only
+        let packet = TsPacket::parse(data.into()).unwrap();
+        assert!(packet.parse_adaptation_field().is_none());
+    }
+
+    #[test]
+    fn test_parse_adaptation_field_with_rai() {
+        // adaptation_field_control = 0x03 (AF + payload), AF with RAI set
+        let mut data = vec![0u8; 188];
+        data[0] = 0x47;
+        data[3] = 0x30; // AF + payload, CC=0
+        data[4] = 1; // AF length = 1
+        data[5] = 0x40; // RAI set
+        let packet = TsPacket::parse(data.into()).unwrap();
+        assert!(packet.has_adaptation_field());
+        let af = packet.parse_adaptation_field().unwrap();
+        assert!(af.random_access_indicator);
+        assert!(!af.discontinuity_indicator);
+        assert!(af.pcr.is_none());
+    }
+
+    #[test]
+    fn test_parse_adaptation_field_with_pcr() {
+        // AF with PCR flag set and 6 bytes of PCR data
+        let mut data = vec![0u8; 188];
+        data[0] = 0x47;
+        data[3] = 0x20; // AF only, no payload
+        data[4] = 7; // AF length = 7 (1 flags + 6 PCR)
+        data[5] = 0x10; // PCR flag set
+        // PCR base=0, extension=0
+        // bytes 6..12 are already zeroed
+        let packet = TsPacket::parse(data.into()).unwrap();
+        let af = packet.parse_adaptation_field().unwrap();
+        let pcr = af.pcr.unwrap();
+        assert_eq!(pcr.base, 0);
+        assert_eq!(pcr.extension, 0);
+    }
+
+    #[test]
+    fn test_parse_adaptation_field_zero_length() {
+        // AF present but length = 0 → no AF bytes to parse
+        let mut data = vec![0u8; 188];
+        data[0] = 0x47;
+        data[3] = 0x30; // AF + payload
+        data[4] = 0; // AF length = 0
+        let packet = TsPacket::parse(data.into()).unwrap();
+        // adaptation_field is None because length was 0
+        assert!(packet.parse_adaptation_field().is_none());
     }
 }

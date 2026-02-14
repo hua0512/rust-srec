@@ -35,12 +35,13 @@ pub trait RefreshTokenRepository: Send + Sync {
 /// SQLx implementation of RefreshTokenRepository.
 pub struct SqlxRefreshTokenRepository {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxRefreshTokenRepository {
     /// Create a new SqlxRefreshTokenRepository with the given connection pool.
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -61,7 +62,7 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
         .bind(token.created_at)
         .bind(token.revoked_at)
         .bind(&token.device_info)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -100,7 +101,7 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
         sqlx::query("UPDATE refresh_tokens SET revoked_at = ? WHERE id = ?")
             .bind(now)
             .bind(id)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(())
     }
@@ -112,7 +113,7 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
         )
         .bind(now)
         .bind(user_id)
-        .execute(&self.pool)
+        .execute(&self.write_pool)
         .await?;
         Ok(())
     }
@@ -121,7 +122,7 @@ impl RefreshTokenRepository for SqlxRefreshTokenRepository {
         let now = crate::database::time::now_ms();
         let result = sqlx::query("DELETE FROM refresh_tokens WHERE expires_at < ?")
             .bind(now)
-            .execute(&self.pool)
+            .execute(&self.write_pool)
             .await?;
         Ok(result.rows_affected())
     }

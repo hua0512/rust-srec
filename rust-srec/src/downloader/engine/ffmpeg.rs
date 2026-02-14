@@ -10,7 +10,8 @@ use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use super::traits::{
-    DownloadConfig, DownloadEngine, DownloadHandle, EngineType, SegmentEvent, SegmentInfo,
+    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, EngineStartError,
+    EngineType, SegmentEvent, SegmentInfo,
 };
 use super::utils::{
     OutputRecordReader, ensure_output_dir, is_segment_start, parse_opened_path, parse_progress,
@@ -162,16 +163,17 @@ impl DownloadEngine for FfmpegEngine {
         EngineType::Ffmpeg
     }
 
-    async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()> {
+    async fn start(
+        &self,
+        handle: Arc<DownloadHandle>,
+    ) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
         // 1. Ensure output directory exists before spawning process
         if let Err(e) = ensure_output_dir(&config.output_dir).await {
-            let msg = e.to_string();
-            let _ = handle.event_tx.try_send(SegmentEvent::DownloadFailed {
-                error: msg.clone(),
-                recoverable: false,
-            });
-            return Err(crate::Error::Other(msg));
+            return Err(EngineStartError::new(
+                DownloadFailureKind::Io,
+                e.to_string(),
+            ));
         }
 
         let args = self.build_args(&config);
@@ -195,15 +197,20 @@ impl DownloadEngine for FfmpegEngine {
             .stdin(Stdio::piped()) // allow graceful stop via 'q'
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = command
-            .spawn()
-            .map_err(|e| crate::Error::Other(format!("Failed to spawn ffmpeg: {}", e)))?;
+        let mut child = command.spawn().map_err(|e| {
+            EngineStartError::new(
+                DownloadFailureKind::Configuration,
+                format!("Failed to spawn ffmpeg: {}", e),
+            )
+        })?;
 
         let mut stdin = child.stdin.take();
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| crate::Error::Other("Failed to capture ffmpeg stderr".to_string()))?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            EngineStartError::new(
+                DownloadFailureKind::Other,
+                "Failed to capture ffmpeg stderr".to_string(),
+            )
+        })?;
 
         // 2. Wait for exit (supports graceful stop on cancellation)
         let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<Option<i32>>();
@@ -486,16 +493,16 @@ impl DownloadEngine for FfmpegEngine {
                     // Non-zero exit code - failure
                     let _ = event_tx
                         .send(SegmentEvent::DownloadFailed {
-                            error: format!("FFmpeg exited with code {}", code),
-                            recoverable: true,
+                            kind: DownloadFailureKind::ProcessExit { code: Some(code) },
+                            message: format!("FFmpeg exited with code {}", code),
                         })
                         .await;
                 }
                 None => {
                     let _ = event_tx
                         .send(SegmentEvent::DownloadFailed {
-                            error: "FFmpeg exited without an exit code".to_string(),
-                            recoverable: true,
+                            kind: DownloadFailureKind::ProcessExit { code: None },
+                            message: "FFmpeg exited without an exit code".to_string(),
                         })
                         .await;
                 }

@@ -1,142 +1,53 @@
-use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{Buf, BytesMut};
+use bytes::BytesMut;
 use std::fs::File;
 use std::io::{self, BufReader, Cursor, Read};
 use std::path::Path;
 use tracing::{debug, error};
 
 use crate::header::FlvHeader;
-use crate::tag::{FlvTag, FlvTagData, FlvTagOwned, FlvTagType, FlvUtil};
+use crate::tag::FlvTagType;
+use crate::{framing, tag::FlvTag};
 
 const BUFFER_SIZE: usize = 4 * 1024; // 4 KB buffer size
 
-/// Parser that works with owned data (FlvTagOwned)
+/// Parser that works with borrowed data (FlvTag).
 pub struct FlvParser;
 
-/// Parser that works with borrowed data (FlvTag)
-pub struct FlvParserRef;
-
-impl FlvParser {
-    pub fn parse_file(file_path: &Path) -> io::Result<u32> {
-        let file = File::open(file_path)?;
-        let mut reader = BufReader::new(file);
-
-        // Parse the header
-        let _header = Self::parse_header(&mut reader)?;
-        let mut tags_count = 0;
-
-        // Add these variables to track tag types
-        let mut video_tags = 0;
-        let mut audio_tags = 0;
-        let mut metadata_tags = 0;
-
-        loop {
-            // Read previous tag size (4 bytes)
-            let mut prev_tag_buffer = BytesMut::with_capacity(4);
-            prev_tag_buffer.resize(4, 0);
-            match reader.read_exact(&mut prev_tag_buffer) {
-                Ok(_) => {
-                    // Just ignore the prev tag size for now
-                    let _prev_tag_size = (&prev_tag_buffer[..]).get_u32();
-                }
-                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                    break;
-                }
-                Err(e) => return Err(e),
-            }
-
-            // Parse a single tag
-            match Self::parse_tag(&mut reader) {
-                Ok(Some((tag, tag_type))) => {
-                    tags_count += 1;
-                    match tag_type {
-                        FlvTagType::Video => video_tags += 1,
-                        FlvTagType::Audio => audio_tags += 1,
-                        FlvTagType::ScriptData => metadata_tags += 1,
-                        _ => error!("Unknown tag type: {:?}", tag),
-                    }
-                }
-                Ok(None) => break, // End of file
-                Err(e) => return Err(e),
-            }
-        }
-
-        debug!(
-            "Audio tags: {}, Video tags: {}, Metadata tags: {}",
-            audio_tags, video_tags, metadata_tags
-        );
-
-        Ok(tags_count)
-    }
-
-    /// Parse the FLV header from a reader
-    fn parse_header<R: Read>(reader: &mut R) -> io::Result<FlvHeader> {
-        let mut buffer = BytesMut::with_capacity(9);
-        buffer.resize(9, 0);
-        reader.read_exact(&mut buffer)?;
-        let mut cursor = Cursor::new(buffer.freeze());
-        FlvHeader::parse(&mut cursor)
-    }
-
-    /// Parse a single FLV tag from a reader
-    /// Returns the parsed tag and its type if successful
-    /// Returns None if EOF is reached
-    pub fn parse_tag<R: Read>(reader: &mut R) -> io::Result<Option<(FlvTagOwned, FlvTagType)>> {
-        let mut tag_buffer = BytesMut::with_capacity(BUFFER_SIZE);
-
-        // Peek at tag header (first 11 bytes) to get the data size
-        tag_buffer.resize(11, 0);
-        if let Err(e) = reader.read_exact(&mut tag_buffer) {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Ok(None);
-            }
-            return Err(e);
-        }
-
-        // Get the data size from the first 11 bytes without consuming the buffer
-        let data_size = {
-            let mut peek = Cursor::new(&tag_buffer[..]);
-            peek.advance(1); // Skip tag type byte
-            peek.read_u24::<BigEndian>()?
-        };
-
-        // Now read the complete tag (header + data)
-        // Reset position to beginning of tag
-        let total_tag_size = 11 + data_size as usize;
-
-        // Resize the buffer to fit the entire tag
-        // We've already read the first 11 bytes, so we need to allocate more space for the data
-        tag_buffer.resize(total_tag_size, 0);
-
-        // Read the remaining data (we already have the first 11 bytes)
-        if let Err(e) = reader.read_exact(&mut tag_buffer[11..]) {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                return Ok(None);
-            }
-            return Err(e);
-        }
-
-        // Use FlvTag::demux to parse the entire tag
-        let tag = FlvTagOwned::demux(&mut Cursor::new(tag_buffer.freeze()))?;
-
-        // Determine the tag type
-        let tag_type = match tag.data {
-            FlvTagData::Video(_) => FlvTagType::Video,
-            FlvTagData::Audio(_) => FlvTagType::Audio,
-            FlvTagData::ScriptData(_) => FlvTagType::ScriptData,
-            FlvTagData::Unknown { tag_type, data: _ } => FlvTagType::Unknown(tag_type.into()),
-        };
-
-        Ok(Some((tag, tag_type)))
-    }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PrevTagSizeMode {
+    /// Ignore `PreviousTagSize` values (fastest, most tolerant).
+    #[default]
+    Ignore,
+    /// Log mismatches but continue parsing.
+    Warn,
+    /// Treat any mismatch as an error.
+    Strict,
 }
 
-/// Implementation of the non-owned version of FlvParser
-impl FlvParserRef {
-    pub fn parse_tags<R, F>(
+impl FlvParser {
+    /// Parse the FLV header from a reader.
+    pub fn parse_header<R: Read>(reader: &mut R) -> io::Result<FlvHeader> {
+        FlvHeader::parse(reader)
+    }
+
+    pub fn parse_tags<R, F>(reader: &mut R, mut on_tag: F, current_position: u64) -> io::Result<u32>
+    where
+        R: Read,
+        F: FnMut(&FlvTag, FlvTagType, u64),
+    {
+        Self::parse_tags_with_prev_tag_size_mode(
+            reader,
+            &mut on_tag,
+            current_position,
+            PrevTagSizeMode::Ignore,
+        )
+    }
+
+    pub fn parse_tags_with_prev_tag_size_mode<R, F>(
         reader: &mut R,
-        mut on_tag: F,
+        on_tag: &mut F,
         mut current_position: u64,
+        mode: PrevTagSizeMode,
     ) -> io::Result<u32>
     where
         R: Read,
@@ -147,26 +58,43 @@ impl FlvParserRef {
         let mut audio_tags = 0;
         let mut metadata_tags = 0;
 
+        let mut expected_prev_tag_size = 0u32;
+
         loop {
-            // Read previous tag size (4 bytes)
-            let mut prev_tag_buffer = BytesMut::with_capacity(4);
-            prev_tag_buffer.resize(4, 0);
+            // Read PreviousTagSize (4 bytes).
+            let mut prev_tag_buffer = [0u8; framing::PREV_TAG_SIZE_FIELD_SIZE];
             match reader.read_exact(&mut prev_tag_buffer) {
                 Ok(_) => {
-                    // Just ignore the prev tag size for now
-                    let _prev_tag_size = (&prev_tag_buffer[..]).get_u32();
-                    current_position += 4; // Update position after reading prev tag size
+                    let prev_tag_size = u32::from_be_bytes(prev_tag_buffer);
+                    if mode != PrevTagSizeMode::Ignore && prev_tag_size != expected_prev_tag_size {
+                        match mode {
+                            PrevTagSizeMode::Ignore => {}
+                            PrevTagSizeMode::Warn => {
+                                debug!(
+                                    expected = expected_prev_tag_size,
+                                    got = prev_tag_size,
+                                    position = current_position,
+                                    "PreviousTagSize mismatch"
+                                );
+                            }
+                            PrevTagSizeMode::Strict => {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    format!(
+                                        "PreviousTagSize mismatch (expected {expected_prev_tag_size}, got {prev_tag_size})"
+                                    ),
+                                ));
+                            }
+                        }
+                    }
+                    current_position += framing::PREV_TAG_SIZE_FIELD_SIZE as u64;
                 }
-                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                    break;
-                }
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e),
             }
 
-            // Store the tag start position
             let tag_position = current_position;
 
-            // Parse a single tag
             match Self::parse_tag(reader) {
                 Ok(Some((tag, tag_type))) => {
                     tags_count += 1;
@@ -177,13 +105,11 @@ impl FlvParserRef {
                         _ => debug!("Unknown tag type: {:?}", tag.tag_type),
                     }
 
-                    // Call the callback with the tag, tag type, and current position if provided
                     on_tag(&tag, tag_type, tag_position);
-
-                    // Update position after reading the tag (header + data)
-                    current_position += 11 + tag.data.len() as u64;
+                    expected_prev_tag_size = (framing::TAG_HEADER_SIZE + tag.data.len()) as u32;
+                    current_position += (framing::TAG_HEADER_SIZE + tag.data.len()) as u64;
                 }
-                Ok(None) => break, // End of file
+                Ok(None) => break,
                 Err(e) => return Err(e),
             }
         }
@@ -195,27 +121,37 @@ impl FlvParserRef {
         Ok(tags_count)
     }
 
-    pub fn parse_file<F>(file_path: &Path, on_tag: F) -> io::Result<u32>
-    where
-        F: FnMut(&FlvTag, FlvTagType, u64),
-    {
+    pub fn parse_file(file_path: &Path) -> io::Result<u32> {
         let file = File::open(file_path)?;
         let mut reader = BufReader::new(file);
 
         // Parse the header
-        let _header = Self::parse_header(&mut reader)?;
-        let initial_position = 9u64; // Start after FLV header (9 bytes)
+        let header = Self::parse_header(&mut reader)?;
+        let initial_position = header.data_offset as u64;
 
-        Self::parse_tags(&mut reader, on_tag, initial_position)
-    }
+        // Add these variables to track tag types
+        let mut video_tags = 0;
+        let mut audio_tags = 0;
+        let mut metadata_tags = 0;
 
-    /// Parse the FLV header from a reader
-    pub fn parse_header<R: Read>(reader: &mut R) -> io::Result<FlvHeader> {
-        let mut buffer = BytesMut::with_capacity(9);
-        buffer.resize(9, 0);
-        reader.read_exact(&mut buffer)?;
-        let mut cursor = Cursor::new(buffer.freeze());
-        FlvHeader::parse(&mut cursor)
+        let tags_count = Self::parse_tags_with_prev_tag_size_mode(
+            &mut reader,
+            &mut |tag, tag_type, _pos| match tag_type {
+                FlvTagType::Video => video_tags += 1,
+                FlvTagType::Audio => audio_tags += 1,
+                FlvTagType::ScriptData => metadata_tags += 1,
+                _ => error!("Unknown tag type: {:?}", tag.tag_type),
+            },
+            initial_position,
+            PrevTagSizeMode::Ignore,
+        )?;
+
+        debug!(
+            "Audio tags: {}, Video tags: {}, Metadata tags: {}",
+            audio_tags, video_tags, metadata_tags
+        );
+
+        Ok(tags_count)
     }
 
     /// Parse a single FLV tag from a reader
@@ -225,7 +161,7 @@ impl FlvParserRef {
         let mut tag_buffer = BytesMut::with_capacity(BUFFER_SIZE);
 
         // Peek at tag header (first 11 bytes) to get the data size
-        tag_buffer.resize(11, 0);
+        tag_buffer.resize(framing::TAG_HEADER_SIZE, 0);
         if let Err(e) = reader.read_exact(&mut tag_buffer) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Ok(None);
@@ -233,23 +169,22 @@ impl FlvParserRef {
             return Err(e);
         }
 
-        // Get the data size from the first 11 bytes without consuming the buffer
-        let data_size = {
-            let mut peek = Cursor::new(&tag_buffer[..]);
-            peek.advance(1); // Skip tag type byte
-            peek.read_u24::<BigEndian>()?
+        let header = {
+            let mut header_bytes = [0u8; framing::TAG_HEADER_SIZE];
+            header_bytes.copy_from_slice(&tag_buffer[..framing::TAG_HEADER_SIZE]);
+            framing::parse_tag_header_bytes(header_bytes)?
         };
 
         // Now read the complete tag (header + data)
         // Reset position to beginning of tag
-        let total_tag_size = 11 + data_size as usize;
+        let total_tag_size = framing::TAG_HEADER_SIZE + header.data_size as usize;
 
         // Resize the buffer to fit the entire tag
         // We've already read the first 11 bytes, so we need to allocate more space for the data
         tag_buffer.resize(total_tag_size, 0);
 
         // Read the remaining data (we already have the first 11 bytes)
-        if let Err(e) = reader.read_exact(&mut tag_buffer[11..]) {
+        if let Err(e) = reader.read_exact(&mut tag_buffer[framing::TAG_HEADER_SIZE..]) {
             if e.kind() == io::ErrorKind::UnexpectedEof {
                 return Ok(None);
             }
@@ -257,12 +192,10 @@ impl FlvParserRef {
         }
 
         // Determine the tag type
-        // peek the first 1 byte to get the tag type
-        let tag_type = tag_buffer[0] & 0x1F; // Mask to get the tag type (5 bits)
+        let tag_type = header.tag_type;
 
-        // Use FlvTag::demux to parse the entire tag
+        // Demux the tag
         let tag = FlvTag::demux(&mut Cursor::new(tag_buffer.freeze()))?;
-        let tag_type = FlvTagType::from(tag_type);
 
         Ok(Some((tag, tag_type)))
     }
@@ -317,7 +250,7 @@ mod tests {
         let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
 
         let start = std::time::Instant::now(); // Start timer
-        let tags_count = super::FlvParserRef::parse_file(path, |_, _, _| {})?;
+        let tags_count = super::FlvParser::parse_file(path)?;
         let duration = start.elapsed(); // Stop timer
 
         // Calculate read speed

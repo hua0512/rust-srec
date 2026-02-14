@@ -28,67 +28,33 @@ fn main() {
     // Create HLS data for the TS segment
     let hls_data = HlsData::ts(media_segment, Bytes::from(ts_data));
 
-    println!("✓ Created HLS TS segment data");
+    println!("Created HLS TS segment data");
     println!("  Segment size: {} bytes", hls_data.size());
 
-    // Compare memory usage and performance
-    compare_parsing_approaches(&hls_data);
+    // Demonstrate parsing
+    demonstrate_parsing(&hls_data);
 
-    // Demonstrate streaming-friendly approach
-    demonstrate_zero_copy_features(&hls_data);
+    // Demonstrate stream queries
+    demonstrate_stream_queries(&hls_data);
 }
 
-fn compare_parsing_approaches(hls_data: &HlsData) {
-    println!("\n🔬 Comparing Parsing Approaches:");
-    println!("================================");
+fn demonstrate_parsing(hls_data: &HlsData) {
+    println!("\nParsing PSI Tables:");
+    println!("===================");
 
-    // Traditional approach
     let start = Instant::now();
-    let traditional_result = hls_data.parse_ts_psi_tables();
-    let traditional_duration = start.elapsed();
+    let result = hls_data.parse_ts_psi_tables();
+    let duration = start.elapsed();
 
-    match traditional_result {
-        Some(Ok((pat, pmts))) => {
-            println!("📊 Traditional Parser:");
-            println!("  Parse time: {traditional_duration:?}");
-            if let Some(pat) = pat {
-                println!("  PAT: {} programs", pat.programs.len());
-                // Estimate memory: PAT + PMTs + descriptor data
-                let mut memory_estimate = std::mem::size_of_val(&pat);
-                memory_estimate += pat.programs.len() * std::mem::size_of::<ts::PatProgram>();
-
-                for pmt in &pmts {
-                    memory_estimate += std::mem::size_of_val(pmt);
-                    memory_estimate += pmt.streams.len() * std::mem::size_of::<ts::PmtStream>();
-                    memory_estimate += pmt.program_info.len();
-                    for stream in &pmt.streams {
-                        memory_estimate += stream.es_info.len();
-                    }
-                }
-                println!("  Estimated memory: ~{memory_estimate} bytes");
-            }
-            println!("  PMTs: {} found", pmts.len());
-        }
-        Some(Err(e)) => println!("❌ Traditional parser failed: {e}"),
-        None => println!("❌ Not a TS segment"),
-    }
-
-    // Zero-copy approach
-    let start = Instant::now();
-    let zero_copy_result = hls_data.parse_ts_psi_tables_zero_copy();
-    let zero_copy_duration = start.elapsed();
-
-    match zero_copy_result {
+    match result {
         Some(Ok(stream_info)) => {
-            println!("🚀 Zero-Copy Parser:");
-            println!("  Parse time: {zero_copy_duration:?}");
+            println!("  Parse time: {duration:?}");
             println!("  Transport Stream ID: {}", stream_info.transport_stream_id);
             println!("  Programs: {} found", stream_info.programs.len());
 
-            // Zero-copy memory is just the lightweight structs
             let memory_usage = std::mem::size_of_val(&stream_info)
                 + stream_info.programs.len() * std::mem::size_of::<hls::ProgramInfo>();
-            println!("  Actual memory: ~{memory_usage} bytes");
+            println!("  Memory usage: ~{memory_usage} bytes");
 
             for program in &stream_info.programs {
                 println!(
@@ -100,58 +66,41 @@ fn compare_parsing_approaches(hls_data: &HlsData) {
                 );
             }
         }
-        Some(Err(e)) => println!("❌ Zero-copy parser failed: {e}"),
-        None => println!("❌ Not a TS segment"),
-    }
-
-    // Performance comparison
-    if traditional_duration > zero_copy_duration {
-        let speedup = traditional_duration.as_nanos() as f64 / zero_copy_duration.as_nanos() as f64;
-        println!("⚡ Zero-copy is {speedup:.2}x faster");
-    } else {
-        let slowdown =
-            zero_copy_duration.as_nanos() as f64 / traditional_duration.as_nanos() as f64;
-        println!("⚡ Zero-copy is {slowdown:.2}x slower (but uses less memory)");
+        Some(Err(e)) => println!("  Parser failed: {e}"),
+        None => println!("  Not a TS segment"),
     }
 }
 
-fn demonstrate_zero_copy_features(hls_data: &HlsData) {
-    println!("\n🌟 Zero-Copy Features Demo:");
-    println!("==========================");
+fn demonstrate_stream_queries(hls_data: &HlsData) {
+    println!("\nStream Queries:");
+    println!("===============");
 
-    // Stream summary with minimal memory usage
-    if let Some(summary) = hls_data.get_stream_summary_zero_copy() {
-        println!("📊 Stream summary (zero-copy): {summary}");
-    }
-
-    // Check for specific stream types efficiently
-    if hls_data.ts_contains_stream_type_zero_copy(StreamType::H264) {
-        println!("✓ Contains H.264 video (detected with zero-copy)");
-    }
-    if hls_data.ts_contains_stream_type_zero_copy(StreamType::H265) {
-        println!("✓ Contains H.265 video (detected with zero-copy)");
-    }
-    if hls_data.ts_contains_stream_type_zero_copy(StreamType::AdtsAac) {
-        println!("✓ Contains AAC audio (detected with zero-copy)");
-    }
-    if hls_data.ts_contains_stream_type_zero_copy(StreamType::Ac3) {
-        println!("✓ Contains AC-3 audio (detected with zero-copy)");
+    // Stream summary
+    if let Some(summary) = hls_data.get_stream_summary() {
+        println!("  Stream summary: {summary}");
     }
 
-    // Get stream lists efficiently
-    if let Some(Ok(video_streams)) = hls_data.get_ts_video_streams_zero_copy() {
-        println!("🎥 Video streams (zero-copy):");
+    // Check for specific stream types
+    if hls_data.ts_contains_stream_type(StreamType::H264) {
+        println!("  Contains H.264 video");
+    }
+    if hls_data.ts_contains_stream_type(StreamType::H265) {
+        println!("  Contains H.265 video");
+    }
+    if hls_data.ts_contains_stream_type(StreamType::AdtsAac) {
+        println!("  Contains AAC audio");
+    }
+    if hls_data.ts_contains_stream_type(StreamType::Ac3) {
+        println!("  Contains AC-3 audio");
+    }
+
+    // Get stream lists
+    if let Some(Ok(video_streams)) = hls_data.get_ts_video_streams() {
+        println!("  Video streams:");
         for (pid, stream_type) in video_streams {
-            println!("   PID 0x{pid:04X}: {stream_type:?}");
+            println!("    PID 0x{pid:04X}: {stream_type:?}");
         }
     }
-
-    println!("\n💡 Benefits of Zero-Copy Approach:");
-    println!("  • No allocation of descriptor data");
-    println!("  • Minimal memory footprint");
-    println!("  • Suitable for high-throughput streaming");
-    println!("  • Lower GC pressure in long-running applications");
-    println!("  • Better cache locality when processing many segments");
 }
 
 fn create_complex_ts_data() -> Vec<u8> {

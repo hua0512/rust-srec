@@ -2,10 +2,11 @@ use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tracing::debug;
+
+use crate::PipelineError;
 
 /// Progress information from writer.
 /// Contains metrics about bytes written, items processed, media duration, and performance.
@@ -107,8 +108,6 @@ pub struct WriterConfig {
     pub file_name_template: String,
     /// File name extension.
     pub file_extension: String,
-    /// Custom data for the strategy.
-    pub strategy_specific_config: Option<Arc<dyn std::any::Any + Send + Sync>>,
 }
 
 impl WriterConfig {
@@ -117,7 +116,6 @@ impl WriterConfig {
             base_path,
             file_name_template,
             file_extension,
-            strategy_specific_config: None,
         }
     }
 }
@@ -173,9 +171,56 @@ impl WriterState {
     }
 }
 
-/// Error type for the writer task.
+/// Summary statistics returned after a writer finishes.
+#[derive(Debug, Clone)]
+pub struct WriterStats {
+    pub items_written: usize,
+    pub files_created: u32,
+    pub bytes_written: u64,
+    pub duration_secs: f64,
+}
+
+impl WriterStats {
+    pub fn from_state(state: &WriterState) -> Self {
+        Self {
+            items_written: state.items_written_total,
+            files_created: if state.items_written_total > 0 {
+                state.file_sequence_number + 1
+            } else {
+                0
+            },
+            bytes_written: state.bytes_written_total,
+            duration_secs: state.media_duration_secs_total,
+        }
+    }
+}
+
+/// Non-generic error type for the writer boundary.
 #[derive(Error, Debug)]
-pub enum TaskError<StrategyError: Error + Send + Sync + 'static> {
+pub enum WriterError {
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
+
+    #[error("Configuration error: {0}")]
+    Config(String),
+
+    #[error("File rotation error: {0}")]
+    Rotation(String),
+
+    #[error("Internal writer error: {0}")]
+    Internal(String),
+
+    #[error("Strategy error: {0}")]
+    Strategy(#[source] Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("Input stream error: {0}")]
+    InputError(#[source] PipelineError),
+}
+
+/// Internal error type for the writer task (keeps strategy error generic).
+#[derive(Error, Debug)]
+#[allow(dead_code)]
+pub(crate) enum TaskError<StrategyError: Error + Send + Sync + 'static> {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
     #[error("Strategy error: {0}")]
@@ -188,13 +233,16 @@ pub enum TaskError<StrategyError: Error + Send + Sync + 'static> {
     Internal(String),
 }
 
-#[derive(Error, Debug)]
-pub enum WriterError<StrategyError: Error + Send + Sync + 'static> {
-    #[error("Task error: {0}")]
-    TaskError(#[from] TaskError<StrategyError>),
-
-    #[error("Input stream error: {0}")]
-    InputError(String),
+impl<SE: Error + Send + Sync + 'static> From<TaskError<SE>> for WriterError {
+    fn from(e: TaskError<SE>) -> Self {
+        match e {
+            TaskError::Io(io) => WriterError::Io(io),
+            TaskError::Strategy(s) => WriterError::Strategy(Box::new(s)),
+            TaskError::Config(msg) => WriterError::Config(msg),
+            TaskError::Rotation(msg) => WriterError::Rotation(msg),
+            TaskError::Internal(msg) => WriterError::Internal(msg),
+        }
+    }
 }
 
 /// Trait defining the strategy for formatting and writing data.
@@ -519,7 +567,11 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
         Ok(())
     }
 
-    pub fn process_item(&mut self, item: D) -> Result<(), TaskError<S::StrategyError>> {
+    pub fn process_item(&mut self, item: D) -> Result<(), WriterError> {
+        self.process_item_inner(item).map_err(WriterError::from)
+    }
+
+    fn process_item_inner(&mut self, item: D) -> Result<(), TaskError<S::StrategyError>> {
         self.ensure_writer_open()?;
 
         if let Some(writer) = self.writer.as_mut() {
@@ -544,7 +596,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
                     match post_write_action {
                         PostWriteAction::None => {}
                         PostWriteAction::Close => {
-                            self.close()?;
+                            self.close_inner()?;
                         }
                         PostWriteAction::Rotate => {
                             self.rotate_file()?;
@@ -587,14 +639,18 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
         }
     }
 
-    pub fn flush(&mut self) -> Result<(), TaskError<S::StrategyError>> {
+    pub fn flush(&mut self) -> Result<(), WriterError> {
         if let Some(writer) = self.writer.as_mut() {
-            writer.flush().map_err(TaskError::Io)?;
+            writer.flush().map_err(WriterError::Io)?;
         }
         Ok(())
     }
 
-    pub fn close(&mut self) -> Result<(), TaskError<S::StrategyError>> {
+    pub fn close(&mut self) -> Result<(), WriterError> {
+        self.close_inner().map_err(WriterError::from)
+    }
+
+    fn close_inner(&mut self) -> Result<(), TaskError<S::StrategyError>> {
         if let Some(mut writer) = self.writer.take()
             && let Some(path) = &self.state.current_file_path
         {
@@ -622,6 +678,33 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
         self.state.current_file_path = None;
         Ok(())
+    }
+
+    /// De-duplicated blocking_recv loop for reading from a channel and writing items.
+    ///
+    /// The `pre_filter` closure can inspect each item and the current writer state
+    /// to decide whether to skip it (return `false`) or process it (return `true`).
+    pub fn run_from_channel(
+        &mut self,
+        mut rx: tokio::sync::mpsc::Receiver<Result<D, PipelineError>>,
+        mut pre_filter: impl FnMut(&D, &WriterState) -> bool,
+    ) -> Result<WriterStats, WriterError> {
+        while let Some(result) = rx.blocking_recv() {
+            match result {
+                Ok(item) => {
+                    if !pre_filter(&item, &self.state) {
+                        continue;
+                    }
+                    self.process_item(item)?;
+                }
+                Err(e) => {
+                    let _ = self.close();
+                    return Err(WriterError::InputError(e));
+                }
+            }
+        }
+        self.close()?;
+        Ok(WriterStats::from_state(&self.state))
     }
 
     pub fn get_current_file_path(&self) -> Option<&PathBuf> {
@@ -668,7 +751,7 @@ impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
         let file = OpenOptions::new()
             .write(true)
             .create(true)
-            .truncate(true) // Or append(true) depending on desired behavior for existing files
+            .truncate(true)
             .open(path)?;
         Ok(BufWriter::new(file))
     }
@@ -678,16 +761,6 @@ impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
         _writer: &mut Self::Writer,
         _item: &D,
     ) -> Result<u64, Self::StrategyError> {
-        // This default strategy doesn't know how to write arbitrary D.
-        // Users should implement this for their specific D.
-        // For demonstration, let's assume D is `Vec<u8>` and write it.
-        // if let Some(bytes_item) = (&item as &dyn std::any::Any).downcast_ref::<Vec<u8>>() {
-        //     writer.write_all(bytes_item)?;
-        //     Ok(bytes_item.len() as u64)
-        // } else {
-        //     Err(DefaultStrategyError::Io(io::Error::new(io::ErrorKind::InvalidInput, "DefaultFileStrategy cannot write this data type")))
-        // }
-        // The above is commented out as D is generic. This method MUST be implemented by concrete strategies.
         panic!(
             "DefaultFileStrategy::write_item must be implemented by a concrete strategy or this strategy should not be used directly with WriterTask::process_item"
         );
@@ -838,16 +911,11 @@ mod tests {
     #[test]
     fn test_writer_task_basic_write_and_close() {
         let dir = tempdir().unwrap();
-        let config = WriterConfig {
-            base_path: dir.path().to_path_buf(),
-            file_name_template: "test_basic_%i".to_string(),
-            file_extension: "txt".to_string(),
-            ..WriterConfig::new(
-                dir.path().to_path_buf(),
-                "test".to_string(),
-                "txt".to_string(),
-            )
-        };
+        let config = WriterConfig::new(
+            dir.path().to_path_buf(),
+            "test_basic_%i".to_string(),
+            "txt".to_string(),
+        );
         let strategy = TestStrategy {
             item_count_to_rotate: 5,
             header_content: Some("HEADER".to_string()),
@@ -870,16 +938,11 @@ mod tests {
     #[test]
     fn test_writer_task_rotation() {
         let dir = tempdir().unwrap();
-        let config = WriterConfig {
-            base_path: dir.path().to_path_buf(),
-            file_name_template: "test_rotate_%i".to_string(),
-            file_extension: "log".to_string(),
-            ..WriterConfig::new(
-                dir.path().to_path_buf(),
-                "test_rotate_%i".to_string(),
-                "log".to_string(),
-            )
-        };
+        let config = WriterConfig::new(
+            dir.path().to_path_buf(),
+            "test_rotate_%i".to_string(),
+            "log".to_string(),
+        );
         // Strategy will rotate after 2 items based on its internal counter fed to should_rotate_file
         let strategy = TestStrategy {
             item_count_to_rotate: 2,
@@ -919,16 +982,11 @@ mod tests {
     #[test]
     fn test_writer_task_rotation_avoids_collisions_when_template_has_no_sequence_placeholder() {
         let dir = tempdir().unwrap();
-        let config = WriterConfig {
-            base_path: dir.path().to_path_buf(),
-            file_name_template: "test_rotate_no_seq".to_string(),
-            file_extension: "log".to_string(),
-            ..WriterConfig::new(
-                dir.path().to_path_buf(),
-                "test_rotate_no_seq".to_string(),
-                "log".to_string(),
-            )
-        };
+        let config = WriterConfig::new(
+            dir.path().to_path_buf(),
+            "test_rotate_no_seq".to_string(),
+            "log".to_string(),
+        );
 
         // Rotate before each subsequent item, so we'd collide without collision avoidance.
         let strategy = TestStrategy {

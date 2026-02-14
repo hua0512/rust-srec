@@ -1,10 +1,8 @@
 use std::borrow::Cow;
 
-use num_derive::FromPrimitive;
-
 /// AMF0 marker types.
 /// Defined in amf0_spec_121207.pdf section 2.1
-#[derive(Debug, PartialEq, Eq, Clone, Copy, FromPrimitive)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
 pub enum Amf0Marker {
     /// number-marker
@@ -51,6 +49,41 @@ pub enum Amf0Marker {
     AVMPlusObject = 0x11,
 }
 
+impl TryFrom<u8> for Amf0Marker {
+    type Error = u8;
+
+    fn try_from(value: u8) -> Result<Self, u8> {
+        match value {
+            0x00 => Ok(Self::Number),
+            0x01 => Ok(Self::Boolean),
+            0x02 => Ok(Self::String),
+            0x03 => Ok(Self::Object),
+            0x04 => Ok(Self::MovieClipMarker),
+            0x05 => Ok(Self::Null),
+            0x06 => Ok(Self::Undefined),
+            0x07 => Ok(Self::Reference),
+            0x08 => Ok(Self::EcmaArray),
+            0x09 => Ok(Self::ObjectEnd),
+            0x0a => Ok(Self::StrictArray),
+            0x0b => Ok(Self::Date),
+            0x0c => Ok(Self::LongString),
+            0x0d => Ok(Self::Unsupported),
+            0x0e => Ok(Self::Recordset),
+            0x0f => Ok(Self::XmlDocument),
+            0x10 => Ok(Self::TypedObject),
+            0x11 => Ok(Self::AVMPlusObject),
+            other => Err(other),
+        }
+    }
+}
+
+impl Amf0Marker {
+    /// Check if a u24 value represents the object-end marker (0x000009).
+    pub fn is_object_end_u24(value: u32) -> bool {
+        value == 0x000009
+    }
+}
+
 /// AMF0 value types.
 /// Defined in amf0_spec_121207.pdf section 2.2-2.14
 #[derive(PartialEq, Clone, Debug)]
@@ -66,45 +99,124 @@ pub enum Amf0Value<'a> {
     /// Null Type defined section 2.7
     Null,
     /// Undefined Type defined section 2.8
-    ObjectEnd,
+    Undefined,
+    /// EcmaArray Type defined section 2.10
+    EcmaArray(Cow<'a, [(Cow<'a, str>, Amf0Value<'a>)]>),
+    /// StrictArray Type defined section 2.12
+    StrictArray(Cow<'a, [Amf0Value<'a>]>),
+    /// Date Type defined section 2.13
+    Date {
+        /// Timestamp in milliseconds since Unix epoch
+        timestamp: f64,
+        /// Timezone offset in minutes
+        timezone: i16,
+    },
     /// LongString Type defined section 2.14
     LongString(Cow<'a, str>),
-    /// StrictArray Type defined section 2.11
-    StrictArray(Cow<'a, [Amf0Value<'a>]>),
 }
 
-impl Amf0Value<'_> {
+impl<'a> Amf0Value<'a> {
     /// Get the marker of the value.
+    #[inline]
     pub fn marker(&self) -> Amf0Marker {
         match self {
-            Self::Boolean(_) => Amf0Marker::Boolean,
             Self::Number(_) => Amf0Marker::Number,
+            Self::Boolean(_) => Amf0Marker::Boolean,
             Self::String(_) => Amf0Marker::String,
             Self::Object(_) => Amf0Marker::Object,
             Self::Null => Amf0Marker::Null,
-            Self::ObjectEnd => Amf0Marker::ObjectEnd,
-            Self::LongString(_) => Amf0Marker::LongString,
+            Self::Undefined => Amf0Marker::Undefined,
+            Self::EcmaArray(_) => Amf0Marker::EcmaArray,
             Self::StrictArray(_) => Amf0Marker::StrictArray,
+            Self::Date { .. } => Amf0Marker::Date,
+            Self::LongString(_) => Amf0Marker::LongString,
         }
     }
 
-    /// Get the owned value.
-    pub fn to_owned(&self) -> Amf0Value<'static> {
+    /// Convert borrowed value to an owned value with `'static` lifetime.
+    ///
+    /// Named `into_owned` to be consistent with [`Cow::into_owned`] and
+    /// to avoid shadowing [`std::borrow::ToOwned`].
+    #[inline]
+    pub fn into_owned(&self) -> Amf0Value<'static> {
         match self {
+            Self::Number(n) => Amf0Value::Number(*n),
+            Self::Boolean(b) => Amf0Value::Boolean(*b),
             Self::String(s) => Amf0Value::String(Cow::Owned(s.to_string())),
             Self::LongString(s) => Amf0Value::LongString(Cow::Owned(s.to_string())),
             Self::Object(o) => Amf0Value::Object(
                 o.iter()
-                    .map(|(k, v)| (Cow::Owned(k.to_string()), v.to_owned()))
+                    .map(|(k, v)| (Cow::Owned(k.to_string()), v.into_owned()))
+                    .collect(),
+            ),
+            Self::EcmaArray(o) => Amf0Value::EcmaArray(
+                o.iter()
+                    .map(|(k, v)| (Cow::Owned(k.to_string()), v.into_owned()))
                     .collect(),
             ),
             Self::StrictArray(a) => {
-                Amf0Value::StrictArray(a.iter().map(|v| v.to_owned()).collect())
+                Amf0Value::StrictArray(a.iter().map(|v| v.into_owned()).collect())
             }
-            Self::Number(n) => Amf0Value::Number(*n),
-            Self::Boolean(b) => Amf0Value::Boolean(*b),
+            Self::Date {
+                timestamp,
+                timezone,
+            } => Amf0Value::Date {
+                timestamp: *timestamp,
+                timezone: *timezone,
+            },
             Self::Null => Amf0Value::Null,
-            Self::ObjectEnd => Amf0Value::ObjectEnd,
+            Self::Undefined => Amf0Value::Undefined,
+        }
+    }
+
+    /// Returns the inner `f64` if this is a `Number`, or `None` otherwise.
+    #[inline]
+    pub fn as_number(&self) -> Option<f64> {
+        match self {
+            Self::Number(n) => Some(*n),
+            _ => None,
+        }
+    }
+
+    /// Returns the inner `bool` if this is a `Boolean`, or `None` otherwise.
+    #[inline]
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Boolean(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    /// Returns the inner string slice if this is a `String` or `LongString`,
+    /// or `None` otherwise.
+    #[inline]
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::String(s) | Self::LongString(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Returns the inner property slice if this is an `Object` or `EcmaArray`,
+    /// or `None` otherwise.
+    ///
+    /// This is useful for consumers that don't need to distinguish between
+    /// the two wire formats.
+    #[inline]
+    pub fn as_object_properties(&self) -> Option<&[(Cow<'a, str>, Amf0Value<'a>)]> {
+        match self {
+            Self::Object(o) | Self::EcmaArray(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    /// Returns the inner value slice if this is a `StrictArray`,
+    /// or `None` otherwise.
+    #[inline]
+    pub fn as_array(&self) -> Option<&[Amf0Value<'a>]> {
+        match self {
+            Self::StrictArray(a) => Some(a),
+            _ => None,
         }
     }
 }
@@ -112,8 +224,6 @@ impl Amf0Value<'_> {
 #[cfg(test)]
 #[cfg_attr(all(test, coverage_nightly), coverage(off))]
 mod tests {
-    use num_traits::FromPrimitive;
-
     use super::*;
 
     #[test]
@@ -130,7 +240,11 @@ mod tests {
                 Amf0Marker::Object,
             ),
             (Amf0Value::Null, Amf0Marker::Null),
-            (Amf0Value::ObjectEnd, Amf0Marker::ObjectEnd),
+            (Amf0Value::Undefined, Amf0Marker::Undefined),
+            (
+                Amf0Value::EcmaArray(Cow::Borrowed(&[(Cow::Borrowed("key"), Amf0Value::Null)])),
+                Amf0Marker::EcmaArray,
+            ),
             (
                 Amf0Value::LongString(Cow::Borrowed("test")),
                 Amf0Marker::LongString,
@@ -138,6 +252,13 @@ mod tests {
             (
                 Amf0Value::StrictArray(Cow::Borrowed(&[Amf0Value::Number(1.0)])),
                 Amf0Marker::StrictArray,
+            ),
+            (
+                Amf0Value::Date {
+                    timestamp: 1000.0,
+                    timezone: 0,
+                },
+                Amf0Marker::Date,
             ),
         ];
 
@@ -147,12 +268,12 @@ mod tests {
     }
 
     #[test]
-    fn test_to_owned() {
+    fn test_into_owned() {
         let value = Amf0Value::Object(Cow::Borrowed(&[(
             Cow::Borrowed("test"),
             Amf0Value::LongString(Cow::Borrowed("test")),
         )]));
-        let owned = value.to_owned();
+        let owned = value.into_owned();
         assert_eq!(
             owned,
             Amf0Value::Object(Cow::Owned(vec![(
@@ -162,30 +283,30 @@ mod tests {
         );
 
         let value = Amf0Value::String(Cow::Borrowed("test"));
-        let owned = value.to_owned();
+        let owned = value.into_owned();
         assert_eq!(owned, Amf0Value::String(Cow::Owned("test".to_string())));
 
         let value = Amf0Value::Number(1.0);
-        let owned = value.to_owned();
+        let owned = value.into_owned();
         assert_eq!(owned, Amf0Value::Number(1.0));
 
         let value = Amf0Value::Boolean(true);
-        let owned = value.to_owned();
+        let owned = value.into_owned();
         assert_eq!(owned, Amf0Value::Boolean(true));
 
         let value = Amf0Value::Null;
-        let owned = value.to_owned();
+        let owned = value.into_owned();
         assert_eq!(owned, Amf0Value::Null);
 
-        let value = Amf0Value::ObjectEnd;
-        let owned = value.to_owned();
-        assert_eq!(owned, Amf0Value::ObjectEnd);
+        let value = Amf0Value::Undefined;
+        let owned = value.into_owned();
+        assert_eq!(owned, Amf0Value::Undefined);
 
         let value = Amf0Value::StrictArray(Cow::Borrowed(&[
             Amf0Value::Number(1.0),
             Amf0Value::String(Cow::Borrowed("test")),
         ]));
-        let owned = value.to_owned();
+        let owned = value.into_owned();
         assert_eq!(
             owned,
             Amf0Value::StrictArray(Cow::Owned(vec![
@@ -193,10 +314,36 @@ mod tests {
                 Amf0Value::String(Cow::Owned("test".to_string()))
             ]))
         );
+
+        let value = Amf0Value::EcmaArray(Cow::Borrowed(&[(
+            Cow::Borrowed("key"),
+            Amf0Value::Number(42.0),
+        )]));
+        let owned = value.into_owned();
+        assert_eq!(
+            owned,
+            Amf0Value::EcmaArray(Cow::Owned(vec![(
+                Cow::Owned("key".to_string()),
+                Amf0Value::Number(42.0),
+            )]))
+        );
+
+        let value = Amf0Value::Date {
+            timestamp: 1234567890.0,
+            timezone: -120,
+        };
+        let owned = value.into_owned();
+        assert_eq!(
+            owned,
+            Amf0Value::Date {
+                timestamp: 1234567890.0,
+                timezone: -120,
+            }
+        );
     }
 
     #[test]
-    fn test_marker_primitive() {
+    fn test_marker_try_from() {
         let cases = [
             (Amf0Marker::Number, 0x00),
             (Amf0Marker::Boolean, 0x01),
@@ -220,9 +367,47 @@ mod tests {
 
         for (marker, value) in cases {
             assert_eq!(marker as u8, value);
-            assert_eq!(Amf0Marker::from_u8(value), Some(marker));
+            assert_eq!(Amf0Marker::try_from(value), Ok(marker));
         }
 
-        assert!(Amf0Marker::from_u8(0x12).is_none());
+        assert_eq!(Amf0Marker::try_from(0x12), Err(0x12));
+        assert_eq!(Amf0Marker::try_from(0xFF), Err(0xFF));
+    }
+
+    #[test]
+    fn test_accessors() {
+        assert_eq!(Amf0Value::Number(42.0).as_number(), Some(42.0));
+        assert_eq!(Amf0Value::Boolean(true).as_number(), None);
+
+        assert_eq!(Amf0Value::Boolean(true).as_bool(), Some(true));
+        assert_eq!(Amf0Value::Number(1.0).as_bool(), None);
+
+        assert_eq!(
+            Amf0Value::String(Cow::Borrowed("hello")).as_str(),
+            Some("hello")
+        );
+        assert_eq!(
+            Amf0Value::LongString(Cow::Borrowed("world")).as_str(),
+            Some("world")
+        );
+        assert_eq!(Amf0Value::Number(1.0).as_str(), None);
+
+        let obj = Amf0Value::Object(Cow::Borrowed(&[(Cow::Borrowed("k"), Amf0Value::Null)]));
+        assert!(obj.as_object_properties().is_some());
+
+        let ecma = Amf0Value::EcmaArray(Cow::Borrowed(&[(Cow::Borrowed("k"), Amf0Value::Null)]));
+        assert!(ecma.as_object_properties().is_some());
+        assert!(Amf0Value::Null.as_object_properties().is_none());
+
+        let arr = Amf0Value::StrictArray(Cow::Borrowed(&[Amf0Value::Number(1.0)]));
+        assert!(arr.as_array().is_some());
+        assert!(Amf0Value::Null.as_array().is_none());
+    }
+
+    #[test]
+    fn test_is_object_end_u24() {
+        assert!(Amf0Marker::is_object_end_u24(0x000009));
+        assert!(!Amf0Marker::is_object_end_u24(0x000000));
+        assert!(!Amf0Marker::is_object_end_u24(0x000109));
     }
 }

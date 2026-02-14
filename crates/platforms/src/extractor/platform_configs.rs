@@ -19,6 +19,8 @@ pub struct HuyaConfig {
     /// Force origin quality stream (default: false)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub force_origin_quality: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
 /// Douyin platform-specific configuration
@@ -42,6 +44,8 @@ pub struct DouyinConfig {
     /// Skip interactive game streams (互动玩法), treat as offline (default: true)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skip_interactive_games: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
 /// Bilibili platform-specific configuration
@@ -50,6 +54,8 @@ pub struct BilibiliConfig {
     /// Quality level (0=lowest, 30000=dolby vision) (default: 30000)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quality: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
 /// Douyu platform-specific configuration
@@ -70,6 +76,8 @@ pub struct DouyuConfig {
     /// API request retry count (default: 3)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_retries: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
 /// Twitch platform-specific configuration
@@ -78,6 +86,8 @@ pub struct TwitchConfig {
     /// OAuth token for authentication
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
 /// TikTok platform-specific configuration
@@ -86,6 +96,8 @@ pub struct TikTokConfig {
     /// Force origin quality stream
     #[serde(skip_serializing_if = "Option::is_none")]
     pub force_origin_quality: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
 /// Twitcasting platform-specific configuration
@@ -94,6 +106,8 @@ pub struct TwitcastingConfig {
     /// Password for protected streams
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
 /// Merge two JSON objects, with overlay taking precedence.
@@ -186,11 +200,12 @@ mod tests {
 
     #[test]
     fn test_huya_config_deserialize() {
-        let json = json!({"use_wup": false, "force_origin_quality": true});
+        let json = json!({"use_wup": false, "force_origin_quality": true, "end_stream_on_danmu_stream_closed": false});
         let config: HuyaConfig = serde_json::from_value(json).unwrap();
         assert_eq!(config.use_wup, Some(false));
         assert_eq!(config.force_origin_quality, Some(true));
         assert_eq!(config.use_wup_v2, None);
+        assert_eq!(config.end_stream_on_danmu_stream_closed, Some(false));
     }
 
     #[test]

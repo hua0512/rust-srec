@@ -19,11 +19,11 @@
 //! This is intentionally conservative to avoid false positives on legitimate
 //! repeated content (e.g. identical AAC frames at different timestamps).
 use flv::data::FlvData;
-use flv::tag::{FlvTag, FlvUtil};
+use flv::tag::FlvTag;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::crc32;
 
@@ -104,6 +104,8 @@ pub struct DuplicateTagFilterOperator {
     max_timestamp_seen: u32,
     replay_active: bool,
     replay_offset_ms: Option<i64>,
+    dropped_duplicates: u64,
+    next_drop_log_at: u64,
 }
 
 impl DuplicateTagFilterOperator {
@@ -123,6 +125,8 @@ impl DuplicateTagFilterOperator {
             max_timestamp_seen: 0,
             replay_active: false,
             replay_offset_ms: None,
+            dropped_duplicates: 0,
+            next_drop_log_at: 1_000,
         }
     }
 
@@ -144,6 +148,8 @@ impl DuplicateTagFilterOperator {
         self.max_timestamp_seen = 0;
         self.replay_active = false;
         self.replay_offset_ms = None;
+        self.dropped_duplicates = 0;
+        self.next_drop_log_at = 1_000;
     }
 
     fn track_tag(&mut self, tag: &FlvTag) {
@@ -282,13 +288,21 @@ impl Processor<FlvData> for DuplicateTagFilterOperator {
                 }
 
                 if self.track_and_check(&tag) {
-                    debug!(
+                    self.dropped_duplicates = self.dropped_duplicates.saturating_add(1);
+                    trace!(
                         "{} Dropping duplicate media tag: type={:?} ts={} len={}",
                         self.context.name,
                         tag.tag_type,
                         tag.timestamp_ms,
                         tag.data.len()
                     );
+                    if self.dropped_duplicates >= self.next_drop_log_at {
+                        debug!(
+                            "{} Dropped {} duplicate media tags so far",
+                            self.context.name, self.dropped_duplicates
+                        );
+                        self.next_drop_log_at = self.next_drop_log_at.saturating_add(1_000);
+                    }
                     return Ok(());
                 }
 

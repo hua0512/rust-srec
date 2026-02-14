@@ -1,7 +1,9 @@
 use crate::data::FlvData;
 use crate::error::FlvError;
+use crate::framing;
 use crate::header::FlvHeader;
 use crate::tag::FlvTag;
+use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{Buf, BytesMut};
 use futures::{Stream, StreamExt};
 use std::{
@@ -19,8 +21,8 @@ const BUFFER_SIZE: usize = 8 * 1024;
 // 16 MiB sanity limit for tag data size
 const MAX_TAG_DATA_SIZE: u32 = 16 * 1024 * 1024;
 const FLV_HEADER_SIZE: usize = 9;
-const PREV_TAG_SIZE_FIELD_SIZE: usize = 4;
-const TAG_HEADER_SIZE: usize = 11;
+const PREV_TAG_SIZE_FIELD_SIZE: usize = framing::PREV_TAG_SIZE_FIELD_SIZE;
+const TAG_HEADER_SIZE: usize = framing::TAG_HEADER_SIZE;
 // Need at least a tag header and the *next* prev tag size
 const MIN_REQUIRED_AFTER_RESYNC: usize = TAG_HEADER_SIZE + PREV_TAG_SIZE_FIELD_SIZE;
 
@@ -48,8 +50,8 @@ impl FlvDecoder {
     // Helper function to attempt resynchronization by finding the next potential tag start
     // Returns true if resync advanced the buffer, false otherwise.
     fn try_resync(&mut self, src: &mut BytesMut) -> bool {
-        // Look for the next potential tag start (type 8, 9, or 18)
-        if let Some(pos) = src.iter().position(|&b| b == 8 || b == 9 || b == 18) {
+        // Look for the next potential tag start (TagType lives in low 5 bits; filter bit may be set).
+        if let Some(pos) = src.iter().position(|&b| matches!(b & 0x1F, 8 | 9 | 18)) {
             // Discard bytes before the potential tag start
             src.advance(pos);
             self.position += pos as u64;
@@ -127,16 +129,53 @@ impl Decoder for FlvDecoder {
                 // No header to return, continue to tag parsing
             } else {
                 // Expect a standard FLV header
-                let expected_size = FLV_HEADER_SIZE + PREV_TAG_SIZE_FIELD_SIZE;
-                if src.len() < expected_size {
+                if src.len() < FLV_HEADER_SIZE {
                     trace!("Awaiting FLV header ({} bytes needed)", FLV_HEADER_SIZE);
                     src.reserve(FLV_HEADER_SIZE - src.len());
                     return Ok(None);
                 }
 
-                let header_bytes = src.split_to(FLV_HEADER_SIZE);
+                // Peek at the 9-byte fixed header to learn DataOffset.
+                let mut header_peek = Cursor::new(&src[..FLV_HEADER_SIZE]);
+
+                let signature = header_peek
+                    .read_u24::<BigEndian>()
+                    .map_err(|_| FlvError::InvalidHeader)?;
+                if signature != 0x464C56 {
+                    return Err(FlvError::InvalidHeader);
+                }
+
+                let version = header_peek.read_u8().map_err(|_| FlvError::InvalidHeader)?;
+                let flags = header_peek.read_u8().map_err(|_| FlvError::InvalidHeader)?;
+                let data_offset = header_peek
+                    .read_u32::<BigEndian>()
+                    .map_err(|_| FlvError::InvalidHeader)?
+                    as usize;
+
+                if version != 0x01 {
+                    return Err(FlvError::InvalidHeader);
+                }
+
+                if (flags & 0b1111_1010) != 0 {
+                    return Err(FlvError::InvalidHeader);
+                }
+
+                if data_offset < FLV_HEADER_SIZE {
+                    return Err(FlvError::InvalidHeader);
+                }
+
+                // Need header bytes + extended header bytes + PrevTagSize0.
+                let expected_size = data_offset + PREV_TAG_SIZE_FIELD_SIZE;
+                if src.len() < expected_size {
+                    trace!("Awaiting full FLV header ({} bytes needed)", expected_size);
+                    src.reserve(expected_size - src.len());
+                    return Ok(None);
+                }
+
+                let header_bytes = src.split_to(data_offset);
                 self.position += header_bytes.len() as u64;
-                let mut cursor = Cursor::new(&header_bytes[..]); // Borrow slice temporarily
+
+                let mut cursor = Cursor::new(&header_bytes[..]);
 
                 match FlvHeader::parse(&mut cursor) {
                     Ok(header) => {
@@ -220,21 +259,19 @@ impl Decoder for FlvDecoder {
         }
 
         // Peek at the tag header without consuming yet
-        let tag_type_byte = src[0];
-        let data_size_bytes = &src[1..4];
-        let data_size = u32::from_be_bytes([
-            0,
-            data_size_bytes[0],
-            data_size_bytes[1],
-            data_size_bytes[2],
-        ]);
+        let header = {
+            let mut header_bytes = [0u8; framing::TAG_HEADER_SIZE];
+            header_bytes.copy_from_slice(&src[..framing::TAG_HEADER_SIZE]);
+            framing::parse_tag_header_bytes(header_bytes).map_err(FlvError::Io)?
+        };
+        let data_size = header.data_size;
 
         // --- 4. Validate Tag Header ---
-        let tag_type = tag_type_byte & 0x1F; // Lower 5 bits for type (ignore filter bit for now)
+        let tag_type = u8::from(header.tag_type);
         if tag_type != 8 && tag_type != 9 && tag_type != 18 {
             warn!(
                 "Invalid tag type encountered: {}. Attempting resync.",
-                tag_type_byte
+                src[0]
             );
             // Discard the single invalid byte and try resyncing
             // src.advance(1);
@@ -287,7 +324,6 @@ impl Decoder for FlvDecoder {
         let mut cursor = Cursor::new(tag_bytes);
 
         match FlvTag::demux(&mut cursor) {
-            // Use the FlvUtil<FlvTag> implementation
             Ok(tag) => {
                 trace!(
                     "Successfully parsed FLV tag: Type={}, Timestamp={}, Size={}",
@@ -416,7 +452,7 @@ impl FlvParser {
 mod tests {
 
     use super::*;
-    use crate::tag::{FlvTagType, FlvUtil};
+    use crate::tag::FlvTagType;
     use bytes::BytesMut;
     use futures::TryStreamExt;
     use std::collections::HashMap;

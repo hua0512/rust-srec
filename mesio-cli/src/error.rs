@@ -36,10 +36,8 @@ pub fn is_broken_pipe_error(err_str: &str) -> bool {
         || err_str.contains("EPIPE")
 }
 
-impl<StrategyError: std::error::Error + Send + Sync + 'static> From<WriterError<StrategyError>>
-    for AppError
-{
-    fn from(error: WriterError<StrategyError>) -> Self {
+impl From<WriterError> for AppError {
+    fn from(error: WriterError) -> Self {
         AppError::Writer(error.to_string())
     }
 }

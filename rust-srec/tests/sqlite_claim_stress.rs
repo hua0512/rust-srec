@@ -95,7 +95,7 @@ async fn sqlite_claim_stress_no_double_claims_or_lost_transitions() {
     let pool = init_stress_pool(&db_url).await;
     run_migrations(&pool).await.unwrap();
 
-    let repo = Arc::new(SqlxJobRepository::new(pool.clone()));
+    let repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
 
     // Seed a backlog of PENDING jobs.
     for i in 0..JOBS {
@@ -107,7 +107,7 @@ async fn sqlite_claim_stress_no_double_claims_or_lost_transitions() {
             Some("session".to_string()),
             "{}",
         );
-        job.priority = ((i % 5) as i32) - 2;
+        job.priority = (i % 5) as i32;
         repo.create_job(&job).await.unwrap();
     }
 

@@ -11,7 +11,7 @@ use flv::data::FlvData;
 #[cfg(test)]
 use flv::header::FlvHeader;
 #[cfg(test)]
-use flv::tag::{FlvTag, FlvTagType, FlvUtil};
+use flv::tag::{FlvTag, FlvTagType};
 #[cfg(test)]
 use std::borrow::Cow;
 
@@ -28,6 +28,7 @@ pub fn create_test_tag(tag_type: FlvTagType, timestamp: u32, data: Vec<u8>) -> F
         timestamp_ms: timestamp,
         stream_id: 0,
         tag_type,
+        is_filtered: false,
         data: Bytes::from(data),
     })
 }

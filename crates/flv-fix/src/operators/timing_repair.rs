@@ -47,7 +47,7 @@
 use amf0::Amf0Value;
 use flv::data::FlvData;
 use flv::script::ScriptData;
-use flv::tag::{FlvTag, FlvTagType, FlvUtil};
+use flv::tag::{FlvTag, FlvTagType};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::cmp::max;
 use std::f64;
@@ -218,11 +218,7 @@ impl TimingState {
     }
 
     fn amf_number(value: &Amf0Value<'_>) -> Option<f64> {
-        match value {
-            Amf0Value::Number(value) => Some(*value),
-            Amf0Value::String(value) => value.parse::<f64>().ok(),
-            _ => None,
-        }
+        value.as_number().or_else(|| value.as_str()?.parse().ok())
     }
 
     /// Update timing parameters based on onMetaData properties, without allocating.
@@ -447,76 +443,71 @@ impl TimingRepairOperator {
             && amf_data.name == crate::AMF0_ON_METADATA
             && !amf_data.data.is_empty()
         {
-            match &amf_data.data[0] {
-                Amf0Value::Object(props) => {
-                    self.state
-                        .update_timing_params_from_metadata_props(props.as_ref());
+            if let Some(props) = amf_data.data[0].as_object_properties() {
+                self.state.update_timing_params_from_metadata_props(props);
+
+                debug!(
+                    "{} TimingRepair: Updated timing params - video interval: {}ms, audio interval: {}ms",
+                    self.context.name,
+                    self.state.video_frame_interval,
+                    self.state.audio_sample_interval
+                );
+            } else if let Some(items) = amf_data.data[0].as_array() {
+                debug!(
+                    "{} TimingRepair: Received metadata as StrictArray with {} items",
+                    self.context.name,
+                    items.len()
+                );
+
+                let mut framerate_value: Option<f64> = None;
+                let mut audio_rate_value: Option<f64> = None;
+                for item in items.iter() {
+                    if let Some(value) = item.as_number() {
+                        if value > 10.0 && value < 500.0 && framerate_value.is_none() {
+                            framerate_value = Some(value);
+
+                            debug!(
+                                "{} TimingRepair: Found potential framerate in StrictArray: {}",
+                                self.context.name, value
+                            );
+                        } else if (value == 44100.0
+                            || value == 48000.0
+                            || value == 22050.0
+                            || value == 11025.0
+                            || value == 88200.0
+                            || value == 96000.0)
+                            && audio_rate_value.is_none()
+                        {
+                            audio_rate_value = Some(value);
+
+                            debug!(
+                                "{} TimingRepair: Found potential audio sample rate in StrictArray: {}",
+                                self.context.name, value
+                            );
+                        }
+                    }
+                }
+                if framerate_value.is_some() || audio_rate_value.is_some() {
+                    if let Some(fps) = framerate_value {
+                        self.state.update_frame_rate(fps);
+                    }
+                    if let Some(rate_hz) = audio_rate_value {
+                        self.state.update_audio_rate(rate_hz);
+                    }
 
                     debug!(
-                        "{} TimingRepair: Updated timing params - video interval: {}ms, audio interval: {}ms",
+                        "{} TimingRepair: Updated timing params from StrictArray - video interval: {}ms, audio interval: {}ms",
                         self.context.name,
                         self.state.video_frame_interval,
                         self.state.audio_sample_interval
                     );
                 }
-                Amf0Value::StrictArray(items) => {
-                    debug!(
-                        "{} TimingRepair: Received metadata as StrictArray with {} items",
-                        self.context.name,
-                        items.len()
-                    );
-
-                    let mut framerate_value: Option<f64> = None;
-                    let mut audio_rate_value: Option<f64> = None;
-                    for item in items.iter() {
-                        if let Amf0Value::Number(value) = item {
-                            if *value > 10.0 && *value < 500.0 && framerate_value.is_none() {
-                                framerate_value = Some(*value);
-
-                                debug!(
-                                    "{} TimingRepair: Found potential framerate in StrictArray: {}",
-                                    self.context.name, *value
-                                );
-                            } else if (*value == 44100.0
-                                || *value == 48000.0
-                                || *value == 22050.0
-                                || *value == 11025.0
-                                || *value == 88200.0
-                                || *value == 96000.0)
-                                && audio_rate_value.is_none()
-                            {
-                                audio_rate_value = Some(*value);
-
-                                debug!(
-                                    "{} TimingRepair: Found potential audio sample rate in StrictArray: {}",
-                                    self.context.name, *value
-                                );
-                            }
-                        }
-                    }
-                    if framerate_value.is_some() || audio_rate_value.is_some() {
-                        if let Some(fps) = framerate_value {
-                            self.state.update_frame_rate(fps);
-                        }
-                        if let Some(rate_hz) = audio_rate_value {
-                            self.state.update_audio_rate(rate_hz);
-                        }
-
-                        debug!(
-                            "{} TimingRepair: Updated timing params from StrictArray - video interval: {}ms, audio interval: {}ms",
-                            self.context.name,
-                            self.state.video_frame_interval,
-                            self.state.audio_sample_interval
-                        );
-                    }
-                }
-                _ => {
-                    error!(
-                        "{} TimingRepair: Metadata format not supported: {:?}",
-                        self.context.name,
-                        amf_data.data[0].marker()
-                    );
-                }
+            } else {
+                error!(
+                    "{} TimingRepair: Metadata format not supported: {:?}",
+                    self.context.name,
+                    amf_data.data[0].marker()
+                );
             }
         }
         // Forward script tag

@@ -113,7 +113,7 @@ pub fn create_client(config: &DownloaderConfig) -> Result<Client, DownloadError>
         // Explicit proxy configuration takes precedence
         let proxy = match build_proxy_from_config(proxy_config) {
             Ok(p) => p,
-            Err(e) => return Err(DownloadError::ProxyError(e)),
+            Err(e) => return Err(DownloadError::proxy_configuration(e)),
         };
         client_builder = client_builder.proxy(proxy);
         info!(proxy_url = %proxy_config.url, "Using explicitly configured proxy for downloads");
@@ -310,7 +310,7 @@ fn create_client_with_backend(
     if let Some(proxy_config) = &config.proxy {
         let proxy = match build_proxy_from_config(proxy_config) {
             Ok(p) => p,
-            Err(e) => return Err(DownloadError::ProxyError(e)),
+            Err(e) => return Err(DownloadError::proxy_configuration(e)),
         };
         client_builder = client_builder.proxy(proxy);
         info!(proxy_url = %proxy_config.url, "Using explicitly configured proxy for downloads");

@@ -1,27 +1,9 @@
+pub use media_types::Resolution;
+
 use bytes::BytesMut;
 use memchr::memchr;
 use tracing::debug;
-use ts::{StreamType, TsPacketRef};
-
-/// Represents video resolution information
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub struct Resolution {
-    pub width: u32,
-    pub height: u32,
-}
-
-impl Resolution {
-    #[inline]
-    pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height }
-    }
-}
-
-impl std::fmt::Display for Resolution {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}x{}", self.width, self.height)
-    }
-}
+use ts::{PesHeader, StreamType, TsPacketRef};
 
 /// Resolution detector for HLS segments
 ///
@@ -293,16 +275,9 @@ impl ResolutionDetector {
     /// Extract elementary stream data from PES packet
     #[inline]
     fn extract_elementary_stream_from_pes(pes_data: &[u8]) -> Option<&[u8]> {
-        // Fast path: check minimum length and start code in one go
-        if pes_data.len() < 9 || pes_data[0] != 0x00 || pes_data[1] != 0x00 || pes_data[2] != 0x01 {
-            return None;
-        }
-
-        let pes_header_data_length = pes_data[8] as usize;
-        let elementary_stream_start = 9 + pes_header_data_length;
-
-        if elementary_stream_start < pes_data.len() {
-            Some(&pes_data[elementary_stream_start..])
+        let header = PesHeader::parse(pes_data).ok()?;
+        if header.payload_offset < pes_data.len() {
+            Some(&pes_data[header.payload_offset..])
         } else {
             None
         }

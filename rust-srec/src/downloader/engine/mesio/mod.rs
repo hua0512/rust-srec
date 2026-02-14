@@ -27,8 +27,75 @@
 pub mod config;
 mod engine;
 mod flv_downloader;
+mod helpers;
 mod hls_downloader;
 
 pub use engine::MesioEngine;
 pub use flv_downloader::FlvDownloader;
-pub use hls_downloader::{DownloadStats, HlsDownloader};
+pub use helpers::DownloadStats;
+pub use hls_downloader::HlsDownloader;
+
+use crate::downloader::engine::traits::DownloadFailureKind;
+use mesio::DownloadError;
+use mesio::flv::error::FlvDownloadError;
+use reqwest::StatusCode;
+
+/// Classify a `mesio::DownloadError` into a `DownloadFailureKind`.
+///
+/// This is the classification boundary — mesio types stay inside
+/// the mesio engine wrappers and do not leak into the shared traits.
+pub(super) fn classify_download_error(err: &DownloadError) -> DownloadFailureKind {
+    match err {
+        DownloadError::HttpStatus { status, .. } => classify_http_status(*status),
+        DownloadError::Network { .. } | DownloadError::Timeout { .. } => {
+            DownloadFailureKind::Network
+        }
+        DownloadError::Io { .. } => DownloadFailureKind::Io,
+        DownloadError::NotFound { .. } | DownloadError::SourceExhausted { .. } => {
+            DownloadFailureKind::SourceUnavailable
+        }
+        DownloadError::InvalidUrl { .. }
+        | DownloadError::UnsupportedProtocol { .. }
+        | DownloadError::ProtocolDetectionFailed { .. }
+        | DownloadError::ProxyConfiguration { .. }
+        | DownloadError::Configuration { .. }
+        | DownloadError::InvalidContent { .. } => DownloadFailureKind::Configuration,
+        DownloadError::FlvDecode { .. }
+        | DownloadError::SegmentProcess { .. }
+        | DownloadError::Decryption { .. }
+        | DownloadError::Protocol { .. } => DownloadFailureKind::Processing,
+        DownloadError::SegmentFetch { retryable, .. } => {
+            if *retryable {
+                DownloadFailureKind::Network
+            } else {
+                DownloadFailureKind::SourceUnavailable
+            }
+        }
+        DownloadError::Cancelled => DownloadFailureKind::Cancelled,
+        DownloadError::Cache { .. }
+        | DownloadError::Playlist { .. }
+        | DownloadError::Internal { .. } => DownloadFailureKind::Network,
+    }
+}
+
+/// Classify a `FlvDownloadError` into a `DownloadFailureKind`.
+pub(super) fn classify_flv_error(err: &FlvDownloadError) -> DownloadFailureKind {
+    match err {
+        FlvDownloadError::Download(e) => classify_download_error(e),
+        FlvDownloadError::Decoder(_) => DownloadFailureKind::Processing,
+        FlvDownloadError::AllSourcesFailed(_) => DownloadFailureKind::SourceUnavailable,
+    }
+}
+
+fn classify_http_status(status: StatusCode) -> DownloadFailureKind {
+    let code = status.as_u16();
+    if code == 429 {
+        DownloadFailureKind::RateLimited
+    } else if status.is_client_error() {
+        DownloadFailureKind::HttpClientError { status: code }
+    } else if status.is_server_error() {
+        DownloadFailureKind::HttpServerError { status: code }
+    } else {
+        DownloadFailureKind::Other
+    }
+}

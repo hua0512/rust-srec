@@ -10,6 +10,7 @@ edition = "2024"
 thiserror = { workspace = true }
 bytes = { workspace = true }
 memchr = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -17,5 +18,4 @@ criterion = { workspace = true }
 [[bench]]
 name = "parser_benchmark"
 harness = false
-
 

@@ -426,8 +426,8 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/routes/_authed/_dashboard/notifications/events.tsx:156
 #: src/routes/_authed/_dashboard/notifications/index.tsx:355
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:105
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:199
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:279
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:200
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:280
 #: src/routes/_authed/_dashboard/sessions/index.tsx:186
 #: src/routes/_authed/_dashboard/sessions/index.tsx:506
 #: src/routes/_authed/_dashboard/streamers/index.tsx:69
@@ -488,7 +488,7 @@ msgstr "应用模板设置。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:40
 #: src/components/pipeline/presets/preset-card.tsx:90
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:66
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:67
 msgid "Archive"
 msgstr "归档"
 
@@ -562,14 +562,14 @@ msgstr "至少需要一个输入路径"
 msgid "Attempt to get the highest original quality available."
 msgstr "尝试获取可用的最高原画质量。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:63
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:39
 #: src/components/pipeline/presets/preset-card.tsx:89
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:133
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:66
 msgid "Audio"
 msgstr "音频"
 
@@ -720,7 +720,7 @@ msgstr "备份"
 msgid "Backup & Restore"
 msgstr "备份与恢复"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:983
+#: src/components/config/engines/forms/mesio-hls-form.tsx:965
 msgid "Base"
 msgstr "基础"
 
@@ -816,7 +816,7 @@ msgstr "品牌颜色"
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "浏览和下载应用程序日志文件。按日期范围筛选或下载全部。"
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:160
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:161
 msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "浏览处理任务生成的媒体文件"
 
@@ -829,13 +829,9 @@ msgstr "浏览器通知"
 msgid "Browser Status"
 msgstr "浏览器状态"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:912
+#: src/components/config/engines/forms/mesio-hls-form.tsx:894
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:739
-msgid "Buffer Pool (Default: On)"
-msgstr "缓冲区池（默认：开）"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:79
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
@@ -867,9 +863,9 @@ msgstr "缓存"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:195
 #: src/components/streamers/streamer-form.tsx:224
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:271
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:256
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.tsx:162
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:502
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:500
 msgid "Cancel"
 msgstr "取消"
 
@@ -905,7 +901,7 @@ msgstr "采集模式"
 msgid "Capture real-time comments and chat messages if available."
 msgstr "如果可用，采集实时评论和聊天消息。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:93
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:94
 msgid "Capture separate stream data."
 msgstr "采集分离的流数据。"
 
@@ -1018,7 +1014,7 @@ msgstr "选择你的显示语言"
 #: src/components/pipeline/presets/preset-card.tsx:92
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:239
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:68
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:69
 msgid "Cleanup"
 msgstr "清理"
 
@@ -1034,21 +1030,21 @@ msgstr "点击添加。你可以在编辑器中重新排序步骤。"
 
 #: src/components/config/templates/template-card.tsx:120
 #: src/components/pipeline/presets/preset-card.tsx:180
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:280
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:511
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:265
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:509
 msgid "Clone"
 msgstr "克隆"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:476
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:474
 msgid "Clone Preset"
 msgstr "克隆预设"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:248
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:233
 msgid "Clone Template"
 msgstr "克隆模板"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:278
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:509
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:263
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:507
 msgid "Cloning..."
 msgstr "正在克隆..."
 
@@ -1123,7 +1119,7 @@ msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以
 #: src/components/pipeline/presets/default-presets-i18n.ts:37
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
 #: src/components/pipeline/presets/preset-card.tsx:87
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:63
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:64
 msgid "Compression"
 msgstr "压缩"
 
@@ -1383,8 +1379,8 @@ msgstr "创建"
 
 #. placeholder {0}: presetToClone?.name
 #. placeholder {0}: templateToClone?.name
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:251
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:479
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:236
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:477
 msgid "Create a copy of \"{0}\" with a new name."
 msgstr "创建“{0}”的副本并使用新名称。"
 
@@ -1392,7 +1388,7 @@ msgstr "创建“{0}”的副本并使用新名称。"
 msgid "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
 msgstr "创建过滤器以控制何时录制该主播。你可以按时间、关键字、分类等进行过滤。"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:224
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:209
 msgid "Create a template to define reusable download configurations."
 msgstr "创建模板以定义可复用的录制配置。"
 
@@ -1438,7 +1434,7 @@ msgstr "创建新工作流"
 msgid "Create Pipeline"
 msgstr "创建处理管道"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:389
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:387
 msgid "Create Preset"
 msgstr "创建预设"
 
@@ -1447,7 +1443,7 @@ msgid "Create Streamer"
 msgstr "创建主播"
 
 #: src/components/config/templates/template-editor.tsx:163
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:235
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:220
 msgid "Create Template"
 msgstr "创建模板"
 
@@ -1455,7 +1451,7 @@ msgstr "创建模板"
 msgid "Create Workflow"
 msgstr "创建工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:379
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:377
 msgid "Create your first job preset to define reusable processor configurations for your pipelines."
 msgstr "创建你的第一个预设，用于为处理管道定义可复用的处理器配置。"
 
@@ -1540,7 +1536,7 @@ msgstr "当前密码"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/preset-card.tsx:94
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:70
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:71
 #: src/routes/_authed/_dashboard/sessions/index.tsx:366
 msgid "Custom"
 msgstr "自定义"
@@ -1603,7 +1599,7 @@ msgstr "DAG 图"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:46
 #: src/components/pipeline/presets/preset-card.tsx:96
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:72
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:73
 msgid "Danmaku"
 msgstr "弹幕"
 
@@ -1624,6 +1620,10 @@ msgstr "DanmakuFactory"
 #: src/components/config/shared-config-editor.tsx:208
 msgid "Danmu"
 msgstr "弹幕"
+
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:262
+msgid "Danmu Control"
+msgstr "弹幕控制"
 
 #: src/routes/_authed/_dashboard/system/health.tsx:329
 msgid "Danmu Service"
@@ -1903,7 +1903,7 @@ msgstr "已完成"
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:90
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:91
 msgid "Double Screen Data"
 msgstr "双屏数据"
 
@@ -2159,7 +2159,7 @@ msgstr "启用弹幕/聊天消息与视频一起录制。"
 msgid "Enabled"
 msgstr "启用"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:771
+#: src/components/config/engines/forms/mesio-hls-form.tsx:753
 msgid "Enabled (Default: Off)"
 msgstr "启用（默认：关闭）"
 
@@ -2182,6 +2182,10 @@ msgstr "结束"
 #: src/components/sessions/timeline-tab.tsx:147
 msgid "End of History"
 msgstr "历史结束"
+
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:29
+msgid "End Stream On Danmu Close"
+msgstr "弹幕关闭时结束录制"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:599
 msgid "End Time"
@@ -2238,8 +2242,8 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 msgid "Engines"
 msgstr "引擎列表"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:265
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:493
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:250
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:491
 msgid "Enter a unique name"
 msgstr "输入唯一名称"
 
@@ -2274,12 +2278,12 @@ msgstr "环境变量"
 #: src/components/config/engines/engine-card.tsx:150
 #: src/components/streamers/card/use-streamer-status.tsx:40
 #: src/routes/_authed/_dashboard/config/engines/$engineId.tsx:49
-#: src/routes/_authed/_dashboard/config/engines/index.tsx:34
+#: src/routes/_authed/_dashboard/config/engines/index.tsx:35
 #: src/routes/_authed/_dashboard/config/platforms/index.tsx:63
 #: src/routes/_authed/_dashboard/config/templates/index.tsx:112
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:335
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:143
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:229
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:144
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:230
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:144
 #: src/routes/_authed/_dashboard/streamers/index.tsx:72
 msgid "Error"
@@ -2408,7 +2412,7 @@ msgstr "执行记录"
 msgid "Exit Immersive"
 msgstr "退出沉浸模式"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:59
 msgid "Experimental"
 msgstr "实验性"
 
@@ -2416,7 +2420,7 @@ msgstr "实验性"
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:247
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:248
 msgid "Explicit TTWID cookie value to use for all requests."
 msgstr "用于所有请求的显式 TTWID Cookie 值。"
 
@@ -2466,8 +2470,8 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:40
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:27
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:29
 msgid "Extraction Settings"
@@ -2515,7 +2519,7 @@ msgid "Failed to check TDL status: {0}"
 msgstr "检查 TDL 状态失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:190
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:191
 msgid "Failed to clone preset: {0}"
 msgstr "克隆预设失败：{0}"
 
@@ -2576,7 +2580,7 @@ msgid "Failed to delete pipeline"
 msgstr "删除处理管道失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:172
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:173
 msgid "Failed to delete preset: {0}"
 msgstr "删除预设失败：{0}"
 
@@ -2633,7 +2637,7 @@ msgid "Failed to load engine: {0}"
 msgstr "加载引擎失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/engines/index.tsx:37
+#: src/routes/_authed/_dashboard/config/engines/index.tsx:38
 msgid "Failed to load engines: {0}"
 msgstr "加载引擎列表失败：{0}"
 
@@ -2647,7 +2651,7 @@ msgid "Failed to load jobs: {0}"
 msgstr "加载处理任务列表失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:146
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:147
 msgid "Failed to load outputs: {0}"
 msgstr "加载媒体文件失败：{0}"
 
@@ -2657,7 +2661,7 @@ msgid "Failed to load platforms: {0}"
 msgstr "加载平台列表失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:232
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:233
 msgid "Failed to load presets: {0}"
 msgstr "加载预设失败：{0}"
 
@@ -2788,7 +2792,7 @@ msgstr "获取"
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1001
+#: src/components/config/engines/forms/mesio-hls-form.tsx:983
 msgid "Fetcher"
 msgstr "获取器"
 
@@ -2822,7 +2826,7 @@ msgid "File Operations"
 msgstr "文件操作"
 
 #: src/components/pipeline/presets/preset-card.tsx:93
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:69
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:70
 msgid "File Ops"
 msgstr "文件操作"
 
@@ -2840,7 +2844,7 @@ msgid "Filename Template"
 msgstr "文件名模板"
 
 #: src/components/logging/log-file-browser.tsx:237
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:178
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:179
 msgid "files"
 msgstr "文件"
 
@@ -2956,11 +2960,11 @@ msgstr "强制 IPv4（默认：关闭）"
 msgid "Force IPv6 (Default: Off)"
 msgstr "强制 IPv6（默认：关闭）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:120
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
 msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:113
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
 msgid "Force Origin Quality"
@@ -3009,13 +3013,13 @@ msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和
 msgid "Full Processing"
 msgstr "全流程处理"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:874
+#: src/components/config/engines/forms/mesio-hls-form.tsx:856
 msgid "Gap Eval Interval (ms)"
 msgstr "间隔评估间隔（毫秒）"
 
 #: src/components/config/engines/forms/mesio-form.tsx:268
 #: src/components/config/platforms/platform-editor.tsx:189
-#: src/components/config/templates/tabs/platform-override-card.tsx:62
+#: src/components/config/templates/tabs/platform-override-card.tsx:64
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
@@ -3070,7 +3074,7 @@ msgstr "正在生成二维码..."
 msgid "Get Started"
 msgstr "开始使用"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:205
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:206
 #: src/components/layout/site-header.tsx:46
 #: src/components/sidebar/navbar.tsx:40
 #: src/routes/_authed/_dashboard/config/route.tsx:50
@@ -3487,7 +3491,7 @@ msgstr "IO 任务"
 msgid "IO Job Timeout"
 msgstr "IO 任务超时"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:217
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:218
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 
@@ -3859,11 +3863,11 @@ msgstr "匹配策略"
 msgid "Max Bitrate (bps)"
 msgstr "最大比特率（bps）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:804
+#: src/components/config/engines/forms/mesio-hls-form.tsx:786
 msgid "Max Buffer Before Skip"
 msgstr "最大缓冲区（跳过前）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:941
+#: src/components/config/engines/forms/mesio-hls-form.tsx:923
 msgid "Max Bytes"
 msgstr "最大字节数"
 
@@ -3933,11 +3937,11 @@ msgstr "最大重试次数"
 msgid "Max Segment Retries"
 msgstr "最大分段重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:921
+#: src/components/config/engines/forms/mesio-hls-form.tsx:903
 msgid "Max Segments"
 msgstr "最大分段数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:894
+#: src/components/config/engines/forms/mesio-hls-form.tsx:876
 msgid "Max Stall Duration (ms)"
 msgstr "最大停顿时间（毫秒）"
 
@@ -3976,11 +3980,11 @@ msgid "MB/s"
 msgstr "MB/s"
 
 #: src/components/sessions/recordings-tab.tsx:45
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:158
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:159
 msgid "Media Outputs"
 msgstr "媒体文件"
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:293
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:291
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
@@ -4000,7 +4004,7 @@ msgstr "消息"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:72
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:71
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:72
 msgid "Metadata"
 msgstr "元数据"
 
@@ -4183,11 +4187,11 @@ msgstr "新密码"
 msgid "New password (min 8 chars)"
 msgstr "新密码（至少 8 个字符）"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:487
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:485
 msgid "New Preset Name"
 msgstr "新预设名称"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:259
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:244
 msgid "New Template Name"
 msgstr "新模板名称"
 
@@ -4306,7 +4310,7 @@ msgstr "未找到匹配的事件"
 msgid "No media outputs generated yet."
 msgstr "尚未生成媒体输出。"
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:286
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:284
 msgid "No media outputs yet"
 msgstr "暂无媒体文件"
 
@@ -4326,7 +4330,7 @@ msgstr "没有其他可依赖的步骤。"
 msgid "No output generated"
 msgstr "未生成输出"
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:284
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:282
 msgid "No outputs found"
 msgstr "未找到媒体文件"
 
@@ -4355,11 +4359,11 @@ msgstr "未找到平台。"
 msgid "No platform overrides configured"
 msgstr "未配置平台覆盖项"
 
-#: src/routes/_authed/_dashboard/config/platforms/index.tsx:161
+#: src/routes/_authed/_dashboard/config/platforms/index.tsx:146
 msgid "No platforms configured"
 msgstr "未配置平台"
 
-#: src/routes/_authed/_dashboard/config/platforms/index.tsx:159
+#: src/routes/_authed/_dashboard/config/platforms/index.tsx:144
 msgid "No platforms found"
 msgstr "未找到平台"
 
@@ -4372,11 +4376,11 @@ msgid "No playable streams found"
 msgstr "未找到可播放的流"
 
 #: src/components/pipeline/workflows/step-library.tsx:426
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:370
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:368
 msgid "No presets found"
 msgstr "未找到预设"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:372
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:370
 msgid "No presets yet"
 msgstr "暂无预设"
 
@@ -4408,11 +4412,11 @@ msgstr "未定义步骤"
 msgid "No streamers found"
 msgstr "未找到主播"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:215
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:200
 msgid "No templates found"
 msgstr "未找到模板"
 
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:217
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:202
 msgid "No templates yet"
 msgstr "暂无模板"
 
@@ -4660,7 +4664,7 @@ msgstr "选项"
 msgid "Out of Space"
 msgstr "空间不足"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1019
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1001
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:164
 #: src/components/config/templates/template-card.tsx:161
@@ -4896,8 +4900,8 @@ msgid "Pending Jobs"
 msgstr "待处理任务"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:539
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:309
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:401
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:307
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:399
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:286
 msgid "Per page:"
 msgstr "每页："
@@ -4914,11 +4918,11 @@ msgstr "逐段"
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:211
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:212
 msgid "Per-Streamer"
 msgstr "按主播"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1010
+#: src/components/config/engines/forms/mesio-hls-form.tsx:992
 msgid "Perf"
 msgstr "性能"
 
@@ -5034,7 +5038,7 @@ msgstr "平台配置"
 msgid "Platform configuration updated successfully"
 msgstr "平台配置更新成功"
 
-#: src/routes/_authed/_dashboard/config/platforms/index.tsx:168
+#: src/routes/_authed/_dashboard/config/platforms/index.tsx:153
 msgid "Platform configurations will appear here when available."
 msgstr "平台配置可用时将显示在此处。"
 
@@ -5050,7 +5054,7 @@ msgstr "平台名称"
 msgid "Platform not found"
 msgstr "未找到平台"
 
-#: src/components/config/templates/tabs/platform-override-card.tsx:118
+#: src/components/config/templates/tabs/platform-override-card.tsx:120
 msgid "Platform Override Settings"
 msgstr "平台覆盖设置"
 
@@ -5088,7 +5092,7 @@ msgstr "播放"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:992
+#: src/components/config/engines/forms/mesio-hls-form.tsx:974
 msgid "Playlist"
 msgstr "播放列表"
 
@@ -5176,15 +5180,15 @@ msgstr "首选格式"
 msgid "Preferred Qualities"
 msgstr "首选画质"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:58
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:784
+#: src/components/config/engines/forms/mesio-hls-form.tsx:766
 msgid "Prefetch Count"
 msgstr "预取数量"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:755
+#: src/components/config/engines/forms/mesio-hls-form.tsx:737
 msgid "Prefetching"
 msgstr "预取"
 
@@ -5196,7 +5200,7 @@ msgstr "保留路径"
 msgid "preset"
 msgstr "预设"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:178
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:179
 msgid "Preset cloned successfully"
 msgstr "预设克隆成功"
 
@@ -5204,7 +5208,7 @@ msgstr "预设克隆成功"
 msgid "Preset created successfully"
 msgstr "预设创建成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:168
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:169
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
@@ -5224,7 +5228,7 @@ msgstr "预设步骤"
 msgid "Preset updated successfully"
 msgstr "预设更新成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:264
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:265
 msgid "presets"
 msgstr "预设"
 
@@ -5233,7 +5237,7 @@ msgstr "预设"
 #: src/components/layout/site-header.tsx:50
 #: src/components/sidebar/navbar.tsx:44
 #: src/lib/menu-list.ts:75
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:244
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:245
 msgid "Presets"
 msgstr "预设"
 
@@ -5560,7 +5564,7 @@ msgstr "成功后移除源文件"
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
 #: src/components/pipeline/presets/default-presets-i18n.ts:36
 #: src/components/pipeline/presets/preset-card.tsx:86
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:62
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:63
 msgid "Remux"
 msgstr "重封装"
 
@@ -5598,11 +5602,11 @@ msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改�
 msgid "Remux with Faststart"
 msgstr "重封装 (Faststart)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:834
+#: src/components/config/engines/forms/mesio-hls-form.tsx:816
 msgid "Reorder Duration (ms)"
 msgstr "重排持续时间（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:854
+#: src/components/config/engines/forms/mesio-hls-form.tsx:836
 msgid "Reorder Max Segments"
 msgstr "重排最大分段数"
 
@@ -5721,7 +5725,7 @@ msgstr "重试策略"
 msgid "Return Previous Page"
 msgstr "返回上一页"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:246
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:247
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "处理管道步骤可复用的处理器配置"
 
@@ -5923,7 +5927,7 @@ msgstr "搜索处理任务..."
 msgid "Search logs..."
 msgstr "搜索日志..."
 
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:168
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:169
 msgid "Search outputs..."
 msgstr "搜索媒体文件..."
 
@@ -5931,7 +5935,7 @@ msgstr "搜索媒体文件..."
 msgid "Search platforms..."
 msgstr "搜索平台..."
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:254
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:255
 msgid "Search presets..."
 msgstr "搜索预设..."
 
@@ -5972,7 +5976,7 @@ msgstr "secret"
 msgid "secs"
 msgstr "秒"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:179
 msgid "Security & Identity"
 msgstr "安全与身份"
 
@@ -6081,7 +6085,7 @@ msgstr "选择此过滤器生效的日期。"
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:84
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:85
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "选择你想要尝试采集的最高质量等级。"
 
@@ -6288,7 +6292,7 @@ msgstr "大小"
 msgid "Size and duration constraints for recordings."
 msgstr "录制的大小与时长限制。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:150
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
 
@@ -6317,7 +6321,7 @@ msgid "Space Saver"
 msgstr "空间节省"
 
 #: src/components/config/platforms/platform-editor.tsx:199
-#: src/components/config/templates/tabs/platform-override-card.tsx:68
+#: src/components/config/templates/tabs/platform-override-card.tsx:70
 msgid "Specific"
 msgstr "特定"
 
@@ -6325,7 +6329,7 @@ msgstr "特定"
 msgid "Specific settings for the platform."
 msgstr "平台的特定设置。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:236
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:237
 msgid "Specific TTWID Cookie"
 msgstr "特定 TTWID Cookie"
 
@@ -6432,6 +6436,10 @@ msgstr "步骤库"
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.tsx:321
 msgid "Steps List"
 msgstr "步骤列表"
+
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:32
+msgid "Stop recording when danmu control signals stream closed."
+msgstr "当弹幕控制信号指示直播已关闭时，停止录制。"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:289
 msgid "Storage"
@@ -6570,7 +6578,7 @@ msgstr "订阅已更新"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:47
 #: src/components/pipeline/presets/preset-card.tsx:97
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:73
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:74
 msgid "Subtitle"
 msgstr "字幕"
 
@@ -6885,7 +6893,7 @@ msgstr "这将永久移除“{0}”配置。此操作无法撤销。"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:64
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:65
 msgid "Thumbnail"
 msgstr "缩略图"
 
@@ -7006,7 +7014,7 @@ msgstr "轨道信息"
 msgid "Transcode H.264"
 msgstr "转码 H.264"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:153
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:154
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
@@ -7107,13 +7115,13 @@ msgid "Try adjusting your search or filters, or add a new streamer to start moni
 msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.tsx:522
-#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:291
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:377
+#: src/routes/_authed/_dashboard/pipeline/outputs.tsx:289
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:375
 msgid "Try adjusting your search or filters."
 msgstr "尝试调整搜索或过滤器。"
 
-#: src/routes/_authed/_dashboard/config/platforms/index.tsx:166
-#: src/routes/_authed/_dashboard/config/templates/index.tsx:222
+#: src/routes/_authed/_dashboard/config/platforms/index.tsx:151
+#: src/routes/_authed/_dashboard/config/templates/index.tsx:207
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.tsx:262
 msgid "Try adjusting your search."
 msgstr "尝试调整搜索。"
@@ -7128,7 +7136,7 @@ msgstr "重试"
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:191
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:192
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
@@ -7230,7 +7238,7 @@ msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:41
 #: src/components/pipeline/presets/preset-card.tsx:91
-#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:67
+#: src/routes/_authed/_dashboard/pipeline/presets/index.tsx:68
 msgid "Upload"
 msgstr "上传"
 
@@ -7289,7 +7297,7 @@ msgstr "使用 0 表示原画质量。"
 msgid "Use danmu_inputs from job manifest"
 msgstr "使用任务清单中的 danmu_inputs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:123
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:124
 msgid "Use mobile endpoint for extraction."
 msgstr "使用移动端端点进行提取。"
 

@@ -20,9 +20,15 @@
 
 ## Redbook (小红书)
 
-- **URL**: `https://www.xiaohongshu.com/user/profile/{user_id}`
+- **URL**: `https://xhslink.com/m/{id}`
 - **Protocol**: HLS
 - **Danmaku**: ❌ Not supported
+
+::: info App share links
+Use `xhslink.com` share links. Direct profile URLs like `xiaohongshu.com/user/profile/...` are not supported.
+
+Note: the `xhslink.com/m/{id}` part changes every stream. Copy a fresh share link when the streamer goes live.
+:::
 
 ## TikTok
 

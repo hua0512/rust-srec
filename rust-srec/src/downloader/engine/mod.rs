@@ -29,6 +29,6 @@ pub use ffmpeg::FfmpegEngine;
 pub use mesio::{DownloadStats, FlvDownloader, HlsDownloader, MesioEngine, config};
 pub use streamlink::StreamlinkEngine;
 pub use traits::{
-    DownloadConfig, DownloadEngine, DownloadHandle, DownloadInfo, DownloadProgress, DownloadStatus,
-    EngineType, SegmentEvent, SegmentInfo,
+    DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
+    DownloadProgress, DownloadStatus, EngineStartError, EngineType, SegmentEvent, SegmentInfo,
 };

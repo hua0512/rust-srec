@@ -13,6 +13,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use std::fmt::Display;
+
 use crate::Result;
 
 /// Type of download engine.
@@ -334,6 +336,99 @@ pub struct SegmentInfo {
     pub completed_at: DateTime<Utc>,
 }
 
+/// Classified error kind for download failures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadFailureKind {
+    /// HTTP 4xx client error (not rate-limiting). Resource permanently unavailable at this URL.
+    HttpClientError { status: u16 },
+    /// HTTP 429 Too Many Requests.
+    RateLimited,
+    /// HTTP 5xx server error (transient).
+    HttpServerError { status: u16 },
+    /// Network-level failure: connection refused/reset, DNS, TLS, timeout.
+    Network,
+    /// Local filesystem I/O error (write failure, disk full).
+    Io,
+    /// Stream source unavailable (all sources failed, playlist empty, stream ended).
+    SourceUnavailable,
+    /// Configuration/protocol error (invalid URL, unsupported protocol).
+    Configuration,
+    /// External process exited abnormally (FFmpeg, Streamlink).
+    ProcessExit { code: Option<i32> },
+    /// Writer/pipeline processing error (FLV decode, segment processing).
+    Processing,
+    /// Download was cancelled.
+    Cancelled,
+    /// Catch-all.
+    Other,
+}
+
+impl DownloadFailureKind {
+    /// Whether this failure should count toward the circuit breaker.
+    ///
+    /// Permanent HTTP client errors (4xx except 429) and configuration errors
+    /// are NOT counted because they indicate the specific resource is gone or
+    /// misconfigured, not that the engine is malfunctioning.
+    pub fn affects_circuit_breaker(&self) -> bool {
+        !matches!(
+            self,
+            Self::HttpClientError { .. } | Self::Configuration | Self::Cancelled
+        )
+    }
+
+    /// Whether the download could succeed if retried.
+    pub fn is_recoverable(&self) -> bool {
+        matches!(
+            self,
+            Self::RateLimited
+                | Self::HttpServerError { .. }
+                | Self::Network
+                | Self::Io
+                | Self::SourceUnavailable
+                | Self::ProcessExit { .. }
+                | Self::Other
+        )
+    }
+}
+
+/// Error returned by [`DownloadEngine::start`] carrying a classified
+/// [`DownloadFailureKind`] so the manager can make informed retry and
+/// circuit-breaker decisions without hardcoding `Other`.
+#[derive(Debug)]
+pub struct EngineStartError {
+    /// Classified failure kind.
+    pub kind: DownloadFailureKind,
+    /// Human-readable error message.
+    pub message: String,
+}
+
+impl EngineStartError {
+    /// Create a new `EngineStartError`.
+    pub fn new(kind: DownloadFailureKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+}
+
+impl Display for EngineStartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for EngineStartError {}
+
+impl From<crate::Error> for EngineStartError {
+    fn from(err: crate::Error) -> Self {
+        Self {
+            kind: DownloadFailureKind::Other,
+            message: err.to_string(),
+        }
+    }
+}
+
 /// Events emitted by download engines.
 #[derive(Debug, Clone)]
 pub enum SegmentEvent {
@@ -355,7 +450,12 @@ pub enum SegmentEvent {
         total_segments: u32,
     },
     /// Download failed.
-    DownloadFailed { error: String, recoverable: bool },
+    DownloadFailed {
+        /// Classified error kind for programmatic decisions.
+        kind: DownloadFailureKind,
+        /// Human-readable error message for logging and display.
+        message: String,
+    },
 }
 
 /// Handle to an active download.
@@ -448,7 +548,8 @@ pub trait DownloadEngine: Send + Sync {
     ///
     /// Returns a handle that can be used to monitor and cancel the download.
     /// The engine should emit events through the handle's event channel.
-    async fn start(&self, handle: Arc<DownloadHandle>) -> Result<()>;
+    async fn start(&self, handle: Arc<DownloadHandle>)
+    -> std::result::Result<(), EngineStartError>;
 
     /// Stop a download.
     ///

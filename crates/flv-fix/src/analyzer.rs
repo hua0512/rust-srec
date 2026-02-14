@@ -2,7 +2,7 @@ use flv::{
     audio::{AudioTagUtils, SoundFormat, SoundRate, SoundSize, SoundType},
     header::FlvHeader,
     resolution::Resolution,
-    tag::{FlvTag, FlvUtil},
+    tag::FlvTag,
     video::VideoCodecId,
 };
 
@@ -10,7 +10,7 @@ use std::fmt;
 use tracing::{debug, trace};
 
 use crate::operators::MIN_INTERVAL_BETWEEN_KEYFRAMES_MS;
-use crate::utils::{FLV_HEADER_SIZE, FLV_PREVIOUS_TAG_SIZE, FLV_TAG_HEADER_SIZE};
+use crate::utils::{FLV_HEADER_SIZE, FLV_PREVIOUS_TAG_SIZE};
 
 /// Error type for FLV analysis operations
 #[derive(Debug, thiserror::Error)]
@@ -511,7 +511,7 @@ impl FlvAnalyzer {
         let data_size = tag.data.len() as u64;
         self.stats.audio_tag_count += 1;
         self.stats.audio_tags_size +=
-            data_size + FLV_TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64; // Tag header + PreviousTagSize
+            data_size + flv::framing::TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64; // Tag header + PreviousTagSize
         self.stats.audio_data_size += data_size;
         self.stats.last_audio_timestamp = tag.timestamp_ms;
     }
@@ -594,7 +594,7 @@ impl FlvAnalyzer {
         let data_size = tag.data.len() as u64;
         video_stats.video_tag_count += 1;
         video_stats.video_tags_size +=
-            data_size + FLV_TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64; // Tag header + PreviousTagSize
+            data_size + flv::framing::TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64; // Tag header + PreviousTagSize
         video_stats.video_data_size += data_size;
         video_stats.last_video_timestamp = timestamp;
     }
@@ -616,7 +616,7 @@ impl FlvAnalyzer {
         self.stats.tags_size += data_size;
         // Tag header + tag body + previous tag size
         self.stats.file_size +=
-            data_size + FLV_TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64;
+            data_size + flv::framing::TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64;
 
         self.stats.last_timestamp = tag.timestamp_ms;
 

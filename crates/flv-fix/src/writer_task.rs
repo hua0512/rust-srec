@@ -1,4 +1,7 @@
-use crate::{analyzer::FlvAnalyzer, script_modifier};
+use crate::{
+    analyzer::{AnalyzerError, FlvAnalyzer},
+    script_modifier,
+};
 use flv::{FlvData, FlvHeader, FlvWriter};
 use pipeline_common::{
     FormatStrategy, PostWriteAction, WriterConfig, WriterState, expand_filename_template,
@@ -21,9 +24,16 @@ pub enum FlvStrategyError {
     #[error("FLV error: {0}")]
     Flv(#[from] flv::FlvError),
     #[error("Analysis error: {0}")]
-    Analysis(String),
+    Analysis(#[from] AnalyzerError),
     #[error("Script modifier error: {0}")]
     ScriptModifier(#[from] script_modifier::ScriptModifierError),
+}
+
+/// Typed configuration for FLV writer.
+pub struct FlvWriterConfig {
+    pub output_dir: PathBuf,
+    pub base_name: String,
+    pub enable_low_latency: bool,
 }
 
 /// FLV-specific format strategy implementation
@@ -127,7 +137,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
                 if let Some(header) = self.pending_header.take() {
                     self.analyzer
                         .analyze_header(&header)
-                        .map_err(|e| FlvStrategyError::Analysis(e.to_string()))?;
+                        .map_err(FlvStrategyError::Analysis)?;
                     writer.write_header(&header)?;
                     bytes_written += 13;
                 }
@@ -140,7 +150,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
                 self.analyzer
                     .analyze_tag(tag)
-                    .map_err(|e| FlvStrategyError::Analysis(e.to_string()))?;
+                    .map_err(FlvStrategyError::Analysis)?;
 
                 writer.write_tag_f(tag)?;
                 bytes_written += (11 + 4 + tag.data.len()) as u64;

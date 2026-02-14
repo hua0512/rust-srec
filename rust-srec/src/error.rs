@@ -44,9 +44,6 @@ pub enum Error {
     #[error("Monitor error: {0}")]
     Monitor(String),
 
-    #[error("Download error: {0}")]
-    DownloadError(String),
-
     #[error("Pipeline error: {0}")]
     PipelineError(String),
 

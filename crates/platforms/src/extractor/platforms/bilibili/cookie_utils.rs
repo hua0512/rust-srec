@@ -1,7 +1,6 @@
 //! Bilibili cookie and credential utilities.
 //!
-//! This module provides helper functions for working with Bilibili cookies
-//! and the cookie refresh process.
+//! This module provides helper functions for working with Bilibili cookies.
 
 use std::collections::HashMap;
 
@@ -22,39 +21,6 @@ pub fn extract_cookie_value(cookies: &str, name: &str) -> Option<String> {
         }
     }
     None
-}
-
-/// Extract refresh_csrf from the Bilibili correspond HTML page.
-///
-/// Looks for: `<div id="1-name">...</div>` and extracts the content.
-pub fn extract_refresh_csrf(html: &str) -> Option<String> {
-    let start_marker = r#"<div id="1-name">"#;
-    let end_marker = "</div>";
-
-    let start = html.find(start_marker)? + start_marker.len();
-    let remaining = &html[start..];
-    let end = remaining.find(end_marker)?;
-
-    Some(remaining[..end].trim().to_string())
-}
-
-/// Parse cookies from Set-Cookie response headers.
-pub fn parse_set_cookies(headers: &reqwest::header::HeaderMap) -> HashMap<String, String> {
-    let mut cookies = HashMap::new();
-
-    for value in headers.get_all(reqwest::header::SET_COOKIE) {
-        if let Ok(cookie_str) = value.to_str() {
-            // Parse "name=value; Path=...; ..."
-            if let Some(kv) = cookie_str.split(';').next() {
-                let parts: Vec<&str> = kv.splitn(2, '=').collect();
-                if parts.len() == 2 {
-                    cookies.insert(parts[0].to_string(), parts[1].to_string());
-                }
-            }
-        }
-    }
-
-    cookies
 }
 
 /// Rebuild cookie string with updated values while preserving priority ordering.
@@ -183,16 +149,8 @@ pub fn strip_refresh_token(cookies: &str) -> String {
         .join("; ")
 }
 
-/// API URLs for Bilibili cookie management.
+/// API URLs for Bilibili credential management.
 pub mod urls {
-    /// Cookie info check URL
-    pub const COOKIE_INFO: &str = "https://passport.bilibili.com/x/passport-login/web/cookie/info";
-    /// Correspond URL template for refresh_csrf
-    pub const CORRESPOND: &str = "https://www.bilibili.com/correspond/1/";
-    /// Cookie refresh URL
-    pub const REFRESH: &str = "https://passport.bilibili.com/x/passport-login/web/cookie/refresh";
-    /// Confirm refresh URL
-    pub const CONFIRM: &str = "https://passport.bilibili.com/x/passport-login/web/confirm/refresh";
     /// NAV API for validation
     pub const NAV: &str = "https://api.bilibili.com/x/web-interface/nav";
     /// Live user info API (requires authenticated cookies)
@@ -221,27 +179,6 @@ mod tests {
             Some("12345".to_string())
         );
         assert_eq!(extract_cookie_value(cookies, "nonexistent"), None);
-    }
-
-    #[test]
-    fn test_extract_refresh_csrf() {
-        let html = r#"
-        <html>
-        <body>
-        <div id="1-name">abcdef123456csrf</div>
-        </body>
-        </html>
-        "#;
-
-        let result = extract_refresh_csrf(html);
-        assert_eq!(result, Some("abcdef123456csrf".to_string()));
-    }
-
-    #[test]
-    fn test_extract_refresh_csrf_not_found() {
-        let html = "<html><body>No csrf here</body></html>";
-        let result = extract_refresh_csrf(html);
-        assert_eq!(result, None);
     }
 
     #[test]

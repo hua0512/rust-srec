@@ -6,8 +6,8 @@ use serde::{Deserialize, Deserializer};
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveInfo<'a> {
-    #[serde(borrow)]
-    pub live_stream: LiveStream<'a>,
+    #[serde(borrow, default)]
+    pub live_stream: Option<LiveStream<'a>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,10 +45,13 @@ pub struct HostInfo<'a> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoomInfo<'a> {
-    #[serde(deserialize_with = "deserialize_pull_config")]
+    #[serde(default, deserialize_with = "deserialize_pull_config")]
     pub pull_config: Option<PullConfig>,
     #[serde(borrow)]
     pub deeplink: Cow<'a, str>,
+
+    #[serde(borrow)]
+    pub room_title: Option<Cow<'a, str>>,
 
     #[serde(borrow)]
     pub room_cover: Cow<'a, str>,
@@ -84,5 +87,42 @@ where
             Ok(Some(config))
         }
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_info_deserializes_without_pull_config_field() {
+        let json = r#"{
+  "liveStream": {
+    "pageStatus": "success",
+    "liveStatus": "fail",
+    "errorMessage": "",
+    "roomData": {
+      "hostInfo": {
+        "avatar": "https://example.invalid/avatar.jpg",
+        "nickName": "tester"
+      },
+      "roomInfo": {
+        "deeplink": "xhsdiscover://live",
+        "roomCover": "https://example.invalid/cover.jpg"
+      }
+    }
+  }
+}"#;
+
+        let live_info: LiveInfo<'_> = serde_json::from_str(json).unwrap();
+        let live_stream = live_info.live_stream.expect("liveStream should be present");
+        assert!(live_stream.room_data.room_info.pull_config.is_none());
+    }
+
+    #[test]
+    fn live_info_deserializes_without_live_stream_field() {
+        let json = r#"{ "foo": 1 }"#;
+        let live_info: LiveInfo<'_> = serde_json::from_str(json).unwrap();
+        assert!(live_info.live_stream.is_none());
     }
 }

@@ -8,11 +8,13 @@ use crate::{config::ProgramConfig, error::AppError};
 use flv::data::FlvData;
 use flv::parser_async::FlvDecoderStream;
 use flv_fix::FlvPipeline;
+use flv_fix::FlvWriterConfig;
 use flv_fix::writer::FlvWriter;
 use futures::{Stream, StreamExt};
 use mesio_engine::DownloaderInstance;
-use pipeline_common::{CancellationToken, PipelineError, ProtocolWriter, config::PipelineConfig};
-use std::collections::HashMap;
+use pipeline_common::{
+    CancellationToken, PipelineError, ProtocolWriter, WriterStats, config::PipelineConfig,
+};
 use std::path::Path;
 use std::pin::Pin;
 use std::time::Instant;
@@ -25,17 +27,13 @@ async fn process_raw_stream(
     output_dir: &Path,
     base_name: &str,
     pipeline_common_config: &PipelineConfig,
-) -> Result<(usize, u32, u64, f64), AppError> {
+) -> Result<WriterStats, AppError> {
     let (tx, rx) = tokio::sync::mpsc::channel(pipeline_common_config.channel_size);
-    let mut writer = FlvWriter::new(
-        output_dir.to_path_buf(),
-        base_name.to_string(),
-        "flv".to_string(),
-        Some(HashMap::from([(
-            "enable_low_latency".to_string(),
-            "false".to_string(),
-        )])),
-    );
+    let mut writer = FlvWriter::new(FlvWriterConfig {
+        output_dir: output_dir.to_path_buf(),
+        base_name: base_name.to_string(),
+        enable_low_latency: false,
+    });
 
     // Capture the current span to propagate to the blocking task
     let current_span = Span::current();
@@ -98,12 +96,12 @@ pub async fn process_file(
     let file_reader = BufReader::new(file);
     let file_size = file_reader.get_ref().metadata().await?.len();
     let decoder_stream = FlvDecoderStream::with_capacity(file_reader, 4 * 1024 * 1024) // 4MB buffer for better I/O throughput
-        .map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
+        .map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
     // Use pipe output strategy when stdout mode is active
-    let (tags_written, files_created, _bytes_written, _duration) = if is_pipe_mode {
+    let stats = if is_pipe_mode {
         // Pipe mode: write to stdout using PipeFlvStrategy
-        let stats = if config.enable_processing {
+        let pipe_stats = if config.enable_processing {
             // Processing enabled: run through FlvPipeline before writing to stdout
             info!(
                 path = %input_path.display(),
@@ -137,9 +135,9 @@ pub async fn process_file(
             path = %input_path.display(),
             input_size = %format_bytes(file_size),
             duration = ?elapsed,
-            tags_written = stats.items_written,
-            bytes_written = stats.bytes_written,
-            segment_count = stats.segment_count,
+            tags_written = pipe_stats.items_written,
+            bytes_written = pipe_stats.bytes_written,
+            segment_count = pipe_stats.segment_count,
             output_mode = %config.output_format,
             processing_enabled = config.enable_processing,
             "FLV pipe output complete"
@@ -160,15 +158,11 @@ pub async fn process_file(
             Box::pin(decoder_stream),
             "Writing FLV output",
             |_writer_span| {
-                FlvWriter::new(
-                    output_dir.to_path_buf(),
-                    base_name.to_string(),
-                    "flv".to_string(),
-                    Some(HashMap::from([(
-                        "enable_low_latency".to_string(),
-                        config.flv_pipeline_config.enable_low_latency.to_string(),
-                    )])),
-                )
+                FlvWriter::new(FlvWriterConfig {
+                    output_dir: output_dir.to_path_buf(),
+                    base_name: base_name.to_string(),
+                    enable_low_latency: config.flv_pipeline_config.enable_low_latency,
+                })
             },
             token.clone(),
         )
@@ -189,18 +183,12 @@ pub async fn process_file(
     };
 
     let elapsed = start_time.elapsed();
-    // file_sequence_number starts at 0, so add 1 to get actual file count
-    let actual_files_created = if tags_written > 0 {
-        files_created + 1
-    } else {
-        0
-    };
     info!(
         path = %input_path.display(),
         input_size = %format_bytes(file_size),
         duration = ?elapsed,
-        tags_written,
-        files_created = actual_files_created,
+        tags_written = stats.items_written,
+        files_created = stats.files_created,
         processing_enabled = config.enable_processing,
         "Processing complete"
     );
@@ -253,13 +241,13 @@ pub async fn process_flv_stream(
         }
     };
 
-    let stream = stream.map(|r| r.map_err(|e| PipelineError::Processing(e.to_string())));
+    let stream = stream.map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
 
     // Use pipe output strategy when stdout mode is active
-    let (tags_written, files_created, _bytes_written) = if is_pipe_mode {
+    let stats = if is_pipe_mode {
         // Pipe mode: write to stdout using PipeFlvStrategy
         // Check if processing is enabled to determine whether to use FlvPipeline
-        let stats = if config.enable_processing {
+        let pipe_stats = if config.enable_processing {
             // Processing enabled: run through FlvPipeline before writing to stdout
             info!(
                 url = %url_str,
@@ -292,64 +280,52 @@ pub async fn process_flv_stream(
         info!(
             url = %url_str,
             duration = ?elapsed,
-            tags_written = stats.items_written,
-            bytes_written = stats.bytes_written,
-            segment_count = stats.segment_count,
+            tags_written = pipe_stats.items_written,
+            bytes_written = pipe_stats.bytes_written,
+            segment_count = pipe_stats.segment_count,
             output_mode = %config.output_format,
             processing_enabled = config.enable_processing,
             "FLV pipe output complete"
         );
 
-        return Ok(stats.items_written as u64);
+        return Ok(pipe_stats.items_written as u64);
     } else if config.enable_processing {
-        let result = process_stream::<FlvPipeline, FlvWriter>(
+        process_stream::<FlvPipeline, FlvWriter>(
             &config.pipeline_config,
             config.flv_pipeline_config.clone(),
             Box::pin(stream),
             "Writing FLV output",
             |_writer_span| {
-                FlvWriter::new(
-                    output_dir.to_path_buf(),
-                    base_name.clone(),
-                    "flv".to_string(),
-                    Some(HashMap::from([(
-                        "enable_low_latency".to_string(),
-                        config.flv_pipeline_config.enable_low_latency.to_string(),
-                    )])),
-                )
+                FlvWriter::new(FlvWriterConfig {
+                    output_dir: output_dir.to_path_buf(),
+                    base_name: base_name.clone(),
+                    enable_low_latency: config.flv_pipeline_config.enable_low_latency,
+                })
             },
             token.clone(),
         )
-        .await?;
-        (result.0, result.1, result.2)
+        .await?
     } else {
-        let result = process_raw_stream(
+        process_raw_stream(
             Box::pin(stream),
             output_dir,
             &base_name,
             &config.pipeline_config,
         )
-        .await?;
-        (result.0, result.1, result.2)
+        .await?
     };
 
     let elapsed = start_time.elapsed();
-    // file_sequence_number starts at 0, so add 1 to get actual file count
-    let actual_files_created = if tags_written > 0 {
-        files_created + 1
-    } else {
-        0
-    };
 
     // Log completion (goes to stderr in pipe mode)
     info!(
         url = %url_str,
         duration = ?elapsed,
-        tags_written,
-        files_created = actual_files_created,
+        tags_written = stats.items_written,
+        files_created = stats.files_created,
         output_mode = %config.output_format,
         "FLV processing complete"
     );
 
-    Ok(tags_written as u64)
+    Ok(stats.items_written as u64)
 }

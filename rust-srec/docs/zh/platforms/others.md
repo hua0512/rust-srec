@@ -20,9 +20,15 @@
 
 ## 小红书
 
-- **URL**: `https://www.xiaohongshu.com/user/profile/{用户ID}`
+- **URL**: `https://xhslink.com/m/{id}`
 - **协议**: HLS
 - **弹幕**: ❌ 不支持
+
+::: info App 分享链接
+请使用 `xhslink.com` 分享链接。`xiaohongshu.com/user/profile/...` 这类个人主页直链目前不支持。
+
+注意：`xhslink.com/m/{id}` 的 `{id}` 每次开播都会变化，请在每次开播时重新复制分享链接。
+:::
 
 ## TikTok
 

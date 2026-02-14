@@ -37,6 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Connecting to database: {}", database_url);
     let pool = database::init_pool(&database_url).await?;
+    let write_pool = database::init_write_pool(&database_url).await?;
 
     // Run migrations
     info!("Running database migrations...");
@@ -45,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create service container
     info!("Initializing services...");
-    let container = Arc::new(ServiceContainer::new(pool).await?);
+    let container = Arc::new(ServiceContainer::new(pool, write_pool).await?);
 
     // Apply persisted log filter from database
     logging_config

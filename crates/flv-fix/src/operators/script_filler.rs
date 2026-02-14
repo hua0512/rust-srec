@@ -115,6 +115,7 @@ impl ScriptKeyframesFillerOperator {
             timestamp_ms: original_tag.timestamp_ms,
             stream_id: original_tag.stream_id,
             tag_type: original_tag.tag_type,
+            is_filtered: false,
             data: Self::create_script_tag_payload(),
         }
     }
@@ -122,7 +123,7 @@ impl ScriptKeyframesFillerOperator {
     /// Processes the AMF data for a valid onMetaData object
     fn process_onmeta_object(
         &self,
-        props: &mut Vec<(String, Amf0Value)>,
+        props: &[(impl AsRef<str>, Amf0Value<'_>)],
         tag: &FlvTag,
     ) -> Result<FlvTag, PipelineError> {
         debug!(
@@ -142,8 +143,12 @@ impl ScriptKeyframesFillerOperator {
 
         let original_payload_size = tag.data.len() as u32;
 
-        let script_data_model = AmfScriptData::from_amf_object(props)
-            .map_err(|e| PipelineError::Processing(e.to_string()))?;
+        let script_data_model = AmfScriptData::from_amf_object_ref(props).map_err(|e| {
+            PipelineError::Strategy(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )))
+        })?;
 
         trace!("Script data model: {:?}", script_data_model);
 
@@ -151,7 +156,12 @@ impl ScriptKeyframesFillerOperator {
         let (buffer, _) = OnMetaDataBuilder::from_script_data(script_data_model)
             .with_placeholder_keyframes(spacer_size)
             .build_bytes(original_payload_size, false)
-            .map_err(|e| PipelineError::Processing(e.to_string()))?;
+            .map_err(|e| {
+                PipelineError::Strategy(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    e.to_string(),
+                )))
+            })?;
 
         debug!("New script data payload size: {}", buffer.len());
 
@@ -160,6 +170,7 @@ impl ScriptKeyframesFillerOperator {
             timestamp_ms: tag.timestamp_ms,
             stream_id: tag.stream_id,
             tag_type: tag.tag_type,
+            is_filtered: false,
             data: Bytes::from(buffer),
         })
     }
@@ -200,13 +211,9 @@ impl ScriptKeyframesFillerOperator {
                     return self.add_keyframes_to_amf(self.create_fallback_tag(&tag));
                 }
 
-                // Check if first data item is an Object
-                if let Amf0Value::Object(props) = &amf_data.data[0] {
-                    let mut owned_props: Vec<(String, Amf0Value)> = props
-                        .iter()
-                        .map(|(k, v)| (k.to_string(), v.clone()))
-                        .collect();
-                    self.process_onmeta_object(&mut owned_props, &tag)
+                // Check if first data item is an Object or EcmaArray
+                if let Some(props) = amf_data.data[0].as_object_properties() {
+                    self.process_onmeta_object(props, &tag)
                 } else {
                     warn!(
                         "{} Unsupported AMF data type for keyframe injection: {:?}. Expected Object but found different type.",
@@ -301,7 +308,6 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
 mod tests {
     use super::*;
     use crate::test_utils::{self, create_script_tag};
-    use amf0::Amf0Value;
     use bytes::Bytes;
     use flv::{header::FlvHeader, tag::FlvTagType};
     use pipeline_common::{CancellationToken, StreamerContext, init_test_tracing};
@@ -311,31 +317,19 @@ mod tests {
     // Helper function to extract keyframes object from tag data
     fn extract_keyframes(tag: &FlvTag) -> Option<HashMap<String, Vec<f64>>> {
         let mut cursor = std::io::Cursor::new(tag.data.clone());
-        if let Ok(amf_data) = ScriptData::demux(&mut cursor)
-            && let Amf0Value::Object(props) = &amf_data.data[0]
-        {
-            for (key, value) in props.iter() {
-                if key == "keyframes"
-                    && let Amf0Value::Object(keyframe_props) = value
-                {
-                    let mut result = HashMap::new();
-                    for (kf_key, kf_value) in keyframe_props.iter() {
-                        if let Amf0Value::StrictArray(array) = kf_value {
-                            let values: Vec<f64> = array
-                                .iter()
-                                .filter_map(|v| {
-                                    if let Amf0Value::Number(num) = v {
-                                        Some(*num)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
-                            result.insert(kf_key.as_ref().to_owned(), values);
-                        }
+        let amf_data = ScriptData::demux(&mut cursor).ok()?;
+        let props = amf_data.data[0].as_object_properties()?;
+        for (key, value) in props.iter() {
+            if key == "keyframes" {
+                let keyframe_props = value.as_object_properties()?;
+                let mut result = HashMap::new();
+                for (kf_key, kf_value) in keyframe_props.iter() {
+                    if let Some(array) = kf_value.as_array() {
+                        let values: Vec<f64> = array.iter().filter_map(|v| v.as_number()).collect();
+                        result.insert(kf_key.as_ref().to_owned(), values);
                     }
-                    return Some(result);
                 }
+                return Some(result);
             }
         }
         None
@@ -506,6 +500,7 @@ mod tests {
             timestamp_ms: 0,
             stream_id: 0,
             tag_type: FlvTagType::ScriptData,
+            is_filtered: false,
             data: Bytes::from(vec![
                 0x02, 0x00, 0x0A, 0x6E, 0x6F, 0x74, 0x4D, 0x65, 0x74, 0x61, 0x44, 0x61, 0x74, 0x61,
             ]), // "notMetaData" without proper AMF structure

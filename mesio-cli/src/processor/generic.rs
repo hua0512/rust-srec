@@ -3,10 +3,12 @@ use crate::utils::spans;
 use futures::{Stream, StreamExt};
 use pipeline_common::{
     CancellationToken, FormatStrategy, PipelineError, PipelineProvider, ProtocolWriter,
-    StreamerContext, WriterConfig, WriterTask, config::PipelineConfig,
+    RunCompletionError, StreamerContext, WriterConfig, WriterStats, WriterTask,
+    config::PipelineConfig, settle_run,
 };
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 use tracing::{Level, Span, span, warn};
 
 pub async fn process_stream<P, W>(
@@ -16,7 +18,7 @@ pub async fn process_stream<P, W>(
     writer_message: &str,
     writer_initializer: impl FnOnce(&Span) -> W,
     token: CancellationToken,
-) -> Result<W::Stats, AppError>
+) -> Result<WriterStats, AppError>
 where
     P: PipelineProvider,
     P::Config: Send + 'static,
@@ -44,14 +46,14 @@ pub async fn process_stream_with_span<P, W>(
     writer_span: Span,
     writer_initializer: impl FnOnce(&Span) -> W,
     token: CancellationToken,
-) -> Result<W::Stats, AppError>
+) -> Result<WriterStats, AppError>
 where
     P: PipelineProvider,
     P::Config: Send + 'static,
     P::Item: Send + 'static,
     W: ProtocolWriter<Item = P::Item>,
 {
-    let context = StreamerContext::new(token.clone());
+    let context = Arc::new(StreamerContext::new(token.clone()));
     let pipeline_provider = P::with_config(context, pipeline_common_config, pipeline_config);
 
     // Create span for pipeline processing under the writer span
@@ -92,27 +94,15 @@ where
     drop(input_tx); // Close the channel to signal completion to the processing task
     drop(_writer_guard);
 
-    // We should also wait for processing tasks to ensure clean shutdown
     let writer_result = writer_task
         .await
-        .map_err(|e| AppError::Writer(e.to_string()))?
-        .map_err(|e| AppError::Writer(e.to_string()));
+        .map_err(|e| AppError::Writer(e.to_string()))?;
 
-    // We should also wait for processing tasks to ensure clean shutdown
-    // If writer failed, we still want to wait for tasks but maybe we prioritize writer error
-    for task in processing_tasks {
-        let task_result = task
-            .await
-            .map_err(|e| AppError::Pipeline(PipelineError::Processing(e.to_string())))?;
-
-        // If writer succeeded, we care about task errors.
-        // If writer failed, we might ignore task errors (which are likely "channel closed")
-        if writer_result.is_ok() {
-            task_result?;
-        }
+    match settle_run(writer_result, processing_tasks).await {
+        Ok(stats) => Ok(stats),
+        Err(RunCompletionError::Writer(err)) => Err(AppError::Writer(err.to_string())),
+        Err(RunCompletionError::Pipeline(err)) => Err(AppError::Pipeline(err)),
     }
-
-    writer_result
 }
 
 /// Statistics from pipe stream processing
@@ -266,7 +256,7 @@ where
 {
     // Create a shared cancellation token for the entire pipe processing chain
     let token = CancellationToken::new();
-    let context = StreamerContext::new(token.clone());
+    let context = Arc::new(StreamerContext::new(token.clone()));
     let pipeline_provider = P::with_config(context, pipeline_config, pipeline_type_config);
     let pipeline = pipeline_provider.build_pipeline();
 
@@ -293,19 +283,9 @@ where
 
     let writer_result = handle_pipe_writer_result(writer_task.await);
 
-    // Wait for processing tasks to ensure clean shutdown
-    for task in processing_tasks {
-        let task_result = task
-            .await
-            .map_err(|e| AppError::Pipeline(PipelineError::Processing(e.to_string())))?;
-
-        // If writer succeeded, we care about task errors
-        // If writer failed (including broken pipe), we ignore task errors
-        // (which are likely "channel closed" or "cancelled")
-        if writer_result.is_ok() {
-            task_result?;
-        }
+    match settle_run(writer_result, processing_tasks).await {
+        Ok(stats) => Ok(stats),
+        Err(RunCompletionError::Writer(err)) => Err(err),
+        Err(RunCompletionError::Pipeline(err)) => Err(AppError::Pipeline(err)),
     }
-
-    writer_result
 }

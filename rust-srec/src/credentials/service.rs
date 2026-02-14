@@ -301,7 +301,13 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
 
         info!("Starting credential refresh");
 
-        let state = RefreshState::new(source.cookies.clone(), source.refresh_token.clone());
+        let mut state = RefreshState::new(source.cookies.clone(), source.refresh_token.clone());
+        // Pass access_token through extra JSON for platform-specific managers.
+        if let Some(ref access_token) = source.access_token {
+            state.extra = Some(serde_json::json!({
+                "access_token": access_token
+            }));
+        }
 
         match manager.refresh(&state).await {
             Ok(new_creds) => {

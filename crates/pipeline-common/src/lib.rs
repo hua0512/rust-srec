@@ -19,7 +19,7 @@
 //! - hua0512
 //!
 
-use std::{collections::HashMap, path::PathBuf};
+use std::sync::Arc;
 
 use thiserror::Error;
 
@@ -30,22 +30,24 @@ mod context;
 pub mod pipeline;
 pub mod processor;
 pub mod progress;
+mod run_completion;
 mod utils;
 mod writer_task;
 
-pub use channel_pipeline::ChannelPipeline;
 /// Re-export key traits and types
-pub use context::{Statistics, StreamerContext};
+pub use channel_pipeline::ChannelPipeline;
+pub use context::StreamerContext;
 pub use pipeline::Pipeline;
 pub use processor::Processor;
 pub use progress::{Progress, ProgressEvent};
+pub use run_completion::{RunCompletionError, settle_run};
 pub use utils::{
     expand_filename_template, expand_path_template, expand_path_template_at, sanitize_filename,
 };
 
 pub use writer_task::{
-    FormatStrategy, PostWriteAction, ProgressCallback, ProgressConfig, TaskError, WriterConfig,
-    WriterError, WriterProgress, WriterState, WriterTask,
+    FormatStrategy, PostWriteAction, ProgressCallback, ProgressConfig, WriterConfig, WriterError,
+    WriterProgress, WriterState, WriterStats, WriterTask,
 };
 
 use crate::config::PipelineConfig;
@@ -57,36 +59,39 @@ pub enum PipelineError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("Processing error: {0}")]
-    Processing(String),
-
-    #[error("Invalid data: {0}")]
-    InvalidData(String),
-
     #[error("Operation was cancelled")]
     Cancelled,
+
+    #[error("Channel closed: {0}")]
+    ChannelClosed(&'static str),
+
+    #[error("{0}")]
+    Strategy(#[source] Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("Stage process failed ({stage}): {source}")]
+    StageProcess {
+        stage: &'static str,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    #[error("Stage finish failed ({stage}): {source}")]
+    StageFinish {
+        stage: &'static str,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 pub trait ProtocolWriter: Send + 'static {
     type Item: Send + 'static;
-    type Stats: Send + 'static;
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    /// Creates a new writer instance.
-    /// Progress tracking is now handled via tracing spans instead of callbacks.
-    fn new(
-        output_dir: PathBuf,
-        base_name: String,
-        extension: String,
-        extras: Option<HashMap<String, String>>,
-    ) -> Self;
 
     fn get_state(&self) -> &WriterState;
 
     fn run(
         &mut self,
-        input_stream: tokio::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
-    ) -> Result<Self::Stats, Self::Error>;
+        input: tokio::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
+    ) -> Result<WriterStats, WriterError>;
 }
 
 pub trait PipelineProvider: Send + 'static {
@@ -94,7 +99,7 @@ pub trait PipelineProvider: Send + 'static {
     type Config: Send + 'static;
 
     fn with_config(
-        context: StreamerContext,
+        context: Arc<StreamerContext>,
         common_config: &PipelineConfig,
         config: Self::Config,
     ) -> Self;

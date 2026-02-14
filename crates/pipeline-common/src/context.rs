@@ -1,75 +1,34 @@
 //! Stream processing context and configuration
 //!
 //! This module provides the context and configuration structures needed for
-//! FLV stream processing. It includes statistics tracking, processing configuration
-//! options, and shared context for operators in the processing pipeline.
+//! stream processing. It includes the shared context for operators in the processing pipeline.
 
 use crate::cancellation::CancellationToken;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-/// Statistics collected during stream processing
-///
-/// Tracks various metrics about the processed stream including tag counts,
-/// fragmentation information, file characteristics, and codec details.
-#[derive(Debug, Default)]
-pub struct Statistics {
-    /// Total number of FLV tags processed
-    pub processed_tags: usize,
-    /// Count of detected fragmented segments
-    pub fragmented_segments: usize,
-    /// Total size of the processed data in bytes
-    pub file_size: usize,
-    /// Total duration of the stream
-    pub duration: Duration,
-    /// Count of keyframes in the stream
-    pub keyframes: usize,
-    /// Whether the stream contains video data
-    pub has_video: bool,
-    /// Whether the stream contains audio data
-    pub has_audio: bool,
-    /// Identified video codec (if present)
-    pub video_codec: Option<String>,
-    /// Identified audio codec (if present)
-    pub audio_codec: Option<String>,
-}
-
-/// Shared context for FLV stream processing operations
+/// Shared context for stream processing operations
 ///
 /// Provides a common context shared across the processing pipeline including
-/// the stream name, statistics, configuration, and metadata. This context is used
+/// the stream name and cancellation token. This context is used
 /// by operators to coordinate their actions and share information.
 #[derive(Debug, Clone)]
 pub struct StreamerContext {
     /// Name of the stream/file being processed
     pub name: String,
-    /// Runtime statistics about the processing operation
-    pub statistics: Arc<Mutex<Statistics>>,
-    /// Additional metadata properties
-    pub metadata: Arc<Mutex<HashMap<String, String>>>,
     /// The cancellation token
     pub token: CancellationToken,
 }
 
 impl StreamerContext {
     /// Create a new StreamerContext with the specified configuration
-    ///
-    /// # Arguments
-    ///
-    /// # Returns
-    /// A new StreamerContext with the given configuration and default values for other fields
     pub fn new(token: CancellationToken) -> Self {
         Self {
             name: "DefaultStreamer".to_string(),
-            statistics: Arc::new(Mutex::new(Statistics::default())),
-            metadata: Arc::new(Mutex::new(HashMap::new())),
             token,
         }
     }
 
-    pub fn arc_new(token: CancellationToken) -> Arc<Self> {
-        Arc::new(Self::new(token))
+    pub fn arc_new(token: CancellationToken) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self::new(token))
     }
 
     pub fn with_name(name: impl Into<String>, token: CancellationToken) -> Self {
@@ -77,11 +36,5 @@ impl StreamerContext {
             name: name.into(),
             ..Self::new(token)
         }
-    }
-}
-
-impl Default for StreamerContext {
-    fn default() -> Self {
-        panic!("StreamerContext must be created with a CancellationToken")
     }
 }

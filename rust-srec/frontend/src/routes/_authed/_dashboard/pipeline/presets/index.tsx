@@ -23,6 +23,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { PresetCard } from '@/components/pipeline/presets/preset-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CardSkeleton } from '@/components/shared/card-skeleton';
 import {
   Dialog,
   DialogContent,
@@ -309,10 +310,7 @@ function PresetsPage() {
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
             >
               {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="h-[220px] border rounded-xl bg-muted/10 animate-pulse flex flex-col p-6 space-y-4 shadow-sm"
-                >
+                <CardSkeleton key={i}>
                   <div className="flex justify-between items-start">
                     <Skeleton className="h-10 w-10 rounded-full" />
                     <Skeleton className="h-6 w-8" />
@@ -324,7 +322,7 @@ function PresetsPage() {
                   <div className="pt-4 mt-auto">
                     <Skeleton className="h-20 w-full rounded-md" />
                   </div>
-                </div>
+                </CardSkeleton>
               ))}
             </motion.div>
           ) : presets && presets.length > 0 ? (

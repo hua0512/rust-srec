@@ -1,6 +1,5 @@
 // Main module for the new HLS downloader implementation
 
-mod buffer_pool;
 pub mod config;
 mod coordinator;
 mod decryption;
@@ -13,12 +12,12 @@ mod output;
 mod playlist;
 mod prefetch;
 mod processor;
+pub mod retry;
 mod scheduler;
 mod segment_utils;
 mod twitch_processor;
 
 // Re-exports for easier access
-pub use buffer_pool::{BufferPool, BufferPoolStats};
 pub use config::{BufferLimits, GapSkipStrategy, HlsConfig};
 pub use coordinator::HlsStreamCoordinator;
 pub use error::HlsDownloaderError;

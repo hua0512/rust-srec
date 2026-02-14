@@ -72,11 +72,12 @@ pub trait SessionRepository: Send + Sync {
 /// SQLx implementation of SessionRepository.
 pub struct SqlxSessionRepository {
     pool: SqlitePool,
+    write_pool: SqlitePool,
 }
 
 impl SqlxSessionRepository {
-    pub fn new(pool: SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
+        Self { pool, write_pool }
     }
 }
 
@@ -119,64 +120,79 @@ impl SessionRepository for SqlxSessionRepository {
     }
 
     async fn create_session(&self, session: &LiveSessionDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&session.id)
-        .bind(&session.streamer_id)
-        .bind(session.start_time)
-        .bind(session.end_time)
-        .bind(&session.titles)
-        .bind(&session.danmu_statistics_id)
-        .bind(session.total_size_bytes)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        retry_on_sqlite_busy("create_session", || async {
+            sqlx::query(
+                r#"
+                INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&session.id)
+            .bind(&session.streamer_id)
+            .bind(session.start_time)
+            .bind(session.end_time)
+            .bind(&session.titles)
+            .bind(&session.danmu_statistics_id)
+            .bind(session.total_size_bytes)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn end_session(&self, id: &str, end_time: i64) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE live_sessions 
-            SET end_time = ?,
-                total_size_bytes = (SELECT COALESCE(SUM(size_bytes), 0) FROM media_outputs WHERE session_id = ?)
-            WHERE id = ?
-            "#,
-        )
-        .bind(end_time)
-        .bind(id)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        retry_on_sqlite_busy("end_session", || async {
+            sqlx::query(
+                r#"
+                UPDATE live_sessions 
+                SET end_time = ?,
+                    total_size_bytes = (SELECT COALESCE(SUM(size_bytes), 0) FROM media_outputs WHERE session_id = ?)
+                WHERE id = ?
+                "#,
+            )
+            .bind(end_time)
+            .bind(id)
+            .bind(id)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn resume_session(&self, id: &str) -> Result<()> {
-        sqlx::query("UPDATE live_sessions SET end_time = NULL WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        retry_on_sqlite_busy("resume_session", || async {
+            sqlx::query("UPDATE live_sessions SET end_time = NULL WHERE id = ?")
+                .bind(id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn update_session_titles(&self, id: &str, titles: &str) -> Result<()> {
-        sqlx::query("UPDATE live_sessions SET titles = ? WHERE id = ?")
-            .bind(titles)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        retry_on_sqlite_busy("update_session_titles", || async {
+            sqlx::query("UPDATE live_sessions SET titles = ? WHERE id = ?")
+                .bind(titles)
+                .bind(id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn delete_session(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM live_sessions WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        retry_on_sqlite_busy("delete_session", || async {
+            sqlx::query("DELETE FROM live_sessions WHERE id = ?")
+                .bind(id)
+                .execute(&self.write_pool)
+                .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn delete_sessions_batch(&self, ids: &[String]) -> Result<u64> {
@@ -184,17 +200,20 @@ impl SessionRepository for SqlxSessionRepository {
             return Ok(0);
         }
 
-        // Build a query with multiple placeholders: DELETE FROM live_sessions WHERE id IN (?, ?, ...)
-        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        let sql = format!("DELETE FROM live_sessions WHERE id IN ({})", placeholders);
+        retry_on_sqlite_busy("delete_sessions_batch", || async {
+            // Build a query with multiple placeholders: DELETE FROM live_sessions WHERE id IN (?, ?, ...)
+            let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let sql = format!("DELETE FROM live_sessions WHERE id IN ({})", placeholders);
 
-        let mut query = sqlx::query(&sql);
-        for id in ids {
-            query = query.bind(id);
-        }
+            let mut query = sqlx::query(&sql);
+            for id in ids {
+                query = query.bind(id);
+            }
 
-        let result = query.execute(&self.pool).await?;
-        Ok(result.rows_affected())
+            let result = query.execute(&self.write_pool).await?;
+            Ok(result.rows_affected())
+        })
+        .await
     }
 
     async fn get_media_output(&self, id: &str) -> Result<MediaOutputDbModel> {
@@ -220,7 +239,7 @@ impl SessionRepository for SqlxSessionRepository {
 
     async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()> {
         retry_on_sqlite_busy("create_media_output", || async {
-            let mut conn = self.pool.acquire().await?;
+            let mut conn = self.write_pool.acquire().await?;
             sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
 
             let result: Result<()> = async {
@@ -272,7 +291,7 @@ impl SessionRepository for SqlxSessionRepository {
         let output = self.get_media_output(id).await?;
 
         retry_on_sqlite_busy("delete_media_output", || async {
-            let mut conn = self.pool.acquire().await?;
+            let mut conn = self.write_pool.acquire().await?;
             sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
 
             let result: Result<()> = async {
@@ -322,42 +341,48 @@ impl SessionRepository for SqlxSessionRepository {
     }
 
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO danmu_statistics (id, session_id, total_danmus, danmu_rate_timeseries, top_talkers, word_frequency)
-            VALUES (?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&stats.id)
-        .bind(&stats.session_id)
-        .bind(stats.total_danmus)
-        .bind(&stats.danmu_rate_timeseries)
-        .bind(&stats.top_talkers)
-        .bind(&stats.word_frequency)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        retry_on_sqlite_busy("create_danmu_statistics", || async {
+            sqlx::query(
+                r#"
+                INSERT INTO danmu_statistics (id, session_id, total_danmus, danmu_rate_timeseries, top_talkers, word_frequency)
+                VALUES (?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(&stats.id)
+            .bind(&stats.session_id)
+            .bind(stats.total_danmus)
+            .bind(&stats.danmu_rate_timeseries)
+            .bind(&stats.top_talkers)
+            .bind(&stats.word_frequency)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn update_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
-        sqlx::query(
-            r#"
-            UPDATE danmu_statistics SET
-                total_danmus = ?,
-                danmu_rate_timeseries = ?,
-                top_talkers = ?,
-                word_frequency = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(stats.total_danmus)
-        .bind(&stats.danmu_rate_timeseries)
-        .bind(&stats.top_talkers)
-        .bind(&stats.word_frequency)
-        .bind(&stats.id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        retry_on_sqlite_busy("update_danmu_statistics", || async {
+            sqlx::query(
+                r#"
+                UPDATE danmu_statistics SET
+                    total_danmus = ?,
+                    danmu_rate_timeseries = ?,
+                    top_talkers = ?,
+                    word_frequency = ?
+                WHERE id = ?
+                "#,
+            )
+            .bind(stats.total_danmus)
+            .bind(&stats.danmu_rate_timeseries)
+            .bind(&stats.top_talkers)
+            .bind(&stats.word_frequency)
+            .bind(&stats.id)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(())
+        })
+        .await
     }
 
     async fn list_sessions_filtered(

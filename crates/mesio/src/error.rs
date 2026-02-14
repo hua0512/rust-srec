@@ -1,50 +1,160 @@
 use flv::error::FlvError;
 use reqwest::StatusCode;
-use std::error::Error as StdError;
 
-use crate::hls::HlsDownloaderError;
-
-// Custom error type for download operations
 #[derive(Debug, thiserror::Error)]
 pub enum DownloadError {
-    #[error("HTTP error: {0}")]
-    HttpError(#[from] reqwest::Error),
-
-    #[error("Invalid URL: {0}")]
-    UrlError(String),
-
-    #[error("Server returned status code {0}")]
-    StatusCode(StatusCode),
-
-    #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
-
-    #[error("Invalid proxy configuration: {0}")]
-    ProxyError(String),
-
-    #[error("No sources available for download: {0}")]
-    NoSource(String),
-
-    #[error("Unsupported protocol: {0}")]
-    UnsupportedProtocol(String),
-
-    #[error("FLV error: {0}")]
-    FlvError(String), // Consider making this From<crate::flv::error::FlvDownloadError>
-
-    #[error("HLS error: {0}")]
-    HlsError(#[from] HlsDownloaderError),
-
-    #[error("Protocol error: {0}")]
-    ProtocolError(Box<dyn StdError + Send + Sync>), // Generic protocol error
-
-    #[error("Failed to detect protocol for URL: {0}")]
-    ProtocolDetectionFailed(String),
-
-    #[error("Generic download error: {0}")]
-    Generic(String),
-    /// Download was cancelled
-    #[error("Download was cancelled")]
+    #[error("download cancelled")]
     Cancelled,
+
+    #[error("invalid URL `{input}`: {reason}")]
+    InvalidUrl { input: String, reason: String },
+
+    #[error("unsupported protocol `{protocol}`")]
+    UnsupportedProtocol { protocol: String },
+
+    #[error("failed to detect protocol for URL `{url}`")]
+    ProtocolDetectionFailed { url: String },
+
+    #[error("proxy configuration error: {reason}")]
+    ProxyConfiguration { reason: String },
+
+    #[error("HTTP request failed: {source}")]
+    Network {
+        #[from]
+        source: reqwest::Error,
+    },
+
+    #[error("request failed with HTTP {status} during {operation} for {url}")]
+    HttpStatus {
+        status: StatusCode,
+        url: String,
+        operation: &'static str,
+    },
+
+    #[error("I/O error: {source}")]
+    Io {
+        #[from]
+        source: std::io::Error,
+    },
+
+    #[error("cache error: {reason}")]
+    Cache { reason: String },
+
+    #[error("playlist error: {reason}")]
+    Playlist { reason: String },
+
+    #[error("segment fetch error: {reason}")]
+    SegmentFetch { reason: String, retryable: bool },
+
+    #[error("segment processing error: {reason}")]
+    SegmentProcess { reason: String },
+
+    #[error("decryption error: {reason}")]
+    Decryption { reason: String },
+
+    #[error("invalid content for {protocol}: {reason}")]
+    InvalidContent {
+        protocol: &'static str,
+        reason: String,
+    },
+
+    #[error("configuration error: {reason}")]
+    Configuration { reason: String },
+
+    #[error("operation timed out: {reason}")]
+    Timeout { reason: String },
+
+    #[error("resource not found: {resource}")]
+    NotFound { resource: String },
+
+    #[error("all download sources failed: {reason}")]
+    SourceExhausted { reason: String },
+
+    #[error("FLV decode error: {source}")]
+    FlvDecode {
+        #[from]
+        source: FlvError,
+    },
+
+    #[error("protocol error: {reason}")]
+    Protocol { reason: String },
+
+    #[error("internal error: {reason}")]
+    Internal { reason: String },
+}
+
+impl DownloadError {
+    pub fn invalid_url(input: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::InvalidUrl {
+            input: input.into(),
+            reason: reason.into(),
+        }
+    }
+
+    pub fn proxy_configuration(reason: impl Into<String>) -> Self {
+        Self::ProxyConfiguration {
+            reason: reason.into(),
+        }
+    }
+
+    pub fn http_status(
+        status: StatusCode,
+        url: impl Into<String>,
+        operation: &'static str,
+    ) -> Self {
+        Self::HttpStatus {
+            status,
+            url: url.into(),
+            operation,
+        }
+    }
+
+    pub fn source_exhausted(reason: impl Into<String>) -> Self {
+        Self::SourceExhausted {
+            reason: reason.into(),
+        }
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Cancelled => false,
+            Self::InvalidUrl { .. }
+            | Self::UnsupportedProtocol { .. }
+            | Self::ProtocolDetectionFailed { .. }
+            | Self::ProxyConfiguration { .. }
+            | Self::InvalidContent { .. }
+            | Self::Configuration { .. }
+            | Self::NotFound { .. } => false,
+            Self::HttpStatus { status, .. } => {
+                status.is_server_error() || *status == StatusCode::TOO_MANY_REQUESTS
+            }
+            Self::SegmentFetch { retryable, .. } => *retryable,
+            Self::Network { .. }
+            | Self::Io { .. }
+            | Self::Cache { .. }
+            | Self::Playlist { .. }
+            | Self::SegmentProcess { .. }
+            | Self::Decryption { .. }
+            | Self::SourceExhausted { .. }
+            | Self::FlvDecode { .. }
+            | Self::Protocol { .. }
+            | Self::Timeout { .. }
+            | Self::Internal { .. } => true,
+        }
+    }
+
+    pub fn is_non_recoverable_source_error(&self) -> bool {
+        match self {
+            Self::HttpStatus { status, .. } => status.is_client_error(),
+            Self::InvalidUrl { .. }
+            | Self::UnsupportedProtocol { .. }
+            | Self::ProtocolDetectionFailed { .. }
+            | Self::InvalidContent { .. }
+            | Self::NotFound { .. } => true,
+            Self::SegmentFetch { retryable, .. } => !retryable,
+            _ => false,
+        }
+    }
 }
 
 impl From<DownloadError> for FlvError {

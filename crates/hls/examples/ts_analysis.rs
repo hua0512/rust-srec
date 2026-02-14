@@ -27,7 +27,7 @@ fn main() {
     // Create HLS data for the TS segment
     let hls_data = HlsData::ts(media_segment, Bytes::from(ts_data));
 
-    println!("✓ Created HLS TS segment data");
+    println!("Created HLS TS segment data");
 
     // Demonstrate TS parsing capabilities
     analyze_ts_segment(&hls_data);
@@ -38,88 +38,74 @@ fn analyze_ts_segment(hls_data: &HlsData) {
 
     // Check if this is a TS segment
     if !hls_data.is_ts() {
-        println!("❌ This is not a TS segment");
+        println!("This is not a TS segment");
         return;
     }
 
     // Get stream summary
     if let Some(summary) = hls_data.get_stream_summary() {
-        println!("📊 Stream summary: {summary}");
+        println!("  Stream summary: {summary}");
     }
 
-    // Debug: try to parse PSI tables directly and print any errors
+    // Parse PSI tables
     if let Some(result) = hls_data.parse_ts_psi_tables() {
         match result {
-            Ok((pat, pmts)) => {
-                println!("✓ Successfully parsed PSI tables");
-                println!(
-                    "   PAT: {}",
-                    if pat.is_some() { "found" } else { "not found" }
-                );
-                println!("   PMTs: {} found", pmts.len());
+            Ok(stream_info) => {
+                println!("  Successfully parsed PSI tables");
+                println!("  Transport Stream ID: {}", stream_info.transport_stream_id);
+                println!("  Programs: {} found", stream_info.programs.len());
+
+                for program in &stream_info.programs {
+                    println!(
+                        "    Program {}: {} video, {} audio, {} other streams",
+                        program.program_number,
+                        program.video_streams.len(),
+                        program.audio_streams.len(),
+                        program.other_streams.len()
+                    );
+                }
             }
             Err(e) => {
-                println!("❌ Failed to parse PSI tables: {e}");
+                println!("  Failed to parse PSI tables: {e}");
             }
         }
     }
 
     // Check for PSI tables
     if hls_data.ts_has_psi_tables() {
-        println!("✓ Contains PSI tables (PAT/PMT)");
+        println!("  Contains PSI tables (PAT/PMT)");
     } else {
-        println!("❌ No PSI tables found");
-    }
-
-    // Get program numbers
-    if let Some(Ok(programs)) = hls_data.get_ts_program_numbers() {
-        println!("📺 Program numbers: {programs:?}");
+        println!("  No PSI tables found");
     }
 
     // Get video streams
     if let Some(Ok(video_streams)) = hls_data.get_ts_video_streams() {
-        println!("🎥 Video streams:");
+        println!("  Video streams:");
         for (pid, stream_type) in video_streams {
-            println!("   PID 0x{pid:04X}: {stream_type:?}");
+            println!("    PID 0x{pid:04X}: {stream_type:?}");
         }
     }
 
     // Get audio streams
     if let Some(Ok(audio_streams)) = hls_data.get_ts_audio_streams() {
-        println!("🔊 Audio streams:");
+        println!("  Audio streams:");
         for (pid, stream_type) in audio_streams {
-            println!("   PID 0x{pid:04X}: {stream_type:?}");
+            println!("    PID 0x{pid:04X}: {stream_type:?}");
         }
     }
 
     // Check for specific stream types
     if hls_data.ts_contains_stream_type(StreamType::H264) {
-        println!("✓ Contains H.264 video");
+        println!("  Contains H.264 video");
     }
     if hls_data.ts_contains_stream_type(StreamType::AdtsAac) {
-        println!("✓ Contains AAC audio");
+        println!("  Contains AAC audio");
     } else {
-        println!("ℹ No AAC audio streams found");
-    }
-
-    // Access lower-level TS parsing if needed
-    if let Some(Ok((pat, pmts))) = hls_data.parse_ts_psi_tables() {
-        if let Some(pat) = pat {
-            println!("\n📄 PAT Information:");
-            println!("   Transport Stream ID: {}", pat.transport_stream_id);
-            println!("   Version: {}", pat.version_number);
-        }
-
-        for pmt in pmts {
-            println!("\n📄 PMT Information (Program {}):", pmt.program_number);
-            println!("   PCR PID: 0x{:04X}", pmt.pcr_pid);
-            println!("   Elementary streams: {}", pmt.streams.len());
-        }
+        println!("  No AAC audio streams found");
     }
 }
 
 fn create_working_ts_data() -> Vec<u8> {
-    // Use the exact test data format that works in debug_hls_ts
     let mut ts_data = Vec::new();
 
     // PAT packet (188 bytes)
@@ -129,7 +115,7 @@ fn create_working_ts_data() -> Vec<u8> {
     pat_packet[2] = 0x00;
     pat_packet[3] = 0x10; // No scrambling, payload only, continuity = 0
 
-    // Simple PAT payload (based on ts crate test)
+    // Simple PAT payload
     pat_packet[4] = 0x00; // Pointer field
     pat_packet[5] = 0x00; // Table ID (PAT)
     pat_packet[6] = 0x80; // Section syntax indicator + reserved + section length high
@@ -144,7 +130,7 @@ fn create_working_ts_data() -> Vec<u8> {
     pat_packet[14] = 0x01; // Program number low (1)
     pat_packet[15] = 0xE1; // PMT PID high (0x100)
     pat_packet[16] = 0x00; // PMT PID low
-    // CRC32 (4 bytes) - leaving as zeros for now
+    // CRC32 (4 bytes)
     pat_packet[17] = 0x00;
     pat_packet[18] = 0x00;
     pat_packet[19] = 0x00;

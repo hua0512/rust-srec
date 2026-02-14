@@ -2,11 +2,10 @@
 
 use crate::CacheManager;
 use crate::downloader::ClientPool;
-use crate::hls::buffer_pool::BufferPool;
 use crate::hls::config::HlsConfig;
 use crate::hls::decryption::{DecryptionService, KeyFetcher};
 use crate::hls::events::HlsStreamEvent;
-use crate::hls::fetcher::{Http2Stats, SegmentDownloader, SegmentFetcher};
+use crate::hls::fetcher::{SegmentDownloader, SegmentFetcher};
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::output::OutputManager;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine, PlaylistProvider};
@@ -25,8 +24,8 @@ pub struct AllTaskHandles {
     pub playlist_engine_handle: Option<JoinHandle<Result<(), HlsDownloaderError>>>,
     pub scheduler_handle: JoinHandle<()>,
     pub output_manager_handle: JoinHandle<()>,
-    /// HTTP/2 connection statistics for observability
-    pub http2_stats: Arc<Http2Stats>,
+    /// Shared performance metrics for the pipeline
+    pub performance_metrics: Arc<PerformanceMetrics>,
 }
 
 /// HLS Stream Coordinator: Sets up and spawns all HLS download pipeline components.
@@ -56,30 +55,20 @@ impl HlsStreamCoordinator {
         // Create shared performance metrics for the pipeline
         let performance_metrics = Arc::new(PerformanceMetrics::new());
 
-        // Create shared buffer pool for decryption operations with metrics
-        let buffer_pool = Arc::new(BufferPool::with_metrics(
-            config.performance_config.buffer_pool.clone(),
-            Arc::clone(&performance_metrics),
-        ));
-
         let key_fetcher = Arc::new(KeyFetcher::new(
             Arc::clone(&clients),
             Arc::clone(&config),
             token.clone(),
         ));
-        let decryption_service = Arc::new(DecryptionService::with_buffer_pool(
+        let decryption_service = Arc::new(DecryptionService::new(
             Arc::clone(&config),
             Arc::clone(&key_fetcher),
             cache_manager.clone(),
-            Arc::clone(&buffer_pool),
         ));
-        // Create shared HTTP/2 stats tracker
-        let http2_stats = Arc::new(Http2Stats::new());
         let segment_fetcher: Arc<dyn SegmentDownloader> = Arc::new(SegmentFetcher::with_metrics(
             Arc::clone(&clients),
             Arc::clone(&config),
             cache_manager.clone(),
-            Arc::clone(&http2_stats),
             Arc::clone(&performance_metrics),
             token.clone(),
         ));
@@ -165,7 +154,6 @@ impl HlsStreamCoordinator {
 
         let output_manager_handle = tokio::spawn(async move {
             output_manager.run().await;
-            debug!("OutputManager task finished.");
         });
 
         let scheduler_parent_span = parent_span.clone();
@@ -215,7 +203,7 @@ impl HlsStreamCoordinator {
             playlist_engine_handle,
             scheduler_handle,
             output_manager_handle,
-            http2_stats,
+            performance_metrics,
         };
 
         Ok((client_event_rx, handles))

@@ -3,8 +3,8 @@
 use crate::CacheManager;
 use crate::cache::{CacheKey, CacheMetadata, CacheResourceType};
 use crate::hls::HlsDownloaderError;
-use crate::hls::buffer_pool::BufferPool;
 use crate::hls::config::HlsConfig;
+use crate::hls::retry::{RetryAction, RetryPolicy, is_retryable_reqwest_error, retry_with_backoff};
 use aes::Aes128;
 use bytes::Bytes;
 use cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7}; // Pkcs7 for padding
@@ -22,24 +22,12 @@ type Aes128CbcDec = cbc::Decryptor<Aes128>;
 /// Offloads CPU-intensive decryption to blocking thread pool
 pub struct DecryptionOffloader {
     enabled: bool,
-    buffer_pool: Option<Arc<BufferPool>>,
 }
 
 impl DecryptionOffloader {
     /// Create a new DecryptionOffloader
     pub fn new(enabled: bool) -> Self {
-        Self {
-            enabled,
-            buffer_pool: None,
-        }
-    }
-
-    /// Create a new DecryptionOffloader with a buffer pool
-    pub fn with_buffer_pool(enabled: bool, buffer_pool: Arc<BufferPool>) -> Self {
-        Self {
-            enabled,
-            buffer_pool: Some(buffer_pool),
-        }
+        Self { enabled }
     }
 
     /// Check if offloading is enabled
@@ -59,66 +47,39 @@ impl DecryptionOffloader {
             // Offload to blocking thread pool
             let key = *key;
             let iv = *iv;
-            let buffer_pool = self.buffer_pool.clone();
-            tokio::task::spawn_blocking(move || {
-                Self::decrypt_sync_with_pool(data, &key, &iv, buffer_pool.as_deref())
-            })
-            .await
-            .map_err(|e| {
-                HlsDownloaderError::DecryptionError(format!("Decryption offload task failed: {e}"))
-            })?
+            tokio::task::spawn_blocking(move || Self::decrypt_sync(data, &key, &iv))
+                .await
+                .map_err(|e| HlsDownloaderError::Decryption {
+                    reason: format!("Decryption offload task failed: {e}"),
+                })?
         } else {
             // Inline decryption (existing behavior)
-            Self::decrypt_sync_with_pool(data, key, iv, self.buffer_pool.as_deref())
+            Self::decrypt_sync(data, key, iv)
         }
     }
 
-    /// Synchronous decryption helper for actual AES decryption (without buffer pool)
-    #[cfg(test)]
     pub fn decrypt_sync(
         data: Bytes,
         key: &[u8; 16],
         iv: &[u8; 16],
     ) -> Result<Bytes, HlsDownloaderError> {
-        Self::decrypt_sync_with_pool(data, key, iv, None)
-    }
+        let mut buffer = data.to_vec();
 
-    /// Synchronous decryption helper with optional buffer pool
-    pub fn decrypt_sync_with_pool(
-        data: Bytes,
-        key: &[u8; 16],
-        iv: &[u8; 16],
-        buffer_pool: Option<&BufferPool>,
-    ) -> Result<Bytes, HlsDownloaderError> {
-        let data_len = data.len();
-
-        // Acquire buffer from pool or allocate new
-        let mut buffer = if let Some(pool) = buffer_pool {
-            let mut buf = pool.acquire(data_len);
-            buf.clear();
-            buf.extend_from_slice(&data);
-            buf
-        } else {
-            data.to_vec()
-        };
-
-        let cipher = Aes128CbcDec::new_from_slices(key, iv).map_err(|e| {
-            HlsDownloaderError::DecryptionError(format!("Failed to initialize AES decryptor: {e}"))
-        })?;
+        let cipher =
+            Aes128CbcDec::new_from_slices(key, iv).map_err(|e| HlsDownloaderError::Decryption {
+                reason: format!("Failed to initialize AES decryptor: {e}"),
+            })?;
 
         let decrypted_len = cipher
             .decrypt_padded_mut::<Pkcs7>(&mut buffer)
-            .map_err(|e| HlsDownloaderError::DecryptionError(format!("Decryption failed: {e}")))?
+            .map_err(|e| HlsDownloaderError::Decryption {
+                reason: format!("Decryption failed: {e}"),
+            })?
             .len();
 
-        if let Some(pool) = buffer_pool {
-            let result = Bytes::copy_from_slice(&buffer[..decrypted_len]);
-            pool.release(buffer);
-            Ok(result)
-        } else {
-            buffer.truncate(decrypted_len);
-            Ok(Bytes::from(buffer))
-        }
+        // Truncate to actual decrypted length and convert to Bytes (zero-copy).
+        buffer.truncate(decrypted_len);
+        Ok(Bytes::from(buffer))
     }
 }
 
@@ -144,75 +105,85 @@ impl KeyFetcher {
     }
 
     pub async fn fetch_key(&self, key_uri: &str) -> Result<Bytes, HlsDownloaderError> {
-        let mut attempts = 0;
-        loop {
-            if self.token.is_cancelled() {
-                return Err(HlsDownloaderError::Cancelled);
-            }
-            attempts += 1;
-            let client = Url::parse(key_uri)
-                .ok()
-                .map(|url| self.clients.client_for_url(&url))
-                .unwrap_or_else(|| self.clients.default_client());
-            let response = tokio::select! {
-                _ = self.token.cancelled() => {
-                    return Err(HlsDownloaderError::Cancelled);
-                }
-                response = client
-                    .get(key_uri)
-                    .timeout(self.config.fetcher_config.key_download_timeout)
-                    .send() => response,
-            };
+        let policy = RetryPolicy {
+            max_retries: self.config.fetcher_config.max_key_retries,
+            base_delay: self.config.fetcher_config.key_retry_delay_base,
+            max_delay: self.config.fetcher_config.max_key_retry_delay,
+            jitter: true,
+        };
 
-            match response {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        let bytes = tokio::select! {
-                            _ = self.token.cancelled() => {
-                                return Err(HlsDownloaderError::Cancelled);
+        let parsed_url = Url::parse(key_uri).ok();
+        let clients = &self.clients;
+        let config = &self.config;
+        let token = &self.token;
+
+        retry_with_backoff(&policy, token, |_attempt| {
+            let parsed_url = parsed_url.clone();
+            async move {
+                let client = parsed_url
+                    .as_ref()
+                    .map(|url| clients.client_for_url(url))
+                    .unwrap_or_else(|| clients.default_client());
+
+                let response = tokio::select! {
+                    _ = token.cancelled() => {
+                        return RetryAction::Fail(HlsDownloaderError::Cancelled);
+                    }
+                    response = client
+                        .get(key_uri)
+                        .timeout(config.fetcher_config.key_download_timeout)
+                        .send() => response,
+                };
+
+                match response {
+                    Ok(response) => {
+                        if response.status().is_success() {
+                            let bytes = tokio::select! {
+                                _ = token.cancelled() => {
+                                    return RetryAction::Fail(HlsDownloaderError::Cancelled);
+                                }
+                                bytes = response.bytes() => bytes,
+                            };
+                            match bytes {
+                                Ok(b) => RetryAction::Success(b),
+                                Err(e) => {
+                                    if is_retryable_reqwest_error(&e) {
+                                        RetryAction::Retry(HlsDownloaderError::from(e))
+                                    } else {
+                                        RetryAction::Fail(HlsDownloaderError::from(e))
+                                    }
+                                }
                             }
-                            bytes = response.bytes() => bytes,
-                        };
-                        return bytes.map_err(HlsDownloaderError::from);
-                    } else if response.status().is_client_error() {
-                        return Err(HlsDownloaderError::DecryptionError(format!(
-                            "Client error {} fetching key from {}",
-                            response.status(),
-                            key_uri
-                        )));
+                        } else if response.status().is_client_error() {
+                            RetryAction::Fail(HlsDownloaderError::Decryption {
+                                reason: format!(
+                                    "Client error {} fetching key from {}",
+                                    response.status(),
+                                    key_uri
+                                ),
+                            })
+                        } else {
+                            // Server errors (5xx) are retryable
+                            RetryAction::Retry(HlsDownloaderError::Decryption {
+                                reason: format!(
+                                    "Server error {} fetching key from {}",
+                                    response.status(),
+                                    key_uri
+                                ),
+                            })
+                        }
                     }
-                    // Server errors or other retryable issues
-                    if attempts > self.config.fetcher_config.max_key_retries {
-                        return Err(HlsDownloaderError::DecryptionError(format!(
-                            "Max retries ({}) exceeded for key {}. Last status: {}",
-                            self.config.fetcher_config.max_key_retries,
-                            key_uri,
-                            response.status()
-                        )));
-                    }
-                }
-                Err(e) => {
-                    // Check if error is retryable (connect, timeout, etc.)
-                    if !e.is_connect() && !e.is_timeout() && !e.is_request() {
-                        return Err(HlsDownloaderError::from(e)); // Non-retryable network error
-                    }
-                    if attempts > self.config.fetcher_config.max_key_retries {
-                        return Err(HlsDownloaderError::DecryptionError(format!(
-                            "Max retries ({}) exceeded for key {} due to network error: {}",
-                            self.config.fetcher_config.max_key_retries, key_uri, e
-                        )));
+                    Err(e) => {
+                        if is_retryable_reqwest_error(&e) {
+                            RetryAction::Retry(HlsDownloaderError::from(e))
+                        } else {
+                            RetryAction::Fail(HlsDownloaderError::from(e))
+                        }
                     }
                 }
             }
-            let delay = self.config.fetcher_config.key_retry_delay_base
-                * (2_u32.pow(attempts.saturating_sub(1)));
-            tokio::select! {
-                _ = self.token.cancelled() => {
-                    return Err(HlsDownloaderError::Cancelled);
-                }
-                _ = tokio::time::sleep(delay) => {}
-            }
-        }
+        })
+        .await
     }
 }
 
@@ -241,19 +212,6 @@ impl DecryptionService {
         }
     }
 
-    /// Create a new DecryptionService with a buffer pool for reduced allocations
-    pub fn with_buffer_pool(
-        config: Arc<HlsConfig>,
-        key_fetcher: Arc<KeyFetcher>,
-        cache_manager: Option<Arc<CacheManager>>,
-        buffer_pool: Arc<BufferPool>,
-    ) -> Self {
-        let offload = config.decryption_config.offload_decryption_to_cpu_pool;
-        let mut service = Self::new(config, key_fetcher, cache_manager);
-        service.offloader = DecryptionOffloader::with_buffer_pool(offload, buffer_pool);
-        service
-    }
-
     async fn get_key_data(
         &self,
         key_info: &Key,
@@ -264,24 +222,23 @@ impl DecryptionService {
                 if uri.starts_with("http://") || uri.starts_with("https://") {
                     uri.clone()
                 } else {
-                    let base = url::Url::parse(base_url).map_err(|e| {
-                        HlsDownloaderError::PlaylistError(format!(
-                            "Invalid base URL {base_url}: {e}"
-                        ))
-                    })?;
+                    let base =
+                        url::Url::parse(base_url).map_err(|e| HlsDownloaderError::Playlist {
+                            reason: format!("Invalid base URL {base_url}: {e}"),
+                        })?;
                     base.join(uri)
-                        .map_err(|e| {
-                            HlsDownloaderError::PlaylistError(format!(
+                        .map_err(|e| HlsDownloaderError::Playlist {
+                            reason: format!(
                                 "Could not join base URL {base_url} with key URI {uri}: {e}"
-                            ))
+                            ),
                         })?
                         .to_string()
                 }
             }
             None => {
-                return Err(HlsDownloaderError::DecryptionError(
-                    "Key URI is missing".to_string(),
-                ));
+                return Err(HlsDownloaderError::Decryption {
+                    reason: "Key URI is missing".to_string(),
+                });
             }
         };
 
@@ -289,10 +246,13 @@ impl DecryptionService {
 
         let key = CacheKey::new(CacheResourceType::Key, key_uri_str, None);
         if let Some(cache_manager) = &self.cache_manager
-            && let Some(cached_key) = cache_manager
-                .get(&key)
-                .await
-                .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {e}")))?
+            && let Some(cached_key) =
+                cache_manager
+                    .get(&key)
+                    .await
+                    .map_err(|e| HlsDownloaderError::Cache {
+                        reason: format!("Cache error: {e}"),
+                    })?
         {
             return Ok(cached_key.0);
         }
@@ -300,11 +260,13 @@ impl DecryptionService {
         let fetched_key_bytes = self.key_fetcher.fetch_key(&key.url).await?;
         if fetched_key_bytes.len() != 16 {
             // AES-128 keys are 16 bytes
-            return Err(HlsDownloaderError::DecryptionError(format!(
-                "Fetched decryption key from {} has incorrect length: {} bytes (expected 16)",
-                key.url,
-                fetched_key_bytes.len()
-            )));
+            return Err(HlsDownloaderError::Decryption {
+                reason: format!(
+                    "Fetched decryption key from {} has incorrect length: {} bytes (expected 16)",
+                    key.url,
+                    fetched_key_bytes.len()
+                ),
+            });
         }
         let len = fetched_key_bytes.len();
 
@@ -316,7 +278,9 @@ impl DecryptionService {
             cache_manager
                 .put(key, fetched_key_bytes.clone(), metadata)
                 .await
-                .map_err(|e| HlsDownloaderError::CacheError(format!("Cache error: {e}")))?;
+                .map_err(|e| HlsDownloaderError::Cache {
+                    reason: format!("Cache error: {e}"),
+                })?;
         }
 
         Ok(fetched_key_bytes)
@@ -326,7 +290,9 @@ impl DecryptionService {
         let iv_str = iv_hex_str.trim_start_matches("0x");
         let mut iv_bytes = [0u8; 16];
         hex::decode_to_slice(iv_str, &mut iv_bytes).map_err(|e| {
-            HlsDownloaderError::DecryptionError(format!("Failed to parse IV '{iv_hex_str}': {e}"))
+            HlsDownloaderError::Decryption {
+                reason: format!("Failed to parse IV '{iv_hex_str}': {e}"),
+            }
         })?;
         Ok(iv_bytes)
     }
@@ -344,9 +310,9 @@ impl DecryptionService {
         if key_info.method != m3u8_rs::KeyMethod::AES128 {
             // Changed to AES128 (all caps)
             // For now, only support AES-128. SAMPLE-AES would need different handling.
-            return Err(HlsDownloaderError::DecryptionError(format!(
-                "Unsupported decryption method: {key_info:?}"
-            )));
+            return Err(HlsDownloaderError::Decryption {
+                reason: format!("Unsupported decryption method: {key_info:?}"),
+            });
         }
 
         let key_data = self.get_key_data(key_info, base_url).await?;
@@ -357,17 +323,20 @@ impl DecryptionService {
             (None, None) => {
                 // This case should ideally be handled by the caller by providing iv_override
                 // based on media_sequence for AES-128 CBC if IV is not in playlist.
-                return Err(HlsDownloaderError::DecryptionError(
-                    "IV is missing and not overridden for AES-128 decryption".to_string(),
-                ));
+                return Err(HlsDownloaderError::Decryption {
+                    reason: "IV is missing and not overridden for AES-128 decryption".to_string(),
+                });
             }
         };
 
         // Decrypt using the offloader (handles both inline and offloaded decryption)
-        let key_array: [u8; 16] = key_data
-            .as_ref()
-            .try_into()
-            .map_err(|_| HlsDownloaderError::DecryptionError("Invalid key length".to_string()))?;
+        let key_array: [u8; 16] =
+            key_data
+                .as_ref()
+                .try_into()
+                .map_err(|_| HlsDownloaderError::Decryption {
+                    reason: "Invalid key length".to_string(),
+                })?;
 
         self.offloader.decrypt(data, &key_array, &iv_bytes).await
     }

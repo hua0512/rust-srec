@@ -33,7 +33,7 @@
 //!
 use flv::data::FlvData;
 use flv::header::FlvHeader;
-use flv::tag::{FlvTag, FlvUtil};
+use flv::tag::FlvTag;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -923,6 +923,7 @@ mod tests {
             timestamp_ms: 0,
             stream_id: 0,
             tag_type: flv::tag::FlvTagType::Video,
+            is_filtered: false,
             data: Bytes::from(vec![
                 0x27, // Inter frame + AVC (same codec)
                 0x00, // AVC sequence header
@@ -980,6 +981,7 @@ mod tests {
             timestamp_ms: 0,
             stream_id: 0,
             tag_type: flv::tag::FlvTagType::Audio,
+            is_filtered: false,
             data: Bytes::from(vec![
                 0xA3, // AAC + different rate/size/type bits than 0xAF
                 0x00, // AAC sequence header

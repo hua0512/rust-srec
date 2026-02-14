@@ -1,5 +1,42 @@
+use parking_lot::Mutex;
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::info;
+
+/// Bounded set to prevent unbounded memory growth from tracking distinct hosts.
+///
+/// Used for observability heuristics (connection reuse estimation), so it is
+/// acceptable for older entries to be evicted.
+#[derive(Debug, Default)]
+struct BoundedHostSet {
+    order: VecDeque<String>,
+    set: HashSet<String>,
+}
+
+impl BoundedHostSet {
+    const MAX_TRACKED_HOSTS: usize = 256;
+
+    fn contains(&self, host: &str) -> bool {
+        self.set.contains(host)
+    }
+
+    fn insert(&mut self, host: &str) -> bool {
+        if self.set.contains(host) {
+            return false;
+        }
+
+        let host_string = host.to_string();
+        self.set.insert(host_string.clone());
+        self.order.push_back(host_string);
+
+        while self.order.len() > Self::MAX_TRACKED_HOSTS {
+            if let Some(oldest) = self.order.pop_front() {
+                self.set.remove(&oldest);
+            }
+        }
+        true
+    }
+}
 
 /// Performance metrics for HLS pipeline
 ///
@@ -22,6 +59,18 @@ pub struct PerformanceMetrics {
     pub http2_requests: AtomicU64,
     /// Number of HTTP/1.x requests
     pub http1_requests: AtomicU64,
+    /// Total bytes downloaded via HTTP/2
+    pub http2_bytes: AtomicU64,
+    /// Total bytes downloaded via HTTP/1.x
+    pub http1_bytes: AtomicU64,
+
+    // Connection reuse tracking
+    /// Number of connections reused (estimated via HTTP/2 multiplexing)
+    pub connections_reused: AtomicU64,
+    /// Number of new connections established
+    pub connections_new: AtomicU64,
+    /// Track hosts seen for connection reuse estimation
+    hosts_seen: Mutex<BoundedHostSet>,
 
     // Decryption metrics
     /// Total number of decryption operations
@@ -36,12 +85,6 @@ pub struct PerformanceMetrics {
     pub cache_hits: AtomicU64,
     /// Number of cache misses
     pub cache_misses: AtomicU64,
-
-    // Buffer pool metrics
-    /// Number of buffer allocations (new buffers created)
-    pub buffer_allocations: AtomicU64,
-    /// Number of buffer reuses (from pool)
-    pub buffer_reuses: AtomicU64,
 
     // Prefetch metrics
     /// Number of prefetch operations initiated
@@ -81,6 +124,41 @@ impl PerformanceMetrics {
         }
     }
 
+    /// Record an HTTP request with version, bytes, and connection reuse tracking.
+    ///
+    /// For HTTP/2, multiple requests to the same host share a connection. This
+    /// method tracks whether a host has been seen before to estimate reuse.
+    pub fn record_request_with_host(&self, version: reqwest::Version, bytes: u64, host: &str) {
+        let is_http2 = version == reqwest::Version::HTTP_2;
+        self.record_http_version(is_http2);
+
+        if is_http2 {
+            self.http2_bytes.fetch_add(bytes, Ordering::Relaxed);
+            let mut hosts = self.hosts_seen.lock();
+            if hosts.contains(host) {
+                self.connections_reused.fetch_add(1, Ordering::Relaxed);
+            } else {
+                self.connections_new.fetch_add(1, Ordering::Relaxed);
+                hosts.insert(host);
+            }
+        } else {
+            self.http1_bytes.fetch_add(bytes, Ordering::Relaxed);
+            self.connections_new.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Get connection reuse rate as a percentage (0.0 to 1.0)
+    pub fn connection_reuse_rate(&self) -> f64 {
+        let reused = self.connections_reused.load(Ordering::Relaxed);
+        let new_conns = self.connections_new.load(Ordering::Relaxed);
+        let total = reused + new_conns;
+        if total == 0 {
+            0.0
+        } else {
+            reused as f64 / total as f64
+        }
+    }
+
     // --- Decryption metrics recording ---
 
     /// Record a decryption operation
@@ -102,18 +180,6 @@ impl PerformanceMetrics {
     /// Record a cache miss
     pub fn record_cache_miss(&self) {
         self.cache_misses.fetch_add(1, Ordering::Relaxed);
-    }
-
-    // --- Buffer pool metrics recording ---
-
-    /// Record a buffer allocation (new buffer created)
-    pub fn record_buffer_allocation(&self) {
-        self.buffer_allocations.fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Record a buffer reuse (from pool)
-    pub fn record_buffer_reuse(&self) {
-        self.buffer_reuses.fetch_add(1, Ordering::Relaxed);
     }
 
     // --- Prefetch metrics recording ---
@@ -173,21 +239,6 @@ impl PerformanceMetrics {
         hits as f64 / total as f64
     }
 
-    /// Get buffer pool reuse rate as a percentage (0.0 to 1.0)
-    ///
-    /// Returns 0.0 if no buffer operations have been recorded
-    pub fn buffer_reuse_rate(&self) -> f64 {
-        let allocations = self.buffer_allocations.load(Ordering::Relaxed);
-        let reuses = self.buffer_reuses.load(Ordering::Relaxed);
-        let total = allocations + reuses;
-
-        if total == 0 {
-            return 0.0;
-        }
-
-        reuses as f64 / total as f64
-    }
-
     /// Get prefetch effectiveness rate as a percentage (0.0 to 1.0)
     ///
     /// Returns 0.0 if no prefetch operations have been initiated
@@ -231,8 +282,6 @@ impl PerformanceMetrics {
         let decryption_bytes = self.decryption_bytes_total.load(Ordering::Relaxed);
         let cache_hits = self.cache_hits.load(Ordering::Relaxed);
         let cache_misses = self.cache_misses.load(Ordering::Relaxed);
-        let buffer_allocs = self.buffer_allocations.load(Ordering::Relaxed);
-        let buffer_reuses = self.buffer_reuses.load(Ordering::Relaxed);
         let prefetch_init = self.prefetch_initiated.load(Ordering::Relaxed);
         let prefetch_used = self.prefetch_used.load(Ordering::Relaxed);
 
@@ -247,9 +296,13 @@ impl PerformanceMetrics {
             .unwrap_or_else(|| "N/A".to_string());
 
         let cache_rate = self.cache_hit_rate() * 100.0;
-        let buffer_rate = self.buffer_reuse_rate() * 100.0;
         let prefetch_rate = self.prefetch_effectiveness() * 100.0;
         let http2_rate = self.http2_rate() * 100.0;
+        let conn_reuse_rate = self.connection_reuse_rate() * 100.0;
+        let conn_reused = self.connections_reused.load(Ordering::Relaxed);
+        let conn_new = self.connections_new.load(Ordering::Relaxed);
+        let h2_bytes = self.http2_bytes.load(Ordering::Relaxed);
+        let h1_bytes = self.http1_bytes.load(Ordering::Relaxed);
 
         info!(
             downloads = downloads,
@@ -260,14 +313,16 @@ impl PerformanceMetrics {
             http2_requests = http2,
             http1_requests = http1,
             http2_rate = format!("{:.1}%", http2_rate),
+            http2_bytes = h2_bytes,
+            http1_bytes = h1_bytes,
+            connections_reused = conn_reused,
+            connections_new = conn_new,
+            connection_reuse_rate = format!("{:.1}%", conn_reuse_rate),
             decryptions = decryptions,
             decryption_bytes = decryption_bytes,
             cache_hits = cache_hits,
             cache_misses = cache_misses,
             cache_hit_rate = format!("{:.1}%", cache_rate),
-            buffer_allocations = buffer_allocs,
-            buffer_reuses = buffer_reuses,
-            buffer_reuse_rate = format!("{:.1}%", buffer_rate),
             prefetch_initiated = prefetch_init,
             prefetch_used = prefetch_used,
             prefetch_effectiveness = format!("{:.1}%", prefetch_rate),
@@ -289,8 +344,6 @@ impl PerformanceMetrics {
             decryption_bytes_total: self.decryption_bytes_total.load(Ordering::Relaxed),
             cache_hits: self.cache_hits.load(Ordering::Relaxed),
             cache_misses: self.cache_misses.load(Ordering::Relaxed),
-            buffer_allocations: self.buffer_allocations.load(Ordering::Relaxed),
-            buffer_reuses: self.buffer_reuses.load(Ordering::Relaxed),
             prefetch_initiated: self.prefetch_initiated.load(Ordering::Relaxed),
             prefetch_used: self.prefetch_used.load(Ordering::Relaxed),
         }
@@ -311,8 +364,6 @@ pub struct MetricsSnapshot {
     pub decryption_bytes_total: u64,
     pub cache_hits: u64,
     pub cache_misses: u64,
-    pub buffer_allocations: u64,
-    pub buffer_reuses: u64,
     pub prefetch_initiated: u64,
     pub prefetch_used: u64,
 }
@@ -384,18 +435,6 @@ mod tests {
         metrics.record_cache_miss();
 
         let rate = metrics.cache_hit_rate();
-        assert!((rate - 0.75).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_buffer_reuse_rate() {
-        let metrics = PerformanceMetrics::new();
-        metrics.record_buffer_allocation();
-        metrics.record_buffer_reuse();
-        metrics.record_buffer_reuse();
-        metrics.record_buffer_reuse();
-
-        let rate = metrics.buffer_reuse_rate();
         assert!((rate - 0.75).abs() < 0.001);
     }
 
