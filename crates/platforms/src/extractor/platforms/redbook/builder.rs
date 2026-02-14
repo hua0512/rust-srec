@@ -203,7 +203,7 @@ impl RedBook {
         let avatar_url = Some(room_data.host_info.avatar.to_string());
         let site_url = self.extractor.url.clone();
         let title = format!("{artist} 的直播");
-        let is_live = live_info.live_stream.live_status == SUCCESS_STATUS;
+        let is_live = live_stream.live_status == SUCCESS_STATUS;
 
         // Validate live status
         if !is_live {
