@@ -327,7 +327,7 @@ impl Douyu {
 
     /// Generates a random mobile user agent string
     fn random_mobile_user_agent() -> String {
-        use rand::Rng;
+        use rand::RngExt;
         // Common mobile user agents
         let agents = [
             "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
@@ -391,7 +391,7 @@ impl Douyu {
 
     /// Generates a random desktop user agent string
     fn random_desktop_user_agent() -> String {
-        use rand::Rng;
+        use rand::RngExt;
         let agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",

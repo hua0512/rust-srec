@@ -12,7 +12,7 @@ use crate::media::stream_info::StreamInfo;
 use async_trait::async_trait;
 use base64::prelude::*;
 use md5::{Digest, Md5};
-use rand::Rng;
+use rand::{Rng, RngExt};
 use rand::seq::IndexedRandom;
 use regex::Regex;
 use reqwest::Client;

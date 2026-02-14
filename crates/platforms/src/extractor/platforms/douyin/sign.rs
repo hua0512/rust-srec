@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Base character set for generating random strings (alphanumeric).

@@ -5,7 +5,7 @@
 //! and automatic failover.
 
 use crate::DownloadError;
-use rand::Rng;
+use rand::RngExt;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};

@@ -10,7 +10,7 @@ use crate::media::StreamInfo;
 use crate::media::media_info::MediaInfo;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use rand::Rng;
+use rand::RngExt;
 use regex::Regex;
 use reqwest::Client;
 use tracing::debug;
