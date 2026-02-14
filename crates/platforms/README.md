@@ -17,7 +17,7 @@ This library provides a unified interface to extract streaming media information
 | Huya        | `huya.com/{room_id}`                             |
 | PandaTV     | `pandalive.co.kr/play/{user_id}` (Defunct)       |
 | Picarto     | `picarto.tv/{channel_name}`                      |
-| Redbook     | `xiaohongshu.com/user/profile/{user_id}` or `xhslink.com/{share_id}` |
+| Redbook     | `xhslink.com/m/{share_id}` |
 | TikTok      | `tiktok.com/@{username}/live`                   |
 | TwitCasting | `twitcasting.tv/{username}`                      |
 | Twitch      | `twitch.tv/{channel_name}`                       |

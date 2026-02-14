@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
@@ -15,13 +13,8 @@ use crate::{
     media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo},
 };
 
-pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?:https?://)?(?:(?:www\.)?xiaohongshu\.com/user/profile/([a-zA-Z0-9_-]+)|xhslink\.com/[a-zA-Z0-9_-]+)")
-        .unwrap()
-});
-static USER_ID_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"/user/profile/([^/?]*)").unwrap());
-
+pub static URL_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:https?://)?xhslink\.com/m/[a-zA-Z0-9_-]+").unwrap());
 static SCRIPT_DATA_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<script>window.__INITIAL_STATE__=(.*?)</script>").unwrap());
 
@@ -32,8 +25,8 @@ const DEFAULT_CODEC_H265: &str = "hevc";
 const DEFAULT_QUALITY_TYPE: &str = "HD";
 const M3U8_EXTENSION: &str = ".m3u8";
 const FLV_EXTENSION: &str = ".flv";
+const XHS_CDN_FLV_PREFIX: &str = "http://live-source-play.xhscdn.com/live/";
 const USER_AGENT: &str = "ios/7.830 (ios 17.0; ; iPhone 15 (A2846/A3089/A3090/A3092))";
-const XY_COMMON_PARAMS: &str = "platform=iOS&sid=session.1722166379345546829388";
 const SUCCESS_STATUS: &str = "success";
 
 pub struct RedBook {
@@ -71,7 +64,6 @@ impl RedBook {
             (reqwest::header::ORIGIN.as_str(), Self::BASE_URL),
             (reqwest::header::REFERER.as_str(), Self::BASE_URL),
             (reqwest::header::USER_AGENT.as_str(), USER_AGENT),
-            ("xy-common-params", XY_COMMON_PARAMS),
         ];
 
         for (key, value) in headers {
@@ -148,28 +140,6 @@ impl RedBook {
         streams
     }
 
-    /// Extract host_id from redirected URL parameters
-    fn extract_host_id(url: &reqwest::Url) -> Result<String, ExtractorError> {
-        let params = url.query_pairs().collect::<HashMap<_, _>>();
-        params
-            .get("host_id")
-            .map(|id| id.to_string())
-            .ok_or_else(|| {
-                ExtractorError::ValidationError(
-                    "RedBook: failed to extract host_id from the redirected url".into(),
-                )
-            })
-    }
-
-    /// Extract user_id from page body or fallback to host_id
-    fn extract_user_id(body: &str, host_id: &str) -> String {
-        USER_ID_REGEX
-            .captures(body)
-            .and_then(|captures| captures.get(1))
-            .map(|m| m.as_str().to_string())
-            .unwrap_or_else(|| host_id.to_string())
-    }
-
     /// Extract and parse script data from page body
     fn extract_script_data(body: &str) -> Result<String, ExtractorError> {
         SCRIPT_DATA_REGEX
@@ -184,30 +154,49 @@ impl RedBook {
             })
     }
 
+    fn deeplink_param(deeplink: &str, key: &str) -> Option<String> {
+        let url = reqwest::Url::parse(deeplink).ok()?;
+        url.query_pairs()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.to_string())
+    }
+
+    fn build_cdn_flv_urls_from_deeplink(deeplink: &str) -> Option<(String, String)> {
+        let flv_url = Self::deeplink_param(deeplink, "flvUrl")?;
+        let room_id = flv_url.split("live/").nth(1)?.split('.').next()?;
+        let cdn_flv = format!("{XHS_CDN_FLV_PREFIX}{room_id}.flv");
+        let cdn_m3u8 = cdn_flv.replace(FLV_EXTENSION, M3U8_EXTENSION);
+        Some((cdn_flv, cdn_m3u8))
+    }
+
     pub async fn get_live_info(&self) -> Result<MediaInfo, ExtractorError> {
-        // Get redirected URL and extract host_id
         let response = self.extractor.get(&self.extractor.url).send().await?;
         let url = response.url().clone();
         debug!("redirected url: {}", url);
 
         let body = response.text().await?;
-        let host_id = Self::extract_host_id(&url)?;
-        debug!("host_id: {}", host_id);
+        let site_url = self.extractor.url.clone();
 
-        let user_id = Self::extract_user_id(&body, &host_id);
-        debug!("user_id: {}", user_id);
+        let script_data = match Self::extract_script_data(&body) {
+            Ok(v) => v,
+            Err(e) => {
+                debug!(error = %e, "RedBook: missing __INITIAL_STATE__ script");
+                return Ok(MediaInfo::builder(site_url, "".to_string(), "".to_string())
+                    .is_live(false)
+                    .build());
+            }
+        };
 
-        // Extract and parse live info
-        let script_data = Self::extract_script_data(&body)?;
-        // debug!("script_data: {}", script_data);
         let live_info: LiveInfo = serde_json::from_str(&script_data)?;
         debug!("live_info: {:?}", live_info);
 
-        let room_data = &live_info.live_stream.room_data;
-        let pull_config =
-            room_data.room_info.pull_config.as_ref().ok_or_else(|| {
-                ExtractorError::ValidationError("Missing pull_config".to_string())
-            })?;
+        let Some(live_stream) = live_info.live_stream else {
+            return Ok(MediaInfo::builder(site_url, "".to_string(), "".to_string())
+                .is_live(false)
+                .build());
+        };
+
+        let room_data = &live_stream.room_data;
 
         // Extract metadata
         let artist = &room_data.host_info.nick_name;
@@ -224,6 +213,57 @@ impl RedBook {
                 .is_live(false)
                 .build());
         }
+
+        if title.contains("回放") {
+            return Ok(MediaInfo::builder(site_url, title, artist.to_string())
+                .artist_url_opt(avatar_url)
+                .is_live(false)
+                .build());
+        }
+
+        let Some(pull_config) = room_data.room_info.pull_config.as_ref() else {
+            if let Some((cdn_flv, cdn_m3u8)) =
+                Self::build_cdn_flv_urls_from_deeplink(&room_data.room_info.deeplink)
+            {
+                let streams = vec![
+                    StreamInfo::builder(cdn_flv, StreamFormat::Flv, MediaFormat::Flv)
+                        .quality(DEFAULT_QUALITY)
+                        .priority(0)
+                        .codec(DEFAULT_CODEC_H264)
+                        .is_headers_needed(true)
+                        .build(),
+                    StreamInfo::builder(cdn_m3u8, StreamFormat::Hls, MediaFormat::Ts)
+                        .quality(DEFAULT_QUALITY)
+                        .priority(1)
+                        .codec(DEFAULT_CODEC_H264)
+                        .is_headers_needed(true)
+                        .build(),
+                ];
+
+                return Ok(MediaInfo::new(
+                    site_url,
+                    title,
+                    artist.to_string(),
+                    Some(room_data.room_info.room_cover.to_string()),
+                    avatar_url.map(|url| url.to_string()),
+                    true,
+                    streams,
+                    Some(self.extractor.get_platform_headers_map()),
+                    None,
+                ));
+            }
+
+            debug!(
+                live_status = %live_stream.live_status,
+                page_status = %live_stream.page_status,
+                error_message = %live_stream.error_message,
+                "RedBook live stream missing pull_config and deeplink fallback; treating as not live"
+            );
+            return Ok(MediaInfo::builder(site_url, title, artist.to_string())
+                .artist_url_opt(avatar_url)
+                .is_live(false)
+                .build());
+        };
 
         // Build streams from both h264 and h265 arrays
         let mut streams = Vec::new();
@@ -246,6 +286,28 @@ impl RedBook {
                 pull_config,
                 h265.len(),
             ));
+        }
+
+        if streams.is_empty()
+            && let Some((cdn_flv, cdn_m3u8)) =
+                Self::build_cdn_flv_urls_from_deeplink(&room_data.room_info.deeplink)
+        {
+            streams.push(
+                StreamInfo::builder(cdn_flv, StreamFormat::Flv, MediaFormat::Flv)
+                    .quality(DEFAULT_QUALITY)
+                    .priority(0)
+                    .codec(DEFAULT_CODEC_H264)
+                    .is_headers_needed(true)
+                    .build(),
+            );
+            streams.push(
+                StreamInfo::builder(cdn_m3u8, StreamFormat::Hls, MediaFormat::Ts)
+                    .quality(DEFAULT_QUALITY)
+                    .priority(1)
+                    .codec(DEFAULT_CODEC_H264)
+                    .is_headers_needed(true)
+                    .build(),
+            );
         }
 
         Ok(MediaInfo::new(
@@ -282,6 +344,25 @@ mod tests {
         platforms::redbook::builder::RedBook,
     };
 
+    #[test]
+    fn test_url_regex_matches_share_links() {
+        assert!(!super::URL_REGEX.is_match("http://xhslink.com/DEnpCgb"));
+        assert!(!super::URL_REGEX.is_match("https://xhslink.com/DEnpCgb"));
+        assert!(super::URL_REGEX.is_match("http://xhslink.com/m/844vKmW30jz"));
+        assert!(super::URL_REGEX.is_match("https://xhslink.com/m/844vKmW30jz"));
+
+        assert!(!super::URL_REGEX.as_str().contains("xiaohongshu"));
+    }
+
+    #[test]
+    fn test_build_cdn_flv_urls_from_deeplink() {
+        let deeplink =
+            "xhsdiscover://live?flvUrl=http%3A%2F%2Fexample.invalid%2Flive%2Froom123.flv";
+        let (flv, m3u8) = super::RedBook::build_cdn_flv_urls_from_deeplink(deeplink).unwrap();
+        assert_eq!(flv, "http://live-source-play.xhscdn.com/live/room123.flv");
+        assert_eq!(m3u8, "http://live-source-play.xhscdn.com/live/room123.m3u8");
+    }
+
     #[tokio::test]
     #[ignore]
     async fn test_extract() {
@@ -290,12 +371,12 @@ mod tests {
             .init();
 
         let redbook = RedBook::new(
-            "http://xhslink.com/DEnpCgb".to_string(),
+            "http://xhslink.com/m/DEnpCgb".to_string(),
             default_client(),
             None,
             None,
         );
-        let media_info = redbook.extract().await.unwrap();
+        let media_info = redbook.extract().await;
         println!("{media_info:?}");
     }
 }
