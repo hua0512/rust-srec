@@ -7,7 +7,7 @@ use crate::hls::config::HlsConfig;
 use crate::hls::retry::{RetryAction, RetryPolicy, is_retryable_reqwest_error, retry_with_backoff};
 use aes::Aes128;
 use bytes::Bytes;
-use cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7}; // Pkcs7 for padding
+use cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
 use hex;
 use m3u8_rs::Key;
 use std::sync::Arc;
@@ -71,7 +71,7 @@ impl DecryptionOffloader {
             })?;
 
         let decrypted_len = cipher
-            .decrypt_padded_mut::<Pkcs7>(&mut buffer)
+            .decrypt_padded::<Pkcs7>(&mut buffer)
             .map_err(|e| HlsDownloaderError::Decryption {
                 reason: format!("Decryption failed: {e}"),
             })?
@@ -350,7 +350,7 @@ mod tests {
 
     /// Helper function to encrypt data for testing decryption
     fn encrypt_data(plaintext: &[u8], key: &[u8; 16], iv: &[u8; 16]) -> Vec<u8> {
-        use cipher::BlockEncryptMut;
+        use cipher::BlockModeEncrypt;
         use cipher::block_padding::Pkcs7;
         let cipher = Aes128CbcEnc::new_from_slices(key, iv).unwrap();
         // Calculate padded length (round up to next 16-byte boundary)
@@ -358,7 +358,7 @@ mod tests {
         let mut buffer = vec![0u8; padded_len];
         buffer[..plaintext.len()].copy_from_slice(plaintext);
         let encrypted = cipher
-            .encrypt_padded_mut::<Pkcs7>(&mut buffer, plaintext.len())
+            .encrypt_padded::<Pkcs7>(&mut buffer, plaintext.len())
             .unwrap();
         encrypted.to_vec()
     }
