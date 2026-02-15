@@ -28,7 +28,8 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::channels::{
-    ChannelConfig, DiscordChannel, EmailChannel, NotificationChannel, WebhookChannel,
+    ChannelConfig, DiscordChannel, EmailChannel, NotificationChannel, TelegramChannel,
+    WebhookChannel,
 };
 use super::events::canonicalize_subscription_event_name;
 use super::events::{NotificationEvent, NotificationPriority};
@@ -36,7 +37,8 @@ use super::web_push::WebPushService;
 use crate::Result;
 use crate::database::models::{
     ChannelType, DiscordChannelSettings, EmailChannelSettings, NotificationChannelDbModel,
-    NotificationDeadLetterDbModel, NotificationEventLogDbModel, WebhookChannelSettings,
+    NotificationDeadLetterDbModel, NotificationEventLogDbModel, TelegramChannelSettings,
+    WebhookChannelSettings,
 };
 use crate::database::repositories::NotificationRepository;
 use crate::downloader::DownloadManagerEvent;
@@ -445,6 +447,7 @@ impl NotificationService {
             let channel: Arc<dyn NotificationChannel> = match channel_config {
                 ChannelConfig::Discord(c) => Arc::new(DiscordChannel::new(c.clone())),
                 ChannelConfig::Email(c) => Arc::new(EmailChannel::new(c.clone())),
+                ChannelConfig::Telegram(c) => Arc::new(TelegramChannel::new(c.clone())),
                 ChannelConfig::Webhook(c) => Arc::new(WebhookChannel::new(c.clone())),
             };
 
@@ -506,6 +509,7 @@ impl NotificationService {
         let channel: Arc<dyn NotificationChannel> = match &config {
             ChannelConfig::Discord(c) => Arc::new(DiscordChannel::new(c.clone())),
             ChannelConfig::Email(c) => Arc::new(EmailChannel::new(c.clone())),
+            ChannelConfig::Telegram(c) => Arc::new(TelegramChannel::new(c.clone())),
             ChannelConfig::Webhook(c) => Arc::new(WebhookChannel::new(c.clone())),
         };
 
@@ -706,6 +710,23 @@ impl NotificationService {
                         .get("batch_window_secs")
                         .and_then(|v| v.as_u64())
                         .unwrap_or(60),
+                }))
+            }
+            ChannelType::Telegram => {
+                let settings: TelegramChannelSettings =
+                    serde_json::from_value(settings_json.clone())?;
+                Arc::new(TelegramChannel::new(super::channels::TelegramConfig {
+                    id: None,
+                    name: None,
+                    enabled: true,
+                    bot_token: settings.bot_token,
+                    chat_id: settings.chat_id,
+                    parse_mode: settings_json
+                        .get("parse_mode")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("HTML")
+                        .to_string(),
+                    min_priority,
                 }))
             }
             ChannelType::Webhook => {

@@ -9,7 +9,7 @@ use sqlx::FromRow;
 pub struct NotificationChannelDbModel {
     pub id: String,
     pub name: String,
-    /// Channel type: Discord, Email, Webhook
+    /// Channel type: Discord, Email, Telegram, Webhook
     pub channel_type: String,
     /// JSON blob for channel-specific settings
     pub settings: String,
@@ -48,6 +48,7 @@ impl NotificationChannelDbModel {
 pub enum ChannelType {
     Discord,
     Email,
+    Telegram,
     Webhook,
 }
 
@@ -56,6 +57,7 @@ impl ChannelType {
         match self {
             Self::Discord => "Discord",
             Self::Email => "Email",
+            Self::Telegram => "Telegram",
             Self::Webhook => "Webhook",
         }
     }
@@ -64,6 +66,7 @@ impl ChannelType {
         match s.trim().to_ascii_lowercase().as_str() {
             "discord" => Some(Self::Discord),
             "email" => Some(Self::Email),
+            "telegram" => Some(Self::Telegram),
             "webhook" => Some(Self::Webhook),
             _ => None,
         }
@@ -78,6 +81,13 @@ pub struct DiscordChannelSettings {
     pub username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
+}
+
+/// Telegram channel settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelegramChannelSettings {
+    pub bot_token: String,
+    pub chat_id: String,
 }
 
 /// Email channel settings.

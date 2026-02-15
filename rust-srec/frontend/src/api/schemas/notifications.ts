@@ -29,7 +29,7 @@ const TimestampMsSchema = z
     return ms;
   });
 
-export const ChannelTypeSchema = z.enum(['Discord', 'Email', 'Webhook']);
+export const ChannelTypeSchema = z.enum(['Discord', 'Email', 'Telegram', 'Webhook']);
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
 // Settings schemas
@@ -80,6 +80,14 @@ export const WebhookSettingsSchema = z.object({
   min_priority: z.enum(['Low', 'Normal', 'High', 'Critical']).default('Low'),
   enabled: z.boolean().default(true),
   timeout_secs: z.number().int().positive().default(30),
+});
+
+export const TelegramSettingsSchema = z.object({
+  bot_token: z.string().min(1),
+  chat_id: z.string().min(1),
+  parse_mode: z.enum(['HTML', 'Markdown', 'MarkdownV2']).default('HTML'),
+  min_priority: z.enum(['Low', 'Normal', 'High', 'Critical']).default('Normal'),
+  enabled: z.boolean().default(true),
 });
 
 export const NotificationChannelSchema = z.object({
@@ -163,12 +171,17 @@ export const WebhookChannelFormSchema = z.object({
   settings: WebhookSettingsSchema,
 });
 
-// Base schema for react-hook-form compatibility - uses generic record for settings
-// and validates the settings based on channel_type via superRefine
+export const TelegramChannelFormSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  channel_type: z.literal('Telegram'),
+  settings: TelegramSettingsSchema,
+});
+
 // Base schema using discriminated union for type-safe settings validation
 export const ChannelFormSchema = z.discriminatedUnion('channel_type', [
   DiscordChannelFormSchema,
   EmailChannelFormSchema,
+  TelegramChannelFormSchema,
   WebhookChannelFormSchema,
 ]);
 
