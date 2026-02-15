@@ -9,13 +9,14 @@ import { type I18n } from '@lingui/core';
 import { useEffect, useState } from 'react';
 
 import appCss from '../styles.css?url';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
 import { NotFound } from '@/components/not-found';
-import { createServerFn } from '@/server/createServerFn';
 import { QueryClient } from '@tanstack/react-query';
-import { ensureValidToken } from '@/server/tokenRefresh';
 import { ThemeProvider } from '@/components/providers/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
-import { BrowserNotificationListener } from '@/components/notifications/browser-notification-listener';
 import { isDesktopBuild } from '@/utils/desktop';
 
 type DevtoolsModules = {
@@ -86,22 +87,12 @@ const Devtools = (() => {
   };
 })();
 
-export const fetchUser = createServerFn({ method: 'GET' }).handler(async () => {
-  return await ensureValidToken();
-});
-
 interface MyRouterContext {
   queryClient: QueryClient;
   i18n: I18n;
 }
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
-  beforeLoad: async () => {
-    const user = await fetchUser();
-    return {
-      user,
-    };
-  },
   pendingComponent: () => (
     <RootDocument>
       <AppLoadingScreen />
@@ -113,19 +104,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       { title: 'Rust-Srec' },
     ],
-    links: [
-      { rel: 'stylesheet', href: appCss },
-      { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-      {
-        rel: 'preconnect',
-        href: 'https://fonts.gstatic.com',
-        crossOrigin: 'anonymous',
-      },
-      {
-        rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
-      },
-    ],
+    links: [{ rel: 'stylesheet', href: appCss }],
   }),
   component: RootComponent,
   notFoundComponent: () => <NotFound />,
@@ -183,9 +162,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <link rel="icon" type="image/svg+xml" href="/stream-rec.svg"></link>
         <HeadContent />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <ThemeProvider>{children}</ThemeProvider>
-        <BrowserNotificationListener />
         <Devtools />
         <Toaster position="top-right" />
         <Scripts />
