@@ -27,6 +27,10 @@ msgstr "--flag value"
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
+#: src/components/notifications/forms/telegram-form.tsx:62
+msgid "-1001234567890"
+msgstr "-1001234567890"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:164
 msgid "-c copy"
 msgstr "-c copy"
@@ -128,7 +132,7 @@ msgstr "{0} stream(s) added successfully"
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} steps"
 
-#: src/components/notifications/channel-form.tsx:313
+#: src/components/notifications/channel-form.tsx:326
 msgid "{val} channel support is coming soon!"
 msgstr "{val} channel support is coming soon!"
 
@@ -167,6 +171,10 @@ msgstr "0:v:0"
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:121
 msgid "1 (best) - 31 (worst)"
 msgstr "1 (best) - 31 (worst)"
+
+#: src/components/notifications/forms/telegram-form.tsx:42
+msgid "123456:ABC-DEF..."
+msgstr "123456:ABC-DEF..."
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:130
 msgid "128k"
@@ -808,6 +816,11 @@ msgstr "Border Radius"
 msgid "Bot Name"
 msgstr "Bot Name"
 
+#: src/components/notifications/channel-card.tsx:108
+#: src/components/notifications/forms/telegram-form.tsx:36
+msgid "Bot Token"
+msgstr "Bot Token"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:237
 msgid "Brand Colors"
 msgstr "Brand Colors"
@@ -853,8 +866,8 @@ msgstr "Caching"
 #: src/components/config/global/backup-restore-card.tsx:580
 #: src/components/config/templates/template-card.tsx:196
 #: src/components/filters/FilterDialog.tsx:247
-#: src/components/notifications/channel-card.tsx:186
-#: src/components/notifications/channel-form.tsx:370
+#: src/components/notifications/channel-card.tsx:212
+#: src/components/notifications/channel-form.tsx:385
 #: src/components/notifications/subscription-manager.tsx:442
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:176
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:199
@@ -941,7 +954,7 @@ msgstr "Change Password Required"
 msgid "Changing Password..."
 msgstr "Changing Password..."
 
-#: src/components/notifications/channel-form.tsx:188
+#: src/components/notifications/channel-form.tsx:201
 msgid "Channel created"
 msgstr "Channel created"
 
@@ -949,7 +962,7 @@ msgstr "Channel created"
 msgid "Channel deleted"
 msgstr "Channel deleted"
 
-#: src/components/notifications/channel-form.tsx:202
+#: src/components/notifications/channel-form.tsx:215
 msgid "Channel updated"
 msgstr "Channel updated"
 
@@ -968,6 +981,11 @@ msgstr "channels"
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:382
 msgid "Channels"
 msgstr "Channels"
+
+#: src/components/notifications/channel-card.tsx:118
+#: src/components/notifications/forms/telegram-form.tsx:57
+msgid "Chat ID"
+msgstr "Chat ID"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:173
 msgid "Check if file exists after conversion"
@@ -1148,7 +1166,7 @@ msgstr "Config"
 msgid "Config Path (Optional)"
 msgstr "Config Path (Optional)"
 
-#: src/components/notifications/channel-form.tsx:353
+#: src/components/notifications/channel-form.tsx:367
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
 #: src/components/pipeline/workflows/step-config-dialog.tsx:326
 #: src/components/pipeline/workflows/workflow-editor.tsx:299
@@ -1217,7 +1235,7 @@ msgstr "Configure Settings"
 msgid "Configure Step"
 msgstr "Configure Step"
 
-#: src/components/notifications/channel-form.tsx:265
+#: src/components/notifications/channel-form.tsx:278
 msgid "Configure where and how you receive notifications."
 msgstr "Configure where and how you receive notifications."
 
@@ -1396,8 +1414,8 @@ msgstr "Create a template to define reusable download configurations."
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 
-#: src/components/notifications/channel-form.tsx:262
-#: src/components/notifications/channel-form.tsx:380
+#: src/components/notifications/channel-form.tsx:275
+#: src/components/notifications/channel-form.tsx:395
 msgid "Create Channel"
 msgstr "Create Channel"
 
@@ -1495,6 +1513,7 @@ msgstr "CRF (Constant Rate Factor)"
 
 #: src/components/notifications/forms/discord-form.tsx:117
 #: src/components/notifications/forms/email-form.tsx:194
+#: src/components/notifications/forms/telegram-form.tsx:121
 #: src/components/notifications/forms/webhook-form.tsx:165
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:159
 msgid "Critical"
@@ -1712,8 +1731,8 @@ msgstr "Delays, proxy, and retention policies."
 #: src/components/config/templates/template-card.tsx:128
 #: src/components/config/templates/template-card.tsx:202
 #: src/components/filters/FilterCard.tsx:316
-#: src/components/notifications/channel-card.tsx:169
-#: src/components/notifications/channel-card.tsx:192
+#: src/components/notifications/channel-card.tsx:195
+#: src/components/notifications/channel-card.tsx:218
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:218
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:242
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
@@ -1728,7 +1747,7 @@ msgstr "Delays, proxy, and retention policies."
 msgid "Delete"
 msgstr "Delete"
 
-#: src/components/notifications/channel-card.tsx:175
+#: src/components/notifications/channel-card.tsx:201
 msgid "Delete Channel?"
 msgstr "Delete Channel?"
 
@@ -2080,7 +2099,7 @@ msgstr "e.g., Standard Processing"
 #: src/components/config/templates/template-card.tsx:116
 #: src/components/filters/FilterCard.tsx:305
 #: src/components/layout/site-header.tsx:54
-#: src/components/notifications/channel-card.tsx:154
+#: src/components/notifications/channel-card.tsx:180
 #: src/components/pipeline/presets/preset-card.tsx:176
 #: src/components/pipeline/workflows/workflow-card.tsx:170
 #: src/components/sidebar/navbar.tsx:48
@@ -2088,7 +2107,7 @@ msgstr "e.g., Standard Processing"
 msgid "Edit"
 msgstr "Edit"
 
-#: src/components/notifications/channel-form.tsx:261
+#: src/components/notifications/channel-form.tsx:274
 msgid "Edit Channel"
 msgstr "Edit Channel"
 
@@ -2153,6 +2172,7 @@ msgstr "Enable recording of danmu/chat messages along with the video."
 #: src/components/notifications/desktop-channel-dialog.tsx:111
 #: src/components/notifications/forms/discord-form.tsx:130
 #: src/components/notifications/forms/email-form.tsx:219
+#: src/components/notifications/forms/telegram-form.tsx:134
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:523
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:555
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:565
@@ -2532,7 +2552,7 @@ msgstr "Failed to clone template: {0}"
 msgid "Failed to copy"
 msgstr "Failed to copy"
 
-#: src/components/notifications/channel-form.tsx:195
+#: src/components/notifications/channel-form.tsx:208
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
 
@@ -2718,7 +2738,7 @@ msgstr "Failed to start login: {0}"
 msgid "Failed to trigger check"
 msgstr "Failed to trigger check"
 
-#: src/components/notifications/channel-form.tsx:209
+#: src/components/notifications/channel-form.tsx:222
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
@@ -3178,6 +3198,7 @@ msgstr "Hide password"
 
 #: src/components/notifications/forms/discord-form.tsx:114
 #: src/components/notifications/forms/email-form.tsx:191
+#: src/components/notifications/forms/telegram-form.tsx:118
 #: src/components/notifications/forms/webhook-form.tsx:162
 #: src/components/streamers/config/streamer-general-settings.tsx:229
 #: src/components/streamers/edit/streamer-meta-form.tsx:204
@@ -3789,6 +3810,7 @@ msgstr "Loop Protection"
 
 #: src/components/notifications/forms/discord-form.tsx:108
 #: src/components/notifications/forms/email-form.tsx:185
+#: src/components/notifications/forms/telegram-form.tsx:112
 #: src/components/notifications/forms/webhook-form.tsx:156
 #: src/components/streamers/config/streamer-general-settings.tsx:235
 #: src/components/streamers/edit/streamer-meta-form.tsx:210
@@ -4038,6 +4060,7 @@ msgstr "Min Interval (s)"
 
 #: src/components/notifications/forms/discord-form.tsx:98
 #: src/components/notifications/forms/email-form.tsx:175
+#: src/components/notifications/forms/telegram-form.tsx:102
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:539
 msgid "Min Priority"
 msgstr "Min Priority"
@@ -4121,11 +4144,11 @@ msgstr "Multiplier for exponential backoff."
 msgid "My Archiving Workflow"
 msgstr "My Archiving Workflow"
 
-#: src/components/notifications/channel-form.tsx:289
+#: src/components/notifications/channel-form.tsx:302
 msgid "My Channel"
 msgstr "My Channel"
 
-#: src/components/notifications/channel-form.tsx:283
+#: src/components/notifications/channel-form.tsx:296
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
 #: src/components/pipeline/workflows/workflow-editor.tsx:309
 #: src/components/streamers/config/streamer-general-settings.tsx:92
@@ -4449,6 +4472,7 @@ msgstr "None (Strip Audio)"
 
 #: src/components/notifications/forms/discord-form.tsx:111
 #: src/components/notifications/forms/email-form.tsx:188
+#: src/components/notifications/forms/telegram-form.tsx:115
 #: src/components/notifications/forms/webhook-form.tsx:159
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:647
 #: src/components/streamers/config/streamer-general-settings.tsx:232
@@ -4616,7 +4640,7 @@ msgstr "Only supported for MP4/MOV/M4V"
 
 #: src/components/config/platforms/platform-card.tsx:83
 #: src/components/config/templates/template-card.tsx:110
-#: src/components/notifications/channel-card.tsx:148
+#: src/components/notifications/channel-card.tsx:174
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:152
 #: src/components/pipeline/outputs/output-card.tsx:128
 #: src/components/pipeline/presets/preset-card.tsx:170
@@ -4826,6 +4850,10 @@ msgstr "Parse Batch"
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:125
 msgid "Parse error: {0}"
 msgstr "Parse error: {0}"
+
+#: src/components/notifications/forms/telegram-form.tsx:78
+msgid "Parse Mode"
+msgstr "Parse Mode"
 
 #: src/components/player/url-input-form.tsx:230
 msgid "Parse Stream"
@@ -6094,7 +6122,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:240
-#: src/components/notifications/channel-form.tsx:326
+#: src/components/notifications/channel-form.tsx:339
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:161
 msgid "Select type"
 msgstr "Select type"
@@ -6568,7 +6596,7 @@ msgstr "streamlink"
 msgid "Streams & Metadata"
 msgstr "Streams & Metadata"
 
-#: src/components/notifications/channel-card.tsx:157
+#: src/components/notifications/channel-card.tsx:183
 msgid "Subscriptions"
 msgstr "Subscriptions"
 
@@ -6772,7 +6800,7 @@ msgstr "Temporarily Paused"
 msgid "Test"
 msgstr "Test"
 
-#: src/components/notifications/channel-card.tsx:161
+#: src/components/notifications/channel-card.tsx:187
 msgid "Test Notification"
 msgstr "Test Notification"
 
@@ -6865,7 +6893,7 @@ msgid "This will cancel all pending and processing jobs in this pipeline."
 msgstr "This will cancel all pending and processing jobs in this pipeline."
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/channel-card.tsx:178
+#: src/components/notifications/channel-card.tsx:204
 msgid "This will permanently delete the notification channel \"{0}\"."
 msgstr "This will permanently delete the notification channel \"{0}\"."
 
@@ -6966,7 +6994,7 @@ msgstr "Timing & Delays"
 msgid "Title"
 msgstr "Title"
 
-#: src/components/notifications/channel-card.tsx:92
+#: src/components/notifications/channel-card.tsx:95
 msgid "To"
 msgstr "To"
 
@@ -7156,7 +7184,7 @@ msgstr "Twitch Proxy Playlist"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch Proxy Playlist Exclude"
 
-#: src/components/notifications/channel-form.tsx:306
+#: src/components/notifications/channel-form.tsx:319
 msgid "Type"
 msgstr "Type"
 
@@ -7223,7 +7251,7 @@ msgstr "Untitled Stream"
 msgid "UPDATE"
 msgstr "UPDATE"
 
-#: src/components/notifications/channel-form.tsx:379
+#: src/components/notifications/channel-form.tsx:394
 msgid "Update Channel"
 msgstr "Update Channel"
 
@@ -7274,7 +7302,7 @@ msgstr "Upload file to cloud storage using rclone. Configure remote in rclone co
 msgid "Uptime"
 msgstr "Uptime"
 
-#: src/components/notifications/channel-card.tsx:104
+#: src/components/notifications/channel-card.tsx:130
 #: src/components/streamers/config/streamer-general-settings.tsx:66
 #: src/components/streamers/edit/streamer-meta-form.tsx:116
 #: src/components/streamers/progress-indicator.tsx:152
@@ -7499,7 +7527,7 @@ msgstr "Web Push is not supported in this browser"
 msgid "Web Push priority updated"
 msgstr "Web Push priority updated"
 
-#: src/components/notifications/channel-card.tsx:80
+#: src/components/notifications/channel-card.tsx:83
 #: src/components/notifications/forms/discord-form.tsx:36
 #: src/components/notifications/forms/webhook-form.tsx:70
 msgid "Webhook URL"

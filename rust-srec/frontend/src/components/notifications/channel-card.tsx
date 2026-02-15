@@ -108,7 +108,9 @@ export function ChannelCard({
                 <Trans>Bot Token</Trans>
               </span>
               <span className="text-[11px] font-medium truncate text-foreground/80">
-                {configObj.bot_token ? `${configObj.bot_token.slice(0, 6)}${'*'.repeat(20)}` : '...'}
+                {configObj.bot_token
+                  ? `${configObj.bot_token.slice(0, 6)}${'*'.repeat(20)}`
+                  : '...'}
               </span>
             </div>
             <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">

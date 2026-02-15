@@ -29,7 +29,12 @@ const TimestampMsSchema = z
     return ms;
   });
 
-export const ChannelTypeSchema = z.enum(['Discord', 'Email', 'Telegram', 'Webhook']);
+export const ChannelTypeSchema = z.enum([
+  'Discord',
+  'Email',
+  'Telegram',
+  'Webhook',
+]);
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
 // Settings schemas
