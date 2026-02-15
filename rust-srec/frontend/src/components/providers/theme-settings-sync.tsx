@@ -60,13 +60,19 @@ export function ThemeSettingsSync() {
     })),
   );
 
-  const [hydrated, setHydrated] = React.useState(false);
+  const [hydrated, setHydrated] = React.useState(() =>
+    useThemeSettings.persist.hasHydrated(),
+  );
   const [systemIsDark, setSystemIsDark] = React.useState(false);
 
   React.useEffect(() => {
+    if (hydrated) return;
+    const unsub = useThemeSettings.persist.onFinishHydration(() =>
+      setHydrated(true),
+    );
     void useThemeSettings.persist.rehydrate();
-    setHydrated(true);
-  }, []);
+    return unsub;
+  }, [hydrated]);
 
   React.useEffect(() => {
     if (theme !== 'system') return;

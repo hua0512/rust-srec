@@ -41,6 +41,7 @@ import { toast } from 'sonner';
 import { Loader2, Box } from 'lucide-react';
 import { DiscordForm } from './forms/discord-form';
 import { EmailForm } from './forms/email-form';
+import { TelegramForm } from './forms/telegram-form';
 import { WebhookForm } from './forms/webhook-form';
 import { removeEmpty } from '@/lib/format';
 
@@ -118,6 +119,18 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
             to_addresses: settings.to_addresses || [],
             use_tls: settings.use_tls ?? true,
             min_priority: settings.min_priority || 'High',
+            enabled: settings.enabled !== false,
+          },
+        });
+      } else if (channel.channel_type === 'Telegram') {
+        form.reset({
+          name: channel.name,
+          channel_type: 'Telegram',
+          settings: {
+            bot_token: settings.bot_token || '',
+            chat_id: settings.chat_id || '',
+            parse_mode: settings.parse_mode || 'HTML',
+            min_priority: settings.min_priority || 'Normal',
             enabled: settings.enabled !== false,
           },
         });
@@ -329,6 +342,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="Webhook">Webhook</SelectItem>
+                          <SelectItem value="Telegram">Telegram</SelectItem>
                           <SelectItem value="Discord">
                             Discord (Coming Soon)
                           </SelectItem>
@@ -359,6 +373,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
               {selectedType === 'Webhook' && <WebhookForm />}
               {selectedType === 'Discord' && <DiscordForm />}
               {selectedType === 'Email' && <EmailForm />}
+              {selectedType === 'Telegram' && <TelegramForm />}
             </div>
 
             <DialogFooter className="pt-4 border-t border-border/40">

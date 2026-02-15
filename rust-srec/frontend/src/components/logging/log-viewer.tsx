@@ -151,7 +151,7 @@ export function LogViewer() {
   const logIdRef = useRef(0);
   const pausedLogsRef = useRef<DisplayLogEvent[]>([]);
 
-  const { user: routeUser } = useRouteContext({ from: '__root__' }) as {
+  const { user: routeUser } = useRouteContext({ from: '/_authed' }) as {
     user?: any;
   };
   const { data: sessionData } = useQuery({
