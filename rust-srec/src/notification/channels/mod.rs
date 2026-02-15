@@ -3,14 +3,17 @@
 //! This module provides different channels for delivering notifications:
 //! - Discord webhooks
 //! - Email (SMTP)
+//! - Telegram Bot API
 //! - Generic webhooks (HTTP POST)
 
 mod discord;
 mod email;
+mod telegram;
 mod webhook;
 
 pub use discord::{DiscordChannel, DiscordConfig};
 pub use email::{EmailChannel, EmailConfig};
+pub use telegram::{TelegramChannel, TelegramConfig};
 pub use webhook::{WebhookAuth, WebhookChannel, WebhookConfig};
 
 use async_trait::async_trait;
@@ -43,6 +46,8 @@ pub enum ChannelConfig {
     Discord(DiscordConfig),
     /// Email channel.
     Email(EmailConfig),
+    /// Telegram Bot API channel.
+    Telegram(TelegramConfig),
     /// Generic webhook channel.
     Webhook(WebhookConfig),
 }
@@ -53,6 +58,7 @@ impl ChannelConfig {
         match self {
             Self::Discord(_) => "discord",
             Self::Email(_) => "email",
+            Self::Telegram(_) => "telegram",
             Self::Webhook(_) => "webhook",
         }
     }
@@ -62,6 +68,7 @@ impl ChannelConfig {
         match self {
             Self::Discord(c) => c.enabled,
             Self::Email(c) => c.enabled,
+            Self::Telegram(c) => c.enabled,
             Self::Webhook(c) => c.enabled,
         }
     }
@@ -71,6 +78,7 @@ impl ChannelConfig {
         match self {
             Self::Discord(c) => c.id.as_deref(),
             Self::Email(c) => c.id.as_deref(),
+            Self::Telegram(c) => c.id.as_deref(),
             Self::Webhook(c) => c.id.as_deref(),
         }
     }
@@ -80,6 +88,7 @@ impl ChannelConfig {
         match self {
             Self::Discord(c) => c.name.as_deref(),
             Self::Email(c) => c.name.as_deref(),
+            Self::Telegram(c) => c.name.as_deref(),
             Self::Webhook(c) => c.name.as_deref(),
         }
     }

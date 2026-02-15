@@ -27,6 +27,7 @@ import {
   Webhook,
   Mail,
   MessageSquare,
+  Send,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
@@ -41,12 +42,14 @@ interface ChannelCardProps {
 const CHANNEL_ICONS = {
   Discord: MessageSquare,
   Email: Mail,
+  Telegram: Send,
   Webhook: Webhook,
 };
 
 const CHANNEL_COLORS = {
   Discord: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
   Email: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+  Telegram: 'bg-sky-500/10 text-sky-500 border-sky-500/20',
   Webhook: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
 };
 
@@ -93,6 +96,27 @@ export function ChannelCard({
               </span>
               <span className="text-[11px] font-medium truncate text-foreground/80">
                 {(configObj.to_addresses || []).join(', ')}
+              </span>
+            </div>
+          </>
+        );
+      case 'Telegram':
+        return (
+          <>
+            <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
+              <span className="text-[9px] uppercase tracking-wider opacity-50">
+                <Trans>Bot Token</Trans>
+              </span>
+              <span className="text-[11px] font-medium truncate text-foreground/80">
+                {configObj.bot_token ? `${configObj.bot_token.slice(0, 6)}${'*'.repeat(20)}` : '...'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5 bg-muted/30 rounded-md px-2 py-1.5 border border-transparent group-hover:border-primary/5 transition-colors">
+              <span className="text-[9px] uppercase tracking-wider opacity-50">
+                <Trans>Chat ID</Trans>
+              </span>
+              <span className="text-[11px] font-medium truncate text-foreground/80">
+                {configObj.chat_id || '...'}
               </span>
             </div>
           </>
