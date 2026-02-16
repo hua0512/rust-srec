@@ -49,7 +49,7 @@ rand = "0.10.0"
 regex = { version = "1.12.3", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
 futures = "0.3.32"
 chrono = { version = "0.4.43", features = ["serde"] }
-uuid = { version = "1.20.0", features = ["v4", "serde"] }
+uuid = { version = "1.21.0", features = ["v4", "serde"] }
 prost = "0.14.3"
 prost-types = "0.14.3"
 prost-build = "0.14.3"
