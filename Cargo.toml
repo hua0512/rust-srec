@@ -89,7 +89,7 @@ base64 = "0.22.1"
 byteorder = "1.5"
 brotli = "8.0"
 openssl = { version = "0.10", features = ["vendored"] }
-native-tls = "0.2.14"
+native-tls = "0.2.16"
 rustls = { version = "0.23.36", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
 rustls-platform-verifier = "0.6.2"
 libsm = "0.6.0"
