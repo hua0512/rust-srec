@@ -69,7 +69,7 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 mimalloc = "0.1.48"
 argon2 = "0.5"
-zip = { version = "7.4", default-features = false, features = ["deflate"] }
+zip = { version = "8.0", default-features = false, features = ["deflate"] }
 tar = "0.4"
 strum = { version = "0.27.2", features = ["derive"] }
 json-patch = "4.1"
