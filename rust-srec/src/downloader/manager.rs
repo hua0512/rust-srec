@@ -667,15 +667,36 @@ impl DownloadManager {
         })
     }
 
-    /// Helper to merge a base config with JSON overrides
+    /// Helper to merge a base config with JSON overrides (RFC 7386 JSON Merge Patch).
     fn merge_config_json<T: Serialize>(
         base: &T,
         override_val: &serde_json::Value,
     ) -> Result<serde_json::Value> {
         let mut base_val =
             serde_json::to_value(base).map_err(|e| crate::Error::Other(e.to_string()))?;
-        json_patch::merge(&mut base_val, override_val);
+        Self::json_merge(&mut base_val, override_val);
         Ok(base_val)
+    }
+
+    /// RFC 7386 JSON Merge Patch: recursively merge `patch` into `target`.
+    fn json_merge(target: &mut serde_json::Value, patch: &serde_json::Value) {
+        if let serde_json::Value::Object(patch_map) = patch {
+            if !target.is_object() {
+                *target = serde_json::Value::Object(serde_json::Map::new());
+            }
+            let target_map = target.as_object_mut().unwrap();
+            for (key, value) in patch_map {
+                if value.is_null() {
+                    target_map.remove(key);
+                } else if let Some(existing) = target_map.get_mut(key) {
+                    Self::json_merge(existing, value);
+                } else {
+                    target_map.insert(key.clone(), value.clone());
+                }
+            }
+        } else {
+            *target = patch.clone();
+        }
     }
 
     fn hash_override(override_val: &serde_json::Value) -> u64 {

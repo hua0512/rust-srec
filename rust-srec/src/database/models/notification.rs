@@ -31,19 +31,7 @@ impl NotificationChannelDbModel {
 }
 
 /// Notification channel types.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    strum::Display,
-    strum::EnumString,
-    utoipa::ToSchema,
-)]
-#[strum(serialize_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "PascalCase")]
 pub enum ChannelType {
     Discord,
@@ -70,6 +58,12 @@ impl ChannelType {
             "webhook" => Some(Self::Webhook),
             _ => None,
         }
+    }
+}
+
+impl std::fmt::Display for ChannelType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -213,9 +207,7 @@ pub struct WebPushSubscriptionDbModel {
 }
 
 /// System event names for notifications.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SystemEvent {
     StreamOnline,
     StreamOffline,
@@ -251,6 +243,12 @@ impl SystemEvent {
             Self::DiskSpaceWarning => "DiskSpaceWarning",
             Self::DiskSpaceCritical => "DiskSpaceCritical",
         }
+    }
+}
+
+impl std::fmt::Display for SystemEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

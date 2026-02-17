@@ -6,7 +6,7 @@ pub enum CliError {
     Network(#[from] reqwest::Error),
 
     #[error("Configuration error: {0}")]
-    Config(#[from] confy::ConfyError),
+    Config(#[from] toml::de::Error),
 
     #[error("Generic error: {0}")]
     Generic(#[from] anyhow::Error),

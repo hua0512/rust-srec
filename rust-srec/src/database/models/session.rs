@@ -171,10 +171,7 @@ impl MediaOutputDbModel {
 }
 
 /// Media file types.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
-)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MediaFileType {
     Video,
@@ -201,6 +198,12 @@ impl MediaFileType {
             "DANMU_XML" => Some(Self::DanmuXml),
             _ => None,
         }
+    }
+}
+
+impl std::fmt::Display for MediaFileType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

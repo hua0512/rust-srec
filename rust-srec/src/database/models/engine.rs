@@ -31,19 +31,7 @@ impl EngineConfigurationDbModel {
 }
 
 /// Engine types.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    strum::Display,
-    strum::EnumString,
-    utoipa::ToSchema,
-)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EngineType {
     Ffmpeg,
@@ -66,6 +54,25 @@ impl EngineType {
             "STREAMLINK" => Some(Self::Streamlink),
             "MESIO" => Some(Self::Mesio),
             _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for EngineType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for EngineType {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "FFMPEG" => Ok(Self::Ffmpeg),
+            "STREAMLINK" => Ok(Self::Streamlink),
+            "MESIO" => Ok(Self::Mesio),
+            _ => Err(format!("Unknown engine type: {s}")),
         }
     }
 }

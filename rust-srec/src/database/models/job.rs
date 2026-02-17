@@ -377,10 +377,7 @@ impl JobDbModel {
 }
 
 /// Job status values.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
-)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum JobStatus {
     /// Job is queued and waiting to be picked up by a worker.
@@ -420,6 +417,12 @@ impl JobStatus {
     /// Check if this is a terminal status.
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Completed | Self::Failed)
+    }
+}
+
+impl std::fmt::Display for JobStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -871,10 +874,7 @@ impl DagPipelineDefinition {
 }
 
 /// Status of a DAG step execution.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
-)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DagStepStatus {
     /// Step is waiting for dependencies to complete.
@@ -921,11 +921,14 @@ impl DagStepStatus {
     }
 }
 
+impl std::fmt::Display for DagStepStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Status of a DAG execution.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
-)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DagExecutionStatus {
     /// DAG is pending (not yet started).
@@ -965,6 +968,12 @@ impl DagExecutionStatus {
     /// Check if this is a terminal status.
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Completed | Self::Failed)
+    }
+}
+
+impl std::fmt::Display for DagExecutionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

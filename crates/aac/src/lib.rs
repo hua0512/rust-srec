@@ -14,8 +14,6 @@
 use std::io;
 
 use bytes_util::BitReader;
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 
 /// A Partial Audio Specific Config
 /// ISO/IEC 14496-3:2019(E) - 1.6
@@ -85,7 +83,7 @@ impl From<AudioObjectType> for u16 {
 /// in the specification.
 ///
 /// ISO/IEC 14496-3:2019(E) - 1.6.2.4 (Table 1.22)
-#[derive(FromPrimitive, Debug, Clone, PartialEq, Copy, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Copy, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 #[must_use]
 pub enum SampleFrequencyIndex {
@@ -125,6 +123,29 @@ pub enum SampleFrequencyIndex {
 }
 
 impl SampleFrequencyIndex {
+    /// Convert a `u8` to a `SampleFrequencyIndex`, returning `None` for invalid values.
+    pub const fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0x0 => Some(Self::Freq96000),
+            0x1 => Some(Self::Freq88200),
+            0x2 => Some(Self::Freq64000),
+            0x3 => Some(Self::Freq48000),
+            0x4 => Some(Self::Freq44100),
+            0x5 => Some(Self::Freq32000),
+            0x6 => Some(Self::Freq24000),
+            0x7 => Some(Self::Freq22050),
+            0x8 => Some(Self::Freq16000),
+            0x9 => Some(Self::Freq12000),
+            0xA => Some(Self::Freq11025),
+            0xB => Some(Self::Freq8000),
+            0xC => Some(Self::Freq7350),
+            0xD => Some(Self::FreqReserved),
+            0xE => Some(Self::FreqReserved2),
+            0xF => Some(Self::FreqEscape),
+            _ => None,
+        }
+    }
+
     /// Convert the SampleFrequencyIndex to the actual frequency in Hz
     pub const fn to_freq(&self) -> Option<u32> {
         match self {

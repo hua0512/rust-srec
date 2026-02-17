@@ -7,7 +7,6 @@
 use bytes::Bytes;
 use flv::{data::FlvData, parser_async::FlvDecoderStream};
 use futures::StreamExt;
-use humansize::{BINARY, format_size};
 use reqwest::{Response, StatusCode, Url};
 use std::sync::Arc;
 use std::time::Instant;
@@ -29,6 +28,26 @@ use tokio_util::sync::CancellationToken;
 
 // Import new capability-based traits
 use crate::{Cacheable, Download, MultiSource, ProtocolBase, RawDownload, RawResumable, Resumable};
+
+/// Format a byte count as a human-readable binary size (e.g. "1.5 MiB").
+fn format_size_binary(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
+    if bytes == 0 {
+        return "0 B".to_string();
+    }
+    let mut size = bytes as f64;
+    for &unit in UNITS {
+        if size < 1024.0 {
+            return if size.fract() < 0.05 {
+                format!("{:.0} {}", size, unit)
+            } else {
+                format!("{:.2} {}", size, unit)
+            };
+        }
+        size /= 1024.0;
+    }
+    format!("{:.2} PiB", size)
+}
 
 /// FLV Downloader for streaming FLV content from URLs
 pub struct FlvDownloader {
@@ -153,7 +172,7 @@ impl FlvDownloader {
         if let Some(content_length) = response.content_length() {
             info!(
                 url = %url,
-                size = %format_size(content_length, BINARY),
+                size = %format_size_binary(content_length),
                 "FLV download started"
             );
 

@@ -65,10 +65,7 @@ impl StreamerDbModel {
 }
 
 /// Streamer operational states.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
-)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum StreamerState {
     /// The streamer is offline.
@@ -145,6 +142,12 @@ impl StreamerState {
             (FatalError, TemporalDisabled) => true,
             _ => false,
         }
+    }
+}
+
+impl std::fmt::Display for StreamerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

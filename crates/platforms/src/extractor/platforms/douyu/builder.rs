@@ -815,7 +815,7 @@ impl Douyu {
         .replace("huos1.", "huosa.");
 
         let mut query = stream_info.query_params.clone();
-        let encoded_url = urlencoding::encode(tencent_url).to_string();
+        let encoded_url = percent_encoding::utf8_percent_encode(tencent_url, percent_encoding::NON_ALPHANUMERIC).to_string();
         query.insert("fp_user_url".to_string(), encoded_url);
         query.insert("vhost".to_string(), tx_host.to_string());
         query.insert("domain".to_string(), tx_host.to_string());
@@ -836,7 +836,7 @@ impl Douyu {
         keys.into_iter()
             .map(|k| {
                 let v = params.get(k).map(String::as_str).unwrap_or_default();
-                format!("{}={}", k, urlencoding::encode(v))
+                format!("{}={}", k, percent_encoding::utf8_percent_encode(v, percent_encoding::NON_ALPHANUMERIC))
             })
             .collect::<Vec<_>>()
             .join("&")

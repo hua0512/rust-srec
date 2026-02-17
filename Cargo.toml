@@ -36,8 +36,8 @@ edition = "2024"
 
 [workspace.dependencies]
 bytes = "1.11.1"
-tokio = { version = "1.49.0", features = ["full"] }
-tokio-util = { version = "0.7.18", features = ["full"] }
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "net", "process", "signal", "sync", "time"] }
+tokio-util = { version = "0.7.18", features = ["codec", "io", "rt", "time"] }
 reqwest = { version = "0.12.26", default-features = false, features = ["json", "stream", "rustls-tls-webpki-roots-no-provider", "gzip", "deflate"] }
 serde = { version = "1.0.217", features = ["derive", "rc"] }
 serde_json = "1.0.149"
@@ -59,7 +59,6 @@ hex = "0.4.3"
 flate2 = { version = "1.1.9", features = ["zlib-rs"], default-features = false }
 url = "2.5.8"
 anyhow = "1.0.95"
-tower = { version = "0.5.3", features = ["full"] }
 tower-http = { version = "0.6.8", features = ["cors", "trace", "request-id", "fs"] }
 tempfile = "3.25.0"
 axum = { version = "0.8.4", features = ["ws"] }
@@ -71,20 +70,14 @@ mimalloc = "0.1.48"
 argon2 = "0.5"
 zip = { version = "8.0", default-features = false, features = ["deflate"] }
 tar = "0.4"
-strum = { version = "0.27.2", features = ["derive"] }
-json-patch = "4.1"
 chrono-tz = "0.10"
 cron = "0.15"
 dotenvy = "0.15"
 sysinfo = { version = "0.38" }
 tracing-appender = "0.2"
-mockall = "0.14.0"
-rstest = "0.26.1"
-itertools = "0.14.0"
 tokio-tungstenite = { version = "0.28.0", default-features = false, features = ["connect"] }
 m3u8-rs = "6.0.0"
 md-5 = "0.10.6"
-urlencoding = "2.1"
 base64 = "0.22.1"
 byteorder = "1.5"
 brotli = "8.0"
@@ -93,7 +86,6 @@ native-tls = "0.2.16"
 rustls = { version = "0.23.36", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
 rustls-platform-verifier = "0.6.2"
 libsm = "0.6.0"
-rsa = { version = "0.9.10", features = ["sha2"] }
 rustc-hash = "2.1"
 memchr = "2.7.6"
 criterion = "0.8.1"

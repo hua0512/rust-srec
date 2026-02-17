@@ -78,15 +78,23 @@ impl AppConfig {
                 }
             }
             None => {
-                // Use confy for default location
-                confy::load("streev-cli", None).context("Failed to load configuration")
+                // Use dirs for default location
+                let path = Self::default_config_path();
+                match path {
+                    Some(p) if p.exists() => {
+                        let content = std::fs::read_to_string(&p)
+                            .context("Failed to read configuration file")?;
+                        toml::from_str(&content).context("Failed to parse configuration file")
+                    }
+                    _ => Ok(Self::default()),
+                }
             }
         }
     }
 
     /// Get default configuration file path
     pub fn default_config_path() -> Option<PathBuf> {
-        confy::get_configuration_file_path("streev-cli", None).ok()
+        dirs::config_dir().map(|d| d.join("streev-cli").join("default-config.toml"))
     }
 
     /// Save configuration to file

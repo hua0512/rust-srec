@@ -64,10 +64,7 @@ impl FilterDbModel {
 }
 
 /// Filter types.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
-)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FilterType {
     /// Time-based filter with days of week and time ranges.
@@ -102,6 +99,12 @@ impl FilterType {
             "REGEX" => Some(Self::Regex),
             _ => None,
         }
+    }
+}
+
+impl std::fmt::Display for FilterType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

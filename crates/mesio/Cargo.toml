@@ -28,7 +28,6 @@ m3u8-rs = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-humansize = "2.0.0"
 rand = { workspace = true }
 parking_lot = { workspace = true }
 rustls = { workspace = true }
