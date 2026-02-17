@@ -324,11 +324,7 @@ impl WebPushService {
             .try_into()
             .map_err(|_| Error::Other("Invalid auth secret length".to_string()))?;
 
-        let (body, salt_b64, dh_b64) =
-            encrypt_aes128gcm(&payload_bytes, &client_pub_raw, &client_auth)?;
-
-        let mut crypto_key = format!("dh={}", dh_b64);
-        crypto_key.push_str(&format!("; p256ecdsa={}", self.config.vapid_public_key_b64));
+        let body = encrypt_aes128gcm(&payload_bytes, &client_pub_raw, &client_auth)?;
 
         let authorization = format!("vapid t={}, k={}", jwt, self.config.vapid_public_key_b64);
 
@@ -343,10 +339,9 @@ impl WebPushService {
             .client
             .post(&sub.endpoint)
             .header("TTL", "3600")
+            // For aes128gcm, salt/server key are encoded in the payload body (RFC8291).
             .header("Content-Encoding", "aes128gcm")
             .header("Content-Type", "application/octet-stream")
-            .header("Encryption", format!("salt={}", salt_b64))
-            .header("Crypto-Key", crypto_key.clone())
             .header("Authorization", authorization.clone())
             .header("Urgency", urgency)
             .body(body.clone())
@@ -370,8 +365,6 @@ impl WebPushService {
                 .header("TTL", "3600")
                 .header("Content-Encoding", "aes128gcm")
                 .header("Content-Type", "application/octet-stream")
-                .header("Encryption", format!("salt={}", salt_b64))
-                .header("Crypto-Key", crypto_key)
                 .header("Authorization", authorization)
                 .header("Urgency", urgency)
                 .body(body)
@@ -635,7 +628,7 @@ fn encrypt_aes128gcm(
     plaintext: &[u8],
     remote_public_key_raw: &[u8; PUBLIC_KEY_LEN],
     auth_secret: &[u8; AUTH_SECRET_LEN],
-) -> Result<(Vec<u8>, String, String)> {
+) -> Result<Vec<u8>> {
     if plaintext.is_empty() {
         return Err(Error::Other("Web push payload cannot be empty".to_string()));
     }
@@ -692,10 +685,7 @@ fn encrypt_aes128gcm(
     body.extend_from_slice(&local_pub_raw);
     body.extend_from_slice(&ciphertext);
 
-    let salt_b64 = encode_b64url(&salt);
-    let dh_b64 = encode_b64url(&local_pub_raw);
-
-    Ok((body, salt_b64, dh_b64))
+    Ok(body)
 }
 
 fn build_vapid_jwt_with_exp(
