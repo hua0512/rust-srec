@@ -90,12 +90,16 @@ impl TelegramChannel {
 
         let title = event.title();
         let description = event.description();
-        let priority = event.priority();
-        let event_type = event.event_type();
+        let priority = event.priority().to_string();
+        let event_type = event.event_type().to_string();
 
-        let text = if self.config.parse_mode == "HTML" {
+        let text = if self.config.parse_mode.eq_ignore_ascii_case("HTML") {
+            let escaped_title = escape_telegram_html(&title);
+            let escaped_description = escape_telegram_html(&description);
+            let escaped_priority = escape_telegram_html(&priority);
+            let escaped_event_type = escape_telegram_html(&event_type);
             format!(
-                "{emoji} <b>{title}</b>\n\n{description}\n\n<i>Priority: {priority} | Type: {event_type}</i>"
+                "{emoji} <b>{escaped_title}</b>\n\n{escaped_description}\n\n<i>Priority: {escaped_priority} | Type: {escaped_event_type}</i>"
             )
         } else {
             format!(
@@ -219,6 +223,13 @@ impl NotificationChannel for TelegramChannel {
     }
 }
 
+fn escape_telegram_html(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 /// Truncate a message to fit within the Telegram character limit.
 fn truncate_message(text: &str, limit: usize) -> String {
     if text.chars().count() <= limit {
@@ -282,6 +293,31 @@ mod tests {
         let msg = channel.build_message(&event);
         assert!(msg.contains("<b>"));
         assert!(msg.contains("1.0.0"));
+    }
+
+    #[test]
+    fn test_build_message_html_escapes_dynamic_content() {
+        let config = TelegramConfig {
+            enabled: true,
+            bot_token: "tok".to_string(),
+            chat_id: "123".to_string(),
+            parse_mode: "html".to_string(),
+            ..Default::default()
+        };
+        let channel = TelegramChannel::new(config);
+        let event = NotificationEvent::StreamOnline {
+            streamer_id: "sid".to_string(),
+            streamer_name: "Alice <admin>".to_string(),
+            title: "live <script>alert(1)</script> & chill".to_string(),
+            category: Some("a<b".to_string()),
+            timestamp: chrono::Utc::now(),
+        };
+
+        let msg = channel.build_message(&event);
+
+        assert!(msg.contains("&lt;admin&gt;"));
+        assert!(msg.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(msg.contains("&amp; chill"));
     }
 
     #[test]
