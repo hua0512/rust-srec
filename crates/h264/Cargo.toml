@@ -1,7 +1,8 @@
 [package]
 name = "h264"
 version = "0.1.1"
-edition = "2024"
+edition.workspace = true
+license.workspace = true
 
 
 [lints.rust]

@@ -1,9 +1,9 @@
 [package]
 name = "mp4"
 version = "0.1.1"
-edition = "2024"
+edition.workspace = true
 description = "Minimal MP4/fMP4 helpers (ISOBMFF init parsing)"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

@@ -1,9 +1,9 @@
 [package]
 name = "pipeline-common"
 version = "0.1.2"
-edition = "2024"
+edition.workspace = true
 description = "Common traits and implementations for media processing pipelines"
-license = "MIT"
+license.workspace = true
 
 
 [dependencies]

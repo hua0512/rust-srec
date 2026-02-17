@@ -1,7 +1,8 @@
 [package]
 name = "h265"
 version = "0.1.1"
-edition = "2024"
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
 bytes = { workspace = true }

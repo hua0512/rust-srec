@@ -1,9 +1,9 @@
 [package]
 name = "mesio"
 version = "0.3.9"
-edition = "2024"
+edition.workspace = true
 description = "Mesio (media) streaming downloader CLI"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 repository = "https://github.com/hua0512/rust-srec"
 
 [dependencies]

@@ -1,7 +1,8 @@
 [package]
 name = "hls-fix"
 version = "0.1.7"
-edition = "2024"
+edition.workspace = true
+license.workspace = true
 description = "HLS processing toolkit"
 
 [dependencies]

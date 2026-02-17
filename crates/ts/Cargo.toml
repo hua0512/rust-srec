@@ -3,8 +3,8 @@ name = "ts"
 version = "0.1.3"
 authors = ["hua0512"]
 repository = "https://github.com/hua0512/rust-srec"
-license = "MIT OR Apache-2.0"
-edition = "2024"
+license.workspace = true
+edition.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }

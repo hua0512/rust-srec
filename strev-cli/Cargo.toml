@@ -1,10 +1,10 @@
 [package]
 name = "strev"
 version = "0.2.0"
-edition = "2024"
+edition.workspace = true
 description = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms"
 authors = ["rust-srec team"]
-license = "MIT OR Apache-2.0"
+license.workspace = true
 repository = "https://github.com/hua0512/rust-srec"
 
 [dependencies]

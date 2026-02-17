@@ -1,10 +1,10 @@
 [package]
 name = "platforms-parser"
 version = "0.2.0"
-edition = "2024"
+edition.workspace = true
 description = "A library for extracting streaming data from various online platforms."
 repository = "https://github.com/hua0512/rust-srec"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 keywords = ["streaming", "extractor", "downloader"]
 categories = ["multimedia::streaming", "api-bindings"]
 

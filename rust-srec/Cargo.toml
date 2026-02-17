@@ -1,9 +1,9 @@
 [package]
 name = "rust-srec"
 version.workspace = true
-edition = "2024"
+edition.workspace = true
 description = "An automatic online streaming recorder"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 repository = "https://github.com/hua0512/rust-srec"
 
 [dependencies]
