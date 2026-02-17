@@ -100,12 +100,15 @@ export const SessionCard = memo(
     return (
       <Card
         className={cn(
-          'flex flex-col h-full bg-card/20 backdrop-blur-3xl border-white/5 shadow-[0_4px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.2)] hover:-translate-y-1.5 transition-all duration-700 group relative overflow-hidden rounded-2xl',
+          'flex flex-col h-full bg-card border border-border/50 shadow-[0_2px_12px_rgba(0,0,0,0.08)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.15)] hover:-translate-y-0.5 hover:border-primary/25 transition-[transform,box-shadow,border-color] duration-300 ease-out group relative overflow-hidden rounded-2xl',
           selectionMode && 'cursor-pointer',
           isSelected && 'ring-2 ring-primary border-primary/50',
         )}
         onClick={handleCardClick}
       >
+        {/* Subtle corner tint */}
+        <div className="absolute top-0 left-0 w-1/2 h-1/2 bg-gradient-to-br from-primary/[0.03] to-transparent pointer-events-none" />
+
         {/* Selection Checkbox Indicator */}
         {selectionMode && (
           <div className="absolute top-3.5 right-3.5 z-30">
@@ -133,14 +136,9 @@ export const SessionCard = memo(
           </div>
         )}
 
-        {/* Dynamic Background Beam */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
-        <div className="absolute -top-[10%] -left-[10%] w-[120%] h-[20%] bg-gradient-to-r from-transparent via-primary/10 to-transparent rotate-45 translate-y-[-100%] group-hover:translate-y-[500%] transition-transform duration-[2s] ease-in-out pointer-events-none" />
-
         <CardHeader className="p-3.5 pb-0 flex-row gap-3 space-y-0 items-start relative z-10">
           <div className="relative shrink-0 pt-0.5">
-            <div className="absolute inset-0 bg-primary/20 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 scale-125" />
-            <Avatar className="h-10 w-10 border-2 border-white/10 shadow-xl transition-all duration-500 group-hover:scale-105 group-hover:border-primary/50 ring-4 ring-black/5">
+            <Avatar className="h-10 w-10 border-2 border-white/10 shadow-xl transition-colors duration-300 group-hover:border-primary/30 ring-4 ring-black/5">
               {session.streamer_avatar && (
                 <AvatarImage
                   src={getProxiedUrl(session.streamer_avatar)}
@@ -178,7 +176,7 @@ export const SessionCard = memo(
               )}
             </div>
             <h3
-              className="text-[14px] font-bold leading-tight tracking-tight text-foreground/90 line-clamp-2 transition-colors duration-500 group-hover:text-primary min-h-[1.25rem]"
+              className="text-[14px] font-bold leading-tight tracking-tight text-foreground/90 line-clamp-2 transition-colors duration-300 group-hover:text-foreground min-h-[1.25rem]"
               title={session.title}
             >
               {session.title || <Trans>Untitled Stream</Trans>}
@@ -188,7 +186,7 @@ export const SessionCard = memo(
 
         <CardContent className="p-4 pt-1 pb-4 relative z-10 flex-1">
           <div className="flex flex-col gap-2.5">
-            <div className="flex items-center gap-2 text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors">
+            <div className="flex items-center gap-2 text-muted-foreground/40">
               <Calendar className="h-3 w-3 text-blue-400/70" />
               <span className="text-[10px] font-black uppercase tracking-widest leading-none">
                 {i18n.date(new Date(session.start_time), {

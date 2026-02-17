@@ -436,8 +436,8 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:102
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:203
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:283
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:170
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:490
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:173
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:457
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:70
 msgid "All"
 msgstr "全部"
@@ -450,7 +450,7 @@ msgstr "所有级别"
 msgid "All Platforms"
 msgstr "所有平台"
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:176
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:179
 msgid "All Time"
 msgstr "全部时间"
 
@@ -517,7 +517,7 @@ msgid "Archive to Cloud"
 msgstr "云端归档"
 
 #. placeholder {0}: selectedIds.size
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:245
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:237
 msgid "Are you sure you want to delete {0} sessions? This action cannot be undone."
 msgstr "你确定要删除 {0} 个会话吗？此操作无法撤销。"
 
@@ -1556,7 +1556,7 @@ msgstr "当前密码"
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:74
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:350
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:337
 msgid "Custom"
 msgstr "自定义"
 
@@ -1741,9 +1741,9 @@ msgstr "延迟、代理与保留策略。"
 #: src/components/pipeline/presets/preset-templates.ts:65
 #: src/components/pipeline/workflows/workflow-card.tsx:178
 #: src/components/pipeline/workflows/workflow-card.tsx:201
-#: src/components/sessions/session-card.tsx:288
+#: src/components/sessions/session-card.tsx:286
 #: src/components/streamers/card/stream-actions-menu.tsx:98
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:519
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:481
 msgid "Delete"
 msgstr "删除"
 
@@ -1914,7 +1914,7 @@ msgstr "磁盘"
 msgid "Disk Space"
 msgstr "磁盘空间"
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:172
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:175
 msgid "Done"
 msgstr "已完成"
 
@@ -2444,7 +2444,7 @@ msgstr "专家模式：直接编辑原始的平台特定配置。"
 msgid "Explicit TTWID cookie value to use for all requests."
 msgstr "用于所有请求的显式 TTWID Cookie 值。"
 
-#: src/components/sessions/session-card.tsx:235
+#: src/components/sessions/session-card.tsx:233
 msgid "Explore"
 msgstr "浏览"
 
@@ -2608,7 +2608,7 @@ msgstr "删除预设失败：{0}"
 msgid "Failed to delete session"
 msgstr "删除会话失败"
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:263
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:255
 msgid "Failed to delete sessions"
 msgstr "删除会话失败"
 
@@ -3672,7 +3672,7 @@ msgstr "允许的文件扩展名列表（不含点号）。"
 #: src/components/streamers/card/use-streamer-status.tsx:167
 #: src/components/streamers/edit/recent-sessions-list.tsx:75
 #: src/components/streamers/edit/streamer-header.tsx:63
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:171
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:174
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:71
 msgid "Live"
 msgstr "直播"
@@ -3828,10 +3828,6 @@ msgstr "主程序"
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:333
 msgid "Maintenance"
 msgstr "维护"
-
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:454
-msgid "Manage"
-msgstr "管理"
 
 #: src/components/config/shared/network-settings-card.tsx:165
 msgid "Manage credentials and session cookies."
@@ -4104,7 +4100,7 @@ msgstr "监控此主播"
 msgid "Monitoring Stopped"
 msgstr "已停止监控"
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:180
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:183
 msgid "Month"
 msgstr "本月"
 
@@ -4227,7 +4223,7 @@ msgstr "下一步"
 msgid "No active recordings"
 msgstr "暂无正在录制"
 
-#: src/components/sessions/session-list.tsx:75
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:593
 msgid "No Archives Found"
 msgstr "未找到归档"
 
@@ -4458,7 +4454,7 @@ msgstr "暂无工作流"
 
 #: src/components/notifications/forms/webhook-form.tsx:252
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:333
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:499
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:466
 msgid "None"
 msgstr "无"
 
@@ -5553,6 +5549,7 @@ msgstr "录制内容"
 
 #: src/components/config/shared/network-settings-card.tsx:199
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:375
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:608
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:138
 msgid "Refresh"
 msgstr "刷新"
@@ -5560,10 +5557,6 @@ msgstr "刷新"
 #: src/components/config/shared/network-settings-card.tsx:138
 msgid "Refresh failed: Manual login required"
 msgstr "刷新失败：需要手动登录"
-
-#: src/components/sessions/session-list.tsx:90
-msgid "REFRESH LIBRARY"
-msgstr "刷新库"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:55
 msgid "Regex"
@@ -5757,7 +5750,7 @@ msgstr "返回上一页"
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "处理管道步骤可复用的处理器配置"
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:280
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:267
 msgid "Review recorded streams and manage archives"
 msgstr "查看录制内容并管理归档"
 
@@ -5967,7 +5960,7 @@ msgstr "搜索平台..."
 msgid "Search presets..."
 msgstr "搜索预设..."
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:289
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:276
 msgid "Search sessions..."
 msgstr "搜索录制会话..."
 
@@ -6135,7 +6128,7 @@ msgstr "选择你偏好的配色方案。"
 msgid "selected"
 msgstr "已选"
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:479
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:447
 msgid "Selected"
 msgstr "已选择"
 
@@ -6207,7 +6200,7 @@ msgstr "会话 ID 是必需的"
 msgid "Session is not running"
 msgstr "会话未运行"
 
-#: src/components/sessions/session-card.tsx:256
+#: src/components/sessions/session-card.tsx:254
 msgid "Session Menu"
 msgstr "会话菜单"
 
@@ -6230,7 +6223,7 @@ msgstr "会话缩略图"
 #: src/components/layout/site-header.tsx:29
 #: src/components/sidebar/navbar.tsx:23
 #: src/lib/menu-list.ts:64
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:279
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:266
 msgid "Sessions"
 msgstr "录制会话"
 
@@ -6615,7 +6608,7 @@ msgid "Subtitle Matching"
 msgstr "字幕匹配"
 
 #. placeholder {0}: result.deleted
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:256
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:248
 msgid "Successfully deleted {0} sessions"
 msgstr "成功删除 {0} 个会话"
 
@@ -7002,7 +6995,7 @@ msgstr "收件人"
 msgid "To Addresses"
 msgstr "收件人地址"
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:177
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:180
 msgid "Today"
 msgstr "今天"
 
@@ -7243,7 +7236,7 @@ msgstr "直到"
 msgid "Untitled Session"
 msgstr "无标题会话"
 
-#: src/components/sessions/session-card.tsx:184
+#: src/components/sessions/session-card.tsx:182
 msgid "Untitled Stream"
 msgstr "无标题直播"
 
@@ -7469,7 +7462,7 @@ msgid "View Detailed Logs & Outputs"
 msgstr "查看详细日志与输出"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:164
-#: src/components/sessions/session-card.tsx:271
+#: src/components/sessions/session-card.tsx:269
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:198
 msgid "View Details"
 msgstr "查看详情"
@@ -7533,7 +7526,7 @@ msgstr "Web 推送优先级已更新"
 msgid "Webhook URL"
 msgstr "Webhook URL"
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:179
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:182
 msgid "Week"
 msgstr "本周"
 
@@ -7613,11 +7606,11 @@ msgstr "X-Auth-Key"
 msgid "Year (4 digits)"
 msgstr "年 (4 位数字)"
 
-#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:178
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:181
 msgid "Yesterday"
 msgstr "昨天"
 
-#: src/components/sessions/session-list.tsx:78
+#: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:596
 msgid "Your digital library is currently empty. Start recording to populate your sessions here."
 msgstr "你的数字库目前为空。开始录制以在此显示会话。"
 

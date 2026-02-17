@@ -16,8 +16,9 @@ import {
   CalendarDays,
   X,
   CheckSquare,
-  Square,
   Trash2,
+  LayoutGrid,
+  RefreshCcw,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
@@ -43,6 +44,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { SearchInput } from '@/components/sessions/search-input';
 import { toast } from 'sonner';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/sessions/')({
   component: SessionsPage,
@@ -127,6 +129,7 @@ function SessionsPage() {
         },
       }),
     placeholderData: keepPreviousData,
+    staleTime: 30000,
   });
 
   const updateSearch = (newParams: Partial<typeof search>) => {
@@ -194,17 +197,6 @@ function SessionsPage() {
     to: search.to ? new Date(search.to) : undefined,
   };
 
-  // Animation variants matching dashboard
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
-    },
-  };
-
   // Selection handlers
   const handleSelectionChange = useCallback((id: string, selected: boolean) => {
     setSelectedIds((prev) => {
@@ -267,12 +259,7 @@ function SessionsPage() {
   }, [selectedIds, i18n, queryClient]);
 
   return (
-    <motion.div
-      className="min-h-screen space-y-6 bg-gradient-to-br from-background via-background to-muted/20"
-      variants={container}
-      initial="hidden"
-      animate="show"
-    >
+    <div className="min-h-screen space-y-6 bg-gradient-to-br from-background via-background to-muted/20">
       {/* Header */}
       <DashboardHeader
         icon={Film}
@@ -425,127 +412,203 @@ function SessionsPage() {
                 <X className="h-4 w-4" />
               </Button>
             )}
-
-            <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
-
-            {/* Selection Mode Toggle */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleSelectionMode}
-              className={cn(
-                'h-9 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-500 shrink-0 border border-white/5',
-                selectionMode
-                  ? 'bg-primary text-primary-foreground border-primary/50 shadow-[0_0_20px_rgba(var(--primary),0.3)] hover:bg-primary/90'
-                  : 'bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50',
-              )}
-            >
-              <motion.div
-                animate={{ scale: selectionMode ? [1, 1.2, 1] : 1 }}
-                transition={{ duration: 0.4 }}
-                className="mr-2"
-              >
-                {selectionMode ? (
-                  <CheckSquare className="h-4 w-4" />
-                ) : (
-                  <Square className="h-4 w-4 text-muted-foreground/50" />
-                )}
-              </motion.div>
-              <Trans>Manage</Trans>
-            </Button>
           </>
         }
       />
 
-      {/* Batch Delete FAB (Bottom Floating Bar) */}
-      <AnimatePresence>
-        {selectionMode && (
-          <motion.div
-            initial={{ opacity: 0, y: 100, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={{ opacity: 0, y: 100, x: '-50%' }}
-            className="fixed bottom-8 left-1/2 z-50 min-w-[320px] max-w-[90vw]"
-          >
-            <div className="relative overflow-hidden rounded-full border border-white/10 shadow-[0_25px_60px_rgba(0,0,0,0.6)] bg-background/40 backdrop-blur-3xl p-1.5 flex items-center gap-2">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-primary/10 opacity-30 pointer-events-none" />
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_100%,rgba(var(--primary),0.15),transparent_60%)] pointer-events-none" />
-
-              {/* Selection Count Badge */}
-              <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-primary/20 border border-primary/30 shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] ml-1">
-                <span className="text-sm font-black tabular-nums text-primary">
+      {/* Selection FAB */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+        {/* Expanded action bar — shown when selection mode is active */}
+        <AnimatePresence>
+          {selectionMode && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              className="flex items-center gap-1.5 rounded-full border border-border/50 bg-card/95 backdrop-blur-xl shadow-[0_8px_40px_rgba(0,0,0,0.2)] p-1.5"
+            >
+              {/* Count badge */}
+              <motion.div
+                key={selectedIds.size}
+                initial={{ scale: 0.8 }}
+                animate={{ scale: 1 }}
+                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-primary/10 border border-primary/20"
+              >
+                <motion.span
+                  key={selectedIds.size}
+                  initial={{ y: -8, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  className="text-sm font-bold tabular-nums text-primary"
+                >
                   {selectedIds.size}
-                </span>
-                <span className="text-[10px] font-black uppercase tracking-widest text-primary/80 hidden sm:inline">
+                </motion.span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary/70 hidden sm:inline">
                   <Trans>Selected</Trans>
                 </span>
-              </div>
-              {/* Bulk Action Buttons */}
-              <div className="flex items-center gap-1.5 flex-1 justify-center px-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleSelectAll}
-                  className="h-9 px-4 text-[10px] font-black uppercase tracking-wider hover:bg-white/10 rounded-full text-muted-foreground hover:text-foreground transition-all"
-                >
-                  <Trans>All</Trans>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDeselectAll}
-                  disabled={selectedIds.size === 0}
-                  className="h-9 px-4 text-[10px] font-black uppercase tracking-wider hover:bg-white/10 rounded-full text-muted-foreground hover:text-foreground transition-all"
-                >
-                  <Trans>None</Trans>
-                </Button>
-              </div>
+              </motion.div>
 
-              {/* Delete Button */}
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleBatchDelete}
-                disabled={selectedIds.size === 0 || isDeleting}
-                className={cn(
-                  'h-10 px-6 rounded-full text-[10px] font-black uppercase tracking-[0.2em] transition-all duration-500 shadow-xl relative group/del overflow-hidden flex items-center justify-center shrink-0',
-                  selectedIds.size > 0
-                    ? 'bg-destructive shadow-destructive/20 hover:shadow-destructive/40 active:scale-95 translate-y-0 opacity-100'
-                    : 'bg-muted text-muted-foreground/30 opacity-50 translate-y-1',
-                )}
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover/del:translate-x-full transition-transform duration-1000" />
-                <Trash2 className="h-4 w-4 mr-2.5 group-hover/del:animate-bounce" />
-                <span className="hidden sm:inline">
-                  <Trans>Delete</Trans>
-                </span>
-              </Button>
-
-              <div className="h-6 w-px bg-white/10 mx-1" />
-
-              {/* Close/Exit Management Mode */}
               <Button
                 variant="ghost"
-                size="icon"
-                onClick={toggleSelectionMode}
-                className="h-10 w-10 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground transition-all border border-white/5 shrink-0 mr-1"
+                size="sm"
+                onClick={handleSelectAll}
+                className="h-8 px-3 text-xs font-medium rounded-full hover:bg-muted/80 text-muted-foreground"
+              >
+                <Trans>All</Trans>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDeselectAll}
+                disabled={selectedIds.size === 0}
+                className="h-8 px-3 text-xs font-medium rounded-full hover:bg-muted/80 text-muted-foreground"
+              >
+                <Trans>None</Trans>
+              </Button>
+
+              <div className="h-5 w-px bg-border/50" />
+
+              <motion.div whileTap={{ scale: 0.92 }}>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleBatchDelete}
+                  disabled={selectedIds.size === 0 || isDeleting}
+                  className="h-9 px-4 rounded-full text-xs font-semibold gap-1.5 disabled:opacity-40"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">
+                    <Trans>Delete</Trans>
+                  </span>
+                </Button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* FAB toggle button */}
+        <motion.button
+          onClick={toggleSelectionMode}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.9 }}
+          className={cn(
+            'h-14 w-14 rounded-full flex items-center justify-center shadow-lg transition-colors duration-300 border',
+            selectionMode
+              ? 'bg-primary text-primary-foreground border-primary/50 shadow-primary/25'
+              : 'bg-card text-muted-foreground border-border/50 hover:text-foreground shadow-black/15',
+          )}
+        >
+          <AnimatePresence mode="wait" initial={false}>
+            {selectionMode ? (
+              <motion.div
+                key="close"
+                initial={{ rotate: -90, opacity: 0 }}
+                animate={{ rotate: 0, opacity: 1 }}
+                exit={{ rotate: 90, opacity: 0 }}
+                transition={{ duration: 0.2 }}
               >
                 <X className="h-5 w-5" />
-              </Button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="select"
+                initial={{ rotate: 90, opacity: 0 }}
+                animate={{ rotate: 0, opacity: 1 }}
+                exit={{ rotate: -90, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <CheckSquare className="h-5 w-5" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.button>
+      </div>
 
       <div className="p-4 md:px-8 space-y-6 pb-20">
-        <SessionList
-          sessions={query.data?.items || []}
-          isLoading={query.isLoading}
-          onRefresh={() => query.refetch()}
-          token={user?.token?.access_token}
-          selectionMode={selectionMode}
-          selectedIds={selectedIds}
-          onSelectionChange={handleSelectionChange}
-        />
+        {query.isPending ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div
+                key={i}
+                className="flex flex-col h-full gap-6 py-6 bg-card border border-border/50 rounded-2xl overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.08)] animate-pulse"
+              >
+                {/* Header — matches CardHeader p-3.5 pb-0 */}
+                <div className="p-3.5 pb-0 flex flex-row gap-3 items-start">
+                  <Skeleton className="h-10 w-10 rounded-full shrink-0" />
+                  <div className="flex-1 min-w-0 pt-0.5 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <Skeleton className="h-3 w-16" />
+                      <Skeleton className="h-4 w-12 rounded-full" />
+                    </div>
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-2/3" />
+                  </div>
+                </div>
+                {/* Content — matches CardContent p-4 pt-1 pb-4 */}
+                <div className="p-4 pt-3 pb-4 flex-1 space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-3 w-3 rounded-sm" />
+                    <Skeleton className="h-3 w-32" />
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <Skeleton className="h-3 w-3 rounded-sm" />
+                      <Skeleton className="h-3 w-14" />
+                    </div>
+                    <div className="w-px h-2.5 bg-border/30" />
+                    <div className="flex items-center gap-1.5">
+                      <Skeleton className="h-3 w-3 rounded-sm" />
+                      <Skeleton className="h-3 w-16" />
+                    </div>
+                  </div>
+                </div>
+                {/* Footer — matches CardFooter p-3 pt-0 */}
+                <div className="p-3 pt-0 flex justify-between items-center">
+                  <Skeleton className="h-9 w-28 rounded-xl" />
+                  <Skeleton className="h-9 w-9 rounded-xl" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (query.data?.items?.length ?? 0) > 0 ? (
+          <SessionList
+            sessions={query.data.items}
+            token={user?.token?.access_token}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            onSelectionChange={handleSelectionChange}
+          />
+        ) : (
+          <motion.div
+            key="empty"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-32 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5 backdrop-blur-sm shadow-sm"
+          >
+            <div className="p-6 bg-primary/5 rounded-full ring-1 ring-primary/10">
+              <LayoutGrid className="h-16 w-16 text-primary/60" />
+            </div>
+            <div className="space-y-2 max-w-md">
+              <h3 className="font-semibold text-2xl tracking-tight">
+                <Trans>No Archives Found</Trans>
+              </h3>
+              <p className="text-muted-foreground">
+                <Trans>
+                  Your digital library is currently empty. Start recording to
+                  populate your sessions here.
+                </Trans>
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => query.refetch()}
+              className="mt-4"
+            >
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              <Trans>Refresh</Trans>
+            </Button>
+          </motion.div>
+        )}
 
         {/* Pagination */}
         {totalPages > 1 && (
@@ -599,6 +662,6 @@ function SessionsPage() {
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
