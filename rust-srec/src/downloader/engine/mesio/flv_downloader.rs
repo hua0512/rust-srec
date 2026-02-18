@@ -94,7 +94,7 @@ impl FlvDownloader {
     ///
     /// Returns download statistics on success.
     pub async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
-        let token = CancellationToken::new();
+        let token = self.cancellation_token.child_token();
 
         // Create factory with configuration
         let factory = self.create_factory(token.clone());
