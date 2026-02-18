@@ -287,7 +287,7 @@ impl Processor for ExecuteCommandProcessor {
             std::time::Duration::from_secs(self.timeout_secs),
             crate::pipeline::processors::utils::run_command_with_logs(
                 &mut cmd,
-                Some(ctx.log_tx.clone()),
+                Some(ctx.log_sink.clone()),
             ),
         )
         .await;

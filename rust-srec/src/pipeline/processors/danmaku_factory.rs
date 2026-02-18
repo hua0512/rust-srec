@@ -308,7 +308,7 @@ impl Processor for DanmakuFactoryProcessor {
 
             let command_output = crate::pipeline::processors::utils::run_command_with_logs(
                 &mut cmd,
-                Some(ctx.log_tx.clone()),
+                Some(ctx.log_sink.clone()),
             )
             .await?;
 

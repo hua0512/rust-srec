@@ -189,7 +189,7 @@ impl RcloneProcessor {
             let command_output = match crate::pipeline::processors::utils::run_rclone_with_progress(
                 &mut cmd,
                 &ctx.progress,
-                Some(ctx.log_tx.clone()),
+                Some(ctx.log_sink.clone()),
             )
             .await
             {
@@ -327,7 +327,7 @@ impl RcloneProcessor {
             let command_output = match crate::pipeline::processors::utils::run_rclone_with_progress(
                 &mut cmd,
                 &ctx.progress,
-                Some(ctx.log_tx.clone()),
+                Some(ctx.log_sink.clone()),
             )
             .await
             {

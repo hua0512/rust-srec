@@ -3,6 +3,8 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio_util::sync::CancellationToken;
 
 use crate::Result;
@@ -115,18 +117,41 @@ impl ProcessorInput {
 pub struct ProcessorContext {
     pub job_id: String,
     pub progress: ProgressReporter,
-    pub log_tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+    pub log_sink: JobLogSink,
     pub cancellation_token: CancellationToken,
+}
+
+#[derive(Clone)]
+pub struct JobLogSink {
+    tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+    dropped: Arc<AtomicUsize>,
+}
+
+impl JobLogSink {
+    pub fn new(tx: tokio::sync::mpsc::Sender<JobLogEntry>, dropped: Arc<AtomicUsize>) -> Self {
+        Self { tx, dropped }
+    }
+
+    pub fn try_send(&self, entry: JobLogEntry) {
+        if self.tx.try_send(entry).is_err() {
+            self.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    pub fn dropped_count(&self) -> usize {
+        self.dropped.load(Ordering::Relaxed)
+    }
 }
 
 impl ProcessorContext {
     pub fn noop(job_id: impl Into<String>) -> Self {
         let job_id = job_id.into();
         let (log_tx, _) = tokio::sync::mpsc::channel(100);
+        let dropped = Arc::new(AtomicUsize::new(0));
         Self {
             job_id: job_id.clone(),
             progress: ProgressReporter::noop(job_id),
-            log_tx,
+            log_sink: JobLogSink::new(log_tx, dropped),
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -134,20 +159,20 @@ impl ProcessorContext {
     pub fn new(
         job_id: impl Into<String>,
         progress: ProgressReporter,
-        log_tx: tokio::sync::mpsc::Sender<JobLogEntry>,
+        log_sink: JobLogSink,
         cancellation_token: CancellationToken,
     ) -> Self {
         Self {
             job_id: job_id.into(),
             progress,
-            log_tx,
+            log_sink,
             cancellation_token,
         }
     }
 
     /// Emit a log entry.
     pub fn log(&self, entry: JobLogEntry) {
-        let _ = self.log_tx.try_send(entry);
+        self.log_sink.try_send(entry);
     }
 
     /// Emit an info log.

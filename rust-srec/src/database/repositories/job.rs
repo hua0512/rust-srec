@@ -10,13 +10,6 @@ use crate::{Error, Result};
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-fn is_missing_execution_log_columns_error(err: &Error) -> bool {
-    let msg = err.to_string().to_ascii_lowercase();
-    msg.contains("no such column") && (msg.contains("level") || msg.contains("message"))
-        || msg.contains("has no column named level")
-        || msg.contains("has no column named message")
-}
-
 /// Job repository trait.
 #[async_trait]
 pub trait JobRepository: Send + Sync {
@@ -671,7 +664,7 @@ impl JobRepository for SqlxJobRepository {
 
     async fn add_execution_log(&self, log: &JobExecutionLogDbModel) -> Result<()> {
         retry_on_sqlite_busy("add_execution_log", || async {
-            let attempt = sqlx::query(
+            sqlx::query(
                 r#"
                 INSERT INTO job_execution_logs (id, job_id, entry, created_at, level, message)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -684,31 +677,8 @@ impl JobRepository for SqlxJobRepository {
             .bind(&log.level)
             .bind(&log.message)
             .execute(&self.write_pool)
-            .await;
-
-            match attempt {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    let err = Error::from(e);
-                    if !is_missing_execution_log_columns_error(&err) {
-                        return Err(err);
-                    }
-
-                    sqlx::query(
-                        r#"
-                        INSERT INTO job_execution_logs (id, job_id, entry, created_at)
-                        VALUES (?, ?, ?, ?)
-                        "#,
-                    )
-                    .bind(&log.id)
-                    .bind(&log.job_id)
-                    .bind(&log.entry)
-                    .bind(log.created_at)
-                    .execute(&self.write_pool)
-                    .await?;
-                    Ok(())
-                }
-            }
+            .await?;
+            Ok(())
         })
         .await
     }
@@ -719,50 +689,34 @@ impl JobRepository for SqlxJobRepository {
         }
 
         retry_on_sqlite_busy("add_execution_logs", || async {
+            const MAX_ROWS_PER_INSERT: usize = 1000;
+
             let mut tx = begin_immediate(&self.write_pool).await?;
-            for log in logs {
-                let res = sqlx::query(
-                    r#"
-                    INSERT INTO job_execution_logs (id, job_id, entry, created_at, level, message)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    "#,
-                )
-                .bind(&log.id)
-                .bind(&log.job_id)
-                .bind(&log.entry)
-                .bind(log.created_at)
-                .bind(&log.level)
-                .bind(&log.message)
-                .execute(&mut *tx)
-                .await;
+
+            for chunk in logs.chunks(MAX_ROWS_PER_INSERT) {
+                let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+                    "INSERT INTO job_execution_logs (id, job_id, entry, created_at, level, message) ",
+                );
+                builder.push_values(chunk.iter(), |mut b, log| {
+                    b.push_bind(&log.id)
+                        .push_bind(&log.job_id)
+                        .push_bind(&log.entry)
+                        .push_bind(log.created_at)
+                        .push_bind(&log.level)
+                        .push_bind(&log.message);
+                });
+
+                let res = builder
+                    .build()
+                    .persistent(false)
+                    .execute(&mut *tx)
+                    .await;
 
                 if let Err(e) = res {
-                    let err = Error::from(e);
-                    if !is_missing_execution_log_columns_error(&err) {
-                        return Err(err);
-                    }
-
-                    // Fallback to legacy schema (no structured columns).
-                    tx.rollback().await?;
-                    let mut tx = begin_immediate(&self.write_pool).await?;
-                    for log in logs {
-                        sqlx::query(
-                            r#"
-                            INSERT INTO job_execution_logs (id, job_id, entry, created_at)
-                            VALUES (?, ?, ?, ?)
-                            "#,
-                        )
-                        .bind(&log.id)
-                        .bind(&log.job_id)
-                        .bind(&log.entry)
-                        .bind(log.created_at)
-                        .execute(&mut *tx)
-                        .await?;
-                    }
-                    tx.commit().await?;
-                    return Ok(());
+                    return Err(Error::from(e));
                 }
             }
+
             tx.commit().await?;
             Ok(())
         })
@@ -770,30 +724,13 @@ impl JobRepository for SqlxJobRepository {
     }
 
     async fn get_execution_logs(&self, job_id: &str) -> Result<Vec<JobExecutionLogDbModel>> {
-        let full = sqlx::query_as::<_, JobExecutionLogDbModel>(
+        let logs = sqlx::query_as::<_, JobExecutionLogDbModel>(
             "SELECT id, job_id, entry, created_at, level, message FROM job_execution_logs WHERE job_id = ? ORDER BY created_at",
         )
         .bind(job_id)
         .fetch_all(&self.pool)
-        .await;
-
-        match full {
-            Ok(logs) => Ok(logs),
-            Err(e) => {
-                let err = Error::from(e);
-                if !is_missing_execution_log_columns_error(&err) {
-                    return Err(err);
-                }
-
-                let logs = sqlx::query_as::<_, JobExecutionLogDbModel>(
-                    "SELECT id, job_id, entry, created_at, NULL as level, NULL as message FROM job_execution_logs WHERE job_id = ? ORDER BY created_at",
-                )
-                .bind(job_id)
-                .fetch_all(&self.pool)
-                .await?;
-                Ok(logs)
-            }
-        }
+        .await?;
+        Ok(logs)
     }
 
     async fn list_execution_logs(
@@ -814,27 +751,9 @@ impl JobRepository for SqlxJobRepository {
         .bind(pagination.limit as i64)
         .bind(pagination.offset as i64)
         .fetch_all(&self.pool)
-        .await;
+        .await?;
 
-        match full {
-            Ok(logs) => Ok((logs, total as u64)),
-            Err(e) => {
-                let err = Error::from(e);
-                if !is_missing_execution_log_columns_error(&err) {
-                    return Err(err);
-                }
-
-                let logs = sqlx::query_as::<_, JobExecutionLogDbModel>(
-                    "SELECT id, job_id, entry, created_at, NULL as level, NULL as message FROM job_execution_logs WHERE job_id = ? ORDER BY created_at LIMIT ? OFFSET ?",
-                )
-                .bind(job_id)
-                .bind(pagination.limit as i64)
-                .bind(pagination.offset as i64)
-                .fetch_all(&self.pool)
-                .await?;
-                Ok((logs, total as u64))
-            }
-        }
+        Ok((full, total as u64))
     }
 
     async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()> {
@@ -1225,29 +1144,47 @@ impl JobRepository for SqlxJobRepository {
 
             let batch_count = job_ids.len() as u64;
 
-            // Delete execution logs for these jobs first
-            for job_id in &job_ids {
-                retry_on_sqlite_busy("purge_jobs_older_than_delete_execution_logs", || async {
-                    sqlx::query("DELETE FROM job_execution_logs WHERE job_id = ?")
-                        .bind(job_id)
-                        .execute(&self.write_pool)
-                        .await?;
-                    Ok(())
-                })
-                .await?;
-            }
+            const MAX_IDS_PER_IN: usize = 900;
 
-            // Delete the jobs
-            for job_id in &job_ids {
-                retry_on_sqlite_busy("purge_jobs_older_than_delete_jobs", || async {
-                    sqlx::query("DELETE FROM job WHERE id = ?")
-                        .bind(job_id)
+            retry_on_sqlite_busy("purge_jobs_older_than_delete_execution_logs", || async {
+                for chunk in job_ids.chunks(MAX_IDS_PER_IN) {
+                    let mut builder =
+                        sqlx::QueryBuilder::<sqlx::Sqlite>::new("DELETE FROM job_execution_logs WHERE job_id IN (");
+                    let mut separated = builder.separated(", ");
+                    for id in chunk {
+                        separated.push_bind(id);
+                    }
+                    separated.push_unseparated(")");
+
+                    builder
+                        .build()
+                        .persistent(false)
                         .execute(&self.write_pool)
                         .await?;
-                    Ok(())
-                })
-                .await?;
-            }
+                }
+                Ok(())
+            })
+            .await?;
+
+            retry_on_sqlite_busy("purge_jobs_older_than_delete_jobs", || async {
+                for chunk in job_ids.chunks(MAX_IDS_PER_IN) {
+                    let mut builder =
+                        sqlx::QueryBuilder::<sqlx::Sqlite>::new("DELETE FROM job WHERE id IN (");
+                    let mut separated = builder.separated(", ");
+                    for id in chunk {
+                        separated.push_bind(id);
+                    }
+                    separated.push_unseparated(")");
+
+                    builder
+                        .build()
+                        .persistent(false)
+                        .execute(&self.write_pool)
+                        .await?;
+                }
+                Ok(())
+            })
+            .await?;
 
             total_deleted += batch_count;
 

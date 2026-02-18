@@ -141,7 +141,7 @@ pub fn create_log_entry(level: LogLevel, message: impl Into<String>) -> JobLogEn
 /// and collecting them into a structured log format.
 pub async fn run_command_with_logs(
     command: &mut Command,
-    log_tx: Option<tokio::sync::mpsc::Sender<JobLogEntry>>,
+    log_sink: Option<super::traits::JobLogSink>,
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
@@ -229,8 +229,8 @@ pub async fn run_command_with_logs(
             entry = rx.recv() => {
                 match entry {
                     Some(entry) => {
-                        if let Some(tx) = &log_tx {
-                            let _ = tx.try_send(entry.clone());
+                        if let Some(sink) = &log_sink {
+                            sink.try_send(entry.clone());
                         }
                         push_log_with_cap(&mut logs, entry, MAX_LOG_ENTRIES, &mut truncated_count);
                     }
@@ -455,7 +455,7 @@ fn determine_rclone_log_level(line: &str) -> LogLevel {
 pub async fn run_ffmpeg_with_progress(
     command: &mut Command,
     progress: &ProgressReporter,
-    log_tx: Option<tokio::sync::mpsc::Sender<JobLogEntry>>,
+    log_sink: Option<super::traits::JobLogSink>,
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
@@ -520,8 +520,8 @@ pub async fn run_ffmpeg_with_progress(
             entry = rx.recv() => {
                 match entry {
                     Some(entry) => {
-                        if let Some(tx) = &log_tx {
-                            let _ = tx.try_send(entry.clone());
+                        if let Some(sink) = &log_sink {
+                            sink.try_send(entry.clone());
                         }
                         push_log_with_cap(&mut logs, entry, MAX_LOG_ENTRIES, &mut truncated_count)
                     },
@@ -572,7 +572,7 @@ pub async fn run_ffmpeg_with_progress(
 pub async fn run_rclone_with_progress(
     command: &mut Command,
     progress: &ProgressReporter,
-    log_tx: Option<tokio::sync::mpsc::Sender<JobLogEntry>>,
+    log_sink: Option<super::traits::JobLogSink>,
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
@@ -626,8 +626,8 @@ pub async fn run_rclone_with_progress(
             entry = rx.recv() => {
                 match entry {
                     Some(entry) => {
-                        if let Some(tx) = &log_tx {
-                            let _ = tx.try_send(entry.clone());
+                        if let Some(sink) = &log_sink {
+                            sink.try_send(entry.clone());
                         }
                         push_log_with_cap(&mut logs, entry, MAX_LOG_ENTRIES, &mut truncated_count)
                     },

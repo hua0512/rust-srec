@@ -553,7 +553,7 @@ impl RemuxProcessor {
         let command_output = crate::pipeline::processors::utils::run_ffmpeg_with_progress(
             &mut cmd,
             &ctx.progress,
-            Some(ctx.log_tx.clone()),
+            Some(ctx.log_sink.clone()),
         )
         .await?;
 
