@@ -13,20 +13,20 @@ use crate::Result;
 /// Helper to ensure path is absolute.
 /// If file exists, uses canonicalize.
 /// If not (e.g. new output), uses current_dir + path.
-fn make_absolute(path: &str) -> String {
+async fn make_absolute(path: &str) -> String {
     let path_obj = Path::new(path);
     if path_obj.is_absolute() {
         return path.to_string();
     }
 
-    if path_obj.exists()
-        && let Ok(abs) = std::fs::canonicalize(path_obj)
+    if let Ok(true) = tokio::fs::try_exists(path_obj).await
+        && let Ok(abs) = tokio::fs::canonicalize(path_obj).await
     {
-        return abs.to_string_lossy().to_string();
+        return abs.to_string_lossy().into_owned();
     }
 
-    if let Ok(cwd) = std::env::current_dir() {
-        return cwd.join(path_obj).to_string_lossy().to_string();
+    if let Ok(Ok(cwd)) = tokio::task::spawn_blocking(std::env::current_dir).await {
+        return cwd.join(path_obj).to_string_lossy().into_owned();
     }
 
     path.to_string()
@@ -432,15 +432,15 @@ impl RemuxProcessor {
         }
     }
 
-    fn determine_output_path_for_input(
+    async fn determine_output_path_for_input(
         input_path: &str,
         config: &RemuxConfig,
         output_override: Option<&str>,
     ) -> Result<String> {
-        let input_abs = make_absolute(input_path);
+        let input_abs = make_absolute(input_path).await;
 
         if let Some(out) = output_override.filter(|s| !s.is_empty()) {
-            let out_abs = make_absolute(out);
+            let out_abs = make_absolute(out).await;
             if Self::paths_equal(&input_abs, &out_abs) {
                 return Err(crate::Error::PipelineError(
                     "Remux output path must not be the same as the input path (use a different output or omit outputs for an auto-generated path)".to_string(),
@@ -466,7 +466,7 @@ impl RemuxProcessor {
             .join(format!("{}.{}", file_stem, ext))
             .to_string_lossy()
             .to_string();
-        let candidate_abs = make_absolute(&candidate);
+        let candidate_abs = make_absolute(&candidate).await;
 
         // Avoid in-place remux (ffmpeg cannot safely write to the same path it's reading from).
         if Self::paths_equal(&input_abs, &candidate_abs) {
@@ -489,7 +489,7 @@ impl RemuxProcessor {
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
-        let input_path_string = make_absolute(input_path);
+        let input_path_string = make_absolute(input_path).await;
         let input_path = input_path_string.as_str();
 
         // Check if input file exists
@@ -533,8 +533,8 @@ impl RemuxProcessor {
         // Determine output path: use provided output or generate one dynamically.
         // Ensures we never choose an output path equal to the input path.
         let output_string =
-            Self::determine_output_path_for_input(input_path, config, output_override)?;
-        let output_path_string = make_absolute(&output_string);
+            Self::determine_output_path_for_input(input_path, config, output_override).await?;
+        let output_path_string = make_absolute(&output_string).await;
         let output_path = output_path_string.as_str();
 
         ctx.info(format!(
@@ -735,7 +735,7 @@ impl Processor for RemuxProcessor {
         if config.remove_input_on_success {
             // Only remove inputs that were actually remuxed. Skipped inputs should never be removed.
             for input_path in &succeeded_inputs {
-                let input_path_string = make_absolute(input_path);
+                let input_path_string = make_absolute(input_path).await;
                 let input_path = input_path_string.as_str();
                 if let Err(e) = tokio::fs::remove_file(input_path).await {
                     let _ = ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
@@ -907,8 +907,8 @@ mod tests {
         assert!(args.contains(&"fast".to_string()));
         assert!(args.contains(&"-vf".to_string()));
     }
-    #[test]
-    fn test_make_absolute_path() {
+    #[tokio::test]
+    async fn test_make_absolute_path() {
         let cwd = std::env::current_dir().unwrap();
 
         // Test absolute path
@@ -917,12 +917,12 @@ mod tests {
         } else {
             "/test/file.txt"
         };
-        assert_eq!(make_absolute(abs), abs);
+        assert_eq!(make_absolute(abs).await, abs);
 
         // Test relative path (non-existent) - should join with CWD
         let rel = "test_file.txt";
         let expected = cwd.join(rel).to_string_lossy().to_string();
-        assert_eq!(make_absolute(rel), expected);
+        assert_eq!(make_absolute(rel).await, expected);
     }
 
     #[tokio::test]
@@ -1006,8 +1006,8 @@ mod tests {
         assert!(b.exists());
     }
 
-    #[test]
-    fn test_determine_output_path_avoids_in_place_collision() {
+    #[tokio::test]
+    async fn test_determine_output_path_avoids_in_place_collision() {
         let temp_dir = TempDir::new().unwrap();
         let input_path = temp_dir.path().join("a.mp4");
         fs::write(&input_path, "dummy").unwrap();
@@ -1018,12 +1018,13 @@ mod tests {
             &config,
             None,
         )
+        .await
         .unwrap();
 
         assert!(output.ends_with("_remux.mp4"));
         assert_ne!(
-            make_absolute(&output),
-            make_absolute(&input_path.to_string_lossy())
+            make_absolute(&output).await,
+            make_absolute(&input_path.to_string_lossy()).await
         );
     }
 }

@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 use std::path::{Path, PathBuf};
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tracing::{error, info, warn};
 
@@ -91,7 +91,7 @@ impl RcloneProcessor {
     /// Create a temporary file containing relative paths for --files-from.
     /// Creates the file in the base directory with a UUID-based name.
     /// Returns the temp file path and relative paths, or error.
-    fn create_files_from_list(
+    async fn create_files_from_list(
         inputs: &[String],
         base_dir: &Path,
     ) -> std::io::Result<(PathBuf, Vec<String>)> {
@@ -99,7 +99,7 @@ impl RcloneProcessor {
         let temp_filename = format!(".rclone_files_{}.txt", uuid::Uuid::new_v4());
         let temp_path = base_dir.join(&temp_filename);
 
-        let mut file = std::fs::File::create(&temp_path)?;
+        let mut file = tokio::fs::File::create(&temp_path).await?;
         let mut relative_paths = Vec::with_capacity(inputs.len());
 
         for input in inputs {
@@ -108,17 +108,18 @@ impl RcloneProcessor {
                 .strip_prefix(base_dir)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
             let relative_str = relative.to_string_lossy();
-            writeln!(file, "{}", relative_str)?;
+            file.write_all(relative_str.as_bytes()).await?;
+            file.write_all(b"\n").await?;
             relative_paths.push(relative_str.to_string());
         }
 
-        file.flush()?;
+        file.flush().await?;
         Ok((temp_path, relative_paths))
     }
 
     /// Clean up the temporary files-from list file.
-    fn cleanup_files_from_list(path: &Path) {
-        if let Err(e) = std::fs::remove_file(path) {
+    async fn cleanup_files_from_list(path: &Path) {
+        if let Err(e) = tokio::fs::remove_file(path).await {
             warn!(
                 "Failed to clean up temp files-from list {}: {}",
                 path.display(),
@@ -275,6 +276,7 @@ impl RcloneProcessor {
 
         // Create temp file with file list
         let (files_from_path, _relative_paths) = Self::create_files_from_list(inputs, &base_dir)
+            .await
             .map_err(|e| crate::Error::Other(format!("Failed to create files-from list: {}", e)))?;
 
         let files_from_path_str = files_from_path.to_string_lossy().to_string();
@@ -360,7 +362,7 @@ impl RcloneProcessor {
                 };
 
                 // Clean up temp file
-                Self::cleanup_files_from_list(&files_from_path);
+                Self::cleanup_files_from_list(&files_from_path).await;
 
                 return Ok(ProcessorOutput {
                     outputs,
@@ -398,7 +400,7 @@ impl RcloneProcessor {
         }
 
         // Clean up temp file on failure
-        Self::cleanup_files_from_list(&files_from_path);
+        Self::cleanup_files_from_list(&files_from_path).await;
 
         error!(
             "Rclone {} batch failed after {} attempts",
