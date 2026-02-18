@@ -861,7 +861,11 @@ impl DownloadManager {
                             index,
                             ..
                         } = info;
-                        let segment_path = path.to_string_lossy().to_string();
+                        // Normalize path
+                        let normalized_path = tokio::fs::canonicalize(&path)
+                            .await
+                            .unwrap_or_else(|_| path.clone());
+                        let segment_path = normalized_path.to_string_lossy().to_string();
                         // Broadcast send is synchronous, ignore if no receivers
                         let _ = event_tx.send(DownloadManagerEvent::SegmentCompleted {
                             download_id: download_id_clone.clone(),
@@ -879,7 +883,7 @@ impl DownloadManager {
                         }
                         debug!(
                             download_id = %download_id_clone,
-                            path = %path.display(),
+                            path = %normalized_path.display(),
                             "Segment completed"
                         );
                     }

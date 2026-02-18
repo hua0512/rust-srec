@@ -125,9 +125,9 @@ pub(super) fn setup_writer_callbacks(
     });
 
     writer.set_on_segment_complete_callback(move |path, sequence, duration_secs, size_bytes| {
-        let abs_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let event_path = path.to_path_buf();
         let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-            path: abs_path,
+            path: event_path,
             duration_secs,
             size_bytes,
             index: sequence,
