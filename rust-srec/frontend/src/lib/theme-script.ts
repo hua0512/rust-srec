@@ -52,7 +52,7 @@ function themeScript(
         }
       }
     }
-  } catch (e) {
+  } catch {
     // localStorage unavailable or malformed cache — fall back to stylesheet defaults
     var fallback = defaultMode === 'system' ? getSystemTheme() : defaultMode;
     el.classList.remove('light', 'dark');

@@ -27,7 +27,7 @@ msgstr "--flag value"
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
-#: src/components/notifications/forms/telegram-form.tsx:62
+#: src/components/notifications/forms/telegram-form.tsx:61
 msgid "-1001234567890"
 msgstr "-1001234567890"
 
@@ -172,7 +172,7 @@ msgstr "0:v:0"
 msgid "1 (best) - 31 (worst)"
 msgstr "1 (best) - 31 (worst)"
 
-#: src/components/notifications/forms/telegram-form.tsx:42
+#: src/components/notifications/forms/telegram-form.tsx:41
 msgid "123456:ABC-DEF..."
 msgstr "123456:ABC-DEF..."
 
@@ -817,7 +817,7 @@ msgid "Bot Name"
 msgstr "Bot Name"
 
 #: src/components/notifications/channel-card.tsx:108
-#: src/components/notifications/forms/telegram-form.tsx:36
+#: src/components/notifications/forms/telegram-form.tsx:35
 msgid "Bot Token"
 msgstr "Bot Token"
 
@@ -983,7 +983,7 @@ msgid "Channels"
 msgstr "Channels"
 
 #: src/components/notifications/channel-card.tsx:118
-#: src/components/notifications/forms/telegram-form.tsx:57
+#: src/components/notifications/forms/telegram-form.tsx:56
 msgid "Chat ID"
 msgstr "Chat ID"
 
@@ -1513,7 +1513,7 @@ msgstr "CRF (Constant Rate Factor)"
 
 #: src/components/notifications/forms/discord-form.tsx:117
 #: src/components/notifications/forms/email-form.tsx:194
-#: src/components/notifications/forms/telegram-form.tsx:121
+#: src/components/notifications/forms/telegram-form.tsx:120
 #: src/components/notifications/forms/webhook-form.tsx:165
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:162
 msgid "Critical"
@@ -2172,7 +2172,7 @@ msgstr "Enable recording of danmu/chat messages along with the video."
 #: src/components/notifications/desktop-channel-dialog.tsx:111
 #: src/components/notifications/forms/discord-form.tsx:130
 #: src/components/notifications/forms/email-form.tsx:219
-#: src/components/notifications/forms/telegram-form.tsx:134
+#: src/components/notifications/forms/telegram-form.tsx:133
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:508
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:540
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:550
@@ -3198,7 +3198,7 @@ msgstr "Hide password"
 
 #: src/components/notifications/forms/discord-form.tsx:114
 #: src/components/notifications/forms/email-form.tsx:191
-#: src/components/notifications/forms/telegram-form.tsx:118
+#: src/components/notifications/forms/telegram-form.tsx:117
 #: src/components/notifications/forms/webhook-form.tsx:162
 #: src/components/streamers/config/streamer-general-settings.tsx:229
 #: src/components/streamers/edit/streamer-meta-form.tsx:204
@@ -3810,7 +3810,7 @@ msgstr "Loop Protection"
 
 #: src/components/notifications/forms/discord-form.tsx:108
 #: src/components/notifications/forms/email-form.tsx:185
-#: src/components/notifications/forms/telegram-form.tsx:112
+#: src/components/notifications/forms/telegram-form.tsx:111
 #: src/components/notifications/forms/webhook-form.tsx:156
 #: src/components/streamers/config/streamer-general-settings.tsx:235
 #: src/components/streamers/edit/streamer-meta-form.tsx:210
@@ -4056,7 +4056,7 @@ msgstr "Min Interval (s)"
 
 #: src/components/notifications/forms/discord-form.tsx:98
 #: src/components/notifications/forms/email-form.tsx:175
-#: src/components/notifications/forms/telegram-form.tsx:102
+#: src/components/notifications/forms/telegram-form.tsx:101
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:524
 msgid "Min Priority"
 msgstr "Min Priority"
@@ -4468,7 +4468,7 @@ msgstr "None (Strip Audio)"
 
 #: src/components/notifications/forms/discord-form.tsx:111
 #: src/components/notifications/forms/email-form.tsx:188
-#: src/components/notifications/forms/telegram-form.tsx:115
+#: src/components/notifications/forms/telegram-form.tsx:114
 #: src/components/notifications/forms/webhook-form.tsx:159
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:647
 #: src/components/streamers/config/streamer-general-settings.tsx:232
@@ -4847,7 +4847,7 @@ msgstr "Parse Batch"
 msgid "Parse error: {0}"
 msgstr "Parse error: {0}"
 
-#: src/components/notifications/forms/telegram-form.tsx:78
+#: src/components/notifications/forms/telegram-form.tsx:77
 msgid "Parse Mode"
 msgstr "Parse Mode"
 

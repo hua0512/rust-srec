@@ -855,8 +855,6 @@ function TimelineItem({
   active: boolean;
   isLast?: boolean;
 }) {
-  console.log(time);
-
   return (
     <div className="relative pl-6">
       {!isLast && (

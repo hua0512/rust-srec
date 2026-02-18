@@ -9,6 +9,22 @@
 import { getBaseUrl } from '@/utils/env';
 import { isTauriRuntime } from '@/utils/tauri';
 
+function getTauriBackendOrigin(): string | null {
+  if (typeof globalThis === 'undefined') {
+    return null;
+  }
+  const backendUrl = (
+    globalThis as unknown as { __RUST_SREC_BACKEND_URL__?: unknown }
+  ).__RUST_SREC_BACKEND_URL__;
+  if (typeof backendUrl !== 'string' || backendUrl.trim().length === 0) {
+    return null;
+  }
+  const normalized = backendUrl.replace(/\/$/, '');
+  return normalized.startsWith('http://') || normalized.startsWith('https://')
+    ? normalized
+    : null;
+}
+
 export function getMediaUrl(
   path: string | null | undefined,
   token?: string,
@@ -32,12 +48,19 @@ export function getMediaUrl(
   }
 
   // Desktop/Tauri: avoid hitting the Vite dev server origin (127.0.0.1:15275 in dev
-  // or tauri:// in prod). Use the runtime-injected backend URL when available.
+  // or tauri:// in prod). Always prefer the runtime-injected backend origin.
   if (isTauriRuntime()) {
-    const baseUrl = getBaseUrl();
-    if (baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) {
-      return new URL(fullUrl, baseUrl).toString();
+    const backendOrigin = getTauriBackendOrigin();
+    if (backendOrigin) {
+      return new URL(fullUrl, backendOrigin).toString();
     }
+  }
+
+  // Web/SSR: if API base is absolute, target backend origin directly instead of
+  // resolving relative media paths against the frontend origin.
+  const apiBaseUrl = getBaseUrl();
+  if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
+    return new URL(fullUrl, apiBaseUrl).toString();
   }
 
   return fullUrl;
