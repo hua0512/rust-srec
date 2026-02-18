@@ -278,7 +278,7 @@ impl ServiceContainer {
             global_config.pipeline_execute_timeout_secs.max(1) as u64;
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(pipeline_config, job_repo)
-                .with_session_repository(session_repo)
+                .with_session_repository(session_repo.clone())
                 .with_streamer_repository(streamer_repo.clone())
                 .with_preset_repository(preset_repo)
                 .with_pipeline_preset_repository(pipeline_preset_repo)
@@ -293,7 +293,10 @@ impl ServiceContainer {
         let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
 
         // Create danmu service with default config
-        let danmu_service = Arc::new(DanmuService::new(DanmuServiceConfig::default()));
+        let danmu_service = Arc::new(
+            DanmuService::new(DanmuServiceConfig::default())
+                .with_session_repository(session_repo.clone()),
+        );
 
         // Create metrics collector
         let metrics_collector = Arc::new(MetricsCollector::new());
@@ -519,7 +522,8 @@ impl ServiceContainer {
 
         // Create danmu service with custom config
         let danmu_service_start = Instant::now();
-        let danmu_service = Arc::new(DanmuService::new(danmu_config));
+        let danmu_service =
+            Arc::new(DanmuService::new(danmu_config).with_session_repository(session_repo));
         let danmu_service_ms = danmu_service_start.elapsed().as_millis();
 
         // Create notification service with default config

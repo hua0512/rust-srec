@@ -3204,6 +3204,17 @@ mod tests {
         async fn update_danmu_statistics(&self, _stats: &DanmuStatisticsDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
+
+        async fn upsert_danmu_statistics(
+            &self,
+            _session_id: &str,
+            _total_danmus: i64,
+            _danmu_rate_timeseries: Option<&str>,
+            _top_talkers: Option<&str>,
+            _word_frequency: Option<&str>,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
     }
 
     struct TestDagRepository {

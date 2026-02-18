@@ -14,14 +14,16 @@ use dashmap::DashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use crate::danmu::{
     DanmuSampler, DanmuSamplingConfig as SamplerConfig, DanmuStatistics, ProviderRegistry,
-    StatisticsAggregator, create_sampler,
+    create_sampler,
 };
+use crate::database::models::DanmuRateEntry;
+use crate::database::repositories::SessionRepository;
 use crate::domain::DanmuSamplingConfig;
 use crate::error::{Error, Result};
 use platforms_parser::danmaku::ConnectionConfig;
@@ -129,14 +131,13 @@ impl CollectionHandle {
 struct CollectionState {
     /// Streamer ID
     streamer_id: String,
-    /// Statistics aggregator (session-level)
-    stats: Arc<Mutex<StatisticsAggregator>>,
     /// Cancellation token for this collection
     cancel_token: CancellationToken,
     /// Command sender
     command_tx: mpsc::Sender<CollectionCommand>,
-    /// Signals when the runner has fully stopped (including final XML flush/finalize).
-    done_rx: Option<oneshot::Receiver<()>>,
+    /// Signals when the runner has fully stopped (including final XML flush/finalize),
+    /// carrying final statistics when available.
+    done_rx: Option<oneshot::Receiver<std::result::Result<DanmuStatistics, String>>>,
 }
 
 #[derive(Debug, Default)]
@@ -177,6 +178,10 @@ pub struct DanmuService {
 }
 
 impl DanmuService {
+    const DEFAULT_MAX_TOP_TALKERS: usize = 32;
+    const DEFAULT_MAX_WORDS: usize = 50;
+    const DEFAULT_RATE_BUCKET_SECS: u64 = 10;
+
     /// Create a new danmu service.
     pub fn new(config: DanmuServiceConfig) -> Self {
         let (event_tx, _) = broadcast::channel(256);
@@ -308,23 +313,29 @@ impl DanmuService {
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
 
-        // Create state
-        let stats = Arc::new(Mutex::new(StatisticsAggregator::new()));
-        let sampler: Arc<Mutex<Box<dyn DanmuSampler>>> = if self.config.sampling_enabled {
+        // Build bounded per-session statistics/sampler state.
+        let max_top_talkers =
+            Self::DEFAULT_MAX_TOP_TALKERS.min(self.config.stats_buffer_size.max(10));
+        let max_words = Self::DEFAULT_MAX_WORDS.min(self.config.stats_buffer_size.max(25));
+        let stats = platforms_parser::danmaku::StatisticsAggregator::with_config(
+            max_top_talkers,
+            max_words,
+            Self::DEFAULT_RATE_BUCKET_SECS,
+        );
+        let sampler: Box<dyn DanmuSampler> = if self.config.sampling_enabled {
             let sampling = sampling_config.unwrap_or_else(|| self.config.default_sampling.clone());
             let sampler_config = to_sampler_config(&sampling);
-            Arc::new(Mutex::new(create_sampler(&sampler_config)))
+            create_sampler(&sampler_config)
         } else {
-            Arc::new(Mutex::new(Box::new(NoopSampler)))
+            Box::new(NoopSampler)
         };
         let cancel_token = self.cancel_token.child_token();
 
         let (ready_tx, ready_rx) = oneshot::channel::<Result<()>>();
-        let (done_tx, done_rx) = oneshot::channel::<()>();
+        let (done_tx, done_rx) = oneshot::channel::<std::result::Result<DanmuStatistics, String>>();
 
         let state = CollectionState {
             streamer_id: streamer_id.to_string(),
-            stats: Arc::clone(&stats),
             cancel_token: cancel_token.clone(),
             command_tx: command_tx.clone(),
             done_rx: Some(done_rx),
@@ -341,10 +352,8 @@ impl DanmuService {
         let event_tx = self.event_tx.clone();
         let collections = self.collections.clone();
         let sessions_by_streamer = self.sessions_by_streamer.clone();
+        let session_repo = self.session_repo.clone();
         let provider = Arc::clone(&provider);
-        let stats = Arc::clone(&stats);
-        let sampler = Arc::clone(&sampler);
-        let statistics_enabled = self.config.statistics_enabled;
         let sampling_enabled = self.config.sampling_enabled;
         let conn_config = connection_config;
         let cancel_token_task = cancel_token.clone();
@@ -358,9 +367,8 @@ impl DanmuService {
                     room_id: room_id_clone,
                     provider: Arc::clone(&provider),
                     conn_config,
-                    stats: Arc::clone(&stats),
-                    statistics_enabled,
-                    sampler: Arc::clone(&sampler),
+                    stats,
+                    sampler,
                     sampling_enabled,
                     event_tx: event_tx.clone(),
                 }),
@@ -372,9 +380,10 @@ impl DanmuService {
                     runner
                 }
                 Ok(Err(e)) => {
+                    let error_message = e.to_string();
                     let _ = event_tx.send(DanmuEvent::Error {
                         session_id: session_id_clone.clone(),
-                        error: e.to_string(),
+                        error: error_message.clone(),
                     });
                     let _ = ready_tx.send(Err(e));
                     if let Some((_, state)) = collections.remove(&session_id_clone) {
@@ -385,7 +394,7 @@ impl DanmuService {
                             sessions_by_streamer.remove(&state.streamer_id);
                         }
                     }
-                    let _ = done_tx.send(());
+                    let _ = done_tx.send(Err(error_message));
                     return;
                 }
                 Err(_) => {
@@ -398,7 +407,7 @@ impl DanmuService {
                     )));
                     let _ = event_tx.send(DanmuEvent::Error {
                         session_id: session_id_clone.clone(),
-                        error: message,
+                        error: message.clone(),
                     });
                     if let Some((_, state)) = collections.remove(&session_id_clone) {
                         let should_remove = sessions_by_streamer
@@ -408,7 +417,7 @@ impl DanmuService {
                             sessions_by_streamer.remove(&state.streamer_id);
                         }
                     }
-                    let _ = done_tx.send(());
+                    let _ = done_tx.send(Err(message));
                     return;
                 }
             };
@@ -433,15 +442,18 @@ impl DanmuService {
                 if should_remove {
                     sessions_by_streamer.remove(&state.streamer_id);
                 }
-                let stats = state.stats.lock().await;
-                let statistics = stats.current_stats();
-                let _ = event_tx.send(DanmuEvent::CollectionStopped {
-                    session_id: session_id_clone,
-                    statistics,
-                });
+                if let Ok(statistics) = &result {
+                    persist_statistics(session_repo.as_deref(), &session_id_clone, statistics)
+                        .await;
+                    let _ = event_tx.send(DanmuEvent::CollectionStopped {
+                        session_id: session_id_clone.clone(),
+                        statistics: statistics.clone(),
+                    });
+                }
             }
 
-            let _ = done_tx.send(());
+            let done_value = result.map_err(|e| e.to_string());
+            let _ = done_tx.send(done_value);
         });
 
         tokio::select! {
@@ -529,7 +541,20 @@ impl DanmuService {
         if let Some(done_rx) = state.done_rx {
             const STOP_TIMEOUT: Duration = Duration::from_secs(10);
             match tokio::time::timeout(STOP_TIMEOUT, done_rx).await {
-                Ok(Ok(())) => {}
+                Ok(Ok(Ok(statistics))) => {
+                    persist_statistics(self.session_repo.as_deref(), session_id, &statistics).await;
+                    let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
+                        session_id: session_id.to_string(),
+                        statistics: statistics.clone(),
+                    });
+                    return Ok(statistics);
+                }
+                Ok(Ok(Err(error))) => {
+                    warn!(
+                        session_id,
+                        error, "Danmu collection ended without final statistics"
+                    );
+                }
                 Ok(Err(_)) => {}
                 Err(_) => {
                     warn!(
@@ -540,17 +565,7 @@ impl DanmuService {
             }
         }
 
-        // Finalize statistics
-        let stats = state.stats.lock().await;
-        let statistics = stats.current_stats();
-
-        // Emit event
-        let _ = self.event_tx.send(DanmuEvent::CollectionStopped {
-            session_id: session_id.to_string(),
-            statistics: statistics.clone(),
-        });
-
-        Ok(statistics)
+        Ok(DanmuStatistics::default())
     }
 
     /// Get a handle for an existing collection.
@@ -566,16 +581,6 @@ impl DanmuService {
     /// Check if collection is active for a session.
     pub fn is_collecting(&self, session_id: &str) -> bool {
         self.collections.contains_key(session_id)
-    }
-
-    /// Get current statistics for a session.
-    pub async fn get_statistics(&self, session_id: &str) -> Option<DanmuStatistics> {
-        if let Some(state) = self.collections.get(session_id) {
-            let stats = state.stats.lock().await;
-            Some(stats.current_stats())
-        } else {
-            None
-        }
     }
 
     /// Get all active session IDs.
@@ -603,6 +608,85 @@ impl DanmuService {
         for session_id in session_ids {
             let _ = self.stop_collection(&session_id).await;
         }
+    }
+}
+
+fn saturating_u64_to_i64(value: u64) -> i64 {
+    if value > i64::MAX as u64 {
+        i64::MAX
+    } else {
+        value as i64
+    }
+}
+
+async fn persist_statistics(
+    session_repo: Option<&dyn SessionRepository>,
+    session_id: &str,
+    statistics: &DanmuStatistics,
+) {
+    #[derive(serde::Serialize)]
+    struct TopTalkerView<'a> {
+        user_id: &'a str,
+        username: &'a str,
+        message_count: i64,
+    }
+
+    let Some(repo) = session_repo else {
+        return;
+    };
+
+    let rate_timeseries = statistics
+        .rate_timeseries
+        .iter()
+        .map(|entry| DanmuRateEntry {
+            ts: entry.timestamp.timestamp_millis(),
+            count: saturating_u64_to_i64(entry.count),
+        });
+    let danmu_rate_timeseries = match serde_json::to_string(&rate_timeseries.collect::<Vec<_>>()) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            warn!(session_id, %error, "Failed to serialize danmu rate timeseries");
+            None
+        }
+    };
+
+    let top_talkers = statistics.top_talkers.iter().map(|entry| TopTalkerView {
+        user_id: entry.user_id.as_str(),
+        username: entry.username.as_str(),
+        message_count: saturating_u64_to_i64(entry.message_count),
+    });
+    let top_talkers = match serde_json::to_string(&top_talkers.collect::<Vec<_>>()) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            warn!(session_id, %error, "Failed to serialize top talkers");
+            None
+        }
+    };
+
+    let word_frequency = statistics
+        .word_frequency
+        .iter()
+        .map(|entry| (entry.word.as_str(), saturating_u64_to_i64(entry.count)))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let word_frequency = match serde_json::to_string(&word_frequency) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            warn!(session_id, %error, "Failed to serialize word frequency");
+            None
+        }
+    };
+
+    if let Err(error) = repo
+        .upsert_danmu_statistics(
+            session_id,
+            saturating_u64_to_i64(statistics.total_count),
+            danmu_rate_timeseries.as_deref(),
+            top_talkers.as_deref(),
+            word_frequency.as_deref(),
+        )
+        .await
+    {
+        warn!(session_id, %error, "Failed to persist danmu statistics");
     }
 }
 

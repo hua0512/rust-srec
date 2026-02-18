@@ -67,6 +67,14 @@ pub trait SessionRepository: Send + Sync {
     ) -> Result<Option<DanmuStatisticsDbModel>>;
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
     async fn update_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
+    async fn upsert_danmu_statistics(
+        &self,
+        session_id: &str,
+        total_danmus: i64,
+        danmu_rate_timeseries: Option<&str>,
+        top_talkers: Option<&str>,
+        word_frequency: Option<&str>,
+    ) -> Result<()>;
 }
 
 /// SQLx implementation of SessionRepository.
@@ -378,6 +386,39 @@ impl SessionRepository for SqlxSessionRepository {
             .bind(&stats.top_talkers)
             .bind(&stats.word_frequency)
             .bind(&stats.id)
+            .execute(&self.write_pool)
+            .await?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn upsert_danmu_statistics(
+        &self,
+        session_id: &str,
+        total_danmus: i64,
+        danmu_rate_timeseries: Option<&str>,
+        top_talkers: Option<&str>,
+        word_frequency: Option<&str>,
+    ) -> Result<()> {
+        retry_on_sqlite_busy("upsert_danmu_statistics", || async {
+            sqlx::query(
+                r#"
+                INSERT INTO danmu_statistics (id, session_id, total_danmus, danmu_rate_timeseries, top_talkers, word_frequency)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    total_danmus = excluded.total_danmus,
+                    danmu_rate_timeseries = excluded.danmu_rate_timeseries,
+                    top_talkers = excluded.top_talkers,
+                    word_frequency = excluded.word_frequency
+                "#,
+            )
+            .bind(uuid::Uuid::new_v4().to_string())
+            .bind(session_id)
+            .bind(total_danmus)
+            .bind(danmu_rate_timeseries)
+            .bind(top_talkers)
+            .bind(word_frequency)
             .execute(&self.write_pool)
             .await?;
             Ok(())

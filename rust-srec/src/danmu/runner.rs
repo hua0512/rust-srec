@@ -9,7 +9,7 @@
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{Mutex, broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use platforms_parser::danmaku::{
@@ -17,7 +17,7 @@ use platforms_parser::danmaku::{
     message::{DanmuMessage, DanmuType},
 };
 
-use crate::danmu::{DanmuSampler, StatisticsAggregator, XmlDanmuWriter};
+use crate::danmu::{DanmuSampler, DanmuStatistics, StatisticsAggregator, XmlDanmuWriter};
 use crate::error::{Error, Result};
 
 use super::events::{CollectionCommand, DanmuEvent};
@@ -59,10 +59,9 @@ pub(crate) struct CollectionRunner {
     // Message buffer for sorting before writing
     message_buffer: Vec<DanmuMessage>,
 
-    // Shared state
-    stats: Arc<Mutex<StatisticsAggregator>>,
-    sampler: Arc<Mutex<Box<dyn DanmuSampler>>>,
-    statistics_enabled: bool,
+    // Stats state
+    stats: StatisticsAggregator,
+    sampler: Box<dyn DanmuSampler>,
     sampling_enabled: bool,
 
     event_tx: broadcast::Sender<DanmuEvent>,
@@ -75,9 +74,8 @@ pub(crate) struct RunnerParams {
     pub room_id: String,
     pub provider: Arc<dyn DanmuProvider>,
     pub conn_config: ConnectionConfig,
-    pub stats: Arc<Mutex<StatisticsAggregator>>,
-    pub statistics_enabled: bool,
-    pub sampler: Arc<Mutex<Box<dyn DanmuSampler>>>,
+    pub stats: StatisticsAggregator,
+    pub sampler: Box<dyn DanmuSampler>,
     pub sampling_enabled: bool,
     pub event_tx: broadcast::Sender<DanmuEvent>,
 }
@@ -92,7 +90,6 @@ impl CollectionRunner {
             provider,
             conn_config,
             stats,
-            statistics_enabled,
             sampler,
             sampling_enabled,
             event_tx,
@@ -110,7 +107,6 @@ impl CollectionRunner {
             message_buffer: Vec::with_capacity(config::MAX_BUFFER_SIZE),
             stats,
             sampler,
-            statistics_enabled,
             sampling_enabled,
             event_tx,
         })
@@ -121,7 +117,7 @@ impl CollectionRunner {
         mut self,
         mut command_rx: mpsc::Receiver<CollectionCommand>,
         cancel_token: CancellationToken,
-    ) -> Result<()> {
+    ) -> Result<DanmuStatistics> {
         let mut flush_interval = tokio::time::interval(tokio::time::Duration::from_millis(
             config::BUFFER_FLUSH_INTERVAL_MS,
         ));
@@ -160,7 +156,7 @@ impl CollectionRunner {
             }
         }
 
-        Ok(())
+        Ok(self.stats.current_stats())
     }
 
     /// Handle a command from the channel.
@@ -351,23 +347,19 @@ impl CollectionRunner {
 
     /// Handle a received danmu message.
     async fn handle_message(&mut self, message: DanmuMessage) -> Result<CommandResult> {
-        if self.statistics_enabled {
-            // Update session-level statistics
-            let is_gift = matches!(message.message_type, DanmuType::Gift | DanmuType::SuperChat);
-            let mut stats_guard = self.stats.lock().await;
-            stats_guard.record_message(
-                &message.user_id,
-                &message.username,
-                &message.content,
-                is_gift,
-                message.timestamp,
-            );
-        }
+        // Update session-level statistics.
+        let is_gift = matches!(message.message_type, DanmuType::Gift | DanmuType::SuperChat);
+        self.stats.record_message(
+            &message.user_id,
+            &message.username,
+            &message.content,
+            is_gift,
+            message.timestamp,
+        );
 
         if self.sampling_enabled {
             // Update sampler (best-effort; used only when sampling is enabled)
-            let mut sampler_guard = self.sampler.lock().await;
-            sampler_guard.record_message(message.timestamp);
+            self.sampler.record_message(message.timestamp);
         }
 
         // Buffer the message (will be written on flush)

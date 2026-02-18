@@ -4,9 +4,10 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::cmp::Reverse;
+use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{HashMap, VecDeque};
+use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
 /// Statistics for a danmu collection session.
@@ -54,6 +55,286 @@ pub struct RateDataPoint {
     pub count: u64,
 }
 
+#[derive(Debug, Clone)]
+struct TalkerCounter {
+    username: String,
+    count: u64,
+    error: u64,
+}
+
+#[derive(Debug, Clone)]
+struct TalkerHeavyHitters {
+    capacity: usize,
+    counters: HashMap<String, TalkerCounter>,
+}
+
+impl TalkerHeavyHitters {
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity: capacity.max(1),
+            counters: HashMap::new(),
+        }
+    }
+
+    fn increment(&mut self, user_id: &str, username: &str) {
+        if let Some(counter) = self.counters.get_mut(user_id) {
+            counter.count = counter.count.saturating_add(1);
+            if counter.username != username {
+                counter.username = username.to_string();
+            }
+            return;
+        }
+
+        if self.counters.len() < self.capacity {
+            self.counters.insert(
+                user_id.to_string(),
+                TalkerCounter {
+                    username: username.to_string(),
+                    count: 1,
+                    error: 0,
+                },
+            );
+            return;
+        }
+
+        let min_key_and_count = self
+            .counters
+            .iter()
+            .min_by_key(|(_, counter)| counter.count)
+            .map(|(key, counter)| (key.clone(), counter.count));
+
+        if let Some((key, min_count)) = min_key_and_count {
+            self.counters.remove(&key);
+            self.counters.insert(
+                user_id.to_string(),
+                TalkerCounter {
+                    username: username.to_string(),
+                    count: min_count.saturating_add(1),
+                    error: min_count,
+                },
+            );
+        }
+    }
+
+    fn top_n(&self, n: usize) -> Vec<TopTalker> {
+        if n == 0 || self.counters.is_empty() {
+            return Vec::new();
+        }
+
+        let mut entries: Vec<_> = self.counters.iter().collect();
+        entries.sort_by(|(aid, a), (bid, b)| {
+            b.count
+                .cmp(&a.count)
+                .then_with(|| aid.cmp(bid))
+                .then_with(|| a.error.cmp(&b.error))
+        });
+        entries.truncate(n);
+        entries
+            .into_iter()
+            .map(|(user_id, counter)| TopTalker {
+                user_id: user_id.clone(),
+                username: counter.username.clone(),
+                message_count: counter.count,
+            })
+            .collect()
+    }
+
+    fn into_top_n(self, n: usize) -> Vec<TopTalker> {
+        if n == 0 || self.counters.is_empty() {
+            return Vec::new();
+        }
+
+        let mut entries: Vec<_> = self.counters.into_iter().collect();
+        entries.sort_by(|(aid, a), (bid, b)| {
+            b.count
+                .cmp(&a.count)
+                .then_with(|| aid.cmp(bid))
+                .then_with(|| a.error.cmp(&b.error))
+        });
+        entries.truncate(n);
+        entries
+            .into_iter()
+            .map(|(user_id, counter)| TopTalker {
+                user_id,
+                username: counter.username,
+                message_count: counter.count,
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct WordCounter {
+    count: u64,
+    error: u64,
+}
+
+#[derive(Debug, Clone)]
+struct CountMinSketch {
+    width: usize,
+    depth: usize,
+    rows: Vec<Vec<u64>>,
+}
+
+impl CountMinSketch {
+    fn new(width: usize, depth: usize) -> Self {
+        let width = width.max(64);
+        let depth = depth.max(2);
+        let mut rows = Vec::with_capacity(depth);
+        for _ in 0..depth {
+            rows.push(vec![0; width]);
+        }
+        Self { width, depth, rows }
+    }
+
+    fn hash_with_seed(value: &str, seed: u64) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        seed.hash(&mut hasher);
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn increment(&mut self, value: &str, inc: u64) {
+        for i in 0..self.depth {
+            let hash = Self::hash_with_seed(value, i as u64);
+            let index = (hash as usize) % self.width;
+            self.rows[i][index] = self.rows[i][index].saturating_add(inc);
+        }
+    }
+
+    fn estimate(&self, value: &str) -> u64 {
+        let mut min_value = u64::MAX;
+        for i in 0..self.depth {
+            let hash = Self::hash_with_seed(value, i as u64);
+            let index = (hash as usize) % self.width;
+            min_value = min_value.min(self.rows[i][index]);
+        }
+        min_value
+    }
+}
+
+#[derive(Debug, Clone)]
+struct WordHeavyHitters {
+    capacity: usize,
+    counters: HashMap<String, WordCounter>,
+    sketch: Option<CountMinSketch>,
+}
+
+impl WordHeavyHitters {
+    fn new(capacity: usize, sketch: Option<CountMinSketch>) -> Self {
+        Self {
+            capacity: capacity.max(1),
+            counters: HashMap::new(),
+            sketch,
+        }
+    }
+
+    fn increment(&mut self, word: &str) {
+        if let Some(sketch) = &mut self.sketch {
+            sketch.increment(word, 1);
+        }
+
+        if let Some(counter) = self.counters.get_mut(word) {
+            counter.count = counter.count.saturating_add(1);
+            return;
+        }
+
+        if self.counters.len() < self.capacity {
+            self.counters
+                .insert(word.to_string(), WordCounter { count: 1, error: 0 });
+            return;
+        }
+
+        let min_key_and_count = self
+            .counters
+            .iter()
+            .min_by_key(|(_, counter)| counter.count)
+            .map(|(key, counter)| (key.clone(), counter.count));
+
+        if let Some((key, min_count)) = min_key_and_count {
+            self.counters.remove(&key);
+            let cms_count = self
+                .sketch
+                .as_ref()
+                .map(|sketch| sketch.estimate(word))
+                .unwrap_or(0);
+            let count = min_count.saturating_add(1).max(cms_count);
+            self.counters.insert(
+                word.to_string(),
+                WordCounter {
+                    count,
+                    error: min_count,
+                },
+            );
+        }
+    }
+
+    fn score(&self, key: &str, counter: &WordCounter) -> u64 {
+        if let Some(sketch) = &self.sketch {
+            counter.count.max(sketch.estimate(key))
+        } else {
+            counter.count
+        }
+    }
+
+    fn compare_entries(&self, a: (&String, &WordCounter), b: (&String, &WordCounter)) -> Ordering {
+        self.score(a.0, a.1)
+            .cmp(&self.score(b.0, b.1))
+            .reverse()
+            .then_with(|| a.0.cmp(b.0))
+            .then_with(|| a.1.error.cmp(&b.1.error))
+    }
+
+    fn top_n(&self, n: usize) -> Vec<WordFrequency> {
+        if n == 0 || self.counters.is_empty() {
+            return Vec::new();
+        }
+
+        let mut entries: Vec<_> = self.counters.iter().collect();
+        entries.sort_by(|a, b| self.compare_entries(*a, *b));
+        entries.truncate(n);
+        entries
+            .into_iter()
+            .map(|(word, counter)| WordFrequency {
+                word: word.clone(),
+                count: self.score(word, counter),
+            })
+            .collect()
+    }
+
+    fn into_top_n(self, n: usize) -> Vec<WordFrequency> {
+        if n == 0 || self.counters.is_empty() {
+            return Vec::new();
+        }
+
+        let sketch = self.sketch;
+        let score = |word: &str, counter: &WordCounter| {
+            if let Some(sketch) = &sketch {
+                counter.count.max(sketch.estimate(word))
+            } else {
+                counter.count
+            }
+        };
+
+        let mut entries: Vec<_> = self.counters.into_iter().collect();
+        entries.sort_by(|(aw, a), (bw, b)| {
+            score(aw, a)
+                .cmp(&score(bw, b))
+                .reverse()
+                .then_with(|| aw.cmp(bw))
+                .then_with(|| a.error.cmp(&b.error))
+        });
+        entries.truncate(n);
+        entries
+            .into_iter()
+            .map(|(word, counter)| WordFrequency {
+                count: score(&word, &counter),
+                word,
+            })
+            .collect()
+    }
+}
+
 /// Aggregator for calculating danmu statistics.
 #[derive(Debug)]
 pub struct StatisticsAggregator {
@@ -63,12 +344,12 @@ pub struct StatisticsAggregator {
     chat_count: u64,
     /// Gift message count
     gift_count: u64,
-    /// User message counts (user_id -> (username, count))
-    user_counts: HashMap<String, (String, u64)>,
-    /// Word counts
-    word_counts: HashMap<String, u64>,
-    /// Rate data points
-    rate_data: Vec<RateDataPoint>,
+    /// Heavy hitters for active talkers (Space-Saving).
+    talker_hh: TalkerHeavyHitters,
+    /// Heavy hitters for words (Space-Saving + optional Count-Min Sketch).
+    word_hh: WordHeavyHitters,
+    /// Rate data points.
+    rate_data: VecDeque<RateDataPoint>,
     /// Current rate bucket
     current_bucket: Option<(DateTime<Utc>, u64)>,
     /// Bucket duration in seconds
@@ -77,8 +358,10 @@ pub struct StatisticsAggregator {
     start_time: Option<DateTime<Utc>>,
     /// Maximum number of top talkers to track
     max_top_talkers: usize,
-    /// Maximum number of words to track
+    /// Maximum number of words to return.
     max_words: usize,
+    /// Maximum number of rate points kept in memory.
+    max_rate_points: usize,
     /// Stop words to filter out
     stop_words: &'static HashSet<&'static str>,
 }
@@ -97,18 +380,29 @@ impl StatisticsAggregator {
         max_words: usize,
         bucket_duration_secs: u64,
     ) -> Self {
+        let talker_capacity = max_top_talkers.max(1).saturating_mul(8);
+        let word_capacity = max_words.max(1).saturating_mul(4);
+        let cms_width = (word_capacity.saturating_mul(32))
+            .next_power_of_two()
+            .max(256);
+        let cms_depth = 4;
+        let max_rate_points = ((6 * 60 * 60) / bucket_duration_secs.max(1) as usize).max(60);
         Self {
             total_count: 0,
             chat_count: 0,
             gift_count: 0,
-            user_counts: HashMap::new(),
-            word_counts: HashMap::new(),
-            rate_data: Vec::new(),
+            talker_hh: TalkerHeavyHitters::new(talker_capacity),
+            word_hh: WordHeavyHitters::new(
+                word_capacity,
+                Some(CountMinSketch::new(cms_width, cms_depth)),
+            ),
+            rate_data: VecDeque::new(),
             current_bucket: None,
             bucket_duration_secs,
             start_time: None,
             max_top_talkers,
             max_words,
+            max_rate_points,
             stop_words: &STOP_WORDS,
         }
     }
@@ -135,11 +429,7 @@ impl StatisticsAggregator {
             self.chat_count += 1;
         }
 
-        // Update user counts
-        self.user_counts
-            .entry(user_id.to_string())
-            .and_modify(|(_, count)| *count += 1)
-            .or_insert_with(|| (username.to_string(), 1));
+        self.talker_hh.increment(user_id, username);
 
         // Update word counts (only for chat messages)
         if !is_gift && !content.is_empty() {
@@ -163,21 +453,8 @@ impl StatisticsAggregator {
                 continue;
             }
 
-            *self.word_counts.entry(word_lower).or_insert(0) += 1;
+            self.word_hh.increment(&word_lower);
         }
-
-        // Prune word counts if too large
-        if self.word_counts.len() > self.max_words * 2 {
-            self.prune_word_counts();
-        }
-    }
-
-    /// Prune word counts to keep only top words.
-    fn prune_word_counts(&mut self) {
-        let mut counts: Vec<_> = self.word_counts.drain().collect();
-        counts.sort_by(|a, b| b.1.cmp(&a.1));
-        counts.truncate(self.max_words);
-        self.word_counts = counts.into_iter().collect();
     }
 
     /// Update the rate bucket.
@@ -190,10 +467,15 @@ impl StatisticsAggregator {
             }
             Some((start, count)) => {
                 // Save current bucket and start new one
-                self.rate_data.push(RateDataPoint {
+                self.rate_data.push_back(RateDataPoint {
                     timestamp: *start,
                     count: *count,
                 });
+                if self.rate_data.len() > self.max_rate_points {
+                    while self.rate_data.len() > self.max_rate_points {
+                        self.rate_data.pop_front();
+                    }
+                }
                 self.current_bucket = Some((bucket_start, 1));
             }
             None => {
@@ -214,7 +496,7 @@ impl StatisticsAggregator {
     pub fn finalize(mut self, end_time: DateTime<Utc>) -> DanmuStatistics {
         // Flush current bucket
         if let Some((start, count)) = self.current_bucket.take() {
-            self.rate_data.push(RateDataPoint {
+            self.rate_data.push_back(RateDataPoint {
                 timestamp: start,
                 count,
             });
@@ -226,35 +508,15 @@ impl StatisticsAggregator {
             .map(|start| (end_time - start).num_seconds().max(0) as u64)
             .unwrap_or(0);
 
-        // Get top talkers
-        let mut user_list: Vec<_> = self.user_counts.into_iter().collect();
-        user_list.sort_by(|a, b| b.1.1.cmp(&a.1.1));
-        let top_talkers: Vec<TopTalker> = user_list
-            .into_iter()
-            .take(self.max_top_talkers)
-            .map(|(user_id, (username, count))| TopTalker {
-                user_id,
-                username,
-                message_count: count,
-            })
-            .collect();
-
-        // Get word frequency
-        let mut word_list: Vec<_> = self.word_counts.into_iter().collect();
-        word_list.sort_by(|a, b| b.1.cmp(&a.1));
-        let word_frequency: Vec<WordFrequency> = word_list
-            .into_iter()
-            .take(self.max_words)
-            .map(|(word, count)| WordFrequency { word, count })
-            .collect();
-
+        let top_talkers = self.talker_hh.into_top_n(self.max_top_talkers);
+        let word_frequency = self.word_hh.into_top_n(self.max_words);
         DanmuStatistics {
             total_count: self.total_count,
             chat_count: self.chat_count,
             gift_count: self.gift_count,
             top_talkers,
             word_frequency,
-            rate_timeseries: self.rate_data,
+            rate_timeseries: self.rate_data.into_iter().collect(),
             start_time: self.start_time,
             end_time: Some(end_time),
             duration_secs,
@@ -263,60 +525,10 @@ impl StatisticsAggregator {
 
     /// Get current statistics without finalizing.
     pub fn current_stats(&self) -> DanmuStatistics {
-        let mut top_talkers = Vec::new();
-        if self.max_top_talkers > 0 && !self.user_counts.is_empty() {
-            let mut heap: BinaryHeap<Reverse<(u64, Reverse<&str>, &str)>> = BinaryHeap::new();
-            for (user_id, (username, count)) in &self.user_counts {
-                heap.push(Reverse((
-                    *count,
-                    Reverse(user_id.as_str()),
-                    username.as_str(),
-                )));
-                if heap.len() > self.max_top_talkers {
-                    let _ = heap.pop();
-                }
-            }
+        let top_talkers = self.talker_hh.top_n(self.max_top_talkers);
+        let word_frequency = self.word_hh.top_n(self.max_words);
 
-            let mut entries: Vec<(u64, &str, &str)> = heap
-                .into_iter()
-                .map(|Reverse((count, Reverse(user_id), username))| (count, user_id, username))
-                .collect();
-            entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
-            top_talkers = entries
-                .into_iter()
-                .map(|(count, user_id, username)| TopTalker {
-                    user_id: user_id.to_string(),
-                    username: username.to_string(),
-                    message_count: count,
-                })
-                .collect();
-        }
-
-        let mut word_frequency = Vec::new();
-        if self.max_words > 0 && !self.word_counts.is_empty() {
-            let mut heap: BinaryHeap<Reverse<(u64, Reverse<&str>)>> = BinaryHeap::new();
-            for (word, count) in &self.word_counts {
-                heap.push(Reverse((*count, Reverse(word.as_str()))));
-                if heap.len() > self.max_words {
-                    let _ = heap.pop();
-                }
-            }
-
-            let mut entries: Vec<(u64, &str)> = heap
-                .into_iter()
-                .map(|Reverse((count, Reverse(word)))| (count, word))
-                .collect();
-            entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
-            word_frequency = entries
-                .into_iter()
-                .map(|(count, word)| WordFrequency {
-                    word: word.to_string(),
-                    count,
-                })
-                .collect();
-        }
-
-        let mut rate_data = self.rate_data.clone();
+        let mut rate_data: Vec<_> = self.rate_data.iter().cloned().collect();
         if let Some((start, count)) = &self.current_bucket {
             rate_data.push(RateDataPoint {
                 timestamp: *start,
@@ -395,6 +607,7 @@ fn default_stop_words() -> HashSet<&'static str> {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use std::time::Instant;
 
     #[test]
     fn test_record_message() {
@@ -509,5 +722,40 @@ mod tests {
         assert_eq!(stats.total_count, 3);
         assert_eq!(stats.chat_count, 1);
         assert_eq!(stats.gift_count, 2);
+    }
+
+    #[test]
+    fn test_heavy_hitter_high_cardinality_bounds() {
+        let mut agg = StatisticsAggregator::with_config(10, 50, 10);
+        let now = Utc::now();
+        let total_messages = 50_000usize;
+
+        let start = Instant::now();
+        for i in 0..total_messages {
+            // Very high-cardinality users.
+            let user_id = format!("user-{}", i % 20_000);
+            let username = format!("User{}", i % 20_000);
+            // Very high-cardinality words mixed with hot keywords.
+            let content = format!("word{} hot hot", i % 30_000);
+            agg.record_message(&user_id, &username, &content, false, now);
+        }
+        let elapsed = start.elapsed();
+
+        // Internal heavy-hitter structures must stay bounded.
+        assert!(agg.talker_hh.counters.len() <= agg.talker_hh.capacity);
+        assert!(agg.word_hh.counters.len() <= agg.word_hh.capacity);
+        assert_eq!(agg.total_count as usize, total_messages);
+
+        // Public outputs are also bounded by config.
+        let stats = agg.current_stats();
+        assert!(stats.top_talkers.len() <= 10);
+        assert!(stats.word_frequency.len() <= 50);
+
+        // Non-failing signal for local profiling/regression checks.
+        eprintln!(
+            "high_cardinality_bounds: messages={} elapsed_ms={}",
+            total_messages,
+            elapsed.as_millis()
+        );
     }
 }

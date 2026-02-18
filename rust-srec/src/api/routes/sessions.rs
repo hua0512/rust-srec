@@ -165,6 +165,13 @@ pub async fn list_sessions(
                 (String::new(), None)
             };
 
+        let danmu_count = session_repository
+            .get_danmu_statistics(&session.id)
+            .await
+            .ok()
+            .flatten()
+            .map(|stats| stats.total_danmus as u64);
+
         session_responses.push(SessionResponse {
             id: session.id.clone(),
             streamer_id: session.streamer_id.clone(),
@@ -176,7 +183,7 @@ pub async fn list_sessions(
             duration_secs,
             output_count,
             total_size_bytes: session.total_size_bytes as u64,
-            danmu_count: None,
+            danmu_count,
             thumbnail_url: get_thumbnail_url(&session.id, session_repository.as_ref()).await,
             streamer_avatar,
         });
@@ -279,17 +286,13 @@ pub async fn get_session(
         (String::new(), None)
     };
 
-    // Get danmu statistics if available
-    let danmu_count = if let Some(danmu_stats_id) = &session.danmu_statistics_id {
-        session_repository
-            .get_danmu_statistics(danmu_stats_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|stats| stats.total_danmus as u64)
-    } else {
-        None
-    };
+    // Fetch danmu stats by session id (danmu_statistics.session_id).
+    let danmu_count = session_repository
+        .get_danmu_statistics(&session.id)
+        .await
+        .ok()
+        .flatten()
+        .map(|stats| stats.total_danmus as u64);
 
     // Get thumbnail URL
     let thumbnail_url = get_thumbnail_url(&session.id, session_repository.as_ref()).await;
