@@ -1,6 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
-import { SessionSchema } from '../../api/schemas';
+import { SessionDanmuStatisticsSchema, SessionSchema } from '../../api/schemas';
 import { z } from 'zod';
 
 const PaginatedSessionSchema = z.object({
@@ -50,6 +50,13 @@ export const getSession = createServerFn({ method: 'GET' })
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(`/sessions/${id}`);
     return SessionSchema.parse(json);
+  });
+
+export const getSessionDanmuStatistics = createServerFn({ method: 'GET' })
+  .inputValidator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const json = await fetchBackend(`/sessions/${id}/danmu-statistics`);
+    return SessionDanmuStatisticsSchema.parse(json);
   });
 
 export const deleteSession = createServerFn({ method: 'POST' })

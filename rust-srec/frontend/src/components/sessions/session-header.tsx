@@ -45,7 +45,6 @@ interface SessionHeaderProps {
     end_time?: string | null;
   };
 }
-
 import { useLingui } from '@lingui/react';
 
 export function SessionHeader({ session }: SessionHeaderProps) {
@@ -115,10 +114,11 @@ export function SessionHeader({ session }: SessionHeaderProps) {
                 <Hash className="h-3.5 w-3.5" />
                 ID: {session.id}
               </span>
-              <span className="opacity-40">•</span>
-              <span className="font-mono text-xs opacity-70 selection:bg-muted select-all">
-                {session.title || <Trans>Untitled Session</Trans>}
-              </span>
+              {session.title && (
+                <span className="text-xs opacity-75 truncate max-w-md">
+                  {session.title}
+                </span>
+              )}
             </div>
           </div>
         </motion.div>

@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { getMediaUrl } from '@/lib/url';
 import { isPlayable } from '@/lib/media';
+import type { SessionDanmuStatistics } from '@/api/schemas';
+import { DanmuStatsPanel } from './danmu-stats-panel';
 
 interface OverviewTabProps {
   session: any;
@@ -26,6 +28,11 @@ interface OverviewTabProps {
   outputs: any[];
   onPlay: (output: any) => void;
   token?: string;
+  danmuStats: SessionDanmuStatistics | undefined;
+  isDanmuStatsLoading: boolean;
+  isDanmuStatsError: boolean;
+  isDanmuStatsUnavailable: boolean;
+  onRetryDanmuStats: () => void;
 }
 
 export function OverviewTab({
@@ -34,11 +41,15 @@ export function OverviewTab({
   outputs,
   onPlay,
   token,
+  danmuStats,
+  isDanmuStatsLoading,
+  isDanmuStatsError,
+  isDanmuStatsUnavailable,
+  onRetryDanmuStats,
 }: OverviewTabProps) {
   const { i18n } = useLingui();
   const thumbnailUrl = getMediaUrl(session.thumbnail_url, token);
 
-  // Find first playable output (not thumbnail or danmu)
   const playableOutput = outputs.find(isPlayable);
 
   return (
@@ -48,7 +59,6 @@ export function OverviewTab({
       transition={{ delay: 0.2 }}
       className="space-y-8"
     >
-      {/* Top Section: Context (Streamer) */}
       <Card className="overflow-hidden border-border/50 shadow-lg bg-card/40 backdrop-blur-xl">
         <div className="absolute top-0 right-0 p-32 bg-primary/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
         <CardContent className="p-4 md:p-8">
@@ -87,22 +97,6 @@ export function OverviewTab({
                 <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold tracking-tight text-foreground truncate max-w-[200px] sm:max-w-none">
                   {session.streamer_name}
                 </h2>
-                <div className="flex items-center gap-6 text-sm text-muted-foreground font-medium pt-1">
-                  <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-green-500" />
-                    <span>
-                      <Trans>
-                        {session.danmu_count?.toLocaleString() || 0} Danmu
-                      </Trans>
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-                    <span>
-                      <Trans>{session.output_count} Outputs</Trans>
-                    </span>
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -123,7 +117,7 @@ export function OverviewTab({
               />
               <StatBox
                 icon={Activity}
-                label={<Trans>Engagement</Trans>}
+                label={<Trans>Danmus</Trans>}
                 value={session.danmu_count?.toLocaleString() || '0'}
                 color="text-orange-500"
                 bg="bg-orange-500/10"
@@ -135,7 +129,6 @@ export function OverviewTab({
       </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Left Column (2/3): Preview & History */}
         <div className="xl:col-span-2 space-y-8">
           <Card className="overflow-hidden border-border/50 shadow-lg bg-card/40 backdrop-blur-xs h-full min-h-[400px] flex flex-col">
             <CardHeader className="pb-3 border-b border-border/40">
@@ -186,9 +179,7 @@ export function OverviewTab({
           </Card>
         </div>
 
-        {/* Right Column (1/3): Performance & Titles */}
         <div className="space-y-8 flex flex-col">
-          {/* Performance Redesigned */}
           <Card className="bg-gradient-to-b from-card/50 to-card/30 backdrop-blur-sm border-border/40 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl -mr-10 -mt-10" />
             <CardHeader className="pb-2">
@@ -233,6 +224,14 @@ export function OverviewTab({
           </Card>
         </div>
       </div>
+
+      <DanmuStatsPanel
+        stats={danmuStats}
+        isLoading={isDanmuStatsLoading}
+        isError={isDanmuStatsError}
+        isUnavailable={isDanmuStatsUnavailable}
+        onRetry={onRetryDanmuStats}
+      />
     </motion.div>
   );
 }

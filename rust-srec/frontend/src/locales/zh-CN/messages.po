@@ -106,20 +106,10 @@ msgstr "{0}"
 msgid "{0} Configuration"
 msgstr "{0} 配置"
 
-#. placeholder {0}: session.danmu_count?.toLocaleString() || 0
-#: src/components/sessions/overview-tab.tsx:94
-msgid "{0} Danmu"
-msgstr "{0} 条弹幕"
-
 #. placeholder {0}: outputs.length
 #: src/components/sessions/recordings-tab.tsx:48
 msgid "{0} Files"
 msgstr "{0} 个文件"
-
-#. placeholder {0}: session.output_count
-#: src/components/sessions/overview-tab.tsx:102
-msgid "{0} Outputs"
-msgstr "{0} 个输出"
 
 #. placeholder {0}: newPlayers.length
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:179
@@ -697,7 +687,7 @@ msgstr "返回处理任务列表"
 msgid "Back to Pipeline Jobs"
 msgstr "返回处理任务列表"
 
-#: src/components/sessions/session-header.tsx:71
+#: src/components/sessions/session-header.tsx:70
 msgid "Back to Sessions"
 msgstr "返回录制会话"
 
@@ -1648,6 +1638,25 @@ msgstr "弹幕控制"
 msgid "Danmu Service"
 msgstr "弹幕服务"
 
+#: src/components/sessions/danmu-stats-panel.tsx:99
+#: src/components/sessions/danmu-stats-panel.tsx:121
+#: src/components/sessions/danmu-stats-panel.tsx:137
+#: src/components/sessions/danmu-stats-panel.tsx:163
+msgid "Danmu Statistics"
+msgstr "弹幕统计"
+
+#: src/components/sessions/danmu-stats-panel.tsx:125
+msgid "Danmu statistics are not available for this session."
+msgstr "此会话的弹幕统计暂不可用。"
+
+#: src/components/sessions/danmu-stats-panel.tsx:88
+msgid "Danmu/min"
+msgstr "弹幕/分钟"
+
+#: src/components/sessions/overview-tab.tsx:120
+msgid "Danmus"
+msgstr "弹幕数"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:118
 msgid "Dark"
 msgstr "深色"
@@ -2211,17 +2220,13 @@ msgstr "弹幕关闭时结束录制"
 msgid "End Time"
 msgstr "结束时间"
 
-#: src/components/sessions/overview-tab.tsx:225
+#: src/components/sessions/overview-tab.tsx:216
 msgid "Ended"
 msgstr "已结束"
 
 #: src/components/notifications/forms/webhook-form.tsx:61
 msgid "Endpoint Configuration"
 msgstr "端点配置"
-
-#: src/components/sessions/overview-tab.tsx:126
-msgid "Engagement"
-msgstr "互动"
 
 #: src/components/config/platforms/platform-card.tsx:143
 #: src/components/config/templates/template-card.tsx:139
@@ -2330,7 +2335,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:162
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:176
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -2650,6 +2655,10 @@ msgstr "从 URL 提取名称失败"
 #: src/components/config/global/backup-restore-card.tsx:120
 msgid "Failed to import configuration"
 msgstr "导入配置失败"
+
+#: src/components/sessions/danmu-stats-panel.tsx:142
+msgid "Failed to load danmu statistics."
+msgstr "加载弹幕统计失败。"
 
 #. placeholder {0}: error?.message || 'Engine not found'
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:52
@@ -3129,7 +3138,7 @@ msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:254
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:170
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:184
 msgid "Go Back"
 msgstr "返回"
 
@@ -3387,7 +3396,7 @@ msgstr "导入成功"
 msgid "Importing..."
 msgstr "正在导入..."
 
-#: src/components/sessions/overview-tab.tsx:291
+#: src/components/sessions/overview-tab.tsx:290
 msgid "In active"
 msgstr "进行中"
 
@@ -3563,7 +3572,7 @@ msgstr "任务超时"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:250
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -4403,7 +4412,7 @@ msgstr "未找到预设"
 msgid "No presets yet"
 msgstr "暂无预设"
 
-#: src/components/sessions/overview-tab.tsx:180
+#: src/components/sessions/overview-tab.tsx:173
 msgid "No preview generated"
 msgstr "未生成预览"
 
@@ -4431,6 +4440,10 @@ msgstr "未定义步骤"
 msgid "No streamers found"
 msgstr "未找到主播"
 
+#: src/components/sessions/danmu-stats-panel.tsx:254
+msgid "No talker data"
+msgstr "暂无发言用户数据"
+
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:196
 msgid "No templates found"
 msgstr "未找到模板"
@@ -4442,6 +4455,10 @@ msgstr "暂无模板"
 #: src/components/sessions/timeline-tab.tsx:31
 msgid "No Title Changes"
 msgstr "标题无变化"
+
+#: src/components/sessions/danmu-stats-panel.tsx:262
+msgid "No word data"
+msgstr "暂无词频数据"
 
 #: src/components/pipeline/workflows/step-library.tsx:564
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:249
@@ -4735,7 +4752,7 @@ msgid "Output Settings"
 msgstr "输出设置"
 
 #: src/components/layout/site-header.tsx:49
-#: src/components/sessions/overview-tab.tsx:119
+#: src/components/sessions/overview-tab.tsx:113
 #: src/components/sidebar/navbar.tsx:43
 #: src/lib/menu-list.ts:90
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:478
@@ -4779,7 +4796,7 @@ msgstr "为此主播覆盖全局默认值。"
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:220
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:231
 msgid "Overview"
 msgstr "概览"
 
@@ -4910,6 +4927,10 @@ msgstr "暂停"
 msgid "paused"
 msgstr "条已暂停"
 
+#: src/components/sessions/danmu-stats-panel.tsx:175
+msgid "Peak / min"
+msgstr "峰值/分钟"
+
 #: src/components/pipeline/dag-graph-view.tsx:390
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:457
@@ -4951,7 +4972,7 @@ msgid "Perf"
 msgstr "性能"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:668
-#: src/components/sessions/overview-tab.tsx:197
+#: src/components/sessions/overview-tab.tsx:188
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:581
 msgid "Performance"
 msgstr "性能"
@@ -5281,7 +5302,7 @@ msgstr "预览图库"
 msgid "Preview Thumbnail"
 msgstr "预览缩略图"
 
-#: src/components/sessions/overview-tab.tsx:171
+#: src/components/sessions/overview-tab.tsx:164
 msgid "Preview Unavailable"
 msgstr "预览不可用"
 
@@ -5543,7 +5564,7 @@ msgstr "录制过滤器"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:238
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:249
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -5714,6 +5735,10 @@ msgstr "保留期限"
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:65
 msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
+
+#: src/components/sessions/danmu-stats-panel.tsx:146
+msgid "Retry"
+msgstr "重试"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:632
 msgid "Retry All Failed"
@@ -6175,11 +6200,11 @@ msgstr "该实体不支持会话完成处理管道。"
 msgid "Session deleted successfully"
 msgstr "会话已删除"
 
-#: src/components/sessions/session-header.tsx:100
+#: src/components/sessions/session-header.tsx:99
 msgid "Session Details"
 msgstr "录制会话详情"
 
-#: src/components/sessions/overview-tab.tsx:205
+#: src/components/sessions/overview-tab.tsx:196
 msgid "Session Duration"
 msgstr "录制时长"
 
@@ -6208,15 +6233,15 @@ msgstr "会话菜单"
 msgid "Session Merging Gap"
 msgstr "会话合并间隔"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:165
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:179
 msgid "Session not found"
 msgstr "未找到录制会话"
 
-#: src/components/sessions/overview-tab.tsx:144
+#: src/components/sessions/overview-tab.tsx:137
 msgid "Session Preview"
 msgstr "录制预览"
 
-#: src/components/sessions/overview-tab.tsx:153
+#: src/components/sessions/overview-tab.tsx:146
 msgid "Session thumbnail"
 msgstr "会话缩略图"
 
@@ -6420,7 +6445,7 @@ msgid "Start Time"
 msgstr "开始时间"
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:255
-#: src/components/sessions/overview-tab.tsx:219
+#: src/components/sessions/overview-tab.tsx:210
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:302
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:636
 msgid "Started"
@@ -6511,7 +6536,7 @@ msgstr "直播链接"
 msgid "Streamer"
 msgstr "主播"
 
-#: src/components/sessions/overview-tab.tsx:81
+#: src/components/sessions/overview-tab.tsx:91
 msgid "STREAMER"
 msgstr "主播"
 
@@ -6942,7 +6967,8 @@ msgstr "时间占位符（本地时间）"
 msgid "Time Range"
 msgstr "时间范围"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:226
+#: src/components/sessions/danmu-stats-panel.tsx:192
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:237
 msgid "Timeline"
 msgstr "时间线"
 
@@ -7003,6 +7029,15 @@ msgstr "今天"
 msgid "Token"
 msgstr "令牌"
 
+#: src/components/sessions/danmu-stats-panel.tsx:180
+#: src/components/sessions/danmu-stats-panel.tsx:253
+msgid "Top Talkers"
+msgstr "活跃发言用户"
+
+#: src/components/sessions/danmu-stats-panel.tsx:261
+msgid "Top Words"
+msgstr "高频词"
+
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:271
 msgid "total"
 msgstr "总计"
@@ -7011,7 +7046,11 @@ msgstr "总计"
 msgid "Total"
 msgstr "总计"
 
-#: src/components/sessions/overview-tab.tsx:112
+#: src/components/sessions/danmu-stats-panel.tsx:170
+msgid "Total Danmu"
+msgstr "总弹幕数"
+
+#: src/components/sessions/overview-tab.tsx:106
 msgid "Total Size"
 msgstr "总大小"
 
@@ -7030,6 +7069,10 @@ msgstr "系统总负载"
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:139
 msgid "Track Information"
 msgstr "轨道信息"
+
+#: src/components/sessions/danmu-stats-panel.tsx:185
+msgid "Tracked Words"
+msgstr "统计词数"
 
 #: src/components/pipeline/presets/preset-templates.ts:14
 msgid "Transcode H.264"
@@ -7231,10 +7274,6 @@ msgstr "未知文件"
 #: src/components/streamers/card/use-streamer-status.tsx:101
 msgid "Until"
 msgstr "直到"
-
-#: src/components/sessions/session-header.tsx:120
-msgid "Untitled Session"
-msgstr "无标题会话"
 
 #: src/components/sessions/session-card.tsx:182
 msgid "Untitled Stream"

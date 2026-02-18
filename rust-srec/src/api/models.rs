@@ -717,6 +717,39 @@ pub struct SessionResponse {
     pub thumbnail_url: Option<String>,
 }
 
+/// Full danmu statistics for a session.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct SessionDanmuStatisticsResponse {
+    pub session_id: String,
+    pub total_danmus: u64,
+    pub danmu_rate_timeseries: Vec<DanmuRatePoint>,
+    pub top_talkers: Vec<DanmuTopTalker>,
+    pub word_frequency: Vec<DanmuWordFrequency>,
+}
+
+/// Danmu rate datapoint.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct DanmuRatePoint {
+    /// Unix epoch milliseconds (UTC).
+    pub ts: i64,
+    pub count: i64,
+}
+
+/// Top talker entry.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct DanmuTopTalker {
+    pub user_id: String,
+    pub username: String,
+    pub message_count: i64,
+}
+
+/// Word frequency entry.
+#[derive(Debug, Clone, Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct DanmuWordFrequency {
+    pub word: String,
+    pub count: i64,
+}
+
 /// Title change entry representing a stream title update.
 ///
 /// # Example

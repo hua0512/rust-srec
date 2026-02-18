@@ -7,9 +7,10 @@ use utoipa::OpenApi;
 
 use crate::api::models::{
     ComponentHealth, CreateFilterRequest, CreateStreamerRequest, CreateTemplateRequest,
-    ExtractMetadataRequest, ExtractMetadataResponse, FilterResponse, GlobalConfigResponse,
-    HealthResponse, JobResponse, PaginatedResponse, ParseUrlRequest, ParseUrlResponse,
-    PipelineStatsResponse, PlatformConfigResponse, ResolveUrlRequest, ResolveUrlResponse,
+    DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, ExtractMetadataRequest,
+    ExtractMetadataResponse, FilterResponse, GlobalConfigResponse, HealthResponse, JobResponse,
+    PaginatedResponse, ParseUrlRequest, ParseUrlResponse, PipelineStatsResponse,
+    PlatformConfigResponse, ResolveUrlRequest, ResolveUrlResponse, SessionDanmuStatisticsResponse,
     SessionResponse, StreamerResponse, TemplateResponse, UpdateFilterRequest,
     UpdateGlobalConfigRequest, UpdatePriorityRequest, UpdateStreamerRequest, UpdateTemplateRequest,
 };
@@ -121,6 +122,7 @@ pub struct MessageResponse {
         // Session endpoints
         crate::api::routes::sessions::list_sessions,
         crate::api::routes::sessions::get_session,
+        crate::api::routes::sessions::get_session_danmu_statistics,
         crate::api::routes::sessions::delete_session,
         crate::api::routes::sessions::delete_sessions_batch,
         // Template endpoints
@@ -246,6 +248,10 @@ pub struct MessageResponse {
             PlatformConfigResponse,
             // Session schemas
             SessionResponse,
+            SessionDanmuStatisticsResponse,
+            DanmuRatePoint,
+            DanmuTopTalker,
+            DanmuWordFrequency,
             PaginatedResponse<SessionResponse>,
             crate::api::routes::sessions::BatchDeleteRequest,
             crate::api::routes::sessions::BatchDeleteResponse,

@@ -218,7 +218,7 @@ pub struct DanmuStatisticsDbModel {
     pub danmu_rate_timeseries: Option<String>,
     /// JSON array of top 10 most active users
     pub top_talkers: Option<String>,
-    /// JSON map of word frequencies
+    /// JSON array of word-frequency entries
     pub word_frequency: Option<String>,
 }
 
@@ -230,7 +230,7 @@ impl DanmuStatisticsDbModel {
             total_danmus: 0,
             danmu_rate_timeseries: Some("[]".to_string()),
             top_talkers: Some("[]".to_string()),
-            word_frequency: Some("{}".to_string()),
+            word_frequency: Some("[]".to_string()),
         }
     }
 }

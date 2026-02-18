@@ -22,8 +22,36 @@ export const SessionSchema = z.object({
   thumbnail_url: z.string().nullable().optional(),
 });
 
+export const DanmuRatePointSchema = z.object({
+  ts: z.number(),
+  count: z.number(),
+});
+
+export const DanmuTopTalkerSchema = z.object({
+  user_id: z.string(),
+  username: z.string(),
+  message_count: z.number(),
+});
+
+export const DanmuWordFrequencySchema = z.object({
+  word: z.string(),
+  count: z.number(),
+});
+
+export const SessionDanmuStatisticsSchema = z.object({
+  session_id: z.string(),
+  total_danmus: z.number(),
+  danmu_rate_timeseries: z.array(DanmuRatePointSchema),
+  top_talkers: z.array(DanmuTopTalkerSchema),
+  word_frequency: z.array(DanmuWordFrequencySchema),
+});
+
 export const JobProgressKindSchema = z.enum(['ffmpeg', 'rclone']);
 export type JobProgressKind = z.infer<typeof JobProgressKindSchema>;
+
+export type SessionDanmuStatistics = z.infer<
+  typeof SessionDanmuStatisticsSchema
+>;
 
 export const JobProgressSnapshotSchema = z.object({
   kind: JobProgressKindSchema,

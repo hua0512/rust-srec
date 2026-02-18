@@ -18,10 +18,13 @@ use axum::{
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
-    PaginatedResponse, PaginationParams, SessionFilterParams, SessionResponse, TitleChange,
+    DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, PaginatedResponse, PaginationParams,
+    SessionDanmuStatisticsResponse, SessionFilterParams, SessionResponse, TitleChange,
 };
 use crate::api::server::AppState;
-use crate::database::models::{Pagination, SessionFilters, TitleEntry};
+use crate::database::models::{
+    DanmuRateEntry, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
+};
 
 /// Create the sessions router.
 ///
@@ -35,6 +38,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_sessions))
         .route("/batch-delete", post(delete_sessions_batch))
+        .route("/{id}/danmu-statistics", get(get_session_danmu_statistics))
         .route("/{id}", get(get_session).delete(delete_session))
 }
 
@@ -311,6 +315,90 @@ pub async fn get_session(
         danmu_count,
         thumbnail_url,
         streamer_avatar,
+    };
+
+    Ok(Json(response))
+}
+
+/// Get full danmu statistics for a session by ID.
+#[utoipa::path(
+    get,
+    path = "/api/sessions/{id}/danmu-statistics",
+    tag = "sessions",
+    params(("id" = String, Path, description = "Session ID")),
+    responses(
+        (status = 200, description = "Session danmu statistics", body = SessionDanmuStatisticsResponse),
+        (status = 404, description = "Session or danmu statistics not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_session_danmu_statistics(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<SessionDanmuStatisticsResponse>> {
+    let session_repository = state
+        .session_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+
+    // Ensure session exists so missing stats can cleanly map to 404.
+    let session = session_repository
+        .get_session(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    let stats = session_repository
+        .get_danmu_statistics(&id)
+        .await
+        .map_err(ApiError::from)?
+        .ok_or_else(|| {
+            ApiError::not_found(format!("DanmuStatistics with id '{}' not found", id))
+        })?;
+
+    let danmu_rate_timeseries = stats
+        .danmu_rate_timeseries
+        .as_deref()
+        .map(serde_json::from_str::<Vec<DanmuRateEntry>>)
+        .transpose()
+        .map_err(|e| ApiError::internal(format!("Failed to parse danmu rate timeseries: {e}")))?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|point| DanmuRatePoint {
+            ts: point.ts,
+            count: point.count,
+        })
+        .collect();
+
+    let top_talkers = stats
+        .top_talkers
+        .as_deref()
+        .map(serde_json::from_str::<Vec<TopTalkerEntry>>)
+        .transpose()
+        .map_err(|e| ApiError::internal(format!("Failed to parse top talkers: {e}")))?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| DanmuTopTalker {
+            user_id: entry.user_id,
+            username: entry.username,
+            message_count: entry.message_count,
+        })
+        .collect();
+
+    let mut word_frequency = stats
+        .word_frequency
+        .as_deref()
+        .map(serde_json::from_str::<Vec<DanmuWordFrequency>>)
+        .transpose()
+        .map_err(|e| ApiError::internal(format!("Failed to parse word frequency: {e}")))?
+        .unwrap_or_default();
+    word_frequency.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.word.cmp(&b.word)));
+
+    let response = SessionDanmuStatisticsResponse {
+        session_id: session.id,
+        total_danmus: stats.total_danmus as u64,
+        danmu_rate_timeseries,
+        top_talkers,
+        word_frequency,
     };
 
     Ok(Json(response))

@@ -631,6 +631,12 @@ async fn persist_statistics(
         message_count: i64,
     }
 
+    #[derive(serde::Serialize)]
+    struct WordFrequencyView<'a> {
+        word: &'a str,
+        count: i64,
+    }
+
     let Some(repo) = session_repo else {
         return;
     };
@@ -666,9 +672,11 @@ async fn persist_statistics(
     let word_frequency = statistics
         .word_frequency
         .iter()
-        .map(|entry| (entry.word.as_str(), saturating_u64_to_i64(entry.count)))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let word_frequency = match serde_json::to_string(&word_frequency) {
+        .map(|entry| WordFrequencyView {
+            word: entry.word.as_str(),
+            count: saturating_u64_to_i64(entry.count),
+        });
+    let word_frequency = match serde_json::to_string(&word_frequency.collect::<Vec<_>>()) {
         Ok(value) => Some(value),
         Err(error) => {
             warn!(session_id, %error, "Failed to serialize word frequency");
