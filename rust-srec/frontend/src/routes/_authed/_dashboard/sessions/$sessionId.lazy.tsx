@@ -347,6 +347,7 @@ function SessionDetailPage() {
                     title={playingOutput.file_path.split('/').pop()}
                     className="w-full h-full border-0 rounded-none bg-black"
                     contentClassName="min-h-0"
+                    defaultWebFullscreen
                   />
                 </Suspense>
               ))}

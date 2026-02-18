@@ -29,6 +29,7 @@ export interface PlayerCardProps {
   volume?: number;
   onVolumeChange?: (volume: number) => void;
   onMuteChange?: (muted: boolean) => void;
+  defaultWebFullscreen?: boolean;
 }
 
 export function PlayerCard({
@@ -44,6 +45,7 @@ export function PlayerCard({
   volume = 0.5,
   onVolumeChange,
   onMuteChange,
+  defaultWebFullscreen = false,
 }: PlayerCardProps) {
   const artRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null); // Type loose for dynamic import
@@ -299,6 +301,9 @@ export function PlayerCard({
         playerRef.current = art;
 
         art.on('ready', () => {
+          if (defaultWebFullscreen) {
+            art.fullscreenWeb = true;
+          }
           setLoading(false);
           setError(null);
         });
@@ -358,7 +363,14 @@ export function PlayerCard({
         artRef.current.innerHTML = '';
       }
     };
-  }, [currentUrl, currentHeaders, resolving, title, refreshKey]);
+  }, [
+    currentUrl,
+    currentHeaders,
+    resolving,
+    title,
+    refreshKey,
+    defaultWebFullscreen,
+  ]);
 
   return (
     <Card
