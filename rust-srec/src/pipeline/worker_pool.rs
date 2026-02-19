@@ -495,11 +495,12 @@ impl WorkerPool {
                                     buffer: &mut VecDeque<super::job_queue::JobLogEntry>,
                                     backoff: &mut std::time::Duration,
                                     next_flush_allowed: &mut tokio::time::Instant,
+                                    force: bool,
                                 ) {
                                     if buffer.is_empty() {
                                         return;
                                     }
-                                    if tokio::time::Instant::now() < *next_flush_allowed {
+                                    if !force && tokio::time::Instant::now() < *next_flush_allowed {
                                         return;
                                     }
 
@@ -546,6 +547,7 @@ impl WorkerPool {
                                                             &mut buffer,
                                                             &mut backoff,
                                                             &mut next_flush_allowed,
+                                                            false,
                                                         )
                                                         .await;
                                                     }
@@ -572,6 +574,7 @@ impl WorkerPool {
                                                         &mut buffer,
                                                         &mut backoff,
                                                         &mut next_flush_allowed,
+                                                        true,
                                                     )
                                                     .await;
                                                     break;
@@ -585,6 +588,7 @@ impl WorkerPool {
                                                 &mut buffer,
                                                 &mut backoff,
                                                 &mut next_flush_allowed,
+                                                false,
                                             )
                                             .await;
                                         }
@@ -1102,11 +1106,10 @@ mod tests {
             input: &ProcessorInput,
             ctx: &ProcessorContext,
         ) -> crate::Result<ProcessorOutput> {
-            let output_path = input
-                .outputs
-                .first()
-                .cloned()
-                .ok_or_else(|| crate::Error::PipelineError("missing output path".to_string()))?;
+            let output_path =
+                input.outputs.first().cloned().ok_or_else(|| {
+                    crate::Error::PipelineError("missing output path".to_string())
+                })?;
 
             let token = ctx.cancellation_token.clone();
             let output_path_for_blocking = output_path.clone();

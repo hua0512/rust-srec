@@ -27,4 +27,6 @@ pub use rclone::RcloneProcessor;
 pub use remux::RemuxProcessor;
 pub use tdl::TdlUploadProcessor;
 pub use thumbnail::ThumbnailProcessor;
-pub use traits::{JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
+pub use traits::{
+    JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType,
+};

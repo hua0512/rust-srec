@@ -1148,8 +1148,9 @@ impl JobRepository for SqlxJobRepository {
 
             retry_on_sqlite_busy("purge_jobs_older_than_delete_execution_logs", || async {
                 for chunk in job_ids.chunks(MAX_IDS_PER_IN) {
-                    let mut builder =
-                        sqlx::QueryBuilder::<sqlx::Sqlite>::new("DELETE FROM job_execution_logs WHERE job_id IN (");
+                    let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+                        "DELETE FROM job_execution_logs WHERE job_id IN (",
+                    );
                     let mut separated = builder.separated(", ");
                     for id in chunk {
                         separated.push_bind(id);

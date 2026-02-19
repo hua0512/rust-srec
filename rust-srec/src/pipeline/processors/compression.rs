@@ -12,10 +12,10 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
 use tar::Builder as TarBuilder;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
-use tokio_util::sync::CancellationToken;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, parse_config_or_default};
@@ -93,6 +93,7 @@ struct CancelProgressReader<R> {
 }
 
 impl<R> CancelProgressReader<R> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         inner: R,
         cancel: CancellationToken,
@@ -189,15 +190,12 @@ fn tmp_output_path(final_path: &Path) -> PathBuf {
 fn archive_entry_name(input_path: &str, preserve_paths: bool) -> Result<String> {
     let path = Path::new(input_path);
     if !preserve_paths {
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| {
-                crate::Error::PipelineError(format!(
-                    "Invalid input filename (missing file_name): {}",
-                    input_path
-                ))
-            })?;
+        let name = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
+            crate::Error::PipelineError(format!(
+                "Invalid input filename (missing file_name): {}",
+                input_path
+            ))
+        })?;
         return Ok(name.to_string());
     }
 
@@ -206,8 +204,7 @@ fn archive_entry_name(input_path: &str, preserve_paths: bool) -> Result<String> 
         match comp {
             std::path::Component::Prefix(_) | std::path::Component::RootDir => {}
             std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-            }
+            std::path::Component::ParentDir => {}
             std::path::Component::Normal(s) => {
                 parts.push(s.to_string_lossy().to_string());
             }
@@ -332,7 +329,9 @@ impl CompressionProcessor {
 
         for (idx, input_path) in inputs.iter().enumerate() {
             if cancel.is_cancelled() {
-                return Err(crate::Error::PipelineError("Compression cancelled".to_string()));
+                return Err(crate::Error::PipelineError(
+                    "Compression cancelled".to_string(),
+                ));
             }
 
             let archive_name = archive_entry_name(input_path, config.preserve_paths)?;
@@ -368,8 +367,9 @@ impl CompressionProcessor {
                 crate::Error::PipelineError(format!("Failed to start ZIP entry: {}", e))
             })?;
 
-            std::io::copy(&mut reader, &mut zip)
-                .map_err(|e| crate::Error::PipelineError(format!("Failed to write ZIP entry: {}", e)))?;
+            std::io::copy(&mut reader, &mut zip).map_err(|e| {
+                crate::Error::PipelineError(format!("Failed to write ZIP entry: {}", e))
+            })?;
             bytes_done = reader.bytes_done;
         }
 
@@ -429,7 +429,9 @@ impl CompressionProcessor {
 
         for (idx, input_path) in inputs.iter().enumerate() {
             if cancel.is_cancelled() {
-                return Err(crate::Error::PipelineError("Compression cancelled".to_string()));
+                return Err(crate::Error::PipelineError(
+                    "Compression cancelled".to_string(),
+                ));
             }
 
             let archive_name = archive_entry_name(input_path, config.preserve_paths)?;
@@ -456,11 +458,12 @@ impl CompressionProcessor {
             let mut header = tar::Header::new_gnu();
             header.set_size(metadata.len());
             header.set_mode(0o644);
-            if let Ok(modified) = metadata.modified() {
-                if let Ok(duration) = modified.duration_since(std::time::SystemTime::UNIX_EPOCH) {
-                    header.set_mtime(duration.as_secs());
-                }
+            if let Ok(modified) = metadata.modified()
+                && let Ok(duration) = modified.duration_since(std::time::SystemTime::UNIX_EPOCH)
+            {
+                header.set_mtime(duration.as_secs());
             }
+
             header.set_cksum();
 
             let reader = CancelProgressReader::new(
@@ -476,8 +479,8 @@ impl CompressionProcessor {
 
             tar.append_data(&mut header, Path::new(&archive_name), reader)
                 .map_err(|e| {
-                crate::Error::PipelineError(format!("Failed to add file to tar archive: {}", e))
-            })?;
+                    crate::Error::PipelineError(format!("Failed to add file to tar archive: {}", e))
+                })?;
 
             bytes_done = bytes_done.saturating_add(metadata.len());
         }
@@ -573,7 +576,9 @@ impl Processor for CompressionProcessor {
         let output_path_str = self.determine_output_path(&input.inputs, &config, input);
         let output_path = PathBuf::from(&output_path_str);
 
-        if let Some(parent) = output_path.parent() {
+        if let Some(parent) = output_path.parent()
+            && !parent.as_os_str().is_empty()
+        {
             tokio::fs::create_dir_all(parent)
                 .await
                 .map_err(|e| crate::Error::io_path("create_dir_all", parent, e))?;
@@ -642,7 +647,9 @@ impl Processor for CompressionProcessor {
             let guard = TmpFileGuard::new(tmp_path.clone());
 
             if cancel.is_cancelled() {
-                return Err(crate::Error::PipelineError("Compression cancelled".to_string()));
+                return Err(crate::Error::PipelineError(
+                    "Compression cancelled".to_string(),
+                ));
             }
 
             let processor = CompressionProcessor;
@@ -664,7 +671,9 @@ impl Processor for CompressionProcessor {
             }?;
 
             if cancel.is_cancelled() {
-                return Err(crate::Error::PipelineError("Compression cancelled".to_string()));
+                return Err(crate::Error::PipelineError(
+                    "Compression cancelled".to_string(),
+                ));
             }
 
             match std::fs::rename(&tmp_path, &output_path) {
@@ -675,9 +684,8 @@ impl Processor for CompressionProcessor {
                     if config_for_blocking.overwrite && output_path.exists() {
                         std::fs::remove_file(&output_path)
                             .map_err(|e| crate::Error::io_path("remove_file", &output_path, e))?;
-                        std::fs::rename(&tmp_path, &output_path).map_err(|e| {
-                            crate::Error::io_path("rename", &output_path, e)
-                        })?;
+                        std::fs::rename(&tmp_path, &output_path)
+                            .map_err(|e| crate::Error::io_path("rename", &output_path, e))?;
                         guard.commit();
                     } else {
                         return Err(crate::Error::io_path("rename", &output_path, rename_err));
