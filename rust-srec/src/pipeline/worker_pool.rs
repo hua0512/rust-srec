@@ -816,6 +816,8 @@ impl WorkerPool {
                                     }
 
                                     if !job_cancellation_token.is_cancelled() {
+                                    job_cancellation_token.cancel();
+
                                     // Check if this is a DAG job for fail-fast handling
                                     if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
                                         // First mark job as failed
@@ -1036,14 +1038,13 @@ impl WorkerPool {
 async fn cleanup_partial_outputs(outputs: &[String]) {
     for output in outputs {
         let path = std::path::Path::new(output);
-        if path.exists() {
-            match tokio::fs::remove_file(path).await {
-                Ok(_) => {
-                    info!("Cleaned up partial output: {}", output);
-                }
-                Err(e) => {
-                    warn!("Failed to clean up partial output {}: {}", output, e);
-                }
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => {
+                info!("Cleaned up partial output: {}", output);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                warn!("Failed to clean up partial output {}: {}", output, e);
             }
         }
     }
@@ -1054,6 +1055,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use std::time::Duration;
+    use tempfile::TempDir;
 
     use crate::pipeline::{Job, JobStatus, ProcessorOutput, ProcessorType};
 
@@ -1080,6 +1082,54 @@ mod tests {
 
         fn name(&self) -> &'static str {
             "sleep"
+        }
+    }
+
+    struct TimeoutPublishProcessor;
+
+    #[async_trait]
+    impl Processor for TimeoutPublishProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Cpu
+        }
+
+        fn job_types(&self) -> Vec<&'static str> {
+            vec!["timeout-publish"]
+        }
+
+        async fn process(
+            &self,
+            input: &ProcessorInput,
+            ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            let output_path = input
+                .outputs
+                .first()
+                .cloned()
+                .ok_or_else(|| crate::Error::PipelineError("missing output path".to_string()))?;
+
+            let token = ctx.cancellation_token.clone();
+            let output_path_for_blocking = output_path.clone();
+            tokio::task::spawn_blocking(move || {
+                std::thread::sleep(Duration::from_millis(1500));
+                if token.is_cancelled() {
+                    return Ok::<_, std::io::Error>(());
+                }
+                std::fs::write(&output_path_for_blocking, b"published")?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| crate::Error::Other(format!("blocking task panicked: {}", e)))??;
+
+            Ok(ProcessorOutput {
+                outputs: vec![output_path.clone()],
+                items_produced: vec![output_path],
+                ..Default::default()
+            })
+        }
+
+        fn name(&self) -> &'static str {
+            "timeout-publish"
         }
     }
 
@@ -1155,6 +1205,53 @@ mod tests {
 
         let job = job_queue.get_job(&job_id).await.unwrap().unwrap();
         assert_eq!(job.status, JobStatus::Interrupted);
+
+        pool.stop().await;
+    }
+
+    #[tokio::test]
+    async fn test_timeout_cancels_job_token_prevents_publish() {
+        let dir = TempDir::new().unwrap();
+        let output_path = dir.path().join("published.txt");
+        let output_str = output_path.to_string_lossy().to_string();
+
+        let job_queue = Arc::new(JobQueue::new());
+        let pool = WorkerPool::with_config(
+            WorkerType::Cpu,
+            WorkerPoolConfig {
+                max_workers: 1,
+                job_timeout_secs: 1,
+                poll_interval_ms: 10,
+                adaptive: AdaptiveWorkerPoolConfig::default(),
+            },
+        );
+
+        pool.start(job_queue.clone(), vec![Arc::new(TimeoutPublishProcessor)]);
+
+        let job = Job::new(
+            "timeout-publish",
+            vec!["/input".to_string()],
+            vec![output_str.clone()],
+            "streamer-1",
+            "session-1",
+        );
+        let job_id = job_queue.enqueue(job).await.unwrap();
+
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if let Some(job) = job_queue.get_job(&job_id).await.unwrap()
+                    && job.status == JobStatus::Failed
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("job should time out and fail");
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        assert!(!output_path.exists());
 
         pool.stop().await;
     }

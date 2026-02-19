@@ -9,16 +9,18 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
+use std::io::{BufReader, BufWriter, Read};
+use std::path::{Path, PathBuf};
 use tar::Builder as TarBuilder;
 use tracing::{debug, error, info};
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
+use tokio_util::sync::CancellationToken;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, parse_config_or_default};
 use crate::Result;
+use crate::pipeline::progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 
 /// Default compression level (6 is a good balance between speed and compression).
 fn default_compression_level() -> u8 {
@@ -74,6 +76,151 @@ pub struct CompressionConfig {
 
 fn default_true() -> bool {
     true
+}
+
+const PROGRESS_REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
+struct CancelProgressReader<R> {
+    inner: R,
+    cancel: CancellationToken,
+    progress: ProgressReporter,
+    bytes_total: u64,
+    bytes_done: u64,
+    last_report_at: std::time::Instant,
+    file_index: usize,
+    file_count: usize,
+    current_file: String,
+}
+
+impl<R> CancelProgressReader<R> {
+    fn new(
+        inner: R,
+        cancel: CancellationToken,
+        progress: ProgressReporter,
+        bytes_total: u64,
+        bytes_done: u64,
+        file_index: usize,
+        file_count: usize,
+        current_file: String,
+    ) -> Self {
+        Self {
+            inner,
+            cancel,
+            progress,
+            bytes_total,
+            bytes_done,
+            last_report_at: std::time::Instant::now(),
+            file_index,
+            file_count,
+            current_file,
+        }
+    }
+
+    fn maybe_report(&mut self) {
+        if self.last_report_at.elapsed() < PROGRESS_REPORT_INTERVAL {
+            return;
+        }
+        self.last_report_at = std::time::Instant::now();
+
+        let percent = if self.bytes_total == 0 {
+            None
+        } else {
+            Some(((self.bytes_done as f64 / self.bytes_total as f64) * 100.0) as f32)
+        };
+
+        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Compression);
+        snapshot.percent = percent;
+        snapshot.bytes_done = Some(self.bytes_done);
+        snapshot.bytes_total = Some(self.bytes_total);
+        snapshot.raw = serde_json::json!({
+            "file_index": self.file_index,
+            "file_count": self.file_count,
+            "file": self.current_file,
+        });
+        self.progress.report(snapshot);
+    }
+}
+
+impl<R: Read> Read for CancelProgressReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.cancel.is_cancelled() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "compression cancelled",
+            ));
+        }
+        let n = self.inner.read(buf)?;
+        if n > 0 {
+            self.bytes_done = self.bytes_done.saturating_add(n as u64);
+            self.maybe_report();
+        }
+        Ok(n)
+    }
+}
+
+struct CancelOnDrop {
+    token: CancellationToken,
+    armed: bool,
+}
+
+impl CancelOnDrop {
+    fn new(token: CancellationToken) -> Self {
+        Self { token, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            self.token.cancel();
+        }
+    }
+}
+
+fn tmp_output_path(final_path: &Path) -> PathBuf {
+    let suffix = uuid::Uuid::new_v4().to_string();
+    PathBuf::from(format!("{}.tmp-{}", final_path.display(), suffix))
+}
+
+fn archive_entry_name(input_path: &str, preserve_paths: bool) -> Result<String> {
+    let path = Path::new(input_path);
+    if !preserve_paths {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| {
+                crate::Error::PipelineError(format!(
+                    "Invalid input filename (missing file_name): {}",
+                    input_path
+                ))
+            })?;
+        return Ok(name.to_string());
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    for comp in path.components() {
+        match comp {
+            std::path::Component::Prefix(_) | std::path::Component::RootDir => {}
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+            }
+            std::path::Component::Normal(s) => {
+                parts.push(s.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        return Err(crate::Error::PipelineError(format!(
+            "Invalid input path for archive entry: {}",
+            input_path
+        )));
+    }
+    Ok(parts.join("/"))
 }
 
 impl Default for CompressionConfig {
@@ -137,30 +284,20 @@ impl CompressionProcessor {
         format!("archive.{}", config.format.extension())
     }
 
-    /// Get the filename to use in the archive for a given input path.
-    fn get_archive_filename(&self, input_path: &str, preserve_paths: bool) -> String {
-        if preserve_paths {
-            input_path.to_string()
-        } else {
-            Path::new(input_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("file")
-                .to_string()
-        }
-    }
-
     /// Create a ZIP archive from the input files.
     fn create_zip_archive(
         &self,
         inputs: &[String],
-        output_path: &str,
+        output_path: &Path,
         config: &CompressionConfig,
+        progress: ProgressReporter,
+        cancel: CancellationToken,
     ) -> Result<(u64, u64)> {
         let file = File::create(output_path).map_err(|e| {
             crate::Error::PipelineError(format!("Failed to create ZIP archive: {}", e))
         })?;
 
+        let file = BufWriter::new(file);
         let mut zip = ZipWriter::new(file);
 
         // Map compression level (0-9) to zip compression method
@@ -174,48 +311,66 @@ impl CompressionProcessor {
         };
 
         let mut total_input_size: u64 = 0;
-
         for input_path in inputs {
-            let path = Path::new(input_path);
-            if !path.exists() {
-                return Err(crate::Error::PipelineError(format!(
-                    "Input file does not exist: {}",
-                    input_path
-                )));
+            let metadata = std::fs::metadata(input_path).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    crate::Error::PipelineError(format!(
+                        "Input file does not exist: {}",
+                        input_path
+                    ))
+                } else {
+                    crate::Error::PipelineError(format!(
+                        "Failed to get input metadata {}: {}",
+                        input_path, e
+                    ))
+                }
+            })?;
+            total_input_size = total_input_size.saturating_add(metadata.len());
+        }
+
+        let mut bytes_done: u64 = 0;
+
+        for (idx, input_path) in inputs.iter().enumerate() {
+            if cancel.is_cancelled() {
+                return Err(crate::Error::PipelineError("Compression cancelled".to_string()));
             }
 
-            let archive_name = self.get_archive_filename(input_path, config.preserve_paths);
+            let archive_name = archive_entry_name(input_path, config.preserve_paths)?;
             debug!("Adding to ZIP: {} as {}", input_path, archive_name);
 
-            // Read file content
-            let mut file = File::open(path).map_err(|e| {
-                crate::Error::PipelineError(format!(
-                    "Failed to open input file {}: {}",
-                    input_path, e
-                ))
+            let file = File::open(input_path).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    crate::Error::PipelineError(format!(
+                        "Input file does not exist: {}",
+                        input_path
+                    ))
+                } else {
+                    crate::Error::PipelineError(format!(
+                        "Failed to open input file {}: {}",
+                        input_path, e
+                    ))
+                }
             })?;
 
-            let metadata = file.metadata().map_err(|e| {
-                crate::Error::PipelineError(format!("Failed to get file metadata: {}", e))
-            })?;
-            total_input_size += metadata.len();
-
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).map_err(|e| {
-                crate::Error::PipelineError(format!(
-                    "Failed to read input file {}: {}",
-                    input_path, e
-                ))
-            })?;
+            let mut reader = CancelProgressReader::new(
+                BufReader::new(file),
+                cancel.clone(),
+                progress.clone(),
+                total_input_size,
+                bytes_done,
+                idx.saturating_add(1),
+                inputs.len(),
+                input_path.clone(),
+            );
 
             // Write to archive
             zip.start_file(&archive_name, options).map_err(|e| {
                 crate::Error::PipelineError(format!("Failed to start ZIP entry: {}", e))
             })?;
 
-            zip.write_all(&buffer).map_err(|e| {
-                crate::Error::PipelineError(format!("Failed to write to ZIP archive: {}", e))
-            })?;
+            std::io::copy(&mut reader, &mut zip)
+                .map_err(|e| crate::Error::PipelineError(format!("Failed to write ZIP entry: {}", e)))?;
+            bytes_done = reader.bytes_done;
         }
 
         zip.finish().map_err(|e| {
@@ -232,8 +387,10 @@ impl CompressionProcessor {
     fn create_tar_gz_archive(
         &self,
         inputs: &[String],
-        output_path: &str,
+        output_path: &Path,
         config: &CompressionConfig,
+        progress: ProgressReporter,
+        cancel: CancellationToken,
     ) -> Result<(u64, u64)> {
         let file = File::create(output_path).map_err(|e| {
             crate::Error::PipelineError(format!("Failed to create tar.gz archive: {}", e))
@@ -251,35 +408,78 @@ impl CompressionProcessor {
         let mut tar = TarBuilder::new(encoder);
 
         let mut total_input_size: u64 = 0;
-
         for input_path in inputs {
-            let path = Path::new(input_path);
-            if !path.exists() {
-                return Err(crate::Error::PipelineError(format!(
-                    "Input file does not exist: {}",
-                    input_path
-                )));
+            let metadata = std::fs::metadata(input_path).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    crate::Error::PipelineError(format!(
+                        "Input file does not exist: {}",
+                        input_path
+                    ))
+                } else {
+                    crate::Error::PipelineError(format!(
+                        "Failed to get input metadata {}: {}",
+                        input_path, e
+                    ))
+                }
+            })?;
+            total_input_size = total_input_size.saturating_add(metadata.len());
+        }
+
+        let mut bytes_done: u64 = 0;
+
+        for (idx, input_path) in inputs.iter().enumerate() {
+            if cancel.is_cancelled() {
+                return Err(crate::Error::PipelineError("Compression cancelled".to_string()));
             }
 
-            let archive_name = self.get_archive_filename(input_path, config.preserve_paths);
+            let archive_name = archive_entry_name(input_path, config.preserve_paths)?;
             debug!("Adding to tar.gz: {} as {}", input_path, archive_name);
 
-            let metadata = std::fs::metadata(path).map_err(|e| {
+            let mut file = File::open(input_path).map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    crate::Error::PipelineError(format!(
+                        "Input file does not exist: {}",
+                        input_path
+                    ))
+                } else {
+                    crate::Error::PipelineError(format!(
+                        "Failed to open input file {}: {}",
+                        input_path, e
+                    ))
+                }
+            })?;
+
+            let metadata = file.metadata().map_err(|e| {
                 crate::Error::PipelineError(format!("Failed to get file metadata: {}", e))
             })?;
-            total_input_size += metadata.len();
 
-            // Add file to tar archive
-            let mut file = File::open(path).map_err(|e| {
-                crate::Error::PipelineError(format!(
-                    "Failed to open input file {}: {}",
-                    input_path, e
-                ))
-            })?;
+            let mut header = tar::Header::new_gnu();
+            header.set_size(metadata.len());
+            header.set_mode(0o644);
+            if let Ok(modified) = metadata.modified() {
+                if let Ok(duration) = modified.duration_since(std::time::SystemTime::UNIX_EPOCH) {
+                    header.set_mtime(duration.as_secs());
+                }
+            }
+            header.set_cksum();
 
-            tar.append_file(&archive_name, &mut file).map_err(|e| {
+            let reader = CancelProgressReader::new(
+                BufReader::new(&mut file),
+                cancel.clone(),
+                progress.clone(),
+                total_input_size,
+                bytes_done,
+                idx.saturating_add(1),
+                inputs.len(),
+                input_path.clone(),
+            );
+
+            tar.append_data(&mut header, Path::new(&archive_name), reader)
+                .map_err(|e| {
                 crate::Error::PipelineError(format!("Failed to add file to tar archive: {}", e))
             })?;
+
+            bytes_done = bytes_done.saturating_add(metadata.len());
         }
 
         // Finish the tar archive and get the gzip encoder back
@@ -305,6 +505,17 @@ impl CompressionProcessor {
         }
         (1.0 - (output_size as f64 / input_size as f64)) * 100.0
     }
+
+    fn clamp_compression_level(level: u8) -> Result<u8> {
+        if level <= 9 {
+            Ok(level)
+        } else {
+            Err(crate::Error::PipelineError(format!(
+                "Invalid compression_level {} (expected 0..=9)",
+                level
+            )))
+        }
+    }
 }
 
 impl Default for CompressionProcessor {
@@ -316,7 +527,7 @@ impl Default for CompressionProcessor {
 #[async_trait]
 impl Processor for CompressionProcessor {
     fn processor_type(&self) -> ProcessorType {
-        ProcessorType::Io
+        ProcessorType::Cpu
     }
 
     fn job_types(&self) -> Vec<&'static str> {
@@ -342,8 +553,10 @@ impl Processor for CompressionProcessor {
         // Initialize logs
         let mut logs = Vec::new();
 
-        let config: CompressionConfig =
+        let mut config: CompressionConfig =
             parse_config_or_default(input.config.as_deref(), ctx, "compression", Some(&mut logs));
+
+        config.compression_level = Self::clamp_compression_level(config.compression_level)?;
 
         // Validate inputs
         if input.inputs.is_empty() {
@@ -357,13 +570,23 @@ impl Processor for CompressionProcessor {
         }
 
         // Determine output path
-        let output_path = self.determine_output_path(&input.inputs, &config, input);
+        let output_path_str = self.determine_output_path(&input.inputs, &config, input);
+        let output_path = PathBuf::from(&output_path_str);
+
+        if let Some(parent) = output_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| crate::Error::io_path("create_dir_all", parent, e))?;
+        }
 
         // Check if output exists and handle overwrite
-        if Path::new(&output_path).exists() && !config.overwrite {
+        let output_exists = tokio::fs::try_exists(&output_path)
+            .await
+            .map_err(|e| crate::Error::io_path("try_exists", &output_path, e))?;
+        if output_exists && !config.overwrite {
             let msg = format!(
                 "Output archive already exists and overwrite is disabled: {}",
-                output_path
+                output_path.display()
             );
             error!("{}", msg);
             logs.push(create_log_entry(
@@ -377,7 +600,7 @@ impl Processor for CompressionProcessor {
             "Creating {:?} archive with {} files -> {}",
             config.format,
             input.inputs.len(),
-            output_path
+            output_path_str
         );
         info!("{}", start_msg);
         logs.push(create_log_entry(
@@ -385,13 +608,89 @@ impl Processor for CompressionProcessor {
             start_msg,
         ));
 
-        // Create the archive based on format
-        let result = match config.format {
-            ArchiveFormat::Zip => self.create_zip_archive(&input.inputs, &output_path, &config),
-            ArchiveFormat::TarGz => {
-                self.create_tar_gz_archive(&input.inputs, &output_path, &config)
+        let tmp_path = tmp_output_path(&output_path);
+
+        let inputs = input.inputs.clone();
+        let config_for_blocking = config.clone();
+        let cancel = ctx.cancellation_token.child_token();
+        let mut cancel_on_drop = CancelOnDrop::new(cancel.clone());
+        let progress = ctx.progress.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            struct TmpFileGuard {
+                path: Option<PathBuf>,
             }
-        };
+
+            impl TmpFileGuard {
+                fn new(path: PathBuf) -> Self {
+                    Self { path: Some(path) }
+                }
+
+                fn commit(mut self) {
+                    self.path.take();
+                }
+            }
+
+            impl Drop for TmpFileGuard {
+                fn drop(&mut self) {
+                    if let Some(path) = self.path.take() {
+                        let _ = std::fs::remove_file(path);
+                    }
+                }
+            }
+
+            let guard = TmpFileGuard::new(tmp_path.clone());
+
+            if cancel.is_cancelled() {
+                return Err(crate::Error::PipelineError("Compression cancelled".to_string()));
+            }
+
+            let processor = CompressionProcessor;
+            let sizes = match config_for_blocking.format {
+                ArchiveFormat::Zip => processor.create_zip_archive(
+                    &inputs,
+                    &tmp_path,
+                    &config_for_blocking,
+                    progress,
+                    cancel.clone(),
+                ),
+                ArchiveFormat::TarGz => processor.create_tar_gz_archive(
+                    &inputs,
+                    &tmp_path,
+                    &config_for_blocking,
+                    progress,
+                    cancel.clone(),
+                ),
+            }?;
+
+            if cancel.is_cancelled() {
+                return Err(crate::Error::PipelineError("Compression cancelled".to_string()));
+            }
+
+            match std::fs::rename(&tmp_path, &output_path) {
+                Ok(()) => {
+                    guard.commit();
+                }
+                Err(rename_err) => {
+                    if config_for_blocking.overwrite && output_path.exists() {
+                        std::fs::remove_file(&output_path)
+                            .map_err(|e| crate::Error::io_path("remove_file", &output_path, e))?;
+                        std::fs::rename(&tmp_path, &output_path).map_err(|e| {
+                            crate::Error::io_path("rename", &output_path, e)
+                        })?;
+                        guard.commit();
+                    } else {
+                        return Err(crate::Error::io_path("rename", &output_path, rename_err));
+                    }
+                }
+            }
+
+            Ok::<_, crate::Error>(sizes)
+        })
+        .await
+        .map_err(|e| crate::Error::Other(format!("Compression worker panicked: {}", e)))?;
+
+        cancel_on_drop.disarm();
 
         // Add detailed logs for inputs
         for input in &input.inputs {
@@ -421,7 +720,7 @@ impl Processor for CompressionProcessor {
             "Compression completed in {:.2}s: {} files -> {} (ratio: {:.1}%)",
             duration,
             input.inputs.len(),
-            output_path,
+            output_path_str,
             compression_ratio
         );
         info!("{}", complete_msg);
@@ -431,7 +730,7 @@ impl Processor for CompressionProcessor {
         ));
 
         Ok(ProcessorOutput {
-            outputs: vec![output_path.clone()],
+            outputs: vec![output_path_str.clone()],
             duration_secs: duration,
             metadata: Some(
                 serde_json::json!({
@@ -445,7 +744,7 @@ impl Processor for CompressionProcessor {
                 })
                 .to_string(),
             ),
-            items_produced: vec![output_path],
+            items_produced: vec![output_path_str],
             input_size_bytes: Some(total_input_size),
             output_size_bytes: Some(output_size),
             // All inputs succeeded if we reach this point
@@ -465,7 +764,7 @@ mod tests {
     #[test]
     fn test_compression_processor_type() {
         let processor = CompressionProcessor::new();
-        assert_eq!(processor.processor_type(), ProcessorType::Io);
+        assert_eq!(processor.processor_type(), ProcessorType::Cpu);
     }
 
     #[test]
@@ -546,16 +845,14 @@ mod tests {
 
     #[test]
     fn test_get_archive_filename_no_preserve() {
-        let processor = CompressionProcessor::new();
-        let filename = processor.get_archive_filename("/path/to/file.txt", false);
+        let filename = archive_entry_name("/path/to/file.txt", false).unwrap();
         assert_eq!(filename, "file.txt");
     }
 
     #[test]
     fn test_get_archive_filename_preserve() {
-        let processor = CompressionProcessor::new();
-        let filename = processor.get_archive_filename("/path/to/file.txt", true);
-        assert_eq!(filename, "/path/to/file.txt");
+        let filename = archive_entry_name("/path/to/file.txt", true).unwrap();
+        assert_eq!(filename, "path/to/file.txt");
     }
 
     #[tokio::test]
