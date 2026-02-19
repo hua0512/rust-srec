@@ -89,7 +89,7 @@ libsm = "0.6.0"
 rustc-hash = "2.1"
 memchr = "2.7.6"
 criterion = "0.8.1"
-zlib-rs = "0.6.0"
+zlib-rs = "0.6.2"
 
 [patch.crates-io]
 # Workaround for zip 7.4.x pulling in typed-path, which introduces an additional
