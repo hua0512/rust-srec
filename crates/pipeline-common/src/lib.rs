@@ -31,6 +31,7 @@ pub mod pipeline;
 pub mod processor;
 pub mod progress;
 mod run_completion;
+pub mod split_reason;
 mod utils;
 mod writer_task;
 
@@ -49,6 +50,8 @@ pub use writer_task::{
     FormatStrategy, PostWriteAction, ProgressCallback, ProgressConfig, WriterConfig, WriterError,
     WriterProgress, WriterState, WriterStats, WriterTask,
 };
+
+pub use split_reason::{AudioCodecInfo, SplitReason, VideoCodecInfo};
 
 use crate::config::PipelineConfig;
 pub use cancellation::CancellationToken;

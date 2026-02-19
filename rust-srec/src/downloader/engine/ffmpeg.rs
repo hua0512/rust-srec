@@ -326,6 +326,7 @@ impl DownloadEngine for FfmpegEngine {
                                                     size_bytes,
                                                     index,
                                                     completed_at: Utc::now(),
+                                                    split_reason: None,
                                                 }))
                                                 .await;
                                         }
@@ -471,6 +472,7 @@ impl DownloadEngine for FfmpegEngine {
                         size_bytes,
                         index,
                         completed_at: Utc::now(),
+                        split_reason: None,
                     }))
                     .await;
             }

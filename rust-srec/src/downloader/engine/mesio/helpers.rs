@@ -6,7 +6,8 @@ use std::path::Path;
 use chrono::Utc;
 use futures::StreamExt;
 use pipeline_common::{
-    PipelineError, RunCompletionError, WriterError, WriterProgress, WriterStats, settle_run,
+    PipelineError, RunCompletionError, SplitReason, WriterError, WriterProgress, WriterStats,
+    settle_run,
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -46,7 +47,7 @@ pub(super) trait WriterWithCallbacks {
 
     fn set_on_segment_complete_callback<F>(&mut self, cb: F)
     where
-        F: Fn(&Path, u32, f64, u64) + Send + Sync + 'static;
+        F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static;
 
     fn set_progress_callback<F>(&mut self, cb: F)
     where
@@ -63,7 +64,7 @@ impl WriterWithCallbacks for flv_fix::FlvWriter {
 
     fn set_on_segment_complete_callback<F>(&mut self, cb: F)
     where
-        F: Fn(&Path, u32, f64, u64) + Send + Sync + 'static,
+        F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
     {
         flv_fix::FlvWriter::set_on_segment_complete_callback(self, cb);
     }
@@ -86,7 +87,7 @@ impl WriterWithCallbacks for hls_fix::HlsWriter {
 
     fn set_on_segment_complete_callback<F>(&mut self, cb: F)
     where
-        F: Fn(&Path, u32, f64, u64) + Send + Sync + 'static,
+        F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
     {
         hls_fix::HlsWriter::set_on_segment_complete_callback(self, cb);
     }
@@ -124,17 +125,20 @@ pub(super) fn setup_writer_callbacks(
         let _ = event_tx_start.blocking_send(event);
     });
 
-    writer.set_on_segment_complete_callback(move |path, sequence, duration_secs, size_bytes| {
-        let event_path = path.to_path_buf();
-        let event = SegmentEvent::SegmentCompleted(SegmentInfo {
-            path: event_path,
-            duration_secs,
-            size_bytes,
-            index: sequence,
-            completed_at: Utc::now(),
-        });
-        let _ = event_tx_complete.blocking_send(event);
-    });
+    writer.set_on_segment_complete_callback(
+        move |path, sequence, duration_secs, size_bytes, split_reason| {
+            let event_path = path.to_path_buf();
+            let event = SegmentEvent::SegmentCompleted(SegmentInfo {
+                path: event_path,
+                duration_secs,
+                size_bytes,
+                index: sequence,
+                completed_at: Utc::now(),
+                split_reason: split_reason.map(|r| r.to_string()),
+            });
+            let _ = event_tx_complete.blocking_send(event);
+        },
+    );
 
     writer.set_progress_callback(move |progress| {
         let download_progress = DownloadProgress {

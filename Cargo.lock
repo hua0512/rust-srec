@@ -1847,6 +1847,7 @@ dependencies = [
  "futures",
  "h264",
  "h265",
+ "pipeline-common",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",

@@ -7,6 +7,7 @@ use thiserror::Error;
 use tracing::debug;
 
 use crate::PipelineError;
+use crate::split_reason::SplitReason;
 
 /// Progress information from writer.
 /// Contains metrics about bytes written, items processed, media duration, and performance.
@@ -311,13 +312,19 @@ pub trait FormatStrategy<D>: Send + Sync + 'static {
     fn current_media_duration_secs(&self) -> f64 {
         0.0
     }
+
+    /// Optional: Returns the split reason for the current file close, if any.
+    /// This is called during file rotation/close to capture why the file was split.
+    fn close_context(&self) -> Option<SplitReason> {
+        None
+    }
 }
 
 /// Callback type for file open events (path, sequence_number).
 pub type FileOpenCallback = Box<dyn Fn(&Path, u32) + Send + Sync>;
 
-/// Callback type for file close events (path, sequence_number, duration_secs, size_bytes).
-pub type FileCloseCallback = Box<dyn Fn(&Path, u32, f64, u64) + Send + Sync>;
+/// Callback type for file close events (path, sequence_number, duration_secs, size_bytes, split_reason).
+pub type FileCloseCallback = Box<dyn Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync>;
 
 /// Generic writer task.
 pub struct WriterTask<D, S: FormatStrategy<D>> {
@@ -414,7 +421,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
     pub fn set_on_file_close_callback<F>(&mut self, callback: F)
     where
-        F: Fn(&Path, u32, f64, u64) + Send + Sync + 'static,
+        F: Fn(&Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
     {
         self.on_file_close_callback = Some(Box::new(callback));
     }
@@ -513,6 +520,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
                 // Capture duration before callback (current file duration)
                 let duration_secs = self.state.media_duration_secs_current_file;
                 let size_bytes = self.state.bytes_written_current_file;
+                let split_reason = self.strategy.close_context();
 
                 if let Some(cb) = &self.on_file_close_callback {
                     cb(
@@ -520,6 +528,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
                         self.state.file_sequence_number,
                         duration_secs,
                         size_bytes,
+                        split_reason.as_ref(),
                     );
                 }
             }
@@ -665,6 +674,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
             // Capture duration before callback (current file duration)
             let duration_secs = self.state.media_duration_secs_current_file;
             let size_bytes = self.state.bytes_written_current_file;
+            let split_reason = self.strategy.close_context();
 
             if let Some(cb) = &self.on_file_close_callback {
                 cb(
@@ -672,6 +682,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
                     self.state.file_sequence_number,
                     duration_secs,
                     size_bytes,
+                    split_reason.as_ref(),
                 );
             }
         }

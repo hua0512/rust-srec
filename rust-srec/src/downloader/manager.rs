@@ -318,6 +318,7 @@ pub enum DownloadManagerEvent {
         segment_index: u32,
         duration_secs: f64,
         size_bytes: u64,
+        split_reason: Option<String>,
     },
     /// Download completed.
     DownloadCompleted {
@@ -859,6 +860,7 @@ impl DownloadManager {
                             duration_secs,
                             size_bytes,
                             index,
+                            split_reason,
                             ..
                         } = info;
                         // Normalize path
@@ -876,6 +878,7 @@ impl DownloadManager {
                             segment_index: index,
                             duration_secs,
                             size_bytes,
+                            split_reason,
                         });
 
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {

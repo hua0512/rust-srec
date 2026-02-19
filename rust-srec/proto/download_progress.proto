@@ -94,6 +94,8 @@ message SegmentCompleted {
   double duration_secs = 5;
   uint64 size_bytes = 6;
   string session_id = 7;
+  // Human-readable split reason, empty if none.
+  string split_reason = 8;
 }
 
 // Download completed event

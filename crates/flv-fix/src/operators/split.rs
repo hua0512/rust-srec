@@ -31,9 +31,10 @@
 //!
 //! - hua0512
 //!
-use flv::data::{AudioCodecInfo, FlvData, SplitReason, VideoCodecInfo};
+use flv::data::FlvData;
 use flv::header::FlvHeader;
 use flv::tag::FlvTag;
+use pipeline_common::split_reason::{AudioCodecInfo, SplitReason, VideoCodecInfo};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info};

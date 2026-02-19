@@ -1,5 +1,6 @@
 use pipeline_common::{
-    PipelineError, ProgressConfig, ProtocolWriter, WriterError, WriterProgress, WriterStats,
+    PipelineError, ProgressConfig, ProtocolWriter, SplitReason, WriterError, WriterProgress,
+    WriterStats,
 };
 
 use crate::writer_task::{FlvFormatStrategy, FlvWriterConfig};
@@ -32,10 +33,11 @@ impl FlvWriter {
 
     /// Set a callback to be invoked when a segment is completed.
     ///
-    /// The callback receives the file path, sequence number (0-based), duration in seconds, and size in bytes.
+    /// The callback receives the file path, sequence number (0-based), duration in seconds,
+    /// size in bytes, and an optional split reason.
     pub fn set_on_segment_complete_callback<F>(&mut self, callback: F)
     where
-        F: Fn(&std::path::Path, u32, f64, u64) + Send + Sync + 'static,
+        F: Fn(&std::path::Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
     {
         self.writer_task.set_on_file_close_callback(callback);
     }

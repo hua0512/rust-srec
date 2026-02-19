@@ -6,8 +6,9 @@ use std::{
 
 use hls::{HlsData, M4sData};
 use pipeline_common::{
-    FormatStrategy, PipelineError, PostWriteAction, ProgressConfig, ProtocolWriter, WriterConfig,
-    WriterError, WriterProgress, WriterState, WriterStats, WriterTask, expand_filename_template,
+    FormatStrategy, PipelineError, PostWriteAction, ProgressConfig, ProtocolWriter, SplitReason,
+    WriterConfig, WriterError, WriterProgress, WriterState, WriterStats, WriterTask,
+    expand_filename_template,
 };
 
 use tracing::{Span, debug, info};
@@ -244,7 +245,7 @@ impl HlsWriter {
     /// Set a callback to be invoked when a segment is completed.
     pub fn set_on_segment_complete_callback<F>(&mut self, callback: F)
     where
-        F: Fn(&std::path::Path, u32, f64, u64) + Send + Sync + 'static,
+        F: Fn(&std::path::Path, u32, f64, u64, Option<&SplitReason>) + Send + Sync + 'static,
     {
         self.writer_task.set_on_file_close_callback(callback);
     }

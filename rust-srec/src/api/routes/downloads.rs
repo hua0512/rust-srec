@@ -336,6 +336,7 @@ fn map_event_to_protobuf(
             segment_index,
             duration_secs,
             size_bytes,
+            split_reason,
             ..
         } => {
             let payload = SegmentCompleted {
@@ -346,6 +347,7 @@ fn map_event_to_protobuf(
                 duration_secs: *duration_secs,
                 size_bytes: *size_bytes,
                 session_id: session_id.clone(),
+                split_reason: split_reason.clone().unwrap_or_default(),
             };
             Some(WsMessage {
                 event_type: EventType::SegmentCompleted as i32,
@@ -523,6 +525,7 @@ mod tests {
             segment_index: 5,
             duration_secs: 10.5,
             size_bytes: 1024000,
+            split_reason: None,
         };
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();

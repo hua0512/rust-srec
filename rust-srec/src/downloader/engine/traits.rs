@@ -338,6 +338,8 @@ pub struct SegmentInfo {
     pub index: u32,
     /// Timestamp when segment was completed.
     pub completed_at: DateTime<Utc>,
+    /// Human-readable reason for the segment split, if any.
+    pub split_reason: Option<String>,
 }
 
 /// Classified error kind for download failures.

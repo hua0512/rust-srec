@@ -346,6 +346,7 @@ pub enum NotificationEvent {
         size_bytes: u64,
         duration_secs: f64,
         timestamp: DateTime<Utc>,
+        split_reason: Option<String>,
     },
     /// Download was cancelled by user.
     DownloadCancelled {
@@ -955,6 +956,7 @@ mod tests {
             size_bytes: 1024 * 1024,
             duration_secs: 10.0,
             timestamp: Utc::now(),
+            split_reason: None,
         };
 
         assert_eq!(complete_event.priority(), NotificationPriority::Low);

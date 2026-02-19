@@ -2,8 +2,8 @@ use crate::{
     analyzer::{AnalyzerError, FlvAnalyzer},
     script_modifier,
 };
-use flv::data::SplitReason;
 use flv::{FlvData, FlvHeader, FlvWriter};
+use pipeline_common::split_reason::SplitReason;
 use pipeline_common::{
     FormatStrategy, PostWriteAction, WriterConfig, WriterState, expand_filename_template,
 };
@@ -313,5 +313,9 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
     fn current_media_duration_secs(&self) -> f64 {
         self.calculate_duration() as f64
+    }
+
+    fn close_context(&self) -> Option<SplitReason> {
+        self.last_split_reason.clone()
     }
 }
