@@ -201,6 +201,10 @@ impl Processor<FlvData> for GopSortOperator {
                 self.push_tags(output)?;
                 debug!("{} End of stream...", self.context.name);
             }
+            FlvData::Split(_) => {
+                self.push_tags(output)?;
+                output(input)?;
+            }
             FlvData::Tag(tag) => {
                 // if we have video, we wait for a keyframe
                 if self.has_video && tag.is_key_frame_nalu() {

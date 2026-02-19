@@ -901,6 +901,9 @@ mod tests {
                     FlvData::EndOfSequence(_) => {
                         // Handle end of sequence if needed
                     }
+                    FlvData::Split(_) => {
+                        // Split markers are informational only
+                    }
                 }
                 Ok(stats)
             })
@@ -1012,6 +1015,7 @@ mod tests {
                 }
                 Ok(FlvData::Header(_)) => {}
                 Ok(FlvData::EndOfSequence(_)) => {}
+                Ok(FlvData::Split(_)) => {}
                 Err(e) => {
                     println!("Error processing tag: {e:?}");
                     // Don't break - continue processing

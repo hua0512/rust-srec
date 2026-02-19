@@ -176,7 +176,8 @@ pub fn print_tags(items: &[FlvData]) {
                 };
                 println!("  {i}: {type_str} @ {ts}ms", ts = tag.timestamp_ms);
             }
-            _ => println!("  {i}: Other"),
+            FlvData::Split(reason) => println!("  {i}: Split({reason:?})"),
+            FlvData::EndOfSequence(_) => println!("  {i}: EndOfSequence"),
         }
     }
 }

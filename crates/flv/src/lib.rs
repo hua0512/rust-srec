@@ -19,7 +19,7 @@ pub mod video;
 pub mod writer;
 pub mod writer_async;
 
-pub use data::FlvData;
+pub use data::{AudioCodecInfo, FlvData, SplitReason, VideoCodecInfo};
 pub use error::FlvError;
 pub use header::FlvHeader;
 pub use tag::{FlvTag, FlvTagType};

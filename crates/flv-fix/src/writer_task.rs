@@ -2,6 +2,7 @@ use crate::{
     analyzer::{AnalyzerError, FlvAnalyzer},
     script_modifier,
 };
+use flv::data::SplitReason;
 use flv::{FlvData, FlvHeader, FlvWriter};
 use pipeline_common::{
     FormatStrategy, PostWriteAction, WriterConfig, WriterState, expand_filename_template,
@@ -47,6 +48,8 @@ pub struct FlvFormatStrategy {
     current_tag_count: u64,
     last_status_update: Option<Instant>,
     last_status_bytes: u64,
+    /// The most recent split reason received, if any.
+    last_split_reason: Option<SplitReason>,
 
     // Whether to use low-latency mode for metadata modification.
     enable_low_latency: bool,
@@ -62,12 +65,18 @@ impl FlvFormatStrategy {
             current_tag_count: 0,
             last_status_update: None,
             last_status_bytes: 0,
+            last_split_reason: None,
             enable_low_latency,
         }
     }
 
     fn calculate_duration(&self) -> u32 {
         self.analyzer.stats.calculate_duration()
+    }
+
+    /// Returns the most recently received split reason, if any.
+    pub fn last_split_reason(&self) -> Option<&SplitReason> {
+        self.last_split_reason.as_ref()
     }
 
     fn should_update_status(&mut self, state: &WriterState) -> bool {
@@ -156,6 +165,10 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
                 bytes_written += (11 + 4 + tag.data.len()) as u64;
                 Ok(bytes_written)
             }
+            FlvData::Split(reason) => {
+                self.last_split_reason = Some(reason.clone());
+                Ok(0)
+            }
             FlvData::EndOfSequence(_) => {
                 tracing::debug!("Received EndOfSequence, stream ending");
                 Ok(0)
@@ -188,6 +201,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         self.current_tag_count = 0;
         self.last_status_update = None;
         self.last_status_bytes = 0;
+        self.last_split_reason = None;
 
         info!(path = %path.display(), "Opening segment");
 

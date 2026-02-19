@@ -222,6 +222,10 @@ impl FormatStrategy<FlvData> for PipeFlvStrategy {
                 // EndOfSequence doesn't write any data, just signals end
                 0
             }
+            FlvData::Split(_) => {
+                // Split markers are informational only; no data to write.
+                0
+            }
         };
 
         self.bytes_written += bytes_written;

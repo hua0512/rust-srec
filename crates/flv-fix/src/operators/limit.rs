@@ -32,24 +32,13 @@
 //! - hua0512
 //!
 
-use flv::data::FlvData;
+use flv::data::{FlvData, SplitReason};
 use flv::header::FlvHeader;
 use flv::tag::FlvTag;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info};
-
-/// Reason for a stream split
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SplitReason {
-    /// Split due to size limit being reached
-    SizeLimit,
-    /// Split due to duration limit being reached
-    DurationLimit,
-    /// Split due to both limits being reached
-    BothLimits,
-}
 
 /// Optional callback for when a stream split occurs
 pub type SplitCallback = Box<dyn Fn(SplitReason, u64, u32) + Send + Sync>;
@@ -148,23 +137,16 @@ impl LimitOperator {
     }
 
     fn determine_split_reason(&self) -> SplitReason {
-        let size_exceeded = self
-            .config
-            .max_size_bytes
-            .map(|max| self.state.accumulated_size >= max)
-            .unwrap_or(false);
-
         let duration_exceeded = self
             .config
             .max_duration_ms
             .map(|max| self.state.current_duration() >= max)
             .unwrap_or(false);
 
-        match (size_exceeded, duration_exceeded) {
-            (true, true) => SplitReason::BothLimits,
-            (true, false) => SplitReason::SizeLimit,
-            (false, true) => SplitReason::DurationLimit,
-            _ => SplitReason::SizeLimit, // Default to size limit if somehow we get here
+        if duration_exceeded {
+            SplitReason::DurationLimit
+        } else {
+            SplitReason::SizeLimit
         }
     }
 
@@ -199,6 +181,7 @@ impl LimitOperator {
 
     fn split_stream(
         &mut self,
+        reason: SplitReason,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         info!(
@@ -208,6 +191,9 @@ impl LimitOperator {
             self.state.current_duration(),
             self.state.split_count + 1
         );
+
+        // Emit the Split marker before re-injecting the header.
+        output(FlvData::Split(reason))?;
 
         // Send each item with Arc cloning instead of full data cloning
         if let Some(header) = &self.state.header {
@@ -320,11 +306,11 @@ impl Processor<FlvData> for LimitOperator {
                     // Report the split with current stats
                     if let Some(callback) = &self.config.on_split {
                         let duration = self.state.current_duration();
-                        (callback)(split_reason, self.state.accumulated_size, duration);
+                        (callback)(split_reason.clone(), self.state.accumulated_size, duration);
                     }
 
                     // Perform the split
-                    self.split_stream(output)?;
+                    self.split_stream(split_reason, output)?;
 
                     // Emit current tag after the split
                     output(FlvData::Tag(tag))?;
@@ -333,8 +319,8 @@ impl Processor<FlvData> for LimitOperator {
                     output(FlvData::Tag(tag))?;
                 }
             }
-            _ => {
-                // 转发其他数据类型
+            FlvData::EndOfSequence(_) | FlvData::Split(_) => {
+                // Forward other data types
                 output(input)?;
             }
         }
@@ -1157,5 +1143,127 @@ mod tests {
 
         // Verify the actual duration tracked by the operator
         // (We can't directly access state, but we verified no split occurred which proves it)
+    }
+
+    #[test]
+    fn test_split_marker_size_limit() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+
+        let config = LimitConfig {
+            max_size_bytes: Some(1024),
+            max_duration_ms: None,
+            split_at_keyframes_only: false,
+            on_split: None,
+        };
+
+        let mut operator = LimitOperator::with_config(context.clone(), config);
+        let mut output_items = Vec::new();
+
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
+            .unwrap();
+
+        // Push enough data to trigger a size split
+        for i in 0..5 {
+            operator
+                .process(
+                    &context,
+                    test_utils::create_video_tag_with_size(i * 100, true, 500),
+                    &mut output_fn,
+                )
+                .unwrap();
+        }
+
+        operator.finish(&context, &mut output_fn).unwrap();
+
+        let split_items: Vec<_> = output_items
+            .iter()
+            .filter(|item| matches!(item, FlvData::Split(SplitReason::SizeLimit)))
+            .collect();
+
+        assert!(
+            !split_items.is_empty(),
+            "Should emit at least one Split(SizeLimit) marker"
+        );
+
+        // Verify each Split comes before its corresponding re-injected Header
+        for (idx, item) in output_items.iter().enumerate() {
+            if matches!(item, FlvData::Split(SplitReason::SizeLimit)) {
+                assert!(
+                    idx + 1 < output_items.len()
+                        && matches!(output_items[idx + 1], FlvData::Header(_)),
+                    "Split(SizeLimit) at index {idx} should be immediately followed by a Header"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_split_marker_duration_limit() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+
+        let config = LimitConfig {
+            max_size_bytes: None,
+            max_duration_ms: Some(500),
+            split_at_keyframes_only: true,
+            on_split: None,
+        };
+
+        let mut operator = LimitOperator::with_config(context.clone(), config);
+        let mut output_items = Vec::new();
+
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, test_utils::create_test_header(), &mut output_fn)
+            .unwrap();
+
+        // Keyframe at 0ms
+        operator
+            .process(
+                &context,
+                test_utils::create_video_tag(0, true),
+                &mut output_fn,
+            )
+            .unwrap();
+        // P-frames leading up to the limit
+        for ts in [100, 200, 300, 400] {
+            operator
+                .process(
+                    &context,
+                    test_utils::create_video_tag(ts, false),
+                    &mut output_fn,
+                )
+                .unwrap();
+        }
+        // Keyframe at 600ms should trigger split
+        operator
+            .process(
+                &context,
+                test_utils::create_video_tag(600, true),
+                &mut output_fn,
+            )
+            .unwrap();
+
+        operator.finish(&context, &mut output_fn).unwrap();
+
+        let split_items: Vec<_> = output_items
+            .iter()
+            .filter(|item| matches!(item, FlvData::Split(SplitReason::DurationLimit)))
+            .collect();
+
+        assert_eq!(
+            split_items.len(),
+            1,
+            "Should emit exactly one Split(DurationLimit) marker"
+        );
     }
 }
