@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use hls::{HlsData, M4sData, M4sInitSegmentData, SegmentType};
+use hls::{HlsData, M4sData, M4sInitSegmentData, SegmentType, SplitReason};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,11 +37,11 @@ impl SegmentLimiterOperator {
         }
     }
 
-    /// Helper function to check if any limit is reached
-    fn is_limit_reached(&self, segment_data: &Bytes, segment_duration: f32) -> bool {
+    /// Helper function to check if any limit is reached, returning the reason if so
+    fn check_limit_reached(&self, segment_data: &Bytes, segment_duration: f32) -> Option<SplitReason> {
         // If no limits are set, no limit can be reached
         if self.max_duration.is_none() && self.max_size.is_none() {
-            return false;
+            return None;
         }
 
         // Check size limit
@@ -55,7 +55,7 @@ impl SegmentLimiterOperator {
                     self.current_size + segment_size,
                     max_size
                 );
-                return true;
+                return Some(SplitReason::SizeLimit);
             }
         }
 
@@ -70,11 +70,11 @@ impl SegmentLimiterOperator {
                     self.current_duration + segment_duration,
                     max_duration
                 );
-                return true;
+                return Some(SplitReason::DurationLimit);
             }
         }
 
-        false
+        None
     }
 
     /// Reset tracking counters
@@ -106,8 +106,8 @@ impl Processor<HlsData> for SegmentLimiterOperator {
             SegmentType::Ts => {
                 if let HlsData::TsData(ts_data) = input {
                     // Check if the current segment would exceed the limit. If so, start a new sequence.
-                    if self.is_limit_reached(&ts_data.data, ts_data.segment.duration) {
-                        output(HlsData::end_marker())?;
+                    if let Some(reason) = self.check_limit_reached(&ts_data.data, ts_data.segment.duration) {
+                        output(HlsData::end_marker_with_reason(reason))?;
                         self.reset_counters();
                     }
 
@@ -132,8 +132,8 @@ impl Processor<HlsData> for SegmentLimiterOperator {
             SegmentType::M4sMedia => {
                 if let HlsData::M4sData(M4sData::Segment(segment)) = input {
                     // Check if the current segment would exceed the limit. If so, start a new sequence.
-                    if self.is_limit_reached(&segment.data, segment.segment.duration) {
-                        output(HlsData::end_marker())?;
+                    if let Some(reason) = self.check_limit_reached(&segment.data, segment.segment.duration) {
+                        output(HlsData::end_marker_with_reason(reason))?;
                         self.reset_counters();
                     }
 
@@ -152,8 +152,8 @@ impl Processor<HlsData> for SegmentLimiterOperator {
                 }
             }
             SegmentType::EndMarker => {
-                // Always include EndPlaylist markers
-                output(HlsData::end_marker())?;
+                // Forward upstream EndMarkers as-is (preserve their reason)
+                output(input)?;
                 self.reset_counters();
             }
         }
@@ -214,7 +214,7 @@ mod tests {
 
         assert_eq!(out.len(), 3);
         assert!(matches!(out[0], HlsData::TsData(_)));
-        assert!(matches!(out[1], HlsData::EndMarker));
+        assert!(matches!(out[1], HlsData::EndMarker(_)));
         assert!(matches!(out[2], HlsData::TsData(_)));
     }
 

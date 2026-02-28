@@ -32,7 +32,7 @@
 //!
 use std::sync::Arc;
 
-use hls::{HlsData, M4sData, SegmentType, StreamProfile, StreamProfileOptions};
+use hls::{HlsData, M4sData, SegmentType, SplitReason, StreamProfile, StreamProfileOptions};
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use tracing::{debug, info, warn};
 
@@ -183,6 +183,7 @@ impl DefragmentOperator {
     // Handle end of playlist
     fn handle_end_of_playlist(
         &mut self,
+        reason: Option<SplitReason>,
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         debug!("{} End of playlist marker received", self.context.name);
@@ -224,7 +225,7 @@ impl DefragmentOperator {
         }
 
         // Output the end of playlist marker
-        output(HlsData::EndMarker)?;
+        output(HlsData::EndMarker(reason))?;
         Ok(())
     }
 
@@ -234,8 +235,8 @@ impl DefragmentOperator {
         output: &mut dyn FnMut(HlsData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
         // Handle end of playlist marker
-        if matches!(data, HlsData::EndMarker) {
-            return self.handle_end_of_playlist(output);
+        if let HlsData::EndMarker(reason) = data {
+            return self.handle_end_of_playlist(reason, output);
         }
 
         // Determine segment type
@@ -270,7 +271,7 @@ impl DefragmentOperator {
                     }
 
                     // Consider it at end of playlist marker
-                    self.handle_end_of_playlist(output)?;
+                    self.handle_end_of_playlist(None, output)?;
 
                     // Continue processing the segment
                 } else {
@@ -681,6 +682,6 @@ mod tests {
 
         assert_eq!(out.len(), 2);
         assert!(matches!(out[0], HlsData::TsData(_)));
-        assert!(matches!(out[1], HlsData::EndMarker));
+        assert!(matches!(out[1], HlsData::EndMarker(_)));
     }
 }

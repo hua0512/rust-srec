@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use m3u8_rs::MediaSegment;
+use pipeline_common::split_reason::SplitReason;
 use ts::StreamType;
 
 use crate::mp4::{M4sData, M4sInitSegmentData, M4sSegmentData};
@@ -13,7 +14,7 @@ use mp4::isobmff;
 pub enum HlsData {
     TsData(TsSegmentData),
     M4sData(M4sData),
-    EndMarker,
+    EndMarker(Option<SplitReason>),
 }
 
 impl HlsData {
@@ -43,7 +44,13 @@ impl HlsData {
     /// Create an end of playlist marker
     #[inline]
     pub fn end_marker() -> Self {
-        HlsData::EndMarker
+        HlsData::EndMarker(None)
+    }
+
+    /// Create an end of playlist marker with a split reason
+    #[inline]
+    pub fn end_marker_with_reason(reason: SplitReason) -> Self {
+        HlsData::EndMarker(Some(reason))
     }
 
     /// Get the segment type
@@ -52,7 +59,7 @@ impl HlsData {
         match self {
             HlsData::TsData(_) => SegmentType::Ts,
             HlsData::M4sData(m4s) => m4s.segment_type(),
-            HlsData::EndMarker => SegmentType::EndMarker,
+            HlsData::EndMarker(_) => SegmentType::EndMarker,
         }
     }
 
@@ -62,7 +69,7 @@ impl HlsData {
         match self {
             HlsData::TsData(ts) => Some(&ts.data),
             HlsData::M4sData(m4s) => Some(m4s.data()),
-            HlsData::EndMarker => None,
+            HlsData::EndMarker(_) => None,
         }
     }
 
@@ -73,7 +80,7 @@ impl HlsData {
             HlsData::TsData(ts) => Some(&mut ts.data),
             HlsData::M4sData(M4sData::InitSegment(init)) => Some(&mut init.data),
             HlsData::M4sData(M4sData::Segment(seg)) => Some(&mut seg.data),
-            HlsData::EndMarker => None,
+            HlsData::EndMarker(_) => None,
         }
     }
 
@@ -83,7 +90,7 @@ impl HlsData {
         match self {
             HlsData::TsData(ts) => Some(&ts.segment),
             HlsData::M4sData(m4s) => m4s.media_segment(),
-            HlsData::EndMarker => None,
+            HlsData::EndMarker(_) => None,
         }
     }
 
@@ -114,7 +121,7 @@ impl HlsData {
     /// Check if this is an end of playlist marker
     #[inline]
     pub fn is_end_marker(&self) -> bool {
-        matches!(self, HlsData::EndMarker)
+        matches!(self, HlsData::EndMarker(_))
     }
 
     /// Get the size of the segment data in bytes, or 0 for end markers
@@ -123,7 +130,7 @@ impl HlsData {
         match self {
             HlsData::TsData(ts) => ts.data.len(),
             HlsData::M4sData(m4s) => m4s.data().len(),
-            HlsData::EndMarker => 0,
+            HlsData::EndMarker(_) => 0,
         }
     }
 
@@ -172,7 +179,7 @@ impl HlsData {
             HlsData::TsData(ts) => ts.segment.discontinuity,
             HlsData::M4sData(M4sData::InitSegment(init)) => init.segment.discontinuity,
             HlsData::M4sData(M4sData::Segment(seg)) => seg.segment.discontinuity,
-            HlsData::EndMarker => false,
+            HlsData::EndMarker(_) => false,
         }
     }
 
@@ -191,7 +198,7 @@ impl HlsData {
                 }
                 false
             }
-            HlsData::EndMarker => false,
+            HlsData::EndMarker(_) => false,
         }
     }
 
@@ -461,7 +468,7 @@ impl AsRef<[u8]> for HlsData {
         match self {
             HlsData::TsData(ts) => ts.data.as_ref(),
             HlsData::M4sData(m4s) => m4s.data().as_ref(),
-            HlsData::EndMarker => &[],
+            HlsData::EndMarker(_) => &[],
         }
     }
 }

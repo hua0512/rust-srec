@@ -91,7 +91,7 @@ pub async fn process_hls_stream(
         HlsData::TsData(_) => "ts",
         HlsData::M4sData(_) => "m4s",
         // should never happen
-        HlsData::EndMarker => {
+        HlsData::EndMarker(_) => {
             return Err(AppError::InvalidInput(
                 "First segment is EndMarker".to_string(),
             ));

@@ -21,6 +21,7 @@ pub struct HlsFormatStrategy {
     current_offset: u64,
     target_duration: f32,
     max_file_size: Option<u64>,
+    last_split_reason: Option<SplitReason>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -38,6 +39,7 @@ impl HlsFormatStrategy {
             current_offset: 0,
             target_duration: 0.0,
             max_file_size,
+            last_split_reason: None,
         }
     }
 
@@ -45,6 +47,7 @@ impl HlsFormatStrategy {
         self.analyzer.reset();
         self.current_offset = 0;
         self.target_duration = 0.0;
+        self.last_split_reason = None;
         Ok(())
     }
 
@@ -114,7 +117,10 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                 Ok(bytes_written)
             }
             // do nothing for end marker, it will be handled in after_item_written
-            HlsData::EndMarker => Ok(0),
+            HlsData::EndMarker(reason) => {
+                self.last_split_reason = reason.clone();
+                Ok(0)
+            }
         }
     }
 
@@ -170,6 +176,17 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         _config: &WriterConfig,
         state: &WriterState,
     ) -> Result<u64, Self::StrategyError> {
+        // If no explicit split reason was set (e.g. from an EndMarker), check if this
+        // close was triggered by the writer-level size rotation path.
+        if self.last_split_reason.is_none()
+            && let Some(max_size) = self.max_file_size
+            && max_size > 0
+            && state.items_written_current_file > 0
+            && state.bytes_written_current_file >= max_size
+        {
+            self.last_split_reason = Some(SplitReason::SizeLimit);
+        }
+
         let items_written = state.items_written_current_file;
         let duration_secs = self.target_duration;
 
@@ -190,7 +207,7 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
         state: &WriterState,
     ) -> Result<PostWriteAction, Self::StrategyError> {
         self.update_status(state);
-        if matches!(item, HlsData::EndMarker) {
+        if matches!(item, HlsData::EndMarker(_)) {
             // If an end marker arrives before any real payload, don't rotate.
             // This prevents creating empty files if the stream begins with a boundary marker.
             if state.items_written_current_file <= 1 {
@@ -210,6 +227,10 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
 
     fn current_media_duration_secs(&self) -> f64 {
         self.target_duration as f64
+    }
+
+    fn close_context(&self) -> Option<SplitReason> {
+        self.last_split_reason.clone()
     }
 }
 
@@ -286,10 +307,10 @@ impl ProtocolWriter for HlsWriter {
     ) -> Result<WriterStats, WriterError> {
         let mut saw_payload = false;
         self.writer_task.run_from_channel(input, |item, _state| {
-            if !saw_payload && matches!(item, HlsData::EndMarker) {
+            if !saw_payload && matches!(item, HlsData::EndMarker(_)) {
                 return false;
             }
-            saw_payload |= !matches!(item, HlsData::EndMarker);
+            saw_payload |= !matches!(item, HlsData::EndMarker(_));
             true
         })
     }
@@ -362,8 +383,8 @@ mod tests {
 
         let handle = std::thread::spawn(move || writer.run(rx));
 
-        tx.blocking_send(Ok(HlsData::EndMarker)).unwrap();
-        tx.blocking_send(Ok(HlsData::EndMarker)).unwrap();
+        tx.blocking_send(Ok(HlsData::end_marker())).unwrap();
+        tx.blocking_send(Ok(HlsData::end_marker())).unwrap();
         drop(tx);
 
         let stats = handle

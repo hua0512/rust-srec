@@ -2,7 +2,7 @@ use hls::{
     HlsData, M4sData, M4sInitSegmentData, Resolution, ResolutionDetector, StreamProfile,
     TsStreamInfo,
 };
-use pipeline_common::{PipelineError, Processor, StreamerContext};
+use pipeline_common::{PipelineError, Processor, SplitReason, StreamerContext};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -74,8 +74,8 @@ impl SegmentSplitOperator {
         crc32::crc32(data)
     }
 
-    // Handle MP4 init segment - returns true if a split is needed
-    fn handle_init_segment(&mut self, input: &HlsData) -> Result<bool, PipelineError> {
+    // Handle MP4 init segment - returns Some(reason) if a split is needed
+    fn handle_init_segment(&mut self, input: &HlsData) -> Result<Option<SplitReason>, PipelineError> {
         // Get data from HlsData
         let data = match input {
             HlsData::M4sData(M4sData::InitSegment(init)) => init,
@@ -88,7 +88,7 @@ impl SegmentSplitOperator {
         };
 
         let crc = Self::calculate_crc(&data.data);
-        let mut needs_split = false;
+        let mut split_reason = None;
 
         if let Some(previous_crc) = self.last_init_segment_crc {
             if previous_crc != crc {
@@ -96,7 +96,9 @@ impl SegmentSplitOperator {
                     "{} Detected different init segment, splitting the stream",
                     self.context.name
                 );
-                needs_split = true;
+                split_reason = Some(SplitReason::StreamStructureChange {
+                    description: "init segment changed".to_string(),
+                });
             }
         } else {
             // First init segment encountered
@@ -107,45 +109,23 @@ impl SegmentSplitOperator {
         self.last_init_segment = Some(data.clone());
         self.last_init_segment_crc = Some(crc);
 
-        // Check for resolution changes in MP4 init segments
-        // if !needs_split {
-        //     if let Some(current_resolution) = self.extract_resolution(input) {
-        //         if let Some(previous_resolution) = &self.last_resolution {
-        //             if previous_resolution != &current_resolution {
-        //                 info!(
-        //                     "{} MP4 video resolution changed: {} -> {}",
-        //                     self.context.name, previous_resolution, current_resolution
-        //                 );
-        //                 needs_split = true;
-        //             }
-        //         } else {
-        //             // First time we detect resolution in MP4
-        //             info!(
-        //                 "{} Detected MP4 video resolution: {}",
-        //                 self.context.name, current_resolution
-        //             );
-        //         }
-        //         self.last_resolution = Some(current_resolution);
-        //     }
-        // }
-
-        Ok(needs_split)
+        Ok(split_reason)
     }
 
     // Handle TS segment
-    // Returns true if a split is needed
-    fn handle_ts_segment(&mut self, input: &HlsData) -> Result<bool, PipelineError> {
+    // Returns Some(reason) if a split is needed
+    fn handle_ts_segment(&mut self, input: &HlsData) -> Result<Option<SplitReason>, PipelineError> {
         let (current_stream_info, packets) = match input {
             HlsData::TsData(ts_data) => match ts_data.parse_stream_and_packets() {
                 Ok((info, packets)) => (info, packets),
                 Err(e) => {
                     warn!("{} Failed to parse TS packets: {}", self.context.name, e);
-                    return Ok(false);
+                    return Ok(None);
                 }
             },
             _ => {
                 debug!("{} Not a TS segment", self.context.name);
-                return Ok(false);
+                return Ok(None);
             }
         };
 
@@ -157,7 +137,7 @@ impl SegmentSplitOperator {
                 "{} TS segment has no PSI tables, skipping analysis",
                 self.context.name
             );
-            return Ok(false);
+            return Ok(None);
         }
 
         // Compute a StreamProfile without re-parsing the TS data.
@@ -255,7 +235,7 @@ impl SegmentSplitOperator {
             summary,
         });
 
-        let mut needs_split = false;
+        let mut split_reason: Option<SplitReason> = None;
 
         // Compare with previous stream information
         if let Some(previous_info) = &self.last_ts_stream_info {
@@ -267,7 +247,13 @@ impl SegmentSplitOperator {
                     previous_info.program_count,
                     current_stream_info.program_count
                 );
-                needs_split = true;
+                split_reason = Some(SplitReason::StreamStructureChange {
+                    description: format!(
+                        "program count changed: {} -> {}",
+                        previous_info.program_count,
+                        current_stream_info.program_count
+                    ),
+                });
             }
 
             // Check for transport stream ID changes
@@ -278,22 +264,34 @@ impl SegmentSplitOperator {
                     previous_info.transport_stream_id,
                     current_stream_info.transport_stream_id
                 );
-                needs_split = true;
+                split_reason = Some(SplitReason::StreamStructureChange {
+                    description: format!(
+                        "transport stream ID changed: {} -> {}",
+                        previous_info.transport_stream_id,
+                        current_stream_info.transport_stream_id
+                    ),
+                });
             }
 
             // Compare stream layouts within programs
-            if !needs_split && previous_info.programs.len() != current_stream_info.programs.len() {
+            if split_reason.is_none() && previous_info.programs.len() != current_stream_info.programs.len() {
                 info!(
                     "{} Number of programs changed: {} -> {}",
                     self.context.name,
                     previous_info.programs.len(),
                     current_stream_info.programs.len()
                 );
-                needs_split = true;
+                split_reason = Some(SplitReason::StreamStructureChange {
+                    description: format!(
+                        "number of programs changed: {} -> {}",
+                        previous_info.programs.len(),
+                        current_stream_info.programs.len()
+                    ),
+                });
             }
 
             // Check individual program changes
-            if !needs_split {
+            if split_reason.is_none() {
                 for (prev_prog, curr_prog) in previous_info
                     .programs
                     .iter()
@@ -304,7 +302,13 @@ impl SegmentSplitOperator {
                             "{} Program number changed: {} -> {}",
                             self.context.name, prev_prog.program_number, curr_prog.program_number
                         );
-                        needs_split = true;
+                        split_reason = Some(SplitReason::StreamStructureChange {
+                            description: format!(
+                                "program number changed: {} -> {}",
+                                prev_prog.program_number,
+                                curr_prog.program_number
+                            ),
+                        });
                         break;
                     }
 
@@ -362,27 +366,59 @@ impl SegmentSplitOperator {
                                 prev_stream.stream_type,
                                 curr_stream.stream_type
                             );
-                            needs_split = true;
+                            split_reason = Some(SplitReason::VideoCodecChange {
+                                from: pipeline_common::VideoCodecInfo {
+                                    codec: format!("{:?}", prev_stream.stream_type),
+                                    profile: None,
+                                    level: None,
+                                    width: None,
+                                    height: None,
+                                    signature: 0,
+                                },
+                                to: pipeline_common::VideoCodecInfo {
+                                    codec: format!("{:?}", curr_stream.stream_type),
+                                    profile: None,
+                                    level: None,
+                                    width: None,
+                                    height: None,
+                                    signature: 0,
+                                },
+                            });
                             break;
                         }
                     }
 
                     // Check for codec changes in audio streams
-                    for (prev_stream, curr_stream) in prev_prog
-                        .audio_streams
-                        .iter()
-                        .zip(curr_prog.audio_streams.iter())
-                    {
-                        if prev_stream.stream_type != curr_stream.stream_type {
-                            info!(
-                                "{} Audio codec changed for program {}: {:?} -> {:?}",
-                                self.context.name,
-                                curr_prog.program_number,
-                                prev_stream.stream_type,
-                                curr_stream.stream_type
-                            );
-                            needs_split = true;
-                            break;
+                    if split_reason.is_none() {
+                        for (prev_stream, curr_stream) in prev_prog
+                            .audio_streams
+                            .iter()
+                            .zip(curr_prog.audio_streams.iter())
+                        {
+                            if prev_stream.stream_type != curr_stream.stream_type {
+                                info!(
+                                    "{} Audio codec changed for program {}: {:?} -> {:?}",
+                                    self.context.name,
+                                    curr_prog.program_number,
+                                    prev_stream.stream_type,
+                                    curr_stream.stream_type
+                                );
+                                split_reason = Some(SplitReason::AudioCodecChange {
+                                    from: pipeline_common::AudioCodecInfo {
+                                        codec: format!("{:?}", prev_stream.stream_type),
+                                        sample_rate: None,
+                                        channels: None,
+                                        signature: 0,
+                                    },
+                                    to: pipeline_common::AudioCodecInfo {
+                                        codec: format!("{:?}", curr_stream.stream_type),
+                                        sample_rate: None,
+                                        channels: None,
+                                        signature: 0,
+                                    },
+                                });
+                                break;
+                            }
                         }
                     }
                 }
@@ -392,7 +428,7 @@ impl SegmentSplitOperator {
         // Compare stream profiles for high-level changes
         if let (Some(current_profile), Some(previous_profile)) =
             (&current_profile, &self.last_stream_profile)
-            && !needs_split
+            && split_reason.is_none()
         {
             // Note: Profile-level codec and stream type checks are NOT reliable for splitting.
             // In live HLS, individual TS segments may only contain audio data (between video
@@ -456,12 +492,15 @@ impl SegmentSplitOperator {
                     "{} Video resolution changed via profile: {} -> {}",
                     self.context.name, previous_res, current_res
                 );
-                needs_split = true;
+                split_reason = Some(SplitReason::ResolutionChange {
+                    from: (previous_res.width, previous_res.height),
+                    to: (current_res.width, current_res.height),
+                });
             }
         }
 
         // Additional resolution change check (if video streams are present)
-        if !needs_split
+        if split_reason.is_none()
             && (current_stream_info
                 .programs
                 .iter()
@@ -474,7 +513,10 @@ impl SegmentSplitOperator {
                         "{} Video resolution changed: {} -> {}",
                         self.context.name, last_resolution, current_resolution
                     );
-                    needs_split = true;
+                    split_reason = Some(SplitReason::ResolutionChange {
+                        from: (last_resolution.width, last_resolution.height),
+                        to: (current_resolution.width, current_resolution.height),
+                    });
                 }
             } else {
                 // First time we detect resolution
@@ -492,7 +534,7 @@ impl SegmentSplitOperator {
             self.last_stream_profile = Some(profile);
         }
 
-        Ok(needs_split)
+        Ok(split_reason)
     }
 
     // Reset operator state
@@ -516,18 +558,18 @@ impl Processor<HlsData> for SegmentSplitOperator {
         if context.token.is_cancelled() {
             return Err(PipelineError::Cancelled);
         }
-        let mut need_split = false;
+        let mut split_reason = None;
 
         // Check if we need to split based on segment type
         match &input {
             HlsData::M4sData(M4sData::InitSegment(_)) => {
                 debug!("Init segment received");
-                need_split = self.handle_init_segment(&input)?;
+                split_reason = self.handle_init_segment(&input)?;
             }
             HlsData::TsData(_) => {
-                need_split = self.handle_ts_segment(&input)?;
+                split_reason = self.handle_ts_segment(&input)?;
             }
-            HlsData::EndMarker => {
+            HlsData::EndMarker(_) => {
                 // Reset state when we see an end marker
                 self.reset();
             }
@@ -535,12 +577,12 @@ impl Processor<HlsData> for SegmentSplitOperator {
         }
 
         // If we need to split, emit an end marker first
-        if need_split {
+        if let Some(reason) = split_reason {
             debug!(
                 "{} Emitting end marker for segment split",
                 self.context.name
             );
-            output(HlsData::end_marker())?;
+            output(HlsData::end_marker_with_reason(reason))?;
 
             // If the split was triggered by a non-init segment, we need to re-emit the last init segment.
             if !matches!(&input, HlsData::M4sData(M4sData::InitSegment(_)))
@@ -811,7 +853,7 @@ mod tests {
         // Should have split the stream (segment1 + end marker + segment2)
         assert_eq!(output_items.len(), 3);
         match &output_items[1] {
-            HlsData::EndMarker => {}
+            HlsData::EndMarker(_) => {}
             _ => panic!("Expected EndMarker"),
         }
     }
@@ -860,7 +902,7 @@ mod tests {
         // Should have split the stream (segment1 + end marker + segment2)
         assert_eq!(output_items.len(), 3);
         match &output_items[1] {
-            HlsData::EndMarker => {}
+            HlsData::EndMarker(_) => {}
             _ => panic!("Expected EndMarker"),
         }
     }
@@ -911,7 +953,7 @@ mod tests {
         // (segment1 + end marker + segment2)
         assert_eq!(output_items.len(), 3);
         match &output_items[1] {
-            HlsData::EndMarker => {}
+            HlsData::EndMarker(_) => {}
             _ => panic!("Expected EndMarker after resolution change"),
         }
     }
@@ -960,7 +1002,7 @@ mod tests {
         assert!(
             output_items
                 .iter()
-                .all(|i| !matches!(i, HlsData::EndMarker))
+                .all(|i| !matches!(i, HlsData::EndMarker(_)))
         );
         // Baseline should remain unchanged.
         assert_eq!(operator.last_resolution, Some(Resolution::new(640, 352)));
@@ -1008,6 +1050,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(output_items.len(), 3);
-        assert!(matches!(&output_items[1], HlsData::EndMarker));
+        assert!(matches!(&output_items[1], HlsData::EndMarker(_)));
     }
 }

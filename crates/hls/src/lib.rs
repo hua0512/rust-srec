@@ -8,6 +8,7 @@ pub mod ts;
 // Export common types for ease of use
 pub use media_types::Resolution;
 pub use mp4::{M4sData, M4sInitSegmentData, M4sSegmentData};
+pub use pipeline_common::split_reason::SplitReason;
 pub use profile::{SegmentType, StreamProfile, StreamProfileOptions};
 pub use resolution::ResolutionDetector;
 pub use segment::HlsData;

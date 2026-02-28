@@ -317,7 +317,7 @@ impl HlsAnalyzer {
                 self.stats.last_segment_size = segment_size;
                 self.stats.last_segment_duration = duration;
             }
-            HlsData::EndMarker => {
+            HlsData::EndMarker(_) => {
                 debug!("End marker received, no analysis needed");
             }
         }

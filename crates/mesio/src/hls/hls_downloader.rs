@@ -135,7 +135,9 @@ impl HlsDownloader {
                     HlsStreamEvent::Data(data) => Some(Ok(*data)),
                     HlsStreamEvent::DiscontinuityTagEncountered { .. } => {
                         debug!("Discontinuity tag encountered");
-                        Some(Ok(HlsData::EndMarker))
+                        Some(Ok(HlsData::end_marker_with_reason(
+                            hls::SplitReason::Discontinuity,
+                        )))
                     }
                     _ => None,
                 },

@@ -130,7 +130,7 @@ impl HlsDownloader {
         // Peek at the first segment to determine file extension
         let first_segment = loop {
             match hls_stream.next().await {
-                Some(Ok(HlsData::EndMarker)) => {
+                Some(Ok(HlsData::EndMarker(_))) => {
                     debug!("Skipping leading HLS EndMarker before first data segment");
                     continue;
                 }
@@ -169,7 +169,7 @@ impl HlsDownloader {
         let extension = match &first_segment {
             HlsData::TsData(_) => "ts",
             HlsData::M4sData(_) => "m4s",
-            HlsData::EndMarker => unreachable!("filtered before extension detection"),
+            HlsData::EndMarker(_) => unreachable!("filtered before extension detection"),
         };
 
         let config_snapshot = self.config_snapshot();

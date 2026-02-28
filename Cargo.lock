@@ -2549,6 +2549,7 @@ dependencies = [
  "media-types",
  "memchr",
  "mp4",
+ "pipeline-common",
  "tracing",
  "ts",
 ]

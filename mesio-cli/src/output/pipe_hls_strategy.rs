@@ -84,7 +84,7 @@ impl PipeHlsStrategy {
     /// - An EndMarker is received
     pub fn should_close_pipe(&self, item: &HlsData) -> bool {
         match item {
-            HlsData::EndMarker => true,
+            HlsData::EndMarker(_) => true,
             _ if item.is_discontinuity() => true,
             _ => false,
         }
@@ -150,7 +150,7 @@ impl PipeHlsStrategy {
                 self.has_written_data = true;
                 bytes
             }
-            HlsData::EndMarker => {
+            HlsData::EndMarker(_) => {
                 // EndMarker doesn't write any data, just signals end
                 0
             }
@@ -230,7 +230,7 @@ impl FormatStrategy<HlsData> for PipeHlsStrategy {
         if self.should_close_pipe(item) {
             // Log segment boundary event to stderr
             let boundary_type = match item {
-                HlsData::EndMarker => "HLS EndMarker",
+                HlsData::EndMarker(_) => "HLS EndMarker",
                 _ if item.is_discontinuity() => "HLS Discontinuity",
                 _ => "Unknown",
             };
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn test_should_close_pipe_end_marker() {
         let strategy = PipeHlsStrategy::new();
-        let end_marker = HlsData::EndMarker;
+        let end_marker = HlsData::end_marker();
 
         // EndMarker should always trigger closure
         assert!(strategy.should_close_pipe(&end_marker));
@@ -436,7 +436,7 @@ mod tests {
         let mut buffer = SharedBuffer::new();
 
         let mut strategy = PipeHlsStrategy::new();
-        let end_marker = HlsData::EndMarker;
+        let end_marker = HlsData::end_marker();
 
         let bytes_written = strategy.write_to(&mut buffer, &end_marker).unwrap();
 
