@@ -241,6 +241,25 @@ mod tests {
         .await
         .unwrap();
 
+        sqlx::query(
+            r#"
+            CREATE TABLE session_segments (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                segment_index INTEGER NOT NULL,
+                file_path TEXT NOT NULL,
+                duration_secs REAL NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                split_reason_code TEXT,
+                split_reason_details_json TEXT,
+                created_at INTEGER NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
         pool
     }
 

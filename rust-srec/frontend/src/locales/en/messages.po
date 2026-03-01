@@ -107,7 +107,7 @@ msgid "{0} Configuration"
 msgstr "{0} Configuration"
 
 #. placeholder {0}: outputs.length
-#: src/components/sessions/recordings-tab.tsx:48
+#: src/components/sessions/recordings-tab.tsx:83
 msgid "{0} Files"
 msgstr "{0} Files"
 
@@ -579,6 +579,10 @@ msgstr "Audio Bitrate"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:255
 msgid "Audio Codec"
 msgstr "Audio Codec"
+
+#: src/lib/split-reason.ts:137
+msgid "Audio codec change"
+msgstr "Audio codec change"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
 #: src/components/pipeline/presets/preset-templates.ts:41
@@ -1915,6 +1919,10 @@ msgstr "Disabled"
 msgid "Disconnected"
 msgstr "Disconnected"
 
+#: src/lib/split-reason.ts:113
+msgid "Discontinuity"
+msgstr "Discontinuity"
+
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:288
 msgid "Disk"
 msgstr "Disk"
@@ -1939,7 +1947,7 @@ msgstr "Double Screen Data"
 msgid "Down"
 msgstr "Down"
 
-#: src/components/sessions/recordings-tab.tsx:131
+#: src/components/sessions/recordings-tab.tsx:206
 #: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "Download"
@@ -2017,6 +2025,10 @@ msgstr "Dual Format"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:588
 msgid "Duration"
 msgstr "Duration"
+
+#: src/lib/split-reason.ts:109
+msgid "Duration limit"
+msgstr "Duration limit"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:418
 msgid "e.g. --namespace my_account"
@@ -2335,7 +2347,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:176
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:187
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -3138,7 +3150,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:254
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:184
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:195
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -3183,6 +3195,10 @@ msgstr "HD Thumbnail"
 #: src/components/notifications/forms/webhook-form.tsx:369
 msgid "Header Key"
 msgstr "Header Key"
+
+#: src/lib/split-reason.ts:111
+msgid "Header received"
+msgstr "Header received"
 
 #: src/components/notifications/forms/webhook-form.tsx:388
 msgid "Header Value"
@@ -3572,7 +3588,7 @@ msgstr "Job Timeouts"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:272
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -4006,7 +4022,7 @@ msgstr "MB"
 msgid "MB/s"
 msgstr "MB/s"
 
-#: src/components/sessions/recordings-tab.tsx:45
+#: src/components/sessions/recordings-tab.tsx:80
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:162
 msgid "Media Outputs"
 msgstr "Media Outputs"
@@ -4334,7 +4350,7 @@ msgstr "No logs to display"
 msgid "No matching events found"
 msgstr "No matching events found"
 
-#: src/components/sessions/recordings-tab.tsx:61
+#: src/components/sessions/recordings-tab.tsx:96
 msgid "No media outputs generated yet."
 msgstr "No media outputs generated yet."
 
@@ -4796,7 +4812,7 @@ msgstr "Override global defaults for this streamer."
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:231
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:242
 msgid "Overview"
 msgstr "Overview"
 
@@ -5127,7 +5143,7 @@ msgstr "platforms"
 msgid "Platforms"
 msgstr "Platforms"
 
-#: src/components/sessions/recordings-tab.tsx:157
+#: src/components/sessions/recordings-tab.tsx:232
 msgid "Play"
 msgstr "Play"
 
@@ -5564,7 +5580,7 @@ msgstr "Recording Filters"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:249
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:260
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -5694,6 +5710,10 @@ msgstr "Reset"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:456
 msgid "Resolution (Scale)"
 msgstr "Resolution (Scale)"
+
+#: src/lib/split-reason.ts:121
+msgid "Resolution change"
+msgstr "Resolution change"
 
 #: src/components/config/global/resource-limits-card.tsx:24
 msgid "Resource Limits"
@@ -6233,7 +6253,7 @@ msgstr "Session Menu"
 msgid "Session Merging Gap"
 msgstr "Session Merging Gap"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:179
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:190
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -6338,6 +6358,10 @@ msgstr "Size"
 msgid "Size and duration constraints for recordings."
 msgstr "Size and duration constraints for recordings."
 
+#: src/lib/split-reason.ts:107
+msgid "Size limit"
+msgstr "Size limit"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
 msgid "Skip Interactive Games"
 msgstr "Skip Interactive Games"
@@ -6387,6 +6411,11 @@ msgstr "Specify preferred content delivery network (e.g., ws-h5, hs-h5)."
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:606
 msgid "Speed"
 msgstr "Speed"
+
+#: src/components/sessions/recordings-tab.tsx:149
+#: src/components/sessions/recordings-tab.tsx:158
+msgid "Split"
+msgstr "Split"
 
 #: src/components/config/shared/limits-card.tsx:65
 msgid "Split after duration."
@@ -6527,6 +6556,10 @@ msgstr "Stream Player"
 #: src/components/config/engines/forms/mesio-form.tsx:58
 msgid "Stream Splitting Strategy"
 msgstr "Stream Splitting Strategy"
+
+#: src/lib/split-reason.ts:115
+msgid "Stream structure change"
+msgstr "Stream structure change"
 
 #: src/components/streamers/edit/active-download-card.tsx:70
 msgid "Stream URL"
@@ -6968,7 +7001,7 @@ msgid "Time Range"
 msgstr "Time Range"
 
 #: src/components/sessions/danmu-stats-panel.tsx:192
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:237
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -7476,6 +7509,10 @@ msgstr "Video Bitrate"
 msgid "Video Codec"
 msgstr "Video Codec"
 
+#: src/lib/split-reason.ts:129
+msgid "Video codec change"
+msgstr "Video codec change"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:158
 msgid "Video Settings"
 msgstr "Video Settings"
@@ -7492,7 +7529,7 @@ msgstr "View All"
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 
-#: src/components/sessions/recordings-tab.tsx:144
+#: src/components/sessions/recordings-tab.tsx:219
 msgid "View Danmu"
 msgstr "View Danmu"
 

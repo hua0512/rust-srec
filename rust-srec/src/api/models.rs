@@ -660,6 +660,19 @@ pub struct MediaOutputResponse {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct SessionSegmentResponse {
+    pub id: String,
+    pub session_id: String,
+    pub segment_index: u32,
+    pub file_path: String,
+    pub duration_secs: f64,
+    pub size_bytes: u64,
+    pub split_reason_code: Option<String>,
+    pub split_reason_details: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+}
+
 // ============================================================================
 // Session DTOs
 // ============================================================================

@@ -75,7 +75,10 @@ impl SegmentSplitOperator {
     }
 
     // Handle MP4 init segment - returns Some(reason) if a split is needed
-    fn handle_init_segment(&mut self, input: &HlsData) -> Result<Option<SplitReason>, PipelineError> {
+    fn handle_init_segment(
+        &mut self,
+        input: &HlsData,
+    ) -> Result<Option<SplitReason>, PipelineError> {
         // Get data from HlsData
         let data = match input {
             HlsData::M4sData(M4sData::InitSegment(init)) => init,
@@ -250,8 +253,7 @@ impl SegmentSplitOperator {
                 split_reason = Some(SplitReason::StreamStructureChange {
                     description: format!(
                         "program count changed: {} -> {}",
-                        previous_info.program_count,
-                        current_stream_info.program_count
+                        previous_info.program_count, current_stream_info.program_count
                     ),
                 });
             }
@@ -267,14 +269,15 @@ impl SegmentSplitOperator {
                 split_reason = Some(SplitReason::StreamStructureChange {
                     description: format!(
                         "transport stream ID changed: {} -> {}",
-                        previous_info.transport_stream_id,
-                        current_stream_info.transport_stream_id
+                        previous_info.transport_stream_id, current_stream_info.transport_stream_id
                     ),
                 });
             }
 
             // Compare stream layouts within programs
-            if split_reason.is_none() && previous_info.programs.len() != current_stream_info.programs.len() {
+            if split_reason.is_none()
+                && previous_info.programs.len() != current_stream_info.programs.len()
+            {
                 info!(
                     "{} Number of programs changed: {} -> {}",
                     self.context.name,
@@ -305,8 +308,7 @@ impl SegmentSplitOperator {
                         split_reason = Some(SplitReason::StreamStructureChange {
                             description: format!(
                                 "program number changed: {} -> {}",
-                                prev_prog.program_number,
-                                curr_prog.program_number
+                                prev_prog.program_number, curr_prog.program_number
                             ),
                         });
                         break;

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   getSession,
   getSessionDanmuStatistics,
+  listSessionSegments,
 } from '@/server/functions/sessions';
 import {
   listPipelines,
@@ -92,6 +93,15 @@ function SessionDetailPage() {
     queryFn: () => listPipelineOutputs({ data: { session_id: sessionId } }),
   });
 
+  const { data: segmentsData, isLoading: isSegmentsLoading } = useQuery({
+    queryKey: ['sessions', sessionId, 'segments'],
+    queryFn: () =>
+      listSessionSegments({
+        data: { session_id: sessionId, limit: 100, offset: 0 },
+      }),
+    enabled: Boolean(sessionId),
+  });
+
   const { data: dagsData, isLoading: isDagsLoading } = useQuery({
     queryKey: ['pipeline', 'dags', sessionId],
     queryFn: () => listPipelines({ data: { session_id: sessionId } }),
@@ -99,6 +109,7 @@ function SessionDetailPage() {
 
   const outputs = outputsData?.items || [];
   const dags = dagsData?.dags || [];
+  const segments = segmentsData?.items || [];
 
   const handleDownload = async (outputId: string, filename: string) => {
     try {
@@ -303,6 +314,8 @@ function SessionDetailPage() {
             <RecordingsTab
               isLoading={isOutputsLoading}
               outputs={outputs}
+              segments={segments}
+              isSegmentsLoading={isSegmentsLoading}
               onDownload={handleDownload}
               onPlay={setPlayingOutput}
             />

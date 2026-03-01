@@ -128,13 +128,24 @@ pub(super) fn setup_writer_callbacks(
     writer.set_on_segment_complete_callback(
         move |path, sequence, duration_secs, size_bytes, split_reason| {
             let event_path = path.to_path_buf();
+
+            let (split_reason_code, split_reason_details_json) = if let Some(reason) = split_reason
+            {
+                (
+                    Some(split_reason_code(reason).to_string()),
+                    split_reason_details_json(reason),
+                )
+            } else {
+                (None, None)
+            };
             let event = SegmentEvent::SegmentCompleted(SegmentInfo {
                 path: event_path,
                 duration_secs,
                 size_bytes,
                 index: sequence,
                 completed_at: Utc::now(),
-                split_reason: split_reason.map(|r| r.to_string()),
+                split_reason_code,
+                split_reason_details_json,
             });
             let _ = event_tx_complete.blocking_send(event);
         },
@@ -154,6 +165,69 @@ pub(super) fn setup_writer_callbacks(
     });
 }
 
+fn split_reason_code(reason: &SplitReason) -> &'static str {
+    match reason {
+        SplitReason::VideoCodecChange { .. } => "video_codec_change",
+        SplitReason::AudioCodecChange { .. } => "audio_codec_change",
+        SplitReason::SizeLimit => "size_limit",
+        SplitReason::DurationLimit => "duration_limit",
+        SplitReason::HeaderReceived => "header_received",
+        SplitReason::ResolutionChange { .. } => "resolution_change",
+        SplitReason::StreamStructureChange { .. } => "stream_structure_change",
+        SplitReason::Discontinuity => "discontinuity",
+    }
+}
+
+fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
+    let details = match reason {
+        SplitReason::VideoCodecChange { from, to } => serde_json::json!({
+            "from": {
+                "codec": from.codec.clone(),
+                "profile": from.profile,
+                "level": from.level,
+                "width": from.width,
+                "height": from.height,
+                "signature": from.signature,
+            },
+            "to": {
+                "codec": to.codec.clone(),
+                "profile": to.profile,
+                "level": to.level,
+                "width": to.width,
+                "height": to.height,
+                "signature": to.signature,
+            },
+        }),
+        SplitReason::AudioCodecChange { from, to } => serde_json::json!({
+            "from": {
+                "codec": from.codec.clone(),
+                "sample_rate": from.sample_rate,
+                "channels": from.channels,
+                "signature": from.signature,
+            },
+            "to": {
+                "codec": to.codec.clone(),
+                "sample_rate": to.sample_rate,
+                "channels": to.channels,
+                "signature": to.signature,
+            },
+        }),
+        SplitReason::ResolutionChange { from, to } => serde_json::json!({
+            "from": { "width": from.0, "height": from.1 },
+            "to": { "width": to.0, "height": to.1 },
+        }),
+        SplitReason::StreamStructureChange { description } => {
+            serde_json::json!({ "description": description })
+        }
+        SplitReason::SizeLimit
+        | SplitReason::DurationLimit
+        | SplitReason::HeaderReceived
+        | SplitReason::Discontinuity => return None,
+    };
+
+    serde_json::to_string(&details).ok()
+}
+
 // ---------------------------------------------------------------------------
 // consume_stream
 // ---------------------------------------------------------------------------
@@ -163,7 +237,6 @@ pub(super) fn setup_writer_callbacks(
 /// Returns `Some((kind, message))` if the stream yielded an error, or `None`
 /// if it completed cleanly (or was cancelled).
 ///
-/// Replaces 4 identical ~25-line `while let Some(result) = stream.next()` blocks.
 pub(super) async fn consume_stream<T, E: Display>(
     stream: impl futures::Stream<Item = std::result::Result<T, E>> + Unpin,
     tx: &mpsc::Sender<std::result::Result<T, PipelineError>>,

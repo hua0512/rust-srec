@@ -1,6 +1,10 @@
 import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
-import { SessionDanmuStatisticsSchema, SessionSchema } from '../../api/schemas';
+import {
+  SessionDanmuStatisticsSchema,
+  SessionSchema,
+  SessionSegmentSchema,
+} from '../../api/schemas';
 import { z } from 'zod';
 
 const PaginatedSessionSchema = z.object({
@@ -76,4 +80,26 @@ export const deleteSessions = createServerFn({ method: 'POST' })
       body: JSON.stringify({ ids }),
     });
     return json as { deleted: number };
+  });
+
+export const listSessionSegments = createServerFn({ method: 'GET' })
+  .inputValidator(
+    (d: { session_id: string; limit?: number; offset?: number }) => d,
+  )
+  .handler(async ({ data }) => {
+    const params = new URLSearchParams();
+    if (data.limit !== undefined) params.set('limit', data.limit.toString());
+    if (data.offset !== undefined) params.set('offset', data.offset.toString());
+
+    const json = await fetchBackend(
+      `/sessions/${data.session_id}/segments?${params.toString()}`,
+    );
+
+    return z
+      .object({
+        items: z.array(SessionSegmentSchema),
+        limit: z.number(),
+        offset: z.number(),
+      })
+      .parse(json);
   });

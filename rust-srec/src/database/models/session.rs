@@ -146,6 +146,44 @@ pub struct MediaOutputDbModel {
     pub created_at: i64,
 }
 
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SessionSegmentDbModel {
+    pub id: String,
+    pub session_id: String,
+    pub segment_index: i64,
+    pub file_path: String,
+    pub duration_secs: f64,
+    pub size_bytes: i64,
+    pub split_reason_code: Option<String>,
+    pub split_reason_details_json: Option<String>,
+    pub created_at: i64,
+}
+
+impl SessionSegmentDbModel {
+    pub fn new(
+        session_id: impl Into<String>,
+        segment_index: u32,
+        file_path: impl Into<String>,
+        duration_secs: f64,
+        size_bytes: u64,
+        split_reason_code: Option<String>,
+        split_reason_details_json: Option<String>,
+    ) -> Self {
+        let size_bytes = i64::try_from(size_bytes).unwrap_or(i64::MAX);
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            session_id: session_id.into(),
+            segment_index: i64::from(segment_index),
+            file_path: file_path.into(),
+            duration_secs,
+            size_bytes,
+            split_reason_code,
+            split_reason_details_json,
+            created_at: crate::database::time::now_ms(),
+        }
+    }
+}
+
 impl MediaOutputDbModel {
     pub fn new(
         session_id: impl Into<String>,

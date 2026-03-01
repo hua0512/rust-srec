@@ -336,7 +336,8 @@ fn map_event_to_protobuf(
             segment_index,
             duration_secs,
             size_bytes,
-            split_reason,
+            split_reason_code: _,
+            split_reason_details_json: _,
             ..
         } => {
             let payload = SegmentCompleted {
@@ -347,7 +348,7 @@ fn map_event_to_protobuf(
                 duration_secs: *duration_secs,
                 size_bytes: *size_bytes,
                 session_id: session_id.clone(),
-                split_reason: split_reason.clone().unwrap_or_default(),
+                split_reason: String::new(),
             };
             Some(WsMessage {
                 event_type: EventType::SegmentCompleted as i32,
@@ -525,7 +526,8 @@ mod tests {
             segment_index: 5,
             duration_secs: 10.5,
             size_bytes: 1024000,
-            split_reason: None,
+            split_reason_code: None,
+            split_reason_details_json: None,
         };
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
@@ -537,6 +539,7 @@ mod tests {
             assert_eq!(payload.duration_secs, 10.5);
             assert_eq!(payload.size_bytes, 1024000);
             assert_eq!(payload.session_id, "session-1");
+            assert_eq!(payload.split_reason, "");
         } else {
             panic!("Expected SegmentCompleted payload");
         }

@@ -61,7 +61,40 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         switch (message.eventType) {
           case EventType.SNAPSHOT:
             if (message.payload.case === 'snapshot') {
-              setSnapshot(message.payload.value.downloads);
+              type SnapshotItem = Parameters<typeof setSnapshot>[0][number];
+
+              const downloads: Parameters<typeof setSnapshot>[0] =
+                message.payload.value.downloads
+                  .map((d): SnapshotItem | null => {
+                    const downloadId =
+                      d.meta?.downloadId || d.metrics?.downloadId;
+                    if (!downloadId) return null;
+                    return {
+                      meta: d.meta ?? {
+                        downloadId,
+                        streamerId: '',
+                        sessionId: '',
+                        engineType: '',
+                        startedAtMs: 0n,
+                        updatedAtMs: 0n,
+                        cdnHost: '',
+                        downloadUrl: '',
+                      },
+                      metrics: d.metrics ?? {
+                        downloadId,
+                        status: '',
+                        bytesDownloaded: 0n,
+                        durationSecs: 0,
+                        speedBytesPerSec: 0n,
+                        segmentsCompleted: 0,
+                        mediaDurationSecs: 0,
+                        playbackRatio: 0,
+                      },
+                    };
+                  })
+                  .filter((d): d is SnapshotItem => d !== null);
+
+              setSnapshot(downloads);
             }
             break;
 
@@ -98,7 +131,6 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             }
             break;
 
-          case EventType.SEGMENT_COMPLETED:
           case EventType.DOWNLOAD_REJECTED:
           case EventType.ERROR:
             // Not currently surfaced in the UI; decoding still works.

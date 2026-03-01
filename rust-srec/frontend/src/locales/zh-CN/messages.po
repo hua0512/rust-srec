@@ -107,7 +107,7 @@ msgid "{0} Configuration"
 msgstr "{0} 配置"
 
 #. placeholder {0}: outputs.length
-#: src/components/sessions/recordings-tab.tsx:48
+#: src/components/sessions/recordings-tab.tsx:83
 msgid "{0} Files"
 msgstr "{0} 个文件"
 
@@ -579,6 +579,10 @@ msgstr "音频比特率"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:255
 msgid "Audio Codec"
 msgstr "音频编码"
+
+#: src/lib/split-reason.ts:137
+msgid "Audio codec change"
+msgstr "音频编码变化"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:62
 #: src/components/pipeline/presets/preset-templates.ts:41
@@ -1915,6 +1919,10 @@ msgstr "已禁用"
 msgid "Disconnected"
 msgstr "已断开"
 
+#: src/lib/split-reason.ts:113
+msgid "Discontinuity"
+msgstr "不连续"
+
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:288
 msgid "Disk"
 msgstr "磁盘"
@@ -1939,7 +1947,7 @@ msgstr "双屏数据"
 msgid "Down"
 msgstr "不可用"
 
-#: src/components/sessions/recordings-tab.tsx:131
+#: src/components/sessions/recordings-tab.tsx:206
 #: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "下载"
@@ -2017,6 +2025,10 @@ msgstr "双格式输出"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:588
 msgid "Duration"
 msgstr "时长"
+
+#: src/lib/split-reason.ts:109
+msgid "Duration limit"
+msgstr "时长限制"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:418
 msgid "e.g. --namespace my_account"
@@ -2335,7 +2347,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:176
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:187
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -3138,7 +3150,7 @@ msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:254
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:184
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:195
 msgid "Go Back"
 msgstr "返回"
 
@@ -3183,6 +3195,10 @@ msgstr "高清缩略图"
 #: src/components/notifications/forms/webhook-form.tsx:369
 msgid "Header Key"
 msgstr "Header 键"
+
+#: src/lib/split-reason.ts:111
+msgid "Header received"
+msgstr "收到头部"
 
 #: src/components/notifications/forms/webhook-form.tsx:388
 msgid "Header Value"
@@ -3572,7 +3588,7 @@ msgstr "任务超时"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:272
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -4006,7 +4022,7 @@ msgstr "MB"
 msgid "MB/s"
 msgstr "MB/s"
 
-#: src/components/sessions/recordings-tab.tsx:45
+#: src/components/sessions/recordings-tab.tsx:80
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:162
 msgid "Media Outputs"
 msgstr "媒体文件"
@@ -4334,7 +4350,7 @@ msgstr "暂无日志可显示"
 msgid "No matching events found"
 msgstr "未找到匹配的事件"
 
-#: src/components/sessions/recordings-tab.tsx:61
+#: src/components/sessions/recordings-tab.tsx:96
 msgid "No media outputs generated yet."
 msgstr "尚未生成媒体输出。"
 
@@ -4796,7 +4812,7 @@ msgstr "为此主播覆盖全局默认值。"
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:231
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:242
 msgid "Overview"
 msgstr "概览"
 
@@ -5127,7 +5143,7 @@ msgstr "平台"
 msgid "Platforms"
 msgstr "平台"
 
-#: src/components/sessions/recordings-tab.tsx:157
+#: src/components/sessions/recordings-tab.tsx:232
 msgid "Play"
 msgstr "播放"
 
@@ -5564,7 +5580,7 @@ msgstr "录制过滤器"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:249
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:260
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -5694,6 +5710,10 @@ msgstr "重置"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:456
 msgid "Resolution (Scale)"
 msgstr "分辨率（缩放）"
+
+#: src/lib/split-reason.ts:121
+msgid "Resolution change"
+msgstr "分辨率变化"
 
 #: src/components/config/global/resource-limits-card.tsx:24
 msgid "Resource Limits"
@@ -6233,7 +6253,7 @@ msgstr "会话菜单"
 msgid "Session Merging Gap"
 msgstr "会话合并间隔"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:179
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:190
 msgid "Session not found"
 msgstr "未找到录制会话"
 
@@ -6338,6 +6358,10 @@ msgstr "大小"
 msgid "Size and duration constraints for recordings."
 msgstr "录制的大小与时长限制。"
 
+#: src/lib/split-reason.ts:107
+msgid "Size limit"
+msgstr "大小限制"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
@@ -6387,6 +6411,11 @@ msgstr "指定首选的内容分发网络（例如 ws-h5, hs-h5）。"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:606
 msgid "Speed"
 msgstr "速度"
+
+#: src/components/sessions/recordings-tab.tsx:149
+#: src/components/sessions/recordings-tab.tsx:158
+msgid "Split"
+msgstr "分割"
 
 #: src/components/config/shared/limits-card.tsx:65
 msgid "Split after duration."
@@ -6527,6 +6556,10 @@ msgstr "流播放器"
 #: src/components/config/engines/forms/mesio-form.tsx:58
 msgid "Stream Splitting Strategy"
 msgstr "流分割策略"
+
+#: src/lib/split-reason.ts:115
+msgid "Stream structure change"
+msgstr "流结构变化"
 
 #: src/components/streamers/edit/active-download-card.tsx:70
 msgid "Stream URL"
@@ -6968,7 +7001,7 @@ msgid "Time Range"
 msgstr "时间范围"
 
 #: src/components/sessions/danmu-stats-panel.tsx:192
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:237
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
 msgid "Timeline"
 msgstr "时间线"
 
@@ -7476,6 +7509,10 @@ msgstr "视频比特率"
 msgid "Video Codec"
 msgstr "视频编码"
 
+#: src/lib/split-reason.ts:129
+msgid "Video codec change"
+msgstr "视频编码变化"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:158
 msgid "Video Settings"
 msgstr "视频设置"
@@ -7492,7 +7529,7 @@ msgstr "查看全部"
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "实时查看应用日志。日志仅保留最近 {MAX_LOG_ENTRIES} 条。"
 
-#: src/components/sessions/recordings-tab.tsx:144
+#: src/components/sessions/recordings-tab.tsx:219
 msgid "View Danmu"
 msgstr "查看弹幕"
 

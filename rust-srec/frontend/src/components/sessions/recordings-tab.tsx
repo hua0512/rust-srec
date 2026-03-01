@@ -16,21 +16,56 @@ import {
 } from 'lucide-react';
 import { isPlayable } from '@/lib/media';
 import { MediaOutput } from '@/api/schemas/system';
+import type { SessionSegment } from '@/api/schemas/session';
+import { formatSplitReason, SplitReasonDetails } from '@/lib/split-reason';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
 
 interface RecordingsTabProps {
   isLoading: boolean;
   outputs: MediaOutput[];
+  segments?: SessionSegment[];
+  isSegmentsLoading?: boolean;
   onDownload: (id: string, name: string) => void;
   onPlay: (output: MediaOutput) => void;
 }
 
+type SplitReasonRecord = {
+  code?: string | null;
+  details?: unknown;
+};
+
 export function RecordingsTab({
   isLoading,
   outputs,
+  segments,
+  isSegmentsLoading,
   onDownload,
   onPlay,
 }: RecordingsTabProps) {
   const { i18n } = useLingui();
+
+  const splitReasonByPath = new Map<string, SplitReasonRecord>();
+  for (const s of segments || []) {
+    if (!isNonEmptyString(s.file_path)) continue;
+    const splitReason: SplitReasonRecord = {
+      code: s.split_reason_code,
+      details: s.split_reason_details,
+    };
+    const fileName = s.file_path.split('/').pop();
+    for (const key of [s.file_path, fileName]) {
+      if (!isNonEmptyString(key)) continue;
+      if (splitReasonByPath.has(key)) continue;
+      splitReasonByPath.set(key, splitReason);
+    }
+  }
 
   return (
     <motion.div
@@ -90,6 +125,46 @@ export function RecordingsTab({
                           >
                             {output.format}
                           </Badge>
+                          {(() => {
+                            if (isSegmentsLoading) return null;
+                            const fileName = output.file_path.split('/').pop();
+                            const reason =
+                              splitReasonByPath.get(output.file_path) ??
+                              (isNonEmptyString(fileName)
+                                ? splitReasonByPath.get(fileName)
+                                : undefined);
+                            const formattedReason = formatSplitReason(
+                              i18n,
+                              reason,
+                            );
+                            if (!isNonEmptyString(formattedReason)) return null;
+
+                            return (
+                              <Tooltip delayDuration={200}>
+                                <TooltipTrigger asChild>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-[10px] px-1 h-4 max-w-64 truncate cursor-help"
+                                  >
+                                    <Trans>Split</Trans>: {formattedReason}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent
+                                  side="bottom"
+                                  sideOffset={6}
+                                  className="max-w-[min(720px,calc(100vw-2rem))] px-3 py-2 bg-background text-foreground border shadow-xl"
+                                >
+                                  <div className="text-xs font-medium">
+                                    <Trans>Split</Trans>: {formattedReason}
+                                  </div>
+                                  <SplitReasonDetails
+                                    code={reason?.code ?? ''}
+                                    details={reason?.details}
+                                  />
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })()}
                           <span>{formatBytes(output.file_size_bytes)}</span>
                           <span>•</span>
                           <span>

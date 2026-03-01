@@ -5,7 +5,7 @@ use sqlx::SqlitePool;
 
 use crate::database::models::{
     DanmuStatisticsDbModel, LiveSessionDbModel, MediaOutputDbModel, OutputFilters, Pagination,
-    SessionFilters,
+    SessionFilters, SessionSegmentDbModel,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
@@ -59,6 +59,19 @@ pub trait SessionRepository: Send + Sync {
         filters: &OutputFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<MediaOutputDbModel>, u64)>;
+
+    async fn create_session_segment(&self, segment: &SessionSegmentDbModel) -> Result<()>;
+    async fn list_session_segments_for_session(
+        &self,
+        session_id: &str,
+        limit: i32,
+    ) -> Result<Vec<SessionSegmentDbModel>>;
+
+    async fn list_session_segments_page(
+        &self,
+        session_id: &str,
+        pagination: &Pagination,
+    ) -> Result<Vec<SessionSegmentDbModel>>;
 
     // Danmu Statistics
     async fn get_danmu_statistics(
@@ -292,6 +305,93 @@ impl SessionRepository for SqlxSessionRepository {
             }
         })
         .await
+    }
+
+    async fn create_session_segment(&self, segment: &SessionSegmentDbModel) -> Result<()> {
+        retry_on_sqlite_busy("create_session_segment", || async {
+            let mut conn = self.write_pool.acquire().await?;
+            sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+
+            let result: Result<()> = async {
+                sqlx::query(
+                    r#"
+                    INSERT INTO session_segments (
+                        id,
+                        session_id,
+                        segment_index,
+                        file_path,
+                        duration_secs,
+                        size_bytes,
+                        split_reason_code,
+                        split_reason_details_json,
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(&segment.id)
+                .bind(&segment.session_id)
+                .bind(segment.segment_index)
+                .bind(&segment.file_path)
+                .bind(segment.duration_secs)
+                .bind(segment.size_bytes)
+                .bind(&segment.split_reason_code)
+                .bind(&segment.split_reason_details_json)
+                .bind(segment.created_at)
+                .execute(&mut *conn)
+                .await?;
+
+                Ok(())
+            }
+            .await;
+
+            match result {
+                Ok(()) => {
+                    sqlx::query("COMMIT").execute(&mut *conn).await?;
+                    Ok(())
+                }
+                Err(err) => {
+                    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+                    Err(err)
+                }
+            }
+        })
+        .await
+    }
+
+    async fn list_session_segments_for_session(
+        &self,
+        session_id: &str,
+        limit: i32,
+    ) -> Result<Vec<SessionSegmentDbModel>> {
+        let limit = limit.clamp(1, 10000);
+        let segments = sqlx::query_as::<_, SessionSegmentDbModel>(
+            "SELECT * FROM session_segments WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(session_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(segments)
+    }
+
+    async fn list_session_segments_page(
+        &self,
+        session_id: &str,
+        pagination: &Pagination,
+    ) -> Result<Vec<SessionSegmentDbModel>> {
+        let limit = i32::try_from(pagination.limit)
+            .unwrap_or(i32::MAX)
+            .clamp(1, 10_000);
+        let offset = i32::try_from(pagination.offset).unwrap_or(0).max(0);
+        let segments = sqlx::query_as::<_, SessionSegmentDbModel>(
+            "SELECT * FROM session_segments WHERE session_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        )
+        .bind(session_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(segments)
     }
 
     async fn delete_media_output(&self, id: &str) -> Result<()> {

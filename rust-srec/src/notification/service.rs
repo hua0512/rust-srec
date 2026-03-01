@@ -1594,7 +1594,6 @@ impl NotificationService {
                                         segment_index,
                                         duration_secs,
                                         size_bytes,
-                                        split_reason,
                                         ..
                                     } => Some(NotificationEvent::SegmentCompleted {
                                         streamer_id,
@@ -1605,7 +1604,6 @@ impl NotificationService {
                                         size_bytes,
                                         duration_secs,
                                         timestamp: Utc::now(),
-                                        split_reason,
                                     }),
                                     DownloadManagerEvent::DownloadCancelled {
                                         streamer_id,

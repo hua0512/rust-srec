@@ -18,8 +18,9 @@ use axum::{
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
-    DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, PaginatedResponse, PaginationParams,
-    SessionDanmuStatisticsResponse, SessionFilterParams, SessionResponse, TitleChange,
+    DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, PageResponse, PaginatedResponse,
+    PaginationParams, SessionDanmuStatisticsResponse, SessionFilterParams, SessionResponse,
+    SessionSegmentResponse, TitleChange,
 };
 use crate::api::server::AppState;
 use crate::database::models::{
@@ -39,7 +40,78 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_sessions))
         .route("/batch-delete", post(delete_sessions_batch))
         .route("/{id}/danmu-statistics", get(get_session_danmu_statistics))
+        .route("/{id}/segments", get(list_session_segments))
         .route("/{id}", get(get_session).delete(delete_session))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/sessions/{id}/segments",
+    tag = "sessions",
+    params(
+        ("id" = String, Path, description = "Session ID"),
+        PaginationParams
+    ),
+    responses(
+        (status = 200, description = "List of session segments", body = PageResponse<SessionSegmentResponse>),
+        (status = 404, description = "Session not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn list_session_segments(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(pagination): Query<PaginationParams>,
+) -> ApiResult<Json<PageResponse<SessionSegmentResponse>>> {
+    let session_repository = state
+        .session_repository
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?
+        .clone();
+
+    session_repository
+        .get_session(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    let effective_limit = pagination.limit.min(100);
+    let db_pagination = Pagination::new(effective_limit, pagination.offset);
+    let segments = session_repository
+        .list_session_segments_page(&id, &db_pagination)
+        .await
+        .map_err(ApiError::from)?;
+
+    let items = segments
+        .into_iter()
+        .map(|s| SessionSegmentResponse {
+            id: s.id,
+            session_id: s.session_id,
+            segment_index: if s.segment_index < 0 {
+                0
+            } else {
+                u32::try_from(s.segment_index).unwrap_or(u32::MAX)
+            },
+            file_path: s.file_path,
+            duration_secs: s.duration_secs,
+            size_bytes: if s.size_bytes < 0 {
+                0
+            } else {
+                u64::try_from(s.size_bytes).unwrap_or(u64::MAX)
+            },
+            split_reason_code: s.split_reason_code.clone(),
+            split_reason_details: s
+                .split_reason_details_json
+                .as_ref()
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok()),
+            created_at: crate::database::time::ms_to_datetime(s.created_at),
+        })
+        .collect();
+
+    Ok(Json(PageResponse::new(
+        items,
+        effective_limit,
+        pagination.offset,
+    )))
 }
 
 /// List recording sessions with pagination and filtering.

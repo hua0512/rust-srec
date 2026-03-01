@@ -1953,7 +1953,10 @@ where
                 session_id,
                 segment_path,
                 segment_index,
+                duration_secs,
                 size_bytes,
+                split_reason_code,
+                split_reason_details_json,
                 ..
             } => {
                 debug!(
@@ -1963,6 +1966,16 @@ where
                 // Persist segment to database
                 self.persist_segment(&session_id, &segment_path, size_bytes)
                     .await;
+                let session_segment = crate::database::models::SessionSegmentDbModel::new(
+                    &session_id,
+                    segment_index,
+                    &segment_path,
+                    duration_secs,
+                    size_bytes,
+                    split_reason_code.clone(),
+                    split_reason_details_json.clone(),
+                );
+                self.persist_session_segment(&session_segment).await;
 
                 let merged_config = if let Some(config_service) = &self.config_service {
                     config_service
@@ -2978,11 +2991,12 @@ where
     /// Persist a downloaded segment to the database.
     async fn persist_segment(&self, session_id: &str, path: &str, size_bytes: u64) {
         if let Some(repo) = &self.session_repo {
+            let size_bytes = i64::try_from(size_bytes).unwrap_or(i64::MAX);
             let output = MediaOutputDbModel::new(
                 session_id,
                 path,
                 MediaFileType::Video, // Assuming video segments for now
-                size_bytes as i64,
+                size_bytes,
             );
 
             if let Err(e) = repo.create_media_output(&output).await {
@@ -2994,6 +3008,24 @@ where
             } else {
                 debug!("Persisted segment for session {}", session_id);
             }
+        }
+    }
+
+    async fn persist_session_segment(
+        &self,
+        segment: &crate::database::models::SessionSegmentDbModel,
+    ) {
+        let Some(repo) = &self.session_repo else {
+            return;
+        };
+
+        if let Err(e) = repo.create_session_segment(segment).await {
+            tracing::warn!(
+                session_id = %segment.session_id,
+                segment_index = segment.segment_index,
+                error = %e,
+                "Failed to persist session segment (non-fatal)"
+            );
         }
     }
 
@@ -3080,6 +3112,7 @@ mod tests {
     use crate::database::models::{
         DagExecutionDbModel, DagStepExecutionDbModel, DanmuStatisticsDbModel, JobDbModel,
         JobExecutionLogDbModel, LiveSessionDbModel, OutputFilters, PipelinePreset, SessionFilters,
+        SessionSegmentDbModel,
     };
     use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
     use async_trait::async_trait;
@@ -3187,6 +3220,26 @@ mod tests {
             _filters: &OutputFilters,
             _pagination: &Pagination,
         ) -> Result<(Vec<MediaOutputDbModel>, u64)> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn create_session_segment(&self, _segment: &SessionSegmentDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_session_segments_for_session(
+            &self,
+            _session_id: &str,
+            _limit: i32,
+        ) -> Result<Vec<SessionSegmentDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_session_segments_page(
+            &self,
+            _session_id: &str,
+            _pagination: &Pagination,
+        ) -> Result<Vec<SessionSegmentDbModel>> {
             unimplemented!("not needed for these tests")
         }
 

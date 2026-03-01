@@ -58,14 +58,9 @@ pub enum SplitReason {
     /// A new FLV header arrived from upstream (stream restart/reconnect).
     HeaderReceived,
     /// Video resolution changed.
-    ResolutionChange {
-        from: (u32, u32),
-        to: (u32, u32),
-    },
+    ResolutionChange { from: (u32, u32), to: (u32, u32) },
     /// Stream structural parameter changed (program info, transport stream ID, init segment CRC, etc.).
-    StreamStructureChange {
-        description: String,
-    },
+    StreamStructureChange { description: String },
     /// HLS playlist discontinuity tag encountered.
     Discontinuity,
 }
@@ -93,7 +88,11 @@ impl fmt::Display for SplitReason {
             Self::DurationLimit => write!(f, "duration limit"),
             Self::HeaderReceived => write!(f, "header received"),
             Self::ResolutionChange { from, to } => {
-                write!(f, "resolution change: {}x{} -> {}x{}", from.0, from.1, to.0, to.1)
+                write!(
+                    f,
+                    "resolution change: {}x{} -> {}x{}",
+                    from.0, from.1, to.0, to.1
+                )
             }
             Self::StreamStructureChange { description } => {
                 write!(f, "stream structure change: {description}")

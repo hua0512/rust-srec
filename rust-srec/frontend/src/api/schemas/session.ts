@@ -46,6 +46,19 @@ export const SessionDanmuStatisticsSchema = z.object({
   word_frequency: z.array(DanmuWordFrequencySchema),
 });
 
+export const SessionSegmentSchema = z.object({
+  id: z.string(),
+  session_id: z.string(),
+  segment_index: z.number(),
+  file_path: z.string(),
+  duration_secs: z.number(),
+  size_bytes: z.number(),
+  split_reason_code: z.string().nullable().optional(),
+  split_reason_details: z.any().optional(),
+  created_at: z.string(),
+});
+export type SessionSegment = z.infer<typeof SessionSegmentSchema>;
+
 export const JobProgressKindSchema = z.enum(['ffmpeg', 'rclone']);
 export type JobProgressKind = z.infer<typeof JobProgressKindSchema>;
 
