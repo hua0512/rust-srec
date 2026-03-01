@@ -636,6 +636,16 @@ impl<
             return Ok(());
         }
 
+        if streamer.is_disabled() {
+            debug!(
+                streamer_id = %streamer.id,
+                streamer_name = %streamer.name,
+                disabled_until = ?streamer.disabled_until,
+                "Ignoring monitor status while temporarily disabled"
+            );
+            return Ok(());
+        }
+
         match status {
             LiveStatus::Live {
                 title,
@@ -858,7 +868,6 @@ impl<
             new_id
         };
 
-        // Update streamer state and clear error backoff as part of the same transaction.
         StreamerTxOps::set_live(&mut tx, &streamer.id, now).await?;
 
         if let Some(ref new_avatar_url) = avatar

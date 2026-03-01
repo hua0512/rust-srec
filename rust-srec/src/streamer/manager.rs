@@ -219,6 +219,18 @@ where
         Ok(())
     }
 
+    pub async fn clear_last_error(&self, id: &str) -> Result<()> {
+        debug!("Clearing last_error for streamer {}", id);
+
+        self.repo.clear_streamer_last_error(id).await?;
+
+        if let Some(mut entry) = self.metadata.get_mut(id) {
+            entry.last_error = None;
+        }
+
+        Ok(())
+    }
+
     /// Update streamer state.
     ///
     /// Persists to database first, then updates in-memory cache.
@@ -892,6 +904,10 @@ mod tests {
         }
 
         async fn clear_streamer_error_state(&self, _id: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn clear_streamer_last_error(&self, _id: &str) -> Result<()> {
             Ok(())
         }
 

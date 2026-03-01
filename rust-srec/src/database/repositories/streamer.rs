@@ -33,6 +33,7 @@ pub trait StreamerRepository: Send + Sync {
 
     // Methods for StreamerManager
     async fn clear_streamer_error_state(&self, id: &str) -> Result<()>;
+    async fn clear_streamer_last_error(&self, id: &str) -> Result<()>;
     async fn record_streamer_error(
         &self,
         id: &str,
@@ -324,6 +325,14 @@ impl StreamerRepository for SqlxStreamerRepository {
         .bind(id)
         .execute(&self.write_pool)
         .await?;
+        Ok(())
+    }
+
+    async fn clear_streamer_last_error(&self, id: &str) -> Result<()> {
+        sqlx::query("UPDATE streamers SET last_error = NULL WHERE id = ?")
+            .bind(id)
+            .execute(&self.write_pool)
+            .await?;
         Ok(())
     }
 

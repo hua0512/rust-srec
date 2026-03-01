@@ -31,7 +31,7 @@ impl StreamerTxOps {
         Ok(result.rows_affected())
     }
 
-    /// Set streamer to LIVE state and record success (clear errors, update last_live_time).
+    /// Set streamer to LIVE state and record `last_live_time`.
     pub async fn set_live(
         tx: &mut SqliteConnection,
         streamer_id: &str,
@@ -41,9 +41,6 @@ impl StreamerTxOps {
             r#"
             UPDATE streamers
             SET state = 'LIVE',
-                consecutive_error_count = 0,
-                disabled_until = NULL,
-                last_error = NULL,
                 last_live_time = ?
             WHERE id = ?
             "#,
@@ -268,7 +265,6 @@ mod tests {
 
         tx.commit().await.unwrap();
 
-        // Verify state, error count cleared, last_live_time set
         let row: (String, i32, Option<String>) = sqlx::query_as(
             "SELECT state, consecutive_error_count, last_error FROM streamers WHERE id = 'test-1'",
         )
@@ -276,8 +272,8 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(row.0, "LIVE");
-        assert_eq!(row.1, 0);
-        assert!(row.2.is_none());
+        assert_eq!(row.1, 3);
+        assert_eq!(row.2.as_deref(), Some("some error"));
     }
 
     #[tokio::test]

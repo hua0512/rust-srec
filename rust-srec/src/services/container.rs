@@ -1328,10 +1328,23 @@ impl ServiceContainer {
                 match &download_event {
                     DownloadManagerEvent::SegmentStarted {
                         session_id,
+                        streamer_id,
                         segment_path,
                         segment_index,
                         ..
                     } => {
+                        if let Some(metadata) = streamer_manager.get_streamer(streamer_id)
+                            && !metadata.is_disabled()
+                            && metadata.last_error.is_some()
+                            && let Err(e) = streamer_manager.clear_last_error(streamer_id).await
+                        {
+                            warn!(
+                                streamer_id = %streamer_id,
+                                error = %e,
+                                "failed to clear streamer last_error on segment start"
+                            );
+                        }
+
                         if let Some(handle) = danmu_service.get_handle(session_id) {
                             let path = std::path::Path::new(segment_path);
                             let segment_id = segment_index.to_string();
@@ -2141,6 +2154,18 @@ impl ServiceContainer {
                     info!(
                         "Ignoring StreamerLive for inactive streamer {} (state: {})",
                         streamer_id, metadata.state
+                    );
+                    return;
+                }
+
+                if let Some(metadata) = streamer_manager.get_streamer(&streamer_id)
+                    && metadata.is_disabled()
+                {
+                    info!(
+                        streamer_id = %streamer_id,
+                        streamer_name = %streamer_name,
+                        disabled_until = ?metadata.disabled_until,
+                        "Ignoring StreamerLive while temporarily disabled"
                     );
                     return;
                 }
