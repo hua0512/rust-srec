@@ -34,58 +34,6 @@ function formatHz(value: unknown): string | null {
   return `${value}Hz`;
 }
 
-function formatCodecSide(details: unknown): string | null {
-  if (!isObject(details)) return null;
-  const codec = details.codec;
-  const profile = details.profile;
-  const level = details.level;
-  const width = details.width;
-  const height = details.height;
-  const signature = details.signature;
-
-  if (!isNonEmptyString(codec)) return null;
-
-  const parts: string[] = [codec];
-
-  if (typeof profile === 'number' && Number.isFinite(profile)) {
-    parts.push(`p${profile}`);
-  }
-  if (typeof level === 'number' && Number.isFinite(level)) {
-    parts.push(`l${level}`);
-  }
-
-  const wxh = formatWxH(width, height);
-  if (wxh) parts.push(wxh);
-
-  const sig = formatSignature(signature);
-  if (sig) parts.push(sig);
-
-  return parts.join(' ');
-}
-
-function formatAudioCodecSide(details: unknown): string | null {
-  if (!isObject(details)) return null;
-  const codec = details.codec;
-  if (!isNonEmptyString(codec)) return null;
-
-  const parts: string[] = [codec];
-  const hz = formatHz(details.sample_rate);
-  if (hz) parts.push(hz);
-
-  const channels = details.channels;
-  if (
-    typeof channels === 'number' &&
-    Number.isFinite(channels) &&
-    channels > 0
-  ) {
-    parts.push(`${channels}ch`);
-  }
-
-  const sig = formatSignature(details.signature);
-  if (sig) parts.push(sig);
-
-  return parts.join(' ');
-}
 
 function formatResolutionSide(details: unknown): string | null {
   if (!isObject(details)) return null;
@@ -95,7 +43,6 @@ function formatResolutionSide(details: unknown): string | null {
 function formatSplitReasonFromCode(
   i18n: I18n,
   code: string,
-  details: unknown,
 ): string | null {
   switch (code) {
     case 'size_limit':
@@ -106,36 +53,14 @@ function formatSplitReasonFromCode(
       return i18n._(msg`Header received`);
     case 'discontinuity':
       return i18n._(msg`Discontinuity`);
-    case 'stream_structure_change': {
-      const label = i18n._(msg`Stream structure change`);
-      const desc = isObject(details) ? details.description : undefined;
-      if (isNonEmptyString(desc)) return `${label}: ${desc}`;
-      return label;
-    }
-    case 'resolution_change': {
-      const label = i18n._(msg`Resolution change`);
-      if (!isObject(details)) return label;
-      const from = formatResolutionSide(details.from);
-      const to = formatResolutionSide(details.to);
-      if (from && to) return `${label}: ${from} → ${to}`;
-      return label;
-    }
-    case 'video_codec_change': {
-      const label = i18n._(msg`Video codec change`);
-      if (!isObject(details)) return label;
-      const from = formatCodecSide(details.from);
-      const to = formatCodecSide(details.to);
-      if (from && to) return `${label}: ${from} → ${to}`;
-      return label;
-    }
-    case 'audio_codec_change': {
-      const label = i18n._(msg`Audio codec change`);
-      if (!isObject(details)) return label;
-      const from = formatAudioCodecSide(details.from);
-      const to = formatAudioCodecSide(details.to);
-      if (from && to) return `${label}: ${from} → ${to}`;
-      return label;
-    }
+    case 'stream_structure_change':
+      return i18n._(msg`Stream structure change`);
+    case 'resolution_change':
+      return i18n._(msg`Resolution change`);
+    case 'video_codec_change':
+      return i18n._(msg`Video codec change`);
+    case 'audio_codec_change':
+      return i18n._(msg`Audio codec change`);
     default:
       return code;
   }
@@ -145,8 +70,7 @@ export function formatSplitReason(i18n: I18n, reason: unknown): string | null {
   if (isObject(reason)) {
     const code = reason.code;
     if (isNonEmptyString(code)) {
-      const details = reason.details;
-      return formatSplitReasonFromCode(i18n, code.trim(), details);
+      return formatSplitReasonFromCode(i18n, code.trim());
     }
     return null;
   }
