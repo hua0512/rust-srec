@@ -85,10 +85,12 @@ export function buildWebSocketUrl(
     wsUrl = `${wsProtocol}//${url.host}${url.pathname}`;
   } else if (typeof window !== 'undefined') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    wsUrl = `${protocol}//${window.location.host}${apiBaseUrl}`;
+    const pathPrefix = apiBaseUrl.startsWith('/') ? apiBaseUrl : `/${apiBaseUrl}`;
+    wsUrl = `${protocol}//${window.location.host}${pathPrefix}`;
   } else {
     // Fallback for SSR if no full URL is provided
-    wsUrl = `ws://localhost:12555${apiBaseUrl}`;
+    const pathPrefix = apiBaseUrl.startsWith('/') ? apiBaseUrl : `/${apiBaseUrl}`;
+    wsUrl = `ws://localhost:12555${pathPrefix}`;
   }
 
   const basePath = wsUrl.replace(/\/$/, '');
