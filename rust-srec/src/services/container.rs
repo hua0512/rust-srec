@@ -2146,28 +2146,29 @@ impl ServiceContainer {
                     return;
                 }
 
+                // Fetch metadata once; reuse for all state/priority checks below.
+                let streamer_metadata = streamer_manager.get_streamer(&streamer_id);
+
                 // Correctness guard: if the streamer was disabled/cancelled while a live check
                 // was in-flight, ignore the live event and don't start downloads/danmu.
-                if let Some(metadata) = streamer_manager.get_streamer(&streamer_id)
-                    && !metadata.is_active()
-                {
-                    info!(
-                        "Ignoring StreamerLive for inactive streamer {} (state: {})",
-                        streamer_id, metadata.state
-                    );
-                    return;
-                }
+                if let Some(metadata) = &streamer_metadata {
+                    if !metadata.is_active() {
+                        info!(
+                            "Ignoring StreamerLive for inactive streamer {} (state: {})",
+                            streamer_id, metadata.state
+                        );
+                        return;
+                    }
 
-                if let Some(metadata) = streamer_manager.get_streamer(&streamer_id)
-                    && metadata.is_disabled()
-                {
-                    info!(
-                        streamer_id = %streamer_id,
-                        streamer_name = %streamer_name,
-                        disabled_until = ?metadata.disabled_until,
-                        "Ignoring StreamerLive while temporarily disabled"
-                    );
-                    return;
+                    if metadata.is_disabled() {
+                        info!(
+                            streamer_id = %streamer_id,
+                            streamer_name = %streamer_name,
+                            disabled_until = ?metadata.disabled_until,
+                            "Ignoring StreamerLive while temporarily disabled"
+                        );
+                        return;
+                    }
                 }
 
                 // Validate we have streams to download
@@ -2179,8 +2180,6 @@ impl ServiceContainer {
                     return;
                 }
 
-                // Get streamer metadata for priority
-                let streamer_metadata = streamer_manager.get_streamer(&streamer_id);
                 let is_high_priority = streamer_metadata
                     .as_ref()
                     .map(|s| s.priority == Priority::High)
