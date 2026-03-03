@@ -7,8 +7,8 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
+import { Switch } from '@/components/ui/switch';
 import { Zap, Cloud, Gamepad2, RotateCcw } from 'lucide-react';
 
 interface DouyuConfigFieldsProps {
@@ -43,7 +43,7 @@ export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
                   </div>
                   <FormControl>
                     <Input
-                      placeholder="ws-h5, hs-h5, etc."
+                      placeholder="ws-h5, hw-h5, etc."
                       {...field}
                       value={field.value || 'ws-h5'}
                       className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all"
@@ -52,7 +52,7 @@ export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
                   <FormDescription className="text-[10px] font-medium pt-1 px-1">
                     <Trans>
                       Specify preferred content delivery network (e.g., ws-h5,
-                      hs-h5).
+                      hw-h5).
                     </Trans>
                   </FormDescription>
                 </FormItem>
@@ -88,29 +88,6 @@ export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
             />
           </div>
 
-          <FormField
-            control={form.control}
-            name={`${fieldName}.force_hs`}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
-                <div className="space-y-0.5">
-                  <FormLabel className="text-xs font-bold text-foreground">
-                    <Trans>Force Huoshan CDN</Trans>
-                  </FormLabel>
-                  <FormDescription className="text-[10px] leading-tight font-medium text-muted-foreground/80">
-                    <Trans>Always prioritize Huoshan delivery nodes.</Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={!!field.value}
-                    onCheckedChange={field.onChange}
-                    className="scale-90"
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
         </div>
       </section>
 

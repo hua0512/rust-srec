@@ -16,9 +16,9 @@ use crate::{
         error::ExtractorError,
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::douyu::models::{
-            CachedEncryptionKey, CdnOrigin, DouyuBetardResponse, DouyuEncryptionResponse,
-            DouyuH5PlayData, DouyuH5PlayResponse, DouyuInteractiveGameResponse,
-            DouyuRoomInfoResponse, FallbackSignResult, ParsedStreamInfo,
+            CachedEncryptionKey, DouyuBetardResponse, DouyuEncryptionResponse, DouyuH5PlayData,
+            DouyuH5PlayResponse, DouyuInteractiveGameResponse, DouyuRoomInfoResponse,
+            FallbackSignResult,
         },
         utils::{extras_get_bool, extras_get_i64, extras_get_str, extras_get_u64},
     },
@@ -36,11 +36,6 @@ static ROOM_STATUS_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(ROOM_STATUS_REGEX_STR).unwrap());
 static VIDEO_LOOP_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(VIDEO_LOOP_REGEX_STR).unwrap());
-
-/// Regex to extract the Tencent CDN group suffix from hostname
-/// Matches: sa, 3a, 1a, 3, 1 at the end of the host prefix
-static TX_HOST_SUFFIX_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r".+(sa|3a|1a|3|1)").unwrap());
 
 /// Default device ID for Douyu requests
 pub const DOUYU_DEFAULT_DID: &str = "10000000000000000000000000001501";
@@ -72,8 +67,6 @@ pub struct Douyu {
     pub disable_interactive_game: bool,
     /// Quality rate selection (0 = original quality, higher = lower quality)
     pub rate: i64,
-    /// When true, force construction of hs-h5 (Huoshan) CDN URL even if API returns hs-h5
-    pub force_hs: bool,
     /// Number of retries for API requests (helps with overseas/intermittent failures)
     pub request_retries: u32,
 }
@@ -98,8 +91,6 @@ impl Douyu {
 
         let rate = extras_get_i64(extras.as_ref(), "rate").unwrap_or(0);
 
-        let force_hs = extras_get_bool(extras.as_ref(), "force_hs").unwrap_or(false);
-
         let request_retries = extras_get_u64(extras.as_ref(), "request_retries")
             .map(|v| v as u32)
             .unwrap_or(Self::DEFAULT_RETRIES);
@@ -116,7 +107,6 @@ impl Douyu {
             cdn,
             disable_interactive_game,
             rate,
-            force_hs,
             request_retries,
         }
     }
@@ -661,193 +651,6 @@ impl Douyu {
         ))
     }
 
-    // ==================== CDN URL Construction ====================
-
-    /// Parses a Douyu stream URL into its components
-    /// Returns the Tencent app name, stream ID, and query parameters
-    pub fn parse_stream_url(url: &str, rid: u64) -> Result<ParsedStreamInfo, ExtractorError> {
-        // Split URL into base and query string
-        let parts: Vec<&str> = url.splitn(2, '?').collect();
-        let base_url = parts[0];
-        let query_string = parts.get(1).unwrap_or(&"");
-
-        // Parse query parameters
-        let mut query_params: HashMap<String, String> = HashMap::new();
-        for (k, v) in url::form_urlencoded::parse(query_string.as_bytes()) {
-            query_params.insert(k.into_owned(), v.into_owned());
-        }
-
-        // Extract host from URL
-        let host = base_url
-            .split("//")
-            .nth(1)
-            .and_then(|s| s.split('/').next())
-            .unwrap_or("")
-            .to_string();
-
-        // Extract stream ID similar to Python: /({rid}[^\._/]+)
-        let stream_id = Self::extract_stream_id_from_base_url(base_url, rid).unwrap_or_else(|| {
-            base_url
-                .split('/')
-                .next_back()
-                .unwrap_or("")
-                .split('.')
-                .next()
-                .unwrap_or("")
-                .split('_')
-                .next()
-                .unwrap_or("")
-                .to_string()
-        });
-
-        // Get app name from the path prefix (like Python get_tx_app_name)
-        let prefix = base_url
-            .split(&stream_id)
-            .next()
-            .unwrap_or(base_url)
-            .trim_end_matches('/');
-        let app_name = prefix.split('/').next_back().unwrap_or("");
-
-        // Get Tencent app name from host (suffix mapping) or fallback to app name
-        let tx_app_name = Self::get_tx_app_name(&host, app_name);
-
-        Ok(ParsedStreamInfo {
-            tx_app_name,
-            stream_id,
-            query_params,
-            host,
-        })
-    }
-
-    fn extract_stream_id_from_base_url(base_url: &str, rid: u64) -> Option<String> {
-        let rid_str = rid.to_string();
-        let marker = format!("/{rid_str}");
-        let pos = base_url.find(&marker)?;
-        let start = pos + 1; // skip '/'
-        let rest = base_url.get(start..)?;
-        let end = rest
-            .find(|c: char| ['.', '_', '/'].contains(&c))
-            .unwrap_or(rest.len());
-        let out = rest.get(..end)?.to_string();
-        if out.is_empty() { None } else { Some(out) }
-    }
-
-    /// Gets the Tencent Cloud app name from the RTMP URL host
-    /// Maps host suffixes to dyliveflv app names
-    fn get_tx_app_name(host: &str, app_name: &str) -> String {
-        if let Some(captures) = TX_HOST_SUFFIX_REGEX.captures(host)
-            && let Some(suffix) = captures.get(1)
-        {
-            let suffix_str = suffix.as_str();
-            // "sa" maps to "1"
-            let num = if suffix_str == "sa" { "1" } else { suffix_str };
-            return format!("dyliveflv{}", num);
-        }
-        if app_name.is_empty() {
-            "dyliveflv1".to_string()
-        } else {
-            app_name.to_string()
-        }
-    }
-
-    /// Builds a Tencent CDN URL from the current stream info.
-    /// Mirrors the direct conversion path in the old builder.
-    fn build_tencent_url(
-        stream_info: &ParsedStreamInfo,
-        additional_params: Option<&HashMap<String, String>>,
-    ) -> Result<String, ExtractorError> {
-        let origin = stream_info
-            .query_params
-            .get("origin")
-            .map(|s| CdnOrigin::from_str(s))
-            .unwrap_or(CdnOrigin::Unknown);
-
-        match origin {
-            CdnOrigin::Unknown => {
-                return Err(ExtractorError::ValidationError(format!(
-                    "Unknown origin '{}' cannot be converted to Tencent CDN",
-                    stream_info
-                        .query_params
-                        .get("origin")
-                        .unwrap_or(&"".to_string())
-                )));
-            }
-            CdnOrigin::Douyu => {
-                debug!("Origin is Douyu self-built, Tencent stream may not exist");
-            }
-            _ => {}
-        }
-
-        let tx_host = "tc-tct.douyucdn2.cn";
-        let mut query = stream_info.query_params.clone();
-        query.insert("fcdn".to_string(), "tct".to_string());
-
-        if let Some(params) = additional_params {
-            for (k, v) in params {
-                query.insert(k.clone(), v.clone());
-            }
-        }
-
-        query.remove("vhost");
-
-        let query_string = Self::encode_query_params(&query);
-        Ok(format!(
-            "https://{}/{}/{}.flv?{}",
-            tx_host, stream_info.tx_app_name, stream_info.stream_id, query_string
-        ))
-    }
-
-    /// Builds a Huoshan/Volcano (hs-h5) URL from a Tencent URL.
-    fn build_huoshan_url(
-        stream_info: &ParsedStreamInfo,
-        tencent_url: &str,
-    ) -> Result<(String, String), ExtractorError> {
-        let tx_host = tencent_url
-            .split("//")
-            .nth(1)
-            .and_then(|s| s.split('/').next())
-            .unwrap_or("tc-tct.douyucdn2.cn");
-
-        let hs_host = format!(
-            "{}.douyucdn2.cn",
-            stream_info.tx_app_name.replace("dyliveflv", "huos")
-        )
-        .replace("huos1.", "huosa.");
-
-        let mut query = stream_info.query_params.clone();
-        let encoded_url =
-            percent_encoding::utf8_percent_encode(tencent_url, percent_encoding::NON_ALPHANUMERIC)
-                .to_string();
-        query.insert("fp_user_url".to_string(), encoded_url);
-        query.insert("vhost".to_string(), tx_host.to_string());
-        query.insert("domain".to_string(), tx_host.to_string());
-
-        let query_string = Self::encode_query_params(&query);
-        let hs_cname_url = format!(
-            "http://douyu-pull.s.volcfcdndvs.com/live/{}.flv?{}",
-            stream_info.stream_id, query_string
-        );
-
-        Ok((hs_host, hs_cname_url))
-    }
-
-    /// Encodes query parameters into a URL query string
-    fn encode_query_params(params: &HashMap<String, String>) -> String {
-        let mut keys: Vec<&String> = params.keys().collect();
-        keys.sort_unstable();
-        keys.into_iter()
-            .map(|k| {
-                let v = params.get(k).map(String::as_str).unwrap_or_default();
-                format!(
-                    "{}={}",
-                    k,
-                    percent_encoding::utf8_percent_encode(v, percent_encoding::NON_ALPHANUMERIC)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("&")
-    }
-
     /// Checks if a CDN type starts with "scdn" (problematic CDN to avoid)
     pub fn is_scdn(cdn: &str) -> bool {
         cdn.starts_with("scdn")
@@ -1076,32 +879,9 @@ impl Douyu {
             .await?;
 
         // Prepare the list of CDNs to process
-        let mut cdns_to_process = data.cdns.clone();
+        let cdns_to_process = data.cdns.clone();
 
-        // Always offer hs-h5 (Huoshan) as an option, even if it's not returned by the API.
-        // It can be resolved later in `get_url` by constructing the URL manually.
-        let want_hs = self.cdn == "hs-h5";
-        if !cdns_to_process.iter().any(|c| c.cdn == "hs-h5") {
-            // Create a synthetic hs-h5 entry (resolved in get_url).
-            let is_h265 = cdns_to_process
-                .iter()
-                .find(|c| c.cdn == "tct-h5")
-                .map(|c| c.is_h265)
-                .unwrap_or(false);
-
-            cdns_to_process.push(crate::extractor::platforms::douyu::models::CdnsWithName {
-                name: "火山".to_string(),
-                cdn: "hs-h5".to_string(),
-                is_h265,
-                re_weight: None,
-            });
-        }
-
-        let preferred_cdn = if want_hs {
-            "hs-h5"
-        } else {
-            actual_cdn.as_str()
-        };
+        let preferred_cdn = actual_cdn.as_str();
         let preferred_rate = self.rate as u64;
 
         for cdn in cdns_to_process {
@@ -1255,70 +1035,7 @@ impl PlatformExtractor for Douyu {
 
         let base_stream_url = format!("{}/{}", resp.rtmp_url, resp.rtmp_live);
 
-        if cdn == "hs-h5" {
-            let need_build = self.force_hs || resp.rtmp_cdn != "hs-h5";
-            if need_build {
-                let stream_info_parsed = match Self::parse_stream_url(&base_stream_url, rid) {
-                    Ok(info) => info,
-                    Err(e) => {
-                        debug!("Failed to parse stream URL: {} (fallback to base)", e);
-                        stream_info.url = base_stream_url;
-                        return Ok(());
-                    }
-                };
-
-                let tencent_url = match Self::build_tencent_url(&stream_info_parsed, None) {
-                    Ok(url) => url,
-                    Err(e) => {
-                        debug!("Failed to build Tencent URL: {} (fallback to base)", e);
-                        stream_info.url = base_stream_url;
-                        return Ok(());
-                    }
-                };
-
-                match Self::build_huoshan_url(&stream_info_parsed, &tencent_url) {
-                    Ok((host, url)) => {
-                        stream_info.url = url;
-
-                        let extras_value = stream_info
-                            .extras
-                            .get_or_insert_with(|| serde_json::json!({}));
-                        if !extras_value.is_object() {
-                            *extras_value = serde_json::json!({});
-                        }
-                        let Some(extras_obj) = extras_value.as_object_mut() else {
-                            // We just enforced object above; if serde_json breaks that invariant,
-                            // skip header injection rather than panic.
-                            return Ok(());
-                        };
-
-                        // Backward-compat (older code used host_header string).
-                        extras_obj.insert(
-                            "host_header".to_string(),
-                            serde_json::Value::String(host.clone()),
-                        );
-
-                        let headers_value = extras_obj
-                            .entry("headers".to_string())
-                            .or_insert_with(|| serde_json::json!({}));
-                        if !headers_value.is_object() {
-                            *headers_value = serde_json::json!({});
-                        }
-                        if let Some(headers_obj) = headers_value.as_object_mut() {
-                            headers_obj.insert("Host".to_string(), serde_json::Value::String(host));
-                        }
-                    }
-                    Err(e) => {
-                        debug!("Failed to build hs-h5 URL (fallback to base): {}", e);
-                        stream_info.url = base_stream_url;
-                    }
-                }
-            } else {
-                stream_info.url = base_stream_url;
-            }
-        } else {
-            stream_info.url = base_stream_url;
-        }
+        stream_info.url = base_stream_url;
         Ok(())
     }
 }

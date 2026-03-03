@@ -456,10 +456,6 @@ msgstr "Allowed Extensions"
 msgid "Alternative protocol variant for live stream extraction."
 msgstr "Alternative protocol variant for live stream extraction."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:101
-msgid "Always prioritize Huoshan delivery nodes."
-msgstr "Always prioritize Huoshan delivery nodes."
-
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:177
 msgid "An error occurred"
 msgstr "An error occurred"
@@ -468,7 +464,7 @@ msgstr "An error occurred"
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "Any additional command line arguments to pass to Streamlink"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:162
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:139
 msgid "API Request Retries"
 msgstr "API Request Retries"
 
@@ -580,7 +576,7 @@ msgstr "Audio Bitrate"
 msgid "Audio Codec"
 msgstr "Audio Codec"
 
-#: src/lib/split-reason.ts:137
+#: src/lib/split-reason.ts:59
 msgid "Audio codec change"
 msgstr "Audio codec change"
 
@@ -1919,7 +1915,7 @@ msgstr "Disabled"
 msgid "Disconnected"
 msgstr "Disconnected"
 
-#: src/lib/split-reason.ts:113
+#: src/lib/split-reason.ts:51
 msgid "Discontinuity"
 msgstr "Discontinuity"
 
@@ -2026,7 +2022,7 @@ msgstr "Dual Format"
 msgid "Duration"
 msgstr "Duration"
 
-#: src/lib/split-reason.ts:109
+#: src/lib/split-reason.ts:47
 msgid "Duration limit"
 msgstr "Duration limit"
 
@@ -2905,7 +2901,7 @@ msgstr "Filter deleted successfully"
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:134
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:111
 msgid "Filter Interactive Games"
 msgstr "Filter Interactive Games"
 
@@ -2988,10 +2984,6 @@ msgstr "Follow Redirects (Default: On)"
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:262
 msgid "Fonts Directory"
 msgstr "Fonts Directory"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:98
-msgid "Force Huoshan CDN"
-msgstr "Force Huoshan CDN"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:276
 msgid "Force IPv4 (Default: Off)"
@@ -3196,7 +3188,7 @@ msgstr "HD Thumbnail"
 msgid "Header Key"
 msgstr "Header Key"
 
-#: src/lib/split-reason.ts:111
+#: src/lib/split-reason.ts:49
 msgid "Header received"
 msgstr "Header received"
 
@@ -3951,7 +3943,7 @@ msgstr "Max Interval (s)"
 msgid "Max IO Jobs"
 msgstr "Max IO Jobs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:177
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:154
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "Max number of retry attempts for metadata fetching."
 
@@ -4206,7 +4198,7 @@ msgstr "Native Resolution Thumbnail"
 msgid "Network"
 msgstr "Network"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:122
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:99
 msgid "Network & Content"
 msgstr "Network & Content"
 
@@ -5711,7 +5703,7 @@ msgstr "Reset"
 msgid "Resolution (Scale)"
 msgstr "Resolution (Scale)"
 
-#: src/lib/split-reason.ts:121
+#: src/lib/split-reason.ts:55
 msgid "Resolution change"
 msgstr "Resolution change"
 
@@ -6358,7 +6350,7 @@ msgstr "Size"
 msgid "Size and duration constraints for recordings."
 msgstr "Size and duration constraints for recordings."
 
-#: src/lib/split-reason.ts:107
+#: src/lib/split-reason.ts:45
 msgid "Size limit"
 msgstr "Size limit"
 
@@ -6404,8 +6396,8 @@ msgid "Specific TTWID Cookie"
 msgstr "Specific TTWID Cookie"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:53
-msgid "Specify preferred content delivery network (e.g., ws-h5, hs-h5)."
-msgstr "Specify preferred content delivery network (e.g., ws-h5, hs-h5)."
+msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
+msgstr "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 
 #: src/components/streamers/edit/active-download-card.tsx:125
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:606
@@ -6557,7 +6549,7 @@ msgstr "Stream Player"
 msgid "Stream Splitting Strategy"
 msgstr "Stream Splitting Strategy"
 
-#: src/lib/split-reason.ts:115
+#: src/lib/split-reason.ts:53
 msgid "Stream structure change"
 msgstr "Stream structure change"
 
@@ -7115,7 +7107,7 @@ msgstr "Transcode H.264"
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "Treat interactive game streams (互动玩法) as offline."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:137
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:114
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
@@ -7509,7 +7501,7 @@ msgstr "Video Bitrate"
 msgid "Video Codec"
 msgstr "Video Codec"
 
-#: src/lib/split-reason.ts:129
+#: src/lib/split-reason.ts:57
 msgid "Video codec change"
 msgstr "Video codec change"
 

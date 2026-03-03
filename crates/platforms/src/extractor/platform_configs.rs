@@ -70,9 +70,6 @@ pub struct DouyuConfig {
     /// Quality rate, 0 = original quality (default: 0)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate: Option<i64>,
-    /// Force Huoshan CDN URL construction (default: false)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub force_hs: Option<bool>,
     /// API request retry count (default: 3)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_retries: Option<u32>,
@@ -225,9 +222,9 @@ mod tests {
 
     #[test]
     fn test_douyu_config_deserialize() {
-        let json = json!({"cdn": "hs-h5", "rate": 0, "request_retries": 5});
+        let json = json!({"cdn": "hw-h5", "rate": 0, "request_retries": 5});
         let config: DouyuConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(config.cdn, Some("hs-h5".to_string()));
+        assert_eq!(config.cdn, Some("hw-h5".to_string()));
         assert_eq!(config.rate, Some(0));
         assert_eq!(config.request_retries, Some(5));
     }

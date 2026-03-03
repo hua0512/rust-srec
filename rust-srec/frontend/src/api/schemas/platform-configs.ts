@@ -37,7 +37,6 @@ export const DouyuConfigSchema = z
     cdn: z.string().nullable().optional(),
     disable_interactive_game: z.boolean().nullable().optional(),
     rate: z.number().nullable().optional(),
-    force_hs: z.boolean().nullable().optional(),
     request_retries: z.number().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })

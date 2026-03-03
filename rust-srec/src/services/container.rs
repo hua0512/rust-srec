@@ -2183,7 +2183,6 @@ impl ServiceContainer {
 
                 let mut headers = media_headers.as_ref().cloned().unwrap_or_default();
 
-                // Merge per-stream headers (e.g., Douyu hs-h5 Host override).
                 if let Some(extras) = best_stream.extras.as_ref() {
                     if let Some(extra_headers) = extras.get("headers").and_then(|v| v.as_object()) {
                         for (k, v) in extra_headers {
