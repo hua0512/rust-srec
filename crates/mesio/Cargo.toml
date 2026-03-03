@@ -48,7 +48,7 @@ flv = { path = "../flv" }
 hls = { path = "../hls" }
 
 [dev-dependencies]
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros", "time"] }
 
 [features]
 default = []
