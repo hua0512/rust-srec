@@ -60,7 +60,7 @@ flate2 = { version = "1.1.9", features = ["zlib-rs"], default-features = false }
 url = "2.5.8"
 anyhow = "1.0.102"
 tower-http = { version = "0.6.8", features = ["cors", "trace", "request-id", "fs"] }
-tempfile = "3.25.0"
+tempfile = "3.26.0"
 axum = { version = "0.8.4", features = ["ws"] }
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "sqlite", "macros", "uuid", "chrono", "json"] }
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
