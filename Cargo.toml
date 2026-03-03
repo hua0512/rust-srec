@@ -83,7 +83,7 @@ byteorder = "1.5"
 brotli = "8.0"
 openssl = { version = "0.10", features = ["vendored"] }
 native-tls = "0.2.18"
-rustls = { version = "0.23.36", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
+rustls = { version = "0.23.37", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
 rustls-platform-verifier = "0.6.2"
 libsm = "0.6.0"
 rustc-hash = "2.1"
