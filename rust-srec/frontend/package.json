@@ -58,7 +58,7 @@
     "hls.js": "^1.6.15",
     "ky": "^1.14.0",
     "lucide-react": "^0.576.0",
-    "motion": "^12.29.0",
+    "motion": "^12.34.5",
     "mpegts.js": "^1.8.0",
     "nitro": "latest",
     "qrcode.react": "^4.2.0",
