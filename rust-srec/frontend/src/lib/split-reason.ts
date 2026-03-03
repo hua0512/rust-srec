@@ -34,16 +34,12 @@ function formatHz(value: unknown): string | null {
   return `${value}Hz`;
 }
 
-
 function formatResolutionSide(details: unknown): string | null {
   if (!isObject(details)) return null;
   return formatWxH(details.width, details.height);
 }
 
-function formatSplitReasonFromCode(
-  i18n: I18n,
-  code: string,
-): string | null {
+function formatSplitReasonFromCode(i18n: I18n, code: string): string | null {
   switch (code) {
     case 'size_limit':
       return i18n._(msg`Size limit`);
