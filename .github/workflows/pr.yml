@@ -17,6 +17,8 @@ env:
 jobs:
   clippy:
     name: Clippy
+    needs: check-changes
+    if: needs.check-changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: sccache
@@ -46,6 +48,8 @@ jobs:
 
   test:
     name: Test Suite
+    needs: check-changes
+    if: needs.check-changes.outputs.rust == 'true'
     strategy:
       matrix:
         include:
@@ -96,6 +100,7 @@ jobs:
     name: Check Changed Files
     runs-on: ubuntu-latest
     outputs:
+      rust: ${{ steps.filter.outputs.rust }}
       frontend: ${{ steps.filter.outputs.frontend }}
       desktop: ${{ steps.filter.outputs.desktop }}
     steps:
@@ -104,6 +109,12 @@ jobs:
         id: filter
         with:
           filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-srec/src-tauri/**'
+              - '.github/workflows/pr.yml'
             frontend:
               - 'rust-srec/frontend/**'
             desktop:
