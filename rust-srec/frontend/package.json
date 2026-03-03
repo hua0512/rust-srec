@@ -79,7 +79,7 @@
     "@bufbuild/protoc-gen-es": "^2.11.0",
     "@lingui/cli": "^5.9.2",
     "@lingui/macro": "^5.7.0",
-    "@lingui/vite-plugin": "^5.7.0",
+    "@lingui/vite-plugin": "^5.9.2",
     "@tanstack/devtools-vite": "^0.5.2",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.9.1",
