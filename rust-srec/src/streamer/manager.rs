@@ -219,6 +219,10 @@ where
         Ok(())
     }
 
+    /// Clears the `last_error` field for the streamer with the given `id`.
+    ///
+    /// Only `last_error` is cleared; `consecutive_error_count` and `disabled_until`
+    /// are left unchanged.
     pub async fn clear_last_error(&self, id: &str) -> Result<()> {
         debug!("Clearing last_error for streamer {}", id);
 
