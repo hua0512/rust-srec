@@ -42,7 +42,7 @@ version = "0.9.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04097e08a47d9ad181c2e1f4a5fabc9ae06ce8839a333ba9a949bcb0d31fd2a3"
 dependencies = [
- "cipher 0.5.0",
+ "cipher 0.5.1",
  "cpubits",
  "cpufeatures 0.2.17",
 ]
@@ -719,7 +719,7 @@ version = "0.2.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85742c5f1d0dda799d2e582c76b82b817d3e4d6434dd285e48e90ed0c963b667"
 dependencies = [
- "cipher 0.5.0",
+ "cipher 0.5.1",
 ]
 
 [[package]]
@@ -847,9 +847,9 @@ dependencies = [
 
 [[package]]
 name = "cipher"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64727038c8c5e2bb503a15b9f5b9df50a1da9a33e83e1f93067d914f2c6604a5"
+checksum = "e34d8227fe1ba289043aeb13792056ff80fd6de1a9f49137a5f499de8e8c78ea"
 dependencies = [
  "crypto-common 0.2.0",
  "inout 0.2.2",
@@ -3439,7 +3439,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "cbc",
- "cipher 0.5.0",
+ "cipher 0.5.1",
  "clap",
  "flv",
  "futures",
