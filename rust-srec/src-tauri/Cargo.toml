@@ -25,7 +25,7 @@ anyhow = { workspace = true }
 tracing-appender = { workspace = true }
 log = "0.4"
 fs2 = "0.4"
-tauri = { version = "2.9.5", features = ["tray-icon"] }
+tauri = { version = "2.10.3", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-notification = "2"
 tokio = { workspace = true }
