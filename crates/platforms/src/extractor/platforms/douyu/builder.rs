@@ -578,7 +578,7 @@ impl Douyu {
             form_data.insert("auth", sign_result.auth);
             form_data.insert("cdn", cdn.to_string());
             form_data.insert("rate", rate.to_string());
-            form_data.insert("ver", "219032101".to_string());
+            form_data.insert("ver", "Douyu_new".to_string());
             form_data.insert("iar", "0".to_string());
             form_data.insert("ive", "0".to_string());
             form_data.insert("rid", rid.to_string());
@@ -600,7 +600,6 @@ impl Douyu {
                 .post(format!("https://www.douyu.com/lapi/live/getH5PlayV1/{rid}"))
                 .header(reqwest::header::USER_AGENT, &key_data.user_agent)
                 .header(reqwest::header::REFERER, Self::BASE_URL)
-                .query(&form_data)
                 .form(&form_data)
                 .send()
                 .await?;
@@ -633,10 +632,35 @@ impl Douyu {
                 if is_douyu_auth_failed(status, &resp.msg) && attempt == 0 {
                     continue;
                 }
-                return Err(ExtractorError::ValidationError(format!(
-                    "Failed to get play info (fallback): {}",
-                    resp.msg
-                )));
+                // Handle specific Douyu error codes
+                match resp.error {
+                    -5 => {
+                        return Err(ExtractorError::ValidationError(format!(
+                            "Room is closed / streamer is not live (error -5): {}",
+                            resp.msg
+                        )));
+                    }
+                    -9 => {
+                        // Timestamp mismatch — retryable since each attempt generates a fresh timestamp
+                        if attempt == 0 {
+                            debug!("Timestamp mismatch (error -9), retrying with fresh timestamp");
+                            continue;
+                        }
+                        return Err(ExtractorError::ValidationError(format!(
+                            "Timestamp/clock skew error (error -9): {}",
+                            resp.msg
+                        )));
+                    }
+                    126 => {
+                        return Err(ExtractorError::RegionLockedContent);
+                    }
+                    _ => {
+                        return Err(ExtractorError::ValidationError(format!(
+                            "Failed to get play info (fallback): code={}, msg={}",
+                            resp.error, resp.msg
+                        )));
+                    }
+                }
             }
 
             return resp.data.ok_or_else(|| {
@@ -1061,5 +1085,49 @@ mod tests {
         let extractor = Douyu::new(url.to_string(), default_client(), None, None);
         let media_info = extractor.extract().await.unwrap();
         println!("{media_info:?}");
+    }
+
+    use crate::extractor::platforms::douyu::models::DouyuH5PlayResponse;
+
+    #[test]
+    fn test_parse_h5play_response_error_minus5() {
+        let json = r#"{"error":-5,"msg":"closeRoom","data":""}"#;
+        let resp: DouyuH5PlayResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.error, -5);
+        assert_eq!(resp.msg, "closeRoom");
+        assert!(resp.data.is_none());
+    }
+
+    #[test]
+    fn test_parse_h5play_response_error_minus9() {
+        let json = r#"{"error":-9,"msg":"room_bus_checksevertime","data":""}"#;
+        let resp: DouyuH5PlayResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.error, -9);
+        assert_eq!(resp.msg, "room_bus_checksevertime");
+        assert!(resp.data.is_none());
+    }
+
+    #[test]
+    fn test_parse_h5play_response_error_126() {
+        let json = r#"{"error":126,"msg":"版权原因，该地域不允许播放","data":""}"#;
+        let resp: DouyuH5PlayResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.error, 126);
+        assert!(resp.data.is_none());
+    }
+
+    #[test]
+    fn test_parse_h5play_response_error_empty_data_string() {
+        let json = r#"{"error":1,"msg":"some error","data":""}"#;
+        let resp: DouyuH5PlayResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.error, 1);
+        assert!(resp.data.is_none());
+    }
+
+    #[test]
+    fn test_parse_h5play_response_success_null_data() {
+        let json = r#"{"error":0,"msg":"ok","data":null}"#;
+        let resp: DouyuH5PlayResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.error, 0);
+        assert!(resp.data.is_none());
     }
 }
