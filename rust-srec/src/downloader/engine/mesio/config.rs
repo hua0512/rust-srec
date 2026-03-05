@@ -53,337 +53,318 @@ pub fn build_hls_config(
         builder = builder.use_system_proxy(config.use_system_proxy);
     }
 
-    let mut hls_config = builder.get_config();
+    let builder = apply_hls_engine_overrides(builder, engine_config);
 
-    apply_hls_engine_overrides(&mut hls_config, engine_config);
-
-    hls_config
+    builder.get_config()
 }
 
 fn apply_hls_engine_overrides(
-    hls_config: &mut mesio::hls::HlsConfig,
+    mut builder: HlsProtocolBuilder,
     engine_config: &MesioEngineConfig,
-) {
+) -> HlsProtocolBuilder {
     let Some(ref cfg) = engine_config.hls else {
-        return;
+        return builder;
     };
 
     let ms = std::time::Duration::from_millis;
 
-    let map_gap_strategy =
-        |strategy: &MesioGapSkipStrategy| -> mesio::hls::config::GapSkipStrategy {
-            match strategy {
-                MesioGapSkipStrategy::WaitIndefinitely => {
-                    mesio::hls::config::GapSkipStrategy::WaitIndefinitely
-                }
-                MesioGapSkipStrategy::SkipAfterCount { count } => {
-                    mesio::hls::config::GapSkipStrategy::SkipAfterCount(*count)
-                }
-                MesioGapSkipStrategy::SkipAfterDuration { duration_ms } => {
-                    mesio::hls::config::GapSkipStrategy::SkipAfterDuration(ms(*duration_ms))
-                }
-                MesioGapSkipStrategy::SkipAfterBoth { count, duration_ms } => {
-                    mesio::hls::config::GapSkipStrategy::SkipAfterBoth {
-                        count: *count,
-                        duration: ms(*duration_ms),
-                    }
-                }
-            }
-        };
-
     if let Some(ref base) = cfg.base {
         if let Some(v) = base.timeout_ms {
-            hls_config.base.timeout = ms(v);
+            builder = builder.timeout(ms(v));
         }
         if let Some(v) = base.connect_timeout_ms {
-            hls_config.base.connect_timeout = ms(v);
+            builder = builder.connect_timeout(ms(v));
         }
         if let Some(v) = base.read_timeout_ms {
-            hls_config.base.read_timeout = ms(v);
+            builder = builder.read_timeout(ms(v));
         }
         if let Some(v) = base.write_timeout_ms {
-            hls_config.base.write_timeout = ms(v);
+            builder = builder.write_timeout(ms(v));
         }
         if let Some(v) = base.follow_redirects {
-            hls_config.base.follow_redirects = v;
+            builder = builder.follow_redirects(v);
         }
         if let Some(ref v) = base.user_agent {
-            hls_config.base.user_agent = v.clone();
-        }
-        if let Some(ref v) = base.params {
-            hls_config.base.params = v.clone();
+            builder = builder.user_agent(v.clone());
         }
         if let Some(v) = base.danger_accept_invalid_certs {
-            hls_config.base.danger_accept_invalid_certs = v;
+            builder = builder.danger_accept_invalid_certs(v);
         }
-        if let Some(v) = base.force_ipv4 {
-            hls_config.base.force_ipv4 = v;
-        }
-        if let Some(v) = base.force_ipv6 {
-            hls_config.base.force_ipv6 = v;
-        }
-        if let Some(v) = base.http_version.as_ref() {
-            hls_config.base.http_version = match v {
-                MesioHttpVersionPreference::Auto => mesio::config::HttpVersionPreference::Auto,
-                MesioHttpVersionPreference::Http2Only => {
-                    mesio::config::HttpVersionPreference::Http2Only
-                }
-                MesioHttpVersionPreference::Http1Only => {
-                    mesio::config::HttpVersionPreference::Http1Only
-                }
-            };
-        }
-        if let Some(v) = base.http2_keep_alive_interval_ms {
-            hls_config.base.http2_keep_alive_interval = Some(ms(v));
-        }
-        if let Some(v) = base.pool_max_idle_per_host {
-            hls_config.base.pool_max_idle_per_host = v;
-        }
-        if let Some(v) = base.pool_idle_timeout_ms {
-            hls_config.base.pool_idle_timeout = ms(v);
-        }
+
+        builder = builder.with_config(|hls_config| {
+            if let Some(ref v) = base.params {
+                hls_config.base.params = v.clone();
+            }
+            if let Some(v) = base.force_ipv4 {
+                hls_config.base.force_ipv4 = v;
+            }
+            if let Some(v) = base.force_ipv6 {
+                hls_config.base.force_ipv6 = v;
+            }
+            if let Some(v) = base.http_version.as_ref() {
+                hls_config.base.http_version = map_http_version(v);
+            }
+            if let Some(v) = base.http2_keep_alive_interval_ms {
+                hls_config.base.http2_keep_alive_interval = Some(ms(v));
+            }
+            if let Some(v) = base.pool_max_idle_per_host {
+                hls_config.base.pool_max_idle_per_host = v;
+            }
+            if let Some(v) = base.pool_idle_timeout_ms {
+                hls_config.base.pool_idle_timeout = ms(v);
+            }
+        });
     }
 
     if let Some(ref pc) = cfg.playlist_config {
         if let Some(v) = pc.initial_playlist_fetch_timeout_ms {
-            hls_config.playlist_config.initial_playlist_fetch_timeout = ms(v);
+            builder = builder.initial_playlist_fetch_timeout(ms(v));
         }
         if let Some(v) = pc.live_refresh_interval_ms {
-            hls_config.playlist_config.live_refresh_interval = ms(v);
+            builder = builder.live_refresh_interval(ms(v));
         }
         if let Some(v) = pc.live_max_refresh_retries {
-            hls_config.playlist_config.live_max_refresh_retries = v;
+            builder = builder.live_max_refresh_retries(v);
         }
         if let Some(v) = pc.live_refresh_retry_delay_ms {
-            hls_config.playlist_config.live_refresh_retry_delay = ms(v);
+            builder = builder.live_refresh_retry_delay(ms(v));
         }
         if let Some(ref policy) = pc.variant_selection_policy {
-            hls_config.playlist_config.variant_selection_policy = match policy {
-                MesioHlsVariantSelectionPolicy::HighestBitrate => {
-                    mesio::hls::config::HlsVariantSelectionPolicy::HighestBitrate
-                }
-                MesioHlsVariantSelectionPolicy::LowestBitrate => {
-                    mesio::hls::config::HlsVariantSelectionPolicy::LowestBitrate
-                }
-                MesioHlsVariantSelectionPolicy::ClosestToBitrate { target_bitrate } => {
-                    mesio::hls::config::HlsVariantSelectionPolicy::ClosestToBitrate(*target_bitrate)
-                }
-                MesioHlsVariantSelectionPolicy::AudioOnly => {
-                    mesio::hls::config::HlsVariantSelectionPolicy::AudioOnly
-                }
-                MesioHlsVariantSelectionPolicy::VideoOnly => {
-                    mesio::hls::config::HlsVariantSelectionPolicy::VideoOnly
-                }
-                MesioHlsVariantSelectionPolicy::MatchingResolution { width, height } => {
-                    mesio::hls::config::HlsVariantSelectionPolicy::MatchingResolution {
-                        width: *width,
-                        height: *height,
-                    }
-                }
-                MesioHlsVariantSelectionPolicy::Custom { value } => {
-                    mesio::hls::config::HlsVariantSelectionPolicy::Custom(value.clone())
-                }
-            };
+            builder = builder.variant_selection_policy(map_variant_selection_policy(policy));
         }
-        if let Some(v) = pc.adaptive_refresh_enabled {
-            hls_config.playlist_config.adaptive_refresh_enabled = v;
-        }
-        if let Some(v) = pc.adaptive_refresh_min_interval_ms {
-            hls_config.playlist_config.adaptive_refresh_min_interval = ms(v);
-        }
-        if let Some(v) = pc.adaptive_refresh_max_interval_ms {
-            hls_config.playlist_config.adaptive_refresh_max_interval = ms(v);
-        }
+
+        builder = builder.with_config(|hls_config| {
+            if let Some(v) = pc.adaptive_refresh_enabled {
+                hls_config.playlist_config.adaptive_refresh_enabled = v;
+            }
+            if let Some(v) = pc.adaptive_refresh_min_interval_ms {
+                hls_config.playlist_config.adaptive_refresh_min_interval = ms(v);
+            }
+            if let Some(v) = pc.adaptive_refresh_max_interval_ms {
+                hls_config.playlist_config.adaptive_refresh_max_interval = ms(v);
+            }
+        });
     }
 
     if let Some(ref sc) = cfg.scheduler_config {
         if let Some(v) = sc.download_concurrency {
-            hls_config.scheduler_config.download_concurrency = v.max(1);
+            builder = builder.download_concurrency(v.max(1));
         }
-        if let Some(v) = sc.processed_segment_buffer_multiplier {
-            hls_config
-                .scheduler_config
-                .processed_segment_buffer_multiplier = v.max(1);
-        }
+
+        builder = builder.with_config(|hls_config| {
+            if let Some(v) = sc.processed_segment_buffer_multiplier {
+                hls_config
+                    .scheduler_config
+                    .processed_segment_buffer_multiplier = v.max(1);
+            }
+        });
     }
 
     if let Some(ref fc) = cfg.fetcher_config {
         if let Some(v) = fc.segment_download_timeout_ms {
-            hls_config.fetcher_config.segment_download_timeout = ms(v);
+            builder = builder.segment_download_timeout(ms(v));
         }
         if let Some(v) = fc.max_segment_retries {
-            hls_config.fetcher_config.max_segment_retries = v;
+            builder = builder.max_segment_retries(v);
         }
         if let Some(v) = fc.segment_retry_delay_base_ms {
-            hls_config.fetcher_config.segment_retry_delay_base = ms(v);
-        }
-        if let Some(v) = fc.max_segment_retry_delay_ms {
-            hls_config.fetcher_config.max_segment_retry_delay = ms(v);
+            builder = builder.segment_retry_delay_base(ms(v));
         }
         if let Some(v) = fc.key_download_timeout_ms {
-            hls_config.fetcher_config.key_download_timeout = ms(v);
+            builder = builder.key_download_timeout(ms(v));
         }
         if let Some(v) = fc.max_key_retries {
-            hls_config.fetcher_config.max_key_retries = v;
+            builder = builder.max_key_retries(v);
         }
         if let Some(v) = fc.key_retry_delay_base_ms {
-            hls_config.fetcher_config.key_retry_delay_base = ms(v);
-        }
-        if let Some(v) = fc.max_key_retry_delay_ms {
-            hls_config.fetcher_config.max_key_retry_delay = ms(v);
+            builder = builder.key_retry_delay_base(ms(v));
         }
         if let Some(v) = fc.segment_raw_cache_ttl_ms {
-            hls_config.fetcher_config.segment_raw_cache_ttl = ms(v);
+            builder = builder.segment_raw_cache_ttl(ms(v));
         }
-        if let Some(v) = fc.streaming_threshold_bytes {
-            hls_config.fetcher_config.streaming_threshold_bytes = v;
-        }
+
+        builder = builder.with_config(|hls_config| {
+            if let Some(v) = fc.max_segment_retry_delay_ms {
+                hls_config.fetcher_config.max_segment_retry_delay = ms(v);
+            }
+            if let Some(v) = fc.max_key_retry_delay_ms {
+                hls_config.fetcher_config.max_key_retry_delay = ms(v);
+            }
+            if let Some(v) = fc.streaming_threshold_bytes {
+                hls_config.fetcher_config.streaming_threshold_bytes = v;
+            }
+        });
     }
 
     if let Some(pc) = cfg.processor_config.as_ref()
         && let Some(v) = pc.processed_segment_ttl_ms
     {
-        hls_config.processor_config.processed_segment_ttl = ms(v);
+        builder = builder.processed_segment_ttl(ms(v));
     }
 
     if let Some(ref dc) = cfg.decryption_config {
         if let Some(v) = dc.key_cache_ttl_ms {
-            hls_config.decryption_config.key_cache_ttl = ms(v);
+            builder = builder.decryption_key_cache_ttl(ms(v));
         }
         if let Some(v) = dc.offload_decryption_to_cpu_pool {
-            hls_config.decryption_config.offload_decryption_to_cpu_pool = v;
+            builder = builder.offload_decryption_to_cpu_pool(v);
         }
     }
 
     if let Some(ref cc) = cfg.cache_config {
         if let Some(v) = cc.playlist_ttl_ms {
-            hls_config.cache_config.playlist_ttl = ms(v);
+            builder = builder.hls_playlist_cache_ttl(ms(v));
         }
         if let Some(v) = cc.segment_ttl_ms {
-            hls_config.cache_config.segment_ttl = ms(v);
+            builder = builder.hls_segment_cache_ttl(ms(v));
         }
         if let Some(v) = cc.decryption_key_ttl_ms {
-            hls_config.cache_config.decryption_key_ttl = ms(v);
+            builder = builder.hls_decryption_key_cache_ttl(ms(v));
         }
     }
 
     // Optional durations: use tri-state (missing => unchanged, null => clear, value => set)
     if let Some(ref oc) = cfg.output_config {
         if let Some(v) = oc.live_reorder_buffer_duration_ms {
-            hls_config.output_config.live_reorder_buffer_duration = ms(v);
+            builder = builder.live_reorder_buffer_duration(ms(v));
         }
         if let Some(v) = oc.live_reorder_buffer_max_segments {
-            hls_config.output_config.live_reorder_buffer_max_segments = v.max(1);
-        }
-        if let Some(v) = oc.gap_evaluation_interval_ms {
-            hls_config.output_config.gap_evaluation_interval = ms(v.max(1));
-        }
-        if let Some(v) = oc.max_pending_init_segments {
-            hls_config.output_config.max_pending_init_segments = v;
+            builder = builder.live_reorder_buffer_max_segments(v.max(1));
         }
         if let Some(value) = oc.live_max_overall_stall_duration_ms {
-            hls_config.output_config.live_max_overall_stall_duration = value.map(ms);
+            builder = builder.live_max_overall_stall_duration(value.map(ms));
         }
-        if let Some(ref v) = oc.live_gap_strategy {
-            hls_config.output_config.live_gap_strategy = map_gap_strategy(v);
-        }
-        if let Some(ref v) = oc.vod_gap_strategy {
-            hls_config.output_config.vod_gap_strategy = map_gap_strategy(v);
-        }
-        if let Some(value) = oc.vod_segment_timeout_ms {
-            hls_config.output_config.vod_segment_timeout = value.map(ms);
-        }
-        if let Some(ref limits) = oc.buffer_limits {
-            if let Some(v) = limits.max_segments {
-                hls_config.output_config.buffer_limits.max_segments = v;
+
+        builder = builder.with_config(|hls_config| {
+            if let Some(v) = oc.gap_evaluation_interval_ms {
+                hls_config.output_config.gap_evaluation_interval = ms(v.max(1));
             }
-            if let Some(v) = limits.max_bytes {
-                hls_config.output_config.buffer_limits.max_bytes = v;
+            if let Some(v) = oc.max_pending_init_segments {
+                hls_config.output_config.max_pending_init_segments = v;
             }
-        }
-        if let Some(v) = oc.metrics_enabled {
-            hls_config.output_config.metrics_enabled = v;
-        }
+            if let Some(ref v) = oc.live_gap_strategy {
+                hls_config.output_config.live_gap_strategy = map_gap_strategy(v);
+            }
+            if let Some(ref v) = oc.vod_gap_strategy {
+                hls_config.output_config.vod_gap_strategy = map_gap_strategy(v);
+            }
+            if let Some(value) = oc.vod_segment_timeout_ms {
+                hls_config.output_config.vod_segment_timeout = value.map(ms);
+            }
+            if let Some(ref limits) = oc.buffer_limits {
+                if let Some(v) = limits.max_segments {
+                    hls_config.output_config.buffer_limits.max_segments = v;
+                }
+                if let Some(v) = limits.max_bytes {
+                    hls_config.output_config.buffer_limits.max_bytes = v;
+                }
+            }
+            if let Some(v) = oc.metrics_enabled {
+                hls_config.output_config.metrics_enabled = v;
+            }
+        });
     }
 
     if let Some(ref pc) = cfg.performance_config {
-        if let Some(v) = pc.decryption_offload_enabled {
-            hls_config.decryption_config.offload_decryption_to_cpu_pool = v;
-        }
-        if let Some(ref prefetch) = pc.prefetch {
-            if let Some(v) = prefetch.enabled {
-                hls_config.performance_config.prefetch.enabled = v;
+        builder = builder.with_config(|hls_config| {
+            if let Some(ref prefetch) = pc.prefetch {
+                if let Some(v) = prefetch.enabled {
+                    hls_config.performance_config.prefetch.enabled = v;
+                }
+                if let Some(v) = prefetch.prefetch_count {
+                    hls_config.performance_config.prefetch.prefetch_count = v;
+                }
+                if let Some(v) = prefetch.max_buffer_before_skip {
+                    hls_config
+                        .performance_config
+                        .prefetch
+                        .max_buffer_before_skip = v;
+                }
             }
-            if let Some(v) = prefetch.prefetch_count {
-                hls_config.performance_config.prefetch.prefetch_count = v;
+            if let Some(ref bs) = pc.batch_scheduler {
+                if let Some(v) = bs.enabled {
+                    hls_config.performance_config.batch_scheduler.enabled = v;
+                }
+                if let Some(v) = bs.batch_window_ms {
+                    hls_config
+                        .performance_config
+                        .batch_scheduler
+                        .batch_window_ms = v;
+                }
+                if let Some(v) = bs.max_batch_size {
+                    hls_config.performance_config.batch_scheduler.max_batch_size = v;
+                }
             }
-            if let Some(v) = prefetch.max_buffer_before_skip {
-                hls_config
-                    .performance_config
-                    .prefetch
-                    .max_buffer_before_skip = v;
+            if let Some(v) = pc.zero_copy_enabled {
+                hls_config.performance_config.zero_copy_enabled = v;
             }
-        }
-        if let Some(ref bs) = pc.batch_scheduler {
-            if let Some(v) = bs.enabled {
-                hls_config.performance_config.batch_scheduler.enabled = v;
+            if let Some(v) = pc.metrics_enabled {
+                hls_config.performance_config.metrics_enabled = v;
             }
-            if let Some(v) = bs.batch_window_ms {
-                hls_config
-                    .performance_config
-                    .batch_scheduler
-                    .batch_window_ms = v;
-            }
-            if let Some(v) = bs.max_batch_size {
-                hls_config.performance_config.batch_scheduler.max_batch_size = v;
-            }
-        }
-        if let Some(v) = pc.zero_copy_enabled {
-            hls_config.performance_config.zero_copy_enabled = v;
-        }
-        if let Some(v) = pc.metrics_enabled {
-            hls_config.performance_config.metrics_enabled = v;
-        }
+        });
     }
 
-    // Back-compat/shortcuts: apply only if the structured overrides above are not set.
-    if cfg
-        .output_config
-        .as_ref()
-        .and_then(|o| o.live_gap_strategy.as_ref())
-        .is_none()
-        && let Some(strategy) = cfg.live_gap_strategy.as_ref()
-    {
-        hls_config.output_config.live_gap_strategy = map_gap_strategy(strategy);
-    }
-    if cfg
-        .performance_config
-        .as_ref()
-        .and_then(|p| p.prefetch.as_ref())
-        .is_none()
-        && let Some(prefetch) = cfg.prefetch.as_ref()
-    {
-        if let Some(enabled) = prefetch.enabled {
-            hls_config.performance_config.prefetch.enabled = enabled;
+    builder
+}
+
+fn map_gap_strategy(strategy: &MesioGapSkipStrategy) -> mesio::hls::config::GapSkipStrategy {
+    let ms = std::time::Duration::from_millis;
+
+    match strategy {
+        MesioGapSkipStrategy::WaitIndefinitely => {
+            mesio::hls::config::GapSkipStrategy::WaitIndefinitely
         }
-        if let Some(prefetch_count) = prefetch.prefetch_count {
-            hls_config.performance_config.prefetch.prefetch_count = prefetch_count;
+        MesioGapSkipStrategy::SkipAfterCount { count } => {
+            mesio::hls::config::GapSkipStrategy::SkipAfterCount(*count)
         }
-        if let Some(max_buffer_before_skip) = prefetch.max_buffer_before_skip {
-            hls_config
-                .performance_config
-                .prefetch
-                .max_buffer_before_skip = max_buffer_before_skip;
+        MesioGapSkipStrategy::SkipAfterDuration { duration_ms } => {
+            mesio::hls::config::GapSkipStrategy::SkipAfterDuration(ms(*duration_ms))
+        }
+        MesioGapSkipStrategy::SkipAfterBoth { count, duration_ms } => {
+            mesio::hls::config::GapSkipStrategy::SkipAfterBoth {
+                count: *count,
+                duration: ms(*duration_ms),
+            }
         }
     }
-    if cfg
-        .scheduler_config
-        .as_ref()
-        .and_then(|s| s.download_concurrency)
-        .is_none()
-        && let Some(download_concurrency) = cfg.download_concurrency
-    {
-        hls_config.scheduler_config.download_concurrency = download_concurrency.max(1);
+}
+
+fn map_variant_selection_policy(
+    policy: &MesioHlsVariantSelectionPolicy,
+) -> mesio::hls::config::HlsVariantSelectionPolicy {
+    match policy {
+        MesioHlsVariantSelectionPolicy::HighestBitrate => {
+            mesio::hls::config::HlsVariantSelectionPolicy::HighestBitrate
+        }
+        MesioHlsVariantSelectionPolicy::LowestBitrate => {
+            mesio::hls::config::HlsVariantSelectionPolicy::LowestBitrate
+        }
+        MesioHlsVariantSelectionPolicy::ClosestToBitrate { target_bitrate } => {
+            mesio::hls::config::HlsVariantSelectionPolicy::ClosestToBitrate(*target_bitrate)
+        }
+        MesioHlsVariantSelectionPolicy::AudioOnly => {
+            mesio::hls::config::HlsVariantSelectionPolicy::AudioOnly
+        }
+        MesioHlsVariantSelectionPolicy::VideoOnly => {
+            mesio::hls::config::HlsVariantSelectionPolicy::VideoOnly
+        }
+        MesioHlsVariantSelectionPolicy::MatchingResolution { width, height } => {
+            mesio::hls::config::HlsVariantSelectionPolicy::MatchingResolution {
+                width: *width,
+                height: *height,
+            }
+        }
+        MesioHlsVariantSelectionPolicy::Custom { value } => {
+            mesio::hls::config::HlsVariantSelectionPolicy::Custom(value.clone())
+        }
+    }
+}
+
+fn map_http_version(version: &MesioHttpVersionPreference) -> mesio::config::HttpVersionPreference {
+    match version {
+        MesioHttpVersionPreference::Auto => mesio::config::HttpVersionPreference::Auto,
+        MesioHttpVersionPreference::Http2Only => mesio::config::HttpVersionPreference::Http2Only,
+        MesioHttpVersionPreference::Http1Only => mesio::config::HttpVersionPreference::Http1Only,
     }
 }
 

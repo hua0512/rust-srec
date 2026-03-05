@@ -1175,7 +1175,10 @@ mod tests {
         manager.clear_last_error("s1").await.unwrap();
         let after = manager.get_streamer("s1").unwrap();
         assert!(after.last_error.is_none());
-        assert_eq!(after.consecutive_error_count, before.consecutive_error_count);
+        assert_eq!(
+            after.consecutive_error_count,
+            before.consecutive_error_count
+        );
         assert_eq!(after.disabled_until, before.disabled_until);
     }
 

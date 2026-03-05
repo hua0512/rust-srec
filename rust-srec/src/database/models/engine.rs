@@ -280,16 +280,6 @@ pub struct MesioHlsConfig {
     /// Override performance-related toggles (prefetch/batching/zero-copy/etc.).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub performance_config: Option<MesioHlsPerformanceConfigOverride>,
-
-    /// Override live gap-skip strategy (to reduce false skips from out-of-order arrivals).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub live_gap_strategy: Option<MesioGapSkipStrategy>,
-    /// Override Mesio HLS prefetch configuration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefetch: Option<MesioPrefetchOverride>,
-    /// Override Mesio HLS download concurrency.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub download_concurrency: Option<usize>,
 }
 
 /// Serializable HTTP version preference for Mesio downloader.
@@ -470,8 +460,6 @@ pub struct MesioHlsOutputConfigOverride {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MesioHlsPerformanceConfigOverride {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decryption_offload_enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefetch: Option<MesioPrefetchOverride>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub batch_scheduler: Option<MesioBatchSchedulerOverride>,
@@ -569,34 +557,51 @@ mod tests {
     }
 
     #[test]
-    fn test_mesio_hls_gap_strategy_parse() {
+    fn test_mesio_hls_structured_config_parse() {
         let json = r#"
         {
           "hls": {
-            "live_gap_strategy": {
-              "type": "skip_after_both",
-              "count": 10,
-              "duration_ms": 1000
+            "output_config": {
+              "live_gap_strategy": {
+                "type": "skip_after_both",
+                "count": 10,
+                "duration_ms": 1000
+              }
             },
-            "download_concurrency": 3,
-            "prefetch": {
-              "enabled": true,
-              "prefetch_count": 4,
-              "max_buffer_before_skip": 20
+            "scheduler_config": {
+              "download_concurrency": 3
+            },
+            "performance_config": {
+              "prefetch": {
+                "enabled": true,
+                "prefetch_count": 4,
+                "max_buffer_before_skip": 20
+              }
             }
           }
         }"#;
         let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
         let hls = parsed.hls.unwrap();
         assert!(matches!(
-            hls.live_gap_strategy,
+            hls.output_config
+                .as_ref()
+                .and_then(|cfg| cfg.live_gap_strategy.as_ref()),
             Some(MesioGapSkipStrategy::SkipAfterBoth {
                 count: 10,
                 duration_ms: 1000
             })
         ));
-        assert_eq!(hls.download_concurrency, Some(3));
-        let prefetch = hls.prefetch.unwrap();
+        assert_eq!(
+            hls.scheduler_config
+                .as_ref()
+                .and_then(|cfg| cfg.download_concurrency),
+            Some(3)
+        );
+        let prefetch = hls
+            .performance_config
+            .as_ref()
+            .and_then(|cfg| cfg.prefetch.as_ref())
+            .unwrap();
         assert_eq!(prefetch.enabled, Some(true));
         assert_eq!(prefetch.prefetch_count, Some(4));
         assert_eq!(prefetch.max_buffer_before_skip, Some(20));

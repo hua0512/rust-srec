@@ -126,9 +126,11 @@ export const MesioHlsFetcherConfigOverrideSchema = z.object({
   segment_download_timeout_ms: optionalInt(0),
   max_segment_retries: optionalInt(0),
   segment_retry_delay_base_ms: optionalInt(0),
+  max_segment_retry_delay_ms: optionalInt(0),
   key_download_timeout_ms: optionalInt(0),
   max_key_retries: optionalInt(0),
   key_retry_delay_base_ms: optionalInt(0),
+  max_key_retry_delay_ms: optionalInt(0),
   segment_raw_cache_ttl_ms: optionalInt(0),
   streaming_threshold_bytes: optionalInt(0),
 });
@@ -170,15 +172,35 @@ export const MesioGapSkipStrategySchema = z.discriminatedUnion('type', [
   }),
 ]);
 
+export const NullableIntSchema = z
+  .union([z.number(), z.string(), z.null()])
+  .transform((val) => {
+    // For tri-state fields:
+    // - undefined/missing => leave unset (use default)
+    // - null            => explicitly disable/clear
+    // - number          => set value
+    // Treat empty input as "unset" (undefined), not "disabled".
+    if (val === '') return undefined;
+    if (val === null) return null;
+    return typeof val === 'number' ? val : Number(val);
+  })
+  .refine(
+    (val) =>
+      val === undefined ||
+      val === null ||
+      (Number.isFinite(val) && Number.isInteger(val)),
+    { message: 'Must be an integer, null, or empty' },
+  );
+
 export const MesioHlsOutputConfigOverrideSchema = z.object({
   live_reorder_buffer_duration_ms: optionalInt(0),
   live_reorder_buffer_max_segments: optionalInt(0),
   gap_evaluation_interval_ms: optionalInt(0),
   max_pending_init_segments: optionalInt(0),
-  live_max_overall_stall_duration_ms: optionalInt(0),
+  live_max_overall_stall_duration_ms: NullableIntSchema.optional(),
   live_gap_strategy: MesioGapSkipStrategySchema.optional(),
   vod_gap_strategy: MesioGapSkipStrategySchema.optional(),
-  vod_segment_timeout_ms: optionalInt(0),
+  vod_segment_timeout_ms: NullableIntSchema.optional(),
   buffer_limits: MesioBufferLimitsOverrideSchema.optional(),
   metrics_enabled: z.boolean().optional(),
 });
@@ -196,7 +218,6 @@ export const MesioBatchSchedulerOverrideSchema = z.object({
 });
 
 export const MesioHlsPerformanceConfigOverrideSchema = z.object({
-  decryption_offload_enabled: z.boolean().optional(),
   prefetch: MesioPrefetchOverrideSchema.optional(),
   batch_scheduler: MesioBatchSchedulerOverrideSchema.optional(),
   zero_copy_enabled: z.boolean().optional(),
@@ -213,9 +234,6 @@ export const MesioHlsConfigSchema = z.object({
   cache_config: MesioHlsCacheConfigOverrideSchema.optional(),
   output_config: MesioHlsOutputConfigOverrideSchema.optional(),
   performance_config: MesioHlsPerformanceConfigOverrideSchema.optional(),
-  live_gap_strategy: MesioGapSkipStrategySchema.optional(),
-  prefetch: MesioPrefetchOverrideSchema.optional(),
-  download_concurrency: optionalInt(1),
 });
 
 export const MesioConfigSchema = z.object({

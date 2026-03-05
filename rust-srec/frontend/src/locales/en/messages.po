@@ -154,6 +154,10 @@ msgstr "0 (None) - 9 (Best)"
 msgid "0 = Unlimited"
 msgstr "0 = Unlimited"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1772
+msgid "0 disables the limit."
+msgstr "0 disables the limit."
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:865
 msgid "0:v:0"
 msgstr "0:v:0"
@@ -206,7 +210,7 @@ msgstr "Absolute path or 'ffmpeg' if in PATH"
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "Absolute path or 'streamlink' in PATH"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:258
+#: src/components/config/engines/forms/mesio-hls-form.tsx:852
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "Accept Invalid Certs (Default: Off)"
 
@@ -237,7 +241,7 @@ msgstr "Active Download"
 msgid "Active Recordings"
 msgstr "Active Recordings"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:405
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1004
 msgid "Adaptive Refresh (Default: On)"
 msgstr "Adaptive Refresh (Default: On)"
 
@@ -330,6 +334,10 @@ msgstr "Add New Streamer"
 msgid "Add Override"
 msgstr "Add Override"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:127
+msgid "Add parameter"
+msgstr "Add parameter"
+
 #: src/components/pipeline/workflows/step-library.tsx:249
 msgid "Add Pipeline Step"
 msgstr "Add Pipeline Step"
@@ -363,7 +371,7 @@ msgstr "Add Tag"
 msgid "Additional arguments appended to the command."
 msgstr "Additional arguments appended to the command."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:408
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1007
 msgid "Adjust rate based on target duration"
 msgstr "Adjust rate based on target duration"
 
@@ -464,7 +472,7 @@ msgstr "An error occurred"
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "Any additional command line arguments to pass to Streamlink"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:139
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:138
 msgid "API Request Retries"
 msgstr "API Request Retries"
 
@@ -475,6 +483,10 @@ msgstr "Appearance & style"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:836
 msgid "Appended before output filename"
 msgstr "Appended before output filename"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:702
+msgid "Appended to all HLS requests. Useful for signed URLs or CDN routing."
+msgstr "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 
 #: src/components/streamers/config/streamer-general-settings.tsx:204
 msgid "Apply template settings."
@@ -589,6 +601,10 @@ msgstr "Audio Extract"
 msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:464
+msgid "Audio only"
+msgstr "Audio only"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:630
 msgid "Audio Processing"
 msgstr "Audio Processing"
@@ -615,7 +631,7 @@ msgstr "Authentication"
 msgid "Authentication & Setup"
 msgstr "Authentication & Setup"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:154
+#: src/components/config/engines/forms/mesio-hls-form.tsx:748
 msgid "Auto (Default)"
 msgstr "Auto (Default)"
 
@@ -718,7 +734,7 @@ msgstr "Backup"
 msgid "Backup & Restore"
 msgstr "Backup & Restore"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:965
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1893
 msgid "Base"
 msgstr "Base"
 
@@ -756,9 +772,17 @@ msgstr "Basic settings for the streamer."
 msgid "Batch parse error: {0}"
 msgstr "Batch parse error: {0}"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1543
+msgid "Batch Scheduler"
+msgstr "Batch Scheduler"
+
 #: src/components/player/url-input-form.tsx:137
 msgid "Batch URLs"
 msgstr "Batch URLs"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1570
+msgid "Batch Window (ms)"
+msgstr "Batch Window (ms)"
 
 #: src/components/notifications/forms/webhook-form.tsx:255
 msgid "Bearer Token"
@@ -832,7 +856,7 @@ msgstr "Browser Notifications"
 msgid "Browser Status"
 msgstr "Browser Status"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:894
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1822
 msgid "Buffer Limits"
 msgstr "Buffer Limits"
 
@@ -848,7 +872,11 @@ msgstr "bytes"
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:625
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1951
+msgid "Cache"
+msgstr "Cache"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1323
 msgid "Caching"
 msgstr "Caching"
 
@@ -943,6 +971,10 @@ msgstr "Change Password Required"
 #: src/routes/_authed/change-password.lazy.tsx:268
 msgid "Changing Password..."
 msgstr "Changing Password..."
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1114
+msgid "Channel buffer size multiplier for processed segments."
+msgstr "Channel buffer size multiplier for processed segments."
 
 #: src/components/notifications/channel-form.tsx:201
 msgid "Channel created"
@@ -1062,6 +1094,10 @@ msgstr "Cloning..."
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:686
 msgid "Close"
 msgstr "Close"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:461
+msgid "Closest to bitrate"
+msgstr "Closest to bitrate"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
 msgid "Collapsible"
@@ -1245,7 +1281,7 @@ msgstr "Confirm new password"
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:59
+#: src/components/config/engines/forms/mesio-hls-form.tsx:643
 msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
@@ -1366,6 +1402,11 @@ msgstr "Copy/Move"
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:75
 msgid "Could not connect to the server. Please check your connection."
 msgstr "Could not connect to the server. Please check your connection."
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:299
+#: src/components/config/engines/forms/mesio-hls-form.tsx:346
+msgid "Count"
+msgstr "Count"
 
 #: src/components/config/global/concurrency-card.tsx:206
 msgid "CPU Job"
@@ -1543,6 +1584,8 @@ msgstr "Current password"
 msgid "Current Password"
 msgstr "Current Password"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:196
+#: src/components/config/engines/forms/mesio-hls-form.tsx:473
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:74
@@ -1688,7 +1731,15 @@ msgstr "Date range:"
 msgid "Day (01-31)"
 msgstr "Day (01-31)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:557
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1941
+msgid "Decryption"
+msgstr "Decryption"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1474
+msgid "Decryption Key TTL (ms)"
+msgstr "Decryption Key TTL (ms)"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1235
 msgid "Decryption Keys"
 msgstr "Decryption Keys"
 
@@ -1697,6 +1748,9 @@ msgstr "Decryption Keys"
 msgid "default"
 msgstr "default"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:190
+#: src/components/config/engines/forms/mesio-hls-form.tsx:275
+#: src/components/config/engines/forms/mesio-hls-form.tsx:452
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
@@ -1710,6 +1764,10 @@ msgstr "Default Engine"
 #: src/components/config/global/pipeline-config-card.tsx:155
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "Default pipeline flow. Configure the sequence of processors for new jobs."
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1745
+msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
+msgstr "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:109
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
@@ -1902,6 +1960,7 @@ msgstr "Directory to scan for new files after command execution"
 msgid "Disable"
 msgstr "Disable"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:193
 #: src/components/streamers/card/use-streamer-status.tsx:41
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:509
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:541
@@ -1965,7 +2024,7 @@ msgstr "Download Backup"
 msgid "Download complete"
 msgstr "Download complete"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:719
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1079
 msgid "Download Concurrency"
 msgstr "Download Concurrency"
 
@@ -2021,6 +2080,11 @@ msgstr "Dual Format"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:588
 msgid "Duration"
 msgstr "Duration"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:322
+#: src/components/config/engines/forms/mesio-hls-form.tsx:366
+msgid "Duration (ms)"
+msgstr "Duration (ms)"
 
 #: src/lib/split-reason.ts:47
 msgid "Duration limit"
@@ -2174,7 +2238,11 @@ msgstr "Enable Monitoring"
 msgid "Enable or disable this webhook"
 msgstr "Enable or disable this webhook"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:698
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1807
+msgid "Enable Output Metrics (Default: On)"
+msgstr "Enable Output Metrics (Default: On)"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1527
 msgid "Enable Performance Metrics (Default: On)"
 msgstr "Enable Performance Metrics (Default: On)"
 
@@ -2196,9 +2264,13 @@ msgstr "Enable recording of danmu/chat messages along with the video."
 msgid "Enabled"
 msgstr "Enabled"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:753
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1625
 msgid "Enabled (Default: Off)"
 msgstr "Enabled (Default: Off)"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1558
+msgid "Enabled (Default: On)"
+msgstr "Enabled (Default: On)"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:128
 msgid "Encoder Preset"
@@ -2829,7 +2901,7 @@ msgstr "Fetch"
 msgid "Fetch Delay"
 msgstr "Fetch Delay"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:983
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1921
 msgid "Fetcher"
 msgstr "Fetcher"
 
@@ -2901,7 +2973,7 @@ msgstr "Filter deleted successfully"
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:111
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:110
 msgid "Filter Interactive Games"
 msgstr "Filter Interactive Games"
 
@@ -2977,7 +3049,7 @@ msgstr "FLV stream fixing pipeline"
 msgid "FLV Tuning"
 msgstr "FLV Tuning"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:240
+#: src/components/config/engines/forms/mesio-hls-form.tsx:834
 msgid "Follow Redirects (Default: On)"
 msgstr "Follow Redirects (Default: On)"
 
@@ -2985,11 +3057,11 @@ msgstr "Follow Redirects (Default: On)"
 msgid "Fonts Directory"
 msgstr "Fonts Directory"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:276
+#: src/components/config/engines/forms/mesio-hls-form.tsx:870
 msgid "Force IPv4 (Default: Off)"
 msgstr "Force IPv4 (Default: Off)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:294
+#: src/components/config/engines/forms/mesio-hls-form.tsx:888
 msgid "Force IPv6 (Default: Off)"
 msgstr "Force IPv6 (Default: Off)"
 
@@ -3046,7 +3118,7 @@ msgstr "Full multimedia processing: Remux video, extract audio and thumbnail in 
 msgid "Full Processing"
 msgstr "Full Processing"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:856
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1728
 msgid "Gap Eval Interval (ms)"
 msgstr "Gap Eval Interval (ms)"
 
@@ -3132,7 +3204,7 @@ msgstr "Global Configuration"
 msgid "Global Default"
 msgstr "Global Default"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:39
+#: src/components/config/engines/forms/mesio-hls-form.tsx:623
 msgid "Global Timeout (ms)"
 msgstr "Global Timeout (ms)"
 
@@ -3172,7 +3244,7 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "H.264 medium compression (CRF 23) optimized for long-term storage."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:177
+#: src/components/config/engines/forms/mesio-hls-form.tsx:771
 msgid "H2 Keep-Alive (ms)"
 msgstr "H2 Keep-Alive (ms)"
 
@@ -3205,6 +3277,10 @@ msgstr "Health"
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:627
 msgid "Healthy"
 msgstr "Healthy"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:527
+msgid "Height"
+msgstr "Height"
 
 #: src/routes/_authed/change-password.lazy.tsx:164
 #: src/routes/_authed/change-password.lazy.tsx:206
@@ -3245,6 +3321,10 @@ msgstr "High Quality MP3"
 msgid "High+"
 msgstr "High+"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:455
+msgid "Highest bitrate"
+msgstr "Highest bitrate"
+
 #: src/components/config/global/network-system-card.tsx:197
 msgid "History Retention"
 msgstr "History Retention"
@@ -3275,6 +3355,10 @@ msgstr "Hooks"
 msgid "Hour (00-23)"
 msgstr "Hour (00-23)"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1370
+msgid "How long to keep decrypted/processed segments in cache."
+msgstr "How long to keep decrypted/processed segments in cache."
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:197
 msgid "How to pair video files with .ass subtitles"
 msgstr "How to pair video files with .ass subtitles"
@@ -3291,15 +3375,15 @@ msgstr "HTTP middleware"
 msgid "HTTP requests"
 msgstr "HTTP requests"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:141
+#: src/components/config/engines/forms/mesio-hls-form.tsx:735
 msgid "HTTP Version Preference"
 msgstr "HTTP Version Preference"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:160
+#: src/components/config/engines/forms/mesio-hls-form.tsx:754
 msgid "HTTP/1.1 Only"
 msgstr "HTTP/1.1 Only"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:157
+#: src/components/config/engines/forms/mesio-hls-form.tsx:751
 msgid "HTTP/2 Only"
 msgstr "HTTP/2 Only"
 
@@ -3441,7 +3525,7 @@ msgstr "INITIAL"
 msgid "Initial Delay (ms)"
 msgstr "Initial Delay (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:320
+#: src/components/config/engines/forms/mesio-hls-form.tsx:914
 msgid "Initial Fetch Timeout (ms)"
 msgstr "Initial Fetch Timeout (ms)"
 
@@ -3619,6 +3703,10 @@ msgstr "Keep uploading other files if one fails"
 msgid "Key"
 msgstr "Key"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1393
+msgid "Key Cache TTL (ms)"
+msgstr "Key Cache TTL (ms)"
+
 #: src/components/filters/forms/FilterTypeSelector.tsx:17
 msgid "Keyword"
 msgstr "Keyword"
@@ -3700,6 +3788,10 @@ msgstr "Live"
 msgid "LIVE"
 msgstr "LIVE"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1781
+msgid "Live Gap Strategy"
+msgstr "Live Gap Strategy"
+
 #: src/components/notifications/browser-channel-dialog.tsx:82
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:536
 msgid "Live Polling"
@@ -3713,7 +3805,7 @@ msgstr "Live polling notifications enabled"
 msgid "Live Preview"
 msgstr "Live Preview"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:340
+#: src/components/config/engines/forms/mesio-hls-form.tsx:934
 msgid "Live Refresh Interval (ms)"
 msgstr "Live Refresh Interval (ms)"
 
@@ -3838,6 +3930,10 @@ msgstr "Low"
 msgid "Lower value = Higher Quality"
 msgstr "Lower value = Higher Quality"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:458
+msgid "Lowest bitrate"
+msgstr "Lowest bitrate"
+
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:59
 msgid "Main application"
 msgstr "Main application"
@@ -3894,15 +3990,23 @@ msgstr "Marked all as read"
 msgid "Match Strategy"
 msgstr "Match Strategy"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:470
+msgid "Matching resolution"
+msgstr "Matching resolution"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1590
+msgid "Max Batch Size"
+msgstr "Max Batch Size"
+
 #: src/components/streamers/config/stream-selection-input.tsx:186
 msgid "Max Bitrate (bps)"
 msgstr "Max Bitrate (bps)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:786
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1658
 msgid "Max Buffer Before Skip"
 msgstr "Max Buffer Before Skip"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:923
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1851
 msgid "Max Bytes"
 msgstr "Max Bytes"
 
@@ -3927,11 +4031,11 @@ msgstr "Max Duration"
 msgid "Max HEVC Compression"
 msgstr "Max HEVC Compression"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:197
+#: src/components/config/engines/forms/mesio-hls-form.tsx:791
 msgid "Max Idle per Host"
 msgstr "Max Idle per Host"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:449
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1048
 msgid "Max Interval (ms)"
 msgstr "Max Interval (ms)"
 
@@ -3943,7 +4047,7 @@ msgstr "Max Interval (s)"
 msgid "Max IO Jobs"
 msgstr "Max IO Jobs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:154
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:153
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "Max number of retry attempts for metadata fetching."
 
@@ -3952,15 +4056,19 @@ msgstr "Max number of retry attempts for metadata fetching."
 msgid "Max Part Size"
 msgstr "Max Part Size"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1761
+msgid "Max Pending Init Segments"
+msgstr "Max Pending Init Segments"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:11
 msgid "Max Quality Thumbnail"
 msgstr "Max Quality Thumbnail"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:360
+#: src/components/config/engines/forms/mesio-hls-form.tsx:954
 msgid "Max Refresh Retries"
 msgstr "Max Refresh Retries"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:586
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1264
 #: src/components/config/shared/retry-policy-form.tsx:56
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
@@ -3968,15 +4076,20 @@ msgstr "Max Refresh Retries"
 msgid "Max Retries"
 msgstr "Max Retries"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:499
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1197
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1304
+msgid "Max Retry Delay (ms)"
+msgstr "Max Retry Delay (ms)"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1157
 msgid "Max Segment Retries"
 msgstr "Max Segment Retries"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:903
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1831
 msgid "Max Segments"
 msgstr "Max Segments"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:876
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1743
 msgid "Max Stall Duration (ms)"
 msgstr "Max Stall Duration (ms)"
 
@@ -3995,6 +4108,10 @@ msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 #: src/components/config/global/network-system-card.tsx:289
 msgid "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
 msgstr "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1090
+msgid "Maximum number of concurrent segment downloads."
+msgstr "Maximum number of concurrent segment downloads."
 
 #: src/components/config/shared/retry-policy-form.tsx:70
 msgid "Maximum number of retry attempts."
@@ -4063,7 +4180,7 @@ msgstr "Method"
 msgid "Min Bitrate (bps)"
 msgstr "Min Bitrate (bps)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:429
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1028
 msgid "Min Interval (ms)"
 msgstr "Min Interval (ms)"
 
@@ -4198,7 +4315,7 @@ msgstr "Native Resolution Thumbnail"
 msgid "Network"
 msgstr "Network"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:99
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:98
 msgid "Network & Content"
 msgstr "Network & Content"
 
@@ -4373,6 +4490,10 @@ msgstr "No outputs found"
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:130
 msgid "No overrides configured"
 msgstr "No overrides configured"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:92
+msgid "No parameters configured."
+msgstr "No parameters configured."
 
 #: src/components/sessions/jobs-tab.tsx:40
 msgid "No pipeline DAGs found."
@@ -4611,7 +4732,8 @@ msgstr "Offline Detection"
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:680
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1408
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1516
 msgid "Offload Decryption (Default: On)"
 msgstr "Offload Decryption (Default: On)"
 
@@ -4709,7 +4831,7 @@ msgstr "Options"
 msgid "Out of Space"
 msgstr "Out of Space"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1001
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1969
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:164
 #: src/components/config/templates/template-card.tsx:161
@@ -4975,7 +5097,7 @@ msgstr "Per-segment Pipeline"
 msgid "Per-Streamer"
 msgstr "Per-Streamer"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:992
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1960
 msgid "Perf"
 msgstr "Perf"
 
@@ -5145,9 +5267,13 @@ msgstr "Play"
 msgid "Player"
 msgstr "Player"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:974
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1902
 msgid "Playlist"
 msgstr "Playlist"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1434
+msgid "Playlist TTL (ms)"
+msgstr "Playlist TTL (ms)"
 
 #: src/components/player/url-input-form.tsx:32
 msgid "Please enter a valid URL"
@@ -5185,7 +5311,7 @@ msgstr "Please wait while we resolve the stream URL."
 msgid "Podcast Extraction"
 msgstr "Podcast Extraction"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:217
+#: src/components/config/engines/forms/mesio-hls-form.tsx:811
 msgid "Pool Idle Timeout (ms)"
 msgstr "Pool Idle Timeout (ms)"
 
@@ -5237,11 +5363,11 @@ msgstr "Preferred Qualities"
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:766
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1638
 msgid "Prefetch Count"
 msgstr "Prefetch Count"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:737
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1609
 msgid "Prefetching"
 msgstr "Prefetching"
 
@@ -5364,6 +5490,14 @@ msgstr "Process locally: Remux to MP4, generate thumbnail, move to archive folde
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "Process video and extract podcast audio in parallel, then upload both."
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1103
+msgid "Processed Buffer Multiplier"
+msgstr "Processed Buffer Multiplier"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1359
+msgid "Processed Segment TTL (ms)"
+msgstr "Processed Segment TTL (ms)"
+
 #: src/components/pipeline/dag-graph-view.tsx:392
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:345
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:220
@@ -5382,6 +5516,7 @@ msgstr "Processing Behavior"
 msgid "Processing nodes"
 msgstr "Processing nodes"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1931
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:143
 msgid "Processor"
 msgstr "Processor"
@@ -5457,6 +5592,10 @@ msgstr "Quality Rate"
 msgid "Quality Settings"
 msgstr "Quality Settings"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:700
+msgid "Query Parameters"
+msgstr "Query Parameters"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:596
 msgid "Queue"
 msgstr "Queue"
@@ -5482,7 +5621,7 @@ msgstr "Ratio"
 msgid "Raw JSON Editor"
 msgstr "Raw JSON Editor"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:633
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1331
 msgid "Raw Segment TTL (ms)"
 msgstr "Raw Segment TTL (ms)"
 
@@ -5500,7 +5639,7 @@ msgstr "Rclone Executable"
 msgid "Rclone Transfer"
 msgstr "Rclone Transfer"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:79
+#: src/components/config/engines/forms/mesio-hls-form.tsx:663
 msgid "Read Timeout (ms)"
 msgstr "Read Timeout (ms)"
 
@@ -5599,6 +5738,7 @@ msgstr "Regex Pattern"
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "Regex patterns to exclude files. Matched against full path and filename."
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:116
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:162
 msgid "Remove"
 msgstr "Remove"
@@ -5652,11 +5792,11 @@ msgstr "Remux to MP4 without re-encoding. Fast and lossless - just changes the c
 msgid "Remux with Faststart"
 msgstr "Remux with Faststart"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:816
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1688
 msgid "Reorder Duration (ms)"
 msgstr "Reorder Duration (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:836
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1708
 msgid "Reorder Max Segments"
 msgstr "Reorder Max Segments"
 
@@ -5756,13 +5896,13 @@ msgstr "Retry"
 msgid "Retry All Failed"
 msgstr "Retry All Failed"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:380
-#: src/components/config/engines/forms/mesio-hls-form.tsx:606
+#: src/components/config/engines/forms/mesio-hls-form.tsx:974
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1284
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:78
 msgid "Retry Delay (ms)"
 msgstr "Retry Delay (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:519
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1177
 msgid "Retry Delay Base (ms)"
 msgstr "Retry Delay Base (ms)"
 
@@ -5814,6 +5954,10 @@ msgstr "Run a custom FFmpeg command. Edit the args to customize."
 #: src/components/pipeline/presets/default-presets-i18n.ts:70
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1410
+msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
+msgstr "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 
 #: src/components/config/global/pipeline-config-card.tsx:294
 #: src/components/config/shared-config-editor.tsx:524
@@ -5957,6 +6101,7 @@ msgstr "Schedule recording times"
 msgid "Scheduled"
 msgstr "Scheduled"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1912
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:331
 msgid "Scheduler"
 msgstr "Scheduler"
@@ -6043,9 +6188,13 @@ msgstr "Security & Identity"
 msgid "Segment"
 msgstr "Segment"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:479
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1137
 msgid "Segment Timeout (ms)"
 msgstr "Segment Timeout (ms)"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1454
+msgid "Segment TTL (ms)"
+msgstr "Segment TTL (ms)"
 
 #: src/components/streamers/edit/active-download-card.tsx:164
 msgid "Segments"
@@ -6354,6 +6503,18 @@ msgstr "Size and duration constraints for recordings."
 msgid "Size limit"
 msgstr "Size limit"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:287
+msgid "Skip after both"
+msgstr "Skip after both"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:281
+msgid "Skip after count"
+msgstr "Skip after count"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:284
+msgid "Skip after duration"
+msgstr "Skip after duration"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:151
 msgid "Skip Interactive Games"
 msgstr "Skip Interactive Games"
@@ -6627,7 +6788,7 @@ msgstr "Streamers currently live will appear here."
 msgid "Streaming services"
 msgstr "Streaming services"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:539
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1217
 msgid "Streaming Threshold (bytes)"
 msgstr "Streaming Threshold (bytes)"
 
@@ -6715,6 +6876,10 @@ msgstr "System Status"
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:45
 msgid "System-wide preferences"
 msgstr "System-wide preferences"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:485
+msgid "Target bitrate"
+msgstr "Target bitrate"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:382
 msgid "Target Bitrate"
@@ -7001,7 +7166,7 @@ msgstr "Timeline"
 msgid "Timeout"
 msgstr "Timeout"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:566
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1244
 msgid "Timeout (ms)"
 msgstr "Timeout (ms)"
 
@@ -7107,7 +7272,7 @@ msgstr "Transcode H.264"
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "Treat interactive game streams (互动玩法) as offline."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:114
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:113
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
@@ -7415,7 +7580,7 @@ msgid "Used for Desktop login (fallback); points to Telegram Desktop folder cont
 msgstr "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:96
-#: src/components/config/engines/forms/mesio-hls-form.tsx:122
+#: src/components/config/engines/forms/mesio-hls-form.tsx:716
 msgid "User Agent"
 msgstr "User Agent"
 
@@ -7453,6 +7618,7 @@ msgstr "Validation Failed"
 msgid "Validation service unavailable"
 msgstr "Validation service unavailable"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:550
 #: src/components/notifications/forms/webhook-form.tsx:459
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:920
@@ -7463,6 +7629,10 @@ msgstr "Value"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:290
 msgid "Variant"
 msgstr "Variant"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:993
+msgid "Variant Selection Policy"
+msgstr "Variant Selection Policy"
 
 #: src/components/config/global/file-config-card.tsx:86
 msgid "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, %S"
@@ -7505,6 +7675,10 @@ msgstr "Video Codec"
 msgid "Video codec change"
 msgstr "Video codec change"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:467
+msgid "Video only"
+msgstr "Video only"
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:158
 msgid "Video Settings"
 msgstr "Video Settings"
@@ -7535,9 +7709,21 @@ msgstr "View Detailed Logs & Outputs"
 msgid "View Details"
 msgstr "View Details"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1785
+msgid "VOD Gap Strategy"
+msgstr "VOD Gap Strategy"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1791
+msgid "VOD Segment Timeout (ms)"
+msgstr "VOD Segment Timeout (ms)"
+
 #: src/components/config/platforms/platform-card.tsx:115
 msgid "Wait"
 msgstr "Wait"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:278
+msgid "Wait indefinitely"
+msgstr "Wait indefinitely"
 
 #: src/components/config/platforms/tabs/general-tab.tsx:96
 msgid "Wait time before starting."
@@ -7602,6 +7788,10 @@ msgstr "Week"
 msgid "Welcome back"
 msgstr "Welcome back"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1793
+msgid "When enabled, each VOD segment must complete within this timeout."
+msgstr "When enabled, each VOD segment must complete within this timeout."
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:362
 msgid "Where TDL stores its session and configuration."
 msgstr "Where TDL stores its session and configuration."
@@ -7610,6 +7800,7 @@ msgstr "Where TDL stores its session and configuration."
 msgid "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
 msgstr "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:508
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:80
 msgid "Width"
 msgstr "Width"
@@ -7662,7 +7853,7 @@ msgstr "Workflows"
 msgid "Working Directory"
 msgstr "Working Directory"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:99
+#: src/components/config/engines/forms/mesio-hls-form.tsx:683
 msgid "Write Timeout (ms)"
 msgstr "Write Timeout (ms)"
 
@@ -7686,7 +7877,7 @@ msgstr "Your digital library is currently empty. Start recording to populate you
 msgid "YYYY-MM-DD"
 msgstr "YYYY-MM-DD"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:662
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1503
 msgid "Zero Copy Processing (Default: On)"
 msgstr "Zero Copy Processing (Default: On)"
 
