@@ -917,7 +917,7 @@ impl<
     /// |----------------------|-------------|------------------------------------------------|
     /// | Live                 | No          | End session, set state to NOT_LIVE             |
     /// | Live                 | Yes         | End session, set NOT_LIVE, clear errors        |
-    /// | TemporalDisabled     | Yes         | Set state to NOT_LIVE, clear errors            |
+    /// | TemporalDisabled     | Yes         | End active session if any, set NOT_LIVE, clear errors |
     /// | NotLive              | Yes         | Clear errors only                              |
     /// | NotLive              | No          | No action (already clean)                      |
     /// | OutOfSchedule        | Yes         | Clear errors only                              |
@@ -938,15 +938,9 @@ impl<
         // Check if we have accumulated errors that should be cleared on successful check
         let has_errors = streamer.consecutive_error_count > 0 || streamer.disabled_until.is_some();
 
-        if streamer.state == StreamerState::Live {
-            // Live -> Offline transition: end session and update state
-            info!(
-                streamer_id = %streamer.id,
-                streamer_name = %streamer.name,
-                streamer_url = %streamer.url,
-                "status=OFFLINE (monitor)"
-            );
-
+        if streamer.state == StreamerState::Live
+            || streamer.state == StreamerState::TemporalDisabled
+        {
             let now = chrono::Utc::now();
 
             let mut tx = self.begin_immediate().await?;
@@ -958,6 +952,18 @@ impl<
                 SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?
             };
 
+            let should_emit_offline =
+                streamer.state == StreamerState::Live || resolved_session_id.is_some();
+
+            if should_emit_offline {
+                info!(
+                    streamer_id = %streamer.id,
+                    streamer_name = %streamer.name,
+                    streamer_url = %streamer.url,
+                    "status=OFFLINE (monitor)"
+                );
+            }
+
             StreamerTxOps::set_offline(&mut tx, &streamer.id).await?;
 
             // Clear any accumulated errors since we successfully checked
@@ -965,19 +971,23 @@ impl<
                 StreamerTxOps::clear_error_state(&mut tx, &streamer.id).await?;
             }
 
-            let event = MonitorEvent::StreamerOffline {
-                streamer_id: streamer.id.clone(),
-                streamer_name: streamer.name.clone(),
-                session_id: resolved_session_id.clone(),
-                timestamp: now,
-            };
-            MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
+            if should_emit_offline {
+                let event = MonitorEvent::StreamerOffline {
+                    streamer_id: streamer.id.clone(),
+                    streamer_name: streamer.name.clone(),
+                    session_id: resolved_session_id.clone(),
+                    timestamp: now,
+                };
+                MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
+            }
 
             tx.commit().await?;
 
             self.reload_streamer_cache(&streamer.id, "offline update")
                 .await;
-            self.notify_outbox();
+            if should_emit_offline {
+                self.notify_outbox();
+            }
         } else if has_errors {
             // Successful check with accumulated errors: clear them
             // This handles TemporalDisabled -> NotLive and NotLive with errors -> NotLive clean
@@ -1410,6 +1420,186 @@ fn status_summary(status: &LiveStatus) -> &'static str {
 mod tests {
     use super::*;
 
+    use std::sync::Arc;
+
+    use sqlx::{Row, SqlitePool};
+
+    use crate::config::{ConfigEventBroadcaster, ConfigService};
+    use crate::database::models::StreamerDbModel;
+    use crate::database::repositories::{
+        MonitorOutboxOps, SqlxConfigRepository, SqlxFilterRepository, SqlxSessionRepository,
+        SqlxStreamerRepository,
+    };
+    use crate::streamer::StreamerManager;
+
+    async fn setup_monitor_test_db() -> SqlitePool {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+
+        sqlx::query(
+            r#"
+            CREATE TABLE streamers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                platform_config_id TEXT NOT NULL,
+                template_config_id TEXT,
+                state TEXT NOT NULL DEFAULT 'NOT_LIVE',
+                priority TEXT NOT NULL DEFAULT 'NORMAL',
+                avatar TEXT,
+                last_live_time INTEGER,
+                streamer_specific_config TEXT,
+                consecutive_error_count INTEGER DEFAULT 0,
+                disabled_until INTEGER,
+                last_error TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"
+            CREATE TABLE live_sessions (
+                id TEXT PRIMARY KEY,
+                streamer_id TEXT NOT NULL,
+                start_time INTEGER NOT NULL,
+                end_time INTEGER,
+                titles TEXT,
+                danmu_statistics_id TEXT,
+                total_size_bytes INTEGER DEFAULT 0
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"
+            CREATE TABLE media_outputs (
+                id TEXT PRIMARY KEY,
+                session_id TEXT,
+                size_bytes INTEGER DEFAULT 0
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"
+            CREATE TABLE monitor_event_outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                streamer_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                delivered_at INTEGER,
+                attempts INTEGER DEFAULT 0,
+                last_error TEXT
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        pool
+    }
+
+    async fn build_test_monitor(
+        pool: &SqlitePool,
+    ) -> StreamMonitor<
+        SqlxStreamerRepository,
+        SqlxFilterRepository,
+        SqlxSessionRepository,
+        SqlxConfigRepository,
+    > {
+        let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
+        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
+        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+        let streamer_manager = Arc::new(StreamerManager::new(
+            streamer_repo.clone(),
+            ConfigEventBroadcaster::new(),
+        ));
+        streamer_manager.hydrate().await.unwrap();
+        let config_service = Arc::new(ConfigService::new(config_repo, streamer_repo));
+
+        StreamMonitor::new(
+            streamer_manager,
+            filter_repo,
+            session_repo,
+            config_service,
+            pool.clone(),
+        )
+    }
+
+    async fn insert_streamer(
+        pool: &SqlitePool,
+        id: &str,
+        state: StreamerState,
+        consecutive_errors: i32,
+        disabled_until: Option<i64>,
+    ) {
+        let mut streamer =
+            StreamerDbModel::new("Test Streamer", format!("https://example.com/{id}"), "test");
+        streamer.id = id.to_string();
+        streamer.state = state.to_string();
+        streamer.consecutive_error_count = Some(consecutive_errors);
+        streamer.disabled_until = disabled_until;
+        streamer.last_error = Some("boom".to_string());
+
+        sqlx::query(
+            r#"
+            INSERT INTO streamers (
+                id, name, url, platform_config_id, template_config_id,
+                state, priority, avatar, last_live_time, streamer_specific_config,
+                consecutive_error_count, disabled_until, last_error,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&streamer.id)
+        .bind(&streamer.name)
+        .bind(&streamer.url)
+        .bind(&streamer.platform_config_id)
+        .bind(&streamer.template_config_id)
+        .bind(&streamer.state)
+        .bind(&streamer.priority)
+        .bind(&streamer.avatar)
+        .bind(streamer.last_live_time)
+        .bind(&streamer.streamer_specific_config)
+        .bind(streamer.consecutive_error_count)
+        .bind(streamer.disabled_until)
+        .bind(&streamer.last_error)
+        .bind(streamer.created_at)
+        .bind(streamer.updated_at)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn insert_active_session(pool: &SqlitePool, session_id: &str, streamer_id: &str) {
+        sqlx::query(
+            r#"
+            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
+            VALUES (?, ?, ?, NULL, ?, NULL, 0)
+            "#,
+        )
+        .bind(session_id)
+        .bind(streamer_id)
+        .bind(chrono::Utc::now().timestamp_millis())
+        .bind(Some("[]".to_string()))
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
     #[test]
     fn test_stream_monitor_config_default() {
         let config = StreamMonitorConfig::default();
@@ -1463,5 +1653,178 @@ mod tests {
             status_summary(&LiveStatus::UnsupportedPlatform),
             "UnsupportedPlatform"
         );
+    }
+
+    #[tokio::test]
+    async fn test_handle_offline_from_temporal_disabled_ends_active_session_and_enqueues_offline() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(
+            &pool,
+            "streamer-1",
+            StreamerState::TemporalDisabled,
+            3,
+            Some(chrono::Utc::now().timestamp_millis() + 60_000),
+        )
+        .await;
+        insert_active_session(&pool, "session-1", "streamer-1").await;
+
+        let monitor = build_test_monitor(&pool).await;
+        let streamer = monitor.streamer_manager.get_streamer("streamer-1").unwrap();
+
+        monitor
+            .handle_offline_with_session(&streamer, None)
+            .await
+            .unwrap();
+
+        let session_row = sqlx::query("SELECT end_time FROM live_sessions WHERE id = ?")
+            .bind("session-1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(session_row.get::<Option<i64>, _>("end_time").is_some());
+
+        let streamer_row = sqlx::query(
+            "SELECT state, consecutive_error_count, disabled_until, last_error FROM streamers WHERE id = ?",
+        )
+        .bind("streamer-1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(streamer_row.get::<String, _>("state"), "NOT_LIVE");
+        assert_eq!(streamer_row.get::<i64, _>("consecutive_error_count"), 0);
+        assert!(
+            streamer_row
+                .get::<Option<i64>, _>("disabled_until")
+                .is_none()
+        );
+        assert!(
+            streamer_row
+                .get::<Option<String>, _>("last_error")
+                .is_none()
+        );
+
+        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
+            .await
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].payload.contains("StreamerOffline"));
+        assert!(entries[0].payload.contains("session-1"));
+
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn test_handle_offline_from_temporal_disabled_without_session_only_clears_errors() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(
+            &pool,
+            "streamer-2",
+            StreamerState::TemporalDisabled,
+            2,
+            Some(chrono::Utc::now().timestamp_millis() + 60_000),
+        )
+        .await;
+
+        let monitor = build_test_monitor(&pool).await;
+        let streamer = monitor.streamer_manager.get_streamer("streamer-2").unwrap();
+
+        monitor
+            .handle_offline_with_session(&streamer, None)
+            .await
+            .unwrap();
+
+        let streamer_row = sqlx::query(
+            "SELECT state, consecutive_error_count, disabled_until, last_error FROM streamers WHERE id = ?",
+        )
+        .bind("streamer-2")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(streamer_row.get::<String, _>("state"), "NOT_LIVE");
+        assert_eq!(streamer_row.get::<i64, _>("consecutive_error_count"), 0);
+        assert!(
+            streamer_row
+                .get::<Option<i64>, _>("disabled_until")
+                .is_none()
+        );
+        assert!(
+            streamer_row
+                .get::<Option<String>, _>("last_error")
+                .is_none()
+        );
+
+        let active_session_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL",
+        )
+        .bind("streamer-2")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(active_session_count, 0);
+
+        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
+            .await
+            .unwrap();
+        assert!(entries.is_empty());
+
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn test_process_status_offline_from_temporal_disabled_closes_active_session() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(
+            &pool,
+            "streamer-3",
+            StreamerState::TemporalDisabled,
+            3,
+            Some(chrono::Utc::now().timestamp_millis() - 1),
+        )
+        .await;
+        insert_active_session(&pool, "session-3", "streamer-3").await;
+
+        let monitor = build_test_monitor(&pool).await;
+        let streamer = monitor.streamer_manager.get_streamer("streamer-3").unwrap();
+
+        monitor
+            .process_status(&streamer, LiveStatus::Offline)
+            .await
+            .unwrap();
+
+        let session_row = sqlx::query("SELECT end_time FROM live_sessions WHERE id = ?")
+            .bind("session-3")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(session_row.get::<Option<i64>, _>("end_time").is_some());
+
+        let streamer_row = sqlx::query(
+            "SELECT state, consecutive_error_count, disabled_until, last_error FROM streamers WHERE id = ?",
+        )
+        .bind("streamer-3")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(streamer_row.get::<String, _>("state"), "NOT_LIVE");
+        assert_eq!(streamer_row.get::<i64, _>("consecutive_error_count"), 0);
+        assert!(
+            streamer_row
+                .get::<Option<i64>, _>("disabled_until")
+                .is_none()
+        );
+        assert!(
+            streamer_row
+                .get::<Option<String>, _>("last_error")
+                .is_none()
+        );
+
+        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
+            .await
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].payload.contains("StreamerOffline"));
+        assert!(entries[0].payload.contains("session-3"));
+
+        monitor.stop();
     }
 }
