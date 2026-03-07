@@ -235,8 +235,8 @@ importers:
         specifier: ^0.16.0
         version: 0.16.0
       shadcn:
-        specifier: ^3.8.5
-        version: 3.8.5(@types/node@22.19.15)(babel-plugin-macros@3.1.0)(typescript@5.9.3)
+        specifier: ^4.0.0
+        version: 4.0.0(@types/node@22.19.15)(babel-plugin-macros@3.1.0)(typescript@5.9.3)
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
@@ -520,8 +520,8 @@ packages:
   '@date-fns/tz@1.4.1':
     resolution: {integrity: sha512-P5LUNhtbj6YfI3iJjw5EL9eUAG6OitD0W3fWQcpQjDRc/QIsL0tRNuO1PcDvPccWL1fSTXXdE1ds+l95DV/OFA==}
 
-  '@dotenvx/dotenvx@1.53.0':
-    resolution: {integrity: sha512-OnsVuJ5O2WCUMXBnyuYah08/I6Tnt1FEZ2PGH9skSRuRh3LK5UoGa6Bzi5Toj/F/0mbeFfv+eNKTsYRoGgRh3Q==}
+  '@dotenvx/dotenvx@1.54.1':
+    resolution: {integrity: sha512-41gU3q7v05GM92QPuPUf4CmUw+mmF8p4wLUh6MCRlxpCkJ9ByLcY9jUf6MwrMNmiKyG/rIckNxj9SCfmNCmCqw==}
     hasBin: true
 
   '@ecies/ciphers@0.2.5':
@@ -4851,8 +4851,8 @@ packages:
   setprototypeof@1.2.0:
     resolution: {integrity: sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==}
 
-  shadcn@3.8.5:
-    resolution: {integrity: sha512-jPRx44e+eyeV7xwY3BLJXcfrks00+M0h5BGB9l6DdcBW4BpAj4x3lVmVy0TXPEs2iHEisxejr62sZAAw6B1EVA==}
+  shadcn@4.0.0:
+    resolution: {integrity: sha512-D3FRsynbtnnIK6P3x0dC1Clez14UoZdOukE46nuuc3R55m0/1awfCm4p1SF14rS+HWVgWOncOWnDyQeZxSW22w==}
     hasBin: true
 
   shebang-command@2.0.0:
@@ -5823,7 +5823,7 @@ snapshots:
 
   '@date-fns/tz@1.4.1': {}
 
-  '@dotenvx/dotenvx@1.53.0':
+  '@dotenvx/dotenvx@1.54.1':
     dependencies:
       commander: 11.1.0
       dotenv: 17.3.1
@@ -9890,14 +9890,14 @@ snapshots:
 
   setprototypeof@1.2.0: {}
 
-  shadcn@3.8.5(@types/node@22.19.15)(babel-plugin-macros@3.1.0)(typescript@5.9.3):
+  shadcn@4.0.0(@types/node@22.19.15)(babel-plugin-macros@3.1.0)(typescript@5.9.3):
     dependencies:
       '@antfu/ni': 25.0.0
       '@babel/core': 7.29.0
       '@babel/parser': 7.29.0
       '@babel/plugin-transform-typescript': 7.28.6(@babel/core@7.29.0)
       '@babel/preset-typescript': 7.28.5(@babel/core@7.29.0)
-      '@dotenvx/dotenvx': 1.53.0
+      '@dotenvx/dotenvx': 1.54.1
       '@modelcontextprotocol/sdk': 1.27.1(zod@3.25.76)
       '@types/validate-npm-package-name': 4.0.2
       browserslist: 4.28.1
