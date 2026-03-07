@@ -32,6 +32,53 @@ use super::detector::{FilterReason, LiveStatus, StreamDetector};
 use super::events::{FatalErrorType, MonitorEvent, MonitorEventBroadcaster};
 use super::rate_limiter::{RateLimiterConfig, RateLimiterManager};
 
+/// Result of [`StreamMonitor::process_status`].
+///
+/// This separates two outcomes that previously looked identical at the type level:
+///
+/// - the monitor accepted the observed [`LiveStatus`] and applied its normal side effects
+///   (state changes, session updates, outbox events)
+/// - the monitor intentionally suppressed those side effects because the streamer is disabled
+///   or still inside temporary backoff
+///
+/// Callers such as the scheduler actor use this to preserve authoritative backoff while still
+/// keeping their local runtime state recoverable. In particular, a suppressed LIVE observation
+/// must not leave the actor stuck in a pseudo-live state when no [`MonitorEvent::StreamerLive`]
+/// was emitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessStatusResult {
+    /// The status was accepted and normal side effects were applied.
+    ///
+    /// For example, a LIVE status may create or resume a session and enqueue a
+    /// [`MonitorEvent::StreamerLive`] outbox entry.
+    Applied,
+    /// The status was intentionally suppressed.
+    ///
+    /// Suppression means the status was observed, but `process_status()` deliberately skipped
+    /// downstream effects. Callers should inspect the [`ProcessStatusSuppression`] reason and
+    /// decide how to schedule the next retry without assuming the streamer has fully transitioned.
+    Suppressed(ProcessStatusSuppression),
+}
+
+/// Reason a status was suppressed by [`StreamMonitor::process_status`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProcessStatusSuppression {
+    /// The streamer is manually disabled.
+    ///
+    /// This is the strongest suppression mode: manual disable should block monitor-driven state
+    /// changes and side effects until the user re-enables the streamer.
+    Disabled,
+    /// The streamer is temporarily disabled due to error backoff.
+    ///
+    /// Backoff remains authoritative: monitor side effects are skipped while cooldown is active.
+    /// The optional `retry_after` value tells callers when status processing can be retried
+    /// without re-entering the same suppression path.
+    TemporarilyDisabled {
+        /// Remaining delay before status processing should be retried.
+        retry_after: Option<Duration>,
+    },
+}
+
 /// Hard upper bound for a single streamer status check to avoid indefinitely-stuck in-flight
 /// deduplication entries when upstream requests hang.
 const STREAM_CHECK_HARD_TIMEOUT: Duration = Duration::from_secs(300);
@@ -613,7 +660,7 @@ impl<
         &self,
         streamer: &StreamerMetadata,
         status: LiveStatus,
-    ) -> Result<()> {
+    ) -> Result<ProcessStatusResult> {
         debug!(
             "Processing status for {}: {:?}",
             streamer.id,
@@ -633,7 +680,9 @@ impl<
                 streamer.id,
                 status_summary(&status)
             );
-            return Ok(());
+            return Ok(ProcessStatusResult::Suppressed(
+                ProcessStatusSuppression::Disabled,
+            ));
         }
 
         if streamer.is_disabled() {
@@ -643,7 +692,13 @@ impl<
                 disabled_until = ?streamer.disabled_until,
                 "Ignoring monitor status while temporarily disabled"
             );
-            return Ok(());
+            return Ok(ProcessStatusResult::Suppressed(
+                ProcessStatusSuppression::TemporarilyDisabled {
+                    retry_after: streamer
+                        .remaining_backoff()
+                        .and_then(|duration| duration.to_std().ok()),
+                },
+            ));
         }
 
         match status {
@@ -729,7 +784,7 @@ impl<
             }
         }
 
-        Ok(())
+        Ok(ProcessStatusResult::Applied)
     }
 
     /// Handle a streamer going live.
@@ -1786,10 +1841,11 @@ mod tests {
         let monitor = build_test_monitor(&pool).await;
         let streamer = monitor.streamer_manager.get_streamer("streamer-3").unwrap();
 
-        monitor
+        let outcome = monitor
             .process_status(&streamer, LiveStatus::Offline)
             .await
             .unwrap();
+        assert_eq!(outcome, ProcessStatusResult::Applied);
 
         let session_row = sqlx::query("SELECT end_time FROM live_sessions WHERE id = ?")
             .bind("session-3")
@@ -1824,6 +1880,139 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert!(entries[0].payload.contains("StreamerOffline"));
         assert!(entries[0].payload.contains("session-3"));
+
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn test_process_status_live_is_suppressed_while_temporarily_disabled() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(
+            &pool,
+            "streamer-live-suppressed",
+            StreamerState::TemporalDisabled,
+            3,
+            Some(chrono::Utc::now().timestamp_millis() + 60_000),
+        )
+        .await;
+
+        let monitor = build_test_monitor(&pool).await;
+        let streamer = monitor
+            .streamer_manager
+            .get_streamer("streamer-live-suppressed")
+            .unwrap();
+
+        let outcome = monitor
+            .process_status(
+                &streamer,
+                LiveStatus::Live {
+                    title: "Suppressed Live".to_string(),
+                    category: None,
+                    avatar: None,
+                    started_at: None,
+                    viewer_count: None,
+                    streams: vec![platforms_parser::media::StreamInfo {
+                        url: "https://example.com/stream.m3u8".to_string(),
+                        stream_format: platforms_parser::media::StreamFormat::Flv,
+                        media_format: platforms_parser::media::formats::MediaFormat::Flv,
+                        quality: "best".to_string(),
+                        bitrate: 5_000_000,
+                        priority: 1,
+                        extras: None,
+                        codec: "h264".to_string(),
+                        fps: 30.0,
+                        is_headers_needed: false,
+                        is_audio_only: false,
+                    }],
+                    media_headers: None,
+                    media_extras: None,
+                    next_check_hint: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            outcome,
+            ProcessStatusResult::Suppressed(ProcessStatusSuppression::TemporarilyDisabled {
+                retry_after: Some(_)
+            })
+        ));
+
+        let active_session_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL",
+        )
+        .bind("streamer-live-suppressed")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(active_session_count, 0);
+
+        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
+            .await
+            .unwrap();
+        assert!(entries.is_empty());
+
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn test_process_status_live_is_suppressed_for_user_disabled_streamer() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(
+            &pool,
+            "streamer-user-disabled",
+            StreamerState::Disabled,
+            0,
+            None,
+        )
+        .await;
+
+        let monitor = build_test_monitor(&pool).await;
+        let streamer = monitor
+            .streamer_manager
+            .get_streamer("streamer-user-disabled")
+            .unwrap();
+
+        let outcome = monitor
+            .process_status(
+                &streamer,
+                LiveStatus::Live {
+                    title: "Should Stay Disabled".to_string(),
+                    category: None,
+                    avatar: None,
+                    started_at: None,
+                    viewer_count: None,
+                    streams: vec![platforms_parser::media::StreamInfo {
+                        url: "https://example.com/stream.flv".to_string(),
+                        stream_format: platforms_parser::media::StreamFormat::Flv,
+                        media_format: platforms_parser::media::formats::MediaFormat::Flv,
+                        quality: "best".to_string(),
+                        bitrate: 5_000_000,
+                        priority: 1,
+                        extras: None,
+                        codec: "h264".to_string(),
+                        fps: 30.0,
+                        is_headers_needed: false,
+                        is_audio_only: false,
+                    }],
+                    media_headers: None,
+                    media_extras: None,
+                    next_check_hint: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            ProcessStatusResult::Suppressed(ProcessStatusSuppression::Disabled)
+        );
+
+        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
+            .await
+            .unwrap();
+        assert!(entries.is_empty());
 
         monitor.stop();
     }

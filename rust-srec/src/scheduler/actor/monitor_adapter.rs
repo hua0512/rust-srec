@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::monitor::{FilterReason, LiveStatus};
+use crate::monitor::{FilterReason, LiveStatus, ProcessStatusResult};
 use crate::streamer::StreamerMetadata;
 
 use super::messages::{BatchDetectionResult, CheckResult};
@@ -29,14 +29,21 @@ pub trait StatusChecker: Send + Sync + 'static {
         streamer: &StreamerMetadata,
     ) -> Result<(CheckResult, LiveStatus), CheckError>;
 
-    /// Process a status result and update the streamer state.
+    /// Process a detected status and return whether monitor side effects were applied.
     ///
-    /// This handles state transitions, event emission, and persistence.
+    /// This handles state transitions, event emission, and persistence, but callers must not
+    /// assume every successful call fully applied the status. A successful return may still be
+    /// [`ProcessStatusResult::Suppressed`] when the monitor intentionally skips side effects due
+    /// to disable/backoff rules.
+    ///
+    /// The scheduler actor relies on this distinction to avoid entering a sticky runtime `Live`
+    /// state when a LIVE observation was suppressed and no [`crate::monitor::MonitorEvent::StreamerLive`]
+    /// event was emitted.
     async fn process_status(
         &self,
         streamer: &StreamerMetadata,
         status: LiveStatus,
-    ) -> Result<(), CheckError>;
+    ) -> Result<ProcessStatusResult, CheckError>;
 
     /// Handle an error during status checking.
     async fn handle_error(
@@ -170,9 +177,9 @@ where
         &self,
         streamer: &StreamerMetadata,
         status: LiveStatus,
-    ) -> Result<(), CheckError> {
-        self.monitor.process_status(streamer, status).await?;
-        Ok(())
+    ) -> Result<ProcessStatusResult, CheckError> {
+        let outcome = self.monitor.process_status(streamer, status).await?;
+        Ok(outcome)
     }
 
     async fn handle_error(
@@ -375,8 +382,8 @@ impl StatusChecker for NoOpStatusChecker {
         &self,
         _streamer: &StreamerMetadata,
         _status: LiveStatus,
-    ) -> Result<(), CheckError> {
-        Ok(())
+    ) -> Result<ProcessStatusResult, CheckError> {
+        Ok(ProcessStatusResult::Applied)
     }
 
     async fn handle_error(

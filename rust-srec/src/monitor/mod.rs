@@ -18,4 +18,6 @@ pub use batch_detector::{BatchDetector, BatchFailure, BatchResult};
 pub use detector::{FilterReason, LiveStatus, StreamDetector, StreamInfo};
 pub use events::{FatalErrorType, MonitorEvent, MonitorEventBroadcaster};
 pub use rate_limiter::{RateLimiter, RateLimiterConfig, RateLimiterManager};
-pub use service::{StreamMonitor, StreamMonitorConfig};
+pub use service::{
+    ProcessStatusResult, ProcessStatusSuppression, StreamMonitor, StreamMonitorConfig,
+};

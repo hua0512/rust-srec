@@ -35,7 +35,7 @@ use super::metrics::ActorMetrics;
 use super::monitor_adapter::StatusChecker;
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::DownloadStopCause;
-use crate::monitor::LiveStatus;
+use crate::monitor::{LiveStatus, ProcessStatusResult, ProcessStatusSuppression};
 use crate::scheduler::actor::DownloadEndPolicy;
 use crate::streamer::StreamerMetadata;
 
@@ -484,6 +484,38 @@ impl StreamerActor {
         }
     }
 
+    fn handle_suppressed_live_status(
+        &mut self,
+        suppression: ProcessStatusSuppression,
+        previous_runtime_state: StreamerActorState,
+    ) {
+        let retry_after = match suppression {
+            ProcessStatusSuppression::Disabled => {
+                debug!(
+                    streamer_id = %self.id,
+                    previous_state = ?previous_runtime_state.streamer_state,
+                    "live status suppressed because streamer is manually disabled"
+                );
+                Duration::from_millis(self.config.check_interval_ms)
+            }
+            ProcessStatusSuppression::TemporarilyDisabled { retry_after } => {
+                let retry_after = retry_after
+                    .unwrap_or_else(|| Duration::from_millis(self.config.check_interval_ms));
+                debug!(
+                    streamer_id = %self.id,
+                    previous_state = ?previous_runtime_state.streamer_state,
+                    retry_after = ?retry_after,
+                    "live status suppressed by temporary disable; reverting actor state"
+                );
+                retry_after
+            }
+        };
+
+        self.state = previous_runtime_state;
+        self.state.last_download_activity_at = None;
+        self.state.next_check = Some(Instant::now() + retry_after);
+    }
+
     /// Initiate a status check.
     ///
     /// If on a batch-capable platform, delegates to the PlatformActor.
@@ -579,7 +611,7 @@ impl StreamerActor {
         // Perform the actual status check using the status checker
         match self.status_checker.check_status(&metadata).await {
             Ok((result, status)) => {
-                // let prev_state = self.state.streamer_state;
+                let previous_runtime_state = self.state.clone();
                 let next_state = result.state;
                 let error_count = self.get_error_count();
 
@@ -591,16 +623,27 @@ impl StreamerActor {
                 let should_emit = self.state.record_check(result, &self.config, error_count);
 
                 // Call process_status only if hysteresis allows it
-                if should_emit
-                    && let Err(e) = self.status_checker.process_status(&metadata, status).await
-                {
-                    warn!("StreamerActor {} failed to process status: {}", self.id, e);
-                    // Revert Live state to prevent the actor from getting stuck in
-                    // the watchdog path when no session/download was actually created.
-                    if self.state.streamer_state == StreamerState::Live {
-                        self.state.streamer_state = StreamerState::NotLive;
-                        self.state.last_download_activity_at = None;
-                        self.state.schedule_immediate_check();
+                if should_emit {
+                    match self.status_checker.process_status(&metadata, status).await {
+                        Ok(ProcessStatusResult::Applied) => {}
+                        Ok(ProcessStatusResult::Suppressed(suppression)) => {
+                            if next_state == StreamerState::Live {
+                                self.handle_suppressed_live_status(
+                                    suppression,
+                                    previous_runtime_state,
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            warn!("StreamerActor {} failed to process status: {}", self.id, e);
+                            // Revert Live state to prevent the actor from getting stuck in
+                            // the watchdog path when no session/download was actually created.
+                            if self.state.streamer_state == StreamerState::Live {
+                                self.state.streamer_state = StreamerState::NotLive;
+                                self.state.last_download_activity_at = None;
+                                self.state.schedule_immediate_check();
+                            }
+                        }
                     }
                 }
 
@@ -779,7 +822,7 @@ impl StreamerActor {
             return Ok(());
         }
 
-        let _prev_state = self.state.streamer_state;
+        let previous_runtime_state = self.state.clone();
         let next_state = result.result.state;
         let error_count = self.get_error_count();
         let is_error = result.result.is_error();
@@ -828,22 +871,31 @@ impl StreamerActor {
         // Call process_status only if hysteresis allows it
         if should_emit {
             // Fetch fresh metadata for process_status
-            if let Some(metadata) = self.get_metadata()
-                && let Err(e) = self
+            if let Some(metadata) = self.get_metadata() {
+                match self
                     .status_checker
                     .process_status(&metadata, result.status)
                     .await
-            {
-                warn!(
-                    "StreamerActor {} failed to process batch status: {}",
-                    self.id, e
-                );
-                // Revert Live state to prevent the actor from getting stuck in
-                // the watchdog path when no session/download was actually created.
-                if self.state.streamer_state == StreamerState::Live {
-                    self.state.streamer_state = StreamerState::NotLive;
-                    self.state.last_download_activity_at = None;
-                    self.state.schedule_immediate_check();
+                {
+                    Ok(ProcessStatusResult::Applied) => {}
+                    Ok(ProcessStatusResult::Suppressed(suppression)) => {
+                        if next_state == StreamerState::Live {
+                            self.handle_suppressed_live_status(suppression, previous_runtime_state);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "StreamerActor {} failed to process batch status: {}",
+                            self.id, e
+                        );
+                        // Revert Live state to prevent the actor from getting stuck in
+                        // the watchdog path when no session/download was actually created.
+                        if self.state.streamer_state == StreamerState::Live {
+                            self.state.streamer_state = StreamerState::NotLive;
+                            self.state.last_download_activity_at = None;
+                            self.state.schedule_immediate_check();
+                        }
+                    }
                 }
             }
         }
@@ -1423,8 +1475,12 @@ impl PersistedActorState {
 mod tests {
     use super::*;
     use crate::domain::Priority;
-    use crate::scheduler::actor::monitor_adapter::NoOpStatusChecker;
+    use crate::monitor::{ProcessStatusResult, ProcessStatusSuppression};
+    use crate::scheduler::actor::monitor_adapter::{CheckError, NoOpStatusChecker};
+    use async_trait::async_trait;
+    use std::collections::VecDeque;
     use std::sync::Arc;
+    use std::sync::Mutex;
 
     fn create_test_metadata() -> StreamerMetadata {
         StreamerMetadata {
@@ -1465,6 +1521,64 @@ mod tests {
 
     fn create_noop_checker() -> Arc<dyn StatusChecker> {
         Arc::new(NoOpStatusChecker)
+    }
+
+    #[derive(Debug)]
+    struct SequenceStatusChecker {
+        checks: Mutex<VecDeque<(CheckResult, LiveStatus)>>,
+        outcomes: Mutex<VecDeque<ProcessStatusResult>>,
+    }
+
+    impl SequenceStatusChecker {
+        fn new(checks: Vec<(CheckResult, LiveStatus)>, outcomes: Vec<ProcessStatusResult>) -> Self {
+            Self {
+                checks: Mutex::new(VecDeque::from(checks)),
+                outcomes: Mutex::new(VecDeque::from(outcomes)),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl StatusChecker for SequenceStatusChecker {
+        async fn check_status(
+            &self,
+            _streamer: &StreamerMetadata,
+        ) -> Result<(CheckResult, LiveStatus), CheckError> {
+            self.checks
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| CheckError::transient("missing check result"))
+        }
+
+        async fn process_status(
+            &self,
+            _streamer: &StreamerMetadata,
+            _status: LiveStatus,
+        ) -> Result<ProcessStatusResult, CheckError> {
+            Ok(self
+                .outcomes
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(ProcessStatusResult::Applied))
+        }
+
+        async fn handle_error(
+            &self,
+            _streamer: &StreamerMetadata,
+            _error: &str,
+        ) -> Result<(), CheckError> {
+            Ok(())
+        }
+
+        async fn set_circuit_breaker_blocked(
+            &self,
+            _streamer: &StreamerMetadata,
+            _retry_after_secs: u64,
+        ) -> Result<(), CheckError> {
+            Ok(())
+        }
     }
 
     #[test]
@@ -1955,5 +2069,250 @@ mod tests {
         assert!(actor.state.next_check.is_some());
         // Hysteresis should be preserved - let checks determine actual state
         assert!(actor.state.hysteresis.was_live());
+    }
+
+    #[tokio::test]
+    async fn test_perform_check_suppressed_live_does_not_leave_actor_stuck_live() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let checker: Arc<dyn StatusChecker> = Arc::new(SequenceStatusChecker::new(
+            vec![(
+                CheckResult::success(StreamerState::Live),
+                LiveStatus::Live {
+                    title: "Suppressed Live".to_string(),
+                    category: None,
+                    started_at: None,
+                    viewer_count: None,
+                    avatar: None,
+                    streams: vec![],
+                    media_headers: None,
+                    media_extras: None,
+                    next_check_hint: None,
+                },
+            )],
+            vec![ProcessStatusResult::Suppressed(
+                ProcessStatusSuppression::TemporarilyDisabled {
+                    retry_after: Some(Duration::from_secs(30)),
+                },
+            )],
+        ));
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            checker,
+        );
+
+        actor.perform_check().await.unwrap();
+
+        assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
+        assert!(actor.state.last_download_activity_at.is_none());
+        assert!(actor.state.next_check.is_some());
+        assert!(!actor.state.hysteresis.was_live());
+
+        let until = actor.state.time_until_next_check().unwrap();
+        assert!(until <= Duration::from_secs(30));
+    }
+
+    #[tokio::test]
+    async fn test_perform_check_recovers_after_suppressed_live_when_backoff_expires() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let checker: Arc<dyn StatusChecker> = Arc::new(SequenceStatusChecker::new(
+            vec![
+                (
+                    CheckResult::success(StreamerState::Live),
+                    LiveStatus::Live {
+                        title: "Suppressed Live".to_string(),
+                        category: None,
+                        started_at: None,
+                        viewer_count: None,
+                        avatar: None,
+                        streams: vec![],
+                        media_headers: None,
+                        media_extras: None,
+                        next_check_hint: None,
+                    },
+                ),
+                (
+                    CheckResult::success(StreamerState::Live),
+                    LiveStatus::Live {
+                        title: "Recovered Live".to_string(),
+                        category: None,
+                        started_at: None,
+                        viewer_count: None,
+                        avatar: None,
+                        streams: vec![],
+                        media_headers: None,
+                        media_extras: None,
+                        next_check_hint: None,
+                    },
+                ),
+            ],
+            vec![
+                ProcessStatusResult::Suppressed(ProcessStatusSuppression::TemporarilyDisabled {
+                    retry_after: Some(Duration::from_secs(1)),
+                }),
+                ProcessStatusResult::Applied,
+            ],
+        ));
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            checker,
+        );
+
+        actor.perform_check().await.unwrap();
+        assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
+        assert!(!actor.state.hysteresis.was_live());
+
+        actor.perform_check().await.unwrap();
+
+        assert_eq!(actor.state.streamer_state, StreamerState::Live);
+        assert!(actor.state.last_download_activity_at.is_some());
+        assert!(actor.state.next_check.is_none());
+        assert!(actor.state.hysteresis.was_live());
+    }
+
+    #[tokio::test]
+    async fn test_suppressed_live_restores_notlive_grace_hysteresis_context() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let checker: Arc<dyn StatusChecker> = Arc::new(SequenceStatusChecker::new(
+            vec![(
+                CheckResult::success(StreamerState::Live),
+                LiveStatus::Live {
+                    title: "Suppressed Live".to_string(),
+                    category: None,
+                    started_at: None,
+                    viewer_count: None,
+                    avatar: None,
+                    streams: vec![],
+                    media_headers: None,
+                    media_extras: None,
+                    next_check_hint: None,
+                },
+            )],
+            vec![ProcessStatusResult::Suppressed(
+                ProcessStatusSuppression::TemporarilyDisabled {
+                    retry_after: Some(Duration::from_secs(30)),
+                },
+            )],
+        ));
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config.clone(),
+            token,
+            checker,
+        );
+
+        actor.state.streamer_state = StreamerState::NotLive;
+        actor.state.hysteresis.mark_live();
+        actor.state.hysteresis.mark_offline_observed();
+        let original_offline_count = actor.state.hysteresis.offline_count();
+        actor.state.last_check = Some(CheckResult {
+            state: StreamerState::NotLive,
+            stream_url: None,
+            title: Some("Previous offline".to_string()),
+            checked_at: chrono::Utc::now(),
+            error: None,
+            next_check_hint: None,
+        });
+
+        actor.perform_check().await.unwrap();
+
+        assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
+        assert!(actor.state.hysteresis.was_live());
+        assert_eq!(
+            actor.state.hysteresis.offline_count(),
+            original_offline_count
+        );
+        assert_eq!(
+            actor
+                .state
+                .last_check
+                .as_ref()
+                .and_then(|check| check.title.as_deref()),
+            Some("Previous offline")
+        );
+        let until = actor.state.time_until_next_check().unwrap();
+        assert!(until <= Duration::from_secs(30));
+    }
+
+    #[tokio::test]
+    async fn test_suppressed_live_restores_out_of_schedule_smart_wake_context() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let checker: Arc<dyn StatusChecker> = Arc::new(SequenceStatusChecker::new(
+            vec![(
+                CheckResult::success(StreamerState::Live),
+                LiveStatus::Live {
+                    title: "Suppressed Live".to_string(),
+                    category: None,
+                    started_at: None,
+                    viewer_count: None,
+                    avatar: None,
+                    streams: vec![],
+                    media_headers: None,
+                    media_extras: None,
+                    next_check_hint: None,
+                },
+            )],
+            vec![ProcessStatusResult::Suppressed(
+                ProcessStatusSuppression::TemporarilyDisabled {
+                    retry_after: Some(Duration::from_secs(30)),
+                },
+            )],
+        ));
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            checker,
+        );
+
+        let smart_wake_hint = chrono::Utc::now() + chrono::Duration::minutes(15);
+        actor.state.streamer_state = StreamerState::OutOfSchedule;
+        actor.state.hysteresis.mark_live();
+        actor.state.last_check = Some(CheckResult {
+            state: StreamerState::OutOfSchedule,
+            stream_url: None,
+            title: Some("Out of schedule".to_string()),
+            checked_at: chrono::Utc::now(),
+            error: None,
+            next_check_hint: Some(smart_wake_hint),
+        });
+
+        actor.perform_check().await.unwrap();
+
+        assert_eq!(actor.state.streamer_state, StreamerState::OutOfSchedule);
+        assert!(actor.state.hysteresis.was_live());
+        assert_eq!(
+            actor
+                .state
+                .last_check
+                .as_ref()
+                .and_then(|check| check.next_check_hint),
+            Some(smart_wake_hint)
+        );
+        let until = actor.state.time_until_next_check().unwrap();
+        assert!(until <= Duration::from_secs(30));
     }
 }
