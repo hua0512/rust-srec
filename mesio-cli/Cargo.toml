@@ -16,7 +16,7 @@ reqwest = { workspace = true, features = ["json", "stream"] }
 crossterm = "0.29.0"
 
 # CLI dependencies
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 
 # Logging
 tracing = { workspace = true }
