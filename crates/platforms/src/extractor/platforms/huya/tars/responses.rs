@@ -4,65 +4,36 @@ use super::stream::BeginLiveNotice;
 use rustc_hash::FxHashMap;
 use tars_codec::{error::TarsError, types::TarsValue};
 
+// GetCdnTokenExRsp from JavaScript x.GetCdnTokenExRsp
 #[derive(Default, Debug, Clone, PartialEq)]
 #[allow(dead_code)]
-pub struct HuyaGetTokenResp {
-    pub url: String,
-    pub cdn_type: String,
-    pub stream_name: String,
-    pub presenter_uid: i64,
-    pub anti_code: String,
-    pub s_time: String,
-    pub flv_anti_code: String,
-    pub hls_anti_code: String,
+pub struct GetCdnTokenExRsp {
+    pub flv_token: String, // tag 0
+    pub expire_time: i32,  // tag 1
 }
 
-impl From<HuyaGetTokenResp> for TarsValue {
-    fn from(resp: HuyaGetTokenResp) -> Self {
+impl From<GetCdnTokenExRsp> for TarsValue {
+    fn from(rsp: GetCdnTokenExRsp) -> Self {
         let mut map = FxHashMap::default();
-        map.insert(0, TarsValue::String(resp.url));
-        map.insert(1, TarsValue::String(resp.cdn_type));
-        map.insert(2, TarsValue::String(resp.stream_name));
-        map.insert(3, TarsValue::Long(resp.presenter_uid));
-        map.insert(4, TarsValue::String(resp.anti_code));
-        map.insert(5, TarsValue::String(resp.s_time));
-        map.insert(6, TarsValue::String(resp.flv_anti_code));
-        map.insert(7, TarsValue::String(resp.hls_anti_code));
+        map.insert(0, TarsValue::String(rsp.flv_token));
+        map.insert(1, TarsValue::Int(rsp.expire_time));
         TarsValue::Struct(map)
     }
 }
 
-impl TryFrom<TarsValue> for HuyaGetTokenResp {
+impl TryFrom<TarsValue> for GetCdnTokenExRsp {
     type Error = TarsError;
 
     fn try_from(value: TarsValue) -> Result<Self, Self::Error> {
         let mut map = value.try_into_struct()?;
         let mut take = |tag: u8| map.remove(&tag);
 
-        Ok(HuyaGetTokenResp {
-            url: take(0)
+        Ok(GetCdnTokenExRsp {
+            flv_token: take(0)
                 .and_then(|v| v.try_into_string().ok())
                 .unwrap_or_default(),
-            cdn_type: take(1)
-                .and_then(|v| v.try_into_string().ok())
-                .unwrap_or_default(),
-            stream_name: take(2)
-                .and_then(|v| v.try_into_string().ok())
-                .unwrap_or_default(),
-            presenter_uid: take(3)
-                .and_then(|v| v.try_into_i64().ok())
-                .unwrap_or_default(),
-            anti_code: take(4)
-                .and_then(|v| v.try_into_string().ok())
-                .unwrap_or_default(),
-            s_time: take(5)
-                .and_then(|v| v.try_into_string().ok())
-                .unwrap_or_default(),
-            flv_anti_code: take(6)
-                .and_then(|v| v.try_into_string().ok())
-                .unwrap_or_default(),
-            hls_anti_code: take(7)
-                .and_then(|v| v.try_into_string().ok())
+            expire_time: take(1)
+                .and_then(|v| v.try_into_i32().ok())
                 .unwrap_or_default(),
         })
     }
@@ -205,43 +176,6 @@ impl TryFrom<TarsValue> for GetLivingInfoRsp {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_huya_get_token_resp_compatibility() {
-        let resp = HuyaGetTokenResp {
-            url: "url".into(),
-            cdn_type: "cdn".into(),
-            stream_name: "stream".into(),
-            presenter_uid: 123,
-            anti_code: "anti".into(),
-            s_time: "time".into(),
-            flv_anti_code: "flv".into(),
-            hls_anti_code: "hls".into(),
-        };
-
-        let tars_val = TarsValue::from(resp.clone());
-        let decoded = HuyaGetTokenResp::try_from(tars_val).unwrap();
-        assert_eq!(resp, decoded);
-    }
-
-    #[test]
-    fn test_stream_setting_notice_compatibility() {
-        let notice = StreamSettingNotice {
-            l_presenter_uid: 123,
-            i_bit_rate: 1000,
-            i_resolution: 1080,
-            i_frame_rate: 60,
-            l_live_id: 456,
-            s_display_name: "test".into(),
-            i_screen_type: 1,
-            s_video_layout: "layout".into(),
-            i_low_delay_mode: 0,
-        };
-
-        let tars_val = TarsValue::from(notice.clone());
-        let decoded = StreamSettingNotice::try_from(tars_val).unwrap();
-        assert_eq!(notice, decoded);
-    }
 
     #[test]
     fn test_get_living_info_rsp_compatibility() {

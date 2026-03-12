@@ -10,8 +10,10 @@ use tars_codec::{
     types::{TarsMessage, TarsRequestHeader, TarsValue},
 };
 
-use super::responses::{GetLivingInfoRsp, HuyaGetTokenResp};
-use super::types::{GetCdnTokenInfoReq, GetLivingInfoReq, HuyaUserId};
+use crate::extractor::platforms::huya::GetLivingInfoRsp;
+
+use super::responses::GetCdnTokenExRsp;
+use super::types::{GetCdnTokenExReq, GetLivingInfoReq, HuyaUserId};
 
 pub(crate) fn build_get_living_info_request(
     presenter_uid: i64,
@@ -48,15 +50,11 @@ pub(crate) fn build_get_living_info_request(
 
 pub fn build_get_cdn_token_info_request(
     stream_name: &str,
-    cdn_type: &str,
-    presenter_uid: i64,
+    flv_url: &str,
 ) -> Result<Bytes, TarsError> {
-    let req = GetCdnTokenInfoReq::new(
-        String::new(),
-        stream_name.to_owned(),
-        cdn_type.to_owned(),
-        presenter_uid,
-    );
+    let req = GetCdnTokenExReq::new()
+        .with_stream_name(stream_name.to_owned())
+        .with_flv_url(flv_url.to_owned());
     let mut body = FxHashMap::default();
     body.insert(
         String::from("tReq"),
@@ -70,7 +68,7 @@ pub fn build_get_cdn_token_info_request(
             message_type: 0,
             request_id: next_request_id(),
             servant_name: String::from("liveui"),
-            func_name: String::from("getCdnTokenInfo"),
+            func_name: String::from("getCdnTokenInfoEx"),
             timeout: 0,
             context: FxHashMap::default(),
             status: FxHashMap::default(),
@@ -124,9 +122,9 @@ pub fn decode_get_living_info_response(bytes: Bytes) -> Result<GetLivingInfoRsp,
     GetLivingInfoRsp::try_from(tars_value)
 }
 
-pub fn decode_get_cdn_token_info_response(bytes: Bytes) -> Result<HuyaGetTokenResp, TarsError> {
+pub fn decode_get_cdn_token_info_response(bytes: Bytes) -> Result<GetCdnTokenExRsp, TarsError> {
     let message = decode_response_zero_copy(bytes)?;
     let resp_bytes = message.body.get("tRsp").ok_or(TarsError::Unknown)?;
     let tars_value = from_bytes(resp_bytes.clone())?;
-    HuyaGetTokenResp::try_from(tars_value)
+    GetCdnTokenExRsp::try_from(tars_value)
 }

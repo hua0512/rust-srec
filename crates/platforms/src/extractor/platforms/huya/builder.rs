@@ -50,11 +50,13 @@ pub struct Huya {
 
 impl Huya {
     const HUYA_URL: &'static str = "https://www.huya.com";
-    const WUP_URL: &'static str = "https://wup.huya.com";
+    const WUP_URL: &'static str = "https://cdn.wup.huya.com";
     const MP_URL: &'static str = "https://mp.huya.com/cache.php";
     // WUP User-Agent for Huya
     const WUP_UA: &'static str =
         "HYSDK(Windows,30000002)_APP(pc_exe&7080002&official)_SDK(trans&2.34.0.5795)";
+
+    const PC_EXE_VER: &'static str = "pc_exe&7080002&official";
 
     pub fn new(
         platform_url: String,
@@ -161,10 +163,16 @@ impl Huya {
         }
     }
 
-    /// Extract CDN type from extras JSON
-    fn extract_cdn_from_extras(extras: &serde_json::Value) -> String {
-        extras_get_str(Some(extras), "cdn")
-            .unwrap_or("AL")
+    // / Extract CDN type from extras JSON
+    // fn extract_cdn_from_extras(extras: &serde_json::Value) -> String {
+    //     extras_get_str(Some(extras), "cdn")
+    //         .unwrap_or("AL")
+    //         .to_owned()
+    // }
+
+    fn extract_flv_url_from_extras(extras: &serde_json::Value) -> String {
+        extras_get_str(Some(extras), "flv_url")
+            .unwrap_or("")
             .to_owned()
     }
 
@@ -594,6 +602,7 @@ impl Huya {
             let extras = serde_json::json!({
                 "cdn": stream_info.s_cdn_type,
                 "stream_name": stream_name,
+                "flv_url": stream_info.s_flv_url,
                 "presenter_uid": presenter_uid.to_string(),
                 "default_bitrate": default_bitrate.to_string(),
             });
@@ -717,49 +726,8 @@ impl Huya {
 
     /// Get living info via WUP using presenter UID
     async fn get_living_info_wup(&self, lp: i64) -> Result<GetLivingInfoRsp, ExtractorError> {
-        let ua = format!(
-            "webh5&{}&websocket",
-            chrono::Utc::now().format("%y%m%d%H%M")
-        );
         let device = "chrome";
-        let request_body = tars::build_get_living_info_request(lp, &ua, device).map_err(|e| {
-            ExtractorError::ValidationError(format!(
-                "Failed to build getLivingInfo request: {:?}",
-                e
-            ))
-        })?;
-
-        let response = self
-            .extractor
-            .post(Self::WUP_URL)
-            .body(request_body)
-            .send()
-            .await?;
-        let response = Self::check_http_response(response).await?;
-        let response_bytes = response.bytes().await?;
-
-        let living_info = tars::decode_get_living_info_response(response_bytes).map_err(|e| {
-            ExtractorError::ValidationError(format!(
-                "Failed to decode getLivingInfo response: {:?}",
-                e
-            ))
-        })?;
-
-        Ok(living_info)
-    }
-
-    /// Get living info via WUP using room ID (numeric ID from URL)
-    /// This avoids the need to parse the web page for presenter UID
-    async fn get_living_info_by_room_id_wup(
-        &self,
-        room_id: i64,
-    ) -> Result<GetLivingInfoRsp, ExtractorError> {
-        let ua = format!(
-            "webh5&{}&websocket",
-            chrono::Utc::now().format("%y%m%d%H%M")
-        );
-        let device = "chrome";
-        let request_body = tars::build_get_living_info_by_room_id_request(room_id, &ua, device)
+        let request_body = tars::build_get_living_info_request(lp, Self::PC_EXE_VER, device)
             .map_err(|e| {
                 ExtractorError::ValidationError(format!(
                     "Failed to build getLivingInfo request: {:?}",
@@ -786,15 +754,52 @@ impl Huya {
         Ok(living_info)
     }
 
+    /// Get living info via WUP using room ID (numeric ID from URL)
+    /// This avoids the need to parse the web page for presenter UID
+    async fn get_living_info_by_room_id_wup(
+        &self,
+        room_id: i64,
+    ) -> Result<GetLivingInfoRsp, ExtractorError> {
+        let device = "chrome";
+        let request_body =
+            tars::build_get_living_info_by_room_id_request(room_id, Self::PC_EXE_VER, device)
+                .map_err(|e| {
+                    ExtractorError::ValidationError(format!(
+                        "Failed to build getLivingInfo request: {:?}",
+                        e
+                    ))
+                })?;
+
+        let response = self
+            .extractor
+            .post(Self::WUP_URL)
+            .body(request_body)
+            .send()
+            .await?;
+        let response = Self::check_http_response(response).await?;
+        let response_bytes = response.bytes().await?;
+
+        let living_info = tars::decode_get_living_info_response(response_bytes).map_err(|e| {
+            ExtractorError::ValidationError(format!(
+                "Failed to decode getLivingInfo response: {:?}",
+                e
+            ))
+        })?;
+
+        Ok(living_info)
+    }
+
     async fn get_stream_url_wup(
         &self,
         stream_info: &mut StreamInfo,
-        cdn: &str,
-        stream_name: &str,
         presenter_uid: i64,
+        stream_name: &str,
+        flv_url: &str,
     ) -> Result<(), ExtractorError> {
-        let request_body = tars::build_get_cdn_token_info_request(stream_name, cdn, presenter_uid)
-            .map_err(|e| {
+        //  http://al.flv.huya.com/src
+        // 1199643886212-1199643886212-5789661561920421888-2399287895880-10057-A-0-1
+        let request_body =
+            tars::build_get_cdn_token_info_request(stream_name, flv_url).map_err(|e| {
                 ExtractorError::ValidationError(format!(
                     "Failed to build getCdnTokenInfo request: {:?}",
                     e
@@ -813,18 +818,20 @@ impl Huya {
         let token_info = decode_get_cdn_token_info_response(response_bytes).map_err(|e| {
             ExtractorError::ValidationError(format!("Failed to decode WUP response: {:?}", e))
         })?;
+        // debug!("token_info: {:#?}", token_info);
 
-        if token_info.stream_name.is_empty() {
+        // wsSecret=787fbd35756215078b3343e1a1a2ca0b&wsTime=69b3281f&fm=RFdxOEJjSjNoNkRKdDZUWV8kMF8kMV8kMl8kMw%3D%3D&ctype=huya_webh5&fs=gctex
+        if token_info.flv_token.is_empty() {
             return Err(ExtractorError::ValidationError(format!(
-                "Failed to get stream name from WUP response: {:?}",
+                "Failed to get flv_token from WUP response: {:?}",
                 token_info
             )));
         }
 
         // Select anti-code based on stream format
-        let anti_code = match stream_info.stream_format {
-            StreamFormat::Flv => token_info.flv_anti_code,
-            StreamFormat::Hls => token_info.hls_anti_code,
+        let mut anti_code = match stream_info.stream_format {
+            StreamFormat::Flv => token_info.flv_token,
+            StreamFormat::Hls => token_info.flv_token,
             _ => {
                 return Err(ExtractorError::ValidationError(format!(
                     "Invalid stream format: {:?}",
@@ -832,6 +839,8 @@ impl Huya {
                 )));
             }
         };
+
+        anti_code = build_query(stream_name, &anti_code, Some(presenter_uid as u64), true)?;
 
         // Parse URL components
         let url = Url::parse(&stream_info.url)
@@ -931,11 +940,10 @@ impl PlatformExtractor for Huya {
             ExtractorError::ValidationError("Stream extras not found for WUP request".to_string())
         })?;
 
-        let cdn = Self::extract_cdn_from_extras(extras);
+        let flv_url = Self::extract_flv_url_from_extras(extras);
         let stream_name = Self::extract_stream_name_from_extras(extras)?;
         let presenter_uid = Self::extract_presenter_uid_from_extras(extras);
-
-        self.get_stream_url_wup(stream_info, &cdn, &stream_name, presenter_uid)
+        self.get_stream_url_wup(stream_info, presenter_uid, &stream_name, &flv_url)
             .await?;
 
         Ok(())
