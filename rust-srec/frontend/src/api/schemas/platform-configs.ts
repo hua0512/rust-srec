@@ -3,8 +3,7 @@ import { z } from 'zod';
 // Huya platform-specific configuration
 export const HuyaConfigSchema = z
   .object({
-    use_wup: z.boolean().nullable().optional(),
-    use_wup_v2: z.boolean().nullable().optional(),
+    api_mode: z.enum(['WUP', 'MP', 'WEB']).nullable().optional(),
     force_origin_quality: z.boolean().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })

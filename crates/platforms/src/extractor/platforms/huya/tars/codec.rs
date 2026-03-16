@@ -51,10 +51,12 @@ pub(crate) fn build_get_living_info_request(
 pub fn build_get_cdn_token_info_request(
     stream_name: &str,
     flv_url: &str,
+    id: HuyaUserId,
 ) -> Result<Bytes, TarsError> {
     let req = GetCdnTokenExReq::new()
         .with_stream_name(stream_name.to_owned())
-        .with_flv_url(flv_url.to_owned());
+        .with_flv_url(flv_url.to_owned())
+        .with_id(id);
     let mut body = FxHashMap::default();
     body.insert(
         String::from("tReq"),

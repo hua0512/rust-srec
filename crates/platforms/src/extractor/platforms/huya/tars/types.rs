@@ -846,6 +846,88 @@ impl TryFrom<TarsValue> for GetLivingInfoReq {
     }
 }
 
+// #[derive(Default, Debug, Clone, PartialEq)]
+// pub struct GetLivingStreamInfoReq {
+//     pub id: HuyaUserId,
+//     pub top_sid: i64,
+//     pub sub_sid: i64,
+//     pub presenter_uid: i64,
+//     pub trace_source: String,
+// }
+
+// impl GetLivingStreamInfoReq {
+//     pub fn new(
+//         id: HuyaUserId,
+//         top_sid: i64,
+//         sub_sid: i64,
+//         presenter_uid: i64,
+//         trace_source: String,
+//     ) -> Self {
+//         Self {
+//             id,
+//             top_sid,
+//             sub_sid,
+//             presenter_uid,
+//             trace_source,
+//         }
+//     }
+
+//     pub fn with_source(mut self, trace_source: String) -> Self {
+//         self.trace_source = trace_source;
+//         self
+//     }
+
+//     pub fn with_sid(mut self, top_sid: i64, sub_sid: i64) -> Self {
+//         self.top_sid = top_sid;
+//         self.sub_sid = sub_sid;
+//         self
+//     }
+
+//     pub fn with_presenter_uid(mut self, presenter_uid: i64) -> Self {
+//         self.presenter_uid = presenter_uid;
+//         self
+//     }
+// }
+
+// impl From<GetLivingStreamInfoReq> for TarsValue {
+//     fn from(req: GetLivingStreamInfoReq) -> Self {
+//         let mut struct_map = FxHashMap::default();
+//         struct_map.insert(0, req.id.into());
+//         struct_map.insert(1, TarsValue::Long(req.top_sid));
+//         struct_map.insert(2, TarsValue::Long(req.sub_sid));
+//         struct_map.insert(3, TarsValue::Long(req.presenter_uid));
+//         struct_map.insert(4, TarsValue::String(req.trace_source));
+//         TarsValue::Struct(struct_map)
+//     }
+// }
+
+// impl TryFrom<TarsValue> for GetLivingStreamInfoReq {
+//     type Error = TarsError;
+
+//     fn try_from(value: TarsValue) -> Result<Self, Self::Error> {
+//         let mut map = value.try_into_struct()?;
+//         let mut take = |tag: u8| map.remove(&tag);
+
+//         Ok(GetLivingStreamInfoReq {
+//             id: take(0)
+//                 .and_then(|v| HuyaUserId::try_from(v).ok())
+//                 .unwrap_or_default(),
+//             top_sid: take(1)
+//                 .and_then(|v| v.try_into_i64().ok())
+//                 .unwrap_or_default(),
+//             sub_sid: take(2)
+//                 .and_then(|v| v.try_into_i64().ok())
+//                 .unwrap_or_default(),
+//             presenter_uid: take(3)
+//                 .and_then(|v| v.try_into_i64().ok())
+//                 .unwrap_or_default(),
+//             trace_source: take(4)
+//                 .and_then(|v| v.try_into_string().ok())
+//                 .unwrap_or_default(),
+//         })
+//     }
+// }
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,12 +10,9 @@ use serde_json::Value;
 /// Huya platform-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HuyaConfig {
-    /// Use WUP protocol for extraction (default: true)
+    /// Extraction API mode (WEB, MP, WUP) (default: "WEB")
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub use_wup: Option<bool>,
-    /// Use WUP v2 (computed query params) (default: false)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub use_wup_v2: Option<bool>,
+    pub api_mode: Option<String>,
     /// Force origin quality stream (default: false)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub force_origin_quality: Option<bool>,
@@ -124,10 +121,10 @@ pub struct TwitcastingConfig {
 /// use serde_json::json;
 /// use platforms_parser::extractor::platform_configs::merge_platform_extras;
 ///
-/// let base = Some(json!({"use_wup": true, "force_origin_quality": false}));
+/// let base = Some(json!({"api_mode": "WUP", "force_origin_quality": false}));
 /// let overlay = Some(json!({"force_origin_quality": true}));
 /// let merged = merge_platform_extras(base, overlay);
-/// // Result: {"use_wup": true, "force_origin_quality": true}
+/// // Result: {"api_mode": "WUP", "force_origin_quality": true}
 /// ```
 pub fn merge_platform_extras(base: Option<Value>, overlay: Option<Value>) -> Option<Value> {
     match (base, overlay) {
@@ -161,9 +158,9 @@ mod tests {
 
     #[test]
     fn test_merge_base_only() {
-        let base = json!({"use_wup": true});
+        let base = json!({"api_mode": "WUP"});
         let result = merge_platform_extras(Some(base), None);
-        assert_eq!(result, Some(json!({"use_wup": true})));
+        assert_eq!(result, Some(json!({"api_mode": "WUP"})));
     }
 
     #[test]
@@ -175,33 +172,32 @@ mod tests {
 
     #[test]
     fn test_merge_overlay_wins() {
-        let base = json!({"use_wup": true, "force_origin_quality": false});
+        let base = json!({"api_mode": "WUP", "force_origin_quality": false});
         let overlay = json!({"force_origin_quality": true});
         let result = merge_platform_extras(Some(base), Some(overlay));
         assert_eq!(
             result,
-            Some(json!({"use_wup": true, "force_origin_quality": true}))
+            Some(json!({"api_mode": "WUP", "force_origin_quality": true}))
         );
     }
 
     #[test]
     fn test_merge_null_values_ignored() {
-        let base = json!({"use_wup": true, "force_origin_quality": false});
-        let overlay = json!({"force_origin_quality": null, "use_wup_v2": true});
+        let base = json!({"api_mode": "WUP", "force_origin_quality": false});
+        let overlay = json!({"force_origin_quality": null, "api_mode": "MP"});
         let result = merge_platform_extras(Some(base), Some(overlay));
         assert_eq!(
             result,
-            Some(json!({"use_wup": true, "force_origin_quality": false, "use_wup_v2": true}))
+            Some(json!({"api_mode": "MP", "force_origin_quality": false}))
         );
     }
 
     #[test]
     fn test_huya_config_deserialize() {
-        let json = json!({"use_wup": false, "force_origin_quality": true, "end_stream_on_danmu_stream_closed": false});
+        let json = json!({"api_mode": "MP", "force_origin_quality": true, "end_stream_on_danmu_stream_closed": false});
         let config: HuyaConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(config.use_wup, Some(false));
+        assert_eq!(config.api_mode, Some("MP".to_string()));
         assert_eq!(config.force_origin_quality, Some(true));
-        assert_eq!(config.use_wup_v2, None);
         assert_eq!(config.end_stream_on_danmu_stream_closed, Some(false));
     }
 
