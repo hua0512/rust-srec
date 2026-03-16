@@ -35,7 +35,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { getMediaUrl } from '@/lib/url';
 import { formatDuration } from '@/lib/format';
-import { BackendApiError } from '@/server/api';
+import { BackendApiError } from '@/lib/api-error';
 import { SessionHeader } from '@/components/sessions/session-header';
 import { OverviewTab } from '@/components/sessions/overview-tab';
 import { RecordingsTab } from '@/components/sessions/recordings-tab';
