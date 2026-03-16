@@ -61,7 +61,7 @@ msgid "{0, plural, one {# done} other {# done}}"
 msgstr "{0, plural, other {# 已完成}}"
 
 #. placeholder {0}: job.execution_info.log_error_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:708
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:711
 msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, other {# 个错误}}"
 
@@ -71,7 +71,7 @@ msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, other {# 失败}}"
 
 #. placeholder {0}: job.execution_info.log_lines_total
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:728
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:731
 msgid "{0, plural, one {# Line} other {# Lines}}"
 msgstr "{0, plural, other {# 行}}"
 
@@ -84,7 +84,7 @@ msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, other {# 步}}"
 
 #. placeholder {0}: job.execution_info.log_warn_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:718
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:721
 msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, other {# 个警告}}"
 
@@ -154,7 +154,7 @@ msgstr "0（无）- 9（最佳）"
 msgid "0 = Unlimited"
 msgstr "0 = 不限"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1772
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1785
 msgid "0 disables the limit."
 msgstr "0 表示不限制。"
 
@@ -210,7 +210,7 @@ msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:852
+#: src/components/config/engines/forms/mesio-hls-form.tsx:872
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "接受无效证书（默认：关闭）"
 
@@ -241,7 +241,7 @@ msgstr "正在录制"
 msgid "Active Recordings"
 msgstr "正在录制"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1004
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1024
 msgid "Adaptive Refresh (Default: On)"
 msgstr "自适应刷新（默认：开）"
 
@@ -334,7 +334,7 @@ msgstr "添加新主播"
 msgid "Add Override"
 msgstr "添加覆盖项"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:127
+#: src/components/config/engines/forms/mesio-hls-form.tsx:129
 msgid "Add parameter"
 msgstr "添加参数"
 
@@ -371,7 +371,7 @@ msgstr "添加自定义标签"
 msgid "Additional arguments appended to the command."
 msgstr "附加到命令的额外参数。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1007
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1027
 msgid "Adjust rate based on target duration"
 msgstr "根据目标时长调整速率"
 
@@ -460,10 +460,6 @@ msgstr "所有类型"
 msgid "Allowed Extensions"
 msgstr "允许的扩展名"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:73
-msgid "Alternative protocol variant for live stream extraction."
-msgstr "用于直播提取的备选协议变体。"
-
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:177
 msgid "An error occurred"
 msgstr "发生错误"
@@ -471,6 +467,10 @@ msgstr "发生错误"
 #: src/components/config/engines/forms/streamlink-form.tsx:161
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:80
+msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
+msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:138
 msgid "API Request Retries"
@@ -484,7 +484,7 @@ msgstr "外观与样式"
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:702
+#: src/components/config/engines/forms/mesio-hls-form.tsx:722
 msgid "Appended to all HLS requests. Useful for signed URLs or CDN routing."
 msgstr "会追加到所有 HLS 请求中。适用于签名 URL 或 CDN 路由。"
 
@@ -524,9 +524,9 @@ msgstr "你确定要删除 {0} 个会话吗？此操作无法撤销。"
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "确定要删除模板“{0}”吗？此操作无法撤销。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:398
-msgid "Are you sure you want to delete this job?"
-msgstr "确定要删除该处理任务吗？"
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:400
+msgid "Are you sure you want to delete this job? This will permanently remove it from your list."
+msgstr "确定要删除此任务吗？此操作将永久从列表中删除。"
 
 #: src/components/sessions/session-card.tsx:76
 msgid "Are you sure you want to delete this session? This action cannot be undone."
@@ -601,7 +601,7 @@ msgstr "提取音频"
 msgid "Audio Extraction"
 msgstr "音频提取"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:464
+#: src/components/config/engines/forms/mesio-hls-form.tsx:496
 msgid "Audio only"
 msgstr "仅音频"
 
@@ -631,7 +631,7 @@ msgstr "认证"
 msgid "Authentication & Setup"
 msgstr "身份验证与设置"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:748
+#: src/components/config/engines/forms/mesio-hls-form.tsx:768
 msgid "Auto (Default)"
 msgstr "自动（默认）"
 
@@ -694,7 +694,7 @@ msgstr "返回"
 msgid "Back to Details"
 msgstr "返回详情"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:287
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:288
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:143
 msgid "Back to Jobs"
 msgstr "返回处理任务列表"
@@ -734,7 +734,7 @@ msgstr "备份"
 msgid "Backup & Restore"
 msgstr "备份与恢复"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1893
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1906
 msgid "Base"
 msgstr "基础"
 
@@ -772,7 +772,7 @@ msgstr "主播的基本设置。"
 msgid "Batch parse error: {0}"
 msgstr "批量解析失败：{0}"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1543
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1556
 msgid "Batch Scheduler"
 msgstr "批处理调度"
 
@@ -780,7 +780,7 @@ msgstr "批处理调度"
 msgid "Batch URLs"
 msgstr "批量 URL"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1570
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1583
 msgid "Batch Window (ms)"
 msgstr "批处理窗口（毫秒）"
 
@@ -856,7 +856,7 @@ msgstr "浏览器通知"
 msgid "Browser Status"
 msgstr "浏览器状态"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1822
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1835
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
 
@@ -872,11 +872,11 @@ msgstr "字节"
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1951
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1964
 msgid "Cache"
 msgstr "缓存"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1323
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1343
 msgid "Caching"
 msgstr "缓存"
 
@@ -900,7 +900,7 @@ msgstr "缓存"
 msgid "Cancel"
 msgstr "取消"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:388
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:389
 msgid "Cancel Execution"
 msgstr "取消执行"
 
@@ -972,7 +972,7 @@ msgstr "需要修改密码"
 msgid "Changing Password..."
 msgstr "正在修改密码..."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1114
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1134
 msgid "Channel buffer size multiplier for processed segments."
 msgstr "已处理分段的通道缓冲倍数。"
 
@@ -1095,7 +1095,7 @@ msgstr "正在克隆..."
 msgid "Close"
 msgstr "关闭"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:461
+#: src/components/config/engines/forms/mesio-hls-form.tsx:493
 msgid "Closest to bitrate"
 msgstr "最接近目标码率"
 
@@ -1137,8 +1137,8 @@ msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:222
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:296
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:461
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:332
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:645
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:333
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:648
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:111
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:409
 msgid "Completed"
@@ -1281,7 +1281,7 @@ msgstr "确认新密码"
 msgid "Confirm Password"
 msgstr "确认密码"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:643
+#: src/components/config/engines/forms/mesio-hls-form.tsx:663
 msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
 
@@ -1314,7 +1314,7 @@ msgstr "连续失败"
 msgid "Container"
 msgstr "容器"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:426
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:429
 msgid "Context"
 msgstr "上下文"
 
@@ -1403,8 +1403,8 @@ msgstr "复制/移动"
 msgid "Could not connect to the server. Please check your connection."
 msgstr "无法连接到服务器，请检查网络连接。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:299
-#: src/components/config/engines/forms/mesio-hls-form.tsx:346
+#: src/components/config/engines/forms/mesio-hls-form.tsx:323
+#: src/components/config/engines/forms/mesio-hls-form.tsx:370
 msgid "Count"
 msgstr "次数"
 
@@ -1510,7 +1510,7 @@ msgstr "创建你的第一个工作流，用于定义录制内容的处理步骤
 
 #: src/components/config/global/backup-restore-card.tsx:178
 #: src/components/pipeline/outputs/output-card.tsx:189
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:631
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:634
 msgid "Created"
 msgstr "已创建"
 
@@ -1584,8 +1584,8 @@ msgstr "当前密码"
 msgid "Current Password"
 msgstr "当前密码"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:196
-#: src/components/config/engines/forms/mesio-hls-form.tsx:473
+#: src/components/config/engines/forms/mesio-hls-form.tsx:205
+#: src/components/config/engines/forms/mesio-hls-form.tsx:505
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:74
@@ -1731,15 +1731,15 @@ msgstr "日期范围："
 msgid "Day (01-31)"
 msgstr "天 (01-31)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1941
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1954
 msgid "Decryption"
 msgstr "解密"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1474
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1493
 msgid "Decryption Key TTL (ms)"
 msgstr "解密密钥 TTL（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1235
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1255
 msgid "Decryption Keys"
 msgstr "解密密钥"
 
@@ -1748,9 +1748,10 @@ msgstr "解密密钥"
 msgid "default"
 msgstr "默认"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:190
-#: src/components/config/engines/forms/mesio-hls-form.tsx:275
-#: src/components/config/engines/forms/mesio-hls-form.tsx:452
+#: src/components/config/engines/forms/mesio-hls-form.tsx:199
+#: src/components/config/engines/forms/mesio-hls-form.tsx:299
+#: src/components/config/engines/forms/mesio-hls-form.tsx:484
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:61
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
@@ -1765,7 +1766,7 @@ msgstr "默认引擎"
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1745
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1758
 msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 msgstr "默认使用 Mesio 内置的直播停顿超时；禁用表示无限等待。"
 
@@ -1826,7 +1827,7 @@ msgstr "删除引擎？"
 msgid "Delete File"
 msgstr "删除文件"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:406
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:409
 msgid "Delete Job"
 msgstr "删除处理任务"
 
@@ -1960,7 +1961,7 @@ msgstr "命令执行后扫描新文件的目录"
 msgid "Disable"
 msgstr "禁用"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:193
+#: src/components/config/engines/forms/mesio-hls-form.tsx:202
 #: src/components/streamers/card/use-streamer-status.tsx:41
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:509
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:541
@@ -2024,7 +2025,7 @@ msgstr "下载备份"
 msgid "Download complete"
 msgstr "下载完成"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1079
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1099
 msgid "Download Concurrency"
 msgstr "下载并发数"
 
@@ -2077,12 +2078,12 @@ msgstr "双格式输出"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:569
 #: src/components/streamers/edit/active-download-card.tsx:153
 #: src/components/streamers/progress-indicator.tsx:124
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:588
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:591
 msgid "Duration"
 msgstr "时长"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:322
-#: src/components/config/engines/forms/mesio-hls-form.tsx:366
+#: src/components/config/engines/forms/mesio-hls-form.tsx:346
+#: src/components/config/engines/forms/mesio-hls-form.tsx:390
 msgid "Duration (ms)"
 msgstr "时长（毫秒）"
 
@@ -2238,11 +2239,11 @@ msgstr "启用监控"
 msgid "Enable or disable this webhook"
 msgstr "启用或禁用此 Webhook"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1807
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1820
 msgid "Enable Output Metrics (Default: On)"
 msgstr "启用输出指标（默认：开）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1527
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1540
 msgid "Enable Performance Metrics (Default: On)"
 msgstr "启用性能指标（默认：开）"
 
@@ -2264,11 +2265,11 @@ msgstr "启用弹幕/聊天消息与视频一起录制。"
 msgid "Enabled"
 msgstr "启用"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1625
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1638
 msgid "Enabled (Default: Off)"
 msgstr "启用（默认：关闭）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1558
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1571
 msgid "Enabled (Default: On)"
 msgstr "启用（默认：开）"
 
@@ -2395,11 +2396,11 @@ msgid "Error"
 msgstr "错误"
 
 #: src/components/streamers/card/use-streamer-status.tsx:152
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:671
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:674
 msgid "Error Details"
 msgstr "错误详情"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:246
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:247
 msgid "Error Loading Job"
 msgstr "加载处理任务失败"
 
@@ -2436,7 +2437,7 @@ msgstr "加载工作流失败"
 msgid "Error: Could not load preset details."
 msgstr "错误：无法加载预设详情。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:617
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:620
 msgid "ETA"
 msgstr "预计剩余时间"
 
@@ -2575,6 +2576,10 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:46
+msgid "Extraction API Mode"
+msgstr "API 模式"
+
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:40
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:27
@@ -2590,7 +2595,7 @@ msgstr "ey..."
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:367
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:224
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:463
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:334
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:335
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:114
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:416
 msgid "Failed"
@@ -2605,9 +2610,9 @@ msgstr "已开始重试失败的步骤"
 msgid "Failed to autofill name"
 msgstr "自动填充名称失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:205
-msgid "Failed to cancel job"
-msgstr "取消处理任务失败"
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:206
+msgid "Failed to cancel and remove job"
+msgstr "取消并删除任务失败"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:98
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:263
@@ -2676,7 +2681,7 @@ msgstr "删除渠道失败"
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:215
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:216
 msgid "Failed to delete job"
 msgstr "删除处理任务失败"
 
@@ -2800,7 +2805,7 @@ msgstr "刷新凭据失败"
 msgid "Failed to retry all failed pipelines"
 msgstr "重试所有失败的处理任务失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:194
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:195
 msgid "Failed to retry job"
 msgstr "重试处理任务失败"
 
@@ -2901,7 +2906,7 @@ msgstr "获取"
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1921
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1934
 msgid "Fetcher"
 msgstr "获取器"
 
@@ -3049,7 +3054,7 @@ msgstr "FLV 流修复管道"
 msgid "FLV Tuning"
 msgstr "FLV 调优"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:834
+#: src/components/config/engines/forms/mesio-hls-form.tsx:854
 msgid "Follow Redirects (Default: On)"
 msgstr "跟随重定向（默认：开）"
 
@@ -3057,11 +3062,11 @@ msgstr "跟随重定向（默认：开）"
 msgid "Fonts Directory"
 msgstr "字体目录"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:870
+#: src/components/config/engines/forms/mesio-hls-form.tsx:890
 msgid "Force IPv4 (Default: Off)"
 msgstr "强制 IPv4（默认：关闭）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:888
+#: src/components/config/engines/forms/mesio-hls-form.tsx:908
 msgid "Force IPv6 (Default: Off)"
 msgstr "强制 IPv6（默认：关闭）"
 
@@ -3070,7 +3075,7 @@ msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:53
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:113
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:109
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
@@ -3079,7 +3084,7 @@ msgstr "强制原画质量"
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:116
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:112
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "强制请求可用的最高原画质量（直连流）。"
 
@@ -3118,7 +3123,7 @@ msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和
 msgid "Full Processing"
 msgstr "全流程处理"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1728
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1741
 msgid "Gap Eval Interval (ms)"
 msgstr "缺口评估间隔（毫秒）"
 
@@ -3204,7 +3209,7 @@ msgstr "全局配置"
 msgid "Global Default"
 msgstr "全局默认"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:623
+#: src/components/config/engines/forms/mesio-hls-form.tsx:643
 msgid "Global Timeout (ms)"
 msgstr "全局超时 (ms)"
 
@@ -3213,7 +3218,7 @@ msgid "Go back"
 msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:254
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:255
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:195
 msgid "Go Back"
 msgstr "返回"
@@ -3244,7 +3249,7 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:771
+#: src/components/config/engines/forms/mesio-hls-form.tsx:791
 msgid "H2 Keep-Alive (ms)"
 msgstr "H2 保活（毫秒）"
 
@@ -3278,7 +3283,7 @@ msgstr "健康"
 msgid "Healthy"
 msgstr "正常"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:527
+#: src/components/config/engines/forms/mesio-hls-form.tsx:559
 msgid "Height"
 msgstr "高度"
 
@@ -3321,7 +3326,7 @@ msgstr "高质量 MP3"
 msgid "High+"
 msgstr "高+"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:455
+#: src/components/config/engines/forms/mesio-hls-form.tsx:487
 msgid "Highest bitrate"
 msgstr "最高码率"
 
@@ -3355,7 +3360,7 @@ msgstr "钩子"
 msgid "Hour (00-23)"
 msgstr "小时 (00-23)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1370
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1390
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "解密/处理后的分段在缓存中保留的时间。"
 
@@ -3375,15 +3380,15 @@ msgstr "HTTP 中间件"
 msgid "HTTP requests"
 msgstr "HTTP 请求"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:735
+#: src/components/config/engines/forms/mesio-hls-form.tsx:755
 msgid "HTTP Version Preference"
 msgstr "HTTP 版本偏好"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:754
+#: src/components/config/engines/forms/mesio-hls-form.tsx:774
 msgid "HTTP/1.1 Only"
 msgstr "仅 HTTP/1.1"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:751
+#: src/components/config/engines/forms/mesio-hls-form.tsx:771
 msgid "HTTP/2 Only"
 msgstr "仅 HTTP/2"
 
@@ -3525,7 +3530,7 @@ msgstr "初始"
 msgid "Initial Delay (ms)"
 msgstr "初始延迟（ms）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:914
+#: src/components/config/engines/forms/mesio-hls-form.tsx:934
 msgid "Initial Fetch Timeout (ms)"
 msgstr "初始获取超时（ms）"
 
@@ -3549,7 +3554,7 @@ msgstr "输入参数"
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:501
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:504
 msgid "Input Path"
 msgstr "输入路径"
 
@@ -3584,7 +3589,7 @@ msgid "Internal"
 msgstr "内部"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:226
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:336
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:337
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:117
 msgid "Interrupted"
 msgstr "已中断"
@@ -3621,9 +3626,9 @@ msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 msgid "Jitter"
 msgstr "抖动"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:200
-msgid "Job cancelled"
-msgstr "处理任务已取消"
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:201
+msgid "Job cancelled and removed"
+msgstr "已取消并删除任务"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:197
 msgid "Job Configuration"
@@ -3633,11 +3638,11 @@ msgstr "处理任务配置"
 msgid "Job configurations"
 msgstr "任务配置"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:211
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:212
 msgid "Job deleted"
 msgstr "处理任务已删除"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:316
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:317
 msgid "Job Details"
 msgstr "处理任务详情"
 
@@ -3645,7 +3650,7 @@ msgstr "处理任务详情"
 msgid "Job limits and engine settings."
 msgstr "任务限制与引擎设置。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:249
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:250
 msgid "Job not found"
 msgstr "未找到处理任务"
 
@@ -3653,7 +3658,7 @@ msgstr "未找到处理任务"
 msgid "Job Presets"
 msgstr "任务预设"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:189
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:190
 msgid "Job retry initiated"
 msgstr "已开始重试处理任务"
 
@@ -3703,7 +3708,7 @@ msgstr "如果一个文件上传失败，继续上传其他文件"
 msgid "Key"
 msgstr "键"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1393
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1413
 msgid "Key Cache TTL (ms)"
 msgstr "密钥缓存 TTL（毫秒）"
 
@@ -3788,7 +3793,7 @@ msgstr "直播"
 msgid "LIVE"
 msgstr "直播中"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1781
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1794
 msgid "Live Gap Strategy"
 msgstr "直播缺口策略"
 
@@ -3805,7 +3810,7 @@ msgstr "实时轮询通知已启用"
 msgid "Live Preview"
 msgstr "实时预览"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:934
+#: src/components/config/engines/forms/mesio-hls-form.tsx:954
 msgid "Live Refresh Interval (ms)"
 msgstr "直播刷新间隔 (ms)"
 
@@ -3818,7 +3823,7 @@ msgstr "已加载模板：{0}"
 msgid "Loading editor components..."
 msgstr "正在加载编辑器组件..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:747
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:750
 msgid "Loading logs..."
 msgstr "正在加载日志..."
 
@@ -3827,7 +3832,7 @@ msgstr "正在加载日志..."
 msgid "Loading more..."
 msgstr "正在加载更多..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:784
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:787
 msgid "Loading older logs..."
 msgstr "正在加载历史日志..."
 
@@ -3930,7 +3935,7 @@ msgstr "低"
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:458
+#: src/components/config/engines/forms/mesio-hls-form.tsx:490
 msgid "Lowest bitrate"
 msgstr "最低码率"
 
@@ -3990,11 +3995,11 @@ msgstr "已全部标记为已读"
 msgid "Match Strategy"
 msgstr "匹配策略"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:470
+#: src/components/config/engines/forms/mesio-hls-form.tsx:502
 msgid "Matching resolution"
 msgstr "匹配分辨率"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1590
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1603
 msgid "Max Batch Size"
 msgstr "最大批处理数量"
 
@@ -4002,11 +4007,11 @@ msgstr "最大批处理数量"
 msgid "Max Bitrate (bps)"
 msgstr "最大比特率（bps）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1658
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1671
 msgid "Max Buffer Before Skip"
 msgstr "最大缓冲区（跳过前）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1851
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1864
 msgid "Max Bytes"
 msgstr "最大字节数"
 
@@ -4031,11 +4036,11 @@ msgstr "最大时长"
 msgid "Max HEVC Compression"
 msgstr "最大 HEVC 压缩"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:791
+#: src/components/config/engines/forms/mesio-hls-form.tsx:811
 msgid "Max Idle per Host"
 msgstr "每主机最大空闲连接数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1048
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1068
 msgid "Max Interval (ms)"
 msgstr "最大间隔（毫秒）"
 
@@ -4056,7 +4061,7 @@ msgstr "元数据获取的最大重试次数。"
 msgid "Max Part Size"
 msgstr "最大分片大小"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1761
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1774
 msgid "Max Pending Init Segments"
 msgstr "待处理初始化分段上限"
 
@@ -4064,11 +4069,11 @@ msgstr "待处理初始化分段上限"
 msgid "Max Quality Thumbnail"
 msgstr "最高质量缩略图"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:954
+#: src/components/config/engines/forms/mesio-hls-form.tsx:974
 msgid "Max Refresh Retries"
 msgstr "最大刷新重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1264
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1284
 #: src/components/config/shared/retry-policy-form.tsx:56
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
@@ -4076,20 +4081,20 @@ msgstr "最大刷新重试次数"
 msgid "Max Retries"
 msgstr "最大重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1197
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1304
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1217
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1324
 msgid "Max Retry Delay (ms)"
 msgstr "最大重试延迟（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1157
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1177
 msgid "Max Segment Retries"
 msgstr "最大分段重试次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1831
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1844
 msgid "Max Segments"
 msgstr "最大分段数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1743
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1756
 msgid "Max Stall Duration (ms)"
 msgstr "最大停顿时间（毫秒）"
 
@@ -4109,7 +4114,7 @@ msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 msgid "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
 msgstr "片段之间的最大空闲时间，超过此时间系统将开始新的录制会话，而不是继续当前会话。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1090
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1110
 msgid "Maximum number of concurrent segment downloads."
 msgstr "分段下载的最大并发数。"
 
@@ -4122,12 +4127,12 @@ msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
 #: src/components/streamers/edit/recent-sessions-list.tsx:103
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:469
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:480
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:472
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:483
 msgid "MB"
 msgstr "MB"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:611
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:614
 msgid "MB/s"
 msgstr "MB/s"
 
@@ -4180,7 +4185,7 @@ msgstr "请求方法"
 msgid "Min Bitrate (bps)"
 msgstr "最小比特率（bps）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1028
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1048
 msgid "Min Interval (ms)"
 msgstr "最小间隔（毫秒）"
 
@@ -4261,6 +4266,10 @@ msgstr "将文件移动到其他位置，并移除原始文件。"
 #: src/components/config/engines/forms/ffmpeg-form.tsx:101
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:65
+msgid "MP"
+msgstr "MP"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:91
 msgid "Multimedia Archive"
@@ -4422,7 +4431,7 @@ msgstr "无扩展名"
 msgid "No filters yet"
 msgstr "暂无过滤器"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:523
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:526
 msgid "No input paths"
 msgstr "没有输入路径"
 
@@ -4447,7 +4456,7 @@ msgstr "不限"
 msgid "No log files found"
 msgstr "未找到日志文件"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:796
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:799
 msgid "No logs available for this execution."
 msgstr "该执行记录暂无日志。"
 
@@ -4479,7 +4488,7 @@ msgstr "未配置模块"
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:558
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:561
 msgid "No output generated"
 msgstr "未生成输出"
 
@@ -4491,7 +4500,7 @@ msgstr "未找到媒体文件"
 msgid "No overrides configured"
 msgstr "未配置覆盖项"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:92
+#: src/components/config/engines/forms/mesio-hls-form.tsx:94
 msgid "No parameters configured."
 msgstr "未配置任何参数。"
 
@@ -4698,6 +4707,11 @@ msgstr "在数据库中保留已完成、失败或中断任务历史记录的天
 msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 msgstr "在数据库中保留通知事件日志的天数。这会影响“通知 → 事件”页面。"
 
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:67
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:73
+msgid "Numeric Room IDs Only"
+msgstr "仅限数字房间 ID"
+
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:42
 msgid "OAuth Token"
 msgstr "OAuth 令牌"
@@ -4732,8 +4746,7 @@ msgstr "离线检测"
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1408
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1516
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1428
 msgid "Offload Decryption (Default: On)"
 msgstr "解密下放到线程池（默认：开）"
 
@@ -4831,7 +4844,7 @@ msgstr "选项"
 msgid "Out of Space"
 msgstr "空间不足"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1969
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1982
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:164
 #: src/components/config/templates/template-card.tsx:161
@@ -4865,7 +4878,7 @@ msgstr "输出格式"
 msgid "Output Options"
 msgstr "输出选项"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:536
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:539
 msgid "Output Path"
 msgstr "输出路径"
 
@@ -5064,7 +5077,7 @@ msgstr "峰值/分钟"
 #: src/components/pipeline/dag-graph-view.tsx:390
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:457
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:328
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:329
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:394
 msgid "Pending"
@@ -5097,13 +5110,13 @@ msgstr "逐段处理管道"
 msgid "Per-Streamer"
 msgstr "按主播"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1960
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1973
 msgid "Perf"
 msgstr "性能"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:668
 #: src/components/sessions/overview-tab.tsx:188
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:581
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:584
 msgid "Performance"
 msgstr "性能"
 
@@ -5123,7 +5136,7 @@ msgstr "选择预设主题或导入自定义主题。"
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:444
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:447
 msgid "Pipeline"
 msgstr "处理管道"
 
@@ -5267,11 +5280,11 @@ msgstr "播放"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1902
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1915
 msgid "Playlist"
 msgstr "播放列表"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1434
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1453
 msgid "Playlist TTL (ms)"
 msgstr "播放列表 TTL（毫秒）"
 
@@ -5311,7 +5324,7 @@ msgstr "正在解析流 URL，请稍候。"
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:811
+#: src/components/config/engines/forms/mesio-hls-form.tsx:831
 msgid "Pool Idle Timeout (ms)"
 msgstr "连接池空闲超时（毫秒）"
 
@@ -5363,11 +5376,11 @@ msgstr "首选画质"
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1638
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1651
 msgid "Prefetch Count"
 msgstr "预取数量"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1609
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1622
 msgid "Prefetching"
 msgstr "预取"
 
@@ -5490,11 +5503,11 @@ msgstr "本地处理：重封装为 MP4，生成缩略图，移动到归档文�
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1103
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1123
 msgid "Processed Buffer Multiplier"
 msgstr "已处理缓冲倍数"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1359
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1379
 msgid "Processed Segment TTL (ms)"
 msgstr "已处理分段 TTL（毫秒）"
 
@@ -5502,7 +5515,7 @@ msgstr "已处理分段 TTL（毫秒）"
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:345
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:220
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:459
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:330
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:331
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:400
 msgid "Processing"
@@ -5516,7 +5529,7 @@ msgstr "处理行为"
 msgid "Processing nodes"
 msgstr "处理节点"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1931
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1944
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:143
 msgid "Processor"
 msgstr "处理器"
@@ -5537,7 +5550,7 @@ msgstr "进度："
 msgid "Protection Settings"
 msgstr "保护设置"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:26
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:33
 msgid "Protocol Settings"
 msgstr "协议设置"
 
@@ -5588,15 +5601,15 @@ msgstr "质量控制"
 msgid "Quality Rate"
 msgstr "画质等级"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:101
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
 msgid "Quality Settings"
 msgstr "画质设置"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:700
+#: src/components/config/engines/forms/mesio-hls-form.tsx:720
 msgid "Query Parameters"
 msgstr "查询参数"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:596
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:599
 msgid "Queue"
 msgstr "队列"
 
@@ -5621,7 +5634,7 @@ msgstr "比例"
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1331
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1351
 msgid "Raw Segment TTL (ms)"
 msgstr "原始分段 TTL（毫秒）"
 
@@ -5639,7 +5652,7 @@ msgstr "Rclone 可执行文件"
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:663
+#: src/components/config/engines/forms/mesio-hls-form.tsx:683
 msgid "Read Timeout (ms)"
 msgstr "读取超时 (ms)"
 
@@ -5738,7 +5751,7 @@ msgstr "正则模式"
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "用于排除文件的正则模式。将针对完整路径和文件名进行匹配。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:116
+#: src/components/config/engines/forms/mesio-hls-form.tsx:118
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:162
 msgid "Remove"
 msgstr "移除"
@@ -5792,11 +5805,11 @@ msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改�
 msgid "Remux with Faststart"
 msgstr "重封装 (Faststart)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1688
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1701
 msgid "Reorder Duration (ms)"
 msgstr "重排持续时间（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1708
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1721
 msgid "Reorder Max Segments"
 msgstr "重排最大分段数"
 
@@ -5851,7 +5864,7 @@ msgstr "分辨率变化"
 msgid "Resource Limits"
 msgstr "资源限制"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:458
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:461
 msgid "Resources"
 msgstr "资源"
 
@@ -5896,13 +5909,13 @@ msgstr "重试"
 msgid "Retry All Failed"
 msgstr "重试所有失败任务"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:974
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1284
+#: src/components/config/engines/forms/mesio-hls-form.tsx:994
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1304
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:78
 msgid "Retry Delay (ms)"
 msgstr "重试延迟（ms）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1177
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1197
 msgid "Retry Delay Base (ms)"
 msgstr "重试延迟基数（毫秒）"
 
@@ -5910,7 +5923,7 @@ msgstr "重试延迟基数（毫秒）"
 msgid "Retry Failed Steps"
 msgstr "重试失败步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:377
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:378
 msgid "Retry Job"
 msgstr "重试处理任务"
 
@@ -5955,7 +5968,7 @@ msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1410
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1430
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "在阻塞线程池中执行解密，避免卡住异步任务。"
 
@@ -6101,7 +6114,7 @@ msgstr "安排录制时间"
 msgid "Scheduled"
 msgstr "已计划"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1912
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1925
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:331
 msgid "Scheduler"
 msgstr "调度器"
@@ -6188,11 +6201,11 @@ msgstr "安全与身份"
 msgid "Segment"
 msgstr "分段"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1137
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1157
 msgid "Segment Timeout (ms)"
 msgstr "分段超时（毫秒）"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1454
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1473
 msgid "Segment TTL (ms)"
 msgstr "分段 TTL（毫秒）"
 
@@ -6374,7 +6387,7 @@ msgid "Session Gap"
 msgstr "会话间隔"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:140
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:431
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:434
 msgid "Session ID"
 msgstr "录制会话 ID"
 
@@ -6503,15 +6516,15 @@ msgstr "录制的大小与时长限制。"
 msgid "Size limit"
 msgstr "大小限制"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:287
+#: src/components/config/engines/forms/mesio-hls-form.tsx:311
 msgid "Skip after both"
 msgstr "满足任一条件后跳过"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:281
+#: src/components/config/engines/forms/mesio-hls-form.tsx:305
 msgid "Skip after count"
 msgstr "达到次数后跳过"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:284
+#: src/components/config/engines/forms/mesio-hls-form.tsx:308
 msgid "Skip after duration"
 msgstr "达到时长后跳过"
 
@@ -6561,7 +6574,7 @@ msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 
 #: src/components/streamers/edit/active-download-card.tsx:125
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:606
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:609
 msgid "Speed"
 msgstr "速度"
 
@@ -6594,10 +6607,6 @@ msgstr "标准"
 msgid "Standard cron expression (sec min hour day mon dow)."
 msgstr "标准 Cron 表达式（秒 分 时 日 月 星期）。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:41
-msgid "Standard protocol for extraction. Recommended for most cases."
-msgstr "提取的标准协议。推荐用于大多数情况。"
-
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:318
 msgid "Start"
 msgstr "开始"
@@ -6629,7 +6638,7 @@ msgstr "开始时间"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:255
 #: src/components/sessions/overview-tab.tsx:210
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:302
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:636
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:639
 msgid "Started"
 msgstr "已开始"
 
@@ -6745,7 +6754,7 @@ msgid "Streamer Details"
 msgstr "主播详情"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:133
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:437
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:440
 msgid "Streamer ID"
 msgstr "主播 ID"
 
@@ -6788,7 +6797,7 @@ msgstr "当前正在直播的主播会显示在这里。"
 msgid "Streaming services"
 msgstr "流媒体服务"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1217
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1237
 msgid "Streaming Threshold (bytes)"
 msgstr "流式传输阈值（字节）"
 
@@ -6877,7 +6886,7 @@ msgstr "系统状态"
 msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:485
+#: src/components/config/engines/forms/mesio-hls-form.tsx:517
 msgid "Target bitrate"
 msgstr "目标码率"
 
@@ -7166,7 +7175,7 @@ msgstr "时间线"
 msgid "Timeout"
 msgstr "超时"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1244
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1264
 msgid "Timeout (ms)"
 msgstr "超时（毫秒）"
 
@@ -7232,7 +7241,7 @@ msgstr "高频词"
 msgid "total"
 msgstr "总计"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:733
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:736
 msgid "Total"
 msgstr "总计"
 
@@ -7567,20 +7576,12 @@ msgstr "使用系统代理"
 msgid "Use TLS"
 msgstr "启用 TLS"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:38
-msgid "Use WUP Protocol"
-msgstr "使用 WUP 协议"
-
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:70
-msgid "Use WUP V2"
-msgstr "使用 WUP V2"
-
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:396
 msgid "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
 msgstr "用于桌面登录（备选）；指向包含 `tdata` 的 Telegram Desktop 文件夹。"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:96
-#: src/components/config/engines/forms/mesio-hls-form.tsx:716
+#: src/components/config/engines/forms/mesio-hls-form.tsx:736
 msgid "User Agent"
 msgstr "User-Agent"
 
@@ -7618,7 +7619,7 @@ msgstr "校验失败"
 msgid "Validation service unavailable"
 msgstr "校验服务不可用"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:550
+#: src/components/config/engines/forms/mesio-hls-form.tsx:582
 #: src/components/notifications/forms/webhook-form.tsx:459
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:920
@@ -7630,7 +7631,7 @@ msgstr "值"
 msgid "Variant"
 msgstr "样式"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:993
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1013
 msgid "Variant Selection Policy"
 msgstr "变体选择策略"
 
@@ -7675,7 +7676,7 @@ msgstr "视频编码"
 msgid "Video codec change"
 msgstr "视频编码变化"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:467
+#: src/components/config/engines/forms/mesio-hls-form.tsx:499
 msgid "Video only"
 msgstr "仅视频"
 
@@ -7709,11 +7710,11 @@ msgstr "查看详细日志与输出"
 msgid "View Details"
 msgstr "查看详情"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1785
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1798
 msgid "VOD Gap Strategy"
 msgstr "点播缺口策略"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1791
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1804
 msgid "VOD Segment Timeout (ms)"
 msgstr "点播分段超时（毫秒）"
 
@@ -7721,7 +7722,7 @@ msgstr "点播分段超时（毫秒）"
 msgid "Wait"
 msgstr "等待"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:278
+#: src/components/config/engines/forms/mesio-hls-form.tsx:302
 msgid "Wait indefinitely"
 msgstr "无限等待"
 
@@ -7740,6 +7741,10 @@ msgstr "处理队列过长时发出警告。"
 #: src/components/streamers/card/stream-actions-menu.tsx:79
 msgid "Watch"
 msgstr "观看"
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:59
+msgid "WEB"
+msgstr "WEB"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:720
 msgid "Web Optimize"
@@ -7788,7 +7793,7 @@ msgstr "本周"
 msgid "Welcome back"
 msgstr "欢迎回来"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1793
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1806
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "启用后，每个点播分段都必须在该超时内完成。"
 
@@ -7800,7 +7805,7 @@ msgstr "TDL 存储其会话和配置的地方。"
 msgid "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
 msgstr "TDL 存储会话数据的地方 (`tdl --storage ...`)。例如：`type=bolt,path=/data/tdl`。"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:508
+#: src/components/config/engines/forms/mesio-hls-form.tsx:540
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:80
 msgid "Width"
 msgstr "宽度"
@@ -7853,9 +7858,13 @@ msgstr "工作流"
 msgid "Working Directory"
 msgstr "工作目录"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:683
+#: src/components/config/engines/forms/mesio-hls-form.tsx:703
 msgid "Write Timeout (ms)"
 msgstr "写入超时（毫秒）"
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:71
+msgid "WUP"
+msgstr "WUP"
 
 #: src/components/notifications/forms/webhook-form.tsx:374
 msgid "X-Auth-Key"
@@ -7877,7 +7886,7 @@ msgstr "你的数字库目前为空。开始录制以在此显示会话。"
 msgid "YYYY-MM-DD"
 msgstr "YYYY-MM-DD"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1503
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1522
 msgid "Zero Copy Processing (Default: On)"
 msgstr "零拷贝处理（默认：开）"
 
