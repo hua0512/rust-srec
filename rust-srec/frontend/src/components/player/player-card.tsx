@@ -56,7 +56,7 @@ export function PlayerCard({
   const [resolving, setResolving] = useState(false);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [currentHeaders, setCurrentHeaders] = useState(headers);
-  const [resolvedStream, setResolvedStream] = useState<any>(null);
+
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleRefresh = () => {
@@ -71,18 +71,11 @@ export function PlayerCard({
       if (!streamData || !title) {
         setCurrentUrl(url);
         setCurrentHeaders(headers);
-        setResolvedStream(null);
+
         return;
       }
 
-      // Use the previously resolved stream info as base ONLY if it matches the current selection
-      // This prevents using resolved info from one quality for another
-      const baseStreamInfo =
-        resolvedStream &&
-        resolvedStream.quality === streamData?.quality &&
-        resolvedStream.cdn === streamData?.cdn
-          ? resolvedStream
-          : streamData;
+      const baseStreamInfo = streamData;
 
       setResolving(true);
       try {
@@ -101,7 +94,6 @@ export function PlayerCard({
           setCurrentUrl(response.stream_info.url || url);
           // Ensure use headers from resolved stream info if available
           // setCurrentHeaders(response.stream_info.headers || headers);
-          setResolvedStream(response.stream_info);
         } else {
           console.warn(
             '[PlayerCard] URL resolution failed, using original:',

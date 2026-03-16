@@ -1,7 +1,7 @@
 import { refreshAuthTokenGlobal } from './tokenRefresh';
 
 import { BASE_URL } from '../utils/env';
-import { useAppSession } from '../utils/session';
+import { useAppSession } from '../utils/session.server';
 
 export { BASE_URL };
 
