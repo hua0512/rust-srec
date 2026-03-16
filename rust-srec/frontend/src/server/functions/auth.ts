@@ -2,11 +2,8 @@ import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
 import { BASE_URL } from '../../utils/env';
 import { ensureValidToken } from '../tokenRefresh';
-import {
-  sanitizeClientSession,
-  isValidSession,
-  useAppSession,
-} from '../../utils/session';
+import { sanitizeClientSession, isValidSession } from '../../utils/session';
+import { useAppSession } from '../../utils/session.server';
 import {
   LoginRequestSchema,
   LoginResponseSchema,

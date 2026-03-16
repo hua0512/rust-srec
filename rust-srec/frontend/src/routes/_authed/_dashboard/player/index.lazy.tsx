@@ -466,15 +466,35 @@ const PlayerItem = React.memo(function PlayerItem({
     [player.currentStream.headers, player.headers],
   );
 
-  const streamData = React.useMemo(
-    () =>
-      player.response.media_info?.streams?.find(
-        (s: any) =>
-          s.url === player.currentStream.url ||
-          s.src === player.currentStream.url,
-      ) || player.response.media_info?.streams?.[0],
-    [player.response.media_info, player.currentStream.url],
-  );
+  // Find the raw backend stream object matching the current selection.
+  // We must pass the raw object (with backend field names like stream_format,
+  // media_format) to the resolve endpoint, not the remapped StreamOption.
+  const streamData = React.useMemo(() => {
+    const streams = player.response.media_info?.streams;
+    if (!Array.isArray(streams) || streams.length === 0) return null;
+
+    const selected = player.currentStream;
+
+    // Match by quality + cdn (the identifiers the user selects by)
+    const match = streams.find((s: any) => {
+      const rawQuality = s.quality || s.resolution || 'unknown';
+      const rawCdn =
+        s.cdn || s.server || s.extras?.cdn?.toString() || undefined;
+      return rawQuality === selected.quality && rawCdn === selected.cdn;
+    });
+    if (match) return match;
+
+    // Fallback: match by URL
+    const urlMatch = streams.find(
+      (s: any) => s.url === selected.url || s.src === selected.url,
+    );
+    return urlMatch || streams[0];
+  }, [
+    player.response.media_info?.streams,
+    player.currentStream.quality,
+    player.currentStream.cdn,
+    player.currentStream.url,
+  ]);
 
   return (
     <div className="w-full h-full min-h-[500px]">
