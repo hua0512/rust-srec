@@ -7,6 +7,13 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Trans } from '@lingui/react/macro';
 import { Zap, Activity } from 'lucide-react';
 
@@ -27,66 +34,55 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
           </h4>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-6">
           <FormField
             control={form.control}
-            name={`${fieldName}.use_wup`}
+            name={`${fieldName}.api_mode`}
             render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
-                <div className="space-y-0.5 pr-4">
-                  <FormLabel className="text-xs font-bold text-foreground">
-                    <Trans>Use WUP Protocol</Trans>
+              <FormItem>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    <Trans>Extraction API Mode</Trans>
                   </FormLabel>
-                  <FormDescription className="text-[10px] leading-tight font-medium">
-                    <Trans>
-                      Standard protocol for extraction. Recommended for most
-                      cases.
-                    </Trans>
-                  </FormDescription>
                 </div>
                 <FormControl>
-                  <Switch
-                    checked={field.value ?? true}
-                    onCheckedChange={(checked) => {
-                      field.onChange(checked);
-                      if (checked) {
-                        form.setValue(`${fieldName}.use_wup_v2`, false);
-                      }
-                    }}
-                    className="scale-90"
-                  />
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value || 'WEB'}
+                  >
+                    <SelectTrigger className="bg-background/50 h-11 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm">
+                      <SelectValue placeholder="Select API Mode" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                      <SelectItem value="WEB">
+                        <Trans>WEB</Trans>{' '}
+                        <span className="text-muted-foreground ml-2 text-xs">
+                          (<Trans>Default</Trans>)
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="MP">
+                        <Trans>MP</Trans>
+                        <span className="text-muted-foreground ml-2 text-xs">
+                          (<Trans>Numeric Room IDs Only</Trans>)
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="WUP">
+                        <Trans>WUP</Trans>{' '}
+                        <span className="text-muted-foreground ml-2 text-xs">
+                          (<Trans>Numeric Room IDs Only</Trans>)
+                        </span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </FormControl>
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name={`${fieldName}.use_wup_v2`}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
-                <div className="space-y-0.5 pr-4">
-                  <FormLabel className="text-xs font-bold text-foreground">
-                    <Trans>Use WUP V2</Trans>
-                  </FormLabel>
-                  <FormDescription className="text-[10px] leading-tight font-medium">
-                    <Trans>
-                      Alternative protocol variant for live stream extraction.
-                    </Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={!!field.value}
-                    onCheckedChange={(checked) => {
-                      field.onChange(checked);
-                      if (checked) {
-                        form.setValue(`${fieldName}.use_wup`, false);
-                      }
-                    }}
-                    className="scale-90"
-                  />
-                </FormControl>
+                <FormDescription className="text-[11px] font-medium pt-2 px-1">
+                  <Trans>
+                    API protocol to use for live stream extraction. WUP is the
+                    standard protocol for the PC app. Note that WUP and MP only
+                    work with numeric room IDs.
+                  </Trans>
+                </FormDescription>
               </FormItem>
             )}
           />

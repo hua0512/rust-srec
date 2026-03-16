@@ -546,31 +546,87 @@ impl TryFrom<TarsValue> for WsRegisterGroupReq {
     }
 }
 
-pub struct GetCdnTokenInfoReq {
-    url: String,
-    cdn_type: String,
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct GetCdnTokenExReq {
+    flv_url: String,
     stream_name: String,
-    presenter_uid: i64,
+    loop_time: i32,
+    id: HuyaUserId,
+    app_id: i32,
 }
 
-impl GetCdnTokenInfoReq {
-    pub fn new(url: String, stream_name: String, cdn_type: String, presenter_uid: i64) -> Self {
+impl GetCdnTokenExReq {
+    pub fn new() -> Self {
         Self {
-            url,
-            cdn_type,
-            stream_name,
-            presenter_uid,
+            flv_url: String::new(),
+            stream_name: String::new(),
+            loop_time: 0,
+            id: HuyaUserId::default(),
+            app_id: 66,
         }
+    }
+
+    pub fn with_id(mut self, id: HuyaUserId) -> Self {
+        self.id = id;
+        self
+    }
+
+    pub fn with_app_id(mut self, app_id: i32) -> Self {
+        self.app_id = app_id;
+        self
+    }
+
+    pub fn with_flv_url(mut self, flv_url: String) -> Self {
+        self.flv_url = flv_url;
+        self
+    }
+
+    pub fn with_stream_name(mut self, stream_name: String) -> Self {
+        self.stream_name = stream_name;
+        self
+    }
+
+    pub fn with_loop_time(mut self, loop_time: i32) -> Self {
+        self.loop_time = loop_time;
+        self
     }
 }
 
-impl From<GetCdnTokenInfoReq> for TarsValue {
-    fn from(req: GetCdnTokenInfoReq) -> Self {
+impl TryFrom<TarsValue> for GetCdnTokenExReq {
+    type Error = TarsError;
+
+    fn try_from(value: TarsValue) -> Result<Self, Self::Error> {
+        let mut map = value.try_into_struct()?;
+        let mut take = |tag: u8| map.remove(&tag);
+
+        Ok(GetCdnTokenExReq {
+            flv_url: take(0)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            stream_name: take(1)
+                .and_then(|v| v.try_into_string().ok())
+                .unwrap_or_default(),
+            loop_time: take(2)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+            id: take(3)
+                .and_then(|v| HuyaUserId::try_from(v).ok())
+                .unwrap_or_default(),
+            app_id: take(4)
+                .and_then(|v| v.try_into_i32().ok())
+                .unwrap_or_default(),
+        })
+    }
+}
+
+impl From<GetCdnTokenExReq> for TarsValue {
+    fn from(req: GetCdnTokenExReq) -> Self {
         let mut struct_map = FxHashMap::default();
-        struct_map.insert(0, TarsValue::String(req.url));
-        struct_map.insert(1, TarsValue::String(req.cdn_type));
-        struct_map.insert(2, TarsValue::String(req.stream_name));
-        struct_map.insert(3, TarsValue::Long(req.presenter_uid));
+        struct_map.insert(0, TarsValue::String(req.flv_url));
+        struct_map.insert(1, TarsValue::String(req.stream_name));
+        struct_map.insert(2, TarsValue::Int(req.loop_time));
+        struct_map.insert(3, req.id.into());
+        struct_map.insert(4, TarsValue::Int(req.app_id));
         TarsValue::Struct(struct_map)
     }
 }
@@ -789,6 +845,88 @@ impl TryFrom<TarsValue> for GetLivingInfoReq {
         })
     }
 }
+
+// #[derive(Default, Debug, Clone, PartialEq)]
+// pub struct GetLivingStreamInfoReq {
+//     pub id: HuyaUserId,
+//     pub top_sid: i64,
+//     pub sub_sid: i64,
+//     pub presenter_uid: i64,
+//     pub trace_source: String,
+// }
+
+// impl GetLivingStreamInfoReq {
+//     pub fn new(
+//         id: HuyaUserId,
+//         top_sid: i64,
+//         sub_sid: i64,
+//         presenter_uid: i64,
+//         trace_source: String,
+//     ) -> Self {
+//         Self {
+//             id,
+//             top_sid,
+//             sub_sid,
+//             presenter_uid,
+//             trace_source,
+//         }
+//     }
+
+//     pub fn with_source(mut self, trace_source: String) -> Self {
+//         self.trace_source = trace_source;
+//         self
+//     }
+
+//     pub fn with_sid(mut self, top_sid: i64, sub_sid: i64) -> Self {
+//         self.top_sid = top_sid;
+//         self.sub_sid = sub_sid;
+//         self
+//     }
+
+//     pub fn with_presenter_uid(mut self, presenter_uid: i64) -> Self {
+//         self.presenter_uid = presenter_uid;
+//         self
+//     }
+// }
+
+// impl From<GetLivingStreamInfoReq> for TarsValue {
+//     fn from(req: GetLivingStreamInfoReq) -> Self {
+//         let mut struct_map = FxHashMap::default();
+//         struct_map.insert(0, req.id.into());
+//         struct_map.insert(1, TarsValue::Long(req.top_sid));
+//         struct_map.insert(2, TarsValue::Long(req.sub_sid));
+//         struct_map.insert(3, TarsValue::Long(req.presenter_uid));
+//         struct_map.insert(4, TarsValue::String(req.trace_source));
+//         TarsValue::Struct(struct_map)
+//     }
+// }
+
+// impl TryFrom<TarsValue> for GetLivingStreamInfoReq {
+//     type Error = TarsError;
+
+//     fn try_from(value: TarsValue) -> Result<Self, Self::Error> {
+//         let mut map = value.try_into_struct()?;
+//         let mut take = |tag: u8| map.remove(&tag);
+
+//         Ok(GetLivingStreamInfoReq {
+//             id: take(0)
+//                 .and_then(|v| HuyaUserId::try_from(v).ok())
+//                 .unwrap_or_default(),
+//             top_sid: take(1)
+//                 .and_then(|v| v.try_into_i64().ok())
+//                 .unwrap_or_default(),
+//             sub_sid: take(2)
+//                 .and_then(|v| v.try_into_i64().ok())
+//                 .unwrap_or_default(),
+//             presenter_uid: take(3)
+//                 .and_then(|v| v.try_into_i64().ok())
+//                 .unwrap_or_default(),
+//             trace_source: take(4)
+//                 .and_then(|v| v.try_into_string().ok())
+//                 .unwrap_or_default(),
+//         })
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
