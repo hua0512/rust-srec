@@ -41,6 +41,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BASE_URL } from '@/utils/env';
 
 /** Format bytes to human readable string */
 function formatBytes(bytes: number): string {
@@ -101,13 +102,17 @@ export function LogFileBrowser() {
     });
 
     try {
-      // Get download URL with date range
-      const { url } = await getLogsDownloadUrl({
-        data: { from: fromDate, to: toDate },
-      });
+      // Get download token
+      const { token } = await getLogsDownloadUrl();
+
+      const base = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+      const url = new URL(`${base}/logging/archive`, window.location.origin);
+      url.searchParams.set('token', token);
+      if (fromDate) url.searchParams.set('from', fromDate);
+      if (toDate) url.searchParams.set('to', toDate);
 
       // Fetch with progress tracking
-      const response = await fetch(url);
+      const response = await fetch(url.toString());
 
       if (!response.ok) {
         throw new Error(`Download failed: ${response.statusText}`);
@@ -200,12 +205,16 @@ export function LogFileBrowser() {
     async (file: LogFileInfo) => {
       try {
         // For individual files, we use the same archive endpoint but with specific date
-        const { url } = await getLogsDownloadUrl({
-          data: { from: file.date, to: file.date },
-        });
+        const { token } = await getLogsDownloadUrl();
+
+        const base = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+        const url = new URL(`${base}/logging/archive`, window.location.origin);
+        url.searchParams.set('token', token);
+        url.searchParams.set('from', file.date);
+        url.searchParams.set('to', file.date);
 
         const link = document.createElement('a');
-        link.href = url;
+        link.href = url.toString();
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

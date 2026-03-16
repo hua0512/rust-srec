@@ -839,7 +839,7 @@ msgstr "机器人令牌"
 msgid "Brand Colors"
 msgstr "品牌颜色"
 
-#: src/components/logging/log-file-browser.tsx:242
+#: src/components/logging/log-file-browser.tsx:251
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "浏览和下载应用程序日志文件。按日期范围筛选或下载全部。"
 
@@ -1723,7 +1723,7 @@ msgstr "数据库查询"
 msgid "Date"
 msgstr "日期"
 
-#: src/components/logging/log-file-browser.tsx:382
+#: src/components/logging/log-file-browser.tsx:391
 msgid "Date range:"
 msgstr "日期范围："
 
@@ -2009,11 +2009,11 @@ msgid "Download"
 msgstr "下载"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:456
+#: src/components/logging/log-file-browser.tsx:465
 msgid "Download {0}"
 msgstr "下载 {0}"
 
-#: src/components/logging/log-file-browser.tsx:316
+#: src/components/logging/log-file-browser.tsx:325
 msgid "Download All"
 msgstr "下载全部"
 
@@ -2021,7 +2021,7 @@ msgstr "下载全部"
 msgid "Download Backup"
 msgstr "下载备份"
 
-#: src/components/logging/log-file-browser.tsx:342
+#: src/components/logging/log-file-browser.tsx:351
 msgid "Download complete"
 msgstr "下载完成"
 
@@ -2055,11 +2055,11 @@ msgid "Downloading"
 msgstr "下载中"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:213
+#: src/components/logging/log-file-browser.tsx:222
 msgid "Downloading {0}"
 msgstr "正在下载 {0}"
 
-#: src/components/logging/log-file-browser.tsx:346
+#: src/components/logging/log-file-browser.tsx:355
 msgid "Downloading..."
 msgstr "下载中..."
 
@@ -2716,11 +2716,11 @@ msgstr "删除工作流失败：{0}"
 msgid "Failed to disable Web Push"
 msgstr "禁用 Web 推送失败"
 
-#: src/components/logging/log-file-browser.tsx:217
+#: src/components/logging/log-file-browser.tsx:226
 msgid "Failed to download file"
 msgstr "下载文件失败"
 
-#: src/components/logging/log-file-browser.tsx:194
+#: src/components/logging/log-file-browser.tsx:199
 msgid "Failed to download logs"
 msgstr "下载日志失败"
 
@@ -2957,7 +2957,7 @@ msgstr "文件名模式（例如 thumb.jpg）"
 msgid "Filename Template"
 msgstr "文件名模板"
 
-#: src/components/logging/log-file-browser.tsx:237
+#: src/components/logging/log-file-browser.tsx:246
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:182
 msgid "files"
 msgstr "文件"
@@ -3856,7 +3856,7 @@ msgstr "正在加载工作流..."
 msgid "Local Archive"
 msgstr "本地归档"
 
-#: src/components/logging/log-file-browser.tsx:234
+#: src/components/logging/log-file-browser.tsx:243
 msgid "Log Files"
 msgstr "日志文件"
 
@@ -3914,7 +3914,7 @@ msgstr "登录类型"
 msgid "Logs"
 msgstr "日志"
 
-#: src/components/logging/log-file-browser.tsx:179
+#: src/components/logging/log-file-browser.tsx:184
 msgid "Logs downloaded successfully"
 msgstr "日志下载成功"
 
@@ -4452,7 +4452,7 @@ msgstr "未设置关键字"
 msgid "No limit"
 msgstr "不限"
 
-#: src/components/logging/log-file-browser.tsx:416
+#: src/components/logging/log-file-browser.tsx:425
 msgid "No log files found"
 msgstr "未找到日志文件"
 
@@ -6259,7 +6259,7 @@ msgstr "选择编解码器"
 msgid "Select config"
 msgstr "选择配置"
 
-#: src/components/logging/log-file-browser.tsx:271
+#: src/components/logging/log-file-browser.tsx:280
 msgid "Select date range"
 msgstr "选择日期范围"
 
@@ -7253,7 +7253,7 @@ msgstr "总弹幕数"
 msgid "Total Size"
 msgstr "总大小"
 
-#: src/components/logging/log-file-browser.tsx:374
+#: src/components/logging/log-file-browser.tsx:383
 msgid "Total size:"
 msgstr "总大小："
 
@@ -7360,7 +7360,7 @@ msgstr "当视频和弹幕可用时触发"
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
-#: src/components/logging/log-file-browser.tsx:420
+#: src/components/logging/log-file-browser.tsx:429
 msgid "Try adjusting the date range"
 msgstr "尝试调整日期范围"
 

@@ -839,7 +839,7 @@ msgstr "Bot Token"
 msgid "Brand Colors"
 msgstr "Brand Colors"
 
-#: src/components/logging/log-file-browser.tsx:242
+#: src/components/logging/log-file-browser.tsx:251
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "Browse and download application log files. Filter by date range or download all."
 
@@ -1723,7 +1723,7 @@ msgstr "Database queries"
 msgid "Date"
 msgstr "Date"
 
-#: src/components/logging/log-file-browser.tsx:382
+#: src/components/logging/log-file-browser.tsx:391
 msgid "Date range:"
 msgstr "Date range:"
 
@@ -2009,11 +2009,11 @@ msgid "Download"
 msgstr "Download"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:456
+#: src/components/logging/log-file-browser.tsx:465
 msgid "Download {0}"
 msgstr "Download {0}"
 
-#: src/components/logging/log-file-browser.tsx:316
+#: src/components/logging/log-file-browser.tsx:325
 msgid "Download All"
 msgstr "Download All"
 
@@ -2021,7 +2021,7 @@ msgstr "Download All"
 msgid "Download Backup"
 msgstr "Download Backup"
 
-#: src/components/logging/log-file-browser.tsx:342
+#: src/components/logging/log-file-browser.tsx:351
 msgid "Download complete"
 msgstr "Download complete"
 
@@ -2055,11 +2055,11 @@ msgid "Downloading"
 msgstr "Downloading"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:213
+#: src/components/logging/log-file-browser.tsx:222
 msgid "Downloading {0}"
 msgstr "Downloading {0}"
 
-#: src/components/logging/log-file-browser.tsx:346
+#: src/components/logging/log-file-browser.tsx:355
 msgid "Downloading..."
 msgstr "Downloading..."
 
@@ -2716,11 +2716,11 @@ msgstr "Failed to delete workflow: {0}"
 msgid "Failed to disable Web Push"
 msgstr "Failed to disable Web Push"
 
-#: src/components/logging/log-file-browser.tsx:217
+#: src/components/logging/log-file-browser.tsx:226
 msgid "Failed to download file"
 msgstr "Failed to download file"
 
-#: src/components/logging/log-file-browser.tsx:194
+#: src/components/logging/log-file-browser.tsx:199
 msgid "Failed to download logs"
 msgstr "Failed to download logs"
 
@@ -2957,7 +2957,7 @@ msgstr "Filename pattern (e.g., thumb.jpg)"
 msgid "Filename Template"
 msgstr "Filename Template"
 
-#: src/components/logging/log-file-browser.tsx:237
+#: src/components/logging/log-file-browser.tsx:246
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:182
 msgid "files"
 msgstr "files"
@@ -3856,7 +3856,7 @@ msgstr "Loading workflows..."
 msgid "Local Archive"
 msgstr "Local Archive"
 
-#: src/components/logging/log-file-browser.tsx:234
+#: src/components/logging/log-file-browser.tsx:243
 msgid "Log Files"
 msgstr "Log Files"
 
@@ -3914,7 +3914,7 @@ msgstr "Login Type"
 msgid "Logs"
 msgstr "Logs"
 
-#: src/components/logging/log-file-browser.tsx:179
+#: src/components/logging/log-file-browser.tsx:184
 msgid "Logs downloaded successfully"
 msgstr "Logs downloaded successfully"
 
@@ -4452,7 +4452,7 @@ msgstr "No keywords set"
 msgid "No limit"
 msgstr "No limit"
 
-#: src/components/logging/log-file-browser.tsx:416
+#: src/components/logging/log-file-browser.tsx:425
 msgid "No log files found"
 msgstr "No log files found"
 
@@ -6259,7 +6259,7 @@ msgstr "Select codec"
 msgid "Select config"
 msgstr "Select config"
 
-#: src/components/logging/log-file-browser.tsx:271
+#: src/components/logging/log-file-browser.tsx:280
 msgid "Select date range"
 msgstr "Select date range"
 
@@ -7253,7 +7253,7 @@ msgstr "Total Danmu"
 msgid "Total Size"
 msgstr "Total Size"
 
-#: src/components/logging/log-file-browser.tsx:374
+#: src/components/logging/log-file-browser.tsx:383
 msgid "Total size:"
 msgstr "Total size:"
 
@@ -7360,7 +7360,7 @@ msgstr "Triggered when video and danmu are available"
 msgid "Trimming & Time"
 msgstr "Trimming & Time"
 
-#: src/components/logging/log-file-browser.tsx:420
+#: src/components/logging/log-file-browser.tsx:429
 msgid "Try adjusting the date range"
 msgstr "Try adjusting the date range"
 

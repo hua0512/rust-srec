@@ -1,6 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
-import { BASE_URL } from '../../utils/env';
 import {
   LoggingConfigResponseSchema,
   UpdateLogFilterRequestSchema,
@@ -65,20 +64,13 @@ export const getArchiveToken = createServerFn({ method: 'GET' }).handler(
   },
 );
 
-/** Build an authenticated download URL for system logs with optional date range. */
-export const getLogsDownloadUrl = createServerFn({ method: 'GET' })
-  .inputValidator((data?: { from?: string; to?: string }) => data)
-  .handler(async ({ data }) => {
-    // Ask the backend for a single-use archive token, then build an absolute
-    // download URL using the configured API base.
+/** Build an authenticated download token for system logs with optional date range. */
+export const getLogsDownloadUrl = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    // Ask the backend for a single-use archive token
     const json = await fetchBackend('/logging/archive-token');
     const parsed = ArchiveTokenResponseSchema.parse(json);
 
-    const base = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-    const url = new URL(`${base}/logging/archive`);
-    url.searchParams.set('token', parsed.token);
-    if (data?.from) url.searchParams.set('from', data.from);
-    if (data?.to) url.searchParams.set('to', data.to);
-
-    return { url: url.toString(), expires_at: parsed.expires_at };
-  });
+    return { token: parsed.token, expires_at: parsed.expires_at };
+  },
+);
