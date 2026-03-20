@@ -1635,6 +1635,7 @@ impl JobQueue {
 
     /// Recover jobs from database on startup.
     /// Loads pending jobs and resets processing jobs to pending.
+    /// Cancelled jobs remain terminal until explicitly retried.
     pub async fn recover_jobs(&self) -> Result<usize> {
         let Some(repo) = &self.job_repository else {
             return Ok(0);

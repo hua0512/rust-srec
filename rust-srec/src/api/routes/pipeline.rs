@@ -40,7 +40,7 @@
 //! | GET | `/api/pipeline/dag/{dag_id}` | Get full DAG status with all steps |
 //! | GET | `/api/pipeline/dag/{dag_id}/graph` | Get DAG visualization data (nodes/edges) |
 //! | GET | `/api/pipeline/dag/{dag_id}/stats` | Get DAG step statistics (blocked/pending/processing/etc.) |
-//! | POST | `/api/pipeline/dag/{dag_id}/retry` | Retry all failed steps in a DAG |
+//! | POST | `/api/pipeline/dag/{dag_id}/retry` | Retry failed or cancelled steps in a DAG |
 //! | DELETE | `/api/pipeline/dag/{dag_id}` | Cancel a DAG execution and all its steps |
 //!
 //! ## Presets (Workflow Templates)
@@ -105,7 +105,7 @@ use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 /// - `GET /dag/{dag_id}` - Get full DAG status with all steps
 /// - `GET /dag/{dag_id}/graph` - Get DAG visualization data
 /// - `GET /dag/{dag_id}/stats` - Get DAG step statistics
-/// - `POST /dag/{dag_id}/retry` - Retry failed steps in a DAG
+/// - `POST /dag/{dag_id}/retry` - Retry failed or cancelled steps in a DAG
 /// - `DELETE /dag/{dag_id}` - Cancel a DAG execution
 /// - `POST /validate` - Validate a DAG definition
 pub fn router() -> Router<AppState> {

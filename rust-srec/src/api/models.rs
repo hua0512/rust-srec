@@ -423,6 +423,7 @@ pub struct TemplateResponse {
 /// - `PROCESSING` - Job is currently being executed by a worker
 /// - `COMPLETED` - Job finished successfully
 /// - `FAILED` - Job encountered an error during processing
+/// - `CANCELLED` - Job was cancelled and remains terminal until retried
 ///
 /// # State Transitions
 ///
@@ -606,6 +607,7 @@ pub struct JobFilterParams {
 /// - `processing_count` - Number of jobs currently being processed
 /// - `completed_count` - Number of successfully completed jobs
 /// - `failed_count` - Number of failed jobs
+/// - `cancelled_count` - Number of cancelled jobs
 /// - `avg_processing_time_secs` - Average processing time in seconds (null if no completed jobs)
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct PipelineStatsResponse {
