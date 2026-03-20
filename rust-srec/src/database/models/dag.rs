@@ -23,7 +23,6 @@ pub struct DagExecutionDbModel {
     pub id: String,
     /// JSON-serialized DAG pipeline definition.
     pub dag_definition: String,
-    /// Execution status: PENDING, PROCESSING, COMPLETED, FAILED, INTERRUPTED.
     pub status: String,
     /// Associated streamer ID.
     pub streamer_id: Option<String>,
@@ -120,10 +119,9 @@ impl DagExecutionDbModel {
         self.updated_at = now;
     }
 
-    /// Mark the DAG as interrupted.
-    pub fn mark_interrupted(&mut self) {
+    pub fn mark_cancelled(&mut self) {
         let now = crate::database::time::now_ms();
-        self.status = DagExecutionStatus::Interrupted.as_str().to_string();
+        self.status = DagExecutionStatus::Cancelled.as_str().to_string();
         self.updated_at = now;
     }
 

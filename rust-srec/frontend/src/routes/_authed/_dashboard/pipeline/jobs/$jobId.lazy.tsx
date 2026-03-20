@@ -36,18 +36,17 @@ import { motion } from 'motion/react';
 import { useInView } from '@/lib/hooks/use-in-view';
 import { cn } from '@/lib/utils';
 import {
+  getStatusConfig,
+  getStatusLabel,
+} from '@/components/pipeline/status-config';
+import {
   ArrowLeft,
-  AlertCircle,
   Terminal,
   RotateCcw,
-  XCircle,
-  CheckCircle2,
-  Clock,
   Workflow,
   Box,
   Cpu,
   Calendar,
-  RefreshCw,
   StopCircle,
   FileCode,
   FileOutput,
@@ -63,62 +62,6 @@ export const Route = createLazyFileRoute(
 });
 
 import { formatDuration } from '@/lib/format';
-
-const STATUS_CONFIG: Record<
-  string,
-  {
-    icon: React.ElementType;
-    color: string;
-    badgeVariant: 'default' | 'secondary' | 'destructive' | 'outline';
-    animate?: boolean;
-    gradient: string;
-    borderColor: string;
-  }
-> = {
-  PENDING: {
-    icon: Clock,
-    color: 'text-muted-foreground',
-    badgeVariant: 'secondary',
-    gradient: 'from-gray-500/20 to-gray-500/5',
-    borderColor: 'border-gray-500/20',
-  },
-  PROCESSING: {
-    icon: RefreshCw,
-    color: 'text-blue-500',
-    badgeVariant: 'default',
-    animate: true,
-    gradient: 'from-blue-500/20 to-blue-500/5',
-    borderColor: 'border-blue-500/20',
-  },
-  COMPLETED: {
-    icon: CheckCircle2,
-    color: 'text-emerald-500',
-    badgeVariant: 'secondary',
-    gradient: 'from-emerald-500/20 to-emerald-500/5',
-    borderColor: 'border-emerald-500/20',
-  },
-  FAILED: {
-    icon: XCircle,
-    color: 'text-red-500',
-    badgeVariant: 'destructive',
-    gradient: 'from-red-500/20 to-red-500/5',
-    borderColor: 'border-red-500/20',
-  },
-  CANCELLED: {
-    icon: AlertCircle,
-    color: 'text-gray-500',
-    badgeVariant: 'secondary',
-    gradient: 'from-gray-500/20 to-gray-500/5',
-    borderColor: 'border-gray-500/20',
-  },
-  INTERRUPTED: {
-    icon: AlertCircle,
-    color: 'text-orange-500',
-    badgeVariant: 'secondary',
-    gradient: 'from-orange-500/20 to-orange-500/5',
-    borderColor: 'border-orange-500/20',
-  },
-};
 
 function JobDetailsPage() {
   const { jobId } = Route.useParams();
@@ -198,12 +141,12 @@ function JobDetailsPage() {
   const cancelMutation = useMutation({
     mutationFn: (id: string) => cancelActivePipelineJob({ data: id }),
     onSuccess: () => {
-      toast.success(i18n._(msg`Job cancelled and removed`));
+      toast.success(i18n._(msg`Job cancelled`));
       void queryClient.invalidateQueries({
         queryKey: ['pipeline', 'job', jobId],
       });
     },
-    onError: () => toast.error(i18n._(msg`Failed to cancel and remove job`)),
+    onError: () => toast.error(i18n._(msg`Failed to cancel job`)),
   });
 
   const deleteMutation = useMutation({
@@ -260,7 +203,7 @@ function JobDetailsPage() {
     );
   }
 
-  const statusConfig = STATUS_CONFIG[job.status] || STATUS_CONFIG.PENDING;
+  const statusConfig = getStatusConfig(job.status);
   const StatusIcon = statusConfig.icon;
 
   return (
@@ -304,12 +247,12 @@ function JobDetailsPage() {
                 )}
               >
                 <StatusIcon
-                  className={cn(
-                    'h-8 w-8',
-                    statusConfig.color,
-                    statusConfig.animate && 'animate-spin',
-                  )}
-                />
+                    className={cn(
+                      'h-8 w-8',
+                      statusConfig.textColor,
+                      statusConfig.animate && 'animate-spin',
+                    )}
+                  />
               </div>
               <div>
                 <div className="flex items-center gap-3 mb-1.5">
@@ -321,22 +264,10 @@ function JobDetailsPage() {
                     className={cn(
                       'border bg-background/50 backdrop-blur font-mono text-xs uppercase tracking-wider h-6',
                       statusConfig.borderColor,
-                      statusConfig.color,
+                      statusConfig.textColor,
                     )}
                   >
-                    {i18n._(
-                      job.status === 'PENDING'
-                        ? msg`Pending`
-                        : job.status === 'PROCESSING'
-                          ? msg`Processing`
-                          : job.status === 'COMPLETED'
-                            ? msg`Completed`
-                            : job.status === 'FAILED'
-                              ? msg`Failed`
-                              : job.status === 'INTERRUPTED'
-                                ? msg`Interrupted`
-                                : job.status,
-                    )}
+                    {getStatusLabel(i18n, job.status)}
                   </Badge>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground font-medium">
@@ -363,7 +294,7 @@ function JobDetailsPage() {
               transition={{ delay: 0.2 }}
               className="flex items-center gap-3"
             >
-              {job.status === 'FAILED' && (
+              {['FAILED', 'CANCELLED'].includes(job.status) && (
                 <Button
                   className="bg-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all font-medium"
                   onClick={() => retryMutation.mutate(job.id)}
@@ -389,7 +320,7 @@ function JobDetailsPage() {
                   <Trans>Cancel Execution</Trans>
                 </Button>
               )}
-              {['COMPLETED', 'FAILED', 'INTERRUPTED'].includes(job.status) && (
+              {['COMPLETED', 'FAILED', 'CANCELLED'].includes(job.status) && (
                 <Button
                   variant="destructive"
                   className="shadow-lg shadow-destructive/20 hover:shadow-destructive/40 transition-all"

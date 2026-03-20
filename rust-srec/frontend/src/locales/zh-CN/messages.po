@@ -14,7 +14,7 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. placeholder {0}: pipeline.session_id.substring(0, 8)
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:260
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:258
 msgid " - Session: {0}"
 msgstr " - 会话：{0}"
 
@@ -56,35 +56,35 @@ msgid "(Preserve source)"
 msgstr "（保留源文件）"
 
 #. placeholder {0}: pipeline.completed_steps
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:278
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:276
 msgid "{0, plural, one {# done} other {# done}}"
 msgstr "{0, plural, other {# 已完成}}"
 
 #. placeholder {0}: job.execution_info.log_error_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:711
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:704
 msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, other {# 个错误}}"
 
 #. placeholder {0}: pipeline.failed_steps
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:288
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:286
 msgid "{0, plural, one {# failed} other {# failed}}"
 msgstr "{0, plural, other {# 失败}}"
 
 #. placeholder {0}: job.execution_info.log_lines_total
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:731
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:724
 msgid "{0, plural, one {# Line} other {# Lines}}"
 msgstr "{0, plural, other {# 行}}"
 
 #. placeholder {0}: pipeline.total_steps
 #. placeholder {0}: steps.length
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:269
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:316
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:267
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:314
 #: src/components/pipeline/workflows/workflow-card.tsx:149
 msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, other {# 步}}"
 
 #. placeholder {0}: job.execution_info.log_warn_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:721
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:714
 msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, other {# 个警告}}"
 
@@ -118,7 +118,7 @@ msgstr "成功添加 {0} 个流"
 
 #. placeholder {0}: dag.completed_steps
 #. placeholder {1}: dag.total_steps
-#: src/components/sessions/jobs-tab.tsx:81
+#: src/components/sessions/jobs-tab.tsx:102
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} 步"
 
@@ -524,7 +524,7 @@ msgstr "你确定要删除 {0} 个会话吗？此操作无法撤销。"
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "确定要删除模板“{0}”吗？此操作无法撤销。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:400
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:393
 msgid "Are you sure you want to delete this job? This will permanently remove it from your list."
 msgstr "确定要删除此任务吗？此操作将永久从列表中删除。"
 
@@ -694,7 +694,7 @@ msgstr "返回"
 msgid "Back to Details"
 msgstr "返回详情"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:288
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:281
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:143
 msgid "Back to Jobs"
 msgstr "返回处理任务列表"
@@ -887,9 +887,9 @@ msgstr "缓存"
 #: src/components/notifications/channel-card.tsx:212
 #: src/components/notifications/channel-form.tsx:385
 #: src/components/notifications/subscription-manager.tsx:442
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:176
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:199
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:236
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:174
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
 #: src/components/pipeline/presets/preset-card.tsx:206
 #: src/components/pipeline/workflows/step-config-dialog.tsx:526
 #: src/components/pipeline/workflows/workflow-card.tsx:195
@@ -900,7 +900,7 @@ msgstr "缓存"
 msgid "Cancel"
 msgstr "取消"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:389
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:382
 msgid "Cancel Execution"
 msgstr "取消执行"
 
@@ -908,13 +908,17 @@ msgstr "取消执行"
 msgid "Cancel Pipeline"
 msgstr "取消处理管道"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:182
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:180
 msgid "Cancel Pipeline?"
 msgstr "取消处理管道？"
 
 #: src/components/pipeline/dag-graph-view.tsx:398
+#: src/components/sessions/jobs-tab.tsx:27
 #: src/components/streamers/card/use-streamer-status.tsx:36
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:226
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:465
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:330
+#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:117
 msgid "Cancelled"
 msgstr "已取消"
 
@@ -1133,12 +1137,13 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
 #: src/components/pipeline/dag-graph-view.tsx:394
+#: src/components/sessions/jobs-tab.tsx:23
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:356
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:222
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:296
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:461
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:333
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:648
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:326
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:641
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:111
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:409
 msgid "Completed"
@@ -1314,7 +1319,7 @@ msgstr "连续失败"
 msgid "Container"
 msgstr "容器"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:429
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:422
 msgid "Context"
 msgstr "上下文"
 
@@ -1510,7 +1515,7 @@ msgstr "创建你的第一个工作流，用于定义录制内容的处理步骤
 
 #: src/components/config/global/backup-restore-card.tsx:178
 #: src/components/pipeline/outputs/output-card.tsx:189
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:634
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:627
 msgid "Created"
 msgstr "已创建"
 
@@ -1801,8 +1806,8 @@ msgstr "延迟、代理与保留策略。"
 #: src/components/filters/FilterCard.tsx:316
 #: src/components/notifications/channel-card.tsx:195
 #: src/components/notifications/channel-card.tsx:218
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:218
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:242
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:216
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:240
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
 #: src/components/pipeline/presets/preset-card.tsx:189
 #: src/components/pipeline/presets/preset-card.tsx:212
@@ -1827,7 +1832,7 @@ msgstr "删除引擎？"
 msgid "Delete File"
 msgstr "删除文件"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:409
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:402
 msgid "Delete Job"
 msgstr "删除处理任务"
 
@@ -1835,7 +1840,7 @@ msgstr "删除处理任务"
 msgid "Delete original file after successful remux"
 msgstr "成功重封装后删除原始文件"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:224
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:222
 msgid "Delete Pipeline?"
 msgstr "删除处理管道？"
 
@@ -2078,7 +2083,7 @@ msgstr "双格式输出"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:569
 #: src/components/streamers/edit/active-download-card.tsx:153
 #: src/components/streamers/progress-indicator.tsx:124
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:591
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:584
 msgid "Duration"
 msgstr "时长"
 
@@ -2396,11 +2401,11 @@ msgid "Error"
 msgstr "错误"
 
 #: src/components/streamers/card/use-streamer-status.tsx:152
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:674
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:667
 msgid "Error Details"
 msgstr "错误详情"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:247
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:240
 msgid "Error Loading Job"
 msgstr "加载处理任务失败"
 
@@ -2437,7 +2442,7 @@ msgstr "加载工作流失败"
 msgid "Error: Could not load preset details."
 msgstr "错误：无法加载预设详情。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:620
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:613
 msgid "ETA"
 msgstr "预计剩余时间"
 
@@ -2592,10 +2597,11 @@ msgid "ey..."
 msgstr "ey..."
 
 #: src/components/pipeline/dag-graph-view.tsx:396
+#: src/components/sessions/jobs-tab.tsx:25
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:367
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:224
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:463
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:335
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:328
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:114
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:416
 msgid "Failed"
@@ -2610,9 +2616,9 @@ msgstr "已开始重试失败的步骤"
 msgid "Failed to autofill name"
 msgstr "自动填充名称失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:206
-msgid "Failed to cancel and remove job"
-msgstr "取消并删除任务失败"
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:199
+msgid "Failed to cancel job"
+msgstr ""
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:98
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:263
@@ -2681,7 +2687,7 @@ msgstr "删除渠道失败"
 msgid "Failed to delete filter"
 msgstr "删除过滤器失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:216
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:209
 msgid "Failed to delete job"
 msgstr "删除处理任务失败"
 
@@ -2805,7 +2811,7 @@ msgstr "刷新凭据失败"
 msgid "Failed to retry all failed pipelines"
 msgstr "重试所有失败的处理任务失败"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:195
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:188
 msgid "Failed to retry job"
 msgstr "重试处理任务失败"
 
@@ -3218,7 +3224,7 @@ msgid "Go back"
 msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:255
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:248
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:195
 msgid "Go Back"
 msgstr "返回"
@@ -3554,7 +3560,7 @@ msgstr "输入参数"
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:504
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:497
 msgid "Input Path"
 msgstr "输入路径"
 
@@ -3588,12 +3594,6 @@ msgstr "Windows 不支持通过此 API 进行交互式密码输入。请使用�
 msgid "Internal"
 msgstr "内部"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:226
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:337
-#: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:117
-msgid "Interrupted"
-msgstr "已中断"
-
 #: src/components/config/shared/danmu-config-form.tsx:156
 msgid "Interval (seconds)"
 msgstr "间隔（秒）"
@@ -3626,9 +3626,9 @@ msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 msgid "Jitter"
 msgstr "抖动"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:201
-msgid "Job cancelled and removed"
-msgstr "已取消并删除任务"
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:194
+msgid "Job cancelled"
+msgstr ""
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:197
 msgid "Job Configuration"
@@ -3638,11 +3638,11 @@ msgstr "处理任务配置"
 msgid "Job configurations"
 msgstr "任务配置"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:212
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:205
 msgid "Job deleted"
 msgstr "处理任务已删除"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:317
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:310
 msgid "Job Details"
 msgstr "处理任务详情"
 
@@ -3650,7 +3650,7 @@ msgstr "处理任务详情"
 msgid "Job limits and engine settings."
 msgstr "任务限制与引擎设置。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:250
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:243
 msgid "Job not found"
 msgstr "未找到处理任务"
 
@@ -3658,7 +3658,7 @@ msgstr "未找到处理任务"
 msgid "Job Presets"
 msgstr "任务预设"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:190
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:183
 msgid "Job retry initiated"
 msgstr "已开始重试处理任务"
 
@@ -3693,7 +3693,7 @@ msgstr "所有输出的 JSON 数组"
 msgid "Keep directory structure"
 msgstr "保留目录结构"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:193
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:191
 msgid "Keep Running"
 msgstr "保持运行"
 
@@ -3823,7 +3823,7 @@ msgstr "已加载模板：{0}"
 msgid "Loading editor components..."
 msgstr "正在加载编辑器组件..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:750
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:743
 msgid "Loading logs..."
 msgstr "正在加载日志..."
 
@@ -3832,7 +3832,7 @@ msgstr "正在加载日志..."
 msgid "Loading more..."
 msgstr "正在加载更多..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:787
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:780
 msgid "Loading older logs..."
 msgstr "正在加载历史日志..."
 
@@ -4127,12 +4127,12 @@ msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
 #: src/components/streamers/edit/recent-sessions-list.tsx:103
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:472
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:483
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:465
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:476
 msgid "MB"
 msgstr "MB"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:614
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:607
 msgid "MB/s"
 msgstr "MB/s"
 
@@ -4431,7 +4431,7 @@ msgstr "无扩展名"
 msgid "No filters yet"
 msgstr "暂无过滤器"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:526
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:519
 msgid "No input paths"
 msgstr "没有输入路径"
 
@@ -4456,7 +4456,7 @@ msgstr "不限"
 msgid "No log files found"
 msgstr "未找到日志文件"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:799
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:792
 msgid "No logs available for this execution."
 msgstr "该执行记录暂无日志。"
 
@@ -4488,7 +4488,7 @@ msgstr "未配置模块"
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:561
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:554
 msgid "No output generated"
 msgstr "未生成输出"
 
@@ -4504,7 +4504,7 @@ msgstr "未配置覆盖项"
 msgid "No parameters configured."
 msgstr "未配置任何参数。"
 
-#: src/components/sessions/jobs-tab.tsx:40
+#: src/components/sessions/jobs-tab.tsx:59
 msgid "No pipeline DAGs found."
 msgstr "未发现处理管道 DAG。"
 
@@ -4797,7 +4797,7 @@ msgstr "仅支持 MP4/MOV/M4V"
 #: src/components/config/platforms/platform-card.tsx:83
 #: src/components/config/templates/template-card.tsx:110
 #: src/components/notifications/channel-card.tsx:174
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:152
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:150
 #: src/components/pipeline/outputs/output-card.tsx:128
 #: src/components/pipeline/presets/preset-card.tsx:170
 #: src/components/pipeline/workflows/workflow-card.tsx:164
@@ -4878,7 +4878,7 @@ msgstr "输出格式"
 msgid "Output Options"
 msgstr "输出选项"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:539
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:532
 msgid "Output Path"
 msgstr "输出路径"
 
@@ -5075,9 +5075,10 @@ msgid "Peak / min"
 msgstr "峰值/分钟"
 
 #: src/components/pipeline/dag-graph-view.tsx:390
+#: src/components/sessions/jobs-tab.tsx:31
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:218
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:457
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:329
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:322
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:103
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:394
 msgid "Pending"
@@ -5116,7 +5117,7 @@ msgstr "性能"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:668
 #: src/components/sessions/overview-tab.tsx:188
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:584
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:577
 msgid "Performance"
 msgstr "性能"
 
@@ -5136,7 +5137,7 @@ msgstr "选择预设主题或导入自定义主题。"
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:447
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:440
 msgid "Pipeline"
 msgstr "处理管道"
 
@@ -5152,7 +5153,7 @@ msgstr "处理管道已删除"
 msgid "Pipeline Execution"
 msgstr "处理管道执行"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:308
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:306
 msgid "Pipeline has failed jobs. Click to view details."
 msgstr "处理管道中有失败的处理任务。点击查看详情。"
 
@@ -5176,7 +5177,7 @@ msgstr "处理任务创建成功"
 msgid "Pipeline Job Timeouts"
 msgstr "管道任务超时"
 
-#: src/components/sessions/jobs-tab.tsx:28
+#: src/components/sessions/jobs-tab.tsx:47
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:348
 msgid "Pipeline Jobs"
 msgstr "处理任务"
@@ -5512,10 +5513,11 @@ msgid "Processed Segment TTL (ms)"
 msgstr "已处理分段 TTL（毫秒）"
 
 #: src/components/pipeline/dag-graph-view.tsx:392
+#: src/components/sessions/jobs-tab.tsx:29
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:345
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:220
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:459
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:331
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:324
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:106
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:400
 msgid "Processing"
@@ -5542,7 +5544,7 @@ msgstr "必须选择处理器"
 msgid "Progress"
 msgstr "进度"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:299
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:297
 msgid "Progress:"
 msgstr "进度："
 
@@ -5609,7 +5611,7 @@ msgstr "画质设置"
 msgid "Query Parameters"
 msgstr "查询参数"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:599
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:592
 msgid "Queue"
 msgstr "队列"
 
@@ -5864,7 +5866,7 @@ msgstr "分辨率变化"
 msgid "Resource Limits"
 msgstr "资源限制"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:461
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:454
 msgid "Resources"
 msgstr "资源"
 
@@ -5923,7 +5925,7 @@ msgstr "重试延迟基数（毫秒）"
 msgid "Retry Failed Steps"
 msgstr "重试失败步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:378
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:371
 msgid "Retry Job"
 msgstr "重试处理任务"
 
@@ -6387,7 +6389,7 @@ msgid "Session Gap"
 msgstr "会话间隔"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:140
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:434
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:427
 msgid "Session ID"
 msgstr "录制会话 ID"
 
@@ -6574,7 +6576,7 @@ msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 
 #: src/components/streamers/edit/active-download-card.tsx:125
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:609
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:602
 msgid "Speed"
 msgstr "速度"
 
@@ -6635,10 +6637,10 @@ msgstr "开始二维码登录"
 msgid "Start Time"
 msgstr "开始时间"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:255
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:253
 #: src/components/sessions/overview-tab.tsx:210
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:302
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:639
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:632
 msgid "Started"
 msgstr "已开始"
 
@@ -6754,7 +6756,7 @@ msgid "Streamer Details"
 msgstr "主播详情"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:133
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:440
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:433
 msgid "Streamer ID"
 msgstr "主播 ID"
 
@@ -7105,7 +7107,7 @@ msgstr "该流已处于活动状态"
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:185
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:183
 msgid "This will cancel all pending and processing jobs in this pipeline."
 msgstr "这将取消此处理管道中所有待处理和处理中的任务。"
 
@@ -7114,7 +7116,7 @@ msgstr "这将取消此处理管道中所有待处理和处理中的任务。"
 msgid "This will permanently delete the notification channel \"{0}\"."
 msgstr "这将永久删除通知渠道“{0}”。"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:227
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:225
 msgid "This will permanently delete the pipeline and all its associated jobs and logs. This action cannot be undone."
 msgstr "这将永久删除处理管道及其关联的所有任务和日志。此操作无法撤销。"
 
@@ -7241,7 +7243,7 @@ msgstr "高频词"
 msgid "total"
 msgstr "总计"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:736
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:729
 msgid "Total"
 msgstr "总计"
 
@@ -7704,7 +7706,7 @@ msgstr "查看弹幕"
 msgid "View Detailed Logs & Outputs"
 msgstr "查看详细日志与输出"
 
-#: src/components/pipeline/jobs/pipeline-summary-card.tsx:164
+#: src/components/pipeline/jobs/pipeline-summary-card.tsx:162
 #: src/components/sessions/session-card.tsx:269
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:198
 msgid "View Details"

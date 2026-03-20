@@ -22,9 +22,9 @@ pub trait JobRepository: Send + Sync {
     /// Mark a job as FAILED and set error/completed_at.
     /// Returns the number of rows updated (0 means the job was already in a terminal state).
     async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64>;
-    /// Mark a job as INTERRUPTED and set completed_at.
+    /// Mark a job as CANCELLED and set completed_at.
     /// Returns the number of rows updated (0 means the job was already in a terminal state).
-    async fn mark_job_interrupted(&self, id: &str) -> Result<u64>;
+    async fn mark_job_cancelled(&self, id: &str) -> Result<u64>;
     /// Reset a job for retry (PENDING, clear started/completed/error, increment retry_count).
     async fn reset_job_for_retry(&self, id: &str) -> Result<()>;
     /// Count pending jobs, optionally filtered by job types.
@@ -57,7 +57,6 @@ pub trait JobRepository: Send + Sync {
     /// Update a job only if its current status matches `expected_status`.
     /// Returns the number of rows updated.
     async fn update_job_if_status(&self, job: &JobDbModel, expected_status: &str) -> Result<u64>;
-    async fn reset_interrupted_jobs(&self) -> Result<i32>;
     /// Reset processing jobs to pending (for recovery on startup).
     async fn reset_processing_jobs(&self) -> Result<i32>;
     async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32>;
@@ -246,11 +245,11 @@ impl JobRepository for SqlxJobRepository {
         .await
     }
 
-    async fn mark_job_interrupted(&self, id: &str) -> Result<u64> {
-        retry_on_sqlite_busy("mark_job_interrupted", || async {
+    async fn mark_job_cancelled(&self, id: &str) -> Result<u64> {
+        retry_on_sqlite_busy("mark_job_cancelled", || async {
             let now = crate::database::time::now_ms();
             let res = sqlx::query(
-                "UPDATE job SET status = 'INTERRUPTED', completed_at = ?, updated_at = ? WHERE id = ? AND status IN ('PENDING', 'PROCESSING')",
+                "UPDATE job SET status = 'CANCELLED', completed_at = ?, updated_at = ? WHERE id = ? AND status IN ('PENDING', 'PROCESSING')",
             )
             .bind(now)
             .bind(now)
@@ -266,7 +265,7 @@ impl JobRepository for SqlxJobRepository {
         retry_on_sqlite_busy("reset_job_for_retry", || async {
             let now = crate::database::time::now_ms();
             let res = sqlx::query(
-                "UPDATE job SET status = 'PENDING', started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ? AND status IN ('FAILED', 'INTERRUPTED')",
+                "UPDATE job SET status = 'PENDING', started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ? AND status IN ('FAILED', 'CANCELLED')",
             )
             .bind(now)
             .bind(id)
@@ -585,20 +584,6 @@ impl JobRepository for SqlxJobRepository {
             .await?;
 
             Ok(res.rows_affected())
-        })
-        .await
-    }
-
-    async fn reset_interrupted_jobs(&self) -> Result<i32> {
-        retry_on_sqlite_busy("reset_interrupted_jobs", || async {
-            let now = crate::database::time::now_ms();
-            let result = sqlx::query(
-                "UPDATE job SET status = 'PENDING', updated_at = ? WHERE status = 'INTERRUPTED'",
-            )
-            .bind(now)
-            .execute(&self.write_pool)
-            .await?;
-            Ok(result.rows_affected() as i32)
         })
         .await
     }
@@ -1021,7 +1006,7 @@ impl JobRepository for SqlxJobRepository {
                 COALESCE(SUM(CASE WHEN status = 'PROCESSING' THEN 1 ELSE 0 END), 0) as processing,
                 COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END), 0) as completed,
                 COALESCE(SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END), 0) as failed,
-                COALESCE(SUM(CASE WHEN status = 'INTERRUPTED' THEN 1 ELSE 0 END), 0) as interrupted
+                COALESCE(SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END), 0) as cancelled
             FROM job
             "#,
         )
@@ -1033,7 +1018,7 @@ impl JobRepository for SqlxJobRepository {
             processing: row.1 as u64,
             completed: row.2 as u64,
             failed: row.3 as u64,
-            interrupted: row.4 as u64,
+            cancelled: row.4 as u64,
         })
     }
 
@@ -1071,7 +1056,7 @@ impl JobRepository for SqlxJobRepository {
             let result = sqlx::query(
                 r#"
                 UPDATE job SET
-                    status = 'INTERRUPTED',
+                    status = 'CANCELLED',
                     completed_at = ?,
                     updated_at = ?
                 WHERE pipeline_id = ?

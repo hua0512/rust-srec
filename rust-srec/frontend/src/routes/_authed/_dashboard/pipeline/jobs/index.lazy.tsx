@@ -113,8 +113,8 @@ function PipelineJobsPage() {
         },
         { value: 'FAILED', label: i18n._(msg`Failed`), icon: XCircle },
         {
-          value: 'INTERRUPTED',
-          label: i18n._(msg`Interrupted`),
+          value: 'CANCELLED',
+          label: i18n._(msg`Cancelled`),
           icon: AlertCircle,
         },
       ] as const,

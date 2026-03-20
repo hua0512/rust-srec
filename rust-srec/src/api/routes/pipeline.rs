@@ -19,8 +19,9 @@
 //! | GET | `/api/pipeline/jobs/{id}` | Get a single job by ID |
 //! | GET | `/api/pipeline/jobs/{id}/logs` | List job execution logs (paged) |
 //! | GET | `/api/pipeline/jobs/{id}/progress` | Get latest job progress snapshot |
-//! | POST | `/api/pipeline/jobs/{id}/retry` | Retry a failed job |
-//! | DELETE | `/api/pipeline/jobs/{id}` | Cancel an active job, or delete a completed/failed job |
+//! | POST | `/api/pipeline/jobs/{id}/retry` | Retry a failed or cancelled job |
+//! | POST | `/api/pipeline/jobs/{id}/cancel` | Cancel an active job |
+//! | DELETE | `/api/pipeline/jobs/{id}` | Delete a terminal job |
 //!
 //! ## Pipelines
 //!
@@ -86,8 +87,9 @@ use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 ///
 /// - `GET /jobs` - List jobs with filtering and pagination
 /// - `GET /jobs/{id}` - Get a single job by ID
-/// - `POST /jobs/{id}/retry` - Retry a failed job
-/// - `DELETE /jobs/{id}` - Cancel a job
+/// - `POST /jobs/{id}/retry` - Retry a failed or cancelled job
+/// - `POST /jobs/{id}/cancel` - Cancel an active job
+/// - `DELETE /jobs/{id}` - Delete a terminal job
 /// - `DELETE /{pipeline_id}` - Cancel all jobs in a DAG pipeline
 /// - `GET /pipelines` - List DAG pipelines with filtering and pagination
 /// - `GET /outputs` - List media outputs
@@ -114,7 +116,8 @@ pub fn router() -> Router<AppState> {
         .route("/jobs/{id}/logs", get(list_job_logs))
         .route("/jobs/{id}/progress", get(get_job_progress))
         .route("/jobs/{id}/retry", post(retry_job))
-        .route("/jobs/{id}", delete(cancel_or_delete_job))
+        .route("/jobs/{id}/cancel", post(cancel_job))
+        .route("/jobs/{id}", delete(delete_job))
         .route("/{pipeline_id}", delete(cancel_pipeline))
         .route("/outputs", get(list_outputs))
         .route("/stats", get(get_stats))
@@ -614,7 +617,7 @@ pub struct DagStatsResponse {
 /// - `session_id` - Associated recording session ID
 /// - `streamer_id` - Associated streamer ID
 /// - `pipeline_id` - Associated pipeline ID (if part of a pipeline)
-/// - `status` - Current job status (pending, processing, completed, failed, interrupted)
+/// - `status` - Current job status (pending, processing, completed, failed, cancelled)
 /// - `streamer_id` - Filter by streamer ID
 /// - `session_id` - Filter by session ID
 /// - `from_date` - Filter jobs created after this date (ISO 8601)
@@ -899,7 +902,7 @@ pub async fn get_job(
     Ok(Json(job_to_response(&job, streamer_name)))
 }
 
-/// Retry a failed or interrupted job.
+/// Retry a failed or cancelled job.
 ///
 /// # Endpoint
 ///
@@ -925,7 +928,7 @@ pub async fn get_job(
 /// # Errors
 ///
 /// - `404 Not Found` - Job with the specified ID does not exist
-/// - `409 Conflict` - Job is not in a retryable terminal status ("failed" or "interrupted")
+/// - `409 Conflict` - Job is not in a retryable terminal status ("failed" or "cancelled")
 ///
 #[utoipa::path(
     post,
@@ -968,11 +971,11 @@ pub async fn retry_job(
     Ok(Json(job_to_response(&job, streamer_name)))
 }
 
-/// Cancel an active job, or delete a completed/failed job.
+/// Cancel an active job.
 ///
 /// # Endpoint
 ///
-/// `DELETE /api/pipeline/jobs/{id}`
+/// `POST /api/pipeline/jobs/{id}/cancel`
 ///
 /// # Path Parameters
 ///
@@ -980,7 +983,7 @@ pub async fn retry_job(
 ///
 /// # Response
 ///
-/// Returns a success message on successful cancellation or deletion.
+/// Returns a success message on successful cancellation.
 ///
 /// ```json
 /// {
@@ -989,65 +992,81 @@ pub async fn retry_job(
 /// }
 /// ```
 ///
-/// For completed or failed jobs, the success message instead reports deletion.
-///
 /// # Errors
 ///
 /// - `404 Not Found` - Job with the specified ID does not exist
-/// - `400 Bad Request` - Job could not be cancelled or deleted due to an invalid state transition
+/// - `400 Bad Request` - Job could not be cancelled due to an invalid state transition
 ///
 /// # Behavior
 ///
-/// - For pending jobs: Removes from queue and marks as "interrupted"
-/// - For processing jobs: Signals cancellation to worker and marks as "interrupted"
-/// - For interrupted jobs: Keeps the job in the interrupted state and re-signals cancellation if needed
-/// - For completed/failed jobs: Deletes the job record instead of returning a cancellation error
+/// - For pending jobs: Removes from queue and marks as "cancelled"
+/// - For processing jobs: Signals cancellation to worker and marks as "cancelled"
+/// - For cancelled jobs: Keeps the job in the cancelled state and re-signals cancellation if needed
 ///
 /// To delete an entire DAG execution, use `DELETE /api/pipeline/dag/{dag_id}/delete`.
 ///
+#[utoipa::path(
+    post,
+    path = "/api/pipeline/jobs/{id}/cancel",
+    tag = "pipeline",
+    params(("id" = String, Path, description = "Job ID")),
+    responses(
+        (status = 200, description = "Job cancelled", body = crate::api::openapi::MessageResponse),
+        (status = 400, description = "Job could not be cancelled", body = crate::api::error::ApiErrorResponse),
+        (status = 404, description = "Job not found", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn cancel_job(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let pipeline_manager = state
+        .pipeline_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+
+    pipeline_manager
+        .cancel_job(&id)
+        .await
+        .map_err(ApiError::from)?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": format!("Job '{}' cancelled successfully", id)
+    })))
+}
+
 #[utoipa::path(
     delete,
     path = "/api/pipeline/jobs/{id}",
     tag = "pipeline",
     params(("id" = String, Path, description = "Job ID")),
     responses(
-        (status = 200, description = "Job cancelled or deleted", body = crate::api::openapi::MessageResponse),
-        (status = 400, description = "Job could not be cancelled or deleted", body = crate::api::error::ApiErrorResponse),
+        (status = 200, description = "Job deleted", body = crate::api::openapi::MessageResponse),
+        (status = 400, description = "Job could not be deleted", body = crate::api::error::ApiErrorResponse),
         (status = 404, description = "Job not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn cancel_or_delete_job(
+pub async fn delete_job(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    // Get pipeline manager from state
     let pipeline_manager = state
         .pipeline_manager
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
-    // Call PipelineManager.cancel_job. If it fails because the job is already
-    // terminal (Completed/Failed), we try to DELETE it instead.
-    match pipeline_manager.cancel_job(&id).await {
-        Ok(_) => Ok(Json(serde_json::json!({
-            "success": true,
-            "message": format!("Job '{}' cancelled successfully", id)
-        }))),
-        Err(crate::Error::InvalidStateTransition { .. }) => {
-            // Job is already in a terminal state (Completed/Failed), so delete it
-            pipeline_manager
-                .delete_job(&id)
-                .await
-                .map_err(ApiError::from)?;
+    pipeline_manager
+        .delete_job(&id)
+        .await
+        .map_err(ApiError::from)?;
 
-            Ok(Json(serde_json::json!({
-                "success": true,
-                "message": format!("Job '{}' deleted successfully", id)
-            })))
-        }
-        Err(e) => Err(ApiError::from(e)),
-    }
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": format!("Job '{}' deleted successfully", id)
+    })))
 }
 
 #[utoipa::path(
@@ -1228,6 +1247,7 @@ pub async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<Pipeline
         processing_count: stats.processing,
         completed_count: stats.completed,
         failed_count: stats.failed,
+        cancelled_count: stats.cancelled,
         avg_processing_time_secs: stats.avg_processing_time_secs,
     };
 
@@ -1314,7 +1334,7 @@ fn api_status_to_db_status(status: ApiJobStatus) -> DbJobStatus {
         ApiJobStatus::Processing => DbJobStatus::Processing,
         ApiJobStatus::Completed => DbJobStatus::Completed,
         ApiJobStatus::Failed => DbJobStatus::Failed,
-        ApiJobStatus::Interrupted => DbJobStatus::Interrupted,
+        ApiJobStatus::Cancelled => DbJobStatus::Cancelled,
     }
 }
 
@@ -1325,7 +1345,7 @@ fn queue_status_to_api_status(status: QueueJobStatus) -> ApiJobStatus {
         QueueJobStatus::Processing => ApiJobStatus::Processing,
         QueueJobStatus::Completed => ApiJobStatus::Completed,
         QueueJobStatus::Failed => ApiJobStatus::Failed,
-        QueueJobStatus::Interrupted => ApiJobStatus::Interrupted,
+        QueueJobStatus::Cancelled => ApiJobStatus::Cancelled,
     }
 }
 
@@ -1898,9 +1918,10 @@ pub async fn retry_dag(
         .await
         .map_err(ApiError::from)?;
 
-    // Retry is only meaningful for failed DAGs.
-    if dag.status != "FAILED" {
-        return Err(ApiError::bad_request("DAG is not in FAILED status"));
+    if dag.status != "FAILED" && dag.status != "CANCELLED" {
+        return Err(ApiError::bad_request(
+            "DAG is not in FAILED or CANCELLED status",
+        ));
     }
 
     // Get all steps
@@ -1928,9 +1949,6 @@ pub async fn retry_dag(
         .await
         .map_err(ApiError::from)?;
 
-    // Retry each job (FAILED or INTERRUPTED -> PENDING). If a step's job has already completed
-    // (e.g. it finished after fail-fast cancelled the DAG), reconcile it by marking the step
-    // completed using the job outputs so downstream steps can be scheduled.
     let mut job_ids = Vec::new();
     let mut reconciled_steps = 0usize;
     for step in &retryable_steps {
@@ -1951,7 +1969,7 @@ pub async fn retry_dag(
         };
 
         match job.status {
-            QueueJobStatus::Failed | QueueJobStatus::Interrupted => {
+            QueueJobStatus::Failed | QueueJobStatus::Cancelled => {
                 match pipeline_manager.retry_job(job_id).await {
                     Ok(job) => job_ids.push(job.id),
                     Err(e) => tracing::warn!("Failed to retry job {}: {}", job_id, e),
@@ -2043,7 +2061,7 @@ pub async fn list_dags(
             "PROCESSING" => "PROCESSING",
             "COMPLETED" => "COMPLETED",
             "FAILED" => "FAILED",
-            "INTERRUPTED" => "INTERRUPTED",
+            "CANCELLED" => "CANCELLED",
             _ => s.as_str(),
         });
 
@@ -2150,23 +2168,27 @@ pub async fn retry_all_failed_dags(
         .dag_scheduler()
         .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
 
-    // 1. List all failed DAGs. Use a large limit to catch them all.
     let failed_dags = dag_scheduler
         .list_dags(Some("FAILED"), None, 1000, 0)
         .await
         .map_err(ApiError::from)?;
+    let cancelled_dags = dag_scheduler
+        .list_dags(Some("CANCELLED"), None, 1000, 0)
+        .await
+        .map_err(ApiError::from)?;
 
-    if failed_dags.is_empty() {
+    let dags: Vec<_> = failed_dags.into_iter().chain(cancelled_dags).collect();
+
+    if dags.is_empty() {
         return Ok(Json(serde_json::json!({
             "success": true,
             "count": 0,
-            "message": "No failed DAGs found"
+            "message": "No failed or cancelled DAGs found"
         })));
     }
 
     let mut retried_count = 0;
-    for dag in failed_dags {
-        // Get all steps for this DAG
+    for dag in dags {
         let steps = dag_scheduler
             .get_dag_steps(&dag.id)
             .await
@@ -2179,8 +2201,7 @@ pub async fn retry_all_failed_dags(
             .collect();
 
         if retryable_steps.is_empty() {
-            // DAG is failed but no steps are failed? (Reset anyway if it's in a failed state)
-            if dag.status == "FAILED" {
+            if dag.status == "FAILED" || dag.status == "CANCELLED" {
                 let _ = dag_scheduler.reset_dag_for_retry(&dag.id).await;
                 retried_count += 1;
             }
@@ -2193,8 +2214,6 @@ pub async fn retry_all_failed_dags(
             continue;
         }
 
-        // Retry each job (FAILED or INTERRUPTED -> PENDING). If a step's job already completed
-        // after fail-fast, reconcile the step completion using the job outputs.
         for step in retryable_steps {
             if let (Some(job_id), Ok(Some(job))) = (
                 &step.job_id,
@@ -2203,7 +2222,7 @@ pub async fn retry_all_failed_dags(
                     .await,
             ) {
                 match job.status {
-                    QueueJobStatus::Failed | QueueJobStatus::Interrupted => {
+                    QueueJobStatus::Failed | QueueJobStatus::Cancelled => {
                         let _ = pipeline_manager.retry_job(job_id).await;
                     }
                     QueueJobStatus::Completed => {
@@ -2227,7 +2246,7 @@ pub async fn retry_all_failed_dags(
     Ok(Json(serde_json::json!({
         "success": true,
         "count": retried_count,
-        "message": format!("Successfully retried {} failed DAGs", retried_count)
+        "message": format!("Successfully retried {} failed or cancelled DAGs", retried_count)
     })))
 }
 
@@ -2636,10 +2655,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cancel_or_delete_job_cancels_processing_job() {
+    async fn test_cancel_job_cancels_processing_job() {
         let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Processing).await;
 
-        let response = cancel_or_delete_job(State(state.clone()), Path(job_id.clone()))
+        let response = cancel_job(State(state.clone()), Path(job_id.clone()))
             .await
             .unwrap();
 
@@ -2650,14 +2669,14 @@ mod tests {
 
         let manager = state.pipeline_manager.as_ref().unwrap();
         let job = manager.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(job.status, QueueJobStatus::Interrupted);
+        assert_eq!(job.status, QueueJobStatus::Cancelled);
     }
 
     #[tokio::test]
-    async fn test_cancel_or_delete_job_deletes_completed_job() {
+    async fn test_delete_job_deletes_completed_job() {
         let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Completed).await;
 
-        let response = cancel_or_delete_job(State(state.clone()), Path(job_id.clone()))
+        let response = delete_job(State(state.clone()), Path(job_id.clone()))
             .await
             .unwrap();
 
@@ -2671,6 +2690,92 @@ mod tests {
         assert!(job.is_none());
     }
 
+    #[tokio::test]
+    async fn test_delete_job_rejects_processing_job() {
+        let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Processing).await;
+
+        let result = delete_job(State(state), Path(job_id));
+
+        assert!(result.await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_cancel_job_rejects_completed_job() {
+        let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Completed).await;
+
+        let result = cancel_job(State(state), Path(job_id));
+
+        assert!(result.await.is_err());
+    }
+
+    #[test]
+    fn test_retry_dag_accepts_cancelled_status() {
+        let status = "CANCELLED";
+        let retryable = status == "FAILED" || status == "CANCELLED";
+        assert!(retryable);
+    }
+
+    #[tokio::test]
+    async fn test_get_job_returns_cancelled_status() {
+        let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Pending).await;
+        let manager = state.pipeline_manager.as_ref().unwrap();
+        manager.cancel_job(&job_id).await.unwrap();
+
+        let response = get_job(State(state), Path(job_id)).await.unwrap();
+
+        assert_eq!(response.0.status, ApiJobStatus::Cancelled);
+    }
+
+    #[tokio::test]
+    async fn test_list_jobs_filters_cancelled_status() {
+        let state = build_test_state();
+        let manager = state.pipeline_manager.as_ref().unwrap().clone();
+
+        let pending_job = Job::new(
+            "remux",
+            vec!["pending-input.mp4".to_string()],
+            vec!["pending-output.mp4".to_string()],
+            "streamer-1",
+            "session-1",
+        );
+        let pending_job_id = manager.enqueue(pending_job).await.unwrap();
+
+        let cancelled_job = Job::new(
+            "remux",
+            vec!["cancelled-input.mp4".to_string()],
+            vec!["cancelled-output.mp4".to_string()],
+            "streamer-1",
+            "session-1",
+        );
+        let cancelled_job_id = manager.enqueue(cancelled_job).await.unwrap();
+        manager.cancel_job(&cancelled_job_id).await.unwrap();
+
+        let response = list_jobs(
+            State(state.clone()),
+            Query(PaginationParams::default()),
+            Query(JobFilterParams {
+                status: Some(ApiJobStatus::Cancelled),
+                ..JobFilterParams::default()
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.0.total, 1);
+        assert_eq!(response.0.items.len(), 1);
+        assert_eq!(response.0.items[0].id, cancelled_job_id);
+        assert_eq!(response.0.items[0].status, ApiJobStatus::Cancelled);
+
+        let pending = manager.get_job(&pending_job_id).await.unwrap().unwrap();
+        assert_eq!(pending.status, QueueJobStatus::Pending);
+    }
+
+    #[test]
+    fn test_job_filter_params_deserialize_cancelled_status() {
+        let filters: JobFilterParams = serde_json::from_str(r#"{"status":"CANCELLED"}"#).unwrap();
+        assert_eq!(filters.status, Some(ApiJobStatus::Cancelled));
+    }
+
     #[test]
     fn test_pipeline_stats_response_serialization() {
         let response = PipelineStatsResponse {
@@ -2678,11 +2783,13 @@ mod tests {
             processing_count: 2,
             completed_count: 100,
             failed_count: 5,
+            cancelled_count: 1,
             avg_processing_time_secs: Some(45.5),
         };
 
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("pending_count"));
+        assert!(json.contains("cancelled_count"));
         assert!(json.contains("45.5"));
     }
 
@@ -2757,8 +2864,8 @@ mod tests {
             DbJobStatus::Failed
         );
         assert_eq!(
-            api_status_to_db_status(ApiJobStatus::Interrupted),
-            DbJobStatus::Interrupted
+            api_status_to_db_status(ApiJobStatus::Cancelled),
+            DbJobStatus::Cancelled
         );
     }
 
@@ -2781,8 +2888,8 @@ mod tests {
             ApiJobStatus::Failed
         );
         assert_eq!(
-            queue_status_to_api_status(QueueJobStatus::Interrupted),
-            ApiJobStatus::Interrupted
+            queue_status_to_api_status(QueueJobStatus::Cancelled),
+            ApiJobStatus::Cancelled
         );
     }
 

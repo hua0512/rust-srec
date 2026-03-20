@@ -188,22 +188,16 @@ export const retryPipelineJob = createServerFn({ method: 'POST' })
     await fetchBackend(`/pipeline/jobs/${id}/retry`, { method: 'POST' });
   });
 
-async function runPipelineJobDeleteAction(id: string) {
-  await fetchBackend(`/pipeline/jobs/${id}`, { method: 'DELETE' });
-}
-
-// Backend `DELETE /pipeline/jobs/{id}` is status-sensitive:
-// it cancels active jobs and deletes terminal jobs.
 export const cancelActivePipelineJob = createServerFn({ method: 'POST' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
-    await runPipelineJobDeleteAction(id);
+    await fetchBackend(`/pipeline/jobs/${id}/cancel`, { method: 'POST' });
   });
 
 export const deletePipelineJob = createServerFn({ method: 'POST' })
   .inputValidator((id: string) => id)
   .handler(async ({ data: id }) => {
-    await runPipelineJobDeleteAction(id);
+    await fetchBackend(`/pipeline/jobs/${id}`, { method: 'DELETE' });
   });
 
 export const cancelPipeline = createServerFn({ method: 'POST' })

@@ -2739,8 +2739,7 @@ where
             .await?
             .ok_or_else(|| Error::not_found("Job", id))?;
 
-        if job_snapshot.status != JobStatus::Failed && job_snapshot.status != JobStatus::Interrupted
-        {
+        if job_snapshot.status != JobStatus::Failed && job_snapshot.status != JobStatus::Cancelled {
             return Err(Error::InvalidStateTransition {
                 from: job_snapshot.status.as_str().to_string(),
                 to: "PENDING".to_string(),
@@ -2763,7 +2762,7 @@ where
             if matches!(
                 dag.get_status(),
                 Some(crate::database::models::DagExecutionStatus::Failed)
-                    | Some(crate::database::models::DagExecutionStatus::Interrupted)
+                    | Some(crate::database::models::DagExecutionStatus::Cancelled)
             ) {
                 dag_scheduler.reset_dag_for_retry(&dag_id).await?;
             }
@@ -2785,14 +2784,11 @@ where
     }
 
     /// Cancel a job.
-    /// For Pending jobs: removes from queue and marks as Interrupted.
-    /// For Processing jobs: signals cancellation and marks as Interrupted.
     /// Returns error for Completed/Failed jobs.
     /// Delegates to JobQueue.
     pub async fn cancel_job(&self, id: &str) -> Result<()> {
         let cancelled_job = self.job_queue.cancel_job(id).await?;
 
-        // Emit JobFailed event for cancelled jobs (pipeline interrupted)
         let _ = self.event_tx.send(PipelineEvent::JobFailed {
             job_id: cancelled_job.id.clone(),
             job_type: cancelled_job.job_type.clone(),
@@ -2803,7 +2799,6 @@ where
     }
 
     /// Delete a job.
-    /// Only allows deleting jobs in terminal states (Completed, Failed, Interrupted).
     /// Removes from database and cache.
     /// Delegates to JobQueue.
     pub async fn delete_job(&self, id: &str) -> Result<()> {
@@ -2981,7 +2976,7 @@ where
             processing: job_stats.processing,
             completed: job_stats.completed,
             failed: job_stats.failed,
-            interrupted: job_stats.interrupted,
+            cancelled: job_stats.cancelled,
             avg_processing_time_secs: job_stats.avg_processing_time_secs,
             queue_depth: self.queue_depth(),
             queue_status: self.queue_status(),
@@ -3075,8 +3070,7 @@ pub struct PipelineStats {
     pub completed: u64,
     /// Number of failed jobs.
     pub failed: u64,
-    /// Number of interrupted jobs.
-    pub interrupted: u64,
+    pub cancelled: u64,
     /// Average processing time in seconds for completed jobs.
     pub avg_processing_time_secs: Option<f64>,
     /// Current queue depth.
@@ -3344,7 +3338,7 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn mark_job_interrupted(&self, _id: &str) -> Result<u64> {
+        async fn mark_job_cancelled(&self, _id: &str) -> Result<u64> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3356,7 +3350,7 @@ mod tests {
                 .ok_or_else(|| crate::Error::not_found("Job", id))?;
 
             match job.status.as_str() {
-                "FAILED" | "INTERRUPTED" => {
+                "FAILED" | "CANCELLED" => {
                     job.status = "PENDING".to_string();
                     job.started_at = None;
                     job.completed_at = None;
@@ -3418,10 +3412,6 @@ mod tests {
             _job: &JobDbModel,
             _expected_status: &str,
         ) -> Result<u64> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn reset_interrupted_jobs(&self) -> Result<i32> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3644,6 +3634,14 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
+        async fn cancel_dag_and_cancel_steps(
+            &self,
+            _dag_id: &str,
+            _error: &str,
+        ) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
         async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
             self.reset_calls.fetch_add(1, Ordering::SeqCst);
             let mut dags = self.dags.lock().expect("lock poisoned");
@@ -3804,6 +3802,14 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
+        async fn cancel_dag_and_cancel_steps(
+            &self,
+            _dag_id: &str,
+            _error: &str,
+        ) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
         async fn reset_dag_for_retry(&self, _dag_id: &str) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
@@ -3919,6 +3925,63 @@ mod tests {
         assert_eq!(retried.retry_count, 1);
         assert!(retried.error.is_none());
 
+        assert_eq!(dag_repo.reset_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_retry_job_resets_cancelled_dag_when_job_is_dag_step() {
+        let job_repo = Arc::new(TestJobRepository::new());
+        let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
+
+        let dag_def = DagExecutionDbModel::new(
+            &crate::database::models::DagPipelineDefinition::new(
+                "test",
+                vec![crate::database::models::DagStep::new(
+                    "step-a",
+                    crate::database::models::PipelineStep::Inline {
+                        processor: "remux".to_string(),
+                        config: serde_json::json!({}),
+                    },
+                )],
+            ),
+            None,
+            None,
+        );
+
+        let mut dag = dag_def;
+        dag.status = crate::database::models::DagExecutionStatus::Cancelled
+            .as_str()
+            .to_string();
+        let dag_id = dag.id.clone();
+        dag_repo.insert(dag);
+
+        let mut job = JobDbModel::new_pipeline_step(
+            "remux",
+            serde_json::to_string(&vec!["/in.flv".to_string()]).unwrap(),
+            "[]",
+            0,
+            None,
+            None,
+        );
+        job.pipeline_id = Some(dag_id.clone());
+        job.dag_step_execution_id = Some("step-exec-1".to_string());
+        job.status = "CANCELLED".to_string();
+        job.error = Some("cancelled".to_string());
+        job.completed_at = Some(chrono::Utc::now().timestamp_millis());
+        let job_id = job.id.clone();
+        job_repo.insert(job);
+
+        let mut config = PipelineManagerConfig::default();
+        config.purge.retention_days = 0;
+
+        let manager: PipelineManager = PipelineManager::with_repository(config, job_repo)
+            .with_dag_repository(dag_repo.clone());
+
+        let retried = manager.retry_job(&job_id).await.unwrap();
+        assert_eq!(
+            retried.status,
+            crate::pipeline::job_queue::JobStatus::Pending
+        );
         assert_eq!(dag_repo.reset_calls(), 1);
     }
 
@@ -4216,9 +4279,8 @@ mod tests {
         // Cancel the pending job
         manager.cancel_job(&job_id).await.unwrap();
 
-        // Verify job is now interrupted
         let cancelled = manager.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(cancelled.status, JobStatus::Interrupted);
+        assert_eq!(cancelled.status, JobStatus::Cancelled);
     }
 
     #[test]

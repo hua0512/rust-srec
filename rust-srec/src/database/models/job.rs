@@ -125,14 +125,13 @@ pub struct JobCounts {
     pub completed: u64,
     /// Number of failed jobs.
     pub failed: u64,
-    /// Number of interrupted jobs.
-    pub interrupted: u64,
+    pub cancelled: u64,
 }
 
 impl JobCounts {
     /// Get total count of all jobs.
     pub fn total(&self) -> u64 {
-        self.pending + self.processing + self.completed + self.failed + self.interrupted
+        self.pending + self.processing + self.completed + self.failed + self.cancelled
     }
 }
 
@@ -148,7 +147,6 @@ pub struct JobDbModel {
     /// - A processor name for inline steps (e.g. `remux`, `upload`, `thumbnail`)
     /// - A preset name for preset-driven DAG steps (e.g. `thumbnail_native`, `thumbnail_hd`)
     pub job_type: String,
-    /// Status: PENDING, PROCESSING, COMPLETED, FAILED, INTERRUPTED
     pub status: String,
     /// JSON blob for job-specific configuration
     pub config: String,
@@ -388,8 +386,7 @@ pub enum JobStatus {
     Completed,
     /// Job failed after exhausting retries.
     Failed,
-    /// Job was interrupted by shutdown; will be reset to PENDING on restart.
-    Interrupted,
+    Cancelled,
 }
 
 impl JobStatus {
@@ -399,7 +396,7 @@ impl JobStatus {
             Self::Processing => "PROCESSING",
             Self::Completed => "COMPLETED",
             Self::Failed => "FAILED",
-            Self::Interrupted => "INTERRUPTED",
+            Self::Cancelled => "CANCELLED",
         }
     }
 
@@ -409,14 +406,14 @@ impl JobStatus {
             "PROCESSING" => Some(Self::Processing),
             "COMPLETED" => Some(Self::Completed),
             "FAILED" => Some(Self::Failed),
-            "INTERRUPTED" => Some(Self::Interrupted),
+            "CANCELLED" => Some(Self::Cancelled),
             _ => None,
         }
     }
 
     /// Check if this is a terminal status.
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Completed | Self::Failed)
+        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
     }
 }
 
@@ -939,8 +936,7 @@ pub enum DagExecutionStatus {
     Completed,
     /// At least one step failed.
     Failed,
-    /// DAG was interrupted by shutdown.
-    Interrupted,
+    Cancelled,
 }
 
 impl DagExecutionStatus {
@@ -950,7 +946,7 @@ impl DagExecutionStatus {
             Self::Processing => "PROCESSING",
             Self::Completed => "COMPLETED",
             Self::Failed => "FAILED",
-            Self::Interrupted => "INTERRUPTED",
+            Self::Cancelled => "CANCELLED",
         }
     }
 
@@ -960,14 +956,14 @@ impl DagExecutionStatus {
             "PROCESSING" => Some(Self::Processing),
             "COMPLETED" => Some(Self::Completed),
             "FAILED" => Some(Self::Failed),
-            "INTERRUPTED" => Some(Self::Interrupted),
+            "CANCELLED" => Some(Self::Cancelled),
             _ => None,
         }
     }
 
     /// Check if this is a terminal status.
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Completed | Self::Failed)
+        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
     }
 }
 
@@ -1117,7 +1113,7 @@ mod tests {
         assert!(JobStatus::Failed.is_terminal());
         assert!(!JobStatus::Pending.is_terminal());
         assert!(!JobStatus::Processing.is_terminal());
-        assert!(!JobStatus::Interrupted.is_terminal());
+        assert!(JobStatus::Cancelled.is_terminal());
     }
 
     #[test]
@@ -1483,7 +1479,7 @@ mod tests {
         assert!(!DagExecutionStatus::Processing.is_terminal());
         assert!(DagExecutionStatus::Completed.is_terminal());
         assert!(DagExecutionStatus::Failed.is_terminal());
-        assert!(!DagExecutionStatus::Interrupted.is_terminal());
+        assert!(DagExecutionStatus::Cancelled.is_terminal());
     }
 
     #[test]

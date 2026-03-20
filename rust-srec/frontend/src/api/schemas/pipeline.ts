@@ -65,7 +65,7 @@ export const JobStatusSchema = z.enum([
   'PROCESSING',
   'COMPLETED',
   'FAILED',
-  'INTERRUPTED',
+  'CANCELLED',
 ]);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 
@@ -155,7 +155,7 @@ export const DagStatusSchema = z.enum([
   'PROCESSING',
   'COMPLETED',
   'FAILED',
-  'INTERRUPTED',
+  'CANCELLED',
 ]);
 export type DagStatus = z.infer<typeof DagStatusSchema>;
 

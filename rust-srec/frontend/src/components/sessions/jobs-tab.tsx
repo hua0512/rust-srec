@@ -7,6 +7,10 @@ import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { Server, Clock } from 'lucide-react';
+import {
+  getStatusConfig,
+  getStatusLabel,
+} from '@/components/pipeline/status-config';
 
 interface JobsTabProps {
   isLoading: boolean;
@@ -15,6 +19,7 @@ interface JobsTabProps {
 
 export function JobsTab({ isLoading, dags }: JobsTabProps) {
   const { i18n } = useLingui();
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -50,6 +55,10 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
                   >
+                    {(() => {
+                      const statusConfig = getStatusConfig(dag.status);
+
+                      return (
                     <Link
                       to="/pipeline/executions/$pipelineId"
                       params={{ pipelineId: dag.id }}
@@ -57,22 +66,14 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                     >
                       <div className="flex items-center gap-4">
                         <Badge
-                          variant={
-                            dag.status === 'COMPLETED'
-                              ? 'default'
-                              : dag.status === 'FAILED'
-                                ? 'destructive'
-                                : 'secondary'
-                          }
+                          variant={statusConfig.badgeVariant}
                           className={cn(
                             'w-24 justify-center',
-                            dag.status === 'COMPLETED' &&
-                              'bg-green-500/15 text-green-600 hover:bg-green-500/25 border-green-500/20',
-                            dag.status === 'PROCESSING' &&
-                              'bg-blue-500/15 text-blue-600 hover:bg-blue-500/25 border-blue-500/20 animate-pulse',
+                            statusConfig.bgColor,
+                            statusConfig.animate && 'animate-pulse',
                           )}
                         >
-                          {dag.status}
+                          {getStatusLabel(i18n, dag.status)}
                         </Badge>
                         <div>
                           <p className="font-medium text-sm group-hover:text-primary transition-colors">
@@ -106,6 +107,8 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                         )}
                       </div>
                     </Link>
+                      );
+                    })()}
                   </motion.div>
                 ))}
               </AnimatePresence>

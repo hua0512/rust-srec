@@ -170,6 +170,7 @@ export const PipelineStatsSchema = z.object({
   processing_count: z.number(),
   completed_count: z.number(),
   failed_count: z.number(),
+  cancelled_count: z.number().optional(),
   avg_processing_time_secs: z.number().nullable().optional(),
 });
 
