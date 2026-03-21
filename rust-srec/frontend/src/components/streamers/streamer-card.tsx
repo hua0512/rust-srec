@@ -54,7 +54,10 @@ export const StreamerCard = memo(
                 />
               </div>
 
-              <StreamAvatarInfo streamer={streamer} activeDownload={activeDownload} />
+              <StreamAvatarInfo
+                streamer={streamer}
+                activeDownload={activeDownload}
+              />
 
               {/* Download progress indicator */}
               {activeDownload && (
