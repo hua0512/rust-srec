@@ -243,7 +243,8 @@ function PipelineExecutionPage() {
                   <Trans>Cancel Pipeline</Trans>
                 </Button>
               )}
-              {(overallStatus === 'FAILED' || overallStatus === 'CANCELLED') && (
+              {(overallStatus === 'FAILED' ||
+                overallStatus === 'CANCELLED') && (
                 <Button
                   className="bg-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-shadow"
                   onClick={() => retryMutation.mutate(pipelineId)}

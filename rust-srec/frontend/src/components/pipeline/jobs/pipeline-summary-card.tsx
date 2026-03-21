@@ -42,7 +42,7 @@ import { useLingui } from '@lingui/react';
 import { type DagSummary } from '@/api/schemas';
 
 import { formatRelativeTime } from '@/lib/date-utils';
-import { STATUS_CONFIG } from '@/components/pipeline/status-config';
+import { getStatusConfig } from '@/components/pipeline/status-config';
 
 interface PipelineSummaryCardProps {
   pipeline: DagSummary;
@@ -86,7 +86,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
     setMounted(true);
   }, []);
   const statusKey = pipeline.status;
-  const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG.MIXED;
+  const statusConfig = getStatusConfig(statusKey);
   const StatusIcon = statusConfig.icon;
 
   const isCompleted = statusKey === 'COMPLETED';

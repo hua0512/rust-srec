@@ -247,12 +247,12 @@ function JobDetailsPage() {
                 )}
               >
                 <StatusIcon
-                    className={cn(
-                      'h-8 w-8',
-                      statusConfig.textColor,
-                      statusConfig.animate && 'animate-spin',
-                    )}
-                  />
+                  className={cn(
+                    'h-8 w-8',
+                    statusConfig.textColor,
+                    statusConfig.animate && 'animate-spin',
+                  )}
+                />
               </div>
               <div>
                 <div className="flex items-center gap-3 mb-1.5">

@@ -4,7 +4,9 @@ import type { Download } from '@/store/downloads';
 
 export const RECOVERY_PROGRESS_MIN_BYTES = 8n * 1024n * 1024n;
 
-export function hasStrongRecoverySignal(activeDownload?: Download | null): boolean {
+export function hasStrongRecoverySignal(
+  activeDownload?: Download | null,
+): boolean {
   if (!activeDownload) {
     return false;
   }
