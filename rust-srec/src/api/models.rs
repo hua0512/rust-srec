@@ -423,15 +423,13 @@ pub struct TemplateResponse {
 /// - `PROCESSING` - Job is currently being executed by a worker
 /// - `COMPLETED` - Job finished successfully
 /// - `FAILED` - Job encountered an error during processing
-/// - `INTERRUPTED` - Job was cancelled by user or system
+/// - `CANCELLED` - Job was cancelled and remains terminal until retried
 ///
 /// # State Transitions
 ///
 /// ```text
 /// pending -> processing -> completed
 ///                      \-> failed
-/// pending -> interrupted (via cancel)
-/// processing -> interrupted (via cancel)
 /// failed -> pending (via retry)
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -441,7 +439,7 @@ pub enum JobStatus {
     Processing,
     Completed,
     Failed,
-    Interrupted,
+    Cancelled,
 }
 
 /// Pipeline job response.
@@ -470,7 +468,6 @@ pub enum JobStatus {
 /// - `id` - Unique job identifier (UUID)
 /// - `session_id` - Associated recording session ID
 /// - `streamer_id` - Associated streamer ID
-/// - `status` - Current job status (pending, processing, completed, failed, interrupted)
 /// - `processor_type` - Type of processing (remux, upload, thumbnail)
 /// - `input_path` - List of input file paths
 /// - `output_path` - List of output file paths (set after completion)
@@ -562,7 +559,6 @@ pub struct JobLogEntry {
 ///
 /// # Query Parameters
 ///
-/// - `status` - Filter by job status (pending, processing, completed, failed, interrupted)
 /// - `streamer_id` - Filter by streamer ID
 /// - `session_id` - Filter by session ID
 /// - `from_date` - Filter jobs created after this date (ISO 8601 format)
@@ -611,6 +607,7 @@ pub struct JobFilterParams {
 /// - `processing_count` - Number of jobs currently being processed
 /// - `completed_count` - Number of successfully completed jobs
 /// - `failed_count` - Number of failed jobs
+/// - `cancelled_count` - Number of cancelled jobs
 /// - `avg_processing_time_secs` - Average processing time in seconds (null if no completed jobs)
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct PipelineStatsResponse {
@@ -618,6 +615,7 @@ pub struct PipelineStatsResponse {
     pub processing_count: u64,
     pub completed_count: u64,
     pub failed_count: u64,
+    pub cancelled_count: u64,
     pub avg_processing_time_secs: Option<f64>,
 }
 

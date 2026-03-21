@@ -97,6 +97,10 @@ pub trait DagRepository: Send + Sync {
     /// Returns job IDs of steps that had jobs created (for cancellation).
     async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>>;
 
+    /// Atomically cancel a DAG and cancel all pending/blocked steps.
+    /// Returns job IDs of steps that had jobs created (for cancellation).
+    async fn cancel_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>>;
+
     /// Reset a previously-failed DAG execution for retry.
     ///
     /// This prepares the DAG state so that when retried jobs complete, downstream steps
@@ -474,7 +478,7 @@ impl DagRepository for SqlxDagRepository {
                     SELECT status
                     FROM dag_execution
                     WHERE id = dag_step_execution.dag_id
-                  ) NOT IN ('COMPLETED', 'FAILED', 'INTERRUPTED')
+                  ) NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
                 "#,
             )
             .bind(status)
@@ -774,6 +778,65 @@ impl DagRepository for SqlxDagRepository {
                 r#"
                 UPDATE dag_execution
                 SET status = 'FAILED', completed_at = ?, updated_at = ?, error = ?
+                WHERE id = ?
+                "#,
+            )
+            .bind(now)
+            .bind(now)
+            .bind(error)
+            .bind(dag_id)
+            .execute(&mut *tx)
+            .await?;
+
+            tx.commit().await?;
+            Ok(processing_job_ids)
+        })
+        .await
+    }
+
+    async fn cancel_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>> {
+        retry_on_sqlite_busy("cancel_dag_and_cancel_steps", || async {
+            let mut tx = begin_immediate(&self.write_pool).await?;
+            let now = crate::database::time::now_ms();
+
+            let processing_job_ids: Vec<String> = sqlx::query_scalar(
+                r#"
+                SELECT job_id FROM dag_step_execution
+                WHERE dag_id = ? AND status = 'PROCESSING' AND job_id IS NOT NULL
+                "#,
+            )
+            .bind(dag_id)
+            .fetch_all(&mut *tx)
+            .await?;
+
+            sqlx::query(
+                r#"
+                UPDATE dag_step_execution
+                SET status = 'CANCELLED', updated_at = ?
+                WHERE dag_id = ? AND status IN ('BLOCKED', 'PENDING')
+                "#,
+            )
+            .bind(now)
+            .bind(dag_id)
+            .execute(&mut *tx)
+            .await?;
+
+            sqlx::query(
+                r#"
+                UPDATE dag_step_execution
+                SET status = 'CANCELLED', updated_at = ?
+                WHERE dag_id = ? AND status = 'PROCESSING'
+                "#,
+            )
+            .bind(now)
+            .bind(dag_id)
+            .execute(&mut *tx)
+            .await?;
+
+            sqlx::query(
+                r#"
+                UPDATE dag_execution
+                SET status = 'CANCELLED', completed_at = ?, updated_at = ?, error = ?
                 WHERE id = ?
                 "#,
             )
@@ -1340,6 +1403,53 @@ mod tests {
             .get_step_by_dag_and_step_id(&dag_id, "B")
             .await
             .unwrap();
+        assert_eq!(step_b.status, "CANCELLED");
+
+        let dag = repo.get_dag(&dag_id).await.unwrap();
+        assert_eq!(dag.status, "FAILED");
+    }
+
+    #[tokio::test]
+    async fn test_cancel_dag_and_cancel_steps_marks_parent_cancelled() {
+        let pool = setup_test_pool().await;
+        let repo = SqlxDagRepository::new(pool.clone(), pool);
+
+        let dag_def = DagPipelineDefinition::new(
+            "test-dag",
+            vec![
+                DagStep::new("A", PipelineStep::preset("remux")),
+                DagStep::with_dependencies(
+                    "B",
+                    PipelineStep::preset("upload"),
+                    vec!["A".to_string()],
+                ),
+            ],
+        );
+
+        let dag = DagExecutionDbModel::new(&dag_def, None, None);
+        let dag_id = dag.id.clone();
+        repo.create_dag(&dag).await.unwrap();
+
+        let step_a = DagStepExecutionDbModel::new(&dag_id, "A", &[]);
+        let step_b = DagStepExecutionDbModel::new(&dag_id, "B", &["A".to_string()]);
+        let step_b_id = step_b.id.clone();
+
+        repo.create_steps(&[step_a, step_b]).await.unwrap();
+        repo.update_step_status_with_job(&step_b_id, "PROCESSING", "job-b")
+            .await
+            .unwrap();
+
+        let cancelled = repo
+            .cancel_dag_and_cancel_steps(&dag_id, "Cancelled by user")
+            .await
+            .unwrap();
+        assert_eq!(cancelled, vec!["job-b".to_string()]);
+
+        let dag = repo.get_dag(&dag_id).await.unwrap();
+        assert_eq!(dag.status, "CANCELLED");
+        assert_eq!(dag.error, Some("Cancelled by user".to_string()));
+
+        let step_b = repo.get_step(&step_b_id).await.unwrap();
         assert_eq!(step_b.status, "CANCELLED");
     }
 

@@ -35,14 +35,16 @@ import { cn } from '@/lib/utils';
 import { getJobPresetName } from '@/components/pipeline/presets/default-presets-i18n';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { type DagStep } from '@/api/schemas';
+import {
+  getStatusConfig,
+  getStatusLabel,
+} from '@/components/pipeline/status-config';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/pipeline/executions/$pipelineId',
 )({
   component: PipelineExecutionPage,
 });
-
-import { STATUS_CONFIG } from '@/components/pipeline/status-config';
 
 function PipelineExecutionPage() {
   const { pipelineId } = Route.useParams();
@@ -213,19 +215,7 @@ function PipelineExecutionPage() {
                       {overallStatus === 'PROCESSING' && (
                         <span className="absolute inset-0 bg-current opacity-10 animate-pulse pointer-events-none" />
                       )}
-                      {i18n._(
-                        overallStatus === 'PENDING'
-                          ? msg`Pending`
-                          : overallStatus === 'PROCESSING'
-                            ? msg`Processing`
-                            : overallStatus === 'COMPLETED'
-                              ? msg`Completed`
-                              : overallStatus === 'FAILED'
-                                ? msg`Failed`
-                                : overallStatus === 'INTERRUPTED'
-                                  ? msg`Interrupted`
-                                  : overallStatus,
-                      )}
+                      {getStatusLabel(i18n, overallStatus)}
                     </Badge>
                   </div>
                   <p className="text-muted-foreground font-mono text-sm opacity-80">
@@ -253,7 +243,8 @@ function PipelineExecutionPage() {
                   <Trans>Cancel Pipeline</Trans>
                 </Button>
               )}
-              {overallStatus === 'FAILED' && (
+              {(overallStatus === 'FAILED' ||
+                overallStatus === 'CANCELLED') && (
                 <Button
                   className="bg-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-shadow"
                   onClick={() => retryMutation.mutate(pipelineId)}
@@ -265,7 +256,7 @@ function PipelineExecutionPage() {
                       retryMutation.isPending && 'animate-spin',
                     )}
                   />
-                  <Trans>Retry Failed Steps</Trans>
+                  <Trans>Retry Pipeline</Trans>
                 </Button>
               )}
             </motion.div>
@@ -335,8 +326,7 @@ function PipelineExecutionPage() {
           <TabsContent value="list" className="mt-0">
             <div className="space-y-4">
               {steps.map((step) => {
-                const jobConfig =
-                  STATUS_CONFIG[step.status] || STATUS_CONFIG.PENDING;
+                const jobConfig = getStatusConfig(step.status);
                 return (
                   <div key={step.step_id} className="block">
                     {step.job_id ? (
@@ -452,19 +442,7 @@ function StepCard({
                     jobConfig.textColor,
                   )}
                 >
-                  {i18n._(
-                    step.status === 'PENDING'
-                      ? msg`Pending`
-                      : step.status === 'PROCESSING'
-                        ? msg`Processing`
-                        : step.status === 'COMPLETED'
-                          ? msg`Completed`
-                          : step.status === 'FAILED'
-                            ? msg`Failed`
-                            : step.status === 'CANCELLED'
-                              ? msg`Cancelled`
-                              : ({ id: step.status } as any),
-                  )}
+                  {getStatusLabel(i18n, step.status)}
                 </span>
                 {isCompleted && (
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />

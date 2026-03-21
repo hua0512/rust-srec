@@ -669,7 +669,7 @@ impl DagScheduler {
 
         let cancelled = self
             .dag_repository
-            .fail_dag_and_cancel_steps(dag_id, "Cancelled by user")
+            .cancel_dag_and_cancel_steps(dag_id, "Cancelled by user")
             .await?;
 
         // Cancel any processing jobs
@@ -862,6 +862,212 @@ mod tests {
     use super::*;
     use crate::database::models::dag::DagStepExecutionDbModel;
     use crate::database::models::{DagPipelineDefinition, DagStep, PipelineStep};
+    use crate::database::repositories::dag::DagRepository;
+    use crate::database::repositories::job::JobRepository;
+    use crate::pipeline::JobQueue;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    async fn setup_test_pool() -> sqlx::SqlitePool {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("dag_scheduler_test.db");
+        let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
+        let pool = crate::database::init_pool(&db_url).await.unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        std::mem::forget(dir);
+        pool
+    }
+
+    struct NoopJobRepository;
+
+    #[async_trait::async_trait]
+    impl JobRepository for NoopJobRepository {
+        async fn create_job(&self, _job: &crate::database::models::JobDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job(&self, _id: &str) -> Result<crate::database::models::JobDbModel> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_pending_jobs(
+            &self,
+            _job_type: &str,
+        ) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_jobs_by_status(
+            &self,
+            _status: &str,
+        ) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_recent_jobs(
+            &self,
+            _limit: i32,
+        ) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_status(&self, _id: &str, _status: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn mark_job_failed(&self, _id: &str, _error: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn mark_job_cancelled(&self, _id: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_job_for_retry(&self, _id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn count_pending_jobs(&self, _job_types: Option<&[String]>) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn upsert_job_execution_progress(
+            &self,
+            _progress: &crate::database::models::JobExecutionProgressDbModel,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job_execution_progress(
+            &self,
+            _job_id: &str,
+        ) -> Result<Option<crate::database::models::JobExecutionProgressDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn claim_next_pending_job(
+            &self,
+            _job_types: Option<&[String]>,
+        ) -> Result<Option<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job_execution_info(&self, _id: &str) -> Result<Option<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_execution_info(&self, _id: &str, _execution_info: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_state(&self, _id: &str, _state: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job(&self, _job: &crate::database::models::JobDbModel) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn update_job_if_status(
+            &self,
+            _job: &crate::database::models::JobDbModel,
+            _expected_status: &str,
+        ) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn reset_processing_jobs(&self) -> Result<i32> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn cleanup_old_jobs(&self, _retention_days: i32) -> Result<i32> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_job(&self, _id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn purge_jobs_older_than(&self, _days: u32, _batch_size: u32) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_purgeable_jobs(&self, _days: u32, _limit: u32) -> Result<Vec<String>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn add_execution_log(
+            &self,
+            _log: &crate::database::models::JobExecutionLogDbModel,
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn add_execution_logs(
+            &self,
+            _logs: &[crate::database::models::JobExecutionLogDbModel],
+        ) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_execution_logs(
+            &self,
+            _job_id: &str,
+        ) -> Result<Vec<crate::database::models::JobExecutionLogDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_execution_logs(
+            &self,
+            _job_id: &str,
+            _pagination: &crate::database::models::Pagination,
+        ) -> Result<(Vec<crate::database::models::JobExecutionLogDbModel>, u64)> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_execution_logs_for_job(&self, _job_id: &str) -> Result<()> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_jobs_filtered(
+            &self,
+            _filters: &crate::database::models::JobFilters,
+            _pagination: &crate::database::models::Pagination,
+        ) -> Result<(Vec<crate::database::models::JobDbModel>, u64)> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn list_jobs_page_filtered(
+            &self,
+            _filters: &crate::database::models::JobFilters,
+            _pagination: &crate::database::models::Pagination,
+        ) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_job_counts_by_status(&self) -> Result<crate::database::models::JobCounts> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_avg_processing_time(&self) -> Result<Option<f64>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn cancel_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn get_jobs_by_pipeline(
+            &self,
+            _pipeline_id: &str,
+        ) -> Result<Vec<crate::database::models::JobDbModel>> {
+            unimplemented!("not needed for these tests")
+        }
+
+        async fn delete_jobs_by_pipeline(&self, _pipeline_id: &str) -> Result<u64> {
+            unimplemented!("not needed for these tests")
+        }
+    }
 
     #[test]
     fn test_collect_leaf_outputs_is_deterministic_and_deduped() {
@@ -898,5 +1104,48 @@ mod tests {
 
         let out = DagScheduler::collect_leaf_outputs_from_step_executions(&def, &step_execs);
         assert_eq!(out, vec!["x".to_string(), "y".to_string(), "z".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_dag_marks_parent_cancelled() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool,
+        ));
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::new()),
+            dag_repo.clone(),
+            Arc::new(NoopJobRepository),
+        );
+
+        let dag_def = DagPipelineDefinition::new(
+            "test",
+            vec![DagStep::new("A", PipelineStep::preset("remux"))],
+        );
+        let dag = crate::database::models::DagExecutionDbModel::new(&dag_def, None, None);
+        let dag_id = dag.id.clone();
+        dag_repo.create_dag(&dag).await.unwrap();
+        dag_repo
+            .create_step(&DagStepExecutionDbModel::new(&dag_id, "A", &[]))
+            .await
+            .unwrap();
+        dag_repo
+            .update_dag_status(
+                &dag_id,
+                crate::database::models::DagExecutionStatus::Processing.as_str(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let result = scheduler.cancel_dag_with_completion(&dag_id).await.unwrap();
+        assert_eq!(result.cancelled_count, 0);
+
+        let dag = dag_repo.get_dag(&dag_id).await.unwrap();
+        assert_eq!(
+            dag.status,
+            crate::database::models::DagExecutionStatus::Cancelled.as_str()
+        );
     }
 }

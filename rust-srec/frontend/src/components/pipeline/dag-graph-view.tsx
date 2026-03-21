@@ -1,87 +1,25 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { motion, useMotionValue, useSpring } from 'motion/react';
-import { DagGraph, DagGraphNode, DagStepStatus } from '@/api/schemas';
+import { DagGraph, DagGraphNode } from '@/api/schemas';
 import { cn } from '@/lib/utils';
-import {
-  CheckCircle2,
-  Clock,
-  RefreshCw,
-  XCircle,
-  AlertCircle,
-  Maximize2,
-  Minimize2,
-  Move,
-} from 'lucide-react';
+import { Maximize2, Minimize2, Move } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GraphViewport, GlassNode } from './graph-shared';
 import { useLingui } from '@lingui/react';
-import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { getJobPresetName } from './presets/default-presets-i18n';
 import { getProcessorDefinition } from './presets/processors/registry';
+import {
+  getStatusConfig,
+  getStatusLabel,
+} from '@/components/pipeline/status-config';
 
 interface DagGraphViewProps {
   graph: DagGraph;
   className?: string;
 }
-
-const STATUS_CONFIG: Record<
-  DagStepStatus,
-  {
-    icon: React.ElementType;
-    color: string;
-    bg: string;
-    glow: string;
-    border: string;
-    animate?: boolean;
-  }
-> = {
-  BLOCKED: {
-    icon: Clock,
-    color: 'text-muted-foreground/40',
-    bg: 'bg-muted/5',
-    glow: 'shadow-transparent',
-    border: 'border-white/5',
-  },
-  PENDING: {
-    icon: Clock,
-    color: 'text-muted-foreground',
-    bg: 'bg-muted/10',
-    glow: 'shadow-transparent',
-    border: 'border-white/10',
-  },
-  PROCESSING: {
-    icon: RefreshCw,
-    color: 'text-blue-500',
-    bg: 'bg-blue-500/10',
-    glow: 'shadow-blue-500/20',
-    border: 'border-blue-500/30',
-    animate: true,
-  },
-  COMPLETED: {
-    icon: CheckCircle2,
-    color: 'text-emerald-500',
-    bg: 'bg-emerald-500/10',
-    glow: 'shadow-emerald-500/10',
-    border: 'border-emerald-500/20',
-  },
-  FAILED: {
-    icon: XCircle,
-    color: 'text-red-500',
-    bg: 'bg-red-500/10',
-    glow: 'shadow-red-500/20',
-    border: 'border-red-500/20',
-  },
-  CANCELLED: {
-    icon: AlertCircle,
-    color: 'text-gray-500',
-    bg: 'bg-gray-500/10',
-    glow: 'shadow-transparent',
-    border: 'border-gray-500/20',
-  },
-};
 
 export function DagGraphView({ graph, className }: DagGraphViewProps) {
   const { i18n } = useLingui();
@@ -325,13 +263,13 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
         <div className="relative z-10">
           {graph.nodes.map((node, idx) => {
             const pos = nodePositions[node.id];
-            const config = STATUS_CONFIG[node.status];
+            const config = getStatusConfig(node.status);
             const Icon = config.icon;
 
             const nodeContent = (
               <GlassNode
                 glow={config.glow}
-                bg={config.bg}
+                bg={config.surfaceBg}
                 isClickable={!!node.job_id}
                 className="w-full"
               >
@@ -347,13 +285,13 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                   <div
                     className={cn(
                       'p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-inner ring-1 ring-white/5',
-                      config.bg,
+                      config.surfaceBg,
                     )}
                   >
                     <Icon
                       className={cn(
                         'h-4 w-4',
-                        config.color,
+                        config.textColor,
                         config.animate && 'animate-spin',
                       )}
                     />
@@ -380,24 +318,10 @@ export function DagGraphView({ graph, className }: DagGraphViewProps) {
                   <span
                     className={cn(
                       'text-[10px] font-black uppercase tracking-widest',
-                      config.color,
+                      config.textColor,
                     )}
                   >
-                    {i18n._(
-                      node.status === 'BLOCKED'
-                        ? msg`Blocked`
-                        : node.status === 'PENDING'
-                          ? msg`Pending`
-                          : node.status === 'PROCESSING'
-                            ? msg`Processing`
-                            : node.status === 'COMPLETED'
-                              ? msg`Completed`
-                              : node.status === 'FAILED'
-                                ? msg`Failed`
-                                : node.status === 'CANCELLED'
-                                  ? msg`Cancelled`
-                                  : node.status,
-                    )}
+                    {getStatusLabel(i18n, node.status)}
                   </span>
                   {node.job_id && (
                     <span className="text-[9px] font-mono text-foreground/20 group-hover:text-foreground/40 transition-colors">

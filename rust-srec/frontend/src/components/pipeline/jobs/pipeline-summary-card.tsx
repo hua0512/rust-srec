@@ -42,7 +42,7 @@ import { useLingui } from '@lingui/react';
 import { type DagSummary } from '@/api/schemas';
 
 import { formatRelativeTime } from '@/lib/date-utils';
-import { STATUS_CONFIG } from '@/components/pipeline/status-config';
+import { getStatusConfig } from '@/components/pipeline/status-config';
 
 interface PipelineSummaryCardProps {
   pipeline: DagSummary;
@@ -86,17 +86,15 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
     setMounted(true);
   }, []);
   const statusKey = pipeline.status;
-  const statusConfig = STATUS_CONFIG[statusKey] || STATUS_CONFIG.MIXED;
+  const statusConfig = getStatusConfig(statusKey);
   const StatusIcon = statusConfig.icon;
 
   const isCompleted = statusKey === 'COMPLETED';
   const isFailed = statusKey === 'FAILED';
+  const isCancelled = statusKey === 'CANCELLED';
   const isPending = statusKey === 'PENDING';
   const isProcessing = statusKey === 'PROCESSING';
-  // Show cancel button if there are any jobs that aren't completed or failed
-  const hasUnfinishedJobs =
-    pipeline.total_steps > pipeline.completed_steps + pipeline.failed_steps;
-  const canCancel = isPending || isProcessing || hasUnfinishedJobs;
+  const canCancel = isPending || isProcessing;
   const statusLabel = statusKey.toLowerCase();
 
   return (
@@ -205,7 +203,7 @@ export const PipelineSummaryCard = memo(function PipelineSummaryCard({
             )}
 
             {/* Delete option for terminal states */}
-            {(isCompleted || isFailed) && onDeletePipeline && (
+            {(isCompleted || isFailed || isCancelled) && onDeletePipeline && (
               <>
                 <DropdownMenuSeparator />
                 <AlertDialog>

@@ -891,7 +891,7 @@ impl WorkerPool {
                             }
 
                             if job_cancellation_token.is_cancelled() {
-                                job_queue.finalize_interrupted_job(&job_id);
+                                job_queue.finalize_cancelled_job(&job_id);
                             }
 
                             active_workers.fetch_sub(1, Ordering::SeqCst);
@@ -1207,7 +1207,7 @@ mod tests {
         .expect("worker should stop processing cancelled job");
 
         let job = job_queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(job.status, JobStatus::Interrupted);
+        assert_eq!(job.status, JobStatus::Cancelled);
 
         pool.stop().await;
     }

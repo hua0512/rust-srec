@@ -145,8 +145,7 @@ pub enum JobStatus {
     Completed,
     /// Job failed.
     Failed,
-    /// Job was interrupted.
-    Interrupted,
+    Cancelled,
 }
 
 impl JobStatus {
@@ -156,7 +155,7 @@ impl JobStatus {
             Self::Processing => "PROCESSING",
             Self::Completed => "COMPLETED",
             Self::Failed => "FAILED",
-            Self::Interrupted => "INTERRUPTED",
+            Self::Cancelled => "CANCELLED",
         }
     }
 }
@@ -1022,10 +1021,8 @@ impl JobQueue {
             completed_job_type = Some(db_job.job_type.clone());
             completed_session_id = db_job.session_id.clone();
 
-            // Only allow PROCESSING -> COMPLETED to avoid overwriting INTERRUPTED jobs.
-            // (Cancellation is expected to win races.)
             if db_job.status != DbJobStatus::Processing.as_str() {
-                self.finalize_interrupted_job(job_id);
+                self.finalize_cancelled_job(job_id);
                 return Ok(());
             }
 
@@ -1063,7 +1060,7 @@ impl JobQueue {
                 .update_job_if_status(&db_job, DbJobStatus::Processing.as_str())
                 .await?;
             if updated == 0 {
-                self.finalize_interrupted_job(job_id);
+                self.finalize_cancelled_job(job_id);
                 return Ok(());
             }
 
@@ -1080,7 +1077,7 @@ impl JobQueue {
                 completed_session_id = Some(job.session_id.clone());
             }
 
-            if job.status != JobStatus::Interrupted {
+            if job.status != JobStatus::Cancelled {
                 transitioned |= matches!(job.status, JobStatus::Pending | JobStatus::Processing);
                 job.status = JobStatus::Completed;
                 job.completed_at = Some(Utc::now());
@@ -1349,7 +1346,7 @@ impl JobQueue {
         Ok(jobs)
     }
 
-    /// Retry a failed or interrupted job.
+    /// Retry a failed or cancelled job.
     /// Returns error if job is not in a retryable terminal status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
         if let Some(repo) = &self.job_repository {
@@ -1373,7 +1370,7 @@ impl JobQueue {
             .get_mut(id)
             .ok_or_else(|| Error::not_found("Job", id))?;
 
-        if cached_job.status != JobStatus::Failed && cached_job.status != JobStatus::Interrupted {
+        if cached_job.status != JobStatus::Failed && cached_job.status != JobStatus::Cancelled {
             return Err(Error::InvalidStateTransition {
                 from: cached_job.status.as_str().to_string(),
                 to: "PENDING".to_string(),
@@ -1396,8 +1393,6 @@ impl JobQueue {
     }
 
     /// Cancel a job.
-    /// For Pending jobs: removes from queue and marks as Interrupted.
-    /// For Processing jobs: signals cancellation and marks as Interrupted.
     /// Returns the cancelled job, or error for Completed/Failed jobs.
     pub async fn cancel_job(&self, id: &str) -> Result<Job> {
         // Get the job
@@ -1410,7 +1405,7 @@ impl JobQueue {
         if job.status == JobStatus::Completed || job.status == JobStatus::Failed {
             return Err(Error::InvalidStateTransition {
                 from: job.status.as_str().to_string(),
-                to: "INTERRUPTED".to_string(),
+                to: "CANCELLED".to_string(),
             });
         }
 
@@ -1421,17 +1416,15 @@ impl JobQueue {
         if is_processing {
             let token = self.cancellation_tokens.entry(id.to_string()).or_default();
             token.cancel();
-        } else if job.status == JobStatus::Interrupted
+        } else if job.status == JobStatus::Cancelled
             && let Some(token) = self.cancellation_tokens.get(id)
         {
-            // Best-effort: if an interrupted job still has a token (e.g. worker hasn't finalized
-            // yet), ensure it's cancelled.
             token.cancel();
         }
 
         // Update database if repository is available
         let updated = if let Some(repo) = &self.job_repository {
-            repo.mark_job_interrupted(id).await?
+            repo.mark_job_cancelled(id).await?
         } else {
             // In-memory mode: treat as updated if we were cancelling an active job.
             matches!(job.status, JobStatus::Pending | JobStatus::Processing) as u64
@@ -1440,20 +1433,18 @@ impl JobQueue {
         // Update cache and get the updated job
         let cancelled_job = {
             if let Some(mut cached_job) = self.jobs_cache.get_mut(id) {
-                cached_job.status = JobStatus::Interrupted;
+                cached_job.status = JobStatus::Cancelled;
                 cached_job.completed_at = Some(Utc::now());
                 cached_job.clone()
             } else {
                 // Job not in cache, return original with updated status
                 let mut updated = job.clone();
-                updated.status = JobStatus::Interrupted;
+                updated.status = JobStatus::Cancelled;
                 updated.completed_at = Some(Utc::now());
                 updated
             }
         };
 
-        // For in-flight jobs, keep the cancellation token/log cursor until the worker observes
-        // cancellation and drains logs, then finalizes the job via `finalize_interrupted_job`.
         let keep_tracking = is_processing || self.cancellation_tokens.contains_key(id);
         if !keep_tracking {
             let _ = self.cancellation_tokens.remove(id);
@@ -1474,7 +1465,6 @@ impl JobQueue {
     }
 
     /// Delete a job.
-    /// Only allows deleting jobs in terminal states (Completed, Failed, Interrupted).
     /// Removes from database and cache.
     pub async fn delete_job(&self, id: &str) -> Result<()> {
         // Try to get from cache first to check status
@@ -1560,7 +1550,7 @@ impl JobQueue {
             for db_job in db_jobs {
                 if db_job.status == "PENDING" || db_job.status == "PROCESSING" {
                     let mut job = db_model_to_job(&db_job);
-                    job.status = JobStatus::Interrupted;
+                    job.status = JobStatus::Cancelled;
                     job.completed_at = Some(Utc::now());
                     cancelled_jobs.push(job);
                 }
@@ -1596,7 +1586,7 @@ impl JobQueue {
                     keep_tracking = true;
                 }
 
-                job.status = JobStatus::Interrupted;
+                job.status = JobStatus::Cancelled;
                 job.completed_at = Some(Utc::now());
 
                 if self.job_repository.is_none() {
@@ -1633,11 +1623,7 @@ impl JobQueue {
         self.cancellation_tokens.get(job_id).map(|t| t.clone())
     }
 
-    /// Finalize a cancelled/interrupted job by cleaning up in-memory tracking.
-    ///
-    /// This is intended to be called by workers after they observe cancellation, so we don't
-    /// drop log/progress state while the log collector might still be draining.
-    pub fn finalize_interrupted_job(&self, job_id: &str) {
+    pub fn finalize_cancelled_job(&self, job_id: &str) {
         let _ = self.cancellation_tokens.remove(job_id);
         let _ = self.persisted_log_cursor.remove(job_id);
         self.progress_cache.remove(job_id);
@@ -1649,16 +1635,11 @@ impl JobQueue {
 
     /// Recover jobs from database on startup.
     /// Loads pending jobs and resets processing jobs to pending.
+    /// Cancelled jobs remain terminal until explicitly retried.
     pub async fn recover_jobs(&self) -> Result<usize> {
         let Some(repo) = &self.job_repository else {
             return Ok(0);
         };
-
-        // Reset interrupted jobs to pending
-        let reset_interrupted = repo.reset_interrupted_jobs().await?;
-        if reset_interrupted > 0 {
-            info!("Reset {} interrupted jobs to pending", reset_interrupted);
-        }
 
         // Reset processing jobs to pending (they were interrupted by shutdown)
         let reset_processing = repo.reset_processing_jobs().await?;
@@ -1702,7 +1683,7 @@ impl JobQueue {
                 processing: counts.processing,
                 completed: counts.completed,
                 failed: counts.failed,
-                interrupted: counts.interrupted,
+                cancelled: counts.cancelled,
                 avg_processing_time_secs: avg_processing_time,
             });
         }
@@ -1716,7 +1697,7 @@ impl JobQueue {
                 JobStatus::Processing => stats.processing += 1,
                 JobStatus::Completed => stats.completed += 1,
                 JobStatus::Failed => stats.failed += 1,
-                JobStatus::Interrupted => stats.interrupted += 1,
+                JobStatus::Cancelled => stats.cancelled += 1,
             }
         }
 
@@ -1978,7 +1959,7 @@ impl JobQueue {
         if let Some(repo) = &self.job_repository {
             let updated = repo.mark_job_failed(job_id, error).await?;
             if updated == 0 {
-                self.finalize_interrupted_job(job_id);
+                self.finalize_cancelled_job(job_id);
                 return Ok(());
             }
             transitioned = true;
@@ -2017,7 +1998,7 @@ impl JobQueue {
 
         // Update cache
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            if job.status != JobStatus::Interrupted {
+            if job.status != JobStatus::Cancelled {
                 transitioned |= matches!(job.status, JobStatus::Pending | JobStatus::Processing);
                 job.status = JobStatus::Failed;
                 job.completed_at = Some(Utc::now());
@@ -2071,7 +2052,7 @@ impl JobQueue {
                     DbJobStatus::Processing => JobStatus::Processing,
                     DbJobStatus::Completed => JobStatus::Completed,
                     DbJobStatus::Failed => JobStatus::Failed,
-                    DbJobStatus::Interrupted => JobStatus::Interrupted,
+                    DbJobStatus::Cancelled => JobStatus::Cancelled,
                 };
                 if job.status != status_enum {
                     continue;
@@ -2171,8 +2152,7 @@ pub struct JobStats {
     pub completed: u64,
     /// Number of failed jobs.
     pub failed: u64,
-    /// Number of interrupted jobs.
-    pub interrupted: u64,
+    pub cancelled: u64,
     /// Average processing time in seconds.
     pub avg_processing_time_secs: Option<f64>,
 }
@@ -2184,7 +2164,7 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         JobStatus::Processing => DbJobStatus::Processing,
         JobStatus::Completed => DbJobStatus::Completed,
         JobStatus::Failed => DbJobStatus::Failed,
-        JobStatus::Interrupted => DbJobStatus::Interrupted,
+        JobStatus::Cancelled => DbJobStatus::Cancelled,
     };
 
     let inputs_json = json::to_string_or_fallback(
@@ -2262,7 +2242,7 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         Some(DbJobStatus::Processing) => JobStatus::Processing,
         Some(DbJobStatus::Completed) => JobStatus::Completed,
         Some(DbJobStatus::Failed) => JobStatus::Failed,
-        Some(DbJobStatus::Interrupted) => JobStatus::Interrupted,
+        Some(DbJobStatus::Cancelled) => JobStatus::Cancelled,
         None => JobStatus::Pending,
     };
 
@@ -2479,7 +2459,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_job_resets_interrupted_to_pending() {
+    async fn test_retry_job_resets_cancelled_to_pending() {
         let queue = JobQueue::new();
 
         let job = Job::new(
@@ -2496,7 +2476,7 @@ mod tests {
         assert_eq!(queue.depth(), 0);
 
         let cancelled = queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(cancelled.status, JobStatus::Interrupted);
+        assert_eq!(cancelled.status, JobStatus::Cancelled);
         assert!(cancelled.completed_at.is_some());
 
         let retried = queue.retry_job(&job_id).await.unwrap();
@@ -2530,7 +2510,6 @@ mod tests {
         queue.cancel_job(&job_id).await.unwrap();
         assert_eq!(queue.depth(), 0);
 
-        // These should be no-ops and must not overwrite INTERRUPTED.
         queue
             .complete(
                 &job_id,
@@ -2546,7 +2525,7 @@ mod tests {
         queue.fail(&job_id, "should be ignored").await.unwrap();
 
         let cancelled = queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(cancelled.status, JobStatus::Interrupted);
+        assert_eq!(cancelled.status, JobStatus::Cancelled);
         assert_eq!(queue.depth(), 0);
 
         // Idempotent cancel.
@@ -2858,9 +2837,6 @@ mod tests {
     // Pipeline Recovery Tests
     // ========================================================================
 
-    /// Test that recover_jobs without repository returns 0.
-    /// This verifies the fallback behavior when no database is configured.
-
     #[tokio::test]
     async fn test_recover_jobs_without_repository() {
         let queue = JobQueue::new();
@@ -2883,15 +2859,11 @@ mod tests {
         queue.enqueue(job1).await.unwrap();
         queue.enqueue(job2).await.unwrap();
 
-        // Without repository, recover_jobs returns 0
         let recovered = queue.recover_jobs().await.unwrap();
         assert_eq!(recovered, 0);
 
-        // But in-memory jobs are still there
         assert_eq!(queue.depth(), 2);
     }
-
-    /// Test deletion of jobs.
 
     #[tokio::test]
     async fn test_delete_job() {
@@ -2921,9 +2893,8 @@ mod tests {
         // 2. Cancel the job
         queue.cancel_job(&job_id).await.unwrap();
 
-        // Verify status is interrupted
         let job = queue.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(job.status, JobStatus::Interrupted);
+        assert_eq!(job.status, JobStatus::Cancelled);
 
         // 3. Delete the job - should succeed
         queue.delete_job(&job_id).await.unwrap();
