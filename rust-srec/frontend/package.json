@@ -72,7 +72,7 @@
     "tailwindcss": "^4.2.1",
     "vite-tsconfig-paths": "^6.1.1",
     "zod": "^4.3.6",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.66.0",
