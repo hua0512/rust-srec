@@ -59,54 +59,55 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
                       const statusConfig = getStatusConfig(dag.status);
 
                       return (
-                    <Link
-                      to="/pipeline/executions/$pipelineId"
-                      params={{ pipelineId: dag.id }}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-muted/30 transition-colors group gap-4"
-                    >
-                      <div className="flex items-center gap-4">
-                        <Badge
-                          variant={statusConfig.badgeVariant}
-                          className={cn(
-                            'w-24 justify-center',
-                            statusConfig.bgColor,
-                            statusConfig.animate && 'animate-pulse',
-                          )}
+                        <Link
+                          to="/pipeline/executions/$pipelineId"
+                          params={{ pipelineId: dag.id }}
+                          className="flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-muted/30 transition-colors group gap-4"
                         >
-                          {getStatusLabel(i18n, dag.status)}
-                        </Badge>
-                        <div>
-                          <p className="font-medium text-sm group-hover:text-primary transition-colors">
-                            {dag.name}
-                            <span className="text-xs text-muted-foreground font-normal ml-2">
-                              <Trans>
-                                {dag.completed_steps}/{dag.total_steps} steps
-                              </Trans>
-                            </span>
-                          </p>
-                          <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                            ID: {dag.id}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs md:text-sm text-muted-foreground sm:justify-end">
-                        <div className="flex items-center gap-1.5 min-w-max">
-                          <Clock className="h-3.5 w-3.5" />
-                          {i18n.date(new Date(dag.created_at), {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: 'numeric',
-                            second: 'numeric',
-                          })}
-                        </div>
-                        {dag.progress_percent !== undefined && (
-                          <div className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded text-[10px] md:text-xs">
-                            {(dag.progress_percent || 0).toFixed(1)}%
+                          <div className="flex items-center gap-4">
+                            <Badge
+                              variant={statusConfig.badgeVariant}
+                              className={cn(
+                                'w-24 justify-center',
+                                statusConfig.bgColor,
+                                statusConfig.animate && 'animate-pulse',
+                              )}
+                            >
+                              {getStatusLabel(i18n, dag.status)}
+                            </Badge>
+                            <div>
+                              <p className="font-medium text-sm group-hover:text-primary transition-colors">
+                                {dag.name}
+                                <span className="text-xs text-muted-foreground font-normal ml-2">
+                                  <Trans>
+                                    {dag.completed_steps}/{dag.total_steps}{' '}
+                                    steps
+                                  </Trans>
+                                </span>
+                              </p>
+                              <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                                ID: {dag.id}
+                              </p>
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </Link>
+                          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs md:text-sm text-muted-foreground sm:justify-end">
+                            <div className="flex items-center gap-1.5 min-w-max">
+                              <Clock className="h-3.5 w-3.5" />
+                              {i18n.date(new Date(dag.created_at), {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: 'numeric',
+                                second: 'numeric',
+                              })}
+                            </div>
+                            {dag.progress_percent !== undefined && (
+                              <div className="font-mono bg-primary/10 text-primary px-2 py-0.5 rounded text-[10px] md:text-xs">
+                                {(dag.progress_percent || 0).toFixed(1)}%
+                              </div>
+                            )}
+                          </div>
+                        </Link>
                       );
                     })()}
                   </motion.div>

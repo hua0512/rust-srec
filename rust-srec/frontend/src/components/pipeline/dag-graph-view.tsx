@@ -3,11 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { motion, useMotionValue, useSpring } from 'motion/react';
 import { DagGraph, DagGraphNode } from '@/api/schemas';
 import { cn } from '@/lib/utils';
-import {
-  Maximize2,
-  Minimize2,
-  Move,
-} from 'lucide-react';
+import { Maximize2, Minimize2, Move } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GraphViewport, GlassNode } from './graph-shared';

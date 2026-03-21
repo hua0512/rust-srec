@@ -22,7 +22,7 @@ export interface StatusConfigItem {
 }
 
 export const STATUS_CONFIG: Record<
-  DagStatus | DagStepStatus | 'MIXED',
+  DagStatus | DagStepStatus,
   StatusConfigItem
 > = {
   PENDING: {
@@ -86,16 +86,6 @@ export const STATUS_CONFIG: Record<
     surfaceBg: 'bg-muted/5',
     glow: 'shadow-transparent',
   },
-  MIXED: {
-    icon: AlertCircle,
-    textColor: 'text-orange-500',
-    bgColor: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-    badgeVariant: 'secondary',
-    gradient: 'from-orange-500/20 to-orange-500/5',
-    borderColor: 'border-orange-500/20',
-    surfaceBg: 'bg-orange-500/10',
-    glow: 'shadow-orange-500/20',
-  },
 };
 
 export function getStatusConfig(status: string): StatusConfigItem {
@@ -118,8 +108,6 @@ export function getStatusLabel(i18n: I18n, status: string): string {
       return i18n._(msg`Failed`);
     case 'CANCELLED':
       return i18n._(msg`Cancelled`);
-    case 'MIXED':
-      return i18n._(msg`Mixed`);
     default:
       return status;
   }
