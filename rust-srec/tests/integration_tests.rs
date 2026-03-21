@@ -565,16 +565,15 @@ mod job_repository_tests {
     }
 
     #[tokio::test]
-    async fn test_reset_interrupted_jobs() {
+    async fn test_cancelled_jobs_are_not_reset_by_processing_recovery() {
         let pool = setup_test_db().await;
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-        // Insert interrupted jobs
         for _ in 0..3 {
             let job_id = uuid::Uuid::new_v4().to_string();
             sqlx::query(
                 "INSERT INTO job (id, job_type, status, config, state, created_at, updated_at)
-                 VALUES (?, 'DOWNLOAD', 'INTERRUPTED', '{}', '{}', ?, ?)",
+                 VALUES (?, 'DOWNLOAD', 'CANCELLED', '{}', '{}', ?, ?)",
             )
             .bind(&job_id)
             .bind(&now)
@@ -584,22 +583,20 @@ mod job_repository_tests {
             .expect("Failed to insert job");
         }
 
-        // Reset interrupted jobs
-        let result = sqlx::query("UPDATE job SET status = 'PENDING' WHERE status = 'INTERRUPTED'")
+        let result = sqlx::query("UPDATE job SET status = 'PENDING' WHERE status = 'PROCESSING'")
             .execute(&pool)
             .await
             .expect("Failed to reset jobs");
 
-        assert_eq!(result.rows_affected(), 3);
+        assert_eq!(result.rows_affected(), 0);
 
-        // Verify no interrupted jobs remain
-        let interrupted: Vec<(String,)> =
-            sqlx::query_as("SELECT id FROM job WHERE status = 'INTERRUPTED'")
+        let cancelled: Vec<(String,)> =
+            sqlx::query_as("SELECT id FROM job WHERE status = 'CANCELLED'")
                 .fetch_all(&pool)
                 .await
                 .expect("Failed to query");
 
-        assert_eq!(interrupted.len(), 0);
+        assert_eq!(cancelled.len(), 3);
     }
 }
 
