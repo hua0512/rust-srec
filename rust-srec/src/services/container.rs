@@ -40,6 +40,7 @@ use crate::database::repositories::{
 };
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
+    engine::DownloadProgress,
     DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
 };
 use crate::logging::LoggingConfig;
@@ -62,6 +63,20 @@ fn should_end_stream_on_danmu_stream_closed(platform_specific_config: Option<&st
                 .and_then(|v| v.as_bool())
         })
         .unwrap_or(true)
+}
+
+const RECOVERY_PROGRESS_MIN_BYTES: u64 = 8 * 1024 * 1024;
+
+fn has_transient_error_state(metadata: &crate::streamer::StreamerMetadata) -> bool {
+    metadata.consecutive_error_count > 0
+        || metadata.disabled_until.is_some()
+        || metadata.last_error.is_some()
+}
+
+fn should_record_recovery_from_progress(progress: &DownloadProgress) -> bool {
+    progress.segments_completed > 0
+        || (progress.bytes_downloaded >= RECOVERY_PROGRESS_MIN_BYTES
+            && progress.speed_bytes_per_sec > 0)
 }
 
 /// Default cache TTL (1 hour).
@@ -1238,8 +1253,9 @@ impl ServiceContainer {
                     result = receiver.recv() => {
                         match result {
                             Ok(download_event) => {
-                                // Progress can be extremely frequent; downstream coordination does not need it.
-                                if matches!(download_event, DownloadManagerEvent::Progress { .. }) {
+                                if let DownloadManagerEvent::Progress { progress, .. } = &download_event
+                                    && !should_record_recovery_from_progress(progress)
+                                {
                                     continue;
                                 }
                                 if event_tx.send(download_event).await.is_err() {
@@ -1322,6 +1338,24 @@ impl ServiceContainer {
                             );
                         }
                     }
+                }
+
+                if let DownloadManagerEvent::Progress {
+                    ref streamer_id,
+                    ref progress,
+                    ..
+                } = download_event
+                    && should_record_recovery_from_progress(progress)
+                    && let Some(metadata) = streamer_manager.get_streamer(streamer_id)
+                    && metadata.is_active()
+                    && has_transient_error_state(&metadata)
+                    && let Err(e) = streamer_manager.record_success(streamer_id, true).await
+                {
+                    warn!(
+                        streamer_id = %streamer_id,
+                        error = %e,
+                        "failed to clear transient streamer error state after sustained download progress"
+                    );
                 }
 
                 // Handle danmu segmentation
@@ -1439,6 +1473,18 @@ impl ServiceContainer {
                                 ),
                             }
                             continue;
+                        }
+
+                        if let Some(metadata) = streamer_manager.get_streamer(streamer_id)
+                            && metadata.is_active()
+                            && has_transient_error_state(&metadata)
+                            && let Err(e) = streamer_manager.record_success(streamer_id, true).await
+                        {
+                            warn!(
+                                streamer_id = %streamer_id,
+                                error = %e,
+                                "failed to clear transient streamer error state after segment completion"
+                            );
                         }
                     }
                     _ => {}
@@ -2668,7 +2714,11 @@ pub struct ServiceStats {
 
 #[cfg(test)]
 mod tests {
-    use super::should_end_stream_on_danmu_stream_closed;
+    use super::{
+        RECOVERY_PROGRESS_MIN_BYTES, should_end_stream_on_danmu_stream_closed,
+        should_record_recovery_from_progress,
+    };
+    use crate::downloader::engine::DownloadProgress;
 
     #[test]
     fn test_should_end_stream_on_danmu_stream_closed_defaults_true() {
@@ -2684,5 +2734,25 @@ mod tests {
         assert!(!should_end_stream_on_danmu_stream_closed(Some(
             r#"{"end_stream_on_danmu_stream_closed":false}"#,
         )));
+    }
+
+    #[test]
+    fn test_recovery_progress_requires_strong_signal() {
+        assert!(!should_record_recovery_from_progress(&DownloadProgress {
+            bytes_downloaded: RECOVERY_PROGRESS_MIN_BYTES - 1,
+            speed_bytes_per_sec: 1024,
+            ..DownloadProgress::default()
+        }));
+
+        assert!(should_record_recovery_from_progress(&DownloadProgress {
+            bytes_downloaded: RECOVERY_PROGRESS_MIN_BYTES,
+            speed_bytes_per_sec: 1024,
+            ..DownloadProgress::default()
+        }));
+
+        assert!(should_record_recovery_from_progress(&DownloadProgress {
+            segments_completed: 1,
+            ..DownloadProgress::default()
+        }));
     }
 }

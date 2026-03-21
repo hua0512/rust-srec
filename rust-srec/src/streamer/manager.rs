@@ -652,6 +652,11 @@ where
             entry.consecutive_error_count = 0;
             entry.disabled_until = None;
             entry.last_error = None;
+            entry.state = if is_going_live {
+                StreamerState::Live
+            } else {
+                StreamerState::NotLive
+            };
             if let Some(time) = last_live_time {
                 entry.last_live_time = Some(time);
             }
@@ -1200,6 +1205,27 @@ mod tests {
         assert_eq!(metadata.consecutive_error_count, 0);
         assert!(metadata.disabled_until.is_none());
         assert!(!manager.is_disabled("s1"));
+        assert_eq!(metadata.state, StreamerState::NotLive);
+    }
+
+    #[tokio::test]
+    async fn test_record_success_going_live_restores_live_state() {
+        let repo =
+            MockStreamerRepository::with_streamers(vec![create_test_db_model("s1", "twitch")]);
+        let broadcaster = ConfigEventBroadcaster::new();
+        let manager = StreamerManager::with_error_threshold(Arc::new(repo), broadcaster, 1);
+        manager.hydrate().await.unwrap();
+
+        manager.record_error("s1", "Error").await.unwrap();
+        manager.update_state("s1", StreamerState::TemporalDisabled).await.unwrap();
+
+        manager.record_success("s1", true).await.unwrap();
+        let metadata = manager.get_streamer("s1").unwrap();
+        assert_eq!(metadata.state, StreamerState::Live);
+        assert_eq!(metadata.consecutive_error_count, 0);
+        assert!(metadata.disabled_until.is_none());
+        assert!(metadata.last_error.is_none());
+        assert!(metadata.last_live_time.is_some());
     }
 
     #[tokio::test]

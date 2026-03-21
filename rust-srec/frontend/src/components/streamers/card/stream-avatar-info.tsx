@@ -20,12 +20,18 @@ import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
 import { StreamerSchema } from '@/api/schemas';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
+import type { Download } from '@/store/downloads';
+import { isStreamerRecovering } from './recovery-state';
 
 interface StreamAvatarInfoProps {
   streamer: z.infer<typeof StreamerSchema>;
+  activeDownload?: Download;
 }
 
-export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
+export const StreamAvatarInfo = ({
+  streamer,
+  activeDownload,
+}: StreamAvatarInfoProps) => {
   const platform = getPlatformFromUrl(streamer.url);
 
   // Use client-side state to avoid hydration mismatch from time differences
@@ -52,6 +58,7 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
     'ERROR',
   ];
   const isStopped = stopStates.includes(streamer.state);
+  const isRecovering = isStreamerRecovering(streamer, activeDownload);
 
   return (
     <div className="flex items-center gap-3">
@@ -94,6 +101,7 @@ export const StreamAvatarInfo = ({ streamer }: StreamAvatarInfoProps) => {
           {/* Consecutive errors */}
           {streamer.consecutive_error_count > 0 &&
             !isTemporarilyPaused &&
+            !isRecovering &&
             !isStopped && (
               <TooltipProvider>
                 <Tooltip delayDuration={0}>

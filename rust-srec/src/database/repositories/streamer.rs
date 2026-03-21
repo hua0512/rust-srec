@@ -370,7 +370,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         if let Some(time) = last_live_time {
             let time_ms = time.timestamp_millis();
             sqlx::query(
-                "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ?",
+                "UPDATE streamers SET state = 'LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ?",
             )
             .bind(time_ms)
             .bind(id)
@@ -378,7 +378,7 @@ impl StreamerRepository for SqlxStreamerRepository {
             .await?;
         } else {
             sqlx::query(
-                "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ?",
+                "UPDATE streamers SET state = 'NOT_LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ?",
             )
             .bind(id)
             .execute(&self.write_pool)
