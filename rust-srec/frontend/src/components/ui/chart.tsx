@@ -64,7 +64,9 @@ function ChartContainer({
         style={style}
         {...props}
       >
-        <ResponsiveContainer>{children}</ResponsiveContainer>
+        <ResponsiveContainer minWidth={0} minHeight={0}>
+          {children}
+        </ResponsiveContainer>
       </div>
     </ChartContext.Provider>
   );

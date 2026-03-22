@@ -40,8 +40,10 @@ import {
   getStatusLabel,
 } from '@/components/pipeline/status-config';
 import {
+  AlertCircle,
   ArrowLeft,
   Terminal,
+  RefreshCw,
   RotateCcw,
   Workflow,
   Box,
