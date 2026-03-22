@@ -1,18 +1,18 @@
+import path from 'node:path';
 import { defineConfig } from 'vitest/config';
-import viteReact from '@vitejs/plugin-react';
-import viteTsConfigPaths from 'vite-tsconfig-paths';
+import react from '@vitejs/plugin-react-swc';
 
 export default defineConfig({
   plugins: [
-    viteTsConfigPaths({
-      projects: ['./tsconfig.json'],
-    }),
-    viteReact({
-      babel: {
-        plugins: ['macros'],
-      },
+    react({
+      plugins: [['@lingui/swc-plugin', {}]],
     }),
   ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,

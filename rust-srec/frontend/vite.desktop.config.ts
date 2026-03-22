@@ -2,8 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vite';
-import viteReact from '@vitejs/plugin-react';
-import viteTsConfigPaths from 'vite-tsconfig-paths';
+import react from '@vitejs/plugin-react-swc';
 import tailwindcss from '@tailwindcss/vite';
 import { devtools } from '@tanstack/devtools-vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
@@ -16,24 +15,19 @@ export default defineConfig({
   plugins: [
     lingui(),
     devtools(),
-    // this is the plugin that enables path aliases
-    viteTsConfigPaths({
-      projects: ['./tsconfig.json'],
-    }),
     tailwindcss(),
     tanstackRouter({
       target: 'react',
       autoCodeSplitting: true,
     }),
-    viteReact({
-      babel: {
-        plugins: ['macros'],
-      },
+    react({
+      plugins: [['@lingui/swc-plugin', {}]],
     }),
     // Limit oxlint to source folders (avoid linting build outputs).
     oxlintPlugin({ path: 'src' }),
   ],
   resolve: {
+    tsconfigPaths: true,
     alias: [
       // Ensure pbjs-generated `import * as $protobuf from "protobufjs/minimal";`
       // works in ESM builds by routing it through an ESM shim.

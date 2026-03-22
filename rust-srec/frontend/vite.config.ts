@@ -1,8 +1,7 @@
 import { defineConfig } from 'vite';
 import { devtools } from '@tanstack/devtools-vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
-import viteReact from '@vitejs/plugin-react';
-import viteTsConfigPaths from 'vite-tsconfig-paths';
+import react from '@vitejs/plugin-react-swc';
 import tailwindcss from '@tailwindcss/vite';
 import { nitro } from 'nitro/vite';
 
@@ -14,20 +13,17 @@ export default defineConfig(() => ({
     lingui(),
     devtools(),
     nitro(),
-    // this is the plugin that enables path aliases
-    viteTsConfigPaths({
-      projects: ['./tsconfig.json'],
-    }),
     tailwindcss(),
     tanstackStart({}),
-    viteReact({
-      babel: {
-        plugins: ['macros'],
-      },
+    react({
+      plugins: [['@lingui/swc-plugin', {}]],
     }),
     // Limit oxlint to source folders (avoid linting build outputs).
     oxlintPlugin({ path: 'src' }),
   ],
+  resolve: {
+    tsconfigPaths: true,
+  },
   server: {
     proxy: {
       '/api': {
