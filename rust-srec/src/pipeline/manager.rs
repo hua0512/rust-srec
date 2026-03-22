@@ -31,7 +31,8 @@ use crate::Result;
 use crate::config::ConfigService;
 use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
 use crate::database::models::{
-    JobFilters, MediaFileType, MediaOutputDbModel, Pagination, TitleEntry,
+    JobFilters, MediaFileType, MediaOutputDbModel, Pagination, SessionSegmentLifecycle,
+    SessionSegmentSplitReason, TitleEntry,
 };
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
@@ -1974,10 +1975,14 @@ where
                     &segment_path,
                     duration_secs,
                     size_bytes,
-                    started_at.as_ref().map(chrono::DateTime::timestamp_millis),
-                    Some(completed_at.timestamp_millis()),
-                    split_reason_code.clone(),
-                    split_reason_details_json.clone(),
+                    SessionSegmentLifecycle::new(
+                        started_at.as_ref().map(chrono::DateTime::timestamp_millis),
+                        Some(completed_at.timestamp_millis()),
+                    ),
+                    SessionSegmentSplitReason::new(
+                        split_reason_code.clone(),
+                        split_reason_details_json.clone(),
+                    ),
                 );
                 self.persist_session_segment(&session_segment).await;
 

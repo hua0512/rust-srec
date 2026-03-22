@@ -2107,7 +2107,9 @@ mod tests {
         };
 
         match started_event {
-            NotificationEvent::SegmentStarted { timestamp, .. } => assert_eq!(timestamp, started_at),
+            NotificationEvent::SegmentStarted { timestamp, .. } => {
+                assert_eq!(timestamp, started_at)
+            }
             _ => unreachable!(),
         }
 

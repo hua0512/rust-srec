@@ -161,6 +161,33 @@ pub struct SessionSegmentDbModel {
     pub persisted_at: i64,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct SessionSegmentLifecycle {
+    pub created_at: Option<i64>,
+    pub completed_at: Option<i64>,
+}
+
+impl SessionSegmentLifecycle {
+    pub fn new(created_at: Option<i64>, completed_at: Option<i64>) -> Self {
+        Self {
+            created_at,
+            completed_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SessionSegmentSplitReason {
+    pub code: Option<String>,
+    pub details_json: Option<String>,
+}
+
+impl SessionSegmentSplitReason {
+    pub fn new(code: Option<String>, details_json: Option<String>) -> Self {
+        Self { code, details_json }
+    }
+}
+
 impl SessionSegmentDbModel {
     pub fn new(
         session_id: impl Into<String>,
@@ -168,10 +195,8 @@ impl SessionSegmentDbModel {
         file_path: impl Into<String>,
         duration_secs: f64,
         size_bytes: u64,
-        created_at: Option<i64>,
-        completed_at: Option<i64>,
-        split_reason_code: Option<String>,
-        split_reason_details_json: Option<String>,
+        lifecycle: SessionSegmentLifecycle,
+        split_reason: SessionSegmentSplitReason,
     ) -> Self {
         let size_bytes = i64::try_from(size_bytes).unwrap_or(i64::MAX);
         let persisted_at = crate::database::time::now_ms();
@@ -182,10 +207,10 @@ impl SessionSegmentDbModel {
             file_path: file_path.into(),
             duration_secs,
             size_bytes,
-            split_reason_code,
-            split_reason_details_json,
-            created_at,
-            completed_at,
+            split_reason_code: split_reason.code,
+            split_reason_details_json: split_reason.details_json,
+            created_at: lifecycle.created_at,
+            completed_at: lifecycle.completed_at,
             persisted_at,
         }
     }
@@ -336,10 +361,11 @@ mod tests {
             "/tmp/segment-003.ts",
             12.5,
             4096,
-            Some(1_700_000_000_000),
-            Some(1_700_000_012_500),
-            Some("manual".to_string()),
-            Some("{\"reason\":\"manual\"}".to_string()),
+            SessionSegmentLifecycle::new(Some(1_700_000_000_000), Some(1_700_000_012_500)),
+            SessionSegmentSplitReason::new(
+                Some("manual".to_string()),
+                Some("{\"reason\":\"manual\"}".to_string()),
+            ),
         );
 
         assert_eq!(segment.session_id, "session-1");

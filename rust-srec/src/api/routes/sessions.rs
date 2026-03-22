@@ -688,9 +688,20 @@ mod tests {
             size_bytes: 4096,
             split_reason_code: None,
             split_reason_details: None,
-            created_at: Some(Utc.timestamp_millis_opt(1_700_000_000_000).single().unwrap()),
-            completed_at: Some(Utc.timestamp_millis_opt(1_700_000_008_500).single().unwrap()),
-            persisted_at: Utc.timestamp_millis_opt(1_700_000_010_000).single().unwrap(),
+            created_at: Some(
+                Utc.timestamp_millis_opt(1_700_000_000_000)
+                    .single()
+                    .unwrap(),
+            ),
+            completed_at: Some(
+                Utc.timestamp_millis_opt(1_700_000_008_500)
+                    .single()
+                    .unwrap(),
+            ),
+            persisted_at: Utc
+                .timestamp_millis_opt(1_700_000_010_000)
+                .single()
+                .unwrap(),
         };
 
         let value = serde_json::to_value(response).unwrap();

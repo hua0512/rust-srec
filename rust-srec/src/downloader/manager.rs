@@ -880,17 +880,16 @@ impl DownloadManager {
                             .await
                             .unwrap_or_else(|_| path.clone());
                         let segment_path = normalized_path.to_string_lossy().to_string();
-                        let started_at = active_downloads
-                            .get(&download_id_clone)
-                            .and_then(|download| {
-                                if download.current_segment_index == Some(index) {
-                                    download.current_segment_started_at
-                                        .as_ref()
-                                        .cloned()
-                                } else {
-                                    None
-                                }
-                            });
+                        let started_at =
+                            active_downloads
+                                .get(&download_id_clone)
+                                .and_then(|download| {
+                                    if download.current_segment_index == Some(index) {
+                                        download.current_segment_started_at.as_ref().cloned()
+                                    } else {
+                                        None
+                                    }
+                                });
 
                         // Broadcast send is synchronous, ignore if no receivers
                         let _ = event_tx.send(DownloadManagerEvent::SegmentCompleted {

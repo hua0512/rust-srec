@@ -40,8 +40,8 @@ use crate::database::repositories::{
 };
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
-    engine::DownloadProgress,
     DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
+    engine::DownloadProgress,
 };
 use crate::logging::LoggingConfig;
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};

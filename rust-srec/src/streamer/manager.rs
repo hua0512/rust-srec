@@ -1217,7 +1217,10 @@ mod tests {
         manager.hydrate().await.unwrap();
 
         manager.record_error("s1", "Error").await.unwrap();
-        manager.update_state("s1", StreamerState::TemporalDisabled).await.unwrap();
+        manager
+            .update_state("s1", StreamerState::TemporalDisabled)
+            .await
+            .unwrap();
 
         manager.record_success("s1", true).await.unwrap();
         let metadata = manager.get_streamer("s1").unwrap();

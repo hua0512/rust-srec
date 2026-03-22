@@ -778,10 +778,14 @@ mod tests {
             "/tmp/segment-007.ts",
             9.5,
             2048,
-            Some(1_700_000_000_000),
-            Some(1_700_000_009_500),
-            Some("manual".to_string()),
-            Some("{\"kind\":\"manual\"}".to_string()),
+            crate::database::models::SessionSegmentLifecycle::new(
+                Some(1_700_000_000_000),
+                Some(1_700_000_009_500),
+            ),
+            crate::database::models::SessionSegmentSplitReason::new(
+                Some("manual".to_string()),
+                Some("{\"kind\":\"manual\"}".to_string()),
+            ),
         );
 
         repo.create_session_segment(&segment).await.unwrap();
