@@ -118,9 +118,11 @@ pub(super) fn setup_writer_callbacks(
     let event_tx_progress = event_tx.clone();
 
     writer.set_on_segment_start_callback(move |path, sequence| {
+        let started_at = Utc::now();
         let event = SegmentEvent::SegmentStarted {
             path: path.to_path_buf(),
             sequence,
+            started_at,
         };
         let _ = event_tx_start.blocking_send(event);
     });

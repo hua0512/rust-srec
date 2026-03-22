@@ -334,6 +334,8 @@ fn map_event_to_protobuf(
             session_id,
             segment_path,
             segment_index,
+            started_at,
+            completed_at,
             duration_secs,
             size_bytes,
             split_reason_code: _,
@@ -349,6 +351,11 @@ fn map_event_to_protobuf(
                 size_bytes: *size_bytes,
                 session_id: session_id.clone(),
                 split_reason: String::new(),
+                started_at_ms: started_at
+                    .as_ref()
+                    .map(chrono::DateTime::timestamp_millis)
+                    .unwrap_or_default(),
+                completed_at_ms: completed_at.timestamp_millis(),
             };
             Some(WsMessage {
                 event_type: EventType::SegmentCompleted as i32,
@@ -524,6 +531,8 @@ mod tests {
             session_id: "session-1".to_string(),
             segment_path: "/path/to/segment.ts".to_string(),
             segment_index: 5,
+            started_at: Some(chrono::Utc::now()),
+            completed_at: chrono::Utc::now(),
             duration_secs: 10.5,
             size_bytes: 1024000,
             split_reason_code: None,
@@ -540,6 +549,7 @@ mod tests {
             assert_eq!(payload.size_bytes, 1024000);
             assert_eq!(payload.session_id, "session-1");
             assert_eq!(payload.split_reason, "");
+            assert!(payload.completed_at_ms > 0);
         } else {
             panic!("Expected SegmentCompleted payload");
         }

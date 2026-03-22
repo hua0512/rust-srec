@@ -70,3 +70,14 @@ curl http://localhost:12555/api/streamers \
 | `404` | Not Found |
 | `409` | Conflict (duplicate) |
 | `500` | Internal Server Error |
+
+## Session segment timestamps
+
+The `GET /api/sessions/{id}/segments` response exposes three different timestamps for each segment:
+
+- `created_at`: when recording for the segment started
+- `completed_at`: when recording for the segment finished
+- `persisted_at`: when the segment row was written to SQLite
+
+For legacy rows recorded before lifecycle timestamps were added, `created_at` and `completed_at`
+may be `null`. In those cases, `persisted_at` remains the reliable database insertion timestamp.

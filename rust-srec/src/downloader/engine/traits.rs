@@ -444,6 +444,7 @@ pub enum SegmentEvent {
         path: PathBuf,
         /// Sequence number of the segment (0-based).
         sequence: u32,
+        started_at: DateTime<Utc>,
     },
     /// A segment was completed.
     SegmentCompleted(SegmentInfo),

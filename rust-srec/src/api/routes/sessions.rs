@@ -53,7 +53,7 @@ pub fn router() -> Router<AppState> {
         PaginationParams
     ),
     responses(
-        (status = 200, description = "List of session segments", body = PageResponse<SessionSegmentResponse>),
+        (status = 200, description = "List of session segments with start, completion, and persistence timestamps", body = PageResponse<SessionSegmentResponse>),
         (status = 404, description = "Session not found", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
@@ -103,7 +103,9 @@ pub async fn list_session_segments(
                 .split_reason_details_json
                 .as_ref()
                 .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok()),
-            created_at: crate::database::time::ms_to_datetime(s.created_at),
+            created_at: s.created_at.map(crate::database::time::ms_to_datetime),
+            completed_at: s.completed_at.map(crate::database::time::ms_to_datetime),
+            persisted_at: crate::database::time::ms_to_datetime(s.persisted_at),
         })
         .collect();
 
@@ -644,6 +646,8 @@ pub async fn delete_sessions_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::models::SessionSegmentResponse;
+    use chrono::{TimeZone, Utc};
 
     #[test]
     fn test_session_filter_params_default() {
@@ -671,5 +675,27 @@ mod tests {
         let (titles, title) = parse_titles(&Some(json.to_string()));
         assert_eq!(titles.len(), 2);
         assert_eq!(title, "Updated Title");
+    }
+
+    #[test]
+    fn test_session_segment_response_serializes_lifecycle_fields() {
+        let response = SessionSegmentResponse {
+            id: "seg-1".to_string(),
+            session_id: "sess-1".to_string(),
+            segment_index: 2,
+            file_path: "/tmp/seg-2.ts".to_string(),
+            duration_secs: 8.5,
+            size_bytes: 4096,
+            split_reason_code: None,
+            split_reason_details: None,
+            created_at: Some(Utc.timestamp_millis_opt(1_700_000_000_000).single().unwrap()),
+            completed_at: Some(Utc.timestamp_millis_opt(1_700_000_008_500).single().unwrap()),
+            persisted_at: Utc.timestamp_millis_opt(1_700_000_010_000).single().unwrap(),
+        };
+
+        let value = serde_json::to_value(response).unwrap();
+        assert!(value.get("created_at").is_some());
+        assert!(value.get("completed_at").is_some());
+        assert!(value.get("persisted_at").is_some());
     }
 }

@@ -668,7 +668,9 @@ pub struct SessionSegmentResponse {
     pub size_bytes: u64,
     pub split_reason_code: Option<String>,
     pub split_reason_details: Option<serde_json::Value>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub persisted_at: DateTime<Utc>,
 }
 
 // ============================================================================

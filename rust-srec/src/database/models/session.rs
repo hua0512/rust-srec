@@ -156,7 +156,9 @@ pub struct SessionSegmentDbModel {
     pub size_bytes: i64,
     pub split_reason_code: Option<String>,
     pub split_reason_details_json: Option<String>,
-    pub created_at: i64,
+    pub created_at: Option<i64>,
+    pub completed_at: Option<i64>,
+    pub persisted_at: i64,
 }
 
 impl SessionSegmentDbModel {
@@ -166,10 +168,13 @@ impl SessionSegmentDbModel {
         file_path: impl Into<String>,
         duration_secs: f64,
         size_bytes: u64,
+        created_at: Option<i64>,
+        completed_at: Option<i64>,
         split_reason_code: Option<String>,
         split_reason_details_json: Option<String>,
     ) -> Self {
         let size_bytes = i64::try_from(size_bytes).unwrap_or(i64::MAX);
+        let persisted_at = crate::database::time::now_ms();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             session_id: session_id.into(),
@@ -179,7 +184,9 @@ impl SessionSegmentDbModel {
             size_bytes,
             split_reason_code,
             split_reason_details_json,
-            created_at: crate::database::time::now_ms(),
+            created_at,
+            completed_at,
+            persisted_at,
         }
     }
 }
@@ -319,5 +326,30 @@ mod tests {
             MediaFileType::parse("THUMBNAIL"),
             Some(MediaFileType::Thumbnail)
         );
+    }
+
+    #[test]
+    fn test_session_segment_new_sets_lifecycle_fields() {
+        let segment = SessionSegmentDbModel::new(
+            "session-1",
+            3,
+            "/tmp/segment-003.ts",
+            12.5,
+            4096,
+            Some(1_700_000_000_000),
+            Some(1_700_000_012_500),
+            Some("manual".to_string()),
+            Some("{\"reason\":\"manual\"}".to_string()),
+        );
+
+        assert_eq!(segment.session_id, "session-1");
+        assert_eq!(segment.segment_index, 3);
+        assert_eq!(segment.file_path, "/tmp/segment-003.ts");
+        assert_eq!(segment.duration_secs, 12.5);
+        assert_eq!(segment.size_bytes, 4096);
+        assert_eq!(segment.created_at, Some(1_700_000_000_000));
+        assert_eq!(segment.completed_at, Some(1_700_000_012_500));
+        assert!(segment.persisted_at > 0);
+        assert!(segment.persisted_at >= 1_700_000_000_000);
     }
 }

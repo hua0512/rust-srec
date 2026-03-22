@@ -200,6 +200,9 @@ struct ActiveDownload {
     is_high_priority: bool,
     /// Last known output path (from segments)
     pub output_path: Option<String>,
+    current_segment_index: Option<u32>,
+    current_segment_path: Option<String>,
+    current_segment_started_at: Option<DateTime<Utc>>,
     /// Semaphore permit guarding concurrency slot (dropped on removal)
     #[allow(dead_code)]
     permit: Option<OwnedSemaphorePermit>,
@@ -307,6 +310,7 @@ pub enum DownloadManagerEvent {
         session_id: String,
         segment_path: String,
         segment_index: u32,
+        started_at: DateTime<Utc>,
     },
     /// Segment completed.
     SegmentCompleted {
@@ -316,6 +320,8 @@ pub enum DownloadManagerEvent {
         session_id: String,
         segment_path: String,
         segment_index: u32,
+        started_at: Option<DateTime<Utc>>,
+        completed_at: DateTime<Utc>,
         duration_secs: f64,
         size_bytes: u64,
         split_reason_code: Option<String>,
@@ -795,6 +801,9 @@ impl DownloadManager {
                 progress: DownloadProgress::default(),
                 is_high_priority,
                 output_path: None,
+                current_segment_index: None,
+                current_segment_path: None,
+                current_segment_started_at: None,
                 permit: Some(permit),
                 retry_config_override: None,
             },
@@ -861,6 +870,7 @@ impl DownloadManager {
                             duration_secs,
                             size_bytes,
                             index,
+                            completed_at,
                             split_reason_code,
                             split_reason_details_json,
                             ..
@@ -870,6 +880,18 @@ impl DownloadManager {
                             .await
                             .unwrap_or_else(|_| path.clone());
                         let segment_path = normalized_path.to_string_lossy().to_string();
+                        let started_at = active_downloads
+                            .get(&download_id_clone)
+                            .and_then(|download| {
+                                if download.current_segment_index == Some(index) {
+                                    download.current_segment_started_at
+                                        .as_ref()
+                                        .cloned()
+                                } else {
+                                    None
+                                }
+                            });
+
                         // Broadcast send is synchronous, ignore if no receivers
                         let _ = event_tx.send(DownloadManagerEvent::SegmentCompleted {
                             download_id: download_id_clone.clone(),
@@ -878,6 +900,8 @@ impl DownloadManager {
                             session_id: session_id.clone(),
                             segment_path: segment_path.clone(),
                             segment_index: index,
+                            started_at,
+                            completed_at,
                             duration_secs,
                             size_bytes,
                             split_reason_code,
@@ -886,6 +910,11 @@ impl DownloadManager {
 
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
                             download.output_path = Some(segment_path);
+                            if download.current_segment_index == Some(index) {
+                                download.current_segment_index = None;
+                                download.current_segment_path = None;
+                                download.current_segment_started_at = None;
+                            }
                         }
                         debug!(
                             download_id = %download_id_clone,
@@ -1007,8 +1036,18 @@ impl DownloadManager {
 
                         break;
                     }
-                    SegmentEvent::SegmentStarted { path, sequence } => {
+                    SegmentEvent::SegmentStarted {
+                        path,
+                        sequence,
+                        started_at,
+                    } => {
                         let segment_path = path.to_string_lossy().to_string();
+
+                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
+                            download.current_segment_index = Some(sequence);
+                            download.current_segment_path = Some(segment_path.clone());
+                            download.current_segment_started_at = Some(started_at);
+                        }
 
                         // Emit segment started event
                         let _ = event_tx.send(DownloadManagerEvent::SegmentStarted {
@@ -1018,6 +1057,7 @@ impl DownloadManager {
                             session_id: session_id.clone(),
                             segment_path: segment_path.clone(),
                             segment_index: sequence,
+                            started_at,
                         });
 
                         if let Some((_, pending_update)) =

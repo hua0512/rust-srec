@@ -1575,6 +1575,7 @@ impl NotificationService {
                                         session_id,
                                         segment_path,
                                         segment_index,
+                                        started_at,
                                         ..
                                     } => Some(NotificationEvent::SegmentStarted {
                                         streamer_id,
@@ -1582,7 +1583,7 @@ impl NotificationService {
                                         session_id,
                                         segment_path,
                                         segment_index,
-                                        timestamp: Utc::now(),
+                                        timestamp: started_at,
                                     }),
                                     DownloadManagerEvent::SegmentCompleted {
                                         streamer_id,
@@ -1590,6 +1591,7 @@ impl NotificationService {
                                         session_id,
                                         segment_path,
                                         segment_index,
+                                        completed_at,
                                         duration_secs,
                                         size_bytes,
                                         ..
@@ -1601,7 +1603,7 @@ impl NotificationService {
                                         segment_index,
                                         size_bytes,
                                         duration_secs,
-                                        timestamp: Utc::now(),
+                                        timestamp: completed_at,
                                     }),
                                     DownloadManagerEvent::DownloadCancelled {
                                         streamer_id,
@@ -2032,6 +2034,89 @@ mod tests {
         assert_eq!(ok_attempts.load(Ordering::SeqCst), 1);
         assert!(flaky_attempts.load(Ordering::SeqCst) >= 2);
         assert_eq!(service.stats().pending_count, 0);
+    }
+
+    #[test]
+    fn test_segment_notifications_preserve_lifecycle_timestamps() {
+        let started_at = Utc::now();
+        let completed_at = started_at + chrono::Duration::seconds(10);
+
+        let started_event = match (DownloadManagerEvent::SegmentStarted {
+            download_id: "dl-1".to_string(),
+            streamer_id: "streamer-1".to_string(),
+            streamer_name: "Streamer".to_string(),
+            session_id: "session-1".to_string(),
+            segment_path: "/tmp/seg.ts".to_string(),
+            segment_index: 1,
+            started_at,
+        }) {
+            DownloadManagerEvent::SegmentStarted {
+                streamer_id,
+                streamer_name,
+                session_id,
+                segment_path,
+                segment_index,
+                started_at,
+                ..
+            } => NotificationEvent::SegmentStarted {
+                streamer_id,
+                streamer_name,
+                session_id,
+                segment_path,
+                segment_index,
+                timestamp: started_at,
+            },
+            _ => unreachable!(),
+        };
+
+        let completed_event = match (DownloadManagerEvent::SegmentCompleted {
+            download_id: "dl-1".to_string(),
+            streamer_id: "streamer-1".to_string(),
+            streamer_name: "Streamer".to_string(),
+            session_id: "session-1".to_string(),
+            segment_path: "/tmp/seg.ts".to_string(),
+            segment_index: 1,
+            started_at: Some(started_at),
+            completed_at,
+            duration_secs: 10.0,
+            size_bytes: 1024,
+            split_reason_code: None,
+            split_reason_details_json: None,
+        }) {
+            DownloadManagerEvent::SegmentCompleted {
+                streamer_id,
+                streamer_name,
+                session_id,
+                segment_path,
+                segment_index,
+                completed_at,
+                duration_secs,
+                size_bytes,
+                ..
+            } => NotificationEvent::SegmentCompleted {
+                streamer_id,
+                streamer_name,
+                session_id,
+                segment_path,
+                segment_index,
+                size_bytes,
+                duration_secs,
+                timestamp: completed_at,
+            },
+            _ => unreachable!(),
+        };
+
+        match started_event {
+            NotificationEvent::SegmentStarted { timestamp, .. } => assert_eq!(timestamp, started_at),
+            _ => unreachable!(),
+        }
+
+        match completed_event {
+            NotificationEvent::SegmentCompleted { timestamp, .. } => {
+                assert_eq!(timestamp, completed_at)
+            }
+            _ => unreachable!(),
+        }
     }
 
     struct MockNotificationRepo {

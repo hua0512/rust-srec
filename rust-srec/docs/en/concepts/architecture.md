@@ -151,6 +151,12 @@ The download manager owns:
 
 It emits `DownloadManagerEvent` for lifecycle, segment boundaries, and (optionally) progress.
 
+For persisted session segments, the backend keeps three separate timestamps:
+
+- `created_at`: when the segment started recording
+- `completed_at`: when the segment finished recording
+- `persisted_at`: when the segment metadata row was stored in SQLite
+
 ### `DanmuService` (chat capture)
 
 Danmu collection is session-scoped but writes files per segment:

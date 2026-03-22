@@ -149,6 +149,12 @@ DownloadManager 负责：
 
 并通过 `DownloadManagerEvent` 广播下载生命周期与分段事件。
 
+对于落库后的 session 分段，后端会保留三种不同含义的时间戳：
+
+- `created_at`：该分段开始录制的时间
+- `completed_at`：该分段结束录制的时间
+- `persisted_at`：该分段元数据写入 SQLite 的时间
+
 ### `DanmuService`（弹幕/聊天采集）
 
 弹幕采集以 session 为单位维持连接，以 segment 为单位落盘：
