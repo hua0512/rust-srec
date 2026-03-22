@@ -1953,6 +1953,8 @@ where
                 session_id,
                 segment_path,
                 segment_index,
+                started_at,
+                completed_at,
                 duration_secs,
                 size_bytes,
                 split_reason_code,
@@ -1972,6 +1974,8 @@ where
                     &segment_path,
                     duration_secs,
                     size_bytes,
+                    started_at.as_ref().map(chrono::DateTime::timestamp_millis),
+                    Some(completed_at.timestamp_millis()),
                     split_reason_code.clone(),
                     split_reason_details_json.clone(),
                 );

@@ -55,7 +55,9 @@ export const SessionSegmentSchema = z.object({
   size_bytes: z.number(),
   split_reason_code: z.string().nullable().optional(),
   split_reason_details: z.any().optional(),
-  created_at: z.string(),
+  created_at: z.string().nullable(),
+  completed_at: z.string().nullable().optional(),
+  persisted_at: z.string(),
 });
 export type SessionSegment = z.infer<typeof SessionSegmentSchema>;
 

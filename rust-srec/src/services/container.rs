@@ -1365,6 +1365,7 @@ impl ServiceContainer {
                         streamer_id,
                         segment_path,
                         segment_index,
+                        started_at,
                         ..
                     } => {
                         if let Some(metadata) = streamer_manager.get_streamer(streamer_id)
@@ -1389,7 +1390,7 @@ impl ServiceContainer {
                             danmu_path.set_extension("xml");
 
                             if let Err(e) = handle
-                                .start_segment(&segment_id, danmu_path, chrono::Utc::now())
+                                .start_segment(&segment_id, danmu_path, started_at.to_owned())
                                 .await
                             {
                                 warn!("Failed to start danmu segment: {}", e);

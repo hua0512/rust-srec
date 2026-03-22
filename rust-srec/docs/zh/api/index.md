@@ -70,3 +70,14 @@ curl http://localhost:12555/api/streamers \
 | `404` | 未找到 |
 | `409` | 冲突（重复）|
 | `500` | 服务器错误 |
+
+## Session 分段时间戳
+
+`GET /api/sessions/{id}/segments` 会为每个分段返回三个不同含义的时间戳：
+
+- `created_at`：该分段开始录制的时间
+- `completed_at`：该分段结束录制的时间
+- `persisted_at`：该分段记录写入 SQLite 的时间
+
+对于生命周期时间戳引入之前产生的历史数据，`created_at` 和 `completed_at` 可能为
+`null`。这种情况下，`persisted_at` 仍然是可靠的数据库写入时间。

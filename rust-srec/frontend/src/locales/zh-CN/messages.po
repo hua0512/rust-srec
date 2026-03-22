@@ -2012,7 +2012,7 @@ msgstr "下载 {0}"
 
 #: src/components/streamers/card/use-streamer-status.tsx:86
 msgid "Download activity looks healthy"
-msgstr ""
+msgstr "下载活动看起来正常"
 
 #: src/components/logging/log-file-browser.tsx:325
 msgid "Download All"
@@ -5074,7 +5074,7 @@ msgstr "待处理"
 
 #: src/components/streamers/card/use-streamer-status.tsx:97
 msgid "Pending Error Clears"
-msgstr ""
+msgstr "待清除错误"
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:334
 msgid "Pending Jobs"
@@ -5721,7 +5721,7 @@ msgstr "录制内容"
 #: src/components/streamers/card/use-streamer-status.tsx:76
 #: src/components/streamers/card/use-streamer-status.tsx:85
 msgid "Recovering"
-msgstr ""
+msgstr "恢复中"
 
 #: src/components/config/shared/network-settings-card.tsx:199
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:375
@@ -7274,7 +7274,7 @@ msgstr "转码 H.264"
 
 #: src/components/streamers/card/use-streamer-status.tsx:89
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
-msgstr ""
+msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:154
 msgid "Treat interactive game streams (互动玩法) as offline."

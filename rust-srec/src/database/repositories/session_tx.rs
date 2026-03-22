@@ -252,7 +252,9 @@ mod tests {
                 size_bytes INTEGER NOT NULL,
                 split_reason_code TEXT,
                 split_reason_details_json TEXT,
-                created_at INTEGER NOT NULL
+                created_at INTEGER,
+                completed_at INTEGER,
+                persisted_at INTEGER NOT NULL
             )
             "#,
         )

@@ -1,7 +1,7 @@
 //! Streamlink download engine implementation.
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use pipeline_common::expand_filename_template;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -422,7 +422,7 @@ impl DownloadEngine for StreamlinkEngine {
         let streamer_id_clone = streamer_id.clone();
         tokio::spawn(async move {
             let mut reader = OutputRecordReader::new(ffmpeg_stderr);
-            let mut active_segment: Option<(u32, PathBuf, f64)> = None;
+            let mut active_segment: Option<(u32, PathBuf, f64, DateTime<Utc>)> = None;
             let mut next_segment_index = 0u32;
             let mut segments_completed = 0u32;
             let mut total_bytes = 0u64;
@@ -438,11 +438,13 @@ impl DownloadEngine for StreamlinkEngine {
             if let Some(path) = single_output_path {
                 let index = 0u32;
                 next_segment_index = 1;
-                active_segment = Some((index, path.clone(), 0.0));
+                let started_at = Utc::now();
+                active_segment = Some((index, path.clone(), 0.0, started_at));
                 let _ = event_tx_clone
                     .send(SegmentEvent::SegmentStarted {
                         path,
                         sequence: index,
+                        started_at,
                     })
                     .await;
             }
@@ -458,13 +460,13 @@ impl DownloadEngine for StreamlinkEngine {
                                     && let Some(path) = parse_opened_path(&line)
                                 {
                                         // Complete the previous segment when a new one starts.
-                                        if let Some((index, path, started_at)) = active_segment.take() {
+                                        if let Some((index, path, started_media_at, _started_at)) = active_segment.take() {
                                             let size_bytes = tokio::fs::metadata(&path)
                                                 .await
                                                 .map(|m| m.len())
                                                 .unwrap_or(0);
                                             let duration_secs =
-                                                (media_duration_total_secs - started_at).max(0.0);
+                                                (media_duration_total_secs - started_media_at).max(0.0);
                                             segments_completed = segments_completed.saturating_add(1);
                                             bytes_completed = bytes_completed.saturating_add(size_bytes);
                                             media_duration_offset_secs += duration_secs;
@@ -487,11 +489,20 @@ impl DownloadEngine for StreamlinkEngine {
 
                                         let index = next_segment_index;
                                         next_segment_index = next_segment_index.saturating_add(1);
-                                        active_segment =
-                                            Some((index, path.clone(), media_duration_total_secs));
+                                        let started_at = Utc::now();
+                                        active_segment = Some((
+                                            index,
+                                            path.clone(),
+                                            media_duration_total_secs,
+                                            started_at,
+                                        ));
 
                                         let _ = event_tx_clone
-                                            .send(SegmentEvent::SegmentStarted { path, sequence: index })
+                                            .send(SegmentEvent::SegmentStarted {
+                                                path,
+                                                sequence: index,
+                                                started_at,
+                                            })
                                             .await;
                                         debug!(
                                             "Segment {} started for {}",
@@ -514,7 +525,7 @@ impl DownloadEngine for StreamlinkEngine {
                                     // Prefer filesystem-backed byte counts since FFmpeg's `size=`
                                     // can reset or be absent when segmenting.
                                     let mut bytes_total = progress.bytes_downloaded;
-                                    if let Some((_, path, _)) = active_segment.as_ref() {
+                                    if let Some((_, path, _, _)) = active_segment.as_ref() {
                                         let now = Instant::now();
                                         if now.duration_since(last_active_segment_stat_at)
                                             >= Duration::from_millis(500)
@@ -555,7 +566,7 @@ impl DownloadEngine for StreamlinkEngine {
                                     progress.segments_completed = segments_completed;
                                     progress.current_segment = active_segment
                                         .as_ref()
-                                        .map(|(_, p, _)| p.to_string_lossy().to_string());
+                                        .map(|(_, p, _, _)| p.to_string_lossy().to_string());
 
                                     progress.speed_bytes_per_sec = last_progress_snapshot
                                         .and_then(|(prev_bytes, prev_elapsed, _)| {
@@ -592,12 +603,12 @@ impl DownloadEngine for StreamlinkEngine {
             }
 
             // Complete the last active segment (if any).
-            if let Some((index, path, started_at)) = active_segment.take() {
+            if let Some((index, path, started_media_at, _started_at)) = active_segment.take() {
                 let size_bytes = tokio::fs::metadata(&path)
                     .await
                     .map(|m| m.len())
                     .unwrap_or(0);
-                let duration_secs = (media_duration_total_secs - started_at).max(0.0);
+                let duration_secs = (media_duration_total_secs - started_media_at).max(0.0);
                 segments_completed = segments_completed.saturating_add(1);
                 bytes_completed = bytes_completed.saturating_add(size_bytes);
                 total_bytes = bytes_completed;

@@ -324,8 +324,10 @@ impl SessionRepository for SqlxSessionRepository {
                         size_bytes,
                         split_reason_code,
                         split_reason_details_json,
-                        created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at,
+                        completed_at,
+                        persisted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     "#,
                 )
                 .bind(&segment.id)
@@ -337,6 +339,8 @@ impl SessionRepository for SqlxSessionRepository {
                 .bind(&segment.split_reason_code)
                 .bind(&segment.split_reason_details_json)
                 .bind(segment.created_at)
+                .bind(segment.completed_at)
+                .bind(segment.persisted_at)
                 .execute(&mut *conn)
                 .await?;
 
@@ -365,7 +369,7 @@ impl SessionRepository for SqlxSessionRepository {
     ) -> Result<Vec<SessionSegmentDbModel>> {
         let limit = limit.clamp(1, 10000);
         let segments = sqlx::query_as::<_, SessionSegmentDbModel>(
-            "SELECT * FROM session_segments WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM session_segments WHERE session_id = ? ORDER BY created_at DESC, persisted_at DESC LIMIT ?",
         )
         .bind(session_id)
         .bind(limit)
@@ -384,7 +388,7 @@ impl SessionRepository for SqlxSessionRepository {
             .clamp(1, 10_000);
         let offset = i32::try_from(pagination.offset).unwrap_or(0).max(0);
         let segments = sqlx::query_as::<_, SessionSegmentDbModel>(
-            "SELECT * FROM session_segments WHERE session_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT * FROM session_segments WHERE session_id = ? ORDER BY created_at DESC, persisted_at DESC LIMIT ? OFFSET ?",
         )
         .bind(session_id)
         .bind(limit)
@@ -730,5 +734,69 @@ impl SessionRepository for SqlxSessionRepository {
         let outputs = data_query.fetch_all(&self.pool).await?;
 
         Ok((outputs, total_count))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::models::Pagination;
+
+    async fn setup_test_repo() -> SqlxSessionRepository {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+
+        sqlx::query(
+            r#"
+            CREATE TABLE session_segments (
+                id TEXT PRIMARY KEY NOT NULL,
+                session_id TEXT NOT NULL,
+                segment_index INTEGER NOT NULL,
+                file_path TEXT NOT NULL,
+                duration_secs REAL NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                split_reason_code TEXT,
+                split_reason_details_json TEXT,
+                created_at INTEGER,
+                completed_at INTEGER,
+                persisted_at INTEGER NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        SqlxSessionRepository::new(pool.clone(), pool)
+    }
+
+    #[tokio::test]
+    async fn test_create_and_list_session_segment_with_lifecycle_timestamps() {
+        let repo = setup_test_repo().await;
+        let segment = SessionSegmentDbModel::new(
+            "session-1",
+            7,
+            "/tmp/segment-007.ts",
+            9.5,
+            2048,
+            Some(1_700_000_000_000),
+            Some(1_700_000_009_500),
+            Some("manual".to_string()),
+            Some("{\"kind\":\"manual\"}".to_string()),
+        );
+
+        repo.create_session_segment(&segment).await.unwrap();
+
+        let listed = repo
+            .list_session_segments_page("session-1", &Pagination::new(10, 0))
+            .await
+            .unwrap();
+
+        assert_eq!(listed.len(), 1);
+        let saved = &listed[0];
+        assert_eq!(saved.session_id, "session-1");
+        assert_eq!(saved.segment_index, 7);
+        assert_eq!(saved.created_at, Some(1_700_000_000_000));
+        assert_eq!(saved.completed_at, Some(1_700_000_009_500));
+        assert!(saved.persisted_at >= 1_700_000_000_000);
     }
 }
