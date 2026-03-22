@@ -15,8 +15,13 @@ import { StreamerSchema } from '@/api/schemas';
 import { z } from 'zod';
 import { useMemo, useState, useEffect } from 'react';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
+import type { Download } from '@/store/downloads';
+import { isStreamerRecovering } from './recovery-state';
 
-export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
+export function useStreamerStatus(
+  streamer: z.infer<typeof StreamerSchema>,
+  activeDownload?: Download,
+) {
   const { i18n } = useLingui();
 
   // Client-side time to avoid hydration mismatch
@@ -64,6 +69,45 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
       'ERROR',
     ];
     const isStopped = stopStates.includes(streamer.state);
+    const isRecovering = isStreamerRecovering(streamer, activeDownload);
+
+    if (isRecovering) {
+      return {
+        label: <Trans>Recovering</Trans>,
+        color:
+          'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 hover:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-400/30',
+        iconColor: 'bg-emerald-500',
+        pulsing: true,
+        tooltip: (
+          <StatusInfoTooltip
+            theme="blue"
+            icon={<Activity className="h-3.5 w-3.5" />}
+            title={<Trans>Recovering</Trans>}
+            subtitle={<Trans>Download activity looks healthy</Trans>}
+          >
+            <div className="text-xs text-muted-foreground leading-relaxed">
+              <Trans>
+                Transient monitoring errors are being preserved until sustained
+                download progress confirms the stream is healthy.
+              </Trans>
+            </div>
+            {streamer.consecutive_error_count > 0 && (
+              <div className="flex items-center justify-between text-xs p-2 rounded-md bg-muted/30 border border-border/40">
+                <span className="text-muted-foreground font-medium">
+                  <Trans>Pending Error Clears</Trans>
+                </span>
+                <Badge
+                  variant="secondary"
+                  className="font-mono font-bold text-[10px] bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-400"
+                >
+                  {streamer.consecutive_error_count}
+                </Badge>
+              </div>
+            )}
+          </StatusInfoTooltip>
+        ),
+      };
+    }
 
     if (isTemporarilyPaused && disabledUntil) {
       return {
@@ -270,5 +314,5 @@ export function useStreamerStatus(streamer: z.infer<typeof StreamerSchema>) {
       pulsing: false,
       tooltip: null,
     };
-  }, [streamer, i18n, now]);
+  }, [activeDownload, streamer, i18n, now]);
 }

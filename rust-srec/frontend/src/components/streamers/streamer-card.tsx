@@ -27,7 +27,7 @@ export const StreamerCard = memo(
     );
     const activeDownload = downloads?.[0]; // Show first active download
 
-    const status = useStreamerStatus(streamer);
+    const status = useStreamerStatus(streamer, activeDownload);
 
     return (
       <DashboardCard
@@ -54,7 +54,10 @@ export const StreamerCard = memo(
                 />
               </div>
 
-              <StreamAvatarInfo streamer={streamer} />
+              <StreamAvatarInfo
+                streamer={streamer}
+                activeDownload={activeDownload}
+              />
 
               {/* Download progress indicator */}
               {activeDownload && (
