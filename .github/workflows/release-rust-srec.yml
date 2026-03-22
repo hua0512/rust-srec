@@ -192,7 +192,7 @@ jobs:
           jq '.bundle.targets = ["deb"]' tauri.conf.json > tauri.conf.json.tmp
           mv tauri.conf.json.tmp tauri.conf.json
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: 10.28.1
 
