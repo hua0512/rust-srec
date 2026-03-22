@@ -80,7 +80,7 @@
     "@lingui/cli": "^5.9.3",
     "@lingui/macro": "^5.9.2",
     "@lingui/vite-plugin": "^5.9.2",
-    "@tanstack/devtools-vite": "^0.5.5",
+    "@tanstack/devtools-vite": "^0.6.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
