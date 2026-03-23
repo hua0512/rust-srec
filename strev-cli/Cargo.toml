@@ -34,7 +34,7 @@ tabled = { version = "0.20", optional = true }
 
 # Simplified configuration
 dirs = "6"
-toml = "1.0"
+toml = "1.1"
 
 # Logging
 tracing = { workspace = true }
