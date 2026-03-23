@@ -336,6 +336,8 @@ pub struct SegmentInfo {
     pub size_bytes: u64,
     /// Segment index (0-based).
     pub index: u32,
+    /// Timestamp when segment recording started (from the start callback).
+    pub started_at: Option<DateTime<Utc>>,
     /// Timestamp when segment was completed.
     pub completed_at: DateTime<Utc>,
     pub split_reason_code: Option<String>,

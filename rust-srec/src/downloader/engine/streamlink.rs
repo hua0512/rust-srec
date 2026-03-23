@@ -460,7 +460,7 @@ impl DownloadEngine for StreamlinkEngine {
                                     && let Some(path) = parse_opened_path(&line)
                                 {
                                         // Complete the previous segment when a new one starts.
-                                        if let Some((index, path, started_media_at, _started_at)) = active_segment.take() {
+                                        if let Some((index, path, started_media_at, started_at)) = active_segment.take() {
                                             let size_bytes = tokio::fs::metadata(&path)
                                                 .await
                                                 .map(|m| m.len())
@@ -480,6 +480,7 @@ impl DownloadEngine for StreamlinkEngine {
                                                     duration_secs,
                                                     size_bytes,
                                                     index,
+                                                    started_at: Some(started_at),
                                                     completed_at: Utc::now(),
                                                     split_reason_code: None,
                                                     split_reason_details_json: None,
@@ -603,7 +604,7 @@ impl DownloadEngine for StreamlinkEngine {
             }
 
             // Complete the last active segment (if any).
-            if let Some((index, path, started_media_at, _started_at)) = active_segment.take() {
+            if let Some((index, path, started_media_at, started_at)) = active_segment.take() {
                 let size_bytes = tokio::fs::metadata(&path)
                     .await
                     .map(|m| m.len())
@@ -624,6 +625,7 @@ impl DownloadEngine for StreamlinkEngine {
                         duration_secs,
                         size_bytes,
                         index,
+                        started_at: Some(started_at),
                         completed_at: Utc::now(),
                         split_reason_code: None,
                         split_reason_details_json: None,

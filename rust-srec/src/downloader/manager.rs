@@ -870,6 +870,7 @@ impl DownloadManager {
                             duration_secs,
                             size_bytes,
                             index,
+                            started_at: info_started_at,
                             completed_at,
                             split_reason_code,
                             split_reason_details_json,
@@ -880,7 +881,9 @@ impl DownloadManager {
                             .await
                             .unwrap_or_else(|_| path.clone());
                         let segment_path = normalized_path.to_string_lossy().to_string();
-                        let started_at =
+                        // Prefer started_at from SegmentInfo (shared between start/complete callbacks),
+                        // fall back to the active_downloads lookup for backward compat.
+                        let started_at = info_started_at.or_else(|| {
                             active_downloads
                                 .get(&download_id_clone)
                                 .and_then(|download| {
@@ -889,7 +892,8 @@ impl DownloadManager {
                                     } else {
                                         None
                                     }
-                                });
+                                })
+                        });
 
                         // Broadcast send is synchronous, ignore if no receivers
                         let _ = event_tx.send(DownloadManagerEvent::SegmentCompleted {
