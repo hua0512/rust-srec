@@ -15,4 +15,4 @@ expgolomb = { path = "../expgolomb" }
 bytes-util = { path = "../bytes-util" }
 
 [dev-dependencies]
-insta = "1.46"
+insta = "1.47"
