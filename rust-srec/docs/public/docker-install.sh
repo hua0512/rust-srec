@@ -185,6 +185,57 @@ main() {
             sed -i "s/VERSION=.*/VERSION=$VERSION/" .env
         fi
     fi
+
+    # NVIDIA GPU detection and setup
+    if command -v nvidia-smi &>/dev/null; then
+        success "NVIDIA GPU detected"
+        nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | while read -r gpu; do
+            info "  GPU: $gpu"
+        done
+        echo ""
+        read -p "Enable NVIDIA GPU hardware acceleration (NVENC/NVDEC)? [Y/n] " -n 1 -r < /dev/tty
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            info "Enabling GPU support in docker-compose.yml..."
+            # Uncomment the deploy block (lines starting with "    # " that form the deploy section)
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' 's/^    # \(deploy:\)/    \1/' docker-compose.yml
+                sed -i '' 's/^    #   \(resources:\)/      \1/' docker-compose.yml
+                sed -i '' 's/^    #     \(limits:\)/        \1/' docker-compose.yml
+                sed -i '' 's/^    #       \(cpus:.*\)/          \1/' docker-compose.yml
+                sed -i '' 's/^    #       \(memory:.*\)/          \1/' docker-compose.yml
+                sed -i '' 's/^    #     \(reservations:\)/        \1/' docker-compose.yml
+                sed -i '' '/^    #       # Uncomment below/d' docker-compose.yml
+                sed -i '' '/^    #       # transcoding/d' docker-compose.yml
+                sed -i '' '/^    #       # https:\/\/docs.nvidia.com/d' docker-compose.yml
+                sed -i '' 's/^    #       \(devices:\)/          \1/' docker-compose.yml
+                sed -i '' 's/^    #         \(- driver:.*\)/            \1/' docker-compose.yml
+                sed -i '' 's/^    #           \(count:.*\)/              \1/' docker-compose.yml
+                sed -i '' 's/^    #           \(capabilities:.*\)/              \1/' docker-compose.yml
+            else
+                sed -i 's/^    # \(deploy:\)/    \1/' docker-compose.yml
+                sed -i 's/^    #   \(resources:\)/      \1/' docker-compose.yml
+                sed -i 's/^    #     \(limits:\)/        \1/' docker-compose.yml
+                sed -i 's/^    #       \(cpus:.*\)/          \1/' docker-compose.yml
+                sed -i 's/^    #       \(memory:.*\)/          \1/' docker-compose.yml
+                sed -i 's/^    #     \(reservations:\)/        \1/' docker-compose.yml
+                sed -i '/^    #       # Uncomment below/d' docker-compose.yml
+                sed -i '/^    #       # transcoding/d' docker-compose.yml
+                sed -i '/^    #       # https:\/\/docs.nvidia.com/d' docker-compose.yml
+                sed -i 's/^    #       \(devices:\)/          \1/' docker-compose.yml
+                sed -i 's/^    #         \(- driver:.*\)/            \1/' docker-compose.yml
+                sed -i 's/^    #           \(count:.*\)/              \1/' docker-compose.yml
+                sed -i 's/^    #           \(capabilities:.*\)/              \1/' docker-compose.yml
+            fi
+            success "GPU acceleration enabled in docker-compose.yml"
+            echo ""
+            warn "Make sure the NVIDIA Container Toolkit is installed on this host."
+            echo "  Install guide: ${BLUE}https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html${NC}"
+        fi
+    else
+        info "No NVIDIA GPU detected. GPU acceleration can be enabled later."
+        echo "  See: ${BLUE}https://docs.srec.rs/en/getting-started/docker#gpu-hardware-acceleration-nvidia${NC}"
+    fi
     
     echo ""
     echo -e "${GREEN}+============================================================+${NC}"

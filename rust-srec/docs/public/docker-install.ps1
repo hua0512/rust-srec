@@ -170,9 +170,52 @@ function Install-RustSrec {
             Write-Info "Setting version to: $($script:Version)"
             $envContent = $envContent -replace "VERSION=.*", "VERSION=$($script:Version)"
         }
-        
+
         Set-Content ".env" $envContent -NoNewline -Encoding UTF8
         Write-Success "Secrets generated and configured"
+
+        # NVIDIA GPU detection and setup
+        $nvidiaDetected = $false
+        try {
+            $null = & nvidia-smi --query-gpu=name --format=csv,noheader 2>&1
+            if ($LASTEXITCODE -eq 0) { $nvidiaDetected = $true }
+        } catch {}
+
+        if ($nvidiaDetected) {
+            $gpuNames = & nvidia-smi --query-gpu=name --format=csv,noheader 2>$null
+            Write-Success "NVIDIA GPU detected"
+            foreach ($gpu in $gpuNames) {
+                Write-Info "  GPU: $gpu"
+            }
+            Write-Host ""
+            $gpuChoice = Read-Host "Enable NVIDIA GPU hardware acceleration (NVENC/NVDEC)? [Y/n]"
+            if ($gpuChoice -notmatch "^[Nn]$") {
+                Write-Info "Enabling GPU support in docker-compose.yml..."
+                $composeContent = Get-Content "docker-compose.yml" -Raw -Encoding UTF8
+                # Uncomment the deploy block and remove comment instructions
+                $composeContent = $composeContent -replace '(?m)^    # (deploy:)', '    $1'
+                $composeContent = $composeContent -replace '(?m)^    #   (resources:)', '      $1'
+                $composeContent = $composeContent -replace '(?m)^    #     (limits:)', '        $1'
+                $composeContent = $composeContent -replace '(?m)^    #       (cpus:)', '          $1'
+                $composeContent = $composeContent -replace '(?m)^    #       (memory:)', '          $1'
+                $composeContent = $composeContent -replace '(?m)^    #     (reservations:)', '        $1'
+                $composeContent = $composeContent -replace '(?m)^    #       # Uncomment below[^\r\n]*\r?\n', ''
+                $composeContent = $composeContent -replace '(?m)^    #       # transcoding[^\r\n]*\r?\n', ''
+                $composeContent = $composeContent -replace '(?m)^    #       # https://docs\.nvidia[^\r\n]*\r?\n', ''
+                $composeContent = $composeContent -replace '(?m)^    #       (devices:)', '          $1'
+                $composeContent = $composeContent -replace '(?m)^    #         (- driver:)', '            $1'
+                $composeContent = $composeContent -replace '(?m)^    #           (count:)', '              $1'
+                $composeContent = $composeContent -replace '(?m)^    #           (capabilities:)', '              $1'
+                Set-Content "docker-compose.yml" $composeContent -NoNewline -Encoding UTF8
+                Write-Success "GPU acceleration enabled in docker-compose.yml"
+                Write-Host ""
+                Write-Warn "Make sure the NVIDIA Container Toolkit is installed on this host."
+                Write-Host "  Install guide: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html" -ForegroundColor Cyan
+            }
+        } else {
+            Write-Info "No NVIDIA GPU detected. GPU acceleration can be enabled later."
+            Write-Host "  See: https://docs.srec.rs/en/getting-started/docker#gpu-hardware-acceleration-nvidia" -ForegroundColor Cyan
+        }
 
         Write-Host ""
         Write-Host "+============================================================+" -ForegroundColor Green

@@ -131,6 +131,12 @@ ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
 
+# NVIDIA Container Toolkit support: when the container runs under the toolkit,
+# these env vars tell it which driver capabilities to expose.
+# Has no effect when no NVIDIA GPU is present.
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
+
 # Install Streamlink, ttvlol plugin, and rclone
 RUN pip3 install --break-system-packages streamlink \
     && mkdir -p /root/.local/share/streamlink/plugins \
