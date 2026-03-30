@@ -2,8 +2,10 @@
 
 use std::fmt::Display;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use pipeline_common::{
     PipelineError, RunCompletionError, SplitReason, WriterError, WriterProgress, WriterStats,
@@ -117,8 +119,16 @@ pub(super) fn setup_writer_callbacks(
     let event_tx_complete = event_tx.clone();
     let event_tx_progress = event_tx.clone();
 
+    // Segments are strictly sequential (start N, complete N, start N+1, …),
+    // so a single atomic timestamp is enough to pass started_at from the start
+    // callback to the complete callback without locking.
+    let started_at_ms = Arc::new(AtomicI64::new(0));
+    let started_at_writer = Arc::clone(&started_at_ms);
+    let started_at_reader = started_at_ms;
+
     writer.set_on_segment_start_callback(move |path, sequence| {
         let started_at = Utc::now();
+        started_at_writer.store(started_at.timestamp_millis(), Ordering::Release);
         let event = SegmentEvent::SegmentStarted {
             path: path.to_path_buf(),
             sequence,
@@ -130,6 +140,13 @@ pub(super) fn setup_writer_callbacks(
     writer.set_on_segment_complete_callback(
         move |path, sequence, duration_secs, size_bytes, split_reason| {
             let event_path = path.to_path_buf();
+
+            let ms = started_at_reader.swap(0, Ordering::Acquire);
+            let started_at = if ms != 0 {
+                DateTime::from_timestamp_millis(ms)
+            } else {
+                None
+            };
 
             let (split_reason_code, split_reason_details_json) = if let Some(reason) = split_reason
             {
@@ -145,6 +162,7 @@ pub(super) fn setup_writer_callbacks(
                 duration_secs,
                 size_bytes,
                 index: sequence,
+                started_at,
                 completed_at: Utc::now(),
                 split_reason_code,
                 split_reason_details_json,

@@ -38,6 +38,7 @@ import { type DagStep } from '@/api/schemas';
 import {
   getStatusConfig,
   getStatusLabel,
+  type StatusConfigItem,
 } from '@/components/pipeline/status-config';
 
 export const Route = createLazyFileRoute(
@@ -144,7 +145,7 @@ function PipelineExecutionPage() {
   const steps = dag.steps || [];
 
   const overallStatus = dag?.status || 'PENDING';
-  const statusConfig = STATUS_CONFIG[overallStatus] || STATUS_CONFIG.PENDING;
+  const statusConfig = getStatusConfig(overallStatus);
   const StatusIcon = statusConfig.icon;
 
   return (
@@ -356,7 +357,7 @@ function StepCard({
   jobConfig,
 }: {
   step: DagStep;
-  jobConfig: (typeof STATUS_CONFIG)[keyof typeof STATUS_CONFIG];
+  jobConfig: StatusConfigItem;
 }) {
   const { i18n } = useLingui();
   const isProcessing = step.status === 'PROCESSING';
