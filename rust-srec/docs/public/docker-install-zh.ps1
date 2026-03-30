@@ -190,24 +190,17 @@ function Install-RustSrec {
             Write-Host ""
             $gpuChoice = Read-Host "是否启用 NVIDIA GPU 硬件加速 (NVENC/NVDEC)? [Y/n]"
             if ($gpuChoice -notmatch "^[Nn]$") {
-                Write-Info "正在启用 docker-compose.yml 中的 GPU 支持..."
-                $composeContent = Get-Content "docker-compose.yml" -Raw -Encoding UTF8
-                # Uncomment the deploy block and remove comment instructions
-                $composeContent = $composeContent -replace '(?m)^    # (deploy:)', '    $1'
-                $composeContent = $composeContent -replace '(?m)^    #   (resources:)', '      $1'
-                $composeContent = $composeContent -replace '(?m)^    #     (limits:)', '        $1'
-                $composeContent = $composeContent -replace '(?m)^    #       (cpus:)', '          $1'
-                $composeContent = $composeContent -replace '(?m)^    #       (memory:)', '          $1'
-                $composeContent = $composeContent -replace '(?m)^    #     (reservations:)', '        $1'
-                $composeContent = $composeContent -replace '(?m)^    #       # Uncomment below[^\r\n]*\r?\n', ''
-                $composeContent = $composeContent -replace '(?m)^    #       # transcoding[^\r\n]*\r?\n', ''
-                $composeContent = $composeContent -replace '(?m)^    #       # https://docs\.nvidia[^\r\n]*\r?\n', ''
-                $composeContent = $composeContent -replace '(?m)^    #       (devices:)', '          $1'
-                $composeContent = $composeContent -replace '(?m)^    #         (- driver:)', '            $1'
-                $composeContent = $composeContent -replace '(?m)^    #           (count:)', '              $1'
-                $composeContent = $composeContent -replace '(?m)^    #           (capabilities:)', '              $1'
-                Set-Content "docker-compose.yml" $composeContent -NoNewline -Encoding UTF8
-                Write-Success "已在 docker-compose.yml 中启用 GPU 加速"
+                Write-Info "下载 docker-compose.gpu.yml..."
+                Get-RemoteFile -Url "$($script:BaseUrl)/docker-compose.gpu.yml" -OutFile "docker-compose.gpu.yml"
+                # 设置 COMPOSE_FILE 以便 docker compose 自动加载两个文件
+                $envContent = Get-Content ".env" -Raw -Encoding UTF8
+                if ($envContent -match "(?m)^COMPOSE_FILE=") {
+                    $envContent = $envContent -replace "(?m)^COMPOSE_FILE=.*", "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml"
+                } else {
+                    $envContent = $envContent.TrimEnd() + "`nCOMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml`n"
+                }
+                Set-Content ".env" $envContent -NoNewline -Encoding UTF8
+                Write-Success "已启用 GPU 加速 (docker-compose.gpu.yml)"
                 Write-Host ""
                 Write-Warn "请确保此主机已安装 NVIDIA Container Toolkit。"
                 Write-Host "  安装指南: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html" -ForegroundColor Cyan

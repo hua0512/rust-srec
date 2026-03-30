@@ -194,38 +194,19 @@ main() {
         read -p "是否启用 NVIDIA GPU 硬件加速 (NVENC/NVDEC)? [Y/n] " -n 1 -r < /dev/tty
         echo
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            info "正在启用 docker-compose.yml 中的 GPU 支持..."
-            # Uncomment the deploy block
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-                sed -i '' 's/^    # \(deploy:\)/    \1/' docker-compose.yml
-                sed -i '' 's/^    #   \(resources:\)/      \1/' docker-compose.yml
-                sed -i '' 's/^    #     \(limits:\)/        \1/' docker-compose.yml
-                sed -i '' 's/^    #       \(cpus:.*\)/          \1/' docker-compose.yml
-                sed -i '' 's/^    #       \(memory:.*\)/          \1/' docker-compose.yml
-                sed -i '' 's/^    #     \(reservations:\)/        \1/' docker-compose.yml
-                sed -i '' '/^    #       # Uncomment below/d' docker-compose.yml
-                sed -i '' '/^    #       # transcoding/d' docker-compose.yml
-                sed -i '' '/^    #       # https:\/\/docs.nvidia.com/d' docker-compose.yml
-                sed -i '' 's/^    #       \(devices:\)/          \1/' docker-compose.yml
-                sed -i '' 's/^    #         \(- driver:.*\)/            \1/' docker-compose.yml
-                sed -i '' 's/^    #           \(count:.*\)/              \1/' docker-compose.yml
-                sed -i '' 's/^    #           \(capabilities:.*\)/              \1/' docker-compose.yml
+            info "下载 docker-compose.gpu.yml..."
+            download "$BASE_URL/docker-compose.gpu.yml" "docker-compose.gpu.yml"
+            # 设置 COMPOSE_FILE 以便 docker compose 自动加载两个文件
+            if grep -q "^COMPOSE_FILE=" .env 2>/dev/null; then
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    sed -i '' 's|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml|' .env
+                else
+                    sed -i 's|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml|' .env
+                fi
             else
-                sed -i 's/^    # \(deploy:\)/    \1/' docker-compose.yml
-                sed -i 's/^    #   \(resources:\)/      \1/' docker-compose.yml
-                sed -i 's/^    #     \(limits:\)/        \1/' docker-compose.yml
-                sed -i 's/^    #       \(cpus:.*\)/          \1/' docker-compose.yml
-                sed -i 's/^    #       \(memory:.*\)/          \1/' docker-compose.yml
-                sed -i 's/^    #     \(reservations:\)/        \1/' docker-compose.yml
-                sed -i '/^    #       # Uncomment below/d' docker-compose.yml
-                sed -i '/^    #       # transcoding/d' docker-compose.yml
-                sed -i '/^    #       # https:\/\/docs.nvidia.com/d' docker-compose.yml
-                sed -i 's/^    #       \(devices:\)/          \1/' docker-compose.yml
-                sed -i 's/^    #         \(- driver:.*\)/            \1/' docker-compose.yml
-                sed -i 's/^    #           \(count:.*\)/              \1/' docker-compose.yml
-                sed -i 's/^    #           \(capabilities:.*\)/              \1/' docker-compose.yml
+                echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> .env
             fi
-            success "已在 docker-compose.yml 中启用 GPU 加速"
+            success "已启用 GPU 加速 (docker-compose.gpu.yml)"
             echo ""
             warn "请确保此主机已安装 NVIDIA Container Toolkit。"
             echo "  安装指南: ${BLUE}https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html${NC}"

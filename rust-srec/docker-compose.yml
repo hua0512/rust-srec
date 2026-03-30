@@ -44,13 +44,6 @@ services:
         reservations:
           cpus: "${CPU_RESERVATION:-1}"
           memory: ${MEMORY_RESERVATION:-512M}
-          # Uncomment below to enable NVIDIA GPU access for hardware-accelerated
-          # transcoding (NVENC/NVDEC). Requires NVIDIA Container Toolkit on the host:
-          # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
-          # devices:
-          #   - driver: nvidia
-          #     count: 1
-          #     capabilities: [gpu, video]
     logging:
       driver: "json-file"
       options:

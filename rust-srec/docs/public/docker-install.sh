@@ -196,38 +196,19 @@ main() {
         read -p "Enable NVIDIA GPU hardware acceleration (NVENC/NVDEC)? [Y/n] " -n 1 -r < /dev/tty
         echo
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            info "Enabling GPU support in docker-compose.yml..."
-            # Uncomment the deploy block (lines starting with "    # " that form the deploy section)
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-                sed -i '' 's/^    # \(deploy:\)/    \1/' docker-compose.yml
-                sed -i '' 's/^    #   \(resources:\)/      \1/' docker-compose.yml
-                sed -i '' 's/^    #     \(limits:\)/        \1/' docker-compose.yml
-                sed -i '' 's/^    #       \(cpus:.*\)/          \1/' docker-compose.yml
-                sed -i '' 's/^    #       \(memory:.*\)/          \1/' docker-compose.yml
-                sed -i '' 's/^    #     \(reservations:\)/        \1/' docker-compose.yml
-                sed -i '' '/^    #       # Uncomment below/d' docker-compose.yml
-                sed -i '' '/^    #       # transcoding/d' docker-compose.yml
-                sed -i '' '/^    #       # https:\/\/docs.nvidia.com/d' docker-compose.yml
-                sed -i '' 's/^    #       \(devices:\)/          \1/' docker-compose.yml
-                sed -i '' 's/^    #         \(- driver:.*\)/            \1/' docker-compose.yml
-                sed -i '' 's/^    #           \(count:.*\)/              \1/' docker-compose.yml
-                sed -i '' 's/^    #           \(capabilities:.*\)/              \1/' docker-compose.yml
+            info "Downloading docker-compose.gpu.yml..."
+            download "$BASE_URL/docker-compose.gpu.yml" "docker-compose.gpu.yml"
+            # Set COMPOSE_FILE so docker compose picks up both files automatically
+            if grep -q "^COMPOSE_FILE=" .env 2>/dev/null; then
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    sed -i '' 's|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml|' .env
+                else
+                    sed -i 's|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml|' .env
+                fi
             else
-                sed -i 's/^    # \(deploy:\)/    \1/' docker-compose.yml
-                sed -i 's/^    #   \(resources:\)/      \1/' docker-compose.yml
-                sed -i 's/^    #     \(limits:\)/        \1/' docker-compose.yml
-                sed -i 's/^    #       \(cpus:.*\)/          \1/' docker-compose.yml
-                sed -i 's/^    #       \(memory:.*\)/          \1/' docker-compose.yml
-                sed -i 's/^    #     \(reservations:\)/        \1/' docker-compose.yml
-                sed -i '/^    #       # Uncomment below/d' docker-compose.yml
-                sed -i '/^    #       # transcoding/d' docker-compose.yml
-                sed -i '/^    #       # https:\/\/docs.nvidia.com/d' docker-compose.yml
-                sed -i 's/^    #       \(devices:\)/          \1/' docker-compose.yml
-                sed -i 's/^    #         \(- driver:.*\)/            \1/' docker-compose.yml
-                sed -i 's/^    #           \(count:.*\)/              \1/' docker-compose.yml
-                sed -i 's/^    #           \(capabilities:.*\)/              \1/' docker-compose.yml
+                echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> .env
             fi
-            success "GPU acceleration enabled in docker-compose.yml"
+            success "GPU acceleration enabled (docker-compose.gpu.yml)"
             echo ""
             warn "Make sure the NVIDIA Container Toolkit is installed on this host."
             echo "  Install guide: ${BLUE}https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html${NC}"

@@ -192,14 +192,29 @@ If you have an NVIDIA GPU, you can enable hardware-accelerated video transcoding
      sudo systemctl restart docker
      ```
 
-### Enable GPU in docker-compose.yml
+### Enable GPU in docker-compose
 
-Uncomment the `deploy` section in your `docker-compose.yml` to grant GPU access to the container:
+Download the GPU compose override file alongside your `docker-compose.yml`:
+
+- <a :href="withBase('/docker-compose.gpu.yml')" download>docker-compose.gpu.yml</a>
+
+Then start with both files:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+Or set `COMPOSE_FILE` in your `.env` so `docker compose up -d` picks it up automatically:
+
+```bash
+echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> .env
+```
+
+The override file adds the NVIDIA device reservation:
 
 ```yaml
 services:
   rust-srec:
-    # ...
     deploy:
       resources:
         reservations:

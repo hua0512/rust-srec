@@ -10,6 +10,7 @@ export default defineConfig({
         /^\/api\/docs/,
         /^http:\/\/localhost/,
         '/docker-compose.example.yml',
+        '/docker-compose.gpu.yml',
         '/env.example',
         '/env.zh.example',
     ],

@@ -192,14 +192,29 @@ services:
      sudo systemctl restart docker
      ```
 
-### 在 docker-compose.yml 中启用 GPU
+### 在 docker-compose 中启用 GPU
 
-取消注释 `docker-compose.yml` 中的 `deploy` 部分，以授予容器 GPU 访问权限：
+下载 GPU compose 覆盖文件，放在 `docker-compose.yml` 同级目录：
+
+- <a :href="withBase('/docker-compose.gpu.yml')" download>docker-compose.gpu.yml</a>
+
+然后使用两个文件启动：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+或者在 `.env` 中设置 `COMPOSE_FILE`，这样 `docker compose up -d` 会自动加载：
+
+```bash
+echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> .env
+```
+
+覆盖文件会添加 NVIDIA 设备预留配置：
 
 ```yaml
 services:
   rust-srec:
-    # ...
     deploy:
       resources:
         reservations:
