@@ -170,9 +170,45 @@ function Install-RustSrec {
             Write-Info "设置版本: $($script:Version)"
             $envContent = $envContent -replace "VERSION=.*", "VERSION=$($script:Version)"
         }
-        
+
         Set-Content ".env" $envContent -NoNewline -Encoding UTF8
         Write-Success "密钥已生成并配置"
+
+        # NVIDIA GPU 检测与配置
+        $nvidiaDetected = $false
+        try {
+            $null = & nvidia-smi --query-gpu=name --format=csv,noheader 2>&1
+            if ($LASTEXITCODE -eq 0) { $nvidiaDetected = $true }
+        } catch {}
+
+        if ($nvidiaDetected) {
+            $gpuNames = & nvidia-smi --query-gpu=name --format=csv,noheader 2>$null
+            Write-Success "检测到 NVIDIA GPU"
+            foreach ($gpu in $gpuNames) {
+                Write-Info "  GPU: $gpu"
+            }
+            Write-Host ""
+            $gpuChoice = Read-Host "是否启用 NVIDIA GPU 硬件加速 (NVENC/NVDEC)? [Y/n]"
+            if ($gpuChoice -notmatch "^[Nn]$") {
+                Write-Info "下载 docker-compose.gpu.yml..."
+                Get-RemoteFile -Url "$($script:BaseUrl)/docker-compose.gpu.yml" -OutFile "docker-compose.gpu.yml"
+                # 设置 COMPOSE_FILE 以便 docker compose 自动加载两个文件
+                $envContent = Get-Content ".env" -Raw -Encoding UTF8
+                if ($envContent -match "(?m)^COMPOSE_FILE=") {
+                    $envContent = $envContent -replace "(?m)^COMPOSE_FILE=.*", "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml"
+                } else {
+                    $envContent = $envContent.TrimEnd() + "`nCOMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml`n"
+                }
+                Set-Content ".env" $envContent -NoNewline -Encoding UTF8
+                Write-Success "已启用 GPU 加速 (docker-compose.gpu.yml)"
+                Write-Host ""
+                Write-Warn "请确保此主机已安装 NVIDIA Container Toolkit。"
+                Write-Host "  安装指南: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html" -ForegroundColor Cyan
+            }
+        } else {
+            Write-Info "未检测到 NVIDIA GPU。稍后可手动启用 GPU 加速。"
+            Write-Host "  参考: https://docs.srec.rs/zh/getting-started/docker#gpu-硬件加速-nvidia" -ForegroundColor Cyan
+        }
 
         Write-Host ""
         Write-Host "+============================================================+" -ForegroundColor Green

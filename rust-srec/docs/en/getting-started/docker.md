@@ -172,6 +172,84 @@ After starting the application, go to **Global Settings** > **Downloader** > **P
 
 This will instruct the application and its engines (FFmpeg, Streamlink, Mesio) to respect the environment variables you configured.
 
+## GPU Hardware Acceleration (NVIDIA)
+
+If you have an NVIDIA GPU, you can enable hardware-accelerated video transcoding (NVENC/NVDEC) to dramatically reduce CPU usage and speed up remuxing/transcoding.
+
+### Prerequisites
+
+1. **NVIDIA GPU drivers** installed on the host machine
+2. **NVIDIA Container Toolkit** installed on the host — this allows Docker containers to access the GPU:
+   - [Installation Guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+   - Quick install (Ubuntu/Debian):
+     ```bash
+     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+     curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+       sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+       sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+     sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+     sudo nvidia-ctk runtime configure --runtime=docker
+     sudo systemctl restart docker
+     ```
+
+### Enable GPU in docker-compose
+
+Download the GPU compose override file alongside your `docker-compose.yml`:
+
+- <a :href="withBase('/docker-compose.gpu.yml')" download>docker-compose.gpu.yml</a>
+
+Then start with both files:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+Or set `COMPOSE_FILE` in your `.env` so `docker compose up -d` picks it up automatically:
+
+```bash
+echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> .env
+```
+
+The override file adds the NVIDIA device reservation:
+
+```yaml
+services:
+  rust-srec:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, video]
+```
+
+::: tip Automatic Setup
+If you use our [one-line install script](#one-line-install-linux-macos), it will automatically detect your NVIDIA GPU and offer to enable this for you.
+:::
+
+### Verify GPU Access
+
+After starting the container, verify the GPU is accessible:
+
+```bash
+docker exec rust-srec nvidia-smi
+```
+
+You should see your GPU model and driver version. If you get an error, the NVIDIA Container Toolkit is not properly configured.
+
+### Enable in Application
+
+Once the GPU is accessible to the container, go to your recording preset settings and enable **Hardware Acceleration** with the `cuda` device to use NVENC for encoding.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `Cannot load libnvcuvid.so.1` in ffmpeg logs | Container cannot access GPU drivers | Install NVIDIA Container Toolkit and restart Docker |
+| `nvidia-smi` not found inside container | Container Toolkit not configured | Run `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
+| High CPU usage despite GPU enabled | Wrong encoder selected | Ensure the preset uses `h264_nvenc` or `hevc_nvenc`, not software encoders |
+
 ## Accessing the Application
 
 - **Web Interface**: `http://localhost:[FRONTEND_PORT]` (Default: http://localhost:15275)

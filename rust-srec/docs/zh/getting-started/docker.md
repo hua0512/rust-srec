@@ -172,6 +172,84 @@ services:
 
 这将指示应用程序及其引擎（FFmpeg、Streamlink、Mesio）遵循您配置的环境变量。
 
+## GPU 硬件加速 (NVIDIA)
+
+如果您拥有 NVIDIA GPU，可以启用硬件加速视频转码 (NVENC/NVDEC)，大幅降低 CPU 占用并加速转封装/转码。
+
+### 前置要求
+
+1. 主机已安装 **NVIDIA GPU 驱动**
+2. 主机已安装 **NVIDIA Container Toolkit** — 允许 Docker 容器访问 GPU：
+   - [安装指南](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+   - 快速安装 (Ubuntu/Debian)：
+     ```bash
+     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+     curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+       sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+       sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+     sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+     sudo nvidia-ctk runtime configure --runtime=docker
+     sudo systemctl restart docker
+     ```
+
+### 在 docker-compose 中启用 GPU
+
+下载 GPU compose 覆盖文件，放在 `docker-compose.yml` 同级目录：
+
+- <a :href="withBase('/docker-compose.gpu.yml')" download>docker-compose.gpu.yml</a>
+
+然后使用两个文件启动：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+或者在 `.env` 中设置 `COMPOSE_FILE`，这样 `docker compose up -d` 会自动加载：
+
+```bash
+echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> .env
+```
+
+覆盖文件会添加 NVIDIA 设备预留配置：
+
+```yaml
+services:
+  rust-srec:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, video]
+```
+
+::: tip 自动配置
+如果使用我们的[一键安装脚本](#一键安装-linux-macos)，脚本会自动检测 NVIDIA GPU 并提示您是否启用。
+:::
+
+### 验证 GPU 访问
+
+启动容器后，验证 GPU 是否可访问：
+
+```bash
+docker exec rust-srec nvidia-smi
+```
+
+您应该能看到 GPU 型号和驱动版本。如果出现错误，说明 NVIDIA Container Toolkit 未正确配置。
+
+### 在应用中启用
+
+容器可访问 GPU 后，前往录制预设设置，启用**硬件加速**并选择 `cuda` 设备以使用 NVENC 编码。
+
+### 常见问题排查
+
+| 现象 | 原因 | 解决方法 |
+|------|------|----------|
+| ffmpeg 日志显示 `Cannot load libnvcuvid.so.1` | 容器无法访问 GPU 驱动 | 安装 NVIDIA Container Toolkit 并重启 Docker |
+| 容器内找不到 `nvidia-smi` | Container Toolkit 未配置 | 运行 `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
+| 已启用 GPU 但 CPU 占用仍然很高 | 编码器选择错误 | 确保预设使用 `h264_nvenc` 或 `hevc_nvenc`，而非软件编码器 |
+
 ## 访问应用
 
 - **Web 界面**：`http://localhost:[FRONTEND_PORT]` (默认：http://localhost:15275)

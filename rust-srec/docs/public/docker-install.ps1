@@ -170,9 +170,45 @@ function Install-RustSrec {
             Write-Info "Setting version to: $($script:Version)"
             $envContent = $envContent -replace "VERSION=.*", "VERSION=$($script:Version)"
         }
-        
+
         Set-Content ".env" $envContent -NoNewline -Encoding UTF8
         Write-Success "Secrets generated and configured"
+
+        # NVIDIA GPU detection and setup
+        $nvidiaDetected = $false
+        try {
+            $null = & nvidia-smi --query-gpu=name --format=csv,noheader 2>&1
+            if ($LASTEXITCODE -eq 0) { $nvidiaDetected = $true }
+        } catch {}
+
+        if ($nvidiaDetected) {
+            $gpuNames = & nvidia-smi --query-gpu=name --format=csv,noheader 2>$null
+            Write-Success "NVIDIA GPU detected"
+            foreach ($gpu in $gpuNames) {
+                Write-Info "  GPU: $gpu"
+            }
+            Write-Host ""
+            $gpuChoice = Read-Host "Enable NVIDIA GPU hardware acceleration (NVENC/NVDEC)? [Y/n]"
+            if ($gpuChoice -notmatch "^[Nn]$") {
+                Write-Info "Downloading docker-compose.gpu.yml..."
+                Get-RemoteFile -Url "$($script:BaseUrl)/docker-compose.gpu.yml" -OutFile "docker-compose.gpu.yml"
+                # Set COMPOSE_FILE so docker compose picks up both files automatically
+                $envContent = Get-Content ".env" -Raw -Encoding UTF8
+                if ($envContent -match "(?m)^COMPOSE_FILE=") {
+                    $envContent = $envContent -replace "(?m)^COMPOSE_FILE=.*", "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml"
+                } else {
+                    $envContent = $envContent.TrimEnd() + "`nCOMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml`n"
+                }
+                Set-Content ".env" $envContent -NoNewline -Encoding UTF8
+                Write-Success "GPU acceleration enabled (docker-compose.gpu.yml)"
+                Write-Host ""
+                Write-Warn "Make sure the NVIDIA Container Toolkit is installed on this host."
+                Write-Host "  Install guide: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html" -ForegroundColor Cyan
+            }
+        } else {
+            Write-Info "No NVIDIA GPU detected. GPU acceleration can be enabled later."
+            Write-Host "  See: https://docs.srec.rs/en/getting-started/docker#gpu-hardware-acceleration-nvidia" -ForegroundColor Cyan
+        }
 
         Write-Host ""
         Write-Host "+============================================================+" -ForegroundColor Green

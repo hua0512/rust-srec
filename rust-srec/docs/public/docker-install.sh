@@ -185,6 +185,38 @@ main() {
             sed -i "s/VERSION=.*/VERSION=$VERSION/" .env
         fi
     fi
+
+    # NVIDIA GPU detection and setup
+    if command -v nvidia-smi &>/dev/null; then
+        success "NVIDIA GPU detected"
+        nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | while read -r gpu; do
+            info "  GPU: $gpu"
+        done
+        echo ""
+        read -p "Enable NVIDIA GPU hardware acceleration (NVENC/NVDEC)? [Y/n] " -n 1 -r < /dev/tty
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            info "Downloading docker-compose.gpu.yml..."
+            download "$BASE_URL/docker-compose.gpu.yml" "docker-compose.gpu.yml"
+            # Set COMPOSE_FILE so docker compose picks up both files automatically
+            if grep -q "^COMPOSE_FILE=" .env 2>/dev/null; then
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    sed -i '' 's|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml|' .env
+                else
+                    sed -i 's|^COMPOSE_FILE=.*|COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml|' .env
+                fi
+            else
+                echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> .env
+            fi
+            success "GPU acceleration enabled (docker-compose.gpu.yml)"
+            echo ""
+            warn "Make sure the NVIDIA Container Toolkit is installed on this host."
+            echo "  Install guide: ${BLUE}https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html${NC}"
+        fi
+    else
+        info "No NVIDIA GPU detected. GPU acceleration can be enabled later."
+        echo "  See: ${BLUE}https://docs.srec.rs/en/getting-started/docker#gpu-hardware-acceleration-nvidia${NC}"
+    fi
     
     echo ""
     echo -e "${GREEN}+============================================================+${NC}"
