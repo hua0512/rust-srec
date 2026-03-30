@@ -53,7 +53,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "cookie-es": "^2.0.0",
+    "cookie-es": "^3.1.1",
     "date-fns": "^4.1.0",
     "hls.js": "^1.6.15",
     "ky": "^1.14.3",
