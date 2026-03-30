@@ -75,7 +75,7 @@ impl CacheKey {
         }
 
         let hash = hasher.finalize();
-        format!("{hash:x}")
+        hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
     }
 }
 
