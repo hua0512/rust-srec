@@ -672,7 +672,7 @@ msgstr "Automate your stream recordings with ease and reliability."
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "Automatically generate a thumbnail for the first segment of each session."
 
-#: src/components/notifications/subscription-manager.tsx:434
+#: src/components/notifications/subscription-manager.tsx:426
 msgid "available"
 msgstr "available"
 
@@ -886,7 +886,7 @@ msgstr "Caching"
 #: src/components/filters/FilterDialog.tsx:247
 #: src/components/notifications/channel-card.tsx:212
 #: src/components/notifications/channel-form.tsx:385
-#: src/components/notifications/subscription-manager.tsx:442
+#: src/components/notifications/subscription-manager.tsx:434
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:174
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
@@ -1905,7 +1905,7 @@ msgstr "Description"
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
-#: src/components/notifications/subscription-manager.tsx:348
+#: src/components/notifications/subscription-manager.tsx:341
 msgid "Deselect All"
 msgstr "Deselect All"
 
@@ -3951,7 +3951,7 @@ msgstr "Manage specialized extraction and identification options."
 msgid "Manage storage paths and file formats."
 msgstr "Manage storage paths and file formats."
 
-#: src/components/notifications/subscription-manager.tsx:302
+#: src/components/notifications/subscription-manager.tsx:295
 msgid "Manage Subscriptions"
 msgstr "Manage Subscriptions"
 
@@ -4456,7 +4456,7 @@ msgstr "No logs available for this execution."
 msgid "No logs to display"
 msgstr "No logs to display"
 
-#: src/components/notifications/subscription-manager.tsx:367
+#: src/components/notifications/subscription-manager.tsx:360
 msgid "No matching events found"
 msgstr "No matching events found"
 
@@ -6053,7 +6053,7 @@ msgstr "Sanitized streamer name"
 #: src/components/config/platforms/platform-editor.tsx:159
 #: src/components/config/templates/template-editor.tsx:213
 #: src/components/filters/FilterDialog.tsx:260
-#: src/components/notifications/subscription-manager.tsx:452
+#: src/components/notifications/subscription-manager.tsx:444
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:543
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
@@ -6126,7 +6126,7 @@ msgstr "Search by name or description..."
 msgid "Search engines..."
 msgstr "Search engines..."
 
-#: src/components/notifications/subscription-manager.tsx:333
+#: src/components/notifications/subscription-manager.tsx:326
 msgid "Search events..."
 msgstr "Search events..."
 
@@ -6229,7 +6229,7 @@ msgid "Select a streamer"
 msgstr "Select a streamer"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:190
-#: src/components/notifications/subscription-manager.tsx:351
+#: src/components/notifications/subscription-manager.tsx:344
 msgid "Select All"
 msgstr "Select All"
 
@@ -6296,7 +6296,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "Select the days required for this filter to apply."
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:305
+#: src/components/notifications/subscription-manager.tsx:298
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
@@ -6318,7 +6318,7 @@ msgstr "Select type"
 msgid "Select your preferred color scheme."
 msgstr "Select your preferred color scheme."
 
-#: src/components/notifications/subscription-manager.tsx:431
+#: src/components/notifications/subscription-manager.tsx:423
 msgid "selected"
 msgstr "selected"
 
