@@ -75,7 +75,12 @@ impl CacheKey {
         }
 
         let hash = hasher.finalize();
-        format!("{hash:x}")
+        use std::fmt::Write;
+        let mut hex = String::with_capacity(hash.len() * 2);
+        for b in hash.iter() {
+            write!(hex, "{b:02x}").unwrap();
+        }
+        hex
     }
 }
 
