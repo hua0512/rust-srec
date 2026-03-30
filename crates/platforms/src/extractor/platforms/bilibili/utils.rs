@@ -26,7 +26,7 @@ pub fn sign_params(params: &mut Vec<(&str, String)>, appsec: &str) -> String {
     let to_sign = format!("{}{}", query, appsec);
     let mut hasher = Md5::new();
     hasher.update(to_sign.as_bytes());
-    format!("{:x}", hasher.finalize())
+    crate::digest_to_hex(&hasher.finalize())
 }
 
 /// Generates a fake BUVID3 identifier for Bilibili API requests.

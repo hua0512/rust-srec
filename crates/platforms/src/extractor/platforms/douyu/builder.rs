@@ -517,7 +517,7 @@ impl Douyu {
         for _ in 0..enc.enc_time {
             let mut hasher = Md5::new();
             hasher.update(format!("{}{}", secret, enc.key).as_bytes());
-            secret = format!("{:x}", hasher.finalize());
+            secret = crate::digest_to_hex(&hasher.finalize());
         }
 
         // Generate salt (empty if is_special, otherwise rid+ts)
@@ -530,7 +530,7 @@ impl Douyu {
         // Generate final auth signature
         let mut hasher = Md5::new();
         hasher.update(format!("{}{}{}", secret, enc.key, salt).as_bytes());
-        let auth = format!("{:x}", hasher.finalize());
+        let auth = crate::digest_to_hex(&hasher.finalize());
 
         Ok((
             FallbackSignResult {

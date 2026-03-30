@@ -132,8 +132,7 @@ fn _encode_wbi(
     // 计算签名
     let mut hasher = md5::Md5::new();
     hasher.update(query.clone() + &mixin_key);
-    let md5_hash = hasher.finalize();
-    let web_sign = format!("{md5_hash:x}");
+    let web_sign = crate::digest_to_hex(&hasher.finalize());
     // 返回最终的 query
     query + &format!("&w_rid={web_sign}")
 }

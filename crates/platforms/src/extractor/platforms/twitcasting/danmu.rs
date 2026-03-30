@@ -167,7 +167,7 @@ impl TwitcastingDanmuProtocol {
         let pass_hash = self.password.as_ref().map(|pass| {
             let mut md5 = Md5::new();
             md5.update(pass.as_bytes());
-            format!("{:x}", md5.finalize())
+            crate::digest_to_hex(&md5.finalize())
         });
 
         if let Some(ref hash) = pass_hash {

@@ -3502,6 +3502,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest 0.11.2",
+]
+
+[[package]]
 name = "media-types"
 version = "0.1.0"
 
@@ -4543,7 +4553,7 @@ dependencies = [
  "futures",
  "libsm",
  "m3u8-rs",
- "md-5",
+ "md-5 0.11.0",
  "native-tls",
  "openssl",
  "parking_lot",
@@ -6224,7 +6234,7 @@ dependencies = [
  "hmac 0.12.1",
  "itoa",
  "log",
- "md-5",
+ "md-5 0.10.6",
  "memchr",
  "once_cell",
  "percent-encoding",
@@ -6265,7 +6275,7 @@ dependencies = [
  "home",
  "itoa",
  "log",
- "md-5",
+ "md-5 0.10.6",
  "memchr",
  "once_cell",
  "rand 0.8.5",
