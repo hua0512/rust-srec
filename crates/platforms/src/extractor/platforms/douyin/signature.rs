@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_empty_md5_constant() {
-        let empty_md5 = format!("{:x}", Md5::digest(b""));
+        let empty_md5 = crate::digest_to_hex(&Md5::digest(b""));
         let mut stub = [0u8; 32];
         stub.copy_from_slice(empty_md5.as_bytes());
         let result = md5_last2(&stub);
