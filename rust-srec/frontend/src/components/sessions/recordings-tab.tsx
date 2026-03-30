@@ -427,7 +427,7 @@ export function RecordingsTab({
 
       current.gapSecsBefore = gapSecs;
       current.hasBreakBefore =
-        current.splitReason?.code === 'discontinuity' || gapSecs > 5;
+        prev.splitReason?.code === 'discontinuity' || gapSecs > 5;
     }
 
     return finalized;

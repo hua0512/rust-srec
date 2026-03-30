@@ -142,7 +142,11 @@ pub(super) fn setup_writer_callbacks(
             let event_path = path.to_path_buf();
 
             let ms = started_at_reader.swap(0, Ordering::Acquire);
-            let started_at = DateTime::from_timestamp_millis(ms);
+            let started_at = if ms != 0 {
+                DateTime::from_timestamp_millis(ms)
+            } else {
+                None
+            };
 
             let (split_reason_code, split_reason_details_json) = if let Some(reason) = split_reason
             {
