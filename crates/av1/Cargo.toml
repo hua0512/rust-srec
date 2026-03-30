@@ -14,4 +14,4 @@ bytes-util = { path = "../bytes-util" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-insta = "1.46"
+insta = "1.47"
