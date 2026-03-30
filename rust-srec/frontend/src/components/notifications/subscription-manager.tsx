@@ -244,15 +244,8 @@ export function SubscriptionManager({
     hidden: { opacity: 0 },
     show: {
       opacity: 1,
-      transition: {
-        staggerChildren: 0.05,
-      },
+      transition: { duration: 0.15 },
     },
-  };
-
-  const item = {
-    hidden: { opacity: 0, x: -10 },
-    show: { opacity: 1, x: 0 },
   };
 
   const handleSelectAll = (filteredTypes: typeof eventTypes) => {
@@ -295,8 +288,8 @@ export function SubscriptionManager({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[550px] max-h-[85vh] bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl">
-        <DialogHeader className="pb-4 border-b border-border/40 space-y-2">
+      <DialogContent className="sm:max-w-[550px] max-h-[85vh] overflow-hidden flex flex-col bg-background/95 backdrop-blur-xl border-border/50 shadow-2xl">
+        <DialogHeader className="shrink-0 pb-4 border-b border-border/40 space-y-2">
           <DialogTitle className="flex items-center gap-2 text-xl">
             <BellRing className="h-5 w-5 text-primary" />
             <Trans>Manage Subscriptions</Trans>
@@ -324,7 +317,7 @@ export function SubscriptionManager({
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4 py-4">
+          <div className="flex flex-col gap-4 py-4 min-h-0 flex-1">
             {/* Search and Filters */}
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
@@ -353,7 +346,7 @@ export function SubscriptionManager({
               </Button>
             </div>
 
-            <ScrollArea className="h-[400px] -mr-4 pr-4">
+            <ScrollArea className="h-[50vh] -mr-4 pr-4">
               <motion.div
                 className="space-y-2"
                 variants={container}
@@ -373,9 +366,8 @@ export function SubscriptionManager({
                     const iconConfig = getEventIcon(type.event_type);
                     const IconComponent = iconConfig.icon;
                     return (
-                      <motion.div
+                      <div
                         key={type.event_type}
-                        variants={item}
                         className={`
                                                     group flex flex-row items-center space-x-3 rounded-xl border p-3 transition-all duration-200 cursor-pointer
                                                     ${
@@ -419,14 +411,14 @@ export function SubscriptionManager({
                             {getEventDescription(type.event_type, i18n)}
                           </p>
                         </div>
-                      </motion.div>
+                      </div>
                     );
                   })
                 )}
               </motion.div>
             </ScrollArea>
 
-            <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
+            <div className="shrink-0 flex items-center justify-between text-xs text-muted-foreground px-1">
               <span>
                 {selectedEvents.length} <Trans>selected</Trans>
               </span>
@@ -437,7 +429,7 @@ export function SubscriptionManager({
           </div>
         )}
 
-        <DialogFooter className="pt-4 border-t border-border/40">
+        <DialogFooter className="shrink-0 pt-4 border-t border-border/40">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             <Trans>Cancel</Trans>
           </Button>

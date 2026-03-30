@@ -672,7 +672,7 @@ msgstr "轻松自动化您的直播录制。"
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "自动为每个会话的第一段生成封面图。"
 
-#: src/components/notifications/subscription-manager.tsx:434
+#: src/components/notifications/subscription-manager.tsx:426
 msgid "available"
 msgstr "可选"
 
@@ -886,7 +886,7 @@ msgstr "缓存"
 #: src/components/filters/FilterDialog.tsx:247
 #: src/components/notifications/channel-card.tsx:212
 #: src/components/notifications/channel-form.tsx:385
-#: src/components/notifications/subscription-manager.tsx:442
+#: src/components/notifications/subscription-manager.tsx:434
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:174
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
@@ -1905,7 +1905,7 @@ msgstr "描述"
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
-#: src/components/notifications/subscription-manager.tsx:348
+#: src/components/notifications/subscription-manager.tsx:341
 msgid "Deselect All"
 msgstr "取消全选"
 
@@ -3951,7 +3951,7 @@ msgstr "管理专门的提取和识别选项。"
 msgid "Manage storage paths and file formats."
 msgstr "管理存储路径和文件格式。"
 
-#: src/components/notifications/subscription-manager.tsx:302
+#: src/components/notifications/subscription-manager.tsx:295
 msgid "Manage Subscriptions"
 msgstr "管理订阅"
 
@@ -4456,7 +4456,7 @@ msgstr "该执行记录暂无日志。"
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
-#: src/components/notifications/subscription-manager.tsx:367
+#: src/components/notifications/subscription-manager.tsx:360
 msgid "No matching events found"
 msgstr "未找到匹配的事件"
 
@@ -6053,7 +6053,7 @@ msgstr "清理后的主播名称"
 #: src/components/config/platforms/platform-editor.tsx:159
 #: src/components/config/templates/template-editor.tsx:213
 #: src/components/filters/FilterDialog.tsx:260
-#: src/components/notifications/subscription-manager.tsx:452
+#: src/components/notifications/subscription-manager.tsx:444
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:543
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
@@ -6126,7 +6126,7 @@ msgstr "按名称或描述搜索..."
 msgid "Search engines..."
 msgstr "搜索引擎..."
 
-#: src/components/notifications/subscription-manager.tsx:333
+#: src/components/notifications/subscription-manager.tsx:326
 msgid "Search events..."
 msgstr "搜索事件..."
 
@@ -6229,7 +6229,7 @@ msgid "Select a streamer"
 msgstr "选择主播"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:190
-#: src/components/notifications/subscription-manager.tsx:351
+#: src/components/notifications/subscription-manager.tsx:344
 msgid "Select All"
 msgstr "全选"
 
@@ -6296,7 +6296,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:305
+#: src/components/notifications/subscription-manager.tsx:298
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
@@ -6318,7 +6318,7 @@ msgstr "选择类型"
 msgid "Select your preferred color scheme."
 msgstr "选择你偏好的配色方案。"
 
-#: src/components/notifications/subscription-manager.tsx:431
+#: src/components/notifications/subscription-manager.tsx:423
 msgid "selected"
 msgstr "已选"
 
