@@ -84,7 +84,7 @@ impl Twitcasting {
         Ok(query_params.get("password").map(|pass_param| {
             let mut md5 = Md5::new();
             md5.update(pass_param.as_bytes());
-            format!("{:x}", md5.finalize())
+            crate::digest_to_hex(&md5.finalize())
         }))
     }
 

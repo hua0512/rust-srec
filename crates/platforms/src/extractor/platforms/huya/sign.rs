@@ -164,7 +164,7 @@ pub fn get_anticode(
     // md5(seqid | ctype | platformType)
     let mut hasher = Md5::new();
     hasher.update(format!("{}|{}|{}", seq_id, ctype, platform_id));
-    let secret_hash = format!("{:x}", hasher.finalize());
+    let secret_hash = crate::digest_to_hex(&hasher.finalize());
 
     // User param differs by platform:
     //   web → convertUid (rotl64-rotated)
@@ -195,7 +195,7 @@ pub fn get_anticode(
         "{}_{}_{}_{}_{}",
         secret_prefix, calc_uid, stream_name, secret_hash, ws_time
     ));
-    let ws_secret = format!("{:x}", hasher2.finalize());
+    let ws_secret = crate::digest_to_hex(&hasher2.finalize());
 
     // Construct query string
     let mut serializer = form_urlencoded::Serializer::new(String::new());
