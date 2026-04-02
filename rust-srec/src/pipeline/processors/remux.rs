@@ -107,15 +107,22 @@ pub enum AudioCodec {
 }
 
 impl AudioCodec {
-    fn as_ffmpeg_args(&self) -> Vec<String> {
+    fn ffmpeg_name(&self) -> Option<&str> {
         match self {
-            Self::Copy => vec!["-c:a".to_string(), "copy".to_string()],
-            Self::Aac => vec!["-c:a".to_string(), "aac".to_string()],
-            Self::Mp3 => vec!["-c:a".to_string(), "libmp3lame".to_string()],
-            Self::Opus => vec!["-c:a".to_string(), "libopus".to_string()],
-            Self::Flac => vec!["-c:a".to_string(), "flac".to_string()],
-            Self::None => vec!["-an".to_string()],
-            Self::Custom(codec) => vec!["-c:a".to_string(), codec.clone()],
+            Self::Copy => Some("copy"),
+            Self::Aac => Some("aac"),
+            Self::Mp3 => Some("libmp3lame"),
+            Self::Opus => Some("libopus"),
+            Self::Flac => Some("flac"),
+            Self::None => None,
+            Self::Custom(codec) => Some(codec),
+        }
+    }
+
+    fn as_ffmpeg_args(&self) -> Vec<String> {
+        match self.ffmpeg_name() {
+            Some(name) => vec!["-c:a".to_string(), name.to_string()],
+            None => vec!["-an".to_string()],
         }
     }
 }
@@ -363,7 +370,7 @@ impl RemuxProcessor {
 
     /// Build FFmpeg command arguments from config.
     fn build_args(&self, input_path: &str, config: &RemuxConfig, output_path: &str) -> Vec<String> {
-        let mut args = Vec::new();
+        let mut args = Vec::with_capacity(32);
 
         // Overwrite flag
         if config.overwrite {
@@ -914,6 +921,27 @@ mod tests {
         assert_eq!(VideoCodec::Copy.as_ffmpeg_args(), vec!["-c:v", "copy"]);
         assert_eq!(VideoCodec::H264.as_ffmpeg_args(), vec!["-c:v", "libx264"]);
         assert_eq!(VideoCodec::H265.as_ffmpeg_args(), vec!["-c:v", "libx265"]);
+        assert_eq!(
+            VideoCodec::H264Nvenc.as_ffmpeg_args(),
+            vec!["-c:v", "h264_nvenc"]
+        );
+        assert_eq!(
+            VideoCodec::HevcNvenc.as_ffmpeg_args(),
+            vec!["-c:v", "hevc_nvenc"]
+        );
+        assert_eq!(
+            VideoCodec::Av1Nvenc.as_ffmpeg_args(),
+            vec!["-c:v", "av1_nvenc"]
+        );
+    }
+
+    #[test]
+    fn test_video_codec_is_nvenc() {
+        assert!(!VideoCodec::Copy.is_nvenc());
+        assert!(!VideoCodec::H264.is_nvenc());
+        assert!(VideoCodec::H264Nvenc.is_nvenc());
+        assert!(VideoCodec::HevcNvenc.is_nvenc());
+        assert!(VideoCodec::Av1Nvenc.is_nvenc());
     }
 
     #[test]
@@ -983,6 +1011,68 @@ mod tests {
         assert!(args.contains(&"fast".to_string()));
         assert!(args.contains(&"-vf".to_string()));
     }
+
+    #[test]
+    fn test_build_args_nvenc_uses_cq_and_scale_cuda() {
+        let processor = RemuxProcessor::new();
+        let config = RemuxConfig {
+            video_codec: VideoCodec::H264Nvenc,
+            audio_codec: AudioCodec::Aac,
+            crf: Some(23),
+            preset: Some(Preset::P4),
+            resolution: Some("1280x720".to_string()),
+            hwaccel: Some("cuda".to_string()),
+            ..Default::default()
+        };
+
+        let args = processor.build_args("/input.flv", &config, "/output.mp4");
+
+        assert!(args.contains(&"h264_nvenc".to_string()));
+        assert!(args.contains(&"-cq".to_string()));
+        assert!(!args.contains(&"-crf".to_string()));
+        assert!(args.contains(&"-preset".to_string()));
+        assert!(args.contains(&"p4".to_string()));
+
+        let vf_idx = args.iter().position(|a| a == "-vf").unwrap();
+        assert!(args[vf_idx + 1].starts_with("scale_cuda="));
+    }
+
+    #[test]
+    fn test_build_args_software_uses_crf_and_scale() {
+        let processor = RemuxProcessor::new();
+        let config = RemuxConfig {
+            video_codec: VideoCodec::H264,
+            crf: Some(23),
+            resolution: Some("1280x720".to_string()),
+            ..Default::default()
+        };
+
+        let args = processor.build_args("/input.flv", &config, "/output.mp4");
+
+        assert!(args.contains(&"-crf".to_string()));
+        assert!(!args.contains(&"-cq".to_string()));
+
+        let vf_idx = args.iter().position(|a| a == "-vf").unwrap();
+        assert!(args[vf_idx + 1].starts_with("scale="));
+    }
+
+    #[test]
+    fn test_nvenc_config_deserialization() {
+        let json = r#"{
+            "video_codec": "h264nvenc",
+            "audio_codec": "aac",
+            "preset": "p7",
+            "crf": 20,
+            "hwaccel": "cuda"
+        }"#;
+
+        let config: RemuxConfig = serde_json::from_str(json).unwrap();
+        assert!(matches!(config.video_codec, VideoCodec::H264Nvenc));
+        assert!(config.video_codec.is_nvenc());
+        assert!(matches!(config.preset, Some(Preset::P7)));
+        assert_eq!(config.crf, Some(20));
+    }
+
     #[tokio::test]
     async fn test_make_absolute_path() {
         let cwd = std::env::current_dir().unwrap();

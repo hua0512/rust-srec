@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - 会话：{0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:927
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:947
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:928
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:948
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -153,7 +153,7 @@ msgstr "0 = 不限"
 msgid "0 disables the limit."
 msgstr "0 表示不限制。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:980
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:981
 msgid "0:v:0"
 msgstr "0:v:0"
 
@@ -358,7 +358,7 @@ msgstr "添加流"
 msgid "Add Streamer"
 msgstr "添加主播"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1011
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1012
 msgid "Add Tag"
 msgstr "添加自定义标签"
 
@@ -384,7 +384,7 @@ msgstr "调整 UI 元素的圆角程度。"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:174
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:239
 #: src/components/streamers/edit/streamer-config-form.tsx:74
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:240
 msgid "Advanced"
@@ -475,7 +475,7 @@ msgstr "API 请求重试次数"
 msgid "Appearance & style"
 msgstr "外观与样式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:951
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:952
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
@@ -569,17 +569,17 @@ msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:46
 #: src/components/pipeline/presets/preset-card.tsx:89
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:165
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:230
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:69
 msgid "Audio"
 msgstr "音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:531
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:529
 msgid "Audio Bitrate"
 msgstr "音频比特率"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:85
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:366
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:364
 msgid "Audio Codec"
 msgstr "音频编码"
 
@@ -600,7 +600,7 @@ msgstr "音频提取"
 msgid "Audio only"
 msgstr "仅音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:745
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:743
 msgid "Audio Processing"
 msgstr "音频处理"
 
@@ -608,7 +608,7 @@ msgstr "音频处理"
 msgid "Audio Properties"
 msgstr "音频属性"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:357
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:355
 msgid "Audio Settings"
 msgstr "音频设置"
 
@@ -1306,7 +1306,7 @@ msgstr "连接/活动超时"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:402
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:400
 msgid "Container"
 msgstr "容器"
 
@@ -1351,8 +1351,8 @@ msgstr "复制"
 msgid "Copy"
 msgstr "复制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:215
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:381
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:283
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:379
 msgid "Copy (Passthrough)"
 msgstr "复制（直通）"
 
@@ -1416,7 +1416,7 @@ msgstr "CPU 任务超时"
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:452
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:450
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
@@ -1538,7 +1538,7 @@ msgstr "凭据保存成功"
 msgid "CRF (0-51)"
 msgstr "CRF (0-51)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:454
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:452
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF（恒定码率因子）"
 
@@ -1605,7 +1605,7 @@ msgstr "自定义配置"
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:912
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:913
 msgid "Custom Flags"
 msgstr "自定义标志"
 
@@ -1831,7 +1831,7 @@ msgstr "删除文件"
 msgid "Delete Job"
 msgstr "删除处理任务"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:890
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:891
 msgid "Delete original file after successful remux"
 msgstr "成功重封装后删除原始文件"
 
@@ -1945,7 +1945,7 @@ msgstr "内部服务与资源的详细健康检查。"
 msgid "Detailed processor settings"
 msgstr "处理器详细设置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:561
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:559
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
@@ -2079,7 +2079,7 @@ msgstr "演练模式"
 msgid "Dual Format"
 msgstr "双格式输出"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:684
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:682
 #: src/components/streamers/edit/active-download-card.tsx:153
 #: src/components/streamers/progress-indicator.tsx:124
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:524
@@ -2111,7 +2111,7 @@ msgstr "例如 /data/tdl"
 msgid "e.g. /output/processed/"
 msgstr "例如 /output/processed/"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:984
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:985
 msgid "e.g. 0:v:0, 0:a:0"
 msgstr "列如: 0:v:0, 0:a:0"
 
@@ -2281,7 +2281,7 @@ msgstr "启用（默认：开）"
 msgid "Encoder Preset"
 msgstr "编码器预设"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:249
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:317
 msgid "Encoding Preset"
 msgstr "编码预设"
 
@@ -2301,7 +2301,7 @@ msgstr "历史结束"
 msgid "End Stream On Danmu Close"
 msgstr "弹幕关闭时结束录制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:714
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:712
 msgid "End Time"
 msgstr "结束时间"
 
@@ -2927,7 +2927,7 @@ msgstr "获取器"
 msgid "ffmpeg"
 msgstr "ffmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:754
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:752
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
@@ -2935,7 +2935,7 @@ msgstr "FFmpeg 音频滤镜（-af）"
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:617
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:615
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
@@ -3097,7 +3097,7 @@ msgstr "强制使用移动端 API"
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:868
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:869
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
@@ -3116,11 +3116,11 @@ msgstr "表单"
 #: src/components/config/global/file-config-card.tsx:103
 #: src/components/config/templates/template-card.tsx:150
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:91
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:147
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:212
 msgid "Format"
 msgstr "格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:592
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:590
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
@@ -3150,7 +3150,7 @@ msgstr "缺口评估间隔（毫秒）"
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:138
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:203
 #: src/components/streamers/edit/streamer-config-form.tsx:67
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:233
 msgid "General"
@@ -3291,7 +3291,7 @@ msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 msgid "H2 Keep-Alive (ms)"
 msgstr "H2 保活（毫秒）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:792
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:790
 msgid "Hardware Acceleration"
 msgstr "硬件加速"
 
@@ -3600,7 +3600,7 @@ msgstr "输入"
 msgid "Input Arguments"
 msgstr "输入参数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:921
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:922
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
@@ -3747,7 +3747,7 @@ msgstr "如果一个文件上传失败，继续上传其他文件"
 
 #: src/components/notifications/forms/webhook-form.tsx:447
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:72
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1024
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1025
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:93
 msgid "Key"
 msgstr "键"
@@ -3983,7 +3983,7 @@ msgstr "低"
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极低。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:482
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:480
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
@@ -4224,7 +4224,7 @@ msgstr "元数据"
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:998
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:999
 msgid "Metadata Tags"
 msgstr "元数据标签"
 
@@ -4531,7 +4531,7 @@ msgstr "尚未生成媒体输出。"
 msgid "No media outputs yet"
 msgstr "暂无媒体文件"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1062
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1063
 msgid "No metadata tags added"
 msgstr "未添加元数据标签"
 
@@ -4672,7 +4672,7 @@ msgstr "无"
 msgid "None (Default)"
 msgstr "无（默认）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:388
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:386
 msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
@@ -4873,7 +4873,7 @@ msgstr "进行中"
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:843
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:844
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "仅支持 MP4/MOV/M4V"
 
@@ -4953,11 +4953,11 @@ msgid "Output Folder"
 msgstr "输出文件夹"
 
 #: src/components/config/shared/output-settings-card.tsx:120
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:411
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:409
 msgid "Output Format"
 msgstr "输出格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:941
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:942
 msgid "Output Options"
 msgstr "输出选项"
 
@@ -5044,7 +5044,7 @@ msgid "Overwrite existing files"
 msgstr "覆盖现有文件"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:226
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:865
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:866
 msgid "Overwrite Files"
 msgstr "覆盖文件"
 
@@ -5198,7 +5198,7 @@ msgstr "按主播"
 msgid "Perf"
 msgstr "性能"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:783
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:781
 #: src/components/sessions/overview-tab.tsx:188
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:517
 msgid "Performance"
@@ -5674,7 +5674,7 @@ msgstr "质量"
 msgid "Quality (qscale)"
 msgstr "质量（qscale）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:440
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:438
 msgid "Quality Control"
 msgstr "质量控制"
 
@@ -5842,7 +5842,7 @@ msgstr "用于排除文件的正则模式。将针对完整路径和文件名进
 msgid "Remove"
 msgstr "移除"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:887
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:888
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
@@ -5938,7 +5938,7 @@ msgstr "需要启用“录制弹幕”。"
 msgid "Reset"
 msgstr "重置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:571
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:569
 msgid "Resolution (Scale)"
 msgstr "分辨率（缩放）"
 
@@ -6333,8 +6333,8 @@ msgstr "选择行为"
 msgid "Select category"
 msgstr "选择类别"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:209
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:375
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:277
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:373
 msgid "Select codec"
 msgstr "选择编解码器"
 
@@ -6362,7 +6362,7 @@ msgstr "选择登录类型"
 msgid "Select operation"
 msgstr "选择操作"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:262
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:330
 msgid "Select preset"
 msgstr "选择预设"
 
@@ -6713,7 +6713,7 @@ msgstr "开始手机号和验证码登录"
 msgid "Start QR Login"
 msgstr "开始二维码登录"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:654
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:652
 msgid "Start Time"
 msgstr "开始时间"
 
@@ -6772,7 +6772,7 @@ msgstr "直播归档"
 msgid "Stream Details"
 msgstr "流详情"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:974
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:975
 msgid "Stream Mapping (-map)"
 msgstr "流映射 (-map)"
 
@@ -6887,7 +6887,7 @@ msgstr "流式传输阈值（字节）"
 msgid "streamlink"
 msgstr "streamlink"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:964
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:965
 msgid "Streams & Metadata"
 msgstr "流与元数据"
 
@@ -6972,7 +6972,7 @@ msgstr "系统级偏好设置"
 msgid "Target bitrate"
 msgstr "目标码率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:497
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:495
 msgid "Target Bitrate"
 msgstr "目标比特率"
 
@@ -7447,7 +7447,7 @@ msgstr "应用启动时触发。"
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:640
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:638
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
@@ -7635,7 +7635,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "必须填写 URL"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:838
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:839
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
@@ -7713,7 +7713,7 @@ msgstr "校验服务不可用"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:582
 #: src/components/notifications/forms/webhook-form.tsx:459
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:1035
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1036
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
 msgid "Value"
 msgstr "值"
@@ -7750,16 +7750,16 @@ msgstr "版本"
 msgid "veryfast"
 msgstr "veryfast"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:156
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:221
 msgid "Video"
 msgstr "视频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:508
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:506
 msgid "Video Bitrate"
 msgstr "视频比特率"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:65
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:200
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:265
 msgid "Video Codec"
 msgstr "视频编码"
 
@@ -7771,7 +7771,7 @@ msgstr "视频编码变化"
 msgid "Video only"
 msgstr "仅视频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:190
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:255
 msgid "Video Settings"
 msgstr "视频设置"
 
@@ -7837,7 +7837,7 @@ msgstr "观看"
 msgid "WEB"
 msgstr "WEB"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:835
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:836
 msgid "Web Optimize"
 msgstr "网页优化"
 
