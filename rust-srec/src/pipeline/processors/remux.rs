@@ -48,6 +48,15 @@ pub enum VideoCodec {
     Vp9,
     /// AV1 codec.
     Av1,
+    /// H.264 NVENC (NVIDIA hardware encoder).
+    #[serde(alias = "h264_nvenc")]
+    H264Nvenc,
+    /// H.265 NVENC (NVIDIA hardware encoder).
+    #[serde(alias = "hevc_nvenc")]
+    HevcNvenc,
+    /// AV1 NVENC (NVIDIA hardware encoder, requires RTX 4000+).
+    #[serde(alias = "av1_nvenc")]
+    Av1Nvenc,
     /// Custom codec string.
     Custom(String),
 }
@@ -60,8 +69,15 @@ impl VideoCodec {
             Self::H265 => vec!["-c:v".to_string(), "libx265".to_string()],
             Self::Vp9 => vec!["-c:v".to_string(), "libvpx-vp9".to_string()],
             Self::Av1 => vec!["-c:v".to_string(), "libaom-av1".to_string()],
+            Self::H264Nvenc => vec!["-c:v".to_string(), "h264_nvenc".to_string()],
+            Self::HevcNvenc => vec!["-c:v".to_string(), "hevc_nvenc".to_string()],
+            Self::Av1Nvenc => vec!["-c:v".to_string(), "av1_nvenc".to_string()],
             Self::Custom(codec) => vec!["-c:v".to_string(), codec.clone()],
         }
+    }
+
+    fn is_nvenc(&self) -> bool {
+        matches!(self, Self::H264Nvenc | Self::HevcNvenc | Self::Av1Nvenc)
     }
 }
 
@@ -114,6 +130,37 @@ pub enum Preset {
     Slow,
     Slower,
     Veryslow,
+    // NVENC-specific presets
+    P1,
+    P2,
+    P3,
+    P4,
+    P5,
+    P6,
+    P7,
+    /// NVENC low-latency.
+    #[serde(alias = "ll")]
+    Ll,
+    /// NVENC high quality.
+    #[serde(alias = "hq")]
+    Hq,
+    /// NVENC high performance.
+    #[serde(alias = "hp")]
+    Hp,
+    /// NVENC Blu-ray disc.
+    #[serde(alias = "bd")]
+    Bd,
+    /// NVENC low-latency high quality.
+    #[serde(alias = "llhq")]
+    Llhq,
+    /// NVENC low-latency high performance.
+    #[serde(alias = "llhp")]
+    Llhp,
+    /// NVENC lossless.
+    Lossless,
+    /// NVENC lossless high performance.
+    #[serde(alias = "losslesshp")]
+    Losslesshp,
 }
 
 impl Preset {
@@ -128,6 +175,21 @@ impl Preset {
             Self::Slow => "slow",
             Self::Slower => "slower",
             Self::Veryslow => "veryslow",
+            Self::P1 => "p1",
+            Self::P2 => "p2",
+            Self::P3 => "p3",
+            Self::P4 => "p4",
+            Self::P5 => "p5",
+            Self::P6 => "p6",
+            Self::P7 => "p7",
+            Self::Ll => "ll",
+            Self::Hq => "hq",
+            Self::Hp => "hp",
+            Self::Bd => "bd",
+            Self::Llhq => "llhq",
+            Self::Llhp => "llhp",
+            Self::Lossless => "lossless",
+            Self::Losslesshp => "losslesshp",
         }
     }
 }
@@ -355,9 +417,14 @@ impl RemuxProcessor {
             args.extend(["-b:a".to_string(), bitrate.clone()]);
         }
 
-        // CRF (quality-based encoding)
+        // Quality-based encoding: NVENC uses -cq, others use -crf
         if let Some(crf) = config.crf {
-            args.extend(["-crf".to_string(), crf.to_string()]);
+            let flag = if config.video_codec.is_nvenc() {
+                "-cq"
+            } else {
+                "-crf"
+            };
+            args.extend([flag.to_string(), crf.to_string()]);
         }
 
         // Preset
@@ -367,9 +434,14 @@ impl RemuxProcessor {
 
         // Video filters
         let mut vf_parts = Vec::new();
+        let is_cuda = config
+            .hwaccel
+            .as_deref()
+            .is_some_and(|h| h.eq_ignore_ascii_case("cuda"));
 
         if let Some(ref resolution) = config.resolution {
-            vf_parts.push(format!("scale={}", resolution.replace('x', ":")));
+            let scale_filter = if is_cuda { "scale_cuda" } else { "scale" };
+            vf_parts.push(format!("{}={}", scale_filter, resolution.replace('x', ":")));
         }
 
         if let Some(fps) = config.fps {

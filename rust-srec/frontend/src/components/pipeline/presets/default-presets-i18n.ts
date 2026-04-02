@@ -30,6 +30,13 @@ export const DEFAULT_JOB_PRESET_NAMES: Record<string, any> = {
   'preset-remux-clean': msg`Remux and Clean`,
   'preset-default-danmu-to-ass': msg`Danmaku to ASS Subtitles`,
   'preset-default-ass-burnin': msg`ASS Subtitle Burn-in`,
+  'preset-nvenc-h264-fast': msg`NVENC H.264 Fast`,
+  'preset-nvenc-h264-hq': msg`NVENC H.264 High Quality`,
+  'preset-nvenc-hevc-fast': msg`NVENC HEVC Fast`,
+  'preset-nvenc-hevc-hq': msg`NVENC HEVC High Quality`,
+  'preset-nvenc-h264-ll': msg`NVENC H.264 Low Latency`,
+  'preset-nvenc-av1-fast': msg`NVENC AV1 Fast`,
+  'preset-nvenc-av1-hq': msg`NVENC AV1 High Quality`,
 };
 
 export const PRESET_CATEGORY_NAMES: Record<string, any> = {
@@ -77,6 +84,13 @@ export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<string, any> = {
   'preset-remux-clean': msg`Remux to MP4 without re-encoding and delete the original file on success. Saves disk space.`,
   'preset-default-danmu-to-ass': msg`Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe.`,
   'preset-default-ass-burnin': msg`Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe.`,
+  'preset-nvenc-h264-fast': msg`Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great speed-to-quality ratio.`,
+  'preset-nvenc-h264-hq': msg`High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). Best NVENC quality.`,
+  'preset-nvenc-hevc-fast': msg`Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Smaller files than H.264.`,
+  'preset-nvenc-hevc-hq': msg`High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 21). Best compression ratio with GPU.`,
+  'preset-nvenc-h264-ll': msg`Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay.`,
+  'preset-nvenc-av1-fast': msg`Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires RTX 4000+ series.`,
+  'preset-nvenc-av1-hq': msg`High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+.`,
 };
 
 export const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, any> = {
@@ -92,6 +106,8 @@ export const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, any> = {
   'pipeline-preview-gallery': msg`Preview Gallery`,
   'pipeline-dual-format': msg`Dual Format`,
   'pipeline-stream-archive': msg`Stream Archive`,
+  'pipeline-nvenc-standard': msg`GPU Standard`,
+  'pipeline-nvenc-hq-archive': msg`GPU HQ Archive`,
 };
 
 export const DEFAULT_PIPELINE_PRESET_DESCRIPTIONS: Record<string, any> = {
@@ -107,6 +123,8 @@ export const DEFAULT_PIPELINE_PRESET_DESCRIPTIONS: Record<string, any> = {
   'pipeline-preview-gallery': msg`Generate multiple preview images at different timestamps for a gallery view.`,
   'pipeline-dual-format': msg`Process video and extract podcast audio in parallel, then upload both.`,
   'pipeline-stream-archive': msg`Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files.`,
+  'pipeline-nvenc-standard': msg`GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation.`,
+  'pipeline-nvenc-hq-archive': msg`GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload.`,
 };
 
 export function isDefaultPreset(id: string): boolean {

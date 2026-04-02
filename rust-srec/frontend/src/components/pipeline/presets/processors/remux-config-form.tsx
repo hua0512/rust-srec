@@ -71,8 +71,20 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
     name: `${prefix}format` as any,
   });
 
+  const hwaccel = useWatch({
+    control,
+    name: `${prefix}hwaccel` as any,
+  });
+
   const isVideoCopy = !videoCodec || videoCodec === 'copy';
   const isAudioCopy = !audioCodec || audioCodec === 'copy';
+  const isNvenc =
+    videoCodec === 'h264nvenc' ||
+    videoCodec === 'hevcnvenc' ||
+    videoCodec === 'av1nvenc';
+  const isAv1Nvenc = videoCodec === 'av1nvenc';
+  const isCuda = hwaccel === 'cuda';
+  const cqMax = isAv1Nvenc ? 63 : 51;
 
   const faststartSupported =
     !format || ['mp4', 'mov', 'm4v'].includes(format.toLowerCase());
@@ -82,6 +94,26 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
       setValue(`${prefix}faststart` as any, false);
     }
   }, [faststartSupported, prefix, setValue]);
+
+  // Reset preset to 'medium' when switching between NVENC and software codecs
+  // to avoid passing incompatible preset values
+  useEffect(() => {
+    setValue(`${prefix}preset` as any, 'medium');
+  }, [isNvenc, prefix, setValue]);
+
+  // Auto-set hwaccel to cuda when an NVENC codec is selected
+  useEffect(() => {
+    if (isNvenc && !isCuda) {
+      setValue(`${prefix}hwaccel` as any, 'cuda');
+    }
+  }, [isNvenc, isCuda, prefix, setValue]);
+
+  // Reset video codec if hwaccel changes away from cuda while NVENC is selected
+  useEffect(() => {
+    if (!isCuda && isNvenc) {
+      setValue(`${prefix}video_codec` as any, 'copy');
+    }
+  }, [isCuda, isNvenc, prefix, setValue]);
 
   const containerVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -186,6 +218,19 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                           <SelectItem value="h265">H.265 / HEVC</SelectItem>
                           <SelectItem value="vp9">VP9</SelectItem>
                           <SelectItem value="av1">AV1</SelectItem>
+                          {isCuda && (
+                            <>
+                              <SelectItem value="h264nvenc">
+                                H.264 NVENC (NVIDIA)
+                              </SelectItem>
+                              <SelectItem value="hevcnvenc">
+                                H.265 NVENC (NVIDIA)
+                              </SelectItem>
+                              <SelectItem value="av1nvenc">
+                                AV1 NVENC (NVIDIA RTX 4000+)
+                              </SelectItem>
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -219,15 +264,81 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="ultrafast">Ultrafast</SelectItem>
-                            <SelectItem value="superfast">Superfast</SelectItem>
-                            <SelectItem value="veryfast">Veryfast</SelectItem>
-                            <SelectItem value="faster">Faster</SelectItem>
-                            <SelectItem value="fast">Fast</SelectItem>
-                            <SelectItem value="medium">Medium</SelectItem>
-                            <SelectItem value="slow">Slow</SelectItem>
-                            <SelectItem value="slower">Slower</SelectItem>
-                            <SelectItem value="veryslow">Veryslow</SelectItem>
+                            {isAv1Nvenc ? (
+                              <>
+                                <SelectItem value="fast">Fast</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="slow">Slow</SelectItem>
+                                <SelectItem value="p1">P1 (Fastest)</SelectItem>
+                                <SelectItem value="p2">P2</SelectItem>
+                                <SelectItem value="p3">P3</SelectItem>
+                                <SelectItem value="p4">P4 (Default)</SelectItem>
+                                <SelectItem value="p5">P5</SelectItem>
+                                <SelectItem value="p6">P6</SelectItem>
+                                <SelectItem value="p7">
+                                  P7 (Best Quality)
+                                </SelectItem>
+                              </>
+                            ) : isNvenc ? (
+                              <>
+                                <SelectItem value="fast">Fast</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="slow">Slow</SelectItem>
+                                <SelectItem value="hp">
+                                  HP (High Performance)
+                                </SelectItem>
+                                <SelectItem value="hq">
+                                  HQ (High Quality)
+                                </SelectItem>
+                                <SelectItem value="bd">
+                                  BD (Blu-ray Disc)
+                                </SelectItem>
+                                <SelectItem value="ll">
+                                  LL (Low Latency)
+                                </SelectItem>
+                                <SelectItem value="llhq">
+                                  LLHQ (Low Latency HQ)
+                                </SelectItem>
+                                <SelectItem value="llhp">
+                                  LLHP (Low Latency HP)
+                                </SelectItem>
+                                <SelectItem value="lossless">
+                                  Lossless
+                                </SelectItem>
+                                <SelectItem value="losslesshp">
+                                  Lossless HP
+                                </SelectItem>
+                                <SelectItem value="p1">P1 (Fastest)</SelectItem>
+                                <SelectItem value="p2">P2</SelectItem>
+                                <SelectItem value="p3">P3</SelectItem>
+                                <SelectItem value="p4">P4 (Default)</SelectItem>
+                                <SelectItem value="p5">P5</SelectItem>
+                                <SelectItem value="p6">P6</SelectItem>
+                                <SelectItem value="p7">
+                                  P7 (Best Quality)
+                                </SelectItem>
+                              </>
+                            ) : (
+                              <>
+                                <SelectItem value="ultrafast">
+                                  Ultrafast
+                                </SelectItem>
+                                <SelectItem value="superfast">
+                                  Superfast
+                                </SelectItem>
+                                <SelectItem value="veryfast">
+                                  Veryfast
+                                </SelectItem>
+                                <SelectItem value="faster">Faster</SelectItem>
+                                <SelectItem value="fast">Fast</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="slow">Slow</SelectItem>
+                                <SelectItem value="slower">Slower</SelectItem>
+                                <SelectItem value="veryslow">
+                                  Veryslow
+                                </SelectItem>
+                              </>
+                            )}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -337,7 +448,11 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                     <FormItem>
                       <div className="flex justify-between items-end mb-2">
                         <FormLabel className="text-xs text-muted-foreground ml-1">
-                          <Trans>CRF (Constant Rate Factor)</Trans>
+                          {isNvenc ? (
+                            <Trans>CQ (Constant Quality)</Trans>
+                          ) : (
+                            <Trans>CRF (Constant Rate Factor)</Trans>
+                          )}
                         </FormLabel>
                         <span className="font-mono text-sm font-medium bg-background px-2 py-0.5 rounded border border-border/50">
                           {field.value ?? 23}
@@ -350,7 +465,7 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                         <FormControl>
                           <Slider
                             min={0}
-                            max={51}
+                            max={cqMax}
                             step={1}
                             value={[field.value ?? 23]}
                             onValueChange={(val: number[]) =>

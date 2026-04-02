@@ -9,6 +9,9 @@ export const VideoCodecSchema = z.enum([
   'hevc',
   'vp9',
   'av1',
+  'h264nvenc',
+  'hevcnvenc',
+  'av1nvenc',
 ]);
 export const AudioCodecSchema = z.enum([
   'copy',
@@ -28,6 +31,21 @@ export const PresetSchema = z.enum([
   'slow',
   'slower',
   'veryslow',
+  'p1',
+  'p2',
+  'p3',
+  'p4',
+  'p5',
+  'p6',
+  'p7',
+  'hq',
+  'hp',
+  'bd',
+  'll',
+  'llhq',
+  'llhp',
+  'lossless',
+  'losslesshp',
 ]);
 
 export const RemuxConfigSchema = z.object({
@@ -36,7 +54,7 @@ export const RemuxConfigSchema = z.object({
   format: z.string().optional(),
   video_bitrate: z.string().optional(),
   audio_bitrate: z.string().optional(),
-  crf: z.number().min(0).max(51).optional(),
+  crf: z.number().min(0).max(63).optional(),
   preset: PresetSchema.optional(),
   resolution: z.string().optional(),
   fps: z.number().optional(),

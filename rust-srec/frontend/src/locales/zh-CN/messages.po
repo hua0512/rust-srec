@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - 会话：{0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:812
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:832
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:927
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:947
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -153,7 +153,7 @@ msgstr "0 = 不限"
 msgid "0 disables the limit."
 msgstr "0 表示不限制。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:865
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:980
 msgid "0:v:0"
 msgstr "0:v:0"
 
@@ -304,7 +304,7 @@ msgstr "添加项目..."
 msgid "Add Metadata"
 msgstr "添加元数据"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:68
+#: src/components/pipeline/presets/default-presets-i18n.ts:75
 msgid "Add metadata tags (title, artist, date) to the video file."
 msgstr "为视频文件添加元数据标签（标题、艺术家、日期）。"
 
@@ -358,7 +358,7 @@ msgstr "添加流"
 msgid "Add Streamer"
 msgstr "添加主播"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:896
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1011
 msgid "Add Tag"
 msgstr "添加自定义标签"
 
@@ -384,7 +384,7 @@ msgstr "调整 UI 元素的圆角程度。"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:142
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:174
 #: src/components/streamers/edit/streamer-config-form.tsx:74
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:240
 msgid "Advanced"
@@ -475,7 +475,7 @@ msgstr "API 请求重试次数"
 msgid "Appearance & style"
 msgstr "外观与样式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:836
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:951
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
@@ -487,7 +487,7 @@ msgstr "会追加到所有 HLS 请求中。适用于签名 URL 或 CDN 路由。
 msgid "Apply template settings."
 msgstr "应用模板设置。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:40
+#: src/components/pipeline/presets/default-presets-i18n.ts:47
 #: src/components/pipeline/presets/preset-card.tsx:90
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:70
 msgid "Archive"
@@ -505,7 +505,7 @@ msgstr "归档格式"
 msgid "Archive Settings"
 msgstr "归档设置"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:84
+#: src/components/pipeline/presets/default-presets-i18n.ts:98
 msgid "Archive to Cloud"
 msgstr "云端归档"
 
@@ -567,19 +567,19 @@ msgstr "尝试获取可用的最高原画质量。"
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:39
+#: src/components/pipeline/presets/default-presets-i18n.ts:46
 #: src/components/pipeline/presets/preset-card.tsx:89
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:133
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:165
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:69
 msgid "Audio"
 msgstr "音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:416
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:531
 msgid "Audio Bitrate"
 msgstr "音频比特率"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:85
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:255
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:366
 msgid "Audio Codec"
 msgstr "音频编码"
 
@@ -600,7 +600,7 @@ msgstr "音频提取"
 msgid "Audio only"
 msgstr "仅音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:630
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:745
 msgid "Audio Processing"
 msgstr "音频处理"
 
@@ -608,7 +608,7 @@ msgstr "音频处理"
 msgid "Audio Properties"
 msgstr "音频属性"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:246
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:357
 msgid "Audio Settings"
 msgstr "音频设置"
 
@@ -753,7 +753,7 @@ msgstr "此配置模板的基本信息。"
 msgid "Basic Information"
 msgstr "基本信息"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:98
+#: src/components/pipeline/presets/default-presets-i18n.ts:114
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
@@ -859,7 +859,7 @@ msgstr "浏览器状态"
 msgid "Buffer Limits"
 msgstr "缓冲区限制"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:79
+#: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。支持清单感知和批量处理。"
 
@@ -1049,7 +1049,7 @@ msgstr "选择此主播如何处理代理连接。"
 msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:42
+#: src/components/pipeline/presets/default-presets-i18n.ts:49
 #: src/components/pipeline/presets/preset-card.tsx:92
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:325
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:239
@@ -1127,7 +1127,7 @@ msgstr "评论"
 msgid "Complete the Telegram login process in this terminal."
 msgstr "在此终端中完成 Telegram 登录过程。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:104
+#: src/components/pipeline/presets/default-presets-i18n.ts:120
 msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
@@ -1152,11 +1152,11 @@ msgstr "组件"
 msgid "Component Status"
 msgstr "组件状态"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:99
+#: src/components/pipeline/presets/default-presets-i18n.ts:115
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:37
+#: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
 #: src/components/pipeline/presets/preset-card.tsx:87
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:67
@@ -1306,7 +1306,7 @@ msgstr "连接/活动超时"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:291
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:402
 msgid "Container"
 msgstr "容器"
 
@@ -1322,7 +1322,7 @@ msgstr "出错时继续"
 msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "控制各模块的日志详细程度。较低级别包含较高级别。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:78
+#: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
 msgstr "使用 DanmakuFactory 将弹幕 XML（Bilibili 格式）转换为 .ass 字幕。支持清单感知和批量处理。"
 
@@ -1351,8 +1351,8 @@ msgstr "复制"
 msgid "Copy"
 msgstr "复制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:183
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:270
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:215
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:381
 msgid "Copy (Passthrough)"
 msgstr "复制（直通）"
 
@@ -1387,7 +1387,7 @@ msgstr "复制 JSON"
 msgid "Copy Path"
 msgstr "复制路径"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:64
+#: src/components/pipeline/presets/default-presets-i18n.ts:71
 msgid "Copy the file to another location. Keeps the original file."
 msgstr "将文件复制到其他位置，保留原始文件。"
 
@@ -1416,6 +1416,10 @@ msgstr "CPU 任务超时"
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:452
+msgid "CQ (Constant Quality)"
+msgstr "CQ (恒定质量)"
+
 #: src/components/config/templates/template-editor.tsx:211
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:146
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:383
@@ -1437,7 +1441,7 @@ msgstr "创建过滤器以控制何时录制该主播。你可以按时间、关
 msgid "Create a template to define reusable download configurations."
 msgstr "创建模板以定义可复用的录制配置。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:62
+#: src/components/pipeline/presets/default-presets-i18n.ts:69
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
@@ -1534,7 +1538,7 @@ msgstr "凭据保存成功"
 msgid "CRF (0-51)"
 msgstr "CRF (0-51)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:340
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:454
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF（恒定码率因子）"
 
@@ -1582,7 +1586,7 @@ msgstr "当前密码"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:205
 #: src/components/config/engines/forms/mesio-hls-form.tsx:505
-#: src/components/pipeline/presets/default-presets-i18n.ts:44
+#: src/components/pipeline/presets/default-presets-i18n.ts:51
 #: src/components/pipeline/presets/preset-card.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:74
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:337
@@ -1601,7 +1605,7 @@ msgstr "自定义配置"
 msgid "Custom FFmpeg"
 msgstr "自定义 FFmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:797
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:912
 msgid "Custom Flags"
 msgstr "自定义标志"
 
@@ -1645,7 +1649,7 @@ msgstr "DAG 配置"
 msgid "DAG Graph"
 msgstr "DAG 图"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:46
+#: src/components/pipeline/presets/default-presets-i18n.ts:53
 #: src/components/pipeline/presets/preset-card.tsx:96
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:76
 msgid "Danmaku"
@@ -1766,7 +1770,7 @@ msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。
 msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
 msgstr "默认使用 Mesio 内置的直播停顿超时；禁用表示无限等待。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:109
+#: src/components/pipeline/presets/default-presets-i18n.ts:125
 msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
 msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原始分辨率缩略图，上传两者至云端并删除本地文件。"
 
@@ -1827,7 +1831,7 @@ msgstr "删除文件"
 msgid "Delete Job"
 msgstr "删除处理任务"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:775
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:890
 msgid "Delete original file after successful remux"
 msgstr "成功重封装后删除原始文件"
 
@@ -1863,7 +1867,7 @@ msgstr "删除源 XML 文件"
 msgid "Delete Template"
 msgstr "删除模板"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:63
+#: src/components/pipeline/presets/default-presets-i18n.ts:70
 msgid "Delete the source file. Use as the last step in a pipeline to clean up."
 msgstr "删除源文件。可作为处理管道最后一步用于清理。"
 
@@ -1941,7 +1945,7 @@ msgstr "内部服务与资源的详细健康检查。"
 msgid "Detailed processor settings"
 msgstr "处理器详细设置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:446
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:561
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
@@ -2071,11 +2075,11 @@ msgstr "从边缘拖动以连接步骤"
 msgid "Dry Run"
 msgstr "演练模式"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:93
+#: src/components/pipeline/presets/default-presets-i18n.ts:107
 msgid "Dual Format"
 msgstr "双格式输出"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:569
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:684
 #: src/components/streamers/edit/active-download-card.tsx:153
 #: src/components/streamers/progress-indicator.tsx:124
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:524
@@ -2107,7 +2111,7 @@ msgstr "例如 /data/tdl"
 msgid "e.g. /output/processed/"
 msgstr "例如 /output/processed/"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:869
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:984
 msgid "e.g. 0:v:0, 0:a:0"
 msgstr "列如: 0:v:0, 0:a:0"
 
@@ -2277,7 +2281,7 @@ msgstr "启用（默认：开）"
 msgid "Encoder Preset"
 msgstr "编码器预设"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:204
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:249
 msgid "Encoding Preset"
 msgstr "编码预设"
 
@@ -2297,7 +2301,7 @@ msgstr "历史结束"
 msgid "End Stream On Danmu Close"
 msgstr "弹幕关闭时结束录制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:599
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:714
 msgid "End Time"
 msgstr "结束时间"
 
@@ -2556,19 +2560,19 @@ msgstr "额外参数"
 msgid "Extract AAC"
 msgstr "提取 AAC"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:73
+#: src/components/pipeline/presets/default-presets-i18n.ts:80
 msgid "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 msgstr "提取高质量 MP3（320kbps）音频，用于播客分发。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:61
+#: src/components/pipeline/presets/default-presets-i18n.ts:68
 msgid "Extract audio track to AAC format (256kbps). High quality, widely compatible."
 msgstr "提取 AAC（256kbps）音频轨道，质量高且兼容性好。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:60
+#: src/components/pipeline/presets/default-presets-i18n.ts:67
 msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
 msgstr "提取 MP3（192kbps）音频轨道，适合播客与音乐。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:101
+#: src/components/pipeline/presets/default-presets-i18n.ts:117
 msgid "Extract high-quality audio for podcast distribution and upload."
 msgstr "提取高质量音频用于播客分发并上传。"
 
@@ -2883,11 +2887,23 @@ msgstr "更新工作流失败：{0}"
 msgid "Fast Compression"
 msgstr "快速压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:102
+#: src/components/pipeline/presets/default-presets-i18n.ts:118
 msgid "Fast encoding for quick sharing on social media or messaging."
 msgstr "快速编码，便于在社交媒体或聊天中快速分享。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:53
+#: src/components/pipeline/presets/default-presets-i18n.ts:92
+msgid "Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires RTX 4000+ series."
+msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 AV1 编码（CQ 28）。需要 RTX 4000+ 系列显卡。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:87
+msgid "Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great speed-to-quality ratio."
+msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 H.264 编码（CQ 23）。速度与画质的良好平衡。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:89
+msgid "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Smaller files than H.264."
+msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 HEVC/H.265 编码（CQ 24）。文件比 H.264 更小。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:60
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取得良好平衡。"
 
@@ -2911,7 +2927,7 @@ msgstr "获取器"
 msgid "ffmpeg"
 msgstr "ffmpeg"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:639
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:754
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
@@ -2919,7 +2935,7 @@ msgstr "FFmpeg 音频滤镜（-af）"
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:502
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:617
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
@@ -2931,7 +2947,7 @@ msgstr "文件配置"
 msgid "File Extension Filter"
 msgstr "文件扩展名过滤"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:43
+#: src/components/pipeline/presets/default-presets-i18n.ts:50
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:257
 msgid "File Operations"
 msgstr "文件操作"
@@ -3081,7 +3097,7 @@ msgstr "强制使用移动端 API"
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:753
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:868
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
@@ -3100,11 +3116,11 @@ msgstr "表单"
 #: src/components/config/global/file-config-card.tsx:103
 #: src/components/config/templates/template-card.tsx:150
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:91
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:115
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:147
 msgid "Format"
 msgstr "格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:477
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:592
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
@@ -3116,11 +3132,11 @@ msgstr "发件人地址"
 msgid "Full HD Thumbnail"
 msgstr "全高清缩略图"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:106
+#: src/components/pipeline/presets/default-presets-i18n.ts:122
 msgid "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
 msgstr "完整的多媒体处理：并行进行视频重封装、音频提取和缩略图生成，然后上传所有文件。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:89
+#: src/components/pipeline/presets/default-presets-i18n.ts:103
 msgid "Full Processing"
 msgstr "全流程处理"
 
@@ -3134,7 +3150,7 @@ msgstr "缺口评估间隔（毫秒）"
 #: src/components/config/templates/template-editor.tsx:247
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:106
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:138
 #: src/components/streamers/edit/streamer-config-form.tsx:67
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:233
 msgid "General"
@@ -3145,31 +3161,31 @@ msgstr "常规"
 msgid "General Configuration"
 msgstr "常规配置"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:57
+#: src/components/pipeline/presets/default-presets-i18n.ts:64
 msgid "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
 msgstr "生成全高清缩略图（宽 1280px），适用于现代显示器与播放器。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:56
+#: src/components/pipeline/presets/default-presets-i18n.ts:63
 msgid "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 msgstr "在第 10 秒生成高清缩略图（宽 640px）。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:58
+#: src/components/pipeline/presets/default-presets-i18n.ts:65
 msgid "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
 msgstr "生成最高质量缩略图（宽 1920px），保留完整 1080p 细节。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:74
+#: src/components/pipeline/presets/default-presets-i18n.ts:81
 msgid "Generate a thumbnail at 30 seconds with 480px width for previews."
 msgstr "在第 30 秒生成缩略图（宽 480px）用于预览。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:59
+#: src/components/pipeline/presets/default-presets-i18n.ts:66
 msgid "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
 msgstr "以原始直播分辨率生成缩略图（不缩放）。质量最佳，但文件体积最大。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:55
+#: src/components/pipeline/presets/default-presets-i18n.ts:62
 msgid "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgstr "从视频第 10 秒生成缩略图（宽 320px）。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:107
+#: src/components/pipeline/presets/default-presets-i18n.ts:123
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "在不同时间点生成多张预览图，用于图库展示。"
 
@@ -3236,6 +3252,22 @@ msgstr "跳转到第 {p} 页"
 msgid "Go to previous page"
 msgstr "上一页"
 
+#: src/components/pipeline/presets/default-presets-i18n.ts:110
+msgid "GPU HQ Archive"
+msgstr "GPU 高质量归档"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:109
+msgid "GPU Standard"
+msgstr "GPU 标准"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:127
+msgid "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
+msgstr "GPU 加速高质量归档：NVENC HEVC 编码、缩略图生成和云端上传。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:126
+msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
+msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:93
 #: src/components/config/engines/forms/streamlink-form.tsx:87
 msgid "Graceful Stop Timeout"
@@ -3251,7 +3283,7 @@ msgstr "图表"
 msgid "H.264"
 msgstr "H.264"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:72
+#: src/components/pipeline/presets/default-presets-i18n.ts:79
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 
@@ -3259,7 +3291,7 @@ msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 msgid "H2 Keep-Alive (ms)"
 msgstr "H2 保活（毫秒）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:677
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:792
 msgid "Hardware Acceleration"
 msgstr "硬件加速"
 
@@ -3309,7 +3341,7 @@ msgstr "隐藏密码"
 msgid "High"
 msgstr "高"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:85
+#: src/components/pipeline/presets/default-presets-i18n.ts:99
 msgid "High Quality Archive"
 msgstr "高质量归档"
 
@@ -3317,7 +3349,19 @@ msgstr "高质量归档"
 msgid "High Quality Compression"
 msgstr "高质量压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:54
+#: src/components/pipeline/presets/default-presets-i18n.ts:93
+msgid "High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+."
+msgstr "使用 NVIDIA NVENC 的高质量 GPU 加速 AV1 编码（CQ 24）。最佳压缩比，需要 RTX 4000+ 系列显卡。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:88
+msgid "High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). Best NVENC quality."
+msgstr "使用 NVIDIA NVENC 的高质量 GPU 加速 H.264 编码（CQ 20）。最佳 NVENC 画质。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:90
+msgid "High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 21). Best compression ratio with GPU."
+msgstr "使用 NVIDIA NVENC 的高质量 GPU 加速 HEVC/H.265 编码（CQ 21）。GPU 最佳压缩比。"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:61
 msgid "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
 msgstr "高质量 H.265/HEVC 压缩（CRF 22）。文件更小，但编码更慢。"
 
@@ -3556,7 +3600,7 @@ msgstr "输入"
 msgid "Input Arguments"
 msgstr "输入参数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:806
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:921
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
@@ -3703,7 +3747,7 @@ msgstr "如果一个文件上传失败，继续上传其他文件"
 
 #: src/components/notifications/forms/webhook-form.tsx:447
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:72
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:909
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1024
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:93
 msgid "Key"
 msgstr "键"
@@ -3852,7 +3896,7 @@ msgstr "正在加载预设..."
 msgid "Loading workflows..."
 msgstr "正在加载工作流..."
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:90
+#: src/components/pipeline/presets/default-presets-i18n.ts:104
 msgid "Local Archive"
 msgstr "本地归档"
 
@@ -3935,7 +3979,11 @@ msgstr "无损分割"
 msgid "Low"
 msgstr "低"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:367
+#: src/components/pipeline/presets/default-presets-i18n.ts:91
+msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
+msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极低。"
+
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:482
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
@@ -4106,11 +4154,11 @@ msgstr "最大停顿时间（毫秒）"
 msgid "Max Uploads"
 msgstr "最大上传数"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:103
+#: src/components/pipeline/presets/default-presets-i18n.ts:119
 msgid "Maximum compression to minimize storage usage, then delete original."
 msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:75
+#: src/components/pipeline/presets/default-presets-i18n.ts:82
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
@@ -4126,7 +4174,7 @@ msgstr "分段下载的最大并发数。"
 msgid "Maximum number of retry attempts."
 msgstr "最大重试尝试次数。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:100
+#: src/components/pipeline/presets/default-presets-i18n.ts:116
 msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "使用 HEVC 进行最高质量压缩，然后上传到云存储。"
 
@@ -4164,7 +4212,7 @@ msgstr "合并更改"
 msgid "Message"
 msgstr "消息"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:45
+#: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-card.tsx:95
 #: src/components/pipeline/presets/preset-templates.ts:72
@@ -4176,7 +4224,7 @@ msgstr "元数据"
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:883
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:998
 msgid "Metadata Tags"
 msgstr "元数据标签"
 
@@ -4266,7 +4314,7 @@ msgstr "移动文件"
 msgid "Move Files"
 msgstr "移动文件"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:65
+#: src/components/pipeline/presets/default-presets-i18n.ts:72
 msgid "Move the file to another location. Removes the original file."
 msgstr "将文件移动到其他位置，并移除原始文件。"
 
@@ -4278,7 +4326,7 @@ msgstr "Mozilla/5.0..."
 msgid "MP"
 msgstr "MP"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:91
+#: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Multimedia Archive"
 msgstr "多媒体归档"
 
@@ -4483,7 +4531,7 @@ msgstr "尚未生成媒体输出。"
 msgid "No media outputs yet"
 msgstr "暂无媒体文件"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:947
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1062
 msgid "No metadata tags added"
 msgstr "未添加元数据标签"
 
@@ -4624,7 +4672,7 @@ msgstr "无"
 msgid "None (Default)"
 msgstr "无（默认）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:277
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:388
 msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
@@ -4719,6 +4767,34 @@ msgstr "在数据库中保留通知事件日志的天数。这会影响“通知
 msgid "Numeric Room IDs Only"
 msgstr "仅限数字房间 ID"
 
+#: src/components/pipeline/presets/default-presets-i18n.ts:38
+msgid "NVENC AV1 Fast"
+msgstr "NVENC AV1 快速"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:39
+msgid "NVENC AV1 High Quality"
+msgstr "NVENC AV1 高质量"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:33
+msgid "NVENC H.264 Fast"
+msgstr "NVENC H.264 快速"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:34
+msgid "NVENC H.264 High Quality"
+msgstr "NVENC H.264 高质量"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:37
+msgid "NVENC H.264 Low Latency"
+msgstr "NVENC H.264 低延迟"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:35
+msgid "NVENC HEVC Fast"
+msgstr "NVENC HEVC 快速"
+
+#: src/components/pipeline/presets/default-presets-i18n.ts:36
+msgid "NVENC HEVC High Quality"
+msgstr "NVENC HEVC 高质量"
+
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:42
 msgid "OAuth Token"
 msgstr "OAuth 令牌"
@@ -4797,7 +4873,7 @@ msgstr "进行中"
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:728
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:843
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "仅支持 MP4/MOV/M4V"
 
@@ -4877,11 +4953,11 @@ msgid "Output Folder"
 msgstr "输出文件夹"
 
 #: src/components/config/shared/output-settings-card.tsx:120
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:300
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:411
 msgid "Output Format"
 msgstr "输出格式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:826
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:941
 msgid "Output Options"
 msgstr "输出选项"
 
@@ -4968,7 +5044,7 @@ msgid "Overwrite existing files"
 msgstr "覆盖现有文件"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:226
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:750
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:865
 msgid "Overwrite Files"
 msgstr "覆盖文件"
 
@@ -5122,7 +5198,7 @@ msgstr "按主播"
 msgid "Perf"
 msgstr "性能"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:668
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:783
 #: src/components/sessions/overview-tab.tsx:188
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:517
 msgid "Performance"
@@ -5328,7 +5404,7 @@ msgstr "请先设置 Telegram Desktop 目录"
 msgid "Please wait while we resolve the stream URL."
 msgstr "正在解析流 URL，请稍候。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:86
+#: src/components/pipeline/presets/default-presets-i18n.ts:100
 msgid "Podcast Extraction"
 msgstr "播客提取"
 
@@ -5449,7 +5525,7 @@ msgstr "可用预设"
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:92
+#: src/components/pipeline/presets/default-presets-i18n.ts:106
 msgid "Preview Gallery"
 msgstr "预览图库"
 
@@ -5503,11 +5579,11 @@ msgstr "优先级过滤器"
 msgid "Process exited with code {0}"
 msgstr "进程以代码 {0} 退出"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:105
+#: src/components/pipeline/presets/default-presets-i18n.ts:121
 msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
 msgstr "本地处理：重封装为 MP4，生成缩略图，移动到归档文件夹。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:108
+#: src/components/pipeline/presets/default-presets-i18n.ts:124
 msgid "Process video and extract podcast audio in parallel, then upload both."
 msgstr "并行处理视频并提取播客音频，然后同时上传两者。"
 
@@ -5598,7 +5674,7 @@ msgstr "质量"
 msgid "Quality (qscale)"
 msgstr "质量（qscale）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:329
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:440
 msgid "Quality Control"
 msgstr "质量控制"
 
@@ -5618,7 +5694,7 @@ msgstr "查询参数"
 msgid "Queue"
 msgstr "队列"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:87
+#: src/components/pipeline/presets/default-presets-i18n.ts:101
 msgid "Quick Share"
 msgstr "快速分享"
 
@@ -5766,7 +5842,7 @@ msgstr "用于排除文件的正则模式。将针对完整路径和文件名进
 msgid "Remove"
 msgstr "移除"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:772
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:887
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
@@ -5775,7 +5851,7 @@ msgid "Remove source on success"
 msgstr "成功后移除源文件"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:4
-#: src/components/pipeline/presets/default-presets-i18n.ts:36
+#: src/components/pipeline/presets/default-presets-i18n.ts:43
 #: src/components/pipeline/presets/preset-card.tsx:86
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:66
 msgid "Remux"
@@ -5795,19 +5871,19 @@ msgstr "重封装并清理"
 msgid "Remux to MKV"
 msgstr "重封装为 MKV"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:52
+#: src/components/pipeline/presets/default-presets-i18n.ts:59
 msgid "Remux to MKV without re-encoding. Matroska supports more codecs and features."
 msgstr "无需重新编码，重封装为 MKV。Matroska 支持更多编码与特性。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:71
+#: src/components/pipeline/presets/default-presets-i18n.ts:78
 msgid "Remux to MP4 with faststart flag for web streaming optimization."
 msgstr "使用 faststart 标志重封装为 MP4，以优化网页播放。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:77
+#: src/components/pipeline/presets/default-presets-i18n.ts:84
 msgid "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
 msgstr "重封装为 MP4 且不重新编码，并在成功后删除原始文件。节省磁盘空间。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:51
+#: src/components/pipeline/presets/default-presets-i18n.ts:58
 msgid "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
 msgstr "无需重新编码，重封装为 MP4。快速且无损——仅更改封装格式。"
 
@@ -5862,7 +5938,7 @@ msgstr "需要启用“录制弹幕”。"
 msgid "Reset"
 msgstr "重置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:456
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:571
 msgid "Resolution (Scale)"
 msgstr "分辨率（缩放）"
 
@@ -5970,11 +6046,11 @@ msgstr "每页行数"
 msgid "Run"
 msgstr "运行"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:69
+#: src/components/pipeline/presets/default-presets-i18n.ts:76
 msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:70
+#: src/components/pipeline/presets/default-presets-i18n.ts:77
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
@@ -6257,8 +6333,8 @@ msgstr "选择行为"
 msgid "Select category"
 msgstr "选择类别"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:177
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:264
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:209
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:375
 msgid "Select codec"
 msgstr "选择编解码器"
 
@@ -6286,7 +6362,7 @@ msgstr "选择登录类型"
 msgid "Select operation"
 msgstr "选择操作"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:217
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:262
 msgid "Select preset"
 msgstr "选择预设"
 
@@ -6559,7 +6635,7 @@ msgstr "发生错误！"
 msgid "Source"
 msgstr "来源"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:88
+#: src/components/pipeline/presets/default-presets-i18n.ts:102
 msgid "Space Saver"
 msgstr "空间节省"
 
@@ -6605,7 +6681,7 @@ msgstr "仅在编解码器配置变更时分割。减少误分割。"
 msgid "Split Reason"
 msgstr "分割原因"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:83
+#: src/components/pipeline/presets/default-presets-i18n.ts:97
 msgid "Standard"
 msgstr "标准"
 
@@ -6637,7 +6713,7 @@ msgstr "开始手机号和验证码登录"
 msgid "Start QR Login"
 msgstr "开始二维码登录"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:539
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:654
 msgid "Start Time"
 msgstr "开始时间"
 
@@ -6688,7 +6764,7 @@ msgstr "当弹幕控制信号指示直播已关闭时，停止录制。"
 msgid "Storage"
 msgstr "存储"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:94
+#: src/components/pipeline/presets/default-presets-i18n.ts:108
 msgid "Stream Archive"
 msgstr "直播归档"
 
@@ -6696,7 +6772,7 @@ msgstr "直播归档"
 msgid "Stream Details"
 msgstr "流详情"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:859
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:974
 msgid "Stream Mapping (-map)"
 msgstr "流映射 (-map)"
 
@@ -6811,7 +6887,7 @@ msgstr "流式传输阈值（字节）"
 msgid "streamlink"
 msgstr "streamlink"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:849
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:964
 msgid "Streams & Metadata"
 msgstr "流与元数据"
 
@@ -6823,7 +6899,7 @@ msgstr "订阅"
 msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:47
+#: src/components/pipeline/presets/default-presets-i18n.ts:54
 #: src/components/pipeline/presets/preset-card.tsx:97
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:77
 msgid "Subtitle"
@@ -6896,7 +6972,7 @@ msgstr "系统级偏好设置"
 msgid "Target bitrate"
 msgstr "目标码率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:382
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:497
 msgid "Target Bitrate"
 msgstr "目标比特率"
 
@@ -7140,7 +7216,7 @@ msgid "This will permanently remove the \"{0}\" configuration. This action canno
 msgstr "这将永久移除“{0}”配置。此操作无法撤销。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
-#: src/components/pipeline/presets/default-presets-i18n.ts:38
+#: src/components/pipeline/presets/default-presets-i18n.ts:45
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
 #: src/components/pipeline/presets/preset-card.tsx:88
 #: src/components/pipeline/presets/preset-templates.ts:24
@@ -7371,7 +7447,7 @@ msgstr "应用启动时触发。"
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:525
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:640
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
@@ -7454,7 +7530,7 @@ msgstr "type=bolt,path=/data/tdl"
 msgid "Ultrafast Compression"
 msgstr "极速压缩"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:76
+#: src/components/pipeline/presets/default-presets-i18n.ts:83
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
@@ -7510,7 +7586,7 @@ msgstr "已更新"
 msgid "Updates existing items and creates new ones. Nothing is deleted."
 msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:41
+#: src/components/pipeline/presets/default-presets-i18n.ts:48
 #: src/components/pipeline/presets/preset-card.tsx:91
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:71
 msgid "Upload"
@@ -7536,11 +7612,11 @@ msgstr "上传参数"
 msgid "Upload everything regardless of file type"
 msgstr "上传所有内容，无论文件类型如何"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:67
+#: src/components/pipeline/presets/default-presets-i18n.ts:74
 msgid "Upload file to cloud storage and delete local copy after successful upload."
 msgstr "将文件上传到云存储，上传成功后删除本地副本。"
 
-#: src/components/pipeline/presets/default-presets-i18n.ts:66
+#: src/components/pipeline/presets/default-presets-i18n.ts:73
 msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
 msgstr "使用 rclone 将文件上传到云存储。在 rclone 配置中设置远端。"
 
@@ -7559,7 +7635,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "必须填写 URL"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:723
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:838
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
@@ -7637,7 +7713,7 @@ msgstr "校验服务不可用"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:582
 #: src/components/notifications/forms/webhook-form.tsx:459
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:920
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:1035
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
 msgid "Value"
 msgstr "值"
@@ -7674,16 +7750,16 @@ msgstr "版本"
 msgid "veryfast"
 msgstr "veryfast"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:124
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:156
 msgid "Video"
 msgstr "视频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:393
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:508
 msgid "Video Bitrate"
 msgstr "视频比特率"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:65
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:168
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:200
 msgid "Video Codec"
 msgstr "视频编码"
 
@@ -7695,7 +7771,7 @@ msgstr "视频编码变化"
 msgid "Video only"
 msgstr "仅视频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:158
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:190
 msgid "Video Settings"
 msgstr "视频设置"
 
@@ -7761,7 +7837,7 @@ msgstr "观看"
 msgid "WEB"
 msgstr "WEB"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:720
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:835
 msgid "Web Optimize"
 msgstr "网页优化"
 
