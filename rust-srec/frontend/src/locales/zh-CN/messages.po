@@ -675,6 +675,10 @@ msgstr "可选"
 msgid "Avatar URL (Optional)"
 msgstr "头像 URL（可选）"
 
+#: src/components/sessions/danmu-stats-panel.tsx:277
+msgid "avg {averagePerMinute}"
+msgstr "均值 {averagePerMinute}"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:423
 msgid "Avg. Duration"
 msgstr "平均时长"
@@ -1401,6 +1405,7 @@ msgstr "无法连接到服务器，请检查网络连接。"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:323
 #: src/components/config/engines/forms/mesio-hls-form.tsx:370
+#: src/components/sessions/danmu-stats-panel.tsx:268
 msgid "Count"
 msgstr "次数"
 
@@ -1681,18 +1686,15 @@ msgstr "弹幕控制"
 msgid "Danmu Service"
 msgstr "弹幕服务"
 
-#: src/components/sessions/danmu-stats-panel.tsx:99
-#: src/components/sessions/danmu-stats-panel.tsx:121
-#: src/components/sessions/danmu-stats-panel.tsx:137
-#: src/components/sessions/danmu-stats-panel.tsx:163
+#: src/components/sessions/danmu-stats-panel.tsx:108
 msgid "Danmu Statistics"
 msgstr "弹幕统计"
 
-#: src/components/sessions/danmu-stats-panel.tsx:125
+#: src/components/sessions/danmu-stats-panel.tsx:159
 msgid "Danmu statistics are not available for this session."
 msgstr "此会话的弹幕统计暂不可用。"
 
-#: src/components/sessions/danmu-stats-panel.tsx:88
+#: src/components/sessions/danmu-stats-panel.tsx:246
 msgid "Danmu/min"
 msgstr "弹幕/分钟"
 
@@ -2742,7 +2744,7 @@ msgstr "从 URL 提取名称失败"
 msgid "Failed to import configuration"
 msgstr "导入配置失败"
 
-#: src/components/sessions/danmu-stats-panel.tsx:142
+#: src/components/sessions/danmu-stats-panel.tsx:170
 msgid "Failed to load danmu statistics."
 msgstr "加载弹幕统计失败。"
 
@@ -4212,6 +4214,10 @@ msgstr "合并更改"
 msgid "Message"
 msgstr "消息"
 
+#: src/components/sessions/danmu-stats-panel.tsx:257
+msgid "Messages"
+msgstr "消息数"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-card.tsx:95
@@ -4633,7 +4639,7 @@ msgstr "未定义步骤"
 msgid "No streamers found"
 msgstr "未找到主播"
 
-#: src/components/sessions/danmu-stats-panel.tsx:254
+#: src/components/sessions/danmu-stats-panel.tsx:409
 msgid "No talker data"
 msgstr "暂无发言用户数据"
 
@@ -4649,7 +4655,7 @@ msgstr "暂无模板"
 msgid "No Title Changes"
 msgstr "标题无变化"
 
-#: src/components/sessions/danmu-stats-panel.tsx:262
+#: src/components/sessions/danmu-stats-panel.tsx:424
 msgid "No word data"
 msgstr "暂无词频数据"
 
@@ -5153,7 +5159,7 @@ msgstr "暂停"
 msgid "paused"
 msgstr "条已暂停"
 
-#: src/components/sessions/danmu-stats-panel.tsx:175
+#: src/components/sessions/danmu-stats-panel.tsx:309
 msgid "Peak / min"
 msgstr "峰值/分钟"
 
@@ -5987,7 +5993,7 @@ msgstr "保留期限"
 msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
-#: src/components/sessions/danmu-stats-panel.tsx:146
+#: src/components/sessions/danmu-stats-panel.tsx:174
 msgid "Retry"
 msgstr "重试"
 
@@ -7253,7 +7259,7 @@ msgstr "时间范围"
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
 
-#: src/components/sessions/danmu-stats-panel.tsx:192
+#: src/components/sessions/danmu-stats-panel.tsx:331
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
 msgid "Timeline"
 msgstr "时间线"
@@ -7315,12 +7321,12 @@ msgstr "今天"
 msgid "Token"
 msgstr "令牌"
 
-#: src/components/sessions/danmu-stats-panel.tsx:180
-#: src/components/sessions/danmu-stats-panel.tsx:253
+#: src/components/sessions/danmu-stats-panel.tsx:315
+#: src/components/sessions/danmu-stats-panel.tsx:408
 msgid "Top Talkers"
 msgstr "活跃发言用户"
 
-#: src/components/sessions/danmu-stats-panel.tsx:261
+#: src/components/sessions/danmu-stats-panel.tsx:423
 msgid "Top Words"
 msgstr "高频词"
 
@@ -7332,7 +7338,7 @@ msgstr "总计"
 msgid "Total"
 msgstr "总计"
 
-#: src/components/sessions/danmu-stats-panel.tsx:170
+#: src/components/sessions/danmu-stats-panel.tsx:303
 msgid "Total Danmu"
 msgstr "总弹幕数"
 
@@ -7356,7 +7362,7 @@ msgstr "系统总负载"
 msgid "Track Information"
 msgstr "轨道信息"
 
-#: src/components/sessions/danmu-stats-panel.tsx:185
+#: src/components/sessions/danmu-stats-panel.tsx:321
 msgid "Tracked Words"
 msgstr "统计词数"
 

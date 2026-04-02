@@ -199,9 +199,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
   // -- derived data --------------------------------------------------------
 
   const chartData = useMemo(() => {
-    const sorted = [...stats.danmu_rate_timeseries].sort(
-      (a, b) => a.ts - b.ts,
-    );
+    const sorted = [...stats.danmu_rate_timeseries].sort((a, b) => a.ts - b.ts);
     return downsampleTimeseries(sorted, MAX_CHART_POINTS).map((point) => ({
       label: i18n.date(new Date(point.ts), {
         hour: '2-digit',
@@ -227,14 +225,8 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
     };
   }, [stats]);
 
-  const topTalkers = useMemo(
-    () => stats.top_talkers.slice(0, 6),
-    [stats],
-  );
-  const topWords = useMemo(
-    () => stats.word_frequency.slice(0, 10),
-    [stats],
-  );
+  const topTalkers = useMemo(() => stats.top_talkers.slice(0, 6), [stats]);
+  const topWords = useMemo(() => stats.word_frequency.slice(0, 10), [stats]);
 
   const talkersChartData = useMemo(
     () =>
@@ -492,11 +484,7 @@ const RankBarChart = memo(function RankBarChart({
       {data.length === 0 ? (
         <p className="text-xs text-muted-foreground">{emptyLabel}</p>
       ) : (
-        <ChartContainer
-          config={config}
-          className="w-full"
-          style={{ height }}
-        >
+        <ChartContainer config={config} className="w-full" style={{ height }}>
           <BarChart data={data} layout="vertical" margin={BAR_MARGIN}>
             <YAxis
               dataKey={categoryKey}
