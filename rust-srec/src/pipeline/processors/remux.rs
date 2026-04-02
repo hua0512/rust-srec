@@ -48,20 +48,40 @@ pub enum VideoCodec {
     Vp9,
     /// AV1 codec.
     Av1,
+    /// H.264 NVENC (NVIDIA hardware encoder).
+    #[serde(alias = "h264_nvenc")]
+    H264Nvenc,
+    /// H.265 NVENC (NVIDIA hardware encoder).
+    #[serde(alias = "hevc_nvenc")]
+    HevcNvenc,
+    /// AV1 NVENC (NVIDIA hardware encoder, requires RTX 4000+).
+    #[serde(alias = "av1_nvenc")]
+    Av1Nvenc,
     /// Custom codec string.
     Custom(String),
 }
 
 impl VideoCodec {
-    fn as_ffmpeg_args(&self) -> Vec<String> {
+    fn ffmpeg_name(&self) -> &str {
         match self {
-            Self::Copy => vec!["-c:v".to_string(), "copy".to_string()],
-            Self::H264 => vec!["-c:v".to_string(), "libx264".to_string()],
-            Self::H265 => vec!["-c:v".to_string(), "libx265".to_string()],
-            Self::Vp9 => vec!["-c:v".to_string(), "libvpx-vp9".to_string()],
-            Self::Av1 => vec!["-c:v".to_string(), "libaom-av1".to_string()],
-            Self::Custom(codec) => vec!["-c:v".to_string(), codec.clone()],
+            Self::Copy => "copy",
+            Self::H264 => "libx264",
+            Self::H265 => "libx265",
+            Self::Vp9 => "libvpx-vp9",
+            Self::Av1 => "libaom-av1",
+            Self::H264Nvenc => "h264_nvenc",
+            Self::HevcNvenc => "hevc_nvenc",
+            Self::Av1Nvenc => "av1_nvenc",
+            Self::Custom(codec) => codec,
         }
+    }
+
+    fn as_ffmpeg_args(&self) -> Vec<String> {
+        vec!["-c:v".to_string(), self.ffmpeg_name().to_string()]
+    }
+
+    fn is_nvenc(&self) -> bool {
+        matches!(self, Self::H264Nvenc | Self::HevcNvenc | Self::Av1Nvenc)
     }
 }
 
@@ -87,15 +107,22 @@ pub enum AudioCodec {
 }
 
 impl AudioCodec {
-    fn as_ffmpeg_args(&self) -> Vec<String> {
+    fn ffmpeg_name(&self) -> Option<&str> {
         match self {
-            Self::Copy => vec!["-c:a".to_string(), "copy".to_string()],
-            Self::Aac => vec!["-c:a".to_string(), "aac".to_string()],
-            Self::Mp3 => vec!["-c:a".to_string(), "libmp3lame".to_string()],
-            Self::Opus => vec!["-c:a".to_string(), "libopus".to_string()],
-            Self::Flac => vec!["-c:a".to_string(), "flac".to_string()],
-            Self::None => vec!["-an".to_string()],
-            Self::Custom(codec) => vec!["-c:a".to_string(), codec.clone()],
+            Self::Copy => Some("copy"),
+            Self::Aac => Some("aac"),
+            Self::Mp3 => Some("libmp3lame"),
+            Self::Opus => Some("libopus"),
+            Self::Flac => Some("flac"),
+            Self::None => None,
+            Self::Custom(codec) => Some(codec),
+        }
+    }
+
+    fn as_ffmpeg_args(&self) -> Vec<String> {
+        match self.ffmpeg_name() {
+            Some(name) => vec!["-c:a".to_string(), name.to_string()],
+            None => vec!["-an".to_string()],
         }
     }
 }
@@ -114,6 +141,37 @@ pub enum Preset {
     Slow,
     Slower,
     Veryslow,
+    // NVENC-specific presets
+    P1,
+    P2,
+    P3,
+    P4,
+    P5,
+    P6,
+    P7,
+    /// NVENC low-latency.
+    #[serde(alias = "ll")]
+    Ll,
+    /// NVENC high quality.
+    #[serde(alias = "hq")]
+    Hq,
+    /// NVENC high performance.
+    #[serde(alias = "hp")]
+    Hp,
+    /// NVENC Blu-ray disc.
+    #[serde(alias = "bd")]
+    Bd,
+    /// NVENC low-latency high quality.
+    #[serde(alias = "llhq")]
+    Llhq,
+    /// NVENC low-latency high performance.
+    #[serde(alias = "llhp")]
+    Llhp,
+    /// NVENC lossless.
+    Lossless,
+    /// NVENC lossless high performance.
+    #[serde(alias = "losslesshp")]
+    Losslesshp,
 }
 
 impl Preset {
@@ -128,6 +186,21 @@ impl Preset {
             Self::Slow => "slow",
             Self::Slower => "slower",
             Self::Veryslow => "veryslow",
+            Self::P1 => "p1",
+            Self::P2 => "p2",
+            Self::P3 => "p3",
+            Self::P4 => "p4",
+            Self::P5 => "p5",
+            Self::P6 => "p6",
+            Self::P7 => "p7",
+            Self::Ll => "ll",
+            Self::Hq => "hq",
+            Self::Hp => "hp",
+            Self::Bd => "bd",
+            Self::Llhq => "llhq",
+            Self::Llhp => "llhp",
+            Self::Lossless => "lossless",
+            Self::Losslesshp => "losslesshp",
         }
     }
 }
@@ -297,7 +370,7 @@ impl RemuxProcessor {
 
     /// Build FFmpeg command arguments from config.
     fn build_args(&self, input_path: &str, config: &RemuxConfig, output_path: &str) -> Vec<String> {
-        let mut args = Vec::new();
+        let mut args = Vec::with_capacity(32);
 
         // Overwrite flag
         if config.overwrite {
@@ -355,9 +428,14 @@ impl RemuxProcessor {
             args.extend(["-b:a".to_string(), bitrate.clone()]);
         }
 
-        // CRF (quality-based encoding)
+        // Quality-based encoding: NVENC uses -cq, others use -crf
         if let Some(crf) = config.crf {
-            args.extend(["-crf".to_string(), crf.to_string()]);
+            let flag = if config.video_codec.is_nvenc() {
+                "-cq"
+            } else {
+                "-crf"
+            };
+            args.extend([flag.to_string(), crf.to_string()]);
         }
 
         // Preset
@@ -367,9 +445,14 @@ impl RemuxProcessor {
 
         // Video filters
         let mut vf_parts = Vec::new();
+        let is_cuda = config
+            .hwaccel
+            .as_deref()
+            .is_some_and(|h| h.eq_ignore_ascii_case("cuda"));
 
         if let Some(ref resolution) = config.resolution {
-            vf_parts.push(format!("scale={}", resolution.replace('x', ":")));
+            let scale_filter = if is_cuda { "scale_cuda" } else { "scale" };
+            vf_parts.push(format!("{}={}", scale_filter, resolution.replace('x', ":")));
         }
 
         if let Some(fps) = config.fps {
@@ -838,6 +921,27 @@ mod tests {
         assert_eq!(VideoCodec::Copy.as_ffmpeg_args(), vec!["-c:v", "copy"]);
         assert_eq!(VideoCodec::H264.as_ffmpeg_args(), vec!["-c:v", "libx264"]);
         assert_eq!(VideoCodec::H265.as_ffmpeg_args(), vec!["-c:v", "libx265"]);
+        assert_eq!(
+            VideoCodec::H264Nvenc.as_ffmpeg_args(),
+            vec!["-c:v", "h264_nvenc"]
+        );
+        assert_eq!(
+            VideoCodec::HevcNvenc.as_ffmpeg_args(),
+            vec!["-c:v", "hevc_nvenc"]
+        );
+        assert_eq!(
+            VideoCodec::Av1Nvenc.as_ffmpeg_args(),
+            vec!["-c:v", "av1_nvenc"]
+        );
+    }
+
+    #[test]
+    fn test_video_codec_is_nvenc() {
+        assert!(!VideoCodec::Copy.is_nvenc());
+        assert!(!VideoCodec::H264.is_nvenc());
+        assert!(VideoCodec::H264Nvenc.is_nvenc());
+        assert!(VideoCodec::HevcNvenc.is_nvenc());
+        assert!(VideoCodec::Av1Nvenc.is_nvenc());
     }
 
     #[test]
@@ -907,6 +1011,68 @@ mod tests {
         assert!(args.contains(&"fast".to_string()));
         assert!(args.contains(&"-vf".to_string()));
     }
+
+    #[test]
+    fn test_build_args_nvenc_uses_cq_and_scale_cuda() {
+        let processor = RemuxProcessor::new();
+        let config = RemuxConfig {
+            video_codec: VideoCodec::H264Nvenc,
+            audio_codec: AudioCodec::Aac,
+            crf: Some(23),
+            preset: Some(Preset::P4),
+            resolution: Some("1280x720".to_string()),
+            hwaccel: Some("cuda".to_string()),
+            ..Default::default()
+        };
+
+        let args = processor.build_args("/input.flv", &config, "/output.mp4");
+
+        assert!(args.contains(&"h264_nvenc".to_string()));
+        assert!(args.contains(&"-cq".to_string()));
+        assert!(!args.contains(&"-crf".to_string()));
+        assert!(args.contains(&"-preset".to_string()));
+        assert!(args.contains(&"p4".to_string()));
+
+        let vf_idx = args.iter().position(|a| a == "-vf").unwrap();
+        assert!(args[vf_idx + 1].starts_with("scale_cuda="));
+    }
+
+    #[test]
+    fn test_build_args_software_uses_crf_and_scale() {
+        let processor = RemuxProcessor::new();
+        let config = RemuxConfig {
+            video_codec: VideoCodec::H264,
+            crf: Some(23),
+            resolution: Some("1280x720".to_string()),
+            ..Default::default()
+        };
+
+        let args = processor.build_args("/input.flv", &config, "/output.mp4");
+
+        assert!(args.contains(&"-crf".to_string()));
+        assert!(!args.contains(&"-cq".to_string()));
+
+        let vf_idx = args.iter().position(|a| a == "-vf").unwrap();
+        assert!(args[vf_idx + 1].starts_with("scale="));
+    }
+
+    #[test]
+    fn test_nvenc_config_deserialization() {
+        let json = r#"{
+            "video_codec": "h264nvenc",
+            "audio_codec": "aac",
+            "preset": "p7",
+            "crf": 20,
+            "hwaccel": "cuda"
+        }"#;
+
+        let config: RemuxConfig = serde_json::from_str(json).unwrap();
+        assert!(matches!(config.video_codec, VideoCodec::H264Nvenc));
+        assert!(config.video_codec.is_nvenc());
+        assert!(matches!(config.preset, Some(Preset::P7)));
+        assert_eq!(config.crf, Some(20));
+    }
+
     #[tokio::test]
     async fn test_make_absolute_path() {
         let cwd = std::env::current_dir().unwrap();

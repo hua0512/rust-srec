@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
-import { memo, useEffect } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { useWatch, useFormContext } from 'react-hook-form';
 import {
   FormField,
@@ -48,6 +48,67 @@ import { Slider } from '@/components/ui/slider';
 
 type RemuxConfig = z.infer<typeof RemuxConfigSchema>;
 
+const NVENC_CODECS = ['h264nvenc', 'hevcnvenc', 'av1nvenc'] as const;
+
+type CodecFamily = 'software' | 'nvenc' | 'av1nvenc';
+
+function getCodecFamily(codec: string | undefined): CodecFamily {
+  if (codec === 'av1nvenc') return 'av1nvenc';
+  if (NVENC_CODECS.includes(codec as (typeof NVENC_CODECS)[number]))
+    return 'nvenc';
+  return 'software';
+}
+
+const COMMON_NVENC_PRESETS = [
+  { value: 'fast', label: 'Fast' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'slow', label: 'Slow' },
+];
+
+const P_PRESETS = [
+  { value: 'p1', label: 'P1 (Fastest)' },
+  { value: 'p2', label: 'P2' },
+  { value: 'p3', label: 'P3' },
+  { value: 'p4', label: 'P4 (Default)' },
+  { value: 'p5', label: 'P5' },
+  { value: 'p6', label: 'P6' },
+  { value: 'p7', label: 'P7 (Best Quality)' },
+];
+
+const NVENC_LEGACY_PRESETS = [
+  { value: 'hp', label: 'HP (High Performance)' },
+  { value: 'hq', label: 'HQ (High Quality)' },
+  { value: 'bd', label: 'BD (Blu-ray Disc)' },
+  { value: 'll', label: 'LL (Low Latency)' },
+  { value: 'llhq', label: 'LLHQ (Low Latency HQ)' },
+  { value: 'llhp', label: 'LLHP (Low Latency HP)' },
+  { value: 'lossless', label: 'Lossless' },
+  { value: 'losslesshp', label: 'Lossless HP' },
+];
+
+const SOFTWARE_PRESETS = [
+  { value: 'ultrafast', label: 'Ultrafast' },
+  { value: 'superfast', label: 'Superfast' },
+  { value: 'veryfast', label: 'Veryfast' },
+  { value: 'faster', label: 'Faster' },
+  { value: 'fast', label: 'Fast' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'slow', label: 'Slow' },
+  { value: 'slower', label: 'Slower' },
+  { value: 'veryslow', label: 'Veryslow' },
+];
+
+function getPresetsForCodecFamily(family: CodecFamily) {
+  switch (family) {
+    case 'av1nvenc':
+      return [...COMMON_NVENC_PRESETS, ...P_PRESETS];
+    case 'nvenc':
+      return [...COMMON_NVENC_PRESETS, ...NVENC_LEGACY_PRESETS, ...P_PRESETS];
+    case 'software':
+      return SOFTWARE_PRESETS;
+  }
+}
+
 export const RemuxConfigForm = memo(function RemuxConfigForm({
   control,
   pathPrefix,
@@ -71,8 +132,18 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
     name: `${prefix}format` as any,
   });
 
+  const hwaccel = useWatch({
+    control,
+    name: `${prefix}hwaccel` as any,
+  });
+
   const isVideoCopy = !videoCodec || videoCodec === 'copy';
   const isAudioCopy = !audioCodec || audioCodec === 'copy';
+  const codecFamily = getCodecFamily(videoCodec);
+  const isNvenc = codecFamily !== 'software';
+  const isCuda = hwaccel === 'cuda';
+  const cqMax = codecFamily === 'av1nvenc' ? 63 : 51;
+  const presetOptions = getPresetsForCodecFamily(codecFamily);
 
   const faststartSupported =
     !format || ['mp4', 'mov', 'm4v'].includes(format.toLowerCase());
@@ -82,6 +153,32 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
       setValue(`${prefix}faststart` as any, false);
     }
   }, [faststartSupported, prefix, setValue]);
+
+  // Reset preset when codec family changes to avoid incompatible preset values
+  const prevCodecFamily = useRef(codecFamily);
+  useEffect(() => {
+    if (prevCodecFamily.current !== codecFamily) {
+      setValue(`${prefix}preset` as any, 'medium');
+      prevCodecFamily.current = codecFamily;
+    }
+  }, [codecFamily, prefix, setValue]);
+
+  // Handle video codec change: auto-set hwaccel to cuda for NVENC codecs
+  const handleVideoCodecChange = (newCodec: string) => {
+    const family = getCodecFamily(newCodec);
+    if (family !== 'software' && hwaccel !== 'cuda') {
+      setValue(`${prefix}hwaccel` as any, 'cuda');
+    }
+    return newCodec;
+  };
+
+  // Handle hwaccel change: reset NVENC codec if cuda is deselected
+  const handleHwaccelChange = (newHwaccel: string) => {
+    if (newHwaccel !== 'cuda' && isNvenc) {
+      setValue(`${prefix}video_codec` as any, 'copy');
+    }
+    return newHwaccel;
+  };
 
   const containerVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -168,7 +265,10 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                         <Trans>Video Codec</Trans>
                       </FormLabel>
                       <Select
-                        onValueChange={field.onChange}
+                        onValueChange={(v) => {
+                          handleVideoCodecChange(v);
+                          field.onChange(v);
+                        }}
                         value={field.value || 'copy'}
                       >
                         <FormControl>
@@ -186,6 +286,19 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                           <SelectItem value="h265">H.265 / HEVC</SelectItem>
                           <SelectItem value="vp9">VP9</SelectItem>
                           <SelectItem value="av1">AV1</SelectItem>
+                          {isCuda && (
+                            <>
+                              <SelectItem value="h264nvenc">
+                                H.264 NVENC (NVIDIA)
+                              </SelectItem>
+                              <SelectItem value="hevcnvenc">
+                                H.265 NVENC (NVIDIA)
+                              </SelectItem>
+                              <SelectItem value="av1nvenc">
+                                AV1 NVENC (NVIDIA RTX 4000+)
+                              </SelectItem>
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -219,15 +332,11 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="ultrafast">Ultrafast</SelectItem>
-                            <SelectItem value="superfast">Superfast</SelectItem>
-                            <SelectItem value="veryfast">Veryfast</SelectItem>
-                            <SelectItem value="faster">Faster</SelectItem>
-                            <SelectItem value="fast">Fast</SelectItem>
-                            <SelectItem value="medium">Medium</SelectItem>
-                            <SelectItem value="slow">Slow</SelectItem>
-                            <SelectItem value="slower">Slower</SelectItem>
-                            <SelectItem value="veryslow">Veryslow</SelectItem>
+                            {presetOptions.map((p) => (
+                              <SelectItem key={p.value} value={p.value}>
+                                {p.label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -337,7 +446,11 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                     <FormItem>
                       <div className="flex justify-between items-end mb-2">
                         <FormLabel className="text-xs text-muted-foreground ml-1">
-                          <Trans>CRF (Constant Rate Factor)</Trans>
+                          {isNvenc ? (
+                            <Trans>CQ (Constant Quality)</Trans>
+                          ) : (
+                            <Trans>CRF (Constant Rate Factor)</Trans>
+                          )}
                         </FormLabel>
                         <span className="font-mono text-sm font-medium bg-background px-2 py-0.5 rounded border border-border/50">
                           {field.value ?? 23}
@@ -350,7 +463,7 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                         <FormControl>
                           <Slider
                             min={0}
-                            max={51}
+                            max={cqMax}
                             step={1}
                             value={[field.value ?? 23]}
                             onValueChange={(val: number[]) =>
@@ -677,7 +790,10 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                           <Trans>Hardware Acceleration</Trans>
                         </FormLabel>
                         <Select
-                          onValueChange={field.onChange}
+                          onValueChange={(v) => {
+                            handleHwaccelChange(v);
+                            field.onChange(v);
+                          }}
                           defaultValue={field.value}
                         >
                           <FormControl>
