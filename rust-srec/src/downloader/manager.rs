@@ -475,7 +475,11 @@ impl DownloadManager {
         let (engine, engine_type, engine_key) =
             self.resolve_engine(engine_id.as_deref(), overrides).await?;
 
-        // Check circuit breaker using the specific engine key
+        // Scope the circuit breaker to this streamer so one streamer's CDN issues
+        // don't block unrelated streamers on the same engine.
+        let engine_key = engine_key.for_streamer(&config.streamer_id);
+
+        // Check circuit breaker using the streamer-scoped key
         if !self.circuit_breakers.is_allowed(&engine_key) {
             warn!(
                 "Engine {} is disabled by circuit breaker, trying fallback",

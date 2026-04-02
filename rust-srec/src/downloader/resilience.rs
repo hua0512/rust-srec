@@ -13,24 +13,30 @@ use super::engine::EngineType;
 
 /// Key for circuit breaker isolation.
 ///
-/// Combines engine type with optional config ID to support per-instance tracking:
-/// - `config_id: None` → global default engine (shared by all users of that type)
+/// Combines engine type, optional config ID, and optional streamer ID to support
+/// per-instance and per-streamer tracking:
+/// - `config_id: None` → global default engine
 /// - `config_id: Some(id)` → custom engine config or override (isolated breaker)
+/// - `streamer_id: None` → shared across all streamers (legacy/global)
+/// - `streamer_id: Some(id)` → isolated per-streamer, so one streamer's CDN issues
+///   don't trip the breaker for unrelated streamers on the same engine
 ///
 /// ## Equality Cases
 ///
 /// | Scenario | EngineKey | Shared? |
 /// |----------|-----------|---------|
-/// | Global FFMPEG | `{ FFMPEG, None }` | Yes - all global FFMPEG users |
-/// | Custom "my-ffmpeg" | `{ FFMPEG, Some("my-ffmpeg") }` | Only same config ID |
-/// | Global + override | `{ FFMPEG, Some("ffmpeg#hash") }` | No - ephemeral |
-/// | Fallback default | `{ default_type, None }` | Yes - all defaults |
+/// | Global FFMPEG | `{ FFMPEG, None, None }` | Yes - all global FFMPEG users |
+/// | Custom "my-ffmpeg" | `{ FFMPEG, Some("my-ffmpeg"), None }` | Only same config ID |
+/// | Per-streamer | `{ MESIO, Some("default"), Some("abc") }` | Only that streamer |
+/// | Global + override | `{ FFMPEG, Some("ffmpeg#hash"), None }` | No - ephemeral |
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EngineKey {
     /// The engine type (FFMPEG, MESIO, STREAMLINK).
     pub engine_type: EngineType,
     /// Custom config ID, or None for the global default instance.
     pub config_id: Option<String>,
+    /// Streamer ID for per-streamer isolation, or None for shared/global breakers.
+    pub streamer_id: Option<String>,
 }
 
 impl EngineKey {
@@ -39,6 +45,7 @@ impl EngineKey {
         Self {
             engine_type,
             config_id: None,
+            streamer_id: None,
         }
     }
 
@@ -47,6 +54,7 @@ impl EngineKey {
         Self {
             engine_type,
             config_id: Some(config_id.into()),
+            streamer_id: None,
         }
     }
 
@@ -64,20 +72,38 @@ impl EngineKey {
         Self {
             engine_type,
             config_id: Some(config_id),
+            streamer_id: None,
         }
+    }
+
+    /// Scope this key to a specific streamer for per-streamer circuit breaker isolation.
+    pub fn for_streamer(mut self, streamer_id: impl Into<String>) -> Self {
+        self.streamer_id = Some(streamer_id.into());
+        self
     }
 
     pub fn is_override(&self) -> bool {
         self.config_id.as_ref().is_some_and(|id| id.contains('#'))
+    }
+
+    /// Whether this key is scoped to a specific streamer.
+    pub fn is_per_streamer(&self) -> bool {
+        self.streamer_id.is_some()
     }
 }
 
 impl std::fmt::Display for EngineKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.config_id {
-            Some(id) => write!(f, "{}:{}", self.engine_type, id),
-            None => write!(f, "{}", self.engine_type),
+            Some(id) => write!(f, "{}:{}", self.engine_type, id)?,
+            None => write!(f, "{}", self.engine_type)?,
         }
+        if let Some(sid) = &self.streamer_id {
+            // Show truncated streamer ID for readability (first 8 chars of UUID)
+            let short = if sid.len() > 8 { &sid[..8] } else { sid };
+            write!(f, "[{}]", short)?;
+        }
+        Ok(())
     }
 }
 
@@ -332,19 +358,19 @@ impl Default for CircuitBreaker {
 
 /// Manager for circuit breakers per engine key.
 ///
-/// Keys circuit breakers by `EngineKey` (type + optional config ID) to support
-/// per-instance isolation. Different custom configs get their own breakers.
+/// Keys circuit breakers by `EngineKey` (type + optional config ID + optional streamer ID)
+/// to support per-instance and per-streamer isolation.
 pub struct CircuitBreakerManager {
     breakers: RwLock<HashMap<EngineKey, Arc<CircuitBreaker>>>,
     failure_threshold: u32,
     cooldown_secs: u64,
-    last_override_cleanup_unix: AtomicU64,
+    last_cleanup_unix: AtomicU64,
 }
 
 impl CircuitBreakerManager {
-    const OVERRIDE_BREAKER_MAX: usize = 256;
-    const OVERRIDE_BREAKER_TTL_SECS: u64 = 6 * 60 * 60;
-    const OVERRIDE_BREAKER_CLEANUP_INTERVAL_SECS: u64 = 5 * 60;
+    const EPHEMERAL_BREAKER_MAX: usize = 256;
+    const EPHEMERAL_BREAKER_TTL_SECS: u64 = 6 * 60 * 60;
+    const CLEANUP_INTERVAL_SECS: u64 = 5 * 60;
 
     /// Create a new circuit breaker manager.
     pub fn new(failure_threshold: u32, cooldown_secs: u64) -> Self {
@@ -352,53 +378,59 @@ impl CircuitBreakerManager {
             breakers: RwLock::new(HashMap::new()),
             failure_threshold,
             cooldown_secs,
-            last_override_cleanup_unix: AtomicU64::new(0),
+            last_cleanup_unix: AtomicU64::new(0),
         }
     }
 
-    fn maybe_cleanup_override_breakers_locked(
+    /// Whether a key represents an ephemeral (auto-created) breaker that should
+    /// be subject to TTL cleanup and capacity limits.
+    fn is_ephemeral(key: &EngineKey) -> bool {
+        key.is_override() || key.is_per_streamer()
+    }
+
+    fn maybe_cleanup_ephemeral_breakers_locked(
         &self,
         breakers: &mut HashMap<EngineKey, Arc<CircuitBreaker>>,
     ) {
         let now = CircuitBreaker::unix_now();
-        let last = self.last_override_cleanup_unix.load(Ordering::Relaxed);
-        if now.saturating_sub(last) < Self::OVERRIDE_BREAKER_CLEANUP_INTERVAL_SECS {
+        let last = self.last_cleanup_unix.load(Ordering::Relaxed);
+        if now.saturating_sub(last) < Self::CLEANUP_INTERVAL_SECS {
             return;
         }
 
         if self
-            .last_override_cleanup_unix
+            .last_cleanup_unix
             .compare_exchange(last, now, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
             return;
         }
 
-        // First: remove stale override breakers.
-        let cutoff = now.saturating_sub(Self::OVERRIDE_BREAKER_TTL_SECS);
+        // Remove stale ephemeral breakers (overrides + per-streamer).
+        let cutoff = now.saturating_sub(Self::EPHEMERAL_BREAKER_TTL_SECS);
         breakers.retain(|key, breaker| {
-            if !key.is_override() {
+            if !Self::is_ephemeral(key) {
                 return true;
             }
             breaker.last_used_unix() >= cutoff
         });
 
-        // Second: cap the number of override breakers (best-effort LRU by last_used_unix).
-        let mut overrides: Vec<(u64, EngineKey)> = breakers
+        // Cap the number of ephemeral breakers (best-effort LRU by last_used_unix).
+        let mut ephemerals: Vec<(u64, EngineKey)> = breakers
             .iter()
             .filter_map(|(key, breaker)| {
-                key.is_override()
+                Self::is_ephemeral(key)
                     .then_some((breaker.last_used_unix(), key.clone()))
             })
             .collect();
 
-        if overrides.len() <= Self::OVERRIDE_BREAKER_MAX {
+        if ephemerals.len() <= Self::EPHEMERAL_BREAKER_MAX {
             return;
         }
 
-        overrides.sort_by_key(|(last_used, _)| *last_used);
-        let remove_count = overrides.len().saturating_sub(Self::OVERRIDE_BREAKER_MAX);
-        for (_, key) in overrides.into_iter().take(remove_count) {
+        ephemerals.sort_by_key(|(last_used, _)| *last_used);
+        let remove_count = ephemerals.len().saturating_sub(Self::EPHEMERAL_BREAKER_MAX);
+        for (_, key) in ephemerals.into_iter().take(remove_count) {
             breakers.remove(&key);
         }
     }
@@ -413,7 +445,7 @@ impl CircuitBreakerManager {
         }
 
         let mut breakers = self.breakers.write();
-        self.maybe_cleanup_override_breakers_locked(&mut breakers);
+        self.maybe_cleanup_ephemeral_breakers_locked(&mut breakers);
         breakers
             .entry(key.clone())
             .or_insert_with(|| {
