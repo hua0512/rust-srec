@@ -300,6 +300,7 @@ impl DownloadEngine for StreamlinkEngine {
 
         let cancellation_token = handle.cancellation_token.clone();
         let started_instant = Instant::now();
+        let graceful_stop_timeout_secs = self.config.graceful_stop_timeout_secs;
 
         // 2. Spawn a waiter task for both processes.
         //
@@ -309,7 +310,7 @@ impl DownloadEngine for StreamlinkEngine {
         let cancellation_token_wait = cancellation_token.clone();
         tokio::spawn(async move {
             const STREAMLINK_KILL_TIMEOUT: Duration = Duration::from_secs(2);
-            const FFMPEG_STOP_TIMEOUT: Duration = Duration::from_secs(10);
+            let ffmpeg_stop_timeout = Duration::from_secs(graceful_stop_timeout_secs as u64);
 
             // Ensure streamlink terminates promptly when cancellation is requested.
             tokio::select! {
@@ -325,7 +326,7 @@ impl DownloadEngine for StreamlinkEngine {
                 }
             }
 
-            let exit_code = match tokio::time::timeout(FFMPEG_STOP_TIMEOUT, ffmpeg.wait()).await {
+            let exit_code = match tokio::time::timeout(ffmpeg_stop_timeout, ffmpeg.wait()).await {
                 Ok(Ok(exit_status)) => exit_status.code(),
                 Ok(Err(e)) => {
                     error!("Error waiting for ffmpeg process: {}", e);

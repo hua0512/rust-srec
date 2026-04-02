@@ -23,7 +23,7 @@ msgstr " - 会话：{0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:156
+#: src/components/config/engines/forms/streamlink-form.tsx:185
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
@@ -31,11 +31,11 @@ msgstr "--hls-live-edge 3"
 msgid "-1001234567890"
 msgstr "-1001234567890"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:164
+#: src/components/config/engines/forms/ffmpeg-form.tsx:190
 msgid "-c copy"
 msgstr "-c copy"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:133
+#: src/components/config/engines/forms/ffmpeg-form.tsx:159
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
 
@@ -129,7 +129,7 @@ msgstr "* * * * * *"
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:48
+#: src/components/config/engines/forms/ffmpeg-form.tsx:51
 msgid "/usr/bin/ffmpeg or ffmpeg"
 msgstr "/usr/bin/ffmpeg 或 ffmpeg"
 
@@ -197,11 +197,11 @@ msgstr "一个唯一的 ID，用于供其他步骤引用此步骤。"
 msgid "A unique name for this configuration template."
 msgstr "为此配置模板提供一个唯一的名称。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:53
+#: src/components/config/engines/forms/ffmpeg-form.tsx:56
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“ffmpeg”"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:49
+#: src/components/config/engines/forms/streamlink-form.tsx:51
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 
@@ -459,7 +459,7 @@ msgstr "允许的扩展名"
 msgid "An error occurred"
 msgstr "发生错误"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:161
+#: src/components/config/engines/forms/streamlink-form.tsx:190
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
@@ -532,11 +532,11 @@ msgstr "确定要删除此会话吗？此操作无法撤销。"
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:138
+#: src/components/config/engines/forms/ffmpeg-form.tsx:164
 msgid "Args inserted before -i input_url"
 msgstr "插入到 -i input_url 之前的参数"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:169
+#: src/components/config/engines/forms/ffmpeg-form.tsx:195
 msgid "Args used for processing/encoding"
 msgstr "用于处理/编码的参数"
 
@@ -783,7 +783,7 @@ msgstr "批处理窗口（毫秒）"
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:67
+#: src/components/config/engines/forms/streamlink-form.tsx:69
 msgid "best"
 msgstr "最佳"
 
@@ -795,8 +795,8 @@ msgstr "测试版"
 msgid "Bilibili QR Login"
 msgstr "哔哩哔哩扫码登录"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:43
-#: src/components/config/engines/forms/streamlink-form.tsx:39
+#: src/components/config/engines/forms/ffmpeg-form.tsx:46
+#: src/components/config/engines/forms/streamlink-form.tsx:41
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:59
 msgid "Binary Path"
 msgstr "可执行文件路径"
@@ -987,7 +987,7 @@ msgstr "渠道已删除"
 msgid "Channel updated"
 msgstr "渠道已更新"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:123
+#: src/components/config/engines/forms/streamlink-form.tsx:152
 msgid "channel1,channel2"
 msgstr "频道1,频道2"
 
@@ -1102,7 +1102,7 @@ msgstr "最接近目标码率"
 msgid "Collapsible"
 msgstr "折叠方式"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:128
+#: src/components/config/engines/forms/streamlink-form.tsx:157
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "用于排除代理的频道列表（逗号分隔）"
 
@@ -1298,7 +1298,7 @@ msgstr "连接错误"
 msgid "Connection Instability"
 msgstr "连接不稳定"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:81
+#: src/components/config/engines/forms/ffmpeg-form.tsx:80
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
@@ -1617,7 +1617,7 @@ msgstr "自定义请求头"
 msgid "Custom imported theme is active."
 msgstr "自定义导入主题已激活。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:106
+#: src/components/config/engines/forms/streamlink-form.tsx:135
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Twitch 播放列表的自定义代理 URL"
 
@@ -1625,7 +1625,7 @@ msgstr "Twitch 播放列表的自定义代理 URL"
 msgid "Custom Tags"
 msgstr "自定义标签"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:106
+#: src/components/config/engines/forms/ffmpeg-form.tsx:132
 msgid "Custom User-Agent string (Optional)"
 msgstr "自定义 User-Agent 字符串（可选）"
 
@@ -2095,7 +2095,7 @@ msgstr "时长限制"
 msgid "e.g. --namespace my_account"
 msgstr "例如 --namespace my_account"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:72
+#: src/components/config/engines/forms/streamlink-form.tsx:74
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
@@ -2546,7 +2546,7 @@ msgstr "导出配置"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:143
+#: src/components/config/engines/forms/streamlink-form.tsx:172
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:111
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:264
 msgid "Extra Arguments"
@@ -3236,6 +3236,11 @@ msgstr "跳转到第 {p} 页"
 msgid "Go to previous page"
 msgstr "上一页"
 
+#: src/components/config/engines/forms/ffmpeg-form.tsx:93
+#: src/components/config/engines/forms/streamlink-form.tsx:87
+msgid "Graceful Stop Timeout"
+msgstr "优雅停止超时"
+
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:86
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:89
 #: src/components/pipeline/workflows/workflow-editor.tsx:382
@@ -3405,7 +3410,7 @@ msgstr "https://api.example.com/webhook"
 msgid "https://discord.com/api/webhooks/..."
 msgstr "https://discord.com/api/webhooks/..."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:101
+#: src/components/config/engines/forms/streamlink-form.tsx:130
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
@@ -3547,7 +3552,7 @@ msgstr "内联：{stepName}"
 msgid "Input"
 msgstr "输入"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:120
+#: src/components/config/engines/forms/ffmpeg-form.tsx:146
 msgid "Input Arguments"
 msgstr "输入参数"
 
@@ -4265,7 +4270,7 @@ msgstr "移动文件"
 msgid "Move the file to another location. Removes the original file."
 msgstr "将文件移动到其他位置，并移除原始文件。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:101
+#: src/components/config/engines/forms/ffmpeg-form.tsx:127
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
@@ -4854,7 +4859,7 @@ msgstr "空间不足"
 msgid "Output"
 msgstr "输出"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:151
+#: src/components/config/engines/forms/ffmpeg-form.tsx:177
 msgid "Output Arguments"
 msgstr "输出参数"
 
@@ -5584,7 +5589,7 @@ msgstr "二维码已过期"
 msgid "QR Login"
 msgstr "扫码登录"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:62
+#: src/components/config/engines/forms/streamlink-form.tsx:64
 #: src/components/player/stream-info-card.tsx:170
 msgid "Quality"
 msgstr "质量"
@@ -6192,10 +6197,6 @@ msgstr "次要"
 #: src/components/notifications/forms/webhook-form.tsx:394
 msgid "secret"
 msgstr "secret"
-
-#: src/components/config/engines/forms/ffmpeg-form.tsx:76
-msgid "secs"
-msgstr "秒"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:179
 msgid "Security & Identity"
@@ -6806,7 +6807,7 @@ msgstr "流媒体服务"
 msgid "Streaming Threshold (bytes)"
 msgstr "流式传输阈值（字节）"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:44
+#: src/components/config/engines/forms/streamlink-form.tsx:46
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -7171,12 +7172,17 @@ msgstr "时间占位符（本地时间）"
 msgid "Time Range"
 msgstr "时间范围"
 
+#: src/components/config/engines/forms/ffmpeg-form.tsx:104
+#: src/components/config/engines/forms/streamlink-form.tsx:98
+msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
+msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
+
 #: src/components/sessions/danmu-stats-panel.tsx:192
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
 msgid "Timeline"
 msgstr "时间线"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:66
+#: src/components/config/engines/forms/ffmpeg-form.tsx:69
 msgid "Timeout"
 msgstr "超时"
 
@@ -7412,7 +7418,7 @@ msgstr "重试"
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:86
+#: src/components/config/engines/forms/streamlink-form.tsx:115
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
@@ -7420,11 +7426,11 @@ msgstr "Twitch (ttv-lol)"
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "用于订阅者专享和高质量流的 Twitch OAuth 令牌。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:96
+#: src/components/config/engines/forms/streamlink-form.tsx:125
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch 代理播放列表"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:118
+#: src/components/config/engines/forms/streamlink-form.tsx:147
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
@@ -7589,7 +7595,7 @@ msgstr "启用 TLS"
 msgid "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
 msgstr "用于桌面登录（备选）；指向包含 `tdata` 的 Telegram Desktop 文件夹。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:96
+#: src/components/config/engines/forms/ffmpeg-form.tsx:122
 #: src/components/config/engines/forms/mesio-hls-form.tsx:736
 msgid "User Agent"
 msgstr "User-Agent"

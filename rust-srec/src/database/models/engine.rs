@@ -95,6 +95,10 @@ pub struct FfmpegEngineConfig {
     /// User agent string
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_agent: Option<String>,
+    /// How long to wait for ffmpeg to exit gracefully before killing it (seconds).
+    /// Increase this on slow hardware to prevent unplayable files missing the moov atom.
+    #[serde(default = "default_graceful_stop_timeout")]
+    pub graceful_stop_timeout_secs: u32,
 }
 
 fn default_ffmpeg_path() -> String {
@@ -105,6 +109,10 @@ fn default_timeout() -> u32 {
     30
 }
 
+fn default_graceful_stop_timeout() -> u32 {
+    60
+}
+
 impl Default for FfmpegEngineConfig {
     fn default() -> Self {
         Self {
@@ -113,6 +121,7 @@ impl Default for FfmpegEngineConfig {
             output_args: Vec::new(),
             timeout_secs: default_timeout(),
             user_agent: None,
+            graceful_stop_timeout_secs: default_graceful_stop_timeout(),
         }
     }
 }
@@ -135,6 +144,10 @@ pub struct StreamlinkEngineConfig {
     /// Twitch proxy playlist exclude (ttv-lol)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub twitch_proxy_playlist_exclude: Option<String>,
+    /// How long to wait for ffmpeg to exit gracefully before killing it (seconds).
+    /// Increase this on slow hardware to prevent unplayable files missing the moov atom.
+    #[serde(default = "default_graceful_stop_timeout")]
+    pub graceful_stop_timeout_secs: u32,
 }
 
 fn default_streamlink_path() -> String {
@@ -153,6 +166,7 @@ impl Default for StreamlinkEngineConfig {
             extra_args: Vec::new(),
             twitch_proxy_playlist: None,
             twitch_proxy_playlist_exclude: None,
+            graceful_stop_timeout_secs: default_graceful_stop_timeout(),
         }
     }
 }

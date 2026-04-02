@@ -18,10 +18,13 @@ import {
   Shield,
   ArrowRightFromLine,
   ArrowLeftFromLine,
+  TimerOff,
 } from 'lucide-react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
+
+import { InputWithUnit } from '@/components/ui/input-with-unit';
 
 interface FfmpegFormProps {
   control: Control<any>;
@@ -66,19 +69,42 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
                 <Trans>Timeout</Trans>
               </FormLabel>
               <FormControl>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    {...field}
-                    className="pr-12 bg-background/50"
-                  />
-                  <span className="absolute right-3 top-2.5 text-xs text-muted-foreground">
-                    <Trans>secs</Trans>
-                  </span>
-                </div>
+                <InputWithUnit
+                  value={field.value}
+                  onChange={field.onChange}
+                  unitType="duration"
+                  className="bg-background/50"
+                />
               </FormControl>
               <FormDescription>
                 <Trans>Connection/activity timeout</Trans>
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={control}
+          name={`${basePath}.graceful_stop_timeout_secs`}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                <TimerOff className="w-3.5 h-3.5 text-primary" />
+                <Trans>Graceful Stop Timeout</Trans>
+              </FormLabel>
+              <FormControl>
+                <InputWithUnit
+                  value={field.value}
+                  onChange={field.onChange}
+                  unitType="duration"
+                  className="bg-background/50"
+                />
+              </FormControl>
+              <FormDescription>
+                <Trans>
+                  Time to wait for ffmpeg to finalize the file before
+                  force-killing it
+                </Trans>
               </FormDescription>
               <FormMessage />
             </FormItem>

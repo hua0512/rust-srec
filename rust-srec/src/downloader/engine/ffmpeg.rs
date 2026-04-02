@@ -216,10 +216,11 @@ impl DownloadEngine for FfmpegEngine {
         let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<Option<i32>>();
         let cancellation_token = handle.cancellation_token.clone();
         let started_instant = Instant::now();
+        let graceful_stop_timeout_secs = self.config.graceful_stop_timeout_secs;
         tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
 
-            const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(10);
+            let graceful_stop_timeout = Duration::from_secs(graceful_stop_timeout_secs as u64);
 
             let exit_code = tokio::select! {
                 status = child.wait() => {
@@ -239,7 +240,7 @@ impl DownloadEngine for FfmpegEngine {
                         let _ = stdin.shutdown().await;
                     }
 
-                    match tokio::time::timeout(GRACEFUL_STOP_TIMEOUT, child.wait()).await {
+                    match tokio::time::timeout(graceful_stop_timeout, child.wait()).await {
                         Ok(Ok(exit_status)) => exit_status.code(),
                         Ok(Err(e)) => {
                             error!("Error waiting for ffmpeg after stop request: {}", e);
