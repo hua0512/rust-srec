@@ -641,9 +641,16 @@ impl SegmentScheduler {
                             }
                         }
                         Err(e) => {
-                            // Check if the error is a SegmentFetchError (e.g. 404)
-                            // We should not abort the stream for a single missing segment
-                            let should_ignore = matches!(e, HlsDownloaderError::SegmentFetch { .. });
+                            // Transient per-segment errors should not kill the entire stream.
+                            // Network/timeout errors (e.g. CDN body decode timeouts) are
+                            // recoverable — the reorder buffer will treat the missing segment
+                            // as a gap and skip it, just like a 404.
+                            let should_ignore = matches!(
+                                e,
+                                HlsDownloaderError::SegmentFetch { .. }
+                                    | HlsDownloaderError::Network { .. }
+                                    | HlsDownloaderError::Timeout { .. }
+                            );
 
                             warn!(
                                 error = %e,
