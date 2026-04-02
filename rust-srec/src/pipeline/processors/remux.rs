@@ -62,18 +62,22 @@ pub enum VideoCodec {
 }
 
 impl VideoCodec {
-    fn as_ffmpeg_args(&self) -> Vec<String> {
+    fn ffmpeg_name(&self) -> &str {
         match self {
-            Self::Copy => vec!["-c:v".to_string(), "copy".to_string()],
-            Self::H264 => vec!["-c:v".to_string(), "libx264".to_string()],
-            Self::H265 => vec!["-c:v".to_string(), "libx265".to_string()],
-            Self::Vp9 => vec!["-c:v".to_string(), "libvpx-vp9".to_string()],
-            Self::Av1 => vec!["-c:v".to_string(), "libaom-av1".to_string()],
-            Self::H264Nvenc => vec!["-c:v".to_string(), "h264_nvenc".to_string()],
-            Self::HevcNvenc => vec!["-c:v".to_string(), "hevc_nvenc".to_string()],
-            Self::Av1Nvenc => vec!["-c:v".to_string(), "av1_nvenc".to_string()],
-            Self::Custom(codec) => vec!["-c:v".to_string(), codec.clone()],
+            Self::Copy => "copy",
+            Self::H264 => "libx264",
+            Self::H265 => "libx265",
+            Self::Vp9 => "libvpx-vp9",
+            Self::Av1 => "libaom-av1",
+            Self::H264Nvenc => "h264_nvenc",
+            Self::HevcNvenc => "hevc_nvenc",
+            Self::Av1Nvenc => "av1_nvenc",
+            Self::Custom(codec) => codec,
         }
+    }
+
+    fn as_ffmpeg_args(&self) -> Vec<String> {
+        vec!["-c:v".to_string(), self.ffmpeg_name().to_string()]
     }
 
     fn is_nvenc(&self) -> bool {
