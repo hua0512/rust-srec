@@ -176,6 +176,10 @@ pub struct DownloadManagerConfig {
     pub circuit_breaker_threshold: u32,
     /// Circuit breaker cooldown in seconds.
     pub circuit_breaker_cooldown_secs: u64,
+    /// Successes required in half-open state to close the circuit.
+    pub circuit_breaker_half_open_success_threshold: u32,
+    /// Failures allowed in half-open state before reopening the circuit.
+    pub circuit_breaker_half_open_failure_threshold: u32,
 }
 
 impl Default for DownloadManagerConfig {
@@ -187,6 +191,8 @@ impl Default for DownloadManagerConfig {
             retry_config: RetryConfig::default(),
             circuit_breaker_threshold: 5,
             circuit_breaker_cooldown_secs: 60,
+            circuit_breaker_half_open_success_threshold: 2,
+            circuit_breaker_half_open_failure_threshold: 2,
         }
     }
 }
@@ -399,9 +405,11 @@ impl DownloadManager {
         let high_priority_limit =
             Arc::new(ConcurrencyLimit::new(config.high_priority_extra_slots, 0));
 
-        let circuit_breakers = CircuitBreakerManager::new(
+        let circuit_breakers = CircuitBreakerManager::with_half_open(
             config.circuit_breaker_threshold,
             config.circuit_breaker_cooldown_secs,
+            config.circuit_breaker_half_open_success_threshold,
+            config.circuit_breaker_half_open_failure_threshold,
         );
 
         let manager = Self {

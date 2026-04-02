@@ -220,6 +220,16 @@ impl CircuitBreaker {
 
     /// Create a new circuit breaker.
     pub fn new(failure_threshold: u32, cooldown_secs: u64) -> Self {
+        Self::with_half_open(failure_threshold, cooldown_secs, 2, 2)
+    }
+
+    /// Create a circuit breaker with explicit half-open thresholds.
+    pub fn with_half_open(
+        failure_threshold: u32,
+        cooldown_secs: u64,
+        half_open_success_threshold: u32,
+        half_open_failure_threshold: u32,
+    ) -> Self {
         Self {
             state: RwLock::new(CircuitState::Closed),
             failure_count: AtomicU32::new(0),
@@ -228,10 +238,8 @@ impl CircuitBreaker {
             cooldown_duration: Duration::from_secs(cooldown_secs),
             half_open_successes: AtomicU32::new(0),
             half_open_failures: AtomicU32::new(0),
-            success_threshold: 2,
-            // Allow 2 failures in half-open state before reopening
-            // This prevents transient network errors from immediately blocking recovery
-            half_open_failure_threshold: 2,
+            success_threshold: half_open_success_threshold,
+            half_open_failure_threshold,
             last_used_unix: AtomicU64::new(Self::unix_now()),
         }
     }
@@ -364,6 +372,8 @@ pub struct CircuitBreakerManager {
     breakers: RwLock<HashMap<EngineKey, Arc<CircuitBreaker>>>,
     failure_threshold: u32,
     cooldown_secs: u64,
+    half_open_success_threshold: u32,
+    half_open_failure_threshold: u32,
     last_cleanup_unix: AtomicU64,
 }
 
@@ -374,10 +384,22 @@ impl CircuitBreakerManager {
 
     /// Create a new circuit breaker manager.
     pub fn new(failure_threshold: u32, cooldown_secs: u64) -> Self {
+        Self::with_half_open(failure_threshold, cooldown_secs, 2, 2)
+    }
+
+    /// Create a manager with explicit half-open thresholds.
+    pub fn with_half_open(
+        failure_threshold: u32,
+        cooldown_secs: u64,
+        half_open_success_threshold: u32,
+        half_open_failure_threshold: u32,
+    ) -> Self {
         Self {
             breakers: RwLock::new(HashMap::new()),
             failure_threshold,
             cooldown_secs,
+            half_open_success_threshold,
+            half_open_failure_threshold,
             last_cleanup_unix: AtomicU64::new(0),
         }
     }
@@ -419,8 +441,7 @@ impl CircuitBreakerManager {
         let mut ephemerals: Vec<(u64, EngineKey)> = breakers
             .iter()
             .filter_map(|(key, breaker)| {
-                Self::is_ephemeral(key)
-                    .then_some((breaker.last_used_unix(), key.clone()))
+                Self::is_ephemeral(key).then_some((breaker.last_used_unix(), key.clone()))
             })
             .collect();
 
@@ -449,9 +470,11 @@ impl CircuitBreakerManager {
         breakers
             .entry(key.clone())
             .or_insert_with(|| {
-                Arc::new(CircuitBreaker::new(
+                Arc::new(CircuitBreaker::with_half_open(
                     self.failure_threshold,
                     self.cooldown_secs,
+                    self.half_open_success_threshold,
+                    self.half_open_failure_threshold,
                 ))
             })
             .clone()
