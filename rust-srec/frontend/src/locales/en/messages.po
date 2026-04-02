@@ -23,7 +23,7 @@ msgstr " - Session: {0}"
 msgid "--flag value"
 msgstr "--flag value"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:156
+#: src/components/config/engines/forms/streamlink-form.tsx:185
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
@@ -31,11 +31,11 @@ msgstr "--hls-live-edge 3"
 msgid "-1001234567890"
 msgstr "-1001234567890"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:164
+#: src/components/config/engines/forms/ffmpeg-form.tsx:190
 msgid "-c copy"
 msgstr "-c copy"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:133
+#: src/components/config/engines/forms/ffmpeg-form.tsx:159
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
 
@@ -129,7 +129,7 @@ msgstr "* * * * * *"
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:48
+#: src/components/config/engines/forms/ffmpeg-form.tsx:51
 msgid "/usr/bin/ffmpeg or ffmpeg"
 msgstr "/usr/bin/ffmpeg or ffmpeg"
 
@@ -197,11 +197,11 @@ msgstr "A unique ID used by other steps to reference this one."
 msgid "A unique name for this configuration template."
 msgstr "A unique name for this configuration template."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:53
+#: src/components/config/engines/forms/ffmpeg-form.tsx:56
 msgid "Absolute path or 'ffmpeg' if in PATH"
 msgstr "Absolute path or 'ffmpeg' if in PATH"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:49
+#: src/components/config/engines/forms/streamlink-form.tsx:51
 msgid "Absolute path or 'streamlink' in PATH"
 msgstr "Absolute path or 'streamlink' in PATH"
 
@@ -459,7 +459,7 @@ msgstr "Allowed Extensions"
 msgid "An error occurred"
 msgstr "An error occurred"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:161
+#: src/components/config/engines/forms/streamlink-form.tsx:190
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "Any additional command line arguments to pass to Streamlink"
 
@@ -532,11 +532,11 @@ msgstr "Are you sure you want to delete this session? This action cannot be undo
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:138
+#: src/components/config/engines/forms/ffmpeg-form.tsx:164
 msgid "Args inserted before -i input_url"
 msgstr "Args inserted before -i input_url"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:169
+#: src/components/config/engines/forms/ffmpeg-form.tsx:195
 msgid "Args used for processing/encoding"
 msgstr "Args used for processing/encoding"
 
@@ -783,7 +783,7 @@ msgstr "Batch Window (ms)"
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:67
+#: src/components/config/engines/forms/streamlink-form.tsx:69
 msgid "best"
 msgstr "best"
 
@@ -795,8 +795,8 @@ msgstr "BETA"
 msgid "Bilibili QR Login"
 msgstr "Bilibili QR Login"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:43
-#: src/components/config/engines/forms/streamlink-form.tsx:39
+#: src/components/config/engines/forms/ffmpeg-form.tsx:46
+#: src/components/config/engines/forms/streamlink-form.tsx:41
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:59
 msgid "Binary Path"
 msgstr "Binary Path"
@@ -987,7 +987,7 @@ msgstr "Channel deleted"
 msgid "Channel updated"
 msgstr "Channel updated"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:123
+#: src/components/config/engines/forms/streamlink-form.tsx:152
 msgid "channel1,channel2"
 msgstr "channel1,channel2"
 
@@ -1102,7 +1102,7 @@ msgstr "Closest to bitrate"
 msgid "Collapsible"
 msgstr "Collapsible"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:128
+#: src/components/config/engines/forms/streamlink-form.tsx:157
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "Comma-separated list of channels to exclude from proxy"
 
@@ -1298,7 +1298,7 @@ msgstr "Connection Error"
 msgid "Connection Instability"
 msgstr "Connection Instability"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:81
+#: src/components/config/engines/forms/ffmpeg-form.tsx:80
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
@@ -1617,7 +1617,7 @@ msgstr "Custom Headers"
 msgid "Custom imported theme is active."
 msgstr "Custom imported theme is active."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:106
+#: src/components/config/engines/forms/streamlink-form.tsx:135
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Custom proxy URL for Twitch playlists"
 
@@ -1625,7 +1625,7 @@ msgstr "Custom proxy URL for Twitch playlists"
 msgid "Custom Tags"
 msgstr "Custom Tags"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:106
+#: src/components/config/engines/forms/ffmpeg-form.tsx:132
 msgid "Custom User-Agent string (Optional)"
 msgstr "Custom User-Agent string (Optional)"
 
@@ -2095,7 +2095,7 @@ msgstr "Duration limit"
 msgid "e.g. --namespace my_account"
 msgstr "e.g. --namespace my_account"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:72
+#: src/components/config/engines/forms/streamlink-form.tsx:74
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 
@@ -2546,7 +2546,7 @@ msgstr "Export Configuration"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:143
+#: src/components/config/engines/forms/streamlink-form.tsx:172
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:111
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:264
 msgid "Extra Arguments"
@@ -3236,6 +3236,11 @@ msgstr "Go to page {p}"
 msgid "Go to previous page"
 msgstr "Go to previous page"
 
+#: src/components/config/engines/forms/ffmpeg-form.tsx:93
+#: src/components/config/engines/forms/streamlink-form.tsx:87
+msgid "Graceful Stop Timeout"
+msgstr "Graceful Stop Timeout"
+
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:86
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:89
 #: src/components/pipeline/workflows/workflow-editor.tsx:382
@@ -3405,7 +3410,7 @@ msgstr "https://api.example.com/webhook"
 msgid "https://discord.com/api/webhooks/..."
 msgstr "https://discord.com/api/webhooks/..."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:101
+#: src/components/config/engines/forms/streamlink-form.tsx:130
 msgid "https://lb-eu.cdn-perfprod.com"
 msgstr "https://lb-eu.cdn-perfprod.com"
 
@@ -3547,7 +3552,7 @@ msgstr "Inline: {stepName}"
 msgid "Input"
 msgstr "Input"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:120
+#: src/components/config/engines/forms/ffmpeg-form.tsx:146
 msgid "Input Arguments"
 msgstr "Input Arguments"
 
@@ -4265,7 +4270,7 @@ msgstr "Move Files"
 msgid "Move the file to another location. Removes the original file."
 msgstr "Move the file to another location. Removes the original file."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:101
+#: src/components/config/engines/forms/ffmpeg-form.tsx:127
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
@@ -4854,7 +4859,7 @@ msgstr "Out of Space"
 msgid "Output"
 msgstr "Output"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:151
+#: src/components/config/engines/forms/ffmpeg-form.tsx:177
 msgid "Output Arguments"
 msgstr "Output Arguments"
 
@@ -5584,7 +5589,7 @@ msgstr "QR code expired"
 msgid "QR Login"
 msgstr "QR Login"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:62
+#: src/components/config/engines/forms/streamlink-form.tsx:64
 #: src/components/player/stream-info-card.tsx:170
 msgid "Quality"
 msgstr "Quality"
@@ -6192,10 +6197,6 @@ msgstr "Secondary"
 #: src/components/notifications/forms/webhook-form.tsx:394
 msgid "secret"
 msgstr "secret"
-
-#: src/components/config/engines/forms/ffmpeg-form.tsx:76
-msgid "secs"
-msgstr "secs"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:179
 msgid "Security & Identity"
@@ -6806,7 +6807,7 @@ msgstr "Streaming services"
 msgid "Streaming Threshold (bytes)"
 msgstr "Streaming Threshold (bytes)"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:44
+#: src/components/config/engines/forms/streamlink-form.tsx:46
 msgid "streamlink"
 msgstr "streamlink"
 
@@ -7171,12 +7172,17 @@ msgstr "Time Placeholders (Local Time)"
 msgid "Time Range"
 msgstr "Time Range"
 
+#: src/components/config/engines/forms/ffmpeg-form.tsx:104
+#: src/components/config/engines/forms/streamlink-form.tsx:98
+msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
+msgstr "Time to wait for ffmpeg to finalize the file before force-killing it"
+
 #: src/components/sessions/danmu-stats-panel.tsx:192
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
 msgid "Timeline"
 msgstr "Timeline"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:66
+#: src/components/config/engines/forms/ffmpeg-form.tsx:69
 msgid "Timeout"
 msgstr "Timeout"
 
@@ -7412,7 +7418,7 @@ msgstr "Try Again"
 msgid "TTWID Management Mode"
 msgstr "TTWID Management Mode"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:86
+#: src/components/config/engines/forms/streamlink-form.tsx:115
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
@@ -7420,11 +7426,11 @@ msgstr "Twitch (ttv-lol)"
 msgid "Twitch OAuth token for subscriber-only and high-quality streams."
 msgstr "Twitch OAuth token for subscriber-only and high-quality streams."
 
-#: src/components/config/engines/forms/streamlink-form.tsx:96
+#: src/components/config/engines/forms/streamlink-form.tsx:125
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch Proxy Playlist"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:118
+#: src/components/config/engines/forms/streamlink-form.tsx:147
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch Proxy Playlist Exclude"
 
@@ -7589,7 +7595,7 @@ msgstr "Use TLS"
 msgid "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
 msgstr "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:96
+#: src/components/config/engines/forms/ffmpeg-form.tsx:122
 #: src/components/config/engines/forms/mesio-hls-form.tsx:736
 msgid "User Agent"
 msgstr "User Agent"

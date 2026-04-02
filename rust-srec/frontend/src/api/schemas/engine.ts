@@ -37,6 +37,7 @@ export const FfmpegConfigSchema = z.object({
   input_args: z.array(z.string()).default([]),
   output_args: z.array(z.string()).default([]),
   timeout_secs: z.coerce.number().int().min(0).default(30),
+  graceful_stop_timeout_secs: z.coerce.number().int().min(0).default(60),
   user_agent: z
     .string()
     .nullable()
@@ -49,6 +50,7 @@ export const StreamlinkConfigSchema = z.object({
   binary_path: z.string().default('streamlink'),
   quality: z.string().default('best'),
   extra_args: z.array(z.string()).default([]),
+  graceful_stop_timeout_secs: z.coerce.number().int().min(0).default(60),
   // Twitch proxy playlist (ttv-lol)
   twitch_proxy_playlist: z
     .string()
