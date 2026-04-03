@@ -463,7 +463,7 @@ msgstr "发生错误"
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "传递给 Streamlink 的其他命令行参数"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:96
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
@@ -1070,6 +1070,14 @@ msgstr "清空"
 #: src/components/pipeline/workflows/step-library.tsx:593
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "点击添加。你可以在编辑器中重新排序步骤。"
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:140
+msgid "Client platform type used for stream authentication signing. Different platforms use different signing methods."
+msgstr "用于流认证签名的客户端平台类型。不同平台使用不同的签名方式。"
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:114
+msgid "Client Type (ctype)"
+msgstr "客户端类型 (ctype)"
 
 #: src/components/config/templates/template-card.tsx:120
 #: src/components/pipeline/presets/preset-card.tsx:180
@@ -1753,7 +1761,8 @@ msgstr "默认"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:199
 #: src/components/config/engines/forms/mesio-hls-form.tsx:299
 #: src/components/config/engines/forms/mesio-hls-form.tsx:484
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:61
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
@@ -2582,7 +2591,7 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:62
 msgid "Extraction API Mode"
 msgstr "API 模式"
 
@@ -3094,7 +3103,7 @@ msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:53
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:109
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:168
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
@@ -3103,7 +3112,7 @@ msgstr "强制原画质量"
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:112
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:171
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "强制请求可用的最高原画质量（直连流）。"
 
@@ -4328,7 +4337,7 @@ msgstr "将文件移动到其他位置，并移除原始文件。"
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:65
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:81
 msgid "MP"
 msgstr "MP"
 
@@ -4768,8 +4777,8 @@ msgstr "在数据库中保留已完成、失败或中断任务历史记录的天
 msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 msgstr "在数据库中保留通知事件日志的天数。这会影响“通知 → 事件”页面。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:67
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:73
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
 msgid "Numeric Room IDs Only"
 msgstr "仅限数字房间 ID"
 
@@ -5637,7 +5646,7 @@ msgstr "进度："
 msgid "Protection Settings"
 msgstr "保护设置"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:49
 msgid "Protocol Settings"
 msgstr "协议设置"
 
@@ -5688,7 +5697,7 @@ msgstr "质量控制"
 msgid "Quality Rate"
 msgstr "画质等级"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:156
 msgid "Quality Settings"
 msgstr "画质设置"
 
@@ -7839,7 +7848,7 @@ msgstr "处理队列过长时发出警告。"
 msgid "Watch"
 msgstr "观看"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:59
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:75
 msgid "WEB"
 msgstr "WEB"
 
@@ -7959,7 +7968,7 @@ msgstr "工作目录"
 msgid "Write Timeout (ms)"
 msgstr "写入超时（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:71
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:87
 msgid "WUP"
 msgstr "WUP"
 

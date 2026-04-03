@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::huya::get_anticode;
+use crate::extractor::platforms::huya::sign::HuyaPlatform;
 
 use crate::extractor::utils::{extras_get_bool, extras_get_i64, extras_get_str, extras_get_u64};
 use crate::media::MediaFormat;
@@ -25,6 +26,7 @@ pub struct Huya {
     // whether to force the origin quality stream
     pub force_origin_quality: bool,
     pub api_mode: HuyaApiMode,
+    pub platform: HuyaPlatform,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HuyaApiMode {
@@ -74,10 +76,13 @@ impl Huya {
             extras_get_bool(extras.as_ref(), "force_origin_quality").unwrap_or(false);
         let api_mode = extras_get_str(extras.as_ref(), "api_mode").unwrap_or("WEB");
         let api_mode = HuyaApiMode::from(api_mode);
+        let platform = extras_get_str(extras.as_ref(), "platform").unwrap_or("huya_pc_exe");
+        let platform = HuyaPlatform::from(platform);
         Self {
             extractor,
             force_origin_quality,
             api_mode,
+            platform,
         }
     }
 
@@ -162,7 +167,7 @@ impl Huya {
             &stream_name,
             anti_code,
             presenter_uid.try_into().ok(),
-            false,
+            self.platform,
         )
         .unwrap_or_else(|_| anti_code.to_string())
     }

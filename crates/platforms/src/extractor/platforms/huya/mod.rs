@@ -12,6 +12,7 @@ pub use builder::Huya;
 pub use builder::URL_REGEX;
 pub use tars::*;
 
+pub use sign::HuyaPlatform;
 pub use sign::get_anticode;
 
 // Re-export the danmu provider

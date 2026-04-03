@@ -463,7 +463,7 @@ msgstr "An error occurred"
 msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "Any additional command line arguments to pass to Streamlink"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:96
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 
@@ -1070,6 +1070,14 @@ msgstr "Clear"
 #: src/components/pipeline/workflows/step-library.tsx:593
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "Click to add. You can reorder steps in the editor."
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:140
+msgid "Client platform type used for stream authentication signing. Different platforms use different signing methods."
+msgstr "Client platform type used for stream authentication signing. Different platforms use different signing methods."
+
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:114
+msgid "Client Type (ctype)"
+msgstr "Client Type (ctype)"
 
 #: src/components/config/templates/template-card.tsx:120
 #: src/components/pipeline/presets/preset-card.tsx:180
@@ -1753,7 +1761,8 @@ msgstr "default"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:199
 #: src/components/config/engines/forms/mesio-hls-form.tsx:299
 #: src/components/config/engines/forms/mesio-hls-form.tsx:484
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:61
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
@@ -2582,7 +2591,7 @@ msgstr "Extract high-quality audio for podcast distribution and upload."
 msgid "Extract MP3"
 msgstr "Extract MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:62
 msgid "Extraction API Mode"
 msgstr "Extraction API Mode"
 
@@ -3094,7 +3103,7 @@ msgid "Force Mobile API"
 msgstr "Force Mobile API"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:53
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:109
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:168
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:41
 msgid "Force Origin Quality"
 msgstr "Force Origin Quality"
@@ -3103,7 +3112,7 @@ msgstr "Force Origin Quality"
 msgid "Force overwrite if output exists"
 msgstr "Force overwrite if output exists"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:112
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:171
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "Force requesting the highest origin quality available (Direct stream)."
 
@@ -4328,7 +4337,7 @@ msgstr "Move the file to another location. Removes the original file."
 msgid "Mozilla/5.0..."
 msgstr "Mozilla/5.0..."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:65
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:81
 msgid "MP"
 msgstr "MP"
 
@@ -4768,8 +4777,8 @@ msgstr "Number of days to keep the history of completed, failed, or interrupted 
 msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 msgstr "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:67
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:73
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
 msgid "Numeric Room IDs Only"
 msgstr "Numeric Room IDs Only"
 
@@ -5637,7 +5646,7 @@ msgstr "Progress:"
 msgid "Protection Settings"
 msgstr "Protection Settings"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:33
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:49
 msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
@@ -5688,7 +5697,7 @@ msgstr "Quality Control"
 msgid "Quality Rate"
 msgstr "Quality Rate"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:156
 msgid "Quality Settings"
 msgstr "Quality Settings"
 
@@ -7839,7 +7848,7 @@ msgstr "Warning when the processing queue gets too long."
 msgid "Watch"
 msgstr "Watch"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:59
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:75
 msgid "WEB"
 msgstr "WEB"
 
@@ -7959,7 +7968,7 @@ msgstr "Working Directory"
 msgid "Write Timeout (ms)"
 msgstr "Write Timeout (ms)"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:71
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:87
 msgid "WUP"
 msgstr "WUP"
 

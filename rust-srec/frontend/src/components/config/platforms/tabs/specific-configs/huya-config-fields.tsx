@@ -16,6 +16,22 @@ import {
 } from '@/components/ui/select';
 import { Trans } from '@lingui/react/macro';
 import { Zap, Activity } from 'lucide-react';
+import { HuyaPlatformValues } from '@/api/schemas/platform-configs';
+
+const HUYA_PLATFORM_LABELS: Record<
+  (typeof HuyaPlatformValues)[number],
+  string
+> = {
+  huya_pc_exe: 'PC Client',
+  huya_adr: 'Android',
+  huya_ios: 'iOS',
+  tv_huya_nftv: 'TV',
+  huya_webh5: 'Web H5',
+  tars_mp: 'Mini Program',
+  tars_mobile: 'WAP / Mobile',
+  huya_liveshareh5: 'Live Share H5',
+  random: 'Random',
+};
 
 interface HuyaConfigFieldsProps {
   form: UseFormReturn<any>;
@@ -81,6 +97,49 @@ export function HuyaConfigFields({ form, fieldName }: HuyaConfigFieldsProps) {
                     API protocol to use for live stream extraction. WUP is the
                     standard protocol for the PC app. Note that WUP and MP only
                     work with numeric room IDs.
+                  </Trans>
+                </FormDescription>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name={`${fieldName}.platform`}
+            render={({ field }) => (
+              <FormItem>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    <Trans>Client Type (ctype)</Trans>
+                  </FormLabel>
+                </div>
+                <FormControl>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value || 'huya_pc_exe'}
+                  >
+                    <SelectTrigger className="bg-background/50 h-11 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm">
+                      <SelectValue placeholder="Select Client Type" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-border/50 shadow-xl">
+                      {HuyaPlatformValues.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {HUYA_PLATFORM_LABELS[value]}
+                          {value === 'huya_pc_exe' && (
+                            <span className="text-muted-foreground ml-2 text-xs">
+                              (<Trans>Default</Trans>)
+                            </span>
+                          )}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormControl>
+                <FormDescription className="text-[11px] font-medium pt-2 px-1">
+                  <Trans>
+                    Client platform type used for stream authentication signing.
+                    Different platforms use different signing methods.
                   </Trans>
                 </FormDescription>
               </FormItem>
