@@ -675,6 +675,10 @@ msgstr "available"
 msgid "Avatar URL (Optional)"
 msgstr "Avatar URL (Optional)"
 
+#: src/components/sessions/danmu-stats-panel.tsx:277
+msgid "avg {averagePerMinute}"
+msgstr "avg {averagePerMinute}"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:423
 msgid "Avg. Duration"
 msgstr "Avg. Duration"
@@ -1401,6 +1405,7 @@ msgstr "Could not connect to the server. Please check your connection."
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:323
 #: src/components/config/engines/forms/mesio-hls-form.tsx:370
+#: src/components/sessions/danmu-stats-panel.tsx:268
 msgid "Count"
 msgstr "Count"
 
@@ -1681,18 +1686,15 @@ msgstr "Danmu Control"
 msgid "Danmu Service"
 msgstr "Danmu Service"
 
-#: src/components/sessions/danmu-stats-panel.tsx:99
-#: src/components/sessions/danmu-stats-panel.tsx:121
-#: src/components/sessions/danmu-stats-panel.tsx:137
-#: src/components/sessions/danmu-stats-panel.tsx:163
+#: src/components/sessions/danmu-stats-panel.tsx:108
 msgid "Danmu Statistics"
 msgstr "Danmu Statistics"
 
-#: src/components/sessions/danmu-stats-panel.tsx:125
+#: src/components/sessions/danmu-stats-panel.tsx:159
 msgid "Danmu statistics are not available for this session."
 msgstr "Danmu statistics are not available for this session."
 
-#: src/components/sessions/danmu-stats-panel.tsx:88
+#: src/components/sessions/danmu-stats-panel.tsx:246
 msgid "Danmu/min"
 msgstr "Danmu/min"
 
@@ -2742,7 +2744,7 @@ msgstr "Failed to extract name from URL"
 msgid "Failed to import configuration"
 msgstr "Failed to import configuration"
 
-#: src/components/sessions/danmu-stats-panel.tsx:142
+#: src/components/sessions/danmu-stats-panel.tsx:170
 msgid "Failed to load danmu statistics."
 msgstr "Failed to load danmu statistics."
 
@@ -4212,6 +4214,10 @@ msgstr "Merge Changes"
 msgid "Message"
 msgstr "Message"
 
+#: src/components/sessions/danmu-stats-panel.tsx:257
+msgid "Messages"
+msgstr "Messages"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:52
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
 #: src/components/pipeline/presets/preset-card.tsx:95
@@ -4633,7 +4639,7 @@ msgstr "No steps defined"
 msgid "No streamers found"
 msgstr "No streamers found"
 
-#: src/components/sessions/danmu-stats-panel.tsx:254
+#: src/components/sessions/danmu-stats-panel.tsx:409
 msgid "No talker data"
 msgstr "No talker data"
 
@@ -4649,7 +4655,7 @@ msgstr "No templates yet"
 msgid "No Title Changes"
 msgstr "No Title Changes"
 
-#: src/components/sessions/danmu-stats-panel.tsx:262
+#: src/components/sessions/danmu-stats-panel.tsx:424
 msgid "No word data"
 msgstr "No word data"
 
@@ -5153,7 +5159,7 @@ msgstr "Pause"
 msgid "paused"
 msgstr "paused"
 
-#: src/components/sessions/danmu-stats-panel.tsx:175
+#: src/components/sessions/danmu-stats-panel.tsx:309
 msgid "Peak / min"
 msgstr "Peak / min"
 
@@ -5987,7 +5993,7 @@ msgstr "Retention Period"
 msgid "Retries for locked files"
 msgstr "Retries for locked files"
 
-#: src/components/sessions/danmu-stats-panel.tsx:146
+#: src/components/sessions/danmu-stats-panel.tsx:174
 msgid "Retry"
 msgstr "Retry"
 
@@ -7253,7 +7259,7 @@ msgstr "Time Range"
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "Time to wait for ffmpeg to finalize the file before force-killing it"
 
-#: src/components/sessions/danmu-stats-panel.tsx:192
+#: src/components/sessions/danmu-stats-panel.tsx:331
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
 msgid "Timeline"
 msgstr "Timeline"
@@ -7315,12 +7321,12 @@ msgstr "Today"
 msgid "Token"
 msgstr "Token"
 
-#: src/components/sessions/danmu-stats-panel.tsx:180
-#: src/components/sessions/danmu-stats-panel.tsx:253
+#: src/components/sessions/danmu-stats-panel.tsx:315
+#: src/components/sessions/danmu-stats-panel.tsx:408
 msgid "Top Talkers"
 msgstr "Top Talkers"
 
-#: src/components/sessions/danmu-stats-panel.tsx:261
+#: src/components/sessions/danmu-stats-panel.tsx:423
 msgid "Top Words"
 msgstr "Top Words"
 
@@ -7332,7 +7338,7 @@ msgstr "total"
 msgid "Total"
 msgstr "Total"
 
-#: src/components/sessions/danmu-stats-panel.tsx:170
+#: src/components/sessions/danmu-stats-panel.tsx:303
 msgid "Total Danmu"
 msgstr "Total Danmu"
 
@@ -7356,7 +7362,7 @@ msgstr "Total system load"
 msgid "Track Information"
 msgstr "Track Information"
 
-#: src/components/sessions/danmu-stats-panel.tsx:185
+#: src/components/sessions/danmu-stats-panel.tsx:321
 msgid "Tracked Words"
 msgstr "Tracked Words"
 
