@@ -1,6 +1,6 @@
 [package]
 name = "strev"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 description = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms"
 authors = ["rust-srec team"]
