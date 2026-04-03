@@ -9,7 +9,7 @@ use crate::extractor::error::ExtractorError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
-pub(crate) enum HuyaPlatform {
+pub enum HuyaPlatform {
     HuyaPcExe = 0,
     HuyaAdr = 2,
     HuyaIos = 3,
@@ -18,6 +18,23 @@ pub(crate) enum HuyaPlatform {
     MiniApp = 102,
     Wap = 103,
     HuyaLiveShareH5 = 104,
+}
+
+impl From<&str> for HuyaPlatform {
+    fn from(s: &str) -> Self {
+        match s {
+            "huya_pc_exe" => Self::HuyaPcExe,
+            "huya_adr" => Self::HuyaAdr,
+            "huya_ios" => Self::HuyaIos,
+            "tv_huya_nftv" => Self::TvHuyaNftv,
+            "huya_webh5" => Self::HuyaWebH5,
+            "tars_mp" => Self::MiniApp,
+            "tars_mobile" => Self::Wap,
+            "huya_liveshareh5" => Self::HuyaLiveShareH5,
+            "random" => Self::get_random(),
+            _ => Self::HuyaPcExe,
+        }
+    }
 }
 
 impl HuyaPlatform {
@@ -70,7 +87,7 @@ impl HuyaPlatform {
             | HuyaPlatform::MiniApp
             | HuyaPlatform::Wap => String::from("13.1.0"),
             HuyaPlatform::TvHuyaNftv => String::from("2.6.10"),
-            HuyaPlatform::HuyaPcExe => String::from("7080002"),
+            HuyaPlatform::HuyaPcExe => String::from("7090002"),
             _ => String::from("0.0.0"),
         };
 
@@ -120,7 +137,7 @@ pub fn get_anticode(
     stream_name: &str,
     anti_code: &str,
     uid: Option<u64>,
-    random_platform: bool,
+    platform: HuyaPlatform,
 ) -> Result<String, ExtractorError> {
     let mut fm_enc = None;
     let mut fs = None;
@@ -138,12 +155,6 @@ pub fn get_anticode(
         None => return Ok(anti_code.to_string()),
     };
 
-    // get platform and its id
-    let platform = if random_platform {
-        HuyaPlatform::get_random()
-    } else {
-        HuyaPlatform::HuyaPcExe
-    };
     let (ctype, platform_id) = platform.as_pair();
     let is_wap = matches!(platform, HuyaPlatform::Wap);
 
@@ -223,6 +234,7 @@ pub fn get_anticode(
 #[cfg(test)]
 mod tests {
     use crate::extractor::platforms::huya::get_anticode;
+    use crate::extractor::platforms::huya::sign::HuyaPlatform;
 
     #[test]
     fn test_build_query() {
@@ -238,7 +250,12 @@ mod tests {
         );
 
         // build_query
-        let result = get_anticode(stream_name, &anti_code, Some(12345), false);
+        let result = get_anticode(
+            stream_name,
+            &anti_code,
+            Some(12345),
+            HuyaPlatform::HuyaPcExe,
+        );
         assert!(result.is_ok());
         let new_query = result.unwrap();
         println!("New query: {}", new_query);

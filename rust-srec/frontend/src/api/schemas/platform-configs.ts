@@ -1,9 +1,22 @@
 import { z } from 'zod';
 
 // Huya platform-specific configuration
+export const HuyaPlatformValues = [
+  'huya_pc_exe',
+  'huya_adr',
+  'huya_ios',
+  'tv_huya_nftv',
+  'huya_webh5',
+  'tars_mp',
+  'tars_mobile',
+  'huya_liveshareh5',
+  'random',
+] as const;
+
 export const HuyaConfigSchema = z
   .object({
     api_mode: z.enum(['WUP', 'MP', 'WEB']).nullable().optional(),
+    platform: z.enum(HuyaPlatformValues).nullable().optional(),
     force_origin_quality: z.boolean().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
