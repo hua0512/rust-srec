@@ -152,7 +152,7 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
 
         <Separator />
 
-        <div className="space-y-4">
+        <div className="@container space-y-4">
           <div className="flex items-center gap-2">
             <Timer className="h-4 w-4 text-sky-500" />
             <h3 className="text-sm font-semibold">
@@ -195,7 +195,7 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
             </Tooltip>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 @md:grid-cols-3 gap-6">
             <FormField
               control={control}
               name="pipeline_cpu_job_timeout_secs"
