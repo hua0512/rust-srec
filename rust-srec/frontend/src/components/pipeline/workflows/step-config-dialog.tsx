@@ -317,7 +317,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                     </div>
                   )}
                   {presetDetail && (
-                    <div className="space-y-6 [&_input]:pointer-events-none [&_textarea]:pointer-events-none [&_button:not([role=tab])]:pointer-events-none [&_input]:opacity-70 [&_textarea]:opacity-70 [&_button:not([role=tab])]:opacity-70 grayscale-[0.1]">
+                    <div className="space-y-6 [&_input]:pointer-events-none [&_textarea]:pointer-events-none [&_label]:pointer-events-none [&_button:not([role=tab])]:pointer-events-none [&_input]:opacity-70 [&_textarea]:opacity-70 [&_label]:opacity-70 [&_button:not([role=tab])]:opacity-70 grayscale-[0.1]">
                       <div className="flex items-center gap-2 mb-4">
                         <div className="h-8 w-1 rounded bg-primary/20" />
                         <h3 className="font-semibold text-lg tracking-tight">
