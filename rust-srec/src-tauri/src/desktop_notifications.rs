@@ -26,14 +26,88 @@ pub const DEFAULT_DESKTOP_NOTIFICATION_EVENT_TYPES: &[&str] = &[
     "credential_invalid",
 ];
 
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+/// Desktop notification minimum priority.
+///
+/// Serializes as integer (Gotify-compatible 0-10 scale).
+/// Deserializes from integer or legacy string ("low"/"normal"/"high"/"critical").
+#[derive(Debug, Default, Clone, Copy)]
 pub enum DesktopNotificationMinPriority {
     Low,
     #[default]
     Normal,
     High,
     Critical,
+}
+
+impl DesktopNotificationMinPriority {
+    fn as_int(self) -> u8 {
+        match self {
+            Self::Low => 2,
+            Self::Normal => 5,
+            Self::High => 8,
+            Self::Critical => 10,
+        }
+    }
+
+    fn from_int(value: u8) -> Option<Self> {
+        match value {
+            0..=3 => Some(Self::Low),
+            4..=6 => Some(Self::Normal),
+            7..=9 => Some(Self::High),
+            10..=u8::MAX => Some(Self::Critical),
+        }
+    }
+}
+
+impl Serialize for DesktopNotificationMinPriority {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.as_int())
+    }
+}
+
+impl<'de> Deserialize<'de> for DesktopNotificationMinPriority {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de;
+
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = DesktopNotificationMinPriority;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("integer (0-10) or string (low/normal/high/critical)")
+            }
+
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                let val = u8::try_from(v)
+                    .map_err(|_| de::Error::invalid_value(de::Unexpected::Unsigned(v), &self))?;
+                DesktopNotificationMinPriority::from_int(val)
+                    .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Unsigned(v), &self))
+            }
+
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                let val = u8::try_from(v)
+                    .map_err(|_| de::Error::invalid_value(de::Unexpected::Signed(v), &self))?;
+                DesktopNotificationMinPriority::from_int(val)
+                    .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Signed(v), &self))
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                match v.trim().to_ascii_lowercase().as_str() {
+                    "low" => Ok(DesktopNotificationMinPriority::Low),
+                    "normal" => Ok(DesktopNotificationMinPriority::Normal),
+                    "high" => Ok(DesktopNotificationMinPriority::High),
+                    "critical" => Ok(DesktopNotificationMinPriority::Critical),
+                    _ => Err(de::Error::unknown_variant(
+                        v,
+                        &["low", "normal", "high", "critical"],
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
 }
 
 impl From<DesktopNotificationMinPriority> for rust_srec::notification::NotificationPriority {

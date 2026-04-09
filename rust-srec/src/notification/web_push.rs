@@ -158,7 +158,7 @@ impl WebPushService {
     ) -> Result<WebPushSubscriptionDbModel> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().timestamp_millis();
-        let min_priority = min_priority.to_string();
+        let min_priority = min_priority.as_int() as i32;
 
         sqlx::query(
             r#"
@@ -178,7 +178,7 @@ impl WebPushService {
         .bind(endpoint)
         .bind(p256dh)
         .bind(auth)
-        .bind(&min_priority)
+        .bind(min_priority)
         .bind(now)
         .bind(now)
         .execute(&self.write_pool)
@@ -279,8 +279,10 @@ impl WebPushService {
                         return;
                     }
 
-                    let min_priority =
-                        parse_priority(&sub.min_priority).unwrap_or(NotificationPriority::Critical);
+                    let min_priority = u8::try_from(sub.min_priority)
+                        .ok()
+                        .and_then(NotificationPriority::from_int)
+                        .unwrap_or(NotificationPriority::Critical);
                     if priority < min_priority {
                         return;
                     }
@@ -494,7 +496,7 @@ struct WebPushPayload {
     body: String,
     url: String,
     event_type: String,
-    priority: String,
+    priority: u8,
     created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     event_log_id: Option<String>,
@@ -507,7 +509,7 @@ impl WebPushPayload {
             body: event.description(),
             url: "/notifications/events".to_string(),
             event_type: event.event_type().to_string(),
-            priority: event.priority().to_string(),
+            priority: event.priority().as_int(),
             created_at: event.timestamp().to_rfc3339(),
             event_log_id: event_log_id.map(|s| s.to_string()),
         }
@@ -536,16 +538,6 @@ impl WebPushPayload {
         let bytes = serde_json::to_vec(&minimal)
             .map_err(|e| Error::Other(format!("Failed to serialize web push payload: {}", e)))?;
         Ok(bytes)
-    }
-}
-
-fn parse_priority(input: &str) -> Option<NotificationPriority> {
-    match input.trim().to_ascii_lowercase().as_str() {
-        "low" => Some(NotificationPriority::Low),
-        "normal" => Some(NotificationPriority::Normal),
-        "high" => Some(NotificationPriority::High),
-        "critical" => Some(NotificationPriority::Critical),
-        _ => None,
     }
 }
 

@@ -11,6 +11,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Globe, Hash, User, Shield, Mail } from 'lucide-react';
+import { priorityOptions } from '@/lib/priority';
 import {
   Select,
   SelectContent,
@@ -174,25 +175,21 @@ export function EmailForm() {
               <FormLabel>
                 <Trans>Min Priority</Trans>
               </FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <Select
+                onValueChange={(val) => field.onChange(Number(val))}
+                defaultValue={String(field.value)}
+              >
                 <FormControl>
                   <SelectTrigger className="bg-background/50">
                     <SelectValue />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="Low">
-                    <Trans>Low</Trans>
-                  </SelectItem>
-                  <SelectItem value="Normal">
-                    <Trans>Normal</Trans>
-                  </SelectItem>
-                  <SelectItem value="High">
-                    <Trans>High</Trans>
-                  </SelectItem>
-                  <SelectItem value="Critical">
-                    <Trans>Critical</Trans>
-                  </SelectItem>
+                  {priorityOptions().map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <Trans>{opt.label}</Trans>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <FormMessage />

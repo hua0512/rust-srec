@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listEvents } from '@/server/functions/notifications';
 import type { NotificationEventLog } from '@/api/schemas/notifications';
+import { priorityLabel } from '@/lib/priority';
 import {
   getBrowserNotificationsEnabled,
   getLastNotifiedCriticalMs,
@@ -41,7 +42,7 @@ function formatBrowserNotification(log: NotificationEventLog): {
   const bodyParts: string[] = [];
   if (streamer) bodyParts.push(String(streamer));
   if (error) bodyParts.push(String(error));
-  if (bodyParts.length === 0) bodyParts.push(log.priority);
+  if (bodyParts.length === 0) bodyParts.push(priorityLabel(log.priority));
 
   return { title: baseTitle, body: bodyParts.join(' — ').slice(0, 200) };
 }
@@ -70,7 +71,7 @@ export function BrowserNotificationListener() {
   const { data: events } = useQuery({
     queryKey: ['notification-events', 'browser', 'critical'],
     queryFn: () =>
-      listEvents({ data: { limit: 50, offset: 0, priority: 'critical' } }),
+      listEvents({ data: { limit: 50, offset: 0, priority: '10' } }),
     enabled: shouldPoll,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,

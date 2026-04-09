@@ -29,9 +29,9 @@ interface BrowserChannelDialogProps {
   webPushEnabled: boolean;
   webPushPermission: NotificationPermission;
   webPushStatusText: string;
-  webPushMinPriority: string;
+  webPushMinPriority: number;
   onWebPushToggle: (checked: boolean) => void;
-  onWebPushPriorityChange: (value: string) => void;
+  onWebPushPriorityChange: (value: number) => void;
   browserNotificationsEnabled: boolean;
   onBrowserNotificationsToggle: (enabled: boolean) => void;
 }
@@ -138,24 +138,24 @@ export function BrowserChannelDialog({
                   <Trans>Priority Filter</Trans>
                 </span>
                 <Select
-                  value={webPushMinPriority}
-                  onValueChange={onWebPushPriorityChange}
+                  value={String(webPushMinPriority)}
+                  onValueChange={(val) => onWebPushPriorityChange(Number(val))}
                   disabled={!webPushSupported}
                 >
                   <SelectTrigger className="h-7 w-32 bg-background/40 border-border/20 text-[10px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="critical" className="text-[10px]">
+                    <SelectItem value="10" className="text-[10px]">
                       {i18n._(msg`Critical Only`)}
                     </SelectItem>
-                    <SelectItem value="high" className="text-[10px]">
+                    <SelectItem value="8" className="text-[10px]">
                       {i18n._(msg`High+`)}
                     </SelectItem>
-                    <SelectItem value="normal" className="text-[10px]">
+                    <SelectItem value="5" className="text-[10px]">
                       {i18n._(msg`Normal+`)}
                     </SelectItem>
-                    <SelectItem value="low" className="text-[10px]">
+                    <SelectItem value="2" className="text-[10px]">
                       {i18n._(msg`All`)}
                     </SelectItem>
                   </SelectContent>

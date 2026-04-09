@@ -25,10 +25,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 
 import type { NotificationEventTypeInfo } from '@/api/schemas/notifications';
-import type {
-  DesktopNotificationConfig,
-  DesktopNotificationMinPriority,
-} from '@/desktop/desktop-notifications';
+import type { DesktopNotificationConfig } from '@/desktop/desktop-notifications';
 
 interface DesktopChannelDialogProps {
   open: boolean;
@@ -49,17 +46,11 @@ export function DesktopChannelDialog({
 }: DesktopChannelDialogProps) {
   const { i18n } = useLingui();
 
-  const priorityLabel = (p: DesktopNotificationMinPriority) => {
-    switch (p) {
-      case 'critical':
-        return i18n._(msg`Critical Only`);
-      case 'high':
-        return i18n._(msg`High+`);
-      case 'normal':
-        return i18n._(msg`Normal+`);
-      case 'low':
-        return i18n._(msg`All`);
-    }
+  const priorityLabel = (p: number) => {
+    if (p >= 10) return i18n._(msg`Critical Only`);
+    if (p >= 7) return i18n._(msg`High+`);
+    if (p >= 4) return i18n._(msg`Normal+`);
+    return i18n._(msg`All`);
   };
 
   const toggleEventType = (eventType: string, checked: boolean) => {
@@ -140,11 +131,11 @@ export function DesktopChannelDialog({
                 <Trans>Minimum Priority</Trans>
               </span>
               <Select
-                value={config.minPriority}
-                onValueChange={(minPriority) =>
+                value={String(config.minPriority)}
+                onValueChange={(val) =>
                   onConfigChange({
                     ...config,
-                    minPriority: minPriority as DesktopNotificationMinPriority,
+                    minPriority: Number(val),
                   })
                 }
               >
@@ -152,17 +143,17 @@ export function DesktopChannelDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="critical" className="text-[10px]">
-                    {priorityLabel('critical')}
+                  <SelectItem value="10" className="text-[10px]">
+                    {priorityLabel(10)}
                   </SelectItem>
-                  <SelectItem value="high" className="text-[10px]">
-                    {priorityLabel('high')}
+                  <SelectItem value="8" className="text-[10px]">
+                    {priorityLabel(8)}
                   </SelectItem>
-                  <SelectItem value="normal" className="text-[10px]">
-                    {priorityLabel('normal')}
+                  <SelectItem value="5" className="text-[10px]">
+                    {priorityLabel(5)}
                   </SelectItem>
-                  <SelectItem value="low" className="text-[10px]">
-                    {priorityLabel('low')}
+                  <SelectItem value="2" className="text-[10px]">
+                    {priorityLabel(2)}
                   </SelectItem>
                 </SelectContent>
               </Select>

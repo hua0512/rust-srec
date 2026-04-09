@@ -24,6 +24,7 @@ import { NotificationChannel } from '@/api/schemas';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
+import { priorityLabel } from '@/lib/priority';
 import {
   Loader2,
   BellRing,
@@ -401,7 +402,7 @@ export function SubscriptionManager({
                               variant="outline"
                               className={`text-[10px] h-5 transition-colors ${isSelected ? 'bg-primary/10 border-primary/20 text-primary' : 'text-muted-foreground'}`}
                             >
-                              {type.priority}
+                              {priorityLabel(type.priority)}
                             </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground/80 leading-relaxed font-mono">

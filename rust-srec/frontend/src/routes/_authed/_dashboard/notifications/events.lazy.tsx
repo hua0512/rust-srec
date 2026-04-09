@@ -54,6 +54,7 @@ import {
 } from '@/lib/notification-state';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { SearchInput } from '@/components/sessions/search-input';
+import { priorityLabel } from '@/lib/priority';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/notifications/events',
@@ -128,12 +129,11 @@ function NotificationEventsPage() {
     if (!rawEvents || typeof window === 'undefined') return;
 
     // Don't auto-dismiss if filters would hide critical events
-    const criticalVisible = priority === 'all' || priority === 'critical';
+    const criticalVisible = priority === 'all' || priority === '10';
     if (!criticalVisible) return;
 
     const maxCritical = rawEvents.reduce((max, e) => {
-      const p = (e.priority ?? '').toString().trim().toLowerCase();
-      if (p !== 'critical') return max;
+      if (e.priority < 10) return max;
       return Math.max(max, e.created_at);
     }, 0);
     if (maxCritical <= 0) return;
@@ -158,19 +158,19 @@ function NotificationEventsPage() {
     () => [
       { value: 'all', label: i18n._(msg`All`), icon: Filter },
       {
-        value: 'critical',
+        value: '10',
         label: i18n._(msg`Critical`),
         icon: Flame,
         color: 'text-red-500',
       },
       {
-        value: 'high',
+        value: '8',
         label: i18n._(msg`High+`),
         icon: Zap,
         color: 'text-orange-500',
       },
       {
-        value: 'normal',
+        value: '5',
         label: i18n._(msg`Normal+`),
         icon: Circle,
         color: 'text-blue-500',
@@ -220,7 +220,7 @@ function NotificationEventsPage() {
 
   const handleViewDetails = useCallback((event: any) => {
     setSelectedPayload({
-      title: `${event.event_type} (${event.priority})`,
+      title: `${event.event_type} (${priorityLabel(event.priority)})`,
       payload: event.payload,
     });
   }, []);
