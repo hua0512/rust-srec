@@ -173,8 +173,8 @@ mod tests {
         assert!(!config.enabled);
         assert!(config.server_url.is_empty());
         assert!(config.app_token.is_empty());
-        assert_eq!(config.priority, 5);
         assert_eq!(config.min_priority, NotificationPriority::Normal);
+        assert_eq!(config.timeout_secs, 30);
     }
 
     #[test]
