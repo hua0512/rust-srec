@@ -134,7 +134,7 @@ jobs:
         working-directory: rust-srec/frontend
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.28.1
       - uses: actions/setup-node@v6
@@ -165,7 +165,7 @@ jobs:
           shared-key: ci
           save-if: ${{ false }}
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.28.1
       - uses: actions/setup-node@v6
