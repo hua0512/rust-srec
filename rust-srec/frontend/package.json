@@ -79,7 +79,7 @@
     "@lingui/cli": "^5.9.4",
     "@lingui/macro": "^5.9.4",
     "@lingui/swc-plugin": "^5.11.0",
-    "@lingui/vite-plugin": "^5.9.4",
+    "@lingui/vite-plugin": "^5.9.5",
     "@tanstack/devtools-vite": "^0.6.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
