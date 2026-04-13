@@ -7,70 +7,63 @@ import { Trans } from '@lingui/react/macro';
 import { Button } from '@/components/ui/button';
 import { EventIcon } from './event-icon';
 import { PayloadPreview } from './payload-preview';
+import { priorityLabel } from '@/lib/priority';
 
-export const getPriorityStyles = (priority: string) => {
-  switch (priority.toLowerCase()) {
-    case 'critical':
-      return {
-        bg: 'bg-destructive/5 dark:bg-destructive/10',
-        border: 'border-destructive/20 group-hover:border-destructive/40',
-        text: 'text-destructive',
-        badge: 'bg-destructive/10 text-destructive border-destructive/20',
-        icon: 'bg-destructive/10 text-destructive',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(239,68,68,0.15)]',
-        flare: 'from-destructive/20 to-transparent',
-      };
-    case 'high':
-      return {
-        bg: 'bg-orange-500/5 dark:bg-orange-500/10',
-        border: 'border-orange-500/20 group-hover:border-orange-500/40',
-        text: 'text-orange-600 dark:text-orange-400',
-        badge:
-          'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
-        icon: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(249,115,22,0.15)]',
-        flare: 'from-orange-500/20 to-transparent',
-      };
-    case 'normal':
-      return {
-        bg: 'bg-blue-500/5 dark:bg-blue-500/10',
-        border: 'border-blue-500/20 group-hover:border-blue-500/40',
-        text: 'text-blue-600 dark:text-blue-400',
-        badge:
-          'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
-        icon: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]',
-        flare: 'from-blue-500/20 to-transparent',
-      };
-    case 'low':
-      return {
-        bg: 'bg-slate-500/5 dark:bg-slate-500/10',
-        border: 'border-slate-500/20 group-hover:border-slate-500/40',
-        text: 'text-slate-600 dark:text-slate-400',
-        badge:
-          'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
-        icon: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(100,116,139,0.15)]',
-        flare: 'from-slate-500/20 to-transparent',
-      };
-    default:
-      return {
-        bg: 'bg-slate-500/5 dark:bg-slate-500/10',
-        border: 'border-slate-500/20 group-hover:border-slate-500/40',
-        text: 'text-slate-600 dark:text-slate-400',
-        badge:
-          'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
-        icon: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
-        glow: 'group-hover:shadow-[0_0_20px_rgba(100,116,139,0.15)]',
-        flare: 'from-slate-500/20 to-transparent',
-      };
+export const getPriorityStyles = (priority: number) => {
+  if (priority >= 10) {
+    // Critical
+    return {
+      bg: 'bg-destructive/5 dark:bg-destructive/10',
+      border: 'border-destructive/20 group-hover:border-destructive/40',
+      text: 'text-destructive',
+      badge: 'bg-destructive/10 text-destructive border-destructive/20',
+      icon: 'bg-destructive/10 text-destructive',
+      glow: 'group-hover:shadow-[0_0_20px_rgba(239,68,68,0.15)]',
+      flare: 'from-destructive/20 to-transparent',
+    };
+  } else if (priority >= 7) {
+    // High
+    return {
+      bg: 'bg-orange-500/5 dark:bg-orange-500/10',
+      border: 'border-orange-500/20 group-hover:border-orange-500/40',
+      text: 'text-orange-600 dark:text-orange-400',
+      badge:
+        'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+      icon: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+      glow: 'group-hover:shadow-[0_0_20px_rgba(249,115,22,0.15)]',
+      flare: 'from-orange-500/20 to-transparent',
+    };
+  } else if (priority >= 4) {
+    // Normal
+    return {
+      bg: 'bg-blue-500/5 dark:bg-blue-500/10',
+      border: 'border-blue-500/20 group-hover:border-blue-500/40',
+      text: 'text-blue-600 dark:text-blue-400',
+      badge:
+        'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+      icon: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+      glow: 'group-hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]',
+      flare: 'from-blue-500/20 to-transparent',
+    };
+  } else {
+    // Low
+    return {
+      bg: 'bg-slate-500/5 dark:bg-slate-500/10',
+      border: 'border-slate-500/20 group-hover:border-slate-500/40',
+      text: 'text-slate-600 dark:text-slate-400',
+      badge:
+        'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+      icon: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
+      glow: 'group-hover:shadow-[0_0_20px_rgba(100,116,139,0.15)]',
+      flare: 'from-slate-500/20 to-transparent',
+    };
   }
 };
 
 export interface NotificationEvent {
   id: string;
   event_type: string;
-  priority: string;
+  priority: number;
   payload: string;
   created_at: number;
   streamer_id?: string | null;
@@ -135,7 +128,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
                   styles.badge,
                 )}
               >
-                {event.priority}
+                {priorityLabel(event.priority)}
               </Badge>
             </div>
             <h4 className="text-[13px] font-bold leading-none tracking-tight text-foreground/90 group-hover:text-primary transition-colors">

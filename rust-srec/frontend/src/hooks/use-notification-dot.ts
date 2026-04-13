@@ -14,7 +14,7 @@ export function useNotificationDot() {
 
       // Server filters by priority=critical, so all returned events are critical
       const events = await listEvents({
-        data: { limit: 50, priority: 'critical' },
+        data: { limit: 50, priority: '10' },
       });
       // 7 days cutoff - critical events shouldn't vanish too quickly
       const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;

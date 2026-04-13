@@ -282,7 +282,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         )
         .bind(&entry.id)
         .bind(&entry.event_type)
-        .bind(&entry.priority)
+        .bind(entry.priority)
         .bind(&entry.payload)
         .bind(&entry.streamer_id)
         .bind(entry.created_at)
@@ -320,16 +320,7 @@ impl NotificationRepository for SqlxNotificationRepository {
         }
 
         if priority.is_some() {
-            // Map priority to numeric value for >= comparison
-            // low=0, normal=1, high=2, critical=3
-            conditions.push(
-                "CASE LOWER(nel.priority) \
-                 WHEN 'low' THEN 0 \
-                 WHEN 'normal' THEN 1 \
-                 WHEN 'high' THEN 2 \
-                 WHEN 'critical' THEN 3 \
-                 ELSE 0 END >= ?",
-            );
+            conditions.push("nel.priority >= ?");
         }
 
         if !conditions.is_empty() {
@@ -353,12 +344,17 @@ impl NotificationRepository for SqlxNotificationRepository {
             query = query.bind(sid);
         }
         if let Some(p) = priority {
-            let priority_value = match p.to_ascii_lowercase().as_str() {
-                "low" => 0,
-                "normal" => 1,
-                "high" => 2,
-                "critical" => 3,
-                _ => 0,
+            // Accept both integer (new format) and string (legacy format).
+            let priority_value: i32 = if let Ok(int_val) = p.parse::<i32>() {
+                int_val
+            } else {
+                match p.trim() {
+                    s if s.eq_ignore_ascii_case("low") => 2,
+                    s if s.eq_ignore_ascii_case("normal") => 5,
+                    s if s.eq_ignore_ascii_case("high") => 8,
+                    s if s.eq_ignore_ascii_case("critical") => 10,
+                    _ => 2,
+                }
             };
             query = query.bind(priority_value);
         }

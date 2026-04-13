@@ -100,7 +100,7 @@ pub struct WebPushSubscriptionJson {
 pub struct WebPushSubscriptionResponse {
     pub id: String,
     pub endpoint: String,
-    pub min_priority: String,
+    pub min_priority: i32,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -108,8 +108,8 @@ pub struct WebPushSubscriptionResponse {
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct SubscribeWebPushRequest {
     pub subscription: WebPushSubscriptionJson,
-    /// Minimum priority to send ("low"|"normal"|"high"|"critical"), default: "critical".
-    pub min_priority: Option<String>,
+    /// Minimum priority to send (integer 0-10 scale, or legacy string), default: 10 (critical).
+    pub min_priority: Option<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
@@ -245,14 +245,24 @@ pub async fn subscribe_web_push(
         ));
     }
 
-    let min_priority = match req.min_priority.as_deref() {
+    let min_priority = match &req.min_priority {
         None => NotificationPriority::Critical,
-        Some(value) => parse_priority(value).ok_or_else(|| {
+        Some(serde_json::Value::Number(n)) => {
+            let val = n
+                .as_u64()
+                .and_then(|v| u8::try_from(v).ok())
+                .ok_or_else(|| {
+                    ApiError::bad_request("min_priority must be an integer between 0 and 10")
+                })?;
+            NotificationPriority::from_int(val).unwrap_or(NotificationPriority::Critical)
+        }
+        Some(serde_json::Value::String(s)) => parse_priority(s).ok_or_else(|| {
             ApiError::bad_request(format!(
-                "Invalid min_priority '{}'. Expected one of: low, normal, high, critical",
-                value
+                "Invalid min_priority '{}'. Expected integer (0-10) or one of: low, normal, high, critical",
+                s
             ))
         })?,
+        _ => NotificationPriority::Critical,
     };
 
     let saved = service
@@ -351,6 +361,10 @@ pub async fn list_events(
 }
 
 fn parse_priority(input: &str) -> Option<NotificationPriority> {
+    // Try integer first (new format), then string (legacy).
+    if let Ok(int_val) = input.trim().parse::<u8>() {
+        return NotificationPriority::from_int(int_val);
+    }
     match input.trim().to_ascii_lowercase().as_str() {
         "low" => Some(NotificationPriority::Low),
         "normal" => Some(NotificationPriority::Normal),

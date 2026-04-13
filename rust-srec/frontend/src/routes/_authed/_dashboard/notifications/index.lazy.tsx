@@ -72,7 +72,7 @@ function NotificationsPage() {
   const [webPushPermission, setWebPushPermission] =
     useState<NotificationPermission>('default');
   const [webPushEnabled, setWebPushEnabled] = useState(false);
-  const [webPushMinPriority, setWebPushMinPriority] = useState('critical');
+  const [webPushMinPriority, setWebPushMinPriority] = useState(10);
 
   const [isBrowserDialogOpen, setIsBrowserDialogOpen] = useState(false);
   const [browserNotificationsEnabled, setBrowserNotificationsEnabledState] =
@@ -82,7 +82,7 @@ function NotificationsPage() {
 
   const defaultDesktopConfig: DesktopNotificationConfig = {
     enabled: true,
-    minPriority: 'normal',
+    minPriority: 5,
     // Empty => no desktop notifications until events are selected.
     eventTypes: [],
   };
@@ -181,7 +181,7 @@ function NotificationsPage() {
     enabled: webPushSupported,
   });
 
-  const handleWebPushPriorityChange = async (priority: string) => {
+  const handleWebPushPriorityChange = async (priority: number) => {
     setWebPushMinPriority(priority);
 
     // If already enabled, update the subscription on the server
@@ -332,18 +332,11 @@ function NotificationsPage() {
   }, [i18n, webPushKeyQuery.isError, webPushPermission, webPushSupported]);
 
   const desktopMinPriorityLabel = useMemo(() => {
-    const p = desktopNotificationsConfig?.minPriority ?? 'normal';
-    switch (p) {
-      case 'critical':
-        return i18n._(msg`Critical Only`);
-      case 'high':
-        return i18n._(msg`High+`);
-      case 'low':
-        return i18n._(msg`All`);
-      case 'normal':
-      default:
-        return i18n._(msg`Normal+`);
-    }
+    const p = desktopNotificationsConfig?.minPriority ?? 5;
+    if (p >= 10) return i18n._(msg`Critical Only`);
+    if (p >= 7) return i18n._(msg`High+`);
+    if (p >= 4) return i18n._(msg`Normal+`);
+    return i18n._(msg`All`);
   }, [desktopNotificationsConfig?.minPriority, i18n]);
 
   const desktopConfiguredEventsText = useMemo(() => {

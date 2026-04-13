@@ -37,6 +37,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { IconInput } from '@/components/ui/icon-input';
 import { SwitchCard } from '@/components/ui/switch-card';
 import { CardHeaderWithIcon } from '@/components/ui/card-header-with-icon';
+import { priorityOptions } from '@/lib/priority';
 
 export const WebhookForm = memo(function WebhookForm() {
   const { i18n } = useLingui();
@@ -143,8 +144,8 @@ export const WebhookForm = memo(function WebhookForm() {
                   <Trans>Minimum Priority</Trans>
                 </FormLabel>
                 <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  onValueChange={(val) => field.onChange(Number(val))}
+                  defaultValue={String(field.value)}
                 >
                   <FormControl>
                     <SelectTrigger>
@@ -152,18 +153,11 @@ export const WebhookForm = memo(function WebhookForm() {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="Low">
-                      <Trans>Low</Trans>
-                    </SelectItem>
-                    <SelectItem value="Normal">
-                      <Trans>Normal</Trans>
-                    </SelectItem>
-                    <SelectItem value="High">
-                      <Trans>High</Trans>
-                    </SelectItem>
-                    <SelectItem value="Critical">
-                      <Trans>Critical</Trans>
-                    </SelectItem>
+                    {priorityOptions().map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        <Trans>{opt.label}</Trans>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormDescription className="text-xs">

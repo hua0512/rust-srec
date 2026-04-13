@@ -36,6 +36,7 @@ impl NotificationChannelDbModel {
 pub enum ChannelType {
     Discord,
     Email,
+    Gotify,
     Telegram,
     Webhook,
 }
@@ -45,6 +46,7 @@ impl ChannelType {
         match self {
             Self::Discord => "Discord",
             Self::Email => "Email",
+            Self::Gotify => "Gotify",
             Self::Telegram => "Telegram",
             Self::Webhook => "Webhook",
         }
@@ -54,6 +56,7 @@ impl ChannelType {
         match s.trim().to_ascii_lowercase().as_str() {
             "discord" => Some(Self::Discord),
             "email" => Some(Self::Email),
+            "gotify" => Some(Self::Gotify),
             "telegram" => Some(Self::Telegram),
             "webhook" => Some(Self::Webhook),
             _ => None,
@@ -95,6 +98,19 @@ pub struct EmailChannelSettings {
     pub to_addresses: Vec<String>,
     #[serde(default)]
     pub use_tls: bool,
+}
+
+/// Gotify channel settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GotifyChannelSettings {
+    pub server_url: String,
+    pub app_token: String,
+    #[serde(default = "default_gotify_timeout")]
+    pub timeout_secs: u64,
+}
+
+fn default_gotify_timeout() -> u64 {
+    30
 }
 
 /// Webhook channel settings.
@@ -177,7 +193,7 @@ impl NotificationDeadLetterDbModel {
 pub struct NotificationEventLogDbModel {
     pub id: String,
     pub event_type: String,
-    pub priority: String,
+    pub priority: i32,
     /// JSON blob of the event payload
     pub payload: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -196,8 +212,8 @@ pub struct WebPushSubscriptionDbModel {
     pub endpoint: String,
     pub p256dh: String,
     pub auth: String,
-    /// Minimum priority to send (low|normal|high|critical).
-    pub min_priority: String,
+    /// Minimum priority to send (integer, Gotify-compatible 0-10 scale).
+    pub min_priority: i32,
     pub created_at: i64,
     pub updated_at: i64,
     /// Optional next allowed attempt time. When set and in the future, delivery is skipped.

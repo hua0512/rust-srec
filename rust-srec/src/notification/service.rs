@@ -28,17 +28,17 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::channels::{
-    ChannelConfig, DiscordChannel, EmailChannel, NotificationChannel, TelegramChannel,
-    WebhookChannel,
+    ChannelConfig, DiscordChannel, EmailChannel, GotifyChannel, NotificationChannel,
+    TelegramChannel, WebhookChannel,
 };
 use super::events::canonicalize_subscription_event_name;
 use super::events::{NotificationEvent, NotificationPriority};
 use super::web_push::WebPushService;
 use crate::Result;
 use crate::database::models::{
-    ChannelType, DiscordChannelSettings, EmailChannelSettings, NotificationChannelDbModel,
-    NotificationDeadLetterDbModel, NotificationEventLogDbModel, TelegramChannelSettings,
-    WebhookChannelSettings,
+    ChannelType, DiscordChannelSettings, EmailChannelSettings, GotifyChannelSettings,
+    NotificationChannelDbModel, NotificationDeadLetterDbModel, NotificationEventLogDbModel,
+    TelegramChannelSettings, WebhookChannelSettings,
 };
 use crate::database::repositories::NotificationRepository;
 use crate::downloader::DownloadManagerEvent;
@@ -447,6 +447,7 @@ impl NotificationService {
             let channel: Arc<dyn NotificationChannel> = match channel_config {
                 ChannelConfig::Discord(c) => Arc::new(DiscordChannel::new(c.clone())),
                 ChannelConfig::Email(c) => Arc::new(EmailChannel::new(c.clone())),
+                ChannelConfig::Gotify(c) => Arc::new(GotifyChannel::new(c.clone())),
                 ChannelConfig::Telegram(c) => Arc::new(TelegramChannel::new(c.clone())),
                 ChannelConfig::Webhook(c) => Arc::new(WebhookChannel::new(c.clone())),
             };
@@ -509,6 +510,7 @@ impl NotificationService {
         let channel: Arc<dyn NotificationChannel> = match &config {
             ChannelConfig::Discord(c) => Arc::new(DiscordChannel::new(c.clone())),
             ChannelConfig::Email(c) => Arc::new(EmailChannel::new(c.clone())),
+            ChannelConfig::Gotify(c) => Arc::new(GotifyChannel::new(c.clone())),
             ChannelConfig::Telegram(c) => Arc::new(TelegramChannel::new(c.clone())),
             ChannelConfig::Webhook(c) => Arc::new(WebhookChannel::new(c.clone())),
         };
@@ -666,8 +668,14 @@ impl NotificationService {
 
         let min_priority = settings_json
             .get("min_priority")
-            .and_then(|v| v.as_str())
-            .and_then(parse_notification_priority)
+            .and_then(|v| {
+                // Accept integer (new format) or string (legacy format).
+                if let Some(n) = v.as_u64() {
+                    NotificationPriority::from_int(n as u8)
+                } else {
+                    v.as_str().and_then(parse_notification_priority)
+                }
+            })
             .unwrap_or(NotificationPriority::Normal);
 
         let runtime_channel: Arc<dyn NotificationChannel> = match channel_type {
@@ -766,6 +774,19 @@ impl NotificationService {
                     auth,
                     min_priority,
                     timeout_secs: settings.timeout_secs.unwrap_or(30),
+                }))
+            }
+            ChannelType::Gotify => {
+                let settings: GotifyChannelSettings =
+                    serde_json::from_value(settings_json.clone())?;
+                Arc::new(GotifyChannel::new(super::channels::GotifyConfig {
+                    id: None,
+                    name: None,
+                    enabled: true,
+                    server_url: settings.server_url,
+                    app_token: settings.app_token,
+                    min_priority,
+                    timeout_secs: settings.timeout_secs,
                 }))
             }
         };
@@ -912,7 +933,7 @@ impl NotificationService {
             let entry = NotificationEventLogDbModel {
                 id: event_log_id.clone(),
                 event_type: event.event_type().to_string(),
-                priority: event.priority().to_string(),
+                priority: event.priority().as_int() as i32,
                 payload: serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()),
                 streamer_id: event.streamer_id().map(|s| s.to_string()),
                 created_at: event.timestamp().timestamp_millis(),
@@ -1803,6 +1824,11 @@ impl NotificationService {
 }
 
 fn parse_notification_priority(value: &str) -> Option<NotificationPriority> {
+    // Try parsing as integer first (new format).
+    if let Ok(int_val) = value.trim().parse::<u8>() {
+        return NotificationPriority::from_int(int_val);
+    }
+    // Fall back to string labels (legacy format).
     match value.trim().to_ascii_lowercase().as_str() {
         "low" => Some(NotificationPriority::Low),
         "normal" => Some(NotificationPriority::Normal),

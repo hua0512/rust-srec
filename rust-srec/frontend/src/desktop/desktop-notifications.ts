@@ -1,13 +1,31 @@
 import { z } from 'zod';
 
+import {
+  PRIORITY_LOW,
+  PRIORITY_NORMAL,
+  PRIORITY_HIGH,
+  PRIORITY_CRITICAL,
+} from '@/lib/priority';
 import { isTauriRuntime } from '@/utils/tauri';
 
-export const DesktopNotificationMinPrioritySchema = z.enum([
-  'low',
-  'normal',
-  'high',
-  'critical',
-]);
+// Accepts integer (new) or legacy string ("low"/"normal"/"high"/"critical").
+export const DesktopNotificationMinPrioritySchema = z
+  .union([z.number().int().min(0).max(10), z.string()])
+  .transform((v) => {
+    if (typeof v === 'number') return v;
+    switch (v.trim().toLowerCase()) {
+      case 'low':
+        return PRIORITY_LOW;
+      case 'normal':
+        return PRIORITY_NORMAL;
+      case 'high':
+        return PRIORITY_HIGH;
+      case 'critical':
+        return PRIORITY_CRITICAL;
+      default:
+        return PRIORITY_NORMAL;
+    }
+  });
 
 export type DesktopNotificationMinPriority = z.infer<
   typeof DesktopNotificationMinPrioritySchema

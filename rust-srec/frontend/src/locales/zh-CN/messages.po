@@ -27,7 +27,7 @@ msgstr "--flag value"
 msgid "--hls-live-edge 3"
 msgstr "--hls-live-edge 3"
 
-#: src/components/notifications/forms/telegram-form.tsx:61
+#: src/components/notifications/forms/telegram-form.tsx:62
 msgid "-1001234567890"
 msgstr "-1001234567890"
 
@@ -94,10 +94,16 @@ msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, other {个文件}}"
 
 #. placeholder {0}: day.full
+#. placeholder {0}: opt.label
 #. placeholder {0}: p.label
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:158
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:191
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:235
+#: src/components/notifications/forms/discord-form.tsx:113
+#: src/components/notifications/forms/email-form.tsx:190
+#: src/components/notifications/forms/gotify-form.tsx:92
+#: src/components/notifications/forms/telegram-form.tsx:116
+#: src/components/notifications/forms/webhook-form.tsx:158
 msgid "{0}"
 msgstr "{0}"
 
@@ -117,7 +123,7 @@ msgstr "成功添加 {0} 个流"
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} 步"
 
-#: src/components/notifications/channel-form.tsx:326
+#: src/components/notifications/channel-form.tsx:339
 msgid "{val} channel support is coming soon!"
 msgstr "即将支持 {val} 渠道！"
 
@@ -161,7 +167,7 @@ msgstr "0:v:0"
 msgid "1 (best) - 31 (worst)"
 msgstr "1（最佳）- 31（最差）"
 
-#: src/components/notifications/forms/telegram-form.tsx:41
+#: src/components/notifications/forms/telegram-form.tsx:42
 msgid "123456:ABC-DEF..."
 msgstr "123456:ABC-DEF..."
 
@@ -181,7 +187,7 @@ msgstr "404"
 msgid "44100"
 msgstr "44100"
 
-#: src/components/notifications/forms/email-form.tsx:66
+#: src/components/notifications/forms/email-form.tsx:67
 msgid "587"
 msgstr "587"
 
@@ -217,10 +223,10 @@ msgstr "操作"
 msgid "Actions"
 msgstr "操作"
 
-#: src/components/notifications/forms/webhook-form.tsx:116
+#: src/components/notifications/forms/webhook-form.tsx:117
 #: src/components/streamers/edit/streamer-meta-form.tsx:226
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:108
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:482
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:475
 msgid "Active"
 msgstr "启用"
 
@@ -240,7 +246,7 @@ msgstr "正在录制"
 msgid "Adaptive Refresh (Default: On)"
 msgstr "自适应刷新（默认：开）"
 
-#: src/components/notifications/forms/webhook-form.tsx:429
+#: src/components/notifications/forms/webhook-form.tsx:423
 msgid "Add"
 msgstr "添加"
 
@@ -268,7 +274,7 @@ msgstr "添加参数模板"
 msgid "Add at least one step"
 msgstr "至少添加一个步骤"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:413
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:406
 msgid "Add Channel"
 msgstr "添加渠道"
 
@@ -276,7 +282,7 @@ msgstr "添加渠道"
 msgid "Add Custom Tag"
 msgstr "添加自定义标签"
 
-#: src/components/notifications/forms/email-form.tsx:156
+#: src/components/notifications/forms/email-form.tsx:157
 msgid "Add email and press Enter"
 msgstr "添加邮箱地址并按 Enter"
 
@@ -417,15 +423,15 @@ msgstr "在: {0} 之后"
 msgid "Album"
 msgstr "专辑"
 
-#: src/components/notifications/subscription-manager.tsx:169
+#: src/components/notifications/subscription-manager.tsx:170
 msgid "Alerts when disk space is running low."
 msgstr "磁盘空间不足时发出警报。"
 
 #: src/components/notifications/browser-channel-dialog.tsx:159
-#: src/components/notifications/desktop-channel-dialog.tsx:61
+#: src/components/notifications/desktop-channel-dialog.tsx:53
 #: src/components/pipeline/workflows/step-library.tsx:291
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:159
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:342
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:339
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:102
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:203
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:283
@@ -470,6 +476,10 @@ msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协�
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:138
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
+
+#: src/components/notifications/forms/gotify-form.tsx:56
+msgid "App Token"
+msgstr "应用令牌"
 
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:75
 msgid "Appearance & style"
@@ -612,13 +622,13 @@ msgstr "音频属性"
 msgid "Audio Settings"
 msgstr "音频设置"
 
-#: src/components/notifications/forms/webhook-form.tsx:217
+#: src/components/notifications/forms/webhook-form.tsx:211
 msgid "Auth Type"
 msgstr "认证类型"
 
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:29
 #: src/components/config/shared/network-settings-card.tsx:162
-#: src/components/notifications/forms/webhook-form.tsx:206
+#: src/components/notifications/forms/webhook-form.tsx:200
 msgid "Authentication"
 msgstr "认证"
 
@@ -667,11 +677,11 @@ msgstr "轻松自动化您的直播录制。"
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "自动为每个会话的第一段生成封面图。"
 
-#: src/components/notifications/subscription-manager.tsx:426
+#: src/components/notifications/subscription-manager.tsx:427
 msgid "available"
 msgstr "可选"
 
-#: src/components/notifications/forms/discord-form.tsx:77
+#: src/components/notifications/forms/discord-form.tsx:78
 msgid "Avatar URL (Optional)"
 msgstr "头像 URL（可选）"
 
@@ -745,7 +755,7 @@ msgstr "重试之间的基础延迟"
 msgid "Base path for remote storage."
 msgstr "远程存储的基础路径。"
 
-#: src/components/notifications/forms/webhook-form.tsx:258
+#: src/components/notifications/forms/webhook-form.tsx:252
 msgid "Basic Auth"
 msgstr "Basic Auth"
 
@@ -783,7 +793,7 @@ msgstr "批量 URL"
 msgid "Batch Window (ms)"
 msgstr "批处理窗口（毫秒）"
 
-#: src/components/notifications/forms/webhook-form.tsx:255
+#: src/components/notifications/forms/webhook-form.tsx:249
 msgid "Bearer Token"
 msgstr "Bearer Token"
 
@@ -825,12 +835,12 @@ msgstr "被浏览器阻止"
 msgid "Border Radius"
 msgstr "圆角半径"
 
-#: src/components/notifications/forms/discord-form.tsx:62
+#: src/components/notifications/forms/discord-form.tsx:63
 msgid "Bot Name"
 msgstr "机器人名称"
 
-#: src/components/notifications/channel-card.tsx:108
-#: src/components/notifications/forms/telegram-form.tsx:35
+#: src/components/notifications/channel-card.tsx:111
+#: src/components/notifications/forms/telegram-form.tsx:36
 msgid "Bot Token"
 msgstr "机器人令牌"
 
@@ -851,7 +861,7 @@ msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "浏览处理任务生成的媒体文件"
 
 #: src/components/notifications/browser-channel-dialog.tsx:64
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:491
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:484
 msgid "Browser Notifications"
 msgstr "浏览器通知"
 
@@ -887,9 +897,9 @@ msgstr "缓存"
 #: src/components/config/global/backup-restore-card.tsx:580
 #: src/components/config/templates/template-card.tsx:196
 #: src/components/filters/FilterDialog.tsx:247
-#: src/components/notifications/channel-card.tsx:212
-#: src/components/notifications/channel-form.tsx:385
-#: src/components/notifications/subscription-manager.tsx:434
+#: src/components/notifications/channel-card.tsx:226
+#: src/components/notifications/channel-form.tsx:400
+#: src/components/notifications/subscription-manager.tsx:435
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:174
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
@@ -979,7 +989,7 @@ msgstr "正在修改密码..."
 msgid "Channel buffer size multiplier for processed segments."
 msgstr "已处理分段的通道缓冲倍数。"
 
-#: src/components/notifications/channel-form.tsx:201
+#: src/components/notifications/channel-form.tsx:214
 msgid "Channel created"
 msgstr "渠道已创建"
 
@@ -987,7 +997,7 @@ msgstr "渠道已创建"
 msgid "Channel deleted"
 msgstr "渠道已删除"
 
-#: src/components/notifications/channel-form.tsx:215
+#: src/components/notifications/channel-form.tsx:228
 msgid "Channel updated"
 msgstr "渠道已更新"
 
@@ -995,7 +1005,7 @@ msgstr "渠道已更新"
 msgid "channel1,channel2"
 msgstr "频道1,频道2"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:386
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:379
 msgid "channels"
 msgstr "个渠道"
 
@@ -1007,8 +1017,8 @@ msgstr "个渠道"
 msgid "Channels"
 msgstr "声道"
 
-#: src/components/notifications/channel-card.tsx:118
-#: src/components/notifications/forms/telegram-form.tsx:56
+#: src/components/notifications/channel-card.tsx:121
+#: src/components/notifications/forms/telegram-form.tsx:57
 msgid "Chat ID"
 msgstr "聊天 ID"
 
@@ -1062,7 +1072,7 @@ msgid "Cleanup"
 msgstr "清理"
 
 #: src/components/logging/log-viewer.tsx:407
-#: src/components/notifications/desktop-channel-dialog.tsx:190
+#: src/components/notifications/desktop-channel-dialog.tsx:181
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:229
 msgid "Clear"
 msgstr "清空"
@@ -1101,7 +1111,7 @@ msgstr "正在克隆..."
 
 #: src/components/config/global/backup-restore-card.tsx:571
 #: src/components/notifications/browser-channel-dialog.tsx:203
-#: src/components/notifications/desktop-channel-dialog.tsx:244
+#: src/components/notifications/desktop-channel-dialog.tsx:235
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:686
 msgid "Close"
 msgstr "关闭"
@@ -1200,7 +1210,7 @@ msgstr "配置"
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
-#: src/components/notifications/channel-form.tsx:367
+#: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
 #: src/components/pipeline/workflows/step-config-dialog.tsx:326
 #: src/components/pipeline/workflows/workflow-editor.tsx:299
@@ -1249,7 +1259,7 @@ msgstr "配置如何在此浏览器中以及通过系统推送通知接收警报
 msgid "Configure how you want to import data from the selected backup file."
 msgstr "配置从所选备份文件导入数据的方式。"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:91
+#: src/components/notifications/desktop-channel-dialog.tsx:82
 msgid "Configure native OS notifications for important events while running the desktop app."
 msgstr "在运行桌面应用时，配置重要事件的原生操作系统通知。"
 
@@ -1261,7 +1271,7 @@ msgstr "配置代理策略和连接详情。"
 msgid "Configure recording rules for this streamer."
 msgstr "配置此主播的录制规则。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:561
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:554
 msgid "Configure Settings"
 msgstr "配置设置"
 
@@ -1269,11 +1279,11 @@ msgstr "配置设置"
 msgid "Configure Step"
 msgstr "配置步骤"
 
-#: src/components/notifications/channel-form.tsx:278
+#: src/components/notifications/channel-form.tsx:291
 msgid "Configure where and how you receive notifications."
 msgstr "配置接收通知的位置和方式。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:516
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:509
 msgid "Configured Events"
 msgstr "已配置的事件"
 
@@ -1458,8 +1468,8 @@ msgstr "创建模板以定义可复用的录制配置。"
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
-#: src/components/notifications/channel-form.tsx:275
-#: src/components/notifications/channel-form.tsx:395
+#: src/components/notifications/channel-form.tsx:288
+#: src/components/notifications/channel-form.tsx:410
 msgid "Create Channel"
 msgstr "创建渠道"
 
@@ -1555,25 +1565,21 @@ msgstr "CRF (0-51)"
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF（恒定码率因子）"
 
-#: src/components/notifications/forms/discord-form.tsx:117
-#: src/components/notifications/forms/email-form.tsx:194
-#: src/components/notifications/forms/telegram-form.tsx:120
-#: src/components/notifications/forms/webhook-form.tsx:165
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:162
 msgid "Critical"
 msgstr "严重"
 
-#: src/components/notifications/subscription-manager.tsx:173
+#: src/components/notifications/subscription-manager.tsx:174
 msgid "Critical alert when the processing queue is full."
 msgstr "处理队列已满时发出严重警报。"
 
 #: src/components/notifications/browser-channel-dialog.tsx:150
-#: src/components/notifications/desktop-channel-dialog.tsx:55
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:338
+#: src/components/notifications/desktop-channel-dialog.tsx:50
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:336
 msgid "Critical Only"
 msgstr "仅限严重"
 
-#: src/components/notifications/subscription-manager.tsx:167
+#: src/components/notifications/subscription-manager.tsx:168
 msgid "Critical system errors or streamer failures."
 msgstr "严重的系统错误或主播故障。"
 
@@ -1622,11 +1628,11 @@ msgstr "自定义 FFmpeg"
 msgid "Custom Flags"
 msgstr "自定义标志"
 
-#: src/components/notifications/forms/webhook-form.tsx:261
+#: src/components/notifications/forms/webhook-form.tsx:255
 msgid "Custom Header"
 msgstr "自定义 Header"
 
-#: src/components/notifications/forms/webhook-form.tsx:413
+#: src/components/notifications/forms/webhook-form.tsx:407
 msgid "Custom Headers"
 msgstr "自定义请求头"
 
@@ -1810,8 +1816,8 @@ msgstr "延迟、代理与保留策略。"
 #: src/components/config/templates/template-card.tsx:128
 #: src/components/config/templates/template-card.tsx:202
 #: src/components/filters/FilterCard.tsx:316
-#: src/components/notifications/channel-card.tsx:195
-#: src/components/notifications/channel-card.tsx:218
+#: src/components/notifications/channel-card.tsx:209
+#: src/components/notifications/channel-card.tsx:232
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:216
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:240
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
@@ -1826,7 +1832,7 @@ msgstr "延迟、代理与保留策略。"
 msgid "Delete"
 msgstr "删除"
 
-#: src/components/notifications/channel-card.tsx:201
+#: src/components/notifications/channel-card.tsx:215
 msgid "Delete Channel?"
 msgstr "删除渠道？"
 
@@ -1898,7 +1904,7 @@ msgstr "已删除"
 msgid "Deletes all existing configurations before importing. This action cannot be undone."
 msgstr "导入前删除所有现有配置。此操作无法撤销。"
 
-#: src/components/notifications/forms/webhook-form.tsx:132
+#: src/components/notifications/forms/webhook-form.tsx:133
 msgid "Delivery Policy"
 msgstr "投递策略"
 
@@ -1919,7 +1925,7 @@ msgstr "描述"
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
-#: src/components/notifications/subscription-manager.tsx:341
+#: src/components/notifications/subscription-manager.tsx:342
 msgid "Deselect All"
 msgstr "取消全选"
 
@@ -1927,12 +1933,12 @@ msgstr "取消全选"
 msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:87
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:489
+#: src/components/notifications/desktop-channel-dialog.tsx:78
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:482
 msgid "Desktop Notifications"
 msgstr "桌面通知"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:128
+#: src/components/notifications/desktop-channel-dialog.tsx:119
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "即使应用已最小化，操作系统仍会显示桌面通知。"
 
@@ -1974,9 +1980,9 @@ msgstr "禁用"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:202
 #: src/components/streamers/card/use-streamer-status.tsx:46
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:509
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:541
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:551
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:534
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:544
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:74
 msgid "Disabled"
 msgstr "已禁用"
@@ -2196,7 +2202,7 @@ msgstr "例如：标准处理"
 #: src/components/config/templates/template-card.tsx:116
 #: src/components/filters/FilterCard.tsx:305
 #: src/components/layout/site-header.tsx:54
-#: src/components/notifications/channel-card.tsx:180
+#: src/components/notifications/channel-card.tsx:194
 #: src/components/pipeline/presets/preset-card.tsx:176
 #: src/components/pipeline/workflows/workflow-card.tsx:170
 #: src/components/sidebar/navbar.tsx:48
@@ -2204,7 +2210,7 @@ msgstr "例如：标准处理"
 msgid "Edit"
 msgstr "编辑"
 
-#: src/components/notifications/channel-form.tsx:274
+#: src/components/notifications/channel-form.tsx:287
 msgid "Edit Channel"
 msgstr "编辑渠道"
 
@@ -2250,7 +2256,7 @@ msgstr "启用高级 HLS 分段重建"
 msgid "Enable Monitoring"
 msgstr "启用监控"
 
-#: src/components/notifications/forms/webhook-form.tsx:117
+#: src/components/notifications/forms/webhook-form.tsx:118
 msgid "Enable or disable this webhook"
 msgstr "启用或禁用此 Webhook"
 
@@ -2270,13 +2276,14 @@ msgstr "启用代理"
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "启用弹幕/聊天消息与视频一起录制。"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:111
-#: src/components/notifications/forms/discord-form.tsx:130
-#: src/components/notifications/forms/email-form.tsx:219
-#: src/components/notifications/forms/telegram-form.tsx:133
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:508
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:540
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:550
+#: src/components/notifications/desktop-channel-dialog.tsx:102
+#: src/components/notifications/forms/discord-form.tsx:127
+#: src/components/notifications/forms/email-form.tsx:216
+#: src/components/notifications/forms/gotify-form.tsx:130
+#: src/components/notifications/forms/telegram-form.tsx:130
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:501
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:533
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:543
 msgid "Enabled"
 msgstr "启用"
 
@@ -2320,7 +2327,7 @@ msgstr "结束时间"
 msgid "Ended"
 msgstr "已结束"
 
-#: src/components/notifications/forms/webhook-form.tsx:61
+#: src/components/notifications/forms/webhook-form.tsx:62
 msgid "Endpoint Configuration"
 msgstr "端点配置"
 
@@ -2464,13 +2471,13 @@ msgstr "事件钩子"
 msgid "Event Type"
 msgstr "事件类型"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:174
+#: src/components/notifications/desktop-channel-dialog.tsx:165
 msgid "Event Types"
 msgstr "事件类型"
 
 #: src/components/layout/site-header.tsx:38
 #: src/components/sidebar/navbar.tsx:32
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:391
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:384
 msgid "Events"
 msgstr "事件"
 
@@ -2602,7 +2609,7 @@ msgstr "API 模式"
 msgid "Extraction Settings"
 msgstr "提取设置"
 
-#: src/components/notifications/forms/webhook-form.tsx:291
+#: src/components/notifications/forms/webhook-form.tsx:285
 msgid "ey..."
 msgstr "ey..."
 
@@ -2654,7 +2661,7 @@ msgstr "克隆模板失败：{0}"
 msgid "Failed to copy"
 msgstr "复制失败"
 
-#: src/components/notifications/channel-form.tsx:208
+#: src/components/notifications/channel-form.tsx:221
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
@@ -2844,7 +2851,7 @@ msgstr "启动登录失败：{0}"
 msgid "Failed to trigger check"
 msgstr "触发检查失败"
 
-#: src/components/notifications/channel-form.tsx:222
+#: src/components/notifications/channel-form.tsx:235
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
@@ -2880,7 +2887,7 @@ msgstr "更新设置失败"
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
 
-#: src/components/notifications/subscription-manager.tsx:230
+#: src/components/notifications/subscription-manager.tsx:231
 msgid "Failed to update subscriptions"
 msgstr "更新订阅失败"
 
@@ -3002,7 +3009,7 @@ msgstr "过滤器创建成功"
 msgid "Filter deleted successfully"
 msgstr "过滤器删除成功"
 
-#: src/components/notifications/forms/webhook-form.tsx:170
+#: src/components/notifications/forms/webhook-form.tsx:164
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
@@ -3135,7 +3142,7 @@ msgstr "格式"
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
-#: src/components/notifications/forms/email-form.tsx:128
+#: src/components/notifications/forms/email-form.tsx:129
 msgid "From Address"
 msgstr "发件人地址"
 
@@ -3263,6 +3270,10 @@ msgstr "跳转到第 {p} 页"
 msgid "Go to previous page"
 msgstr "上一页"
 
+#: src/components/notifications/forms/gotify-form.tsx:62
+msgid "Gotify application token"
+msgstr "Gotify 应用令牌"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:110
 msgid "GPU HQ Archive"
 msgstr "GPU 高质量归档"
@@ -3310,7 +3321,7 @@ msgstr "硬件加速"
 msgid "HD Thumbnail"
 msgstr "高清缩略图"
 
-#: src/components/notifications/forms/webhook-form.tsx:369
+#: src/components/notifications/forms/webhook-form.tsx:363
 msgid "Header Key"
 msgstr "Header 键"
 
@@ -3318,7 +3329,7 @@ msgstr "Header 键"
 msgid "Header received"
 msgstr "收到头部"
 
-#: src/components/notifications/forms/webhook-form.tsx:388
+#: src/components/notifications/forms/webhook-form.tsx:382
 msgid "Header Value"
 msgstr "Header 值"
 
@@ -3343,10 +3354,6 @@ msgstr "高度"
 msgid "Hide password"
 msgstr "隐藏密码"
 
-#: src/components/notifications/forms/discord-form.tsx:114
-#: src/components/notifications/forms/email-form.tsx:191
-#: src/components/notifications/forms/telegram-form.tsx:117
-#: src/components/notifications/forms/webhook-form.tsx:162
 #: src/components/streamers/config/streamer-general-settings.tsx:229
 #: src/components/streamers/edit/streamer-meta-form.tsx:204
 msgid "High"
@@ -3381,9 +3388,9 @@ msgid "High Quality MP3"
 msgstr "高质量 MP3"
 
 #: src/components/notifications/browser-channel-dialog.tsx:153
-#: src/components/notifications/desktop-channel-dialog.tsx:57
+#: src/components/notifications/desktop-channel-dialog.tsx:51
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:168
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:340
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:337
 msgid "High+"
 msgstr "高+"
 
@@ -3453,17 +3460,21 @@ msgstr "仅 HTTP/1.1"
 msgid "HTTP/2 Only"
 msgstr "仅 HTTP/2"
 
-#: src/components/notifications/forms/discord-form.tsx:81
+#: src/components/notifications/forms/discord-form.tsx:82
 msgid "https://..."
 msgstr "https://..."
 
-#: src/components/notifications/forms/webhook-form.tsx:75
+#: src/components/notifications/forms/webhook-form.tsx:76
 msgid "https://api.example.com/webhook"
 msgstr "https://api.example.com/webhook"
 
-#: src/components/notifications/forms/discord-form.tsx:41
+#: src/components/notifications/forms/discord-form.tsx:42
 msgid "https://discord.com/api/webhooks/..."
 msgstr "https://discord.com/api/webhooks/..."
+
+#: src/components/notifications/forms/gotify-form.tsx:41
+msgid "https://gotify.example.com"
+msgstr "https://gotify.example.com"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:130
 msgid "https://lb-eu.cdn-perfprod.com"
@@ -3558,7 +3569,7 @@ msgstr "正在导入..."
 msgid "In active"
 msgstr "进行中"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:483
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:476
 msgid "Inactive"
 msgstr "未激活"
 
@@ -3633,7 +3644,7 @@ msgstr "嵌入"
 msgid "Inspecting"
 msgstr "检查中"
 
-#: src/components/notifications/events/event-card.tsx:179
+#: src/components/notifications/events/event-card.tsx:172
 msgid "Interact"
 msgstr "查看详情"
 
@@ -3645,7 +3656,7 @@ msgstr "24小时交互式时间线选择。"
 msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
 msgstr "Windows 不支持通过此 API 进行交互式密码输入。请使用“桌面登录”（导入 tdata）或在常规终端中登录一次。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:495
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:488
 msgid "Internal"
 msgstr "内部"
 
@@ -3756,7 +3767,7 @@ msgstr "保持运行"
 msgid "Keep uploading other files if one fails"
 msgstr "如果一个文件上传失败，继续上传其他文件"
 
-#: src/components/notifications/forms/webhook-form.tsx:447
+#: src/components/notifications/forms/webhook-form.tsx:441
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:72
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:1025
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:93
@@ -3853,7 +3864,7 @@ msgid "Live Gap Strategy"
 msgstr "直播缺口策略"
 
 #: src/components/notifications/browser-channel-dialog.tsx:82
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:536
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:529
 msgid "Live Polling"
 msgstr "实时轮询"
 
@@ -3981,10 +3992,6 @@ msgstr "循环保护"
 msgid "Lossless Split"
 msgstr "无损分割"
 
-#: src/components/notifications/forms/discord-form.tsx:108
-#: src/components/notifications/forms/email-form.tsx:185
-#: src/components/notifications/forms/telegram-form.tsx:111
-#: src/components/notifications/forms/webhook-form.tsx:156
 #: src/components/streamers/config/streamer-general-settings.tsx:235
 #: src/components/streamers/edit/streamer-meta-form.tsx:210
 msgid "Low"
@@ -4022,11 +4029,11 @@ msgstr "管理专门的提取和识别选项。"
 msgid "Manage storage paths and file formats."
 msgstr "管理存储路径和文件格式。"
 
-#: src/components/notifications/subscription-manager.tsx:295
+#: src/components/notifications/subscription-manager.tsx:296
 msgid "Manage Subscriptions"
 msgstr "管理订阅"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:380
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:373
 msgid "Manage where system notifications are sent"
 msgstr "管理系统通知发送到哪里"
 
@@ -4247,7 +4254,7 @@ msgstr "元数据标签"
 msgid "Metadata Variables"
 msgstr "元数据变量"
 
-#: src/components/notifications/forms/webhook-form.tsx:91
+#: src/components/notifications/forms/webhook-form.tsx:92
 msgid "Method"
 msgstr "请求方法"
 
@@ -4263,10 +4270,11 @@ msgstr "最小间隔（毫秒）"
 msgid "Min Interval (s)"
 msgstr "最小间隔（s）"
 
-#: src/components/notifications/forms/discord-form.tsx:98
-#: src/components/notifications/forms/email-form.tsx:175
-#: src/components/notifications/forms/telegram-form.tsx:101
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:524
+#: src/components/notifications/forms/discord-form.tsx:99
+#: src/components/notifications/forms/email-form.tsx:176
+#: src/components/notifications/forms/gotify-form.tsx:78
+#: src/components/notifications/forms/telegram-form.tsx:102
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:517
 msgid "Min Priority"
 msgstr "最低优先级"
 
@@ -4279,8 +4287,8 @@ msgstr "最小分段大小"
 msgid "Min size to keep."
 msgstr "保留的最小大小。"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:140
-#: src/components/notifications/forms/webhook-form.tsx:143
+#: src/components/notifications/desktop-channel-dialog.tsx:131
+#: src/components/notifications/forms/webhook-form.tsx:144
 msgid "Minimum Priority"
 msgstr "最低优先级"
 
@@ -4353,11 +4361,11 @@ msgstr "指数退避的倍率。"
 msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
-#: src/components/notifications/channel-form.tsx:302
+#: src/components/notifications/channel-form.tsx:315
 msgid "My Channel"
 msgstr "我的渠道"
 
-#: src/components/notifications/channel-form.tsx:296
+#: src/components/notifications/channel-form.tsx:309
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
 #: src/components/pipeline/workflows/workflow-editor.tsx:309
 #: src/components/streamers/config/streamer-general-settings.tsx:92
@@ -4382,7 +4390,7 @@ msgstr "name@example.com"
 msgid "Namespace"
 msgstr "命名空间"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:117
+#: src/components/notifications/desktop-channel-dialog.tsx:108
 msgid "Native"
 msgstr "原生"
 
@@ -4460,7 +4468,7 @@ msgstr "无配置。"
 msgid "No credentials found."
 msgstr "未找到凭据。"
 
-#: src/components/notifications/forms/webhook-form.tsx:436
+#: src/components/notifications/forms/webhook-form.tsx:430
 msgid "No custom headers configured"
 msgstr "未配置自定义请求头"
 
@@ -4534,7 +4542,7 @@ msgstr "该执行记录暂无日志。"
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
-#: src/components/notifications/subscription-manager.tsx:360
+#: src/components/notifications/subscription-manager.tsx:361
 msgid "No matching events found"
 msgstr "未找到匹配的事件"
 
@@ -4677,7 +4685,7 @@ msgstr "未找到工作流"
 msgid "No workflows yet"
 msgstr "暂无工作流"
 
-#: src/components/notifications/forms/webhook-form.tsx:252
+#: src/components/notifications/forms/webhook-form.tsx:246
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:333
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:466
 msgid "None"
@@ -4691,10 +4699,6 @@ msgstr "无（默认）"
 msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
-#: src/components/notifications/forms/discord-form.tsx:111
-#: src/components/notifications/forms/email-form.tsx:188
-#: src/components/notifications/forms/telegram-form.tsx:114
-#: src/components/notifications/forms/webhook-form.tsx:159
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:647
 #: src/components/streamers/config/streamer-general-settings.tsx:232
 #: src/components/streamers/edit/streamer-meta-form.tsx:207
@@ -4702,9 +4706,9 @@ msgid "Normal"
 msgstr "正常"
 
 #: src/components/notifications/browser-channel-dialog.tsx:156
-#: src/components/notifications/desktop-channel-dialog.tsx:59
+#: src/components/notifications/desktop-channel-dialog.tsx:52
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:174
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:345
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:338
 msgid "Normal+"
 msgstr "普通+"
 
@@ -4744,11 +4748,11 @@ msgstr "通知服务"
 #: src/components/layout/site-header.tsx:37
 #: src/components/sidebar/navbar.tsx:31
 #: src/lib/menu-list.ts:124
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:377
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:370
 msgid "Notifications"
 msgstr "通知"
 
-#: src/components/notifications/forms/email-form.tsx:133
+#: src/components/notifications/forms/email-form.tsx:134
 msgid "notifier@example.com"
 msgstr "notifier@example.com"
 
@@ -4894,7 +4898,7 @@ msgstr "仅支持 MP4/MOV/M4V"
 
 #: src/components/config/platforms/platform-card.tsx:83
 #: src/components/config/templates/template-card.tsx:110
-#: src/components/notifications/channel-card.tsx:174
+#: src/components/notifications/channel-card.tsx:188
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:150
 #: src/components/pipeline/outputs/output-card.tsx:128
 #: src/components/pipeline/presets/preset-card.tsx:170
@@ -5105,7 +5109,7 @@ msgstr "批量解析"
 msgid "Parse error: {0}"
 msgstr "解析失败：{0}"
 
-#: src/components/notifications/forms/telegram-form.tsx:77
+#: src/components/notifications/forms/telegram-form.tsx:78
 msgid "Parse Mode"
 msgstr "解析模式"
 
@@ -5128,10 +5132,10 @@ msgid "Passthrough Inputs"
 msgstr "透传输入"
 
 #: src/components/config/shared/proxy-settings-card.tsx:197
-#: src/components/notifications/forms/email-form.tsx:105
-#: src/components/notifications/forms/email-form.tsx:111
+#: src/components/notifications/forms/email-form.tsx:106
+#: src/components/notifications/forms/email-form.tsx:112
+#: src/components/notifications/forms/webhook-form.tsx:330
 #: src/components/notifications/forms/webhook-form.tsx:336
-#: src/components/notifications/forms/webhook-form.tsx:342
 #: src/routes/_public/login.lazy.tsx:188
 msgid "Password"
 msgstr "密码"
@@ -5427,7 +5431,7 @@ msgstr "播客提取"
 msgid "Pool Idle Timeout (ms)"
 msgstr "连接池空闲超时（毫秒）"
 
-#: src/components/notifications/forms/email-form.tsx:60
+#: src/components/notifications/forms/email-form.tsx:61
 msgid "Port"
 msgstr "端口"
 
@@ -5536,7 +5540,7 @@ msgstr "预设"
 msgid "Presets Available"
 msgstr "可用预设"
 
-#: src/components/notifications/forms/email-form.tsx:161
+#: src/components/notifications/forms/email-form.tsx:162
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
 
@@ -5777,11 +5781,11 @@ msgstr "所有系统组件与资源的实时状态。"
 msgid "Reason"
 msgstr "原因"
 
-#: src/components/notifications/subscription-manager.tsx:137
+#: src/components/notifications/subscription-manager.tsx:138
 msgid "Receive a notification when a stream ends."
 msgstr "当直播结束时接收通知。"
 
-#: src/components/notifications/subscription-manager.tsx:135
+#: src/components/notifications/subscription-manager.tsx:136
 msgid "Receive a notification when a streamer goes live."
 msgstr "当主播开播时接收通知。"
 
@@ -5930,7 +5934,7 @@ msgstr "替换输出文件"
 msgid "Replace output files if they already exist"
 msgstr "若输出文件已存在则替换"
 
-#: src/components/notifications/forms/webhook-form.tsx:193
+#: src/components/notifications/forms/webhook-form.tsx:187
 msgid "Request timeout duration"
 msgstr "请求超时时长"
 
@@ -6159,7 +6163,7 @@ msgstr "清理后的主播名称"
 #: src/components/config/platforms/platform-editor.tsx:159
 #: src/components/config/templates/template-editor.tsx:213
 #: src/components/filters/FilterDialog.tsx:260
-#: src/components/notifications/subscription-manager.tsx:444
+#: src/components/notifications/subscription-manager.tsx:445
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:543
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
@@ -6232,7 +6236,7 @@ msgstr "按名称或描述搜索..."
 msgid "Search engines..."
 msgstr "搜索引擎..."
 
-#: src/components/notifications/subscription-manager.tsx:326
+#: src/components/notifications/subscription-manager.tsx:327
 msgid "Search events..."
 msgstr "搜索事件..."
 
@@ -6285,7 +6289,7 @@ msgstr "秒 (00-59)"
 msgid "Secondary"
 msgstr "次要"
 
-#: src/components/notifications/forms/webhook-form.tsx:394
+#: src/components/notifications/forms/webhook-form.tsx:388
 msgid "secret"
 msgstr "secret"
 
@@ -6331,8 +6335,8 @@ msgstr "选择会话"
 msgid "Select a streamer"
 msgstr "选择主播"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:190
-#: src/components/notifications/subscription-manager.tsx:344
+#: src/components/notifications/desktop-channel-dialog.tsx:181
+#: src/components/notifications/subscription-manager.tsx:345
 msgid "Select All"
 msgstr "全选"
 
@@ -6399,7 +6403,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:298
+#: src/components/notifications/subscription-manager.tsx:299
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
@@ -6412,7 +6416,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:240
-#: src/components/notifications/channel-form.tsx:339
+#: src/components/notifications/channel-form.tsx:352
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:161
 msgid "Select type"
 msgstr "选择类型"
@@ -6421,7 +6425,7 @@ msgstr "选择类型"
 msgid "Select your preferred color scheme."
 msgstr "选择你偏好的配色方案。"
 
-#: src/components/notifications/subscription-manager.tsx:423
+#: src/components/notifications/subscription-manager.tsx:424
 msgid "selected"
 msgstr "已选"
 
@@ -6444,6 +6448,11 @@ msgstr "用英文逗号分隔多个路径。"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:328
 msgid "Server not configured"
 msgstr "服务器未配置"
+
+#: src/components/notifications/channel-card.tsx:133
+#: src/components/notifications/forms/gotify-form.tsx:36
+msgid "Server URL"
+msgstr "服务器地址"
 
 #: src/components/config/global/pipeline-config-card.tsx:259
 #: src/components/config/shared-config-editor.tsx:484
@@ -6634,11 +6643,11 @@ msgstr "跳过互动玩法"
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "跳过了 {skippedCount} 个重复的流"
 
-#: src/components/notifications/forms/email-form.tsx:39
+#: src/components/notifications/forms/email-form.tsx:40
 msgid "SMTP Host"
 msgstr "SMTP 主机"
 
-#: src/components/notifications/forms/email-form.tsx:44
+#: src/components/notifications/forms/email-form.tsx:45
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
 
@@ -6744,7 +6753,7 @@ msgid "Starting tdl process..."
 msgstr "正在启动 tdl 进程..."
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:481
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:504
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:497
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:437
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:148
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:218
@@ -6906,11 +6915,11 @@ msgstr "streamlink"
 msgid "Streams & Metadata"
 msgstr "流与元数据"
 
-#: src/components/notifications/channel-card.tsx:183
+#: src/components/notifications/channel-card.tsx:197
 msgid "Subscriptions"
 msgstr "订阅"
 
-#: src/components/notifications/subscription-manager.tsx:223
+#: src/components/notifications/subscription-manager.tsx:224
 msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
@@ -6965,7 +6974,7 @@ msgstr "同步"
 msgid "System"
 msgstr "系统"
 
-#: src/components/notifications/events/event-card.tsx:161
+#: src/components/notifications/events/event-card.tsx:154
 msgid "SYSTEM"
 msgstr "系统"
 
@@ -7110,11 +7119,11 @@ msgstr "模板"
 msgid "Temporarily Paused"
 msgstr "暂时暂停"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:241
+#: src/components/notifications/desktop-channel-dialog.tsx:232
 msgid "Test"
 msgstr "测试"
 
-#: src/components/notifications/channel-card.tsx:187
+#: src/components/notifications/channel-card.tsx:201
 msgid "Test Notification"
 msgstr "测试通知"
 
@@ -7161,7 +7170,7 @@ msgstr "主题模式"
 msgid "Theme Preset"
 msgstr "主题预设"
 
-#: src/components/notifications/desktop-channel-dialog.tsx:228
+#: src/components/notifications/desktop-channel-dialog.tsx:219
 msgid "These settings only apply to the desktop app. The server will still deliver channel notifications (Discord/Email/Webhook) normally."
 msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道通知（Discord/电子邮件/Webhook）。"
 
@@ -7207,7 +7216,7 @@ msgid "This will cancel all pending and processing jobs in this pipeline."
 msgstr "这将取消此处理管道中所有待处理和处理中的任务。"
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/channel-card.tsx:204
+#: src/components/notifications/channel-card.tsx:218
 msgid "This will permanently delete the notification channel \"{0}\"."
 msgstr "这将永久删除通知渠道“{0}”。"
 
@@ -7281,7 +7290,11 @@ msgstr "超时"
 msgid "Timeout (ms)"
 msgstr "超时（毫秒）"
 
-#: src/components/notifications/forms/webhook-form.tsx:182
+#: src/components/notifications/forms/gotify-form.tsx:107
+msgid "Timeout (s)"
+msgstr "超时（秒）"
+
+#: src/components/notifications/forms/webhook-form.tsx:176
 msgid "Timeout (seconds)"
 msgstr "超时（秒）"
 
@@ -7314,11 +7327,11 @@ msgstr "时间与延迟"
 msgid "Title"
 msgstr "标题"
 
-#: src/components/notifications/channel-card.tsx:95
+#: src/components/notifications/channel-card.tsx:98
 msgid "To"
 msgstr "收件人"
 
-#: src/components/notifications/forms/email-form.tsx:149
+#: src/components/notifications/forms/email-form.tsx:150
 msgid "To Addresses"
 msgstr "收件人地址"
 
@@ -7326,7 +7339,7 @@ msgstr "收件人地址"
 msgid "Today"
 msgstr "今天"
 
-#: src/components/notifications/forms/webhook-form.tsx:285
+#: src/components/notifications/forms/webhook-form.tsx:279
 msgid "Token"
 msgstr "令牌"
 
@@ -7401,59 +7414,59 @@ msgstr "每个分段录制后触发"
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
-#: src/components/notifications/subscription-manager.tsx:143
+#: src/components/notifications/subscription-manager.tsx:144
 msgid "Triggered when a download fails with an error."
 msgstr "当下载因错误失败时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:149
+#: src/components/notifications/subscription-manager.tsx:150
 msgid "Triggered when a download is manually cancelled."
 msgstr "当下载被手动取消时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:152
+#: src/components/notifications/subscription-manager.tsx:153
 msgid "Triggered when a download is rejected (e.g., circuit breaker)."
 msgstr "当下载被拒绝时触发（例如熔断器）。"
 
-#: src/components/notifications/subscription-manager.tsx:141
+#: src/components/notifications/subscription-manager.tsx:142
 msgid "Triggered when a download successfully completes."
 msgstr "当下载成功完成时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:147
+#: src/components/notifications/subscription-manager.tsx:148
 msgid "Triggered when a file segment is finished."
 msgstr "当文件分段完成时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:139
+#: src/components/notifications/subscription-manager.tsx:140
 msgid "Triggered when a new download recording begins."
 msgstr "当新的下载录制开始时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:145
+#: src/components/notifications/subscription-manager.tsx:146
 msgid "Triggered when a new file segment is created."
 msgstr "当创建新的文件分段时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:163
+#: src/components/notifications/subscription-manager.tsx:164
 msgid "Triggered when a pipeline job fails."
 msgstr "当处理任务失败时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:161
+#: src/components/notifications/subscription-manager.tsx:162
 msgid "Triggered when a pipeline job finishes successfully."
 msgstr "当处理任务成功完成时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:165
+#: src/components/notifications/subscription-manager.tsx:166
 msgid "Triggered when a pipeline job is cancelled."
 msgstr "当处理任务被取消时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:159
+#: src/components/notifications/subscription-manager.tsx:160
 msgid "Triggered when a post-processing pipeline job starts."
 msgstr "当后处理任务开始时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:156
+#: src/components/notifications/subscription-manager.tsx:157
 msgid "Triggered when streamer configuration is dynamically updated."
 msgstr "当主播配置被动态更新时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:177
+#: src/components/notifications/subscription-manager.tsx:178
 msgid "Triggered when the application shuts down."
 msgstr "应用关闭时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:175
+#: src/components/notifications/subscription-manager.tsx:176
 msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
@@ -7525,7 +7538,7 @@ msgstr "Twitch 代理播放列表"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
-#: src/components/notifications/channel-form.tsx:319
+#: src/components/notifications/channel-form.tsx:332
 msgid "Type"
 msgstr "类型"
 
@@ -7588,7 +7601,7 @@ msgstr "无标题直播"
 msgid "UPDATE"
 msgstr "更新"
 
-#: src/components/notifications/channel-form.tsx:394
+#: src/components/notifications/channel-form.tsx:409
 msgid "Update Channel"
 msgstr "更新渠道"
 
@@ -7639,7 +7652,7 @@ msgstr "使用 rclone 将文件上传到云存储。在 rclone 配置中设置�
 msgid "Uptime"
 msgstr "运行时间"
 
-#: src/components/notifications/channel-card.tsx:130
+#: src/components/notifications/channel-card.tsx:144
 #: src/components/streamers/config/streamer-general-settings.tsx:66
 #: src/components/streamers/edit/streamer-meta-form.tsx:116
 #: src/components/streamers/progress-indicator.tsx:152
@@ -7678,7 +7691,7 @@ msgstr "使用二维码登录"
 msgid "Use System Proxy"
 msgstr "使用系统代理"
 
-#: src/components/notifications/forms/email-form.tsx:207
+#: src/components/notifications/forms/email-form.tsx:204
 msgid "Use TLS"
 msgstr "启用 TLS"
 
@@ -7692,15 +7705,15 @@ msgid "User Agent"
 msgstr "User-Agent"
 
 #: src/components/config/shared/proxy-settings-card.tsx:179
-#: src/components/notifications/forms/email-form.tsx:85
-#: src/components/notifications/forms/email-form.tsx:90
-#: src/components/notifications/forms/webhook-form.tsx:317
-#: src/components/notifications/forms/webhook-form.tsx:322
+#: src/components/notifications/forms/email-form.tsx:86
+#: src/components/notifications/forms/email-form.tsx:91
+#: src/components/notifications/forms/webhook-form.tsx:311
+#: src/components/notifications/forms/webhook-form.tsx:316
 #: src/routes/_public/login.lazy.tsx:168
 msgid "Username"
 msgstr "用户名"
 
-#: src/components/notifications/forms/discord-form.tsx:57
+#: src/components/notifications/forms/discord-form.tsx:58
 msgid "Username (Optional)"
 msgstr "用户名（可选）"
 
@@ -7726,7 +7739,7 @@ msgid "Validation service unavailable"
 msgstr "校验服务不可用"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:582
-#: src/components/notifications/forms/webhook-form.tsx:459
+#: src/components/notifications/forms/webhook-form.tsx:453
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:78
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:1036
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:99
@@ -7840,7 +7853,7 @@ msgstr "开始前等待时间。"
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
 
-#: src/components/notifications/subscription-manager.tsx:171
+#: src/components/notifications/subscription-manager.tsx:172
 msgid "Warning when the processing queue gets too long."
 msgstr "处理队列过长时发出警告。"
 
@@ -7857,7 +7870,7 @@ msgid "Web Optimize"
 msgstr "网页优化"
 
 #: src/components/notifications/browser-channel-dialog.tsx:119
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:546
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:539
 msgid "Web Push"
 msgstr "Web 推送"
 
@@ -7885,9 +7898,9 @@ msgstr "此浏览器不支持 Web 推送"
 msgid "Web Push priority updated"
 msgstr "Web 推送优先级已更新"
 
-#: src/components/notifications/channel-card.tsx:83
-#: src/components/notifications/forms/discord-form.tsx:36
-#: src/components/notifications/forms/webhook-form.tsx:70
+#: src/components/notifications/channel-card.tsx:86
+#: src/components/notifications/forms/discord-form.tsx:37
+#: src/components/notifications/forms/webhook-form.tsx:71
 msgid "Webhook URL"
 msgstr "Webhook URL"
 
@@ -7972,7 +7985,7 @@ msgstr "写入超时（毫秒）"
 msgid "WUP"
 msgstr "WUP"
 
-#: src/components/notifications/forms/webhook-form.tsx:374
+#: src/components/notifications/forms/webhook-form.tsx:368
 msgid "X-Auth-Key"
 msgstr "X-Auth-Key"
 

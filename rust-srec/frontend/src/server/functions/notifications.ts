@@ -150,7 +150,7 @@ export const subscribeWebPush = createServerFn({ method: 'POST' })
   .inputValidator(
     (d: {
       subscription: z.infer<typeof WebPushSubscriptionJsonSchema>;
-      min_priority?: string;
+      min_priority?: number;
     }) => d,
   )
   .handler(async ({ data }) => {

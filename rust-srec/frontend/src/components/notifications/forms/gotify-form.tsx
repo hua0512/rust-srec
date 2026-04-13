@@ -8,8 +8,7 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import { KeyRound, Hash } from 'lucide-react';
-import { priorityOptions } from '@/lib/priority';
+import { Globe, KeyRound, Timer } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -20,8 +19,9 @@ import {
 import { useFormContext } from 'react-hook-form';
 import { IconInput } from '@/components/ui/icon-input';
 import { SwitchCard } from '@/components/ui/switch-card';
+import { priorityOptions } from '@/lib/priority';
 
-export function TelegramForm() {
+export function GotifyForm() {
   const { i18n } = useLingui();
   const form = useFormContext();
 
@@ -29,17 +29,16 @@ export function TelegramForm() {
     <div className="space-y-4 rounded-xl border border-primary/10 bg-primary/5 p-4">
       <FormField
         control={form.control}
-        name="settings.bot_token"
+        name="settings.server_url"
         render={({ field }) => (
           <FormItem>
             <FormLabel>
-              <Trans>Bot Token</Trans>
+              <Trans>Server URL</Trans>
             </FormLabel>
             <FormControl>
               <IconInput
-                icon={KeyRound}
-                type="password"
-                placeholder={i18n._(msg`123456:ABC-DEF...`)}
+                icon={Globe}
+                placeholder={i18n._(msg`https://gotify.example.com`)}
                 className="bg-background/50"
                 {...field}
               />
@@ -50,16 +49,17 @@ export function TelegramForm() {
       />
       <FormField
         control={form.control}
-        name="settings.chat_id"
+        name="settings.app_token"
         render={({ field }) => (
           <FormItem>
             <FormLabel>
-              <Trans>Chat ID</Trans>
+              <Trans>App Token</Trans>
             </FormLabel>
             <FormControl>
               <IconInput
-                icon={Hash}
-                placeholder={i18n._(msg`-1001234567890`)}
+                icon={KeyRound}
+                type="password"
+                placeholder={i18n._(msg`Gotify application token`)}
                 className="bg-background/50"
                 {...field}
               />
@@ -69,30 +69,6 @@ export function TelegramForm() {
         )}
       />
       <div className="pt-2 grid grid-cols-3 gap-4">
-        <FormField
-          control={form.control}
-          name="settings.parse_mode"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                <Trans>Parse Mode</Trans>
-              </FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl>
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="HTML">HTML</SelectItem>
-                  <SelectItem value="Markdown">Markdown</SelectItem>
-                  <SelectItem value="MarkdownV2">MarkdownV2</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
         <FormField
           control={form.control}
           name="settings.min_priority"
@@ -118,6 +94,30 @@ export function TelegramForm() {
                   ))}
                 </SelectContent>
               </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="settings.timeout_secs"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                <Trans>Timeout (s)</Trans>
+              </FormLabel>
+              <FormControl>
+                <IconInput
+                  icon={Timer}
+                  type="number"
+                  min={1}
+                  max={300}
+                  placeholder="30"
+                  className="bg-background/50"
+                  {...field}
+                  onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                />
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}

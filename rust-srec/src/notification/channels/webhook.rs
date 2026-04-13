@@ -139,7 +139,8 @@ impl WebhookChannel {
     fn build_payload(&self, event: &NotificationEvent) -> serde_json::Value {
         json!({
             "event_type": event.event_type(),
-            "priority": event.priority().to_string(),
+            "priority": event.priority().as_int(),
+            "priority_label": event.priority().to_string(),
             "title": event.title(),
             "description": event.description(),
             "timestamp": event.timestamp().to_rfc3339(),
@@ -255,6 +256,8 @@ mod tests {
         let payload = channel.build_payload(&event);
         assert_eq!(payload["event_type"], "stream_online");
         assert_eq!(payload["streamer_id"], "123");
+        assert_eq!(payload["priority"], 5); // Normal = 5 (integer)
+        assert_eq!(payload["priority_label"], "normal");
     }
 
     #[test]

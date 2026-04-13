@@ -14,7 +14,7 @@ pub struct NotificationEventTypeInfo {
     pub event_type: &'static str,
     /// Human-friendly label.
     pub label: &'static str,
-    /// Default priority level.
+    /// Default priority level (integer, Gotify-compatible 0-10 scale).
     pub priority: NotificationPriority,
     /// Additional accepted subscription keys (legacy / aliases).
     pub aliases: &'static [&'static str],
@@ -245,20 +245,12 @@ fn normalize_subscription_key(input: &str) -> String {
 }
 
 /// Priority level for notifications.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    Default,
-    utoipa::ToSchema,
-)]
+///
+/// Serializes as an integer (Gotify-compatible 0-10 scale):
+/// Low = 2, Normal = 5, High = 8, Critical = 10.
+///
+/// Deserializes from either an integer or a string label (backward compat).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum NotificationPriority {
     /// Low priority - informational only.
     Low,
@@ -269,6 +261,99 @@ pub enum NotificationPriority {
     High,
     /// Critical priority - requires immediate attention.
     Critical,
+}
+
+impl utoipa::PartialSchema for NotificationPriority {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::schema::{Object, SchemaType, Type};
+        Object::builder()
+            .schema_type(SchemaType::Type(Type::Integer))
+            .description(Some(
+                "Priority level (integer, 0-10 scale): 2=Low, 5=Normal, 8=High, 10=Critical",
+            ))
+            .enum_values(Some([2i32, 5, 8, 10]))
+            .build()
+            .into()
+    }
+}
+
+impl utoipa::ToSchema for NotificationPriority {}
+
+impl Serialize for NotificationPriority {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.as_int())
+    }
+}
+
+impl<'de> Deserialize<'de> for NotificationPriority {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de;
+
+        struct PriorityVisitor;
+
+        impl<'de> de::Visitor<'de> for PriorityVisitor {
+            type Value = NotificationPriority;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("an integer (0-10) or a string (low/normal/high/critical)")
+            }
+
+            fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                let val = u8::try_from(value).map_err(|_| {
+                    de::Error::invalid_value(de::Unexpected::Unsigned(value), &self)
+                })?;
+                NotificationPriority::from_int(val)
+                    .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Unsigned(value), &self))
+            }
+
+            fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                let val = u8::try_from(value)
+                    .map_err(|_| de::Error::invalid_value(de::Unexpected::Signed(value), &self))?;
+                NotificationPriority::from_int(val)
+                    .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Signed(value), &self))
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                match value.trim().to_ascii_lowercase().as_str() {
+                    "low" => Ok(NotificationPriority::Low),
+                    "normal" => Ok(NotificationPriority::Normal),
+                    "high" => Ok(NotificationPriority::High),
+                    "critical" => Ok(NotificationPriority::Critical),
+                    _ => Err(de::Error::unknown_variant(
+                        value,
+                        &["low", "normal", "high", "critical"],
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(PriorityVisitor)
+    }
+}
+
+impl NotificationPriority {
+    /// Integer representation aligned with Gotify's 0-10 priority scale.
+    pub fn as_int(&self) -> u8 {
+        match self {
+            Self::Low => 2,
+            Self::Normal => 5,
+            Self::High => 8,
+            Self::Critical => 10,
+        }
+    }
+
+    /// Parse from integer value.
+    ///
+    /// Maps ranges to the closest priority level:
+    /// 0-3 → Low, 4-6 → Normal, 7-9 → High, 10+ → Critical
+    pub fn from_int(value: u8) -> Option<Self> {
+        match value {
+            0..=3 => Some(Self::Low),
+            4..=6 => Some(Self::Normal),
+            7..=9 => Some(Self::High),
+            10..=u8::MAX => Some(Self::Critical),
+        }
+    }
 }
 
 impl std::fmt::Display for NotificationPriority {
@@ -864,6 +949,66 @@ mod tests {
     fn test_notification_priority_display() {
         assert_eq!(NotificationPriority::Low.to_string(), "low");
         assert_eq!(NotificationPriority::Critical.to_string(), "critical");
+    }
+
+    #[test]
+    fn test_notification_priority_as_int() {
+        assert_eq!(NotificationPriority::Low.as_int(), 2);
+        assert_eq!(NotificationPriority::Normal.as_int(), 5);
+        assert_eq!(NotificationPriority::High.as_int(), 8);
+        assert_eq!(NotificationPriority::Critical.as_int(), 10);
+    }
+
+    #[test]
+    fn test_notification_priority_from_int() {
+        assert_eq!(
+            NotificationPriority::from_int(0),
+            Some(NotificationPriority::Low)
+        );
+        assert_eq!(
+            NotificationPriority::from_int(2),
+            Some(NotificationPriority::Low)
+        );
+        assert_eq!(
+            NotificationPriority::from_int(3),
+            Some(NotificationPriority::Low)
+        );
+        assert_eq!(
+            NotificationPriority::from_int(4),
+            Some(NotificationPriority::Normal)
+        );
+        assert_eq!(
+            NotificationPriority::from_int(5),
+            Some(NotificationPriority::Normal)
+        );
+        assert_eq!(
+            NotificationPriority::from_int(7),
+            Some(NotificationPriority::High)
+        );
+        assert_eq!(
+            NotificationPriority::from_int(8),
+            Some(NotificationPriority::High)
+        );
+        assert_eq!(
+            NotificationPriority::from_int(10),
+            Some(NotificationPriority::Critical)
+        );
+        assert_eq!(
+            NotificationPriority::from_int(255),
+            Some(NotificationPriority::Critical)
+        );
+    }
+
+    #[test]
+    fn test_notification_priority_int_roundtrip() {
+        for p in [
+            NotificationPriority::Low,
+            NotificationPriority::Normal,
+            NotificationPriority::High,
+            NotificationPriority::Critical,
+        ] {
+            assert_eq!(NotificationPriority::from_int(p.as_int()), Some(p));
+        }
     }
 
     #[test]

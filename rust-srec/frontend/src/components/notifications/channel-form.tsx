@@ -41,6 +41,7 @@ import { toast } from 'sonner';
 import { Loader2, Box } from 'lucide-react';
 import { DiscordForm } from './forms/discord-form';
 import { EmailForm } from './forms/email-form';
+import { GotifyForm } from './forms/gotify-form';
 import { TelegramForm } from './forms/telegram-form';
 import { WebhookForm } from './forms/webhook-form';
 import { removeEmpty } from '@/lib/format';
@@ -68,7 +69,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
         url: '',
         method: 'POST',
         auth: { type: 'None' },
-        min_priority: 'Low',
+        min_priority: 2,
         enabled: true,
         timeout_secs: 30,
         headers: [],
@@ -102,7 +103,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
             webhook_url: settings.webhook_url || '',
             username: settings.username,
             avatar_url: settings.avatar_url,
-            min_priority: settings.min_priority || 'Normal',
+            min_priority: settings.min_priority ?? 5,
             enabled: settings.enabled !== false,
           },
         });
@@ -118,7 +119,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
             from_address: settings.from_address || '',
             to_addresses: settings.to_addresses || [],
             use_tls: settings.use_tls ?? true,
-            min_priority: settings.min_priority || 'High',
+            min_priority: settings.min_priority ?? 8,
             enabled: settings.enabled !== false,
           },
         });
@@ -130,8 +131,20 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
             bot_token: settings.bot_token || '',
             chat_id: settings.chat_id || '',
             parse_mode: settings.parse_mode || 'HTML',
-            min_priority: settings.min_priority || 'Normal',
+            min_priority: settings.min_priority ?? 5,
             enabled: settings.enabled !== false,
+          },
+        });
+      } else if (channel.channel_type === 'Gotify') {
+        form.reset({
+          name: channel.name,
+          channel_type: 'Gotify',
+          settings: {
+            server_url: settings.server_url || '',
+            app_token: settings.app_token || '',
+            min_priority: settings.min_priority ?? 5,
+            enabled: settings.enabled !== false,
+            timeout_secs: settings.timeout_secs || 30,
           },
         });
       } else if (channel.channel_type === 'Webhook') {
@@ -171,7 +184,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
             url: settings.url || '',
             method: settings.method || 'POST',
             auth,
-            min_priority: settings.min_priority || 'Low',
+            min_priority: settings.min_priority ?? 2,
             enabled: settings.enabled !== false,
             timeout_secs: settings.timeout_secs || 30,
             headers,
@@ -186,7 +199,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
           url: '',
           method: 'POST',
           auth: { type: 'None' },
-          min_priority: 'Low',
+          min_priority: 2,
           enabled: true,
           timeout_secs: 30,
           headers: [],
@@ -343,6 +356,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                         <SelectContent>
                           <SelectItem value="Webhook">Webhook</SelectItem>
                           <SelectItem value="Telegram">Telegram</SelectItem>
+                          <SelectItem value="Gotify">Gotify</SelectItem>
                           <SelectItem value="Discord">
                             Discord (Coming Soon)
                           </SelectItem>
@@ -373,6 +387,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
               {selectedType === 'Webhook' && <WebhookForm />}
               {selectedType === 'Discord' && <DiscordForm />}
               {selectedType === 'Email' && <EmailForm />}
+              {selectedType === 'Gotify' && <GotifyForm />}
               {selectedType === 'Telegram' && <TelegramForm />}
             </div>
 

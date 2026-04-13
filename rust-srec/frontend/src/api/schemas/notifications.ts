@@ -32,6 +32,7 @@ const TimestampMsSchema = z
 export const ChannelTypeSchema = z.enum([
   'Discord',
   'Email',
+  'Gotify',
   'Telegram',
   'Webhook',
 ]);
@@ -42,7 +43,7 @@ export const DiscordSettingsSchema = z.object({
   webhook_url: z.url(),
   username: z.string().optional(),
   avatar_url: z.url().optional(),
-  min_priority: z.enum(['Low', 'Normal', 'High', 'Critical']).default('Normal'),
+  min_priority: z.number().int().min(0).max(10).default(5),
   enabled: z.boolean().default(true),
 });
 
@@ -54,7 +55,7 @@ export const EmailSettingsSchema = z.object({
   from_address: z.email(),
   to_addresses: z.array(z.email()).min(1),
   use_tls: z.boolean().default(true),
-  min_priority: z.enum(['Low', 'Normal', 'High', 'Critical']).default('High'),
+  min_priority: z.number().int().min(0).max(10).default(8),
   enabled: z.boolean().default(true),
 });
 
@@ -82,7 +83,7 @@ export const WebhookSettingsSchema = z.object({
   headers: z.array(z.tuple([z.string(), z.string()])).optional(),
   method: z.string().default('POST'),
   auth: WebhookAuthSchema.optional(),
-  min_priority: z.enum(['Low', 'Normal', 'High', 'Critical']).default('Low'),
+  min_priority: z.number().int().min(0).max(10).default(2),
   enabled: z.boolean().default(true),
   timeout_secs: z.number().int().positive().default(30),
 });
@@ -91,8 +92,16 @@ export const TelegramSettingsSchema = z.object({
   bot_token: z.string().min(1),
   chat_id: z.string().min(1),
   parse_mode: z.enum(['HTML', 'Markdown', 'MarkdownV2']).default('HTML'),
-  min_priority: z.enum(['Low', 'Normal', 'High', 'Critical']).default('Normal'),
+  min_priority: z.number().int().min(0).max(10).default(5),
   enabled: z.boolean().default(true),
+});
+
+export const GotifySettingsSchema = z.object({
+  server_url: z.string().url(),
+  app_token: z.string().min(1),
+  min_priority: z.number().int().min(0).max(10).default(5),
+  enabled: z.boolean().default(true),
+  timeout_secs: z.number().int().positive().default(30),
 });
 
 export const NotificationChannelSchema = z.object({
@@ -122,7 +131,7 @@ export type UpdateChannelRequest = z.infer<typeof UpdateChannelRequestSchema>;
 export const NotificationEventTypeInfoSchema = z.object({
   event_type: z.string(),
   label: z.string(),
-  priority: z.enum(['Low', 'Normal', 'High', 'Critical']),
+  priority: z.number().int(),
 });
 
 export type NotificationEventTypeInfo = z.infer<
@@ -132,7 +141,7 @@ export type NotificationEventTypeInfo = z.infer<
 export const NotificationEventLogSchema = z.object({
   id: z.uuid(),
   event_type: z.string(),
-  priority: z.string(),
+  priority: z.number().int(),
   payload: z.string(),
   streamer_id: z.string().optional().nullable(),
   created_at: TimestampMsSchema,
@@ -143,7 +152,7 @@ export type NotificationEventLog = z.infer<typeof NotificationEventLogSchema>;
 export const WebPushSubscriptionSchema = z.object({
   id: z.uuid(),
   endpoint: z.string().url(),
-  min_priority: z.string(),
+  min_priority: z.number().int(),
   created_at: TimestampMsSchema,
   updated_at: TimestampMsSchema,
 });
@@ -170,6 +179,12 @@ export const EmailChannelFormSchema = z.object({
   settings: EmailSettingsSchema,
 });
 
+export const GotifyChannelFormSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  channel_type: z.literal('Gotify'),
+  settings: GotifySettingsSchema,
+});
+
 export const WebhookChannelFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   channel_type: z.literal('Webhook'),
@@ -186,6 +201,7 @@ export const TelegramChannelFormSchema = z.object({
 export const ChannelFormSchema = z.discriminatedUnion('channel_type', [
   DiscordChannelFormSchema,
   EmailChannelFormSchema,
+  GotifyChannelFormSchema,
   TelegramChannelFormSchema,
   WebhookChannelFormSchema,
 ]);
