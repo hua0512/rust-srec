@@ -92,10 +92,11 @@ criterion = "0.8.1"
 zlib-rs = "0.6.3"
 
 [patch.crates-io]
-# Workaround for zip 7.4.x pulling in typed-path, which introduces an additional
+# Workaround for zip 7.4+ pulling in typed-path, which introduces an additional
 # `AsRef` impl for `Cow<'_, str>` and triggers ambiguous inference in utoipa
-# macro-generated code. PR: https://github.com/juhaku/utoipa/pull/1519
-utoipa-gen = { git = "https://github.com/cfilipescu/utoipa", rev = "4faea27e72e314007eb65afdac9e867ffbf85afe" }
+# macro-generated code. Mirrors juhaku/utoipa#1519 (closed without merge).
+# Pinned to our own fork because the previous third-party fork was deleted.
+utoipa-gen = { git = "https://github.com/hua0512/utoipa", rev = "fc51b40fd1c54846d9e3de99cdf68c23672f19cd" }
 
 [profile.dev]
 incremental = true

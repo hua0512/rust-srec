@@ -47,14 +47,14 @@ pub struct HostInfo<'a> {
 pub struct RoomInfo<'a> {
     #[serde(default, deserialize_with = "deserialize_pull_config")]
     pub pull_config: Option<PullConfig>,
-    #[serde(borrow)]
-    pub deeplink: Cow<'a, str>,
+    #[serde(borrow, default)]
+    pub deeplink: Option<Cow<'a, str>>,
 
     #[serde(borrow)]
     pub room_title: Option<Cow<'a, str>>,
 
-    #[serde(borrow)]
-    pub room_cover: Cow<'a, str>,
+    #[serde(borrow, default)]
+    pub room_cover: Option<Cow<'a, str>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,5 +124,34 @@ mod tests {
         let json = r#"{ "foo": 1 }"#;
         let live_info: LiveInfo<'_> = serde_json::from_str(json).unwrap();
         assert!(live_info.live_stream.is_none());
+    }
+
+    /// Regression: when a RedBook stream has ended, the response still carries
+    /// `liveStream.roomData.roomInfo` but omits `deeplink` (and sometimes
+    /// `roomCover`). Deserialization must succeed so the extractor can reach
+    /// the `liveStatus != "success"` branch and report the stream as offline.
+    #[test]
+    fn live_info_deserializes_without_deeplink_or_room_cover() {
+        let json = r#"{
+  "liveStream": {
+    "pageStatus": "success",
+    "liveStatus": "fail",
+    "errorMessage": "",
+    "roomData": {
+      "hostInfo": {
+        "avatar": "https://example.invalid/avatar.jpg",
+        "nickName": "tester"
+      },
+      "roomInfo": {}
+    }
+  }
+}"#;
+
+        let live_info: LiveInfo<'_> = serde_json::from_str(json).unwrap();
+        let live_stream = live_info.live_stream.expect("liveStream should be present");
+        let room_info = &live_stream.room_data.room_info;
+        assert!(room_info.deeplink.is_none());
+        assert!(room_info.room_cover.is_none());
+        assert!(room_info.pull_config.is_none());
     }
 }
