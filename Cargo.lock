@@ -7722,7 +7722,7 @@ dependencies = [
 [[package]]
 name = "utoipa-gen"
 version = "5.4.0"
-source = "git+https://github.com/cfilipescu/utoipa?rev=4faea27e72e314007eb65afdac9e867ffbf85afe#4faea27e72e314007eb65afdac9e867ffbf85afe"
+source = "git+https://github.com/hua0512/utoipa?rev=fc51b40fd1c54846d9e3de99cdf68c23672f19cd#fc51b40fd1c54846d9e3de99cdf68c23672f19cd"
 dependencies = [
  "proc-macro2",
  "quote",
