@@ -169,6 +169,32 @@ impl RedBook {
         Some((cdn_flv, cdn_m3u8))
     }
 
+    /// Build the default FLV + HLS fallback streams from a RedBook `deeplink`.
+    ///
+    /// Returns an empty vec if the deeplink is absent or malformed — callers
+    /// can use `is_empty()` to decide whether the stream is actually reachable.
+    fn fallback_streams_from_deeplink(deeplink: Option<&str>) -> Vec<StreamInfo> {
+        let Some((cdn_flv, cdn_m3u8)) = deeplink.and_then(Self::build_cdn_flv_urls_from_deeplink)
+        else {
+            return Vec::new();
+        };
+
+        vec![
+            StreamInfo::builder(cdn_flv, StreamFormat::Flv, MediaFormat::Flv)
+                .quality(DEFAULT_QUALITY)
+                .priority(0)
+                .codec(DEFAULT_CODEC_H264)
+                .is_headers_needed(true)
+                .build(),
+            StreamInfo::builder(cdn_m3u8, StreamFormat::Hls, MediaFormat::Ts)
+                .quality(DEFAULT_QUALITY)
+                .priority(1)
+                .codec(DEFAULT_CODEC_H264)
+                .is_headers_needed(true)
+                .build(),
+        ]
+    }
+
     pub async fn get_live_info(&self) -> Result<MediaInfo, ExtractorError> {
         let response = self.extractor.get(&self.extractor.url).send().await?;
         let url = response.url().clone();
@@ -221,31 +247,22 @@ impl RedBook {
                 .build());
         }
 
-        let Some(pull_config) = room_data.room_info.pull_config.as_ref() else {
-            if let Some((cdn_flv, cdn_m3u8)) =
-                Self::build_cdn_flv_urls_from_deeplink(&room_data.room_info.deeplink)
-            {
-                let streams = vec![
-                    StreamInfo::builder(cdn_flv, StreamFormat::Flv, MediaFormat::Flv)
-                        .quality(DEFAULT_QUALITY)
-                        .priority(0)
-                        .codec(DEFAULT_CODEC_H264)
-                        .is_headers_needed(true)
-                        .build(),
-                    StreamInfo::builder(cdn_m3u8, StreamFormat::Hls, MediaFormat::Ts)
-                        .quality(DEFAULT_QUALITY)
-                        .priority(1)
-                        .codec(DEFAULT_CODEC_H264)
-                        .is_headers_needed(true)
-                        .build(),
-                ];
+        let room_cover = room_data
+            .room_info
+            .room_cover
+            .as_ref()
+            .map(|c| c.to_string());
+        let deeplink = room_data.room_info.deeplink.as_deref();
 
+        let Some(pull_config) = room_data.room_info.pull_config.as_ref() else {
+            let streams = Self::fallback_streams_from_deeplink(deeplink);
+            if !streams.is_empty() {
                 return Ok(MediaInfo::new(
                     site_url,
                     title,
                     artist.to_string(),
-                    Some(room_data.room_info.room_cover.to_string()),
-                    avatar_url.map(|url| url.to_string()),
+                    room_cover,
+                    avatar_url,
                     true,
                     streams,
                     Some(self.extractor.get_platform_headers_map()),
@@ -288,34 +305,16 @@ impl RedBook {
             ));
         }
 
-        if streams.is_empty()
-            && let Some((cdn_flv, cdn_m3u8)) =
-                Self::build_cdn_flv_urls_from_deeplink(&room_data.room_info.deeplink)
-        {
-            streams.push(
-                StreamInfo::builder(cdn_flv, StreamFormat::Flv, MediaFormat::Flv)
-                    .quality(DEFAULT_QUALITY)
-                    .priority(0)
-                    .codec(DEFAULT_CODEC_H264)
-                    .is_headers_needed(true)
-                    .build(),
-            );
-            streams.push(
-                StreamInfo::builder(cdn_m3u8, StreamFormat::Hls, MediaFormat::Ts)
-                    .quality(DEFAULT_QUALITY)
-                    .priority(1)
-                    .codec(DEFAULT_CODEC_H264)
-                    .is_headers_needed(true)
-                    .build(),
-            );
+        if streams.is_empty() {
+            streams.extend(Self::fallback_streams_from_deeplink(deeplink));
         }
 
         Ok(MediaInfo::new(
             site_url,
             title,
             artist.to_string(),
-            Some(room_data.room_info.room_cover.to_string()),
-            avatar_url.map(|url| url.to_string()),
+            room_cover,
+            avatar_url,
             is_live,
             streams,
             Some(self.extractor.get_platform_headers_map()),
