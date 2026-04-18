@@ -199,6 +199,16 @@ impl Huya {
         extras_get_u64(Some(extras), "default_bitrate").unwrap_or(10000)
     }
 
+    /// Map Huya's `iWebPriorityRate` (higher = better, 100 is a pin, -1 is
+    /// "disabled for this ctype") to `StreamInfo.priority` (lower = better).
+    /// Clamping makes the `-1` sentinel worst-but-valid — selection is left
+    /// to `StreamSelector` (`preferred_cdns` / `blacklisted_cdns`) rather
+    /// than filtered here, so users can opt in to a CDN Huya flagged as
+    /// deprioritised if it works for them.
+    pub(super) fn priority_from_web_rate(rate: i32) -> u32 {
+        (100 - rate.clamp(0, 100)) as u32
+    }
+
     pub(super) async fn get_room_page(&self) -> Result<String, ExtractorError> {
         let response = self.extractor.get(&self.extractor.url).send().await?;
         let response = Self::check_http_response(response).await?;

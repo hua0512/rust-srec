@@ -313,7 +313,7 @@ impl Huya {
                 "ua": ua.to_string(),
             });
 
-            let priority = stream_info.i_web_priority_rate as u32;
+            let priority = Self::priority_from_web_rate(stream_info.i_web_priority_rate);
 
             // Add streams for each bitrate
             if bitrate_info_list.is_empty() {
