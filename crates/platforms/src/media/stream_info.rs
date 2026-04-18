@@ -60,6 +60,8 @@ pub struct StreamInfo {
     pub quality: String,
     // Bitrate of the stream in bits per second
     pub bitrate: u64,
+    // Selection priority: lower is better. StreamSelector sorts ascending,
+    // then ties are broken by bitrate (higher = better).
     pub priority: u32,
     pub extras: Option<serde_json::Value>,
     pub codec: String,
