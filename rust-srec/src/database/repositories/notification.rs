@@ -1,6 +1,5 @@
 //! Notification repository.
 
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::database::models::{
@@ -9,39 +8,79 @@ use crate::database::models::{
 use crate::{Error, Result};
 
 /// Notification repository trait.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynNotificationRepository = dyn(box) NotificationRepository)]
 pub trait NotificationRepository: Send + Sync {
     // Channels
-    async fn get_channel(&self, id: &str) -> Result<NotificationChannelDbModel>;
-    async fn list_channels(&self) -> Result<Vec<NotificationChannelDbModel>>;
-    async fn create_channel(&self, channel: &NotificationChannelDbModel) -> Result<()>;
-    async fn update_channel(&self, channel: &NotificationChannelDbModel) -> Result<()>;
-    async fn delete_channel(&self, id: &str) -> Result<()>;
+    fn get_channel(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<NotificationChannelDbModel>> + Send;
+    fn list_channels(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<NotificationChannelDbModel>>> + Send;
+    fn create_channel(
+        &self,
+        channel: &NotificationChannelDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_channel(
+        &self,
+        channel: &NotificationChannelDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_channel(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // Subscriptions
-    async fn get_subscriptions_for_channel(&self, channel_id: &str) -> Result<Vec<String>>;
-    async fn get_channels_for_event(
+    fn get_subscriptions_for_channel(
+        &self,
+        channel_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
+    fn get_channels_for_event(
         &self,
         event_name: &str,
-    ) -> Result<Vec<NotificationChannelDbModel>>;
-    async fn subscribe(&self, channel_id: &str, event_name: &str) -> Result<()>;
-    async fn unsubscribe(&self, channel_id: &str, event_name: &str) -> Result<()>;
-    async fn unsubscribe_all(&self, channel_id: &str) -> Result<()>;
+    ) -> impl std::future::Future<Output = Result<Vec<NotificationChannelDbModel>>> + Send;
+    fn subscribe(
+        &self,
+        channel_id: &str,
+        event_name: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn unsubscribe(
+        &self,
+        channel_id: &str,
+        event_name: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn unsubscribe_all(
+        &self,
+        channel_id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // Dead Letter Queue
-    async fn add_to_dead_letter(&self, entry: &NotificationDeadLetterDbModel) -> Result<()>;
-    async fn list_dead_letters(
+    fn add_to_dead_letter(
+        &self,
+        entry: &NotificationDeadLetterDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn list_dead_letters(
         &self,
         channel_id: Option<&str>,
         limit: i32,
-    ) -> Result<Vec<NotificationDeadLetterDbModel>>;
-    async fn get_dead_letter(&self, id: &str) -> Result<NotificationDeadLetterDbModel>;
-    async fn delete_dead_letter(&self, id: &str) -> Result<()>;
-    async fn cleanup_old_dead_letters(&self, retention_days: i32) -> Result<i32>;
+    ) -> impl std::future::Future<Output = Result<Vec<NotificationDeadLetterDbModel>>> + Send;
+    fn get_dead_letter(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<NotificationDeadLetterDbModel>> + Send;
+    fn delete_dead_letter(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn cleanup_old_dead_letters(
+        &self,
+        retention_days: i32,
+    ) -> impl std::future::Future<Output = Result<i32>> + Send;
 
     // Event log
-    async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()>;
-    async fn list_event_logs(
+    fn add_event_log(
+        &self,
+        entry: &NotificationEventLogDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn list_event_logs(
         &self,
         event_type: Option<&str>,
         streamer_id: Option<&str>,
@@ -49,7 +88,7 @@ pub trait NotificationRepository: Send + Sync {
         priority: Option<&str>,
         offset: i32,
         limit: i32,
-    ) -> Result<Vec<NotificationEventLogDbModel>>;
+    ) -> impl std::future::Future<Output = Result<Vec<NotificationEventLogDbModel>>> + Send;
 }
 
 /// SQLx implementation of NotificationRepository.
@@ -64,7 +103,6 @@ impl SqlxNotificationRepository {
     }
 }
 
-#[async_trait]
 impl NotificationRepository for SqlxNotificationRepository {
     async fn get_channel(&self, id: &str) -> Result<NotificationChannelDbModel> {
         sqlx::query_as::<_, NotificationChannelDbModel>(

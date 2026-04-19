@@ -7,118 +7,187 @@ use crate::database::models::{
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 /// Job repository trait.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynJobRepository = dyn(box) JobRepository)]
 pub trait JobRepository: Send + Sync {
-    async fn get_job(&self, id: &str) -> Result<JobDbModel>;
-    async fn list_pending_jobs(&self, job_type: &str) -> Result<Vec<JobDbModel>>;
-    async fn list_jobs_by_status(&self, status: &str) -> Result<Vec<JobDbModel>>;
-    async fn list_recent_jobs(&self, limit: i32) -> Result<Vec<JobDbModel>>;
-    async fn create_job(&self, job: &JobDbModel) -> Result<()>;
-    async fn update_job_status(&self, id: &str, status: &str) -> Result<()>;
+    fn get_job(&self, id: &str) -> impl std::future::Future<Output = Result<JobDbModel>> + Send;
+    fn list_pending_jobs(
+        &self,
+        job_type: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<JobDbModel>>> + Send;
+    fn list_jobs_by_status(
+        &self,
+        status: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<JobDbModel>>> + Send;
+    fn list_recent_jobs(
+        &self,
+        limit: i32,
+    ) -> impl std::future::Future<Output = Result<Vec<JobDbModel>>> + Send;
+    fn create_job(&self, job: &JobDbModel) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_job_status(
+        &self,
+        id: &str,
+        status: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
     /// Mark a job as FAILED and set error/completed_at.
     /// Returns the number of rows updated (0 means the job was already in a terminal state).
-    async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64>;
+    fn mark_job_failed(
+        &self,
+        id: &str,
+        error: &str,
+    ) -> impl std::future::Future<Output = Result<u64>> + Send;
     /// Mark a job as CANCELLED and set completed_at.
     /// Returns the number of rows updated (0 means the job was already in a terminal state).
-    async fn mark_job_cancelled(&self, id: &str) -> Result<u64>;
+    fn mark_job_cancelled(&self, id: &str) -> impl std::future::Future<Output = Result<u64>> + Send;
     /// Reset a job for retry (PENDING, clear started/completed/error, increment retry_count).
-    async fn reset_job_for_retry(&self, id: &str) -> Result<()>;
+    fn reset_job_for_retry(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
     /// Count pending jobs, optionally filtered by job types.
-    async fn count_pending_jobs(&self, job_types: Option<&[String]>) -> Result<u64>;
+    fn count_pending_jobs(
+        &self,
+        job_types: Option<&[String]>,
+    ) -> impl std::future::Future<Output = Result<u64>> + Send;
     /// Upsert (replace) the latest execution progress snapshot for a job.
-    async fn upsert_job_execution_progress(
+    fn upsert_job_execution_progress(
         &self,
         progress: &JobExecutionProgressDbModel,
-    ) -> Result<()>;
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
     /// Get the latest execution progress snapshot for a job.
-    async fn get_job_execution_progress(
+    fn get_job_execution_progress(
         &self,
         job_id: &str,
-    ) -> Result<Option<JobExecutionProgressDbModel>>;
+    ) -> impl std::future::Future<Output = Result<Option<JobExecutionProgressDbModel>>> + Send;
     /// Atomically claim (transition) the next pending job to PROCESSING.
     /// Returns the claimed job, if any.
     ///
     /// This is intended for the hot dequeue path to avoid a list+update race and
     /// to reduce DB round-trips.
-    async fn claim_next_pending_job(
+    fn claim_next_pending_job(
         &self,
         job_types: Option<&[String]>,
-    ) -> Result<Option<JobDbModel>>;
+    ) -> impl std::future::Future<Output = Result<Option<JobDbModel>>> + Send;
     /// Fetch only the `execution_info` field for a job.
-    async fn get_job_execution_info(&self, id: &str) -> Result<Option<String>>;
+    fn get_job_execution_info(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<Option<String>>> + Send;
     /// Update only the `execution_info` field for a job.
-    async fn update_job_execution_info(&self, id: &str, execution_info: &str) -> Result<()>;
-    async fn update_job_state(&self, id: &str, state: &str) -> Result<()>;
-    async fn update_job(&self, job: &JobDbModel) -> Result<()>;
+    fn update_job_execution_info(
+        &self,
+        id: &str,
+        execution_info: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_job_state(
+        &self,
+        id: &str,
+        state: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_job(&self, job: &JobDbModel) -> impl std::future::Future<Output = Result<()>> + Send;
     /// Update a job only if its current status matches `expected_status`.
     /// Returns the number of rows updated.
-    async fn update_job_if_status(&self, job: &JobDbModel, expected_status: &str) -> Result<u64>;
+    fn update_job_if_status(
+        &self,
+        job: &JobDbModel,
+        expected_status: &str,
+    ) -> impl std::future::Future<Output = Result<u64>> + Send;
     /// Reset processing jobs to pending (for recovery on startup).
-    async fn reset_processing_jobs(&self) -> Result<i32>;
-    async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32>;
-    async fn delete_job(&self, id: &str) -> Result<()>;
+    fn reset_processing_jobs(&self) -> impl std::future::Future<Output = Result<i32>> + Send;
+    fn cleanup_old_jobs(
+        &self,
+        retention_days: i32,
+    ) -> impl std::future::Future<Output = Result<i32>> + Send;
+    fn delete_job(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // Purge methods
     /// Purge completed/failed jobs older than the specified number of days.
     /// Deletes jobs in batches to avoid long-running transactions.
     /// Returns the number of jobs deleted.
-    async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64>;
+    fn purge_jobs_older_than(
+        &self,
+        days: u32,
+        batch_size: u32,
+    ) -> impl std::future::Future<Output = Result<u64>> + Send;
 
     /// Get IDs of jobs that are eligible for purging.
     /// Returns job IDs for completed/failed jobs older than the specified days.
-    async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>>;
+    fn get_purgeable_jobs(
+        &self,
+        days: u32,
+        limit: u32,
+    ) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
 
     // Execution logs
-    async fn add_execution_log(&self, log: &JobExecutionLogDbModel) -> Result<()>;
+    fn add_execution_log(
+        &self,
+        log: &JobExecutionLogDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
     /// Add multiple execution logs in one transaction.
-    async fn add_execution_logs(&self, logs: &[JobExecutionLogDbModel]) -> Result<()>;
-    async fn get_execution_logs(&self, job_id: &str) -> Result<Vec<JobExecutionLogDbModel>>;
+    fn add_execution_logs(
+        &self,
+        logs: &[JobExecutionLogDbModel],
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn get_execution_logs(
+        &self,
+        job_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<JobExecutionLogDbModel>>> + Send;
     /// List execution logs with pagination, returning (logs, total_count).
-    async fn list_execution_logs(
+    fn list_execution_logs(
         &self,
         job_id: &str,
         pagination: &Pagination,
-    ) -> Result<(Vec<JobExecutionLogDbModel>, u64)>;
-    async fn delete_execution_logs_for_job(&self, job_id: &str) -> Result<()>;
+    ) -> impl std::future::Future<Output = Result<(Vec<JobExecutionLogDbModel>, u64)>> + Send;
+    fn delete_execution_logs_for_job(
+        &self,
+        job_id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // Filtering and pagination
     /// List jobs with optional filters and pagination.
     /// Returns a tuple of (jobs, total_count).
-    async fn list_jobs_filtered(
+    fn list_jobs_filtered(
         &self,
         filters: &JobFilters,
         pagination: &Pagination,
-    ) -> Result<(Vec<JobDbModel>, u64)>;
+    ) -> impl std::future::Future<Output = Result<(Vec<JobDbModel>, u64)>> + Send;
     /// List jobs with optional filters and pagination, without running a `COUNT(*)`.
-    async fn list_jobs_page_filtered(
+    fn list_jobs_page_filtered(
         &self,
         filters: &JobFilters,
         pagination: &Pagination,
-    ) -> Result<Vec<JobDbModel>>;
+    ) -> impl std::future::Future<Output = Result<Vec<JobDbModel>>> + Send;
 
     // Statistics
     /// Get job counts by status.
-    async fn get_job_counts_by_status(&self) -> Result<JobCounts>;
+    fn get_job_counts_by_status(&self)
+    -> impl std::future::Future<Output = Result<JobCounts>> + Send;
 
     /// Get average processing time for completed jobs in seconds.
-    async fn get_avg_processing_time(&self) -> Result<Option<f64>>;
+    fn get_avg_processing_time(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Option<f64>>> + Send;
 
     // Atomic pipeline operations
 
     /// Cancel all pending/processing jobs in a pipeline.
     /// Returns the number of jobs cancelled.
-    async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64>;
+    fn cancel_jobs_by_pipeline(
+        &self,
+        pipeline_id: &str,
+    ) -> impl std::future::Future<Output = Result<u64>> + Send;
 
     /// Get all jobs in a pipeline.
-    async fn get_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<Vec<JobDbModel>>;
+    fn get_jobs_by_pipeline(
+        &self,
+        pipeline_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<JobDbModel>>> + Send;
 
     /// Delete all jobs in a pipeline and their associated data (logs, progress).
     /// Returns the number of jobs deleted.
-    async fn delete_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64>;
+    fn delete_jobs_by_pipeline(
+        &self,
+        pipeline_id: &str,
+    ) -> impl std::future::Future<Output = Result<u64>> + Send;
 }
 
 /// SQLx implementation of JobRepository.
@@ -133,7 +202,6 @@ impl SqlxJobRepository {
     }
 }
 
-#[async_trait]
 impl JobRepository for SqlxJobRepository {
     async fn get_job(&self, id: &str) -> Result<JobDbModel> {
         sqlx::query_as::<_, JobDbModel>("SELECT * FROM job WHERE id = ?")

@@ -1,6 +1,5 @@
 //! Session repository.
 
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::database::models::{
@@ -11,83 +10,121 @@ use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
 
 /// Session repository trait.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynSessionRepository = dyn(box) SessionRepository)]
 pub trait SessionRepository: Send + Sync {
     // Live Sessions
-    async fn get_session(&self, id: &str) -> Result<LiveSessionDbModel>;
-    async fn get_active_session_for_streamer(
+    fn get_session(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<LiveSessionDbModel>> + Send;
+    fn get_active_session_for_streamer(
         &self,
         streamer_id: &str,
-    ) -> Result<Option<LiveSessionDbModel>>;
-    async fn list_sessions_for_streamer(
+    ) -> impl std::future::Future<Output = Result<Option<LiveSessionDbModel>>> + Send;
+    fn list_sessions_for_streamer(
         &self,
         streamer_id: &str,
         limit: i32,
-    ) -> Result<Vec<LiveSessionDbModel>>;
-    async fn create_session(&self, session: &LiveSessionDbModel) -> Result<()>;
-    async fn end_session(&self, id: &str, end_time: i64) -> Result<()>;
-    async fn resume_session(&self, id: &str) -> Result<()>;
-    async fn update_session_titles(&self, id: &str, titles: &str) -> Result<()>;
-    async fn delete_session(&self, id: &str) -> Result<()>;
-    async fn delete_sessions_batch(&self, ids: &[String]) -> Result<u64>;
+    ) -> impl std::future::Future<Output = Result<Vec<LiveSessionDbModel>>> + Send;
+    fn create_session(
+        &self,
+        session: &LiveSessionDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn end_session(
+        &self,
+        id: &str,
+        end_time: i64,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn resume_session(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_session_titles(
+        &self,
+        id: &str,
+        titles: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_session(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_sessions_batch(
+        &self,
+        ids: &[String],
+    ) -> impl std::future::Future<Output = Result<u64>> + Send;
 
     // Filtering and pagination
     /// List sessions with optional filters and pagination.
     /// Returns a tuple of (sessions, total_count).
-    async fn list_sessions_filtered(
+    fn list_sessions_filtered(
         &self,
         filters: &SessionFilters,
         pagination: &Pagination,
-    ) -> Result<(Vec<LiveSessionDbModel>, u64)>;
+    ) -> impl std::future::Future<Output = Result<(Vec<LiveSessionDbModel>, u64)>> + Send;
 
     // Media Outputs
-    async fn get_media_output(&self, id: &str) -> Result<MediaOutputDbModel>;
-    async fn get_media_outputs_for_session(
+    fn get_media_output(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<MediaOutputDbModel>> + Send;
+    fn get_media_outputs_for_session(
         &self,
         session_id: &str,
-    ) -> Result<Vec<MediaOutputDbModel>>;
-    async fn create_media_output(&self, output: &MediaOutputDbModel) -> Result<()>;
-    async fn delete_media_output(&self, id: &str) -> Result<()>;
+    ) -> impl std::future::Future<Output = Result<Vec<MediaOutputDbModel>>> + Send;
+    fn create_media_output(
+        &self,
+        output: &MediaOutputDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_media_output(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Get the count of media outputs for a session.
-    async fn get_output_count(&self, session_id: &str) -> Result<u32>;
+    fn get_output_count(
+        &self,
+        session_id: &str,
+    ) -> impl std::future::Future<Output = Result<u32>> + Send;
 
     /// List media outputs with optional filters and pagination.
     /// Returns a tuple of (outputs, total_count).
-    async fn list_outputs_filtered(
+    fn list_outputs_filtered(
         &self,
         filters: &OutputFilters,
         pagination: &Pagination,
-    ) -> Result<(Vec<MediaOutputDbModel>, u64)>;
+    ) -> impl std::future::Future<Output = Result<(Vec<MediaOutputDbModel>, u64)>> + Send;
 
-    async fn create_session_segment(&self, segment: &SessionSegmentDbModel) -> Result<()>;
-    async fn list_session_segments_for_session(
+    fn create_session_segment(
+        &self,
+        segment: &SessionSegmentDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn list_session_segments_for_session(
         &self,
         session_id: &str,
         limit: i32,
-    ) -> Result<Vec<SessionSegmentDbModel>>;
+    ) -> impl std::future::Future<Output = Result<Vec<SessionSegmentDbModel>>> + Send;
 
-    async fn list_session_segments_page(
+    fn list_session_segments_page(
         &self,
         session_id: &str,
         pagination: &Pagination,
-    ) -> Result<Vec<SessionSegmentDbModel>>;
+    ) -> impl std::future::Future<Output = Result<Vec<SessionSegmentDbModel>>> + Send;
 
     // Danmu Statistics
-    async fn get_danmu_statistics(
+    fn get_danmu_statistics(
         &self,
         session_id: &str,
-    ) -> Result<Option<DanmuStatisticsDbModel>>;
-    async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
-    async fn update_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
-    async fn upsert_danmu_statistics(
+    ) -> impl std::future::Future<Output = Result<Option<DanmuStatisticsDbModel>>> + Send;
+    fn create_danmu_statistics(
+        &self,
+        stats: &DanmuStatisticsDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_danmu_statistics(
+        &self,
+        stats: &DanmuStatisticsDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn upsert_danmu_statistics(
         &self,
         session_id: &str,
         total_danmus: i64,
         danmu_rate_timeseries: Option<&str>,
         top_talkers: Option<&str>,
         word_frequency: Option<&str>,
-    ) -> Result<()>;
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 /// SQLx implementation of SessionRepository.
@@ -102,7 +139,6 @@ impl SqlxSessionRepository {
     }
 }
 
-#[async_trait]
 impl SessionRepository for SqlxSessionRepository {
     async fn get_session(&self, id: &str) -> Result<LiveSessionDbModel> {
         sqlx::query_as::<_, LiveSessionDbModel>("SELECT * FROM live_sessions WHERE id = ?")

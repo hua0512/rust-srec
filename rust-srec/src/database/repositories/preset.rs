@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use crate::Result;
 use crate::database::models::{JobPreset, Pagination};
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 /// Filter parameters for job presets.
@@ -19,41 +18,60 @@ pub struct JobPresetFilters {
 }
 
 /// Repository for managing job presets.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynJobPresetRepository = dyn(box) JobPresetRepository)]
 pub trait JobPresetRepository: Send + Sync {
     /// Get a preset by ID.
-    async fn get_preset(&self, id: &str) -> Result<Option<JobPreset>>;
+    fn get_preset(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<Option<JobPreset>>> + Send;
 
     /// Get a preset by name.
-    async fn get_preset_by_name(&self, name: &str) -> Result<Option<JobPreset>>;
+    fn get_preset_by_name(
+        &self,
+        name: &str,
+    ) -> impl std::future::Future<Output = Result<Option<JobPreset>>> + Send;
 
     /// Check if a preset name exists (optionally excluding a specific ID).
-    async fn name_exists(&self, name: &str, exclude_id: Option<&str>) -> Result<bool>;
+    fn name_exists(
+        &self,
+        name: &str,
+        exclude_id: Option<&str>,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// List all presets.
-    async fn list_presets(&self) -> Result<Vec<JobPreset>>;
+    fn list_presets(&self) -> impl std::future::Future<Output = Result<Vec<JobPreset>>> + Send;
 
     /// List presets filtered by category.
-    async fn list_presets_by_category(&self, category: Option<&str>) -> Result<Vec<JobPreset>>;
+    fn list_presets_by_category(
+        &self,
+        category: Option<&str>,
+    ) -> impl std::future::Future<Output = Result<Vec<JobPreset>>> + Send;
 
     /// List presets with filtering, searching, and pagination.
-    async fn list_presets_filtered(
+    fn list_presets_filtered(
         &self,
         filters: &JobPresetFilters,
         pagination: &Pagination,
-    ) -> Result<(Vec<JobPreset>, u64)>;
+    ) -> impl std::future::Future<Output = Result<(Vec<JobPreset>, u64)>> + Send;
 
     /// List all unique categories.
-    async fn list_categories(&self) -> Result<Vec<String>>;
+    fn list_categories(&self) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
 
     /// Create a new preset.
-    async fn create_preset(&self, preset: &JobPreset) -> Result<()>;
+    fn create_preset(
+        &self,
+        preset: &JobPreset,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Update an existing preset.
-    async fn update_preset(&self, preset: &JobPreset) -> Result<()>;
+    fn update_preset(
+        &self,
+        preset: &JobPreset,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Delete a preset.
-    async fn delete_preset(&self, id: &str) -> Result<()>;
+    fn delete_preset(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 /// SQLite implementation of JobPresetRepository.
@@ -69,7 +87,6 @@ impl SqliteJobPresetRepository {
     }
 }
 
-#[async_trait]
 impl JobPresetRepository for SqliteJobPresetRepository {
     async fn get_preset(&self, id: &str) -> Result<Option<JobPreset>> {
         let preset = sqlx::query_as::<_, JobPreset>(
@@ -317,32 +334,49 @@ pub struct PipelinePresetFilters {
 }
 
 /// Repository for managing pipeline presets (workflow sequences).
-#[async_trait]
+#[dynosaur::dynosaur(pub DynPipelinePresetRepository = dyn(box) PipelinePresetRepository)]
 pub trait PipelinePresetRepository: Send + Sync {
     /// List all pipeline presets.
-    async fn list_pipeline_presets(&self) -> Result<Vec<PipelinePreset>>;
+    fn list_pipeline_presets(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<PipelinePreset>>> + Send;
 
     /// List pipeline presets with filtering, searching, and pagination.
-    async fn list_pipeline_presets_filtered(
+    fn list_pipeline_presets_filtered(
         &self,
         filters: &PipelinePresetFilters,
         pagination: &Pagination,
-    ) -> Result<(Vec<PipelinePreset>, u64)>;
+    ) -> impl std::future::Future<Output = Result<(Vec<PipelinePreset>, u64)>> + Send;
 
     /// Get a pipeline preset by ID.
-    async fn get_pipeline_preset(&self, id: &str) -> Result<Option<PipelinePreset>>;
+    fn get_pipeline_preset(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<Option<PipelinePreset>>> + Send;
 
     /// Get a pipeline preset by name.
-    async fn get_pipeline_preset_by_name(&self, name: &str) -> Result<Option<PipelinePreset>>;
+    fn get_pipeline_preset_by_name(
+        &self,
+        name: &str,
+    ) -> impl std::future::Future<Output = Result<Option<PipelinePreset>>> + Send;
 
     /// Create a new pipeline preset.
-    async fn create_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()>;
+    fn create_pipeline_preset(
+        &self,
+        preset: &PipelinePreset,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Update an existing pipeline preset.
-    async fn update_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()>;
+    fn update_pipeline_preset(
+        &self,
+        preset: &PipelinePreset,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Delete a pipeline preset.
-    async fn delete_pipeline_preset(&self, id: &str) -> Result<()>;
+    fn delete_pipeline_preset(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 /// SQLite implementation of PipelinePresetRepository.
@@ -358,7 +392,6 @@ impl SqlitePipelinePresetRepository {
     }
 }
 
-#[async_trait]
 impl PipelinePresetRepository for SqlitePipelinePresetRepository {
     async fn list_pipeline_presets(&self) -> Result<Vec<PipelinePreset>> {
         let presets = sqlx::query_as::<_, PipelinePreset>(

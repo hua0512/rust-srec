@@ -17,6 +17,7 @@ use tracing::{debug, error, info, warn};
 
 use super::engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
+    DynDownloadEngine,
     DownloadProgress, DownloadStatus, EngineStartError, EngineType, FfmpegEngine, IoErrorKindSer,
     MesioEngine, SegmentEvent, StreamlinkEngine,
 };
@@ -26,7 +27,7 @@ use crate::Result;
 use crate::database::models::engine::{
     FfmpegEngineConfig, MesioEngineConfig, StreamlinkEngineConfig,
 };
-use crate::database::repositories::config::ConfigRepository;
+use crate::database::repositories::config::{ConfigRepository, DynConfigRepository};
 use crate::downloader::SegmentInfo;
 
 fn parse_engine_config<T: DeserializeOwned>(engine: &'static str, raw: &str) -> Result<T> {
@@ -246,7 +247,7 @@ pub struct DownloadManager {
     /// Pending configuration updates keyed by download_id.
     pending_updates: Arc<DashMap<String, PendingConfigUpdate>>,
     /// Engine registry.
-    engines: RwLock<HashMap<EngineType, Arc<dyn DownloadEngine>>>,
+    engines: RwLock<HashMap<EngineType, Arc<DynDownloadEngine<'static>>>>,
     /// Circuit breaker manager.
     circuit_breakers: CircuitBreakerManager,
     /// Output-root write gate. Optional so existing tests and simple callers
@@ -263,7 +264,7 @@ pub struct DownloadManager {
     /// Broadcast sender for download events
     event_tx: broadcast::Sender<DownloadManagerEvent>,
     /// Config repository for resolving custom engines.
-    config_repo: Option<Arc<dyn ConfigRepository>>,
+    config_repo: Option<Arc<DynConfigRepository<'static>>>,
 }
 
 /// Type of configuration that was updated.
@@ -483,15 +484,15 @@ impl DownloadManager {
             let mut engines = manager.engines.write();
             engines.insert(
                 EngineType::Ffmpeg,
-                Arc::new(FfmpegEngine::new()) as Arc<dyn DownloadEngine>,
+                DynDownloadEngine::new_arc(FfmpegEngine::new()),
             );
             engines.insert(
                 EngineType::Streamlink,
-                Arc::new(StreamlinkEngine::new()) as Arc<dyn DownloadEngine>,
+                DynDownloadEngine::new_arc(StreamlinkEngine::new()),
             );
             engines.insert(
                 EngineType::Mesio,
-                Arc::new(MesioEngine::new()) as Arc<dyn DownloadEngine>,
+                DynDownloadEngine::new_arc(MesioEngine::new()),
             );
         }
 
@@ -523,20 +524,20 @@ impl DownloadManager {
     }
 
     /// Set the config repository.
-    pub fn with_config_repo(mut self, config_repo: Arc<dyn ConfigRepository>) -> Self {
+    pub fn with_config_repo(mut self, config_repo: Arc<DynConfigRepository<'static>>) -> Self {
         self.config_repo = Some(config_repo);
         self
     }
 
     /// Register a download engine.
-    pub fn register_engine(&mut self, engine: Arc<dyn DownloadEngine>) {
+    pub fn register_engine(&mut self, engine: Arc<DynDownloadEngine<'static>>) {
         let engine_type = engine.engine_type();
         self.engines.write().insert(engine_type, engine);
         debug!("Registered download engine: {}", engine_type);
     }
 
     /// Get an engine by type.
-    pub fn get_engine(&self, engine_type: EngineType) -> Option<Arc<dyn DownloadEngine>> {
+    pub fn get_engine(&self, engine_type: EngineType) -> Option<Arc<DynDownloadEngine<'static>>> {
         self.engines.read().get(&engine_type).cloned()
     }
 
@@ -685,7 +686,7 @@ impl DownloadManager {
         &self,
         engine_id: Option<&str>,
         overrides: Option<&serde_json::Value>,
-    ) -> Result<(Arc<dyn DownloadEngine>, EngineType, EngineKey)> {
+    ) -> Result<(Arc<DynDownloadEngine<'static>>, EngineType, EngineKey)> {
         let default_engine = self.config.read().default_engine;
         let target_id = engine_id.unwrap_or(default_engine.as_str());
 
@@ -702,14 +703,14 @@ impl DownloadManager {
             let engine_type = self.resolve_engine_type(target_id).await?;
             let key = EngineKey::with_override(engine_type, engine_id, override_hash);
 
-            let engine: Arc<dyn DownloadEngine> = match engine_type {
+            let engine: Arc<DynDownloadEngine<'static>> = match engine_type {
                 EngineType::Ffmpeg => {
                     let base_config = self
                         .load_engine_config_or_default::<FfmpegEngineConfig>(target_id)
                         .await;
                     let merged_config =
                         Self::apply_override_best_effort(base_config, override_config);
-                    Arc::new(FfmpegEngine::with_config(merged_config))
+                    DynDownloadEngine::new_arc(FfmpegEngine::with_config(merged_config))
                 }
                 EngineType::Streamlink => {
                     let base_config = self
@@ -717,7 +718,7 @@ impl DownloadManager {
                         .await;
                     let merged_config =
                         Self::apply_override_best_effort(base_config, override_config);
-                    Arc::new(StreamlinkEngine::with_config(merged_config))
+                    DynDownloadEngine::new_arc(StreamlinkEngine::with_config(merged_config))
                 }
                 EngineType::Mesio => {
                     let base_config = self
@@ -725,7 +726,7 @@ impl DownloadManager {
                         .await;
                     let merged_config =
                         Self::apply_override_best_effort(base_config, override_config);
-                    Arc::new(MesioEngine::with_config(merged_config))
+                    DynDownloadEngine::new_arc(MesioEngine::with_config(merged_config))
                 }
             };
 
@@ -759,21 +760,21 @@ impl DownloadManager {
                             })?;
 
                         let key = EngineKey::custom(engine_type, id);
-                        let engine: Arc<dyn DownloadEngine> = match engine_type {
+                        let engine: Arc<DynDownloadEngine<'static>> = match engine_type {
                             EngineType::Ffmpeg => {
                                 let engine_config: FfmpegEngineConfig =
                                     parse_engine_config("ffmpeg", &config.config)?;
-                                Arc::new(FfmpegEngine::with_config(engine_config))
+                                DynDownloadEngine::new_arc(FfmpegEngine::with_config(engine_config))
                             }
                             EngineType::Streamlink => {
                                 let engine_config: StreamlinkEngineConfig =
                                     parse_engine_config("streamlink", &config.config)?;
-                                Arc::new(StreamlinkEngine::with_config(engine_config))
+                                DynDownloadEngine::new_arc(StreamlinkEngine::with_config(engine_config))
                             }
                             EngineType::Mesio => {
                                 let engine_config: MesioEngineConfig =
                                     parse_engine_config("mesio", &config.config)?;
-                                Arc::new(MesioEngine::with_config(engine_config))
+                                DynDownloadEngine::new_arc(MesioEngine::with_config(engine_config))
                             }
                         };
 
@@ -911,7 +912,7 @@ impl DownloadManager {
     async fn start_download_with_engine(
         &self,
         config: DownloadConfig,
-        engine: Arc<dyn DownloadEngine>,
+        engine: Arc<DynDownloadEngine<'static>>,
         engine_type: EngineType,
         engine_key: EngineKey,
         is_high_priority: bool,

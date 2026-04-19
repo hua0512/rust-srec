@@ -18,7 +18,9 @@ use tracing::{debug, error, info, warn};
 
 use super::handle::ActorHandle;
 use super::messages::{PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage};
-use super::monitor_adapter::{BatchChecker, NoOpBatchChecker, NoOpStatusChecker, StatusChecker};
+use super::monitor_adapter::{
+    DynBatchChecker, DynStatusChecker, NoOpBatchChecker, NoOpStatusChecker,
+};
 use super::platform_actor::PlatformActor;
 use super::registry::{ActorRegistry, ActorTaskResult};
 use super::restart_tracker::{RestartTracker, RestartTrackerConfig};
@@ -101,9 +103,9 @@ pub struct Supervisor {
     /// Platform actor senders for streamer-platform association.
     platform_senders: HashMap<String, mpsc::Sender<PlatformMessage>>,
     /// Status checker for streamer actors.
-    status_checker: Arc<dyn StatusChecker>,
+    status_checker: Arc<DynStatusChecker<'static>>,
     /// Batch checker for platform actors.
-    batch_checker: Arc<dyn BatchChecker>,
+    batch_checker: Arc<DynBatchChecker<'static>>,
 }
 
 impl Supervisor {
@@ -134,8 +136,8 @@ impl Supervisor {
             cancellation_token,
             config,
             metadata_store,
-            Arc::new(NoOpStatusChecker),
-            Arc::new(NoOpBatchChecker),
+            DynStatusChecker::new_arc(NoOpStatusChecker),
+            DynBatchChecker::new_arc(NoOpBatchChecker),
         )
     }
 
@@ -147,8 +149,8 @@ impl Supervisor {
         cancellation_token: CancellationToken,
         config: SupervisorConfig,
         metadata_store: Arc<DashMap<String, StreamerMetadata>>,
-        status_checker: Arc<dyn StatusChecker>,
-        batch_checker: Arc<dyn BatchChecker>,
+        status_checker: Arc<DynStatusChecker<'static>>,
+        batch_checker: Arc<DynBatchChecker<'static>>,
     ) -> Self {
         Self {
             registry: ActorRegistry::new(cancellation_token.clone()),

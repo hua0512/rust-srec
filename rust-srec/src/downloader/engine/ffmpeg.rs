@@ -1,6 +1,5 @@
 //! FFmpeg download engine implementation.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use pipeline_common::expand_filename_template;
 use std::path::PathBuf;
@@ -157,7 +156,6 @@ impl Default for FfmpegEngine {
     }
 }
 
-#[async_trait]
 impl DownloadEngine for FfmpegEngine {
     fn engine_type(&self) -> EngineType {
         EngineType::Ffmpeg

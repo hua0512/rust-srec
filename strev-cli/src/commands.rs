@@ -10,7 +10,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use platforms_parser::{
     extractor::{
         ProxyConfig, factory::ExtractorFactory, factory_with_proxy,
-        platform_extractor::PlatformExtractor,
+        platform_extractor::{DynPlatformExtractor, PlatformExtractor},
     },
     media::{MediaInfo, StreamInfo},
 };
@@ -397,7 +397,7 @@ impl CommandExecutor {
         extras: Option<&str>,
         timeout_duration: Duration,
         retries: u32,
-    ) -> Result<(MediaInfo, Box<dyn PlatformExtractor>)> {
+    ) -> Result<(MediaInfo, Box<DynPlatformExtractor<'static>>)> {
         let mut last_error = None;
 
         for attempt in 0..=retries {

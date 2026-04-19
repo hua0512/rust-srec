@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
 use super::error::ExtractorError;
-use super::platform_extractor::PlatformExtractor;
+use super::platform_extractor::DynPlatformExtractor;
 use super::streamlink_extractor::StreamlinkExtractor;
 use crate::extractor::platforms::{
     self, acfun::Acfun, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya,
@@ -16,8 +16,12 @@ static REDBOOK_PROFILE_URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 // A type alias for a thread-safe constructor function.
-type ExtractorConstructor =
-    fn(String, Client, Option<String>, Option<serde_json::Value>) -> Box<dyn PlatformExtractor>;
+type ExtractorConstructor = fn(
+    String,
+    Client,
+    Option<String>,
+    Option<serde_json::Value>,
+) -> Box<DynPlatformExtractor<'static>>;
 
 struct PlatformEntry {
     regex: &'static LazyLock<Regex>,
@@ -31,8 +35,7 @@ macro_rules! platform_registry {
                 PlatformEntry {
                     regex: &$regex,
                     constructor: |url, client, cookies, extras| {
-                        Box::new($builder(url, client, cookies, extras))
-                            as Box<dyn PlatformExtractor>
+                        DynPlatformExtractor::new_box($builder(url, client, cookies, extras))
                     },
                 },
             )+
@@ -71,7 +74,7 @@ impl ExtractorFactory {
         url: &str,
         cookies: Option<String>,
         extras: Option<serde_json::Value>,
-    ) -> Result<Box<dyn PlatformExtractor>, ExtractorError> {
+    ) -> Result<Box<DynPlatformExtractor<'static>>, ExtractorError> {
         if REDBOOK_PROFILE_URL_REGEX.is_match(url) {
             return Err(ExtractorError::ValidationError(
                 "RedBook profile URLs are not supported; use xhslink.com/m share links".to_string(),
@@ -92,7 +95,7 @@ impl ExtractorFactory {
         // Automatic fallback: try Streamlink for anything not covered by built-in extractors.
         // If Streamlink isn't available or can't handle the URL, preserve the legacy behavior.
         StreamlinkExtractor::new(url.to_string(), self.client.clone(), cookies, extras)
-            .map(|e| Box::new(e) as Box<dyn PlatformExtractor>)
+            .map(DynPlatformExtractor::new_box)
             .or(Err(ExtractorError::UnsupportedExtractor))
     }
 }

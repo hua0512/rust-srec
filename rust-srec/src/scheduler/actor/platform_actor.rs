@@ -24,7 +24,7 @@ use super::messages::{
     StreamerMessage,
 };
 use super::metrics::ActorMetrics;
-use super::monitor_adapter::{BatchChecker, NoOpBatchChecker};
+use super::monitor_adapter::{BatchChecker, DynBatchChecker, NoOpBatchChecker};
 use super::streamer_actor::{ActorError, ActorOutcome, ActorResult};
 use crate::domain::StreamerState;
 use crate::streamer::StreamerMetadata;
@@ -72,7 +72,7 @@ pub struct PlatformActor {
     /// Metrics handle.
     metrics: ActorMetrics,
     /// Batch checker for performing actual batch checks.
-    batch_checker: std::sync::Arc<dyn BatchChecker>,
+    batch_checker: std::sync::Arc<DynBatchChecker<'static>>,
     /// Flag to indicate batch timer needs to be reset after config change.
     timer_needs_reset: bool,
 }
@@ -94,7 +94,7 @@ impl PlatformActor {
             platform_id,
             config,
             cancellation_token,
-            std::sync::Arc::new(NoOpBatchChecker),
+            DynBatchChecker::new_arc(NoOpBatchChecker),
         )
     }
 
@@ -112,7 +112,7 @@ impl PlatformActor {
             platform_id,
             config,
             cancellation_token,
-            std::sync::Arc::new(NoOpBatchChecker),
+            DynBatchChecker::new_arc(NoOpBatchChecker),
         )
     }
 
@@ -128,7 +128,7 @@ impl PlatformActor {
         platform_id: impl Into<String>,
         config: PlatformConfig,
         cancellation_token: CancellationToken,
-        batch_checker: std::sync::Arc<dyn BatchChecker>,
+        batch_checker: std::sync::Arc<DynBatchChecker<'static>>,
     ) -> (Self, ActorHandle<PlatformMessage>) {
         let platform_id = platform_id.into();
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
@@ -179,7 +179,7 @@ impl PlatformActor {
         platform_id: impl Into<String>,
         config: PlatformConfig,
         cancellation_token: CancellationToken,
-        batch_checker: std::sync::Arc<dyn BatchChecker>,
+        batch_checker: std::sync::Arc<DynBatchChecker<'static>>,
     ) -> (Self, ActorHandle<PlatformMessage>) {
         let platform_id = platform_id.into();
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);

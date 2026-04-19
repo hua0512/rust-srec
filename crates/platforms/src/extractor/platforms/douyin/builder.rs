@@ -18,7 +18,6 @@ use crate::extractor::utils::{extras_get_bool, extras_get_str};
 use crate::media::formats::{MediaFormat, StreamFormat};
 use crate::media::media_info::MediaInfo;
 use crate::media::stream_info::StreamInfo;
-use async_trait::async_trait;
 use regex::Regex;
 use reqwest::{Client, RequestBuilder};
 use rustc_hash::FxHashMap;
@@ -1125,7 +1124,6 @@ impl<'a> DouyinRequest<'a> {
     }
 }
 
-#[async_trait]
 impl PlatformExtractor for Douyin {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

@@ -2,6 +2,7 @@
 
 use axum::{Json, Router, extract::State, routing::post};
 use platforms_parser::extractor::factory::ExtractorFactory;
+use platforms_parser::extractor::platform_extractor::PlatformExtractor;
 use std::time::Duration;
 use tracing::{debug, warn};
 

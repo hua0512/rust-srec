@@ -12,6 +12,7 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 use crate::credentials::platforms::bilibili::{BilibiliCredentialManager, QrPollStatus};
 use crate::credentials::{CredentialScope, CredentialSource};
+use crate::database::repositories::streamer::StreamerRepository;
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct CredentialSourceResponse {

@@ -2,7 +2,6 @@
 //!
 //! This is the database-backed persistence implementation for the credentials subsystem.
 
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 use tracing::{debug, instrument};
 
@@ -250,7 +249,6 @@ impl SqlxCredentialStore {
     }
 }
 
-#[async_trait]
 impl CredentialStore for SqlxCredentialStore {
     #[instrument(
         skip(self, credentials),

@@ -18,14 +18,13 @@ pub use gotify::{GotifyChannel, GotifyConfig};
 pub use telegram::{TelegramChannel, TelegramConfig};
 pub use webhook::{WebhookAuth, WebhookChannel, WebhookConfig};
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use super::events::NotificationEvent;
 use crate::Result;
 
 /// Trait for notification channels.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynNotificationChannel = dyn(box) NotificationChannel)]
 pub trait NotificationChannel: Send + Sync {
     /// Get the channel type name.
     fn channel_type(&self) -> &'static str;
@@ -34,10 +33,13 @@ pub trait NotificationChannel: Send + Sync {
     fn is_enabled(&self) -> bool;
 
     /// Send a notification through this channel.
-    async fn send(&self, event: &NotificationEvent) -> Result<()>;
+    fn send(
+        &self,
+        event: &NotificationEvent,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Test the channel configuration.
-    async fn test(&self) -> Result<()>;
+    fn test(&self) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 /// Channel configuration wrapper.

@@ -13,7 +13,7 @@ use super::dag_scheduler::{
     DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler,
 };
 use super::job_queue::{JobExecutionInfo, JobQueue, JobResult};
-use super::processors::{JobLogSink, Processor, ProcessorContext, ProcessorInput};
+use super::processors::{DynProcessor, JobLogSink, Processor, ProcessorContext, ProcessorInput};
 
 /// Type of worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -209,7 +209,7 @@ impl WorkerPool {
     }
 
     /// Start the worker pool.
-    pub fn start(&self, job_queue: Arc<JobQueue>, processors: Vec<Arc<dyn Processor>>) {
+    pub fn start(&self, job_queue: Arc<JobQueue>, processors: Vec<Arc<DynProcessor<'static>>>) {
         self.start_with_dag_scheduler(job_queue, processors, None, None);
     }
 
@@ -217,7 +217,7 @@ impl WorkerPool {
     pub fn start_with_dag_scheduler(
         &self,
         job_queue: Arc<JobQueue>,
-        processors: Vec<Arc<dyn Processor>>,
+        processors: Vec<Arc<DynProcessor<'static>>>,
         dag_scheduler: Option<Arc<DagScheduler>>,
         dag_notify_tx: Option<tokio::sync::mpsc::Sender<DagCompletionInfo>>,
     ) {
@@ -1057,7 +1057,6 @@ async fn cleanup_partial_outputs(outputs: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use std::time::Duration;
     use tempfile::TempDir;
 
@@ -1065,7 +1064,6 @@ mod tests {
 
     struct SleepProcessor;
 
-    #[async_trait]
     impl Processor for SleepProcessor {
         fn processor_type(&self) -> ProcessorType {
             ProcessorType::Cpu
@@ -1091,7 +1089,6 @@ mod tests {
 
     struct TimeoutPublishProcessor;
 
-    #[async_trait]
     impl Processor for TimeoutPublishProcessor {
         fn processor_type(&self) -> ProcessorType {
             ProcessorType::Cpu
@@ -1169,7 +1166,7 @@ mod tests {
             },
         );
 
-        pool.start(job_queue.clone(), vec![Arc::new(SleepProcessor)]);
+        pool.start(job_queue.clone(), vec![DynProcessor::new_arc(SleepProcessor)]);
 
         let job = Job::new(
             "sleep",
@@ -1229,7 +1226,7 @@ mod tests {
             },
         );
 
-        pool.start(job_queue.clone(), vec![Arc::new(TimeoutPublishProcessor)]);
+        pool.start(job_queue.clone(), vec![DynProcessor::new_arc(TimeoutPublishProcessor)]);
 
         let job = Job::new(
             "timeout-publish",

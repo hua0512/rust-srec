@@ -19,8 +19,9 @@ use super::dag_scheduler::{
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, JobStatus, QueueDepthStatus};
 use super::processors::{
     AssBurnInProcessor, AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor,
-    DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor, MetadataProcessor,
-    Processor, RcloneProcessor, RemuxProcessor, TdlUploadProcessor, ThumbnailProcessor,
+    DanmakuFactoryProcessor, DeleteProcessor, DynProcessor, ExecuteCommandProcessor,
+    MetadataProcessor, Processor, RcloneProcessor, RemuxProcessor, TdlUploadProcessor,
+    ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
 use super::purge::{JobPurgeService, PurgeConfig};
@@ -37,7 +38,9 @@ use crate::database::models::{
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
 use crate::database::repositories::{
-    DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
+    DagRepository, DynDagRepository, DynJobPresetRepository, DynJobRepository,
+    DynPipelinePresetRepository, DynSessionRepository, DynStreamerRepository, JobPresetRepository,
+    PipelinePresetRepository, SessionRepository,
 };
 use crate::downloader::DownloadManagerEvent;
 use crate::utils::filename::sanitize_filename;
@@ -217,11 +220,11 @@ pub struct PipelineManager<
     /// IO worker pool.
     io_pool: WorkerPool,
     /// Processors.
-    processors: Vec<Arc<dyn Processor>>,
+    processors: Vec<Arc<DynProcessor<'static>>>,
     /// Event broadcaster.
     event_tx: broadcast::Sender<PipelineEvent>,
     /// Session repository for persistence (optional).
-    session_repo: Option<Arc<dyn SessionRepository>>,
+    session_repo: Option<Arc<DynSessionRepository<'static>>>,
     /// Streamer repository for metadata lookup (optional).
     streamer_repo: Option<Arc<SR>>,
     /// Cancellation token.
@@ -233,9 +236,9 @@ pub struct PipelineManager<
     /// Job purge service for automatic cleanup of old jobs.
     purge_service: Option<Arc<JobPurgeService>>,
     /// Job preset repository for resolving named pipeline steps.
-    preset_repo: Option<Arc<dyn JobPresetRepository>>,
+    preset_repo: Option<Arc<DynJobPresetRepository<'static>>>,
     /// Pipeline preset repository for resolving workflow steps.
-    pipeline_preset_repo: Option<Arc<dyn PipelinePresetRepository>>,
+    pipeline_preset_repo: Option<Arc<DynPipelinePresetRepository<'static>>>,
     /// Config service for resolving pipeline rules.
     config_service: Option<Arc<ConfigService<CR, SR>>>,
     /// Last observed queue depth status (edge-trigger warnings).
@@ -259,9 +262,9 @@ pub struct PipelineManager<
     handled_dag_completions: DashMap<String, std::time::Instant>,
 
     /// DAG repository for DAG pipeline persistence.
-    dag_repository: Option<Arc<dyn DagRepository>>,
+    dag_repository: Option<Arc<DynDagRepository<'static>>>,
     /// Job repository reference (needed for DAG scheduler).
-    job_repository: Option<Arc<dyn JobRepository>>,
+    job_repository: Option<Arc<DynJobRepository<'static>>>,
     /// DAG scheduler for orchestrating DAG pipeline execution.
     dag_scheduler: Option<Arc<DagScheduler>>,
 }
@@ -325,19 +328,19 @@ where
         let execute_timeout_secs = config.execute_timeout_secs;
 
         // Create default processors
-        let processors: Vec<Arc<dyn Processor>> = vec![
-            Arc::new(RemuxProcessor::new()),
-            Arc::new(DanmakuFactoryProcessor::new()),
-            Arc::new(AssBurnInProcessor::new()),
-            Arc::new(RcloneProcessor::new()),
-            Arc::new(TdlUploadProcessor::new()),
-            Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
-            Arc::new(ThumbnailProcessor::new()),
-            Arc::new(CopyMoveProcessor::new()),
-            Arc::new(AudioExtractProcessor::new()),
-            Arc::new(CompressionProcessor::new()),
-            Arc::new(MetadataProcessor::new()),
-            Arc::new(DeleteProcessor::new()),
+        let processors: Vec<Arc<DynProcessor<'static>>> = vec![
+            DynProcessor::new_arc(RemuxProcessor::new()),
+            DynProcessor::new_arc(DanmakuFactoryProcessor::new()),
+            DynProcessor::new_arc(AssBurnInProcessor::new()),
+            DynProcessor::new_arc(RcloneProcessor::new()),
+            DynProcessor::new_arc(TdlUploadProcessor::new()),
+            DynProcessor::new_arc(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
+            DynProcessor::new_arc(ThumbnailProcessor::new()),
+            DynProcessor::new_arc(CopyMoveProcessor::new()),
+            DynProcessor::new_arc(AudioExtractProcessor::new()),
+            DynProcessor::new_arc(CompressionProcessor::new()),
+            DynProcessor::new_arc(MetadataProcessor::new()),
+            DynProcessor::new_arc(DeleteProcessor::new()),
         ];
 
         // Create throttle controller if enabled
@@ -381,7 +384,7 @@ where
     /// This enables database persistence and job recovery on startup.
     pub fn with_repository(
         config: PipelineManagerConfig,
-        job_repository: Arc<dyn JobRepository>,
+        job_repository: Arc<DynJobRepository<'static>>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let job_queue = Arc::new(JobQueue::with_repository(
@@ -402,19 +405,19 @@ where
         };
 
         // Create default processors
-        let processors: Vec<Arc<dyn Processor>> = vec![
-            Arc::new(RemuxProcessor::new()),
-            Arc::new(DanmakuFactoryProcessor::new()),
-            Arc::new(AssBurnInProcessor::new()),
-            Arc::new(RcloneProcessor::new()),
-            Arc::new(TdlUploadProcessor::new()),
-            Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
-            Arc::new(ThumbnailProcessor::new()),
-            Arc::new(CopyMoveProcessor::new()),
-            Arc::new(AudioExtractProcessor::new()),
-            Arc::new(CompressionProcessor::new()),
-            Arc::new(MetadataProcessor::new()),
-            Arc::new(DeleteProcessor::new()),
+        let processors: Vec<Arc<DynProcessor<'static>>> = vec![
+            DynProcessor::new_arc(RemuxProcessor::new()),
+            DynProcessor::new_arc(DanmakuFactoryProcessor::new()),
+            DynProcessor::new_arc(AssBurnInProcessor::new()),
+            DynProcessor::new_arc(RcloneProcessor::new()),
+            DynProcessor::new_arc(TdlUploadProcessor::new()),
+            DynProcessor::new_arc(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
+            DynProcessor::new_arc(ThumbnailProcessor::new()),
+            DynProcessor::new_arc(CopyMoveProcessor::new()),
+            DynProcessor::new_arc(AudioExtractProcessor::new()),
+            DynProcessor::new_arc(CompressionProcessor::new()),
+            DynProcessor::new_arc(MetadataProcessor::new()),
+            DynProcessor::new_arc(DeleteProcessor::new()),
         ];
 
         // Create throttle controller if enabled
@@ -457,7 +460,7 @@ where
     /// Set the session repository for persistence.
     pub fn with_session_repository(
         mut self,
-        session_repository: Arc<dyn SessionRepository>,
+        session_repository: Arc<DynSessionRepository<'static>>,
     ) -> Self {
         self.session_repo = Some(session_repository.clone());
         // Also set session repo on job queue
@@ -466,10 +469,13 @@ where
     }
 
     /// Set the streamer repository for metadata lookup.
-    pub fn with_streamer_repository(mut self, streamer_repository: Arc<SR>) -> Self {
+    pub fn with_streamer_repository(mut self, streamer_repository: Arc<SR>) -> Self
+    where
+        SR: Clone,
+    {
         // Also set streamer repo on job queue for metadata resolution during dequeue
         self.job_queue
-            .set_streamer_repo(streamer_repository.clone() as Arc<dyn StreamerRepository>);
+            .set_streamer_repo(DynStreamerRepository::new_arc((*streamer_repository).clone()));
         self.streamer_repo = Some(streamer_repository);
         self
     }
@@ -482,7 +488,10 @@ where
     }
 
     /// Set the job preset repository.
-    pub fn with_preset_repository(mut self, preset_repo: Arc<dyn JobPresetRepository>) -> Self {
+    pub fn with_preset_repository(
+        mut self,
+        preset_repo: Arc<DynJobPresetRepository<'static>>,
+    ) -> Self {
         self.preset_repo = Some(preset_repo);
         self
     }
@@ -490,7 +499,7 @@ where
     /// Set the pipeline preset repository (for workflow expansion).
     pub fn with_pipeline_preset_repository(
         mut self,
-        pipeline_preset_repo: Arc<dyn PipelinePresetRepository>,
+        pipeline_preset_repo: Arc<DynPipelinePresetRepository<'static>>,
     ) -> Self {
         self.pipeline_preset_repo = Some(pipeline_preset_repo);
         self
@@ -504,7 +513,10 @@ where
 
     /// Set the DAG repository for DAG pipeline persistence.
     /// This also creates the DAG scheduler if job_repository is already set.
-    pub fn with_dag_repository(mut self, dag_repository: Arc<dyn DagRepository>) -> Self {
+    pub fn with_dag_repository(
+        mut self,
+        dag_repository: Arc<DynDagRepository<'static>>,
+    ) -> Self {
         self.dag_repository = Some(dag_repository.clone());
 
         // Create DAG scheduler if we have both repositories
@@ -567,7 +579,7 @@ where
         info!("Starting Pipeline Manager");
 
         // Get CPU and IO processors
-        let cpu_processors: Vec<Arc<dyn Processor>> = self
+        let cpu_processors: Vec<Arc<DynProcessor<'static>>> = self
             .processors
             .iter()
             .filter(|p| p.processor_type() == super::processors::ProcessorType::Cpu)
@@ -579,7 +591,7 @@ where
             cpu_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
         );
 
-        let io_processors: Vec<Arc<dyn Processor>> = self
+        let io_processors: Vec<Arc<DynProcessor<'static>>> = self
             .processors
             .iter()
             .filter(|p| p.processor_type() == super::processors::ProcessorType::Io)
@@ -3117,8 +3129,9 @@ mod tests {
         JobExecutionLogDbModel, LiveSessionDbModel, OutputFilters, PipelinePreset, SessionFilters,
         SessionSegmentDbModel,
     };
-    use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
-    use async_trait::async_trait;
+    use crate::database::repositories::{
+        JobRepository, PipelinePresetFilters, PipelinePresetRepository,
+    };
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -3134,7 +3147,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl SessionRepository for TestSessionRepository {
         async fn get_session(&self, id: &str) -> Result<LiveSessionDbModel> {
             Ok(LiveSessionDbModel {
@@ -3273,14 +3285,15 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct TestDagRepository {
-        dags: Mutex<HashMap<String, DagExecutionDbModel>>,
+        dags: Arc<Mutex<HashMap<String, DagExecutionDbModel>>>,
     }
 
     impl TestDagRepository {
         fn new() -> Self {
             Self {
-                dags: Mutex::new(HashMap::new()),
+                dags: Arc::new(Mutex::new(HashMap::new())),
             }
         }
 
@@ -3311,7 +3324,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl crate::database::repositories::JobRepository for TestJobRepository {
         async fn get_job(&self, id: &str) -> Result<JobDbModel> {
             self.jobs
@@ -3507,16 +3519,17 @@ mod tests {
 
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    #[derive(Clone)]
     struct TestDagRepositoryForRetry {
-        dags: Mutex<HashMap<String, DagExecutionDbModel>>,
-        reset_calls: AtomicUsize,
+        dags: Arc<Mutex<HashMap<String, DagExecutionDbModel>>>,
+        reset_calls: Arc<AtomicUsize>,
     }
 
     impl TestDagRepositoryForRetry {
         fn new() -> Self {
             Self {
-                dags: Mutex::new(HashMap::new()),
-                reset_calls: AtomicUsize::new(0),
+                dags: Arc::new(Mutex::new(HashMap::new())),
+                reset_calls: Arc::new(AtomicUsize::new(0)),
             }
         }
 
@@ -3532,7 +3545,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl DagRepository for TestDagRepositoryForRetry {
         async fn create_dag(&self, _dag: &DagExecutionDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
@@ -3700,7 +3712,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl DagRepository for TestDagRepository {
         async fn create_dag(&self, _dag: &DagExecutionDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
@@ -3883,8 +3894,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_job_resets_failed_dag_when_job_is_dag_step() {
-        let job_repo = Arc::new(TestJobRepository::new());
-        let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
+        let job_repo = DynJobRepository::new_arc(TestJobRepository::new());
+        let dag_repo = TestDagRepositoryForRetry::new();
 
         let dag_def = crate::database::models::DagPipelineDefinition::new(
             "test",
@@ -3918,13 +3929,13 @@ mod tests {
         job.error = Some("boom".to_string());
         job.completed_at = Some(chrono::Utc::now().timestamp_millis());
         let job_id = job.id.clone();
-        job_repo.insert(job);
+        job_repo.create_job(&job).await.unwrap();
 
         let mut config = PipelineManagerConfig::default();
         config.purge.retention_days = 0;
 
         let manager: PipelineManager = PipelineManager::with_repository(config, job_repo)
-            .with_dag_repository(dag_repo.clone());
+            .with_dag_repository(DynDagRepository::new_arc(dag_repo.clone()));
 
         let retried = manager.retry_job(&job_id).await.unwrap();
         assert_eq!(
@@ -3939,8 +3950,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_job_resets_cancelled_dag_when_job_is_dag_step() {
-        let job_repo = Arc::new(TestJobRepository::new());
-        let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
+        let job_repo = DynJobRepository::new_arc(TestJobRepository::new());
+        let dag_repo = TestDagRepositoryForRetry::new();
 
         let dag_def = DagExecutionDbModel::new(
             &crate::database::models::DagPipelineDefinition::new(
@@ -3978,13 +3989,13 @@ mod tests {
         job.error = Some("cancelled".to_string());
         job.completed_at = Some(chrono::Utc::now().timestamp_millis());
         let job_id = job.id.clone();
-        job_repo.insert(job);
+        job_repo.create_job(&job).await.unwrap();
 
         let mut config = PipelineManagerConfig::default();
         config.purge.retention_days = 0;
 
         let manager: PipelineManager = PipelineManager::with_repository(config, job_repo)
-            .with_dag_repository(dag_repo.clone());
+            .with_dag_repository(DynDagRepository::new_arc(dag_repo.clone()));
 
         let retried = manager.retry_job(&job_id).await.unwrap();
         assert_eq!(
@@ -4013,7 +4024,6 @@ mod tests {
         preset: PipelinePreset,
     }
 
-    #[async_trait]
     impl PipelinePresetRepository for TestPipelinePresetRepository {
         async fn list_pipeline_presets(&self) -> Result<Vec<PipelinePreset>> {
             Ok(vec![])
@@ -4065,7 +4075,7 @@ mod tests {
                 ),
             ],
         );
-        let repo = Arc::new(TestPipelinePresetRepository {
+        let repo = DynPipelinePresetRepository::new_arc(TestPipelinePresetRepository {
             preset: PipelinePreset::new("wf", workflow_dag),
         });
 
@@ -4360,7 +4370,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_complete_waits_for_session_end_time() {
-        let session_repo = Arc::new(TestSessionRepository::new(None));
+        let session_repo = DynSessionRepository::new_arc(TestSessionRepository::new(None));
         let manager: PipelineManager = PipelineManager::new().with_session_repository(session_repo);
 
         let session_id = "session-1".to_string();
@@ -4407,7 +4417,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_complete_triggers_after_session_end_time() {
-        let session_repo = Arc::new(TestSessionRepository::new(Some(
+        let session_repo = DynSessionRepository::new_arc(TestSessionRepository::new(Some(
             chrono::Utc::now().timestamp_millis(),
         )));
         let manager: PipelineManager = PipelineManager::new().with_session_repository(session_repo);
@@ -4447,7 +4457,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_complete_waits_for_paired_dags() {
-        let session_repo = Arc::new(TestSessionRepository::new(Some(
+        let session_repo = DynSessionRepository::new_arc(TestSessionRepository::new(Some(
             chrono::Utc::now().timestamp_millis(),
         )));
         let manager: PipelineManager = PipelineManager::new().with_session_repository(session_repo);
@@ -4500,13 +4510,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_complete_recovers_segment_dag_completion_without_context() {
-        let session_repo = Arc::new(TestSessionRepository::new(Some(
+        let session_repo = DynSessionRepository::new_arc(TestSessionRepository::new(Some(
             chrono::Utc::now().timestamp_millis(),
         )));
-        let dag_repo = Arc::new(TestDagRepository::new());
+        let dag_repo = TestDagRepository::new();
         let manager: PipelineManager = PipelineManager::new()
             .with_session_repository(session_repo)
-            .with_dag_repository(dag_repo.clone());
+            .with_dag_repository(DynDagRepository::new_arc(dag_repo.clone()));
 
         let session_id = "session-1".to_string();
         let streamer_id = "streamer-1".to_string();
@@ -4562,13 +4572,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_complete_recovers_paired_dag_completion_without_context() {
-        let session_repo = Arc::new(TestSessionRepository::new(Some(
+        let session_repo = DynSessionRepository::new_arc(TestSessionRepository::new(Some(
             chrono::Utc::now().timestamp_millis(),
         )));
-        let dag_repo = Arc::new(TestDagRepository::new());
+        let dag_repo = TestDagRepository::new();
         let manager: PipelineManager = PipelineManager::new()
             .with_session_repository(session_repo)
-            .with_dag_repository(dag_repo.clone());
+            .with_dag_repository(DynDagRepository::new_arc(dag_repo.clone()));
 
         let session_id = "session-1".to_string();
         let streamer_id = "streamer-1".to_string();
@@ -4630,8 +4640,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_paired_segment_recovers_segment_dag_completion_without_context() {
-        let dag_repo = Arc::new(TestDagRepository::new());
-        let manager: PipelineManager = PipelineManager::new().with_dag_repository(dag_repo.clone());
+        let dag_repo = TestDagRepository::new();
+        let manager: PipelineManager = PipelineManager::new()
+            .with_dag_repository(DynDagRepository::new_arc(dag_repo.clone()));
 
         let session_id = "session-1".to_string();
         let streamer_id = "streamer-1".to_string();

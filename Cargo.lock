@@ -1655,6 +1655,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+name = "dynosaur"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a12303417f378f29ba12cb12fc78a9df0d8e16ccb1ad94abf04d48d96bdda532"
+dependencies = [
+ "dynosaur_derive",
+]
+
+[[package]]
+name = "dynosaur_derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b0713d5c1d52e774c5cd7bb8b043d7c0fc4f921abfb678556140bfbe6ab2364"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.16.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3650,11 +3670,11 @@ name = "mesio-engine"
 version = "0.4.0"
 dependencies = [
  "aes 0.9.0-rc.4",
- "async-trait",
  "bytes",
  "cbc",
  "cipher 0.5.1",
  "clap",
+ "dynosaur",
  "flv",
  "futures",
  "hex",
@@ -4633,12 +4653,12 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 name = "platforms-parser"
 version = "0.2.0"
 dependencies = [
- "async-trait",
  "base64 0.22.1",
  "brotli",
  "byteorder",
  "bytes",
  "chrono",
+ "dynosaur",
  "flate2",
  "futures",
  "libsm",
@@ -5506,7 +5526,6 @@ dependencies = [
  "aes-gcm",
  "anyhow",
  "argon2",
- "async-trait",
  "axum",
  "base64 0.22.1",
  "bytes",
@@ -5515,6 +5534,7 @@ dependencies = [
  "cron",
  "dashmap",
  "dotenvy",
+ "dynosaur",
  "flate2",
  "flv",
  "flv-fix",

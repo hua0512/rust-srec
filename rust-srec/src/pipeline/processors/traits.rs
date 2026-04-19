@@ -1,6 +1,5 @@
 //! Processor trait and related types.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -223,7 +222,7 @@ pub struct ProcessorOutput {
 }
 
 /// Trait for pipeline processors.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynProcessor = dyn(box) Processor)]
 pub trait Processor: Send + Sync {
     /// Get the processor type.
     fn processor_type(&self) -> ProcessorType;
@@ -243,11 +242,11 @@ pub trait Processor: Send + Sync {
     /// This method MUST be cancel-safe. The worker pool may cancel the future if the job times out
     /// or if the application is shutting down. Implementations should ensure that cancellation
     /// does not leave the system in an inconsistent state (e.g., partial files should be cleaned up).
-    async fn process(
+    fn process(
         &self,
         input: &ProcessorInput,
         ctx: &ProcessorContext,
-    ) -> Result<ProcessorOutput>;
+    ) -> impl std::future::Future<Output = Result<ProcessorOutput>> + Send;
 
     /// Get the processor name.
     fn name(&self) -> &'static str;

@@ -23,10 +23,10 @@ use crate::danmu::{
     create_sampler,
 };
 use crate::database::models::DanmuRateEntry;
-use crate::database::repositories::SessionRepository;
+use crate::database::repositories::{DynSessionRepository, SessionRepository};
 use crate::domain::DanmuSamplingConfig;
 use crate::error::{Error, Result};
-use platforms_parser::danmaku::ConnectionConfig;
+use platforms_parser::danmaku::{ConnectionConfig, DanmuProvider};
 
 use super::events::{CollectionCommand, DanmuEvent};
 use super::runner::{CollectionRunner, RunnerParams};
@@ -174,7 +174,7 @@ pub struct DanmuService {
     /// Global cancellation token
     cancel_token: CancellationToken,
     /// Session repository for persistence
-    session_repo: Option<Arc<dyn crate::database::repositories::SessionRepository>>,
+    session_repo: Option<Arc<crate::database::repositories::DynSessionRepository<'static>>>,
 }
 
 impl DanmuService {
@@ -215,7 +215,7 @@ impl DanmuService {
     /// Set the session repository for persistence.
     pub fn with_session_repository(
         mut self,
-        repo: Arc<dyn crate::database::repositories::SessionRepository>,
+        repo: Arc<crate::database::repositories::DynSessionRepository<'static>>,
     ) -> Self {
         self.session_repo = Some(repo);
         self
@@ -224,7 +224,7 @@ impl DanmuService {
     /// Get the session repository (if set).
     pub fn session_repo(
         &self,
-    ) -> Option<&Arc<dyn crate::database::repositories::SessionRepository>> {
+    ) -> Option<&Arc<crate::database::repositories::DynSessionRepository<'static>>> {
         self.session_repo.as_ref()
     }
 
@@ -620,7 +620,7 @@ fn saturating_u64_to_i64(value: u64) -> i64 {
 }
 
 async fn persist_statistics(
-    session_repo: Option<&dyn SessionRepository>,
+    session_repo: Option<&DynSessionRepository<'_>>,
     session_id: &str,
     statistics: &DanmuStatistics,
 ) {

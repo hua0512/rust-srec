@@ -20,7 +20,10 @@ use crate::database::models::{
     JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus as DbJobStatus, MediaFileType,
     MediaOutputDbModel, Pagination, TitleEntry,
 };
-use crate::database::repositories::{JobRepository, SessionRepository, StreamerRepository};
+use crate::database::repositories::{
+    DynJobRepository, DynSessionRepository, DynStreamerRepository, JobRepository,
+    SessionRepository, StreamerRepository,
+};
 use crate::pipeline::processors::utils as processor_utils;
 use crate::utils::json::{self, JsonContext};
 use crate::{Error, Result};
@@ -531,11 +534,11 @@ pub struct JobQueue {
     /// Notify when new jobs are added.
     notify: Arc<Notify>,
     /// Job repository for database persistence.
-    job_repository: Option<Arc<dyn JobRepository>>,
+    job_repository: Option<Arc<DynJobRepository<'static>>>,
     /// Session repository for persisting media outputs (e.g., thumbnails).
-    session_repo: std::sync::OnceLock<Arc<dyn SessionRepository>>,
+    session_repo: std::sync::OnceLock<Arc<DynSessionRepository<'static>>>,
     /// Streamer repository for looking up streamer metadata (e.g., name).
-    streamer_repo: std::sync::OnceLock<Arc<dyn StreamerRepository>>,
+    streamer_repo: std::sync::OnceLock<Arc<DynStreamerRepository<'static>>>,
     /// In-memory cache of jobs (for quick lookups).
     jobs_cache: DashMap<String, Job>,
     /// Cancellation tokens for processing jobs.
@@ -582,7 +585,7 @@ impl JobQueue {
     }
 
     /// Create a new job queue with a job repository for database persistence.
-    pub fn with_repository(config: JobQueueConfig, repository: Arc<dyn JobRepository>) -> Self {
+    pub fn with_repository(config: JobQueueConfig, repository: Arc<DynJobRepository<'static>>) -> Self {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::channel::<JobProgressUpdate>(1024);
         let cancellation_tokens: DashMap<String, CancellationToken> = DashMap::new();
         let progress_cache: DashMap<String, JobProgressSnapshot> = DashMap::new();
@@ -609,19 +612,19 @@ impl JobQueue {
     }
 
     /// Set the job repository for database persistence.
-    pub fn set_repository(&mut self, repository: Arc<dyn JobRepository>) {
+    pub fn set_repository(&mut self, repository: Arc<DynJobRepository<'static>>) {
         self.job_repository = Some(repository);
     }
 
     /// Set the session repository for persisting media outputs (e.g., thumbnails).
     /// This can only be called once.
-    pub fn set_session_repo(&self, repo: Arc<dyn SessionRepository>) {
+    pub fn set_session_repo(&self, repo: Arc<DynSessionRepository<'static>>) {
         let _ = self.session_repo.set(repo);
     }
 
     /// Set the streamer repository for looking up streamer metadata.
     /// This can only be called once.
-    pub fn set_streamer_repo(&self, repo: Arc<dyn StreamerRepository>) {
+    pub fn set_streamer_repo(&self, repo: Arc<DynStreamerRepository<'static>>) {
         let _ = self.streamer_repo.set(repo);
     }
 
@@ -2085,7 +2088,7 @@ impl JobQueue {
 }
 
 fn spawn_progress_aggregator(
-    repo: Option<Arc<dyn JobRepository>>,
+    repo: Option<Arc<DynJobRepository<'static>>>,
     mut rx: tokio::sync::mpsc::Receiver<JobProgressUpdate>,
     cancellation_tokens: DashMap<String, CancellationToken>,
     progress_cache: DashMap<String, JobProgressSnapshot>,

@@ -78,6 +78,9 @@ use crate::api::models::{
 use crate::api::server::AppState;
 use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
 use crate::database::models::{JobFilters, JobStatus as DbJobStatus, OutputFilters, Pagination};
+use crate::database::repositories::preset::PipelinePresetRepository;
+use crate::database::repositories::session::SessionRepository;
+use crate::database::repositories::streamer::StreamerRepository;
 use crate::pipeline::JobProgressSnapshot;
 use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 

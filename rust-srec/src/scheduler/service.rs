@@ -24,7 +24,8 @@ use tracing::{debug, error, info, trace, warn};
 use crate::Result;
 use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use crate::database::repositories::{
-    ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
+    ConfigRepository, DynConfigRepository, FilterRepository, SessionRepository,
+    StreamerRepository,
 };
 use crate::domain::Priority;
 use crate::downloader::{DownloadManagerEvent, DownloadStopCause};
@@ -32,8 +33,9 @@ use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorHandle, ConfigRouter, ConfigScope, DownloadEndPolicy, MonitorBatchChecker,
-    MonitorStatusChecker, PlatformConfig, PlatformMapping, PlatformMessage, RoutingPlan,
+    ActorHandle, ConfigRouter, ConfigScope, DownloadEndPolicy, DynBatchChecker, DynStatusChecker,
+    MonitorBatchChecker, MonitorStatusChecker, PlatformConfig, PlatformMapping, PlatformMessage,
+    RoutingPlan,
     ShutdownReport, StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig,
     TaskCompletionAction,
 };
@@ -113,7 +115,7 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     /// Scheduler configuration.
     config: SchedulerConfig,
     /// Config repository for pulling fresh global timing config on hot reload.
-    config_repo: Option<Arc<dyn ConfigRepository>>,
+    config_repo: Option<Arc<DynConfigRepository<'static>>>,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,
     /// Supervisor for managing actor lifecycle.
@@ -297,8 +299,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         CR: ConfigRepository + Send + Sync + 'static,
     {
         // Create status and batch checkers directly from the StreamMonitor
-        let status_checker = Arc::new(MonitorStatusChecker::new(monitor.clone()));
-        let batch_checker = Arc::new(MonitorBatchChecker::new(monitor.clone()));
+        let status_checker = DynStatusChecker::new_arc(MonitorStatusChecker::new(monitor.clone()));
+        let batch_checker = DynBatchChecker::new_arc(MonitorBatchChecker::new(monitor.clone()));
 
         // Pass the shared metadata store to the supervisor
         let metadata_store = streamer_manager.metadata_store();
@@ -329,7 +331,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Attach a config repository to enable hot reloading of global scheduler timing config.
-    pub fn with_config_repo(mut self, config_repo: Arc<dyn ConfigRepository>) -> Self {
+    pub fn with_config_repo(mut self, config_repo: Arc<DynConfigRepository<'static>>) -> Self {
         self.config_repo = Some(config_repo);
         self
     }

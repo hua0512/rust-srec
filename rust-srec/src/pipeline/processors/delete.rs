@@ -3,7 +3,6 @@
 //! This processor handles file deletion with retry logic for locked files.
 //!
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::fs;
@@ -137,7 +136,6 @@ impl Default for DeleteProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for DeleteProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Io

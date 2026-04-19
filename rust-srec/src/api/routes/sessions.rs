@@ -23,6 +23,8 @@ use crate::api::models::{
     SessionSegmentResponse, TitleChange,
 };
 use crate::api::server::AppState;
+use crate::database::repositories::session::SessionRepository;
+use crate::database::repositories::streamer::StreamerRepository;
 use crate::database::models::{
     DanmuRateEntry, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
 };
@@ -481,7 +483,7 @@ pub async fn get_session_danmu_statistics(
 /// Helper to get the thumbnail URL for a session
 async fn get_thumbnail_url(
     session_id: &str,
-    repo: &dyn crate::database::repositories::session::SessionRepository,
+    repo: &crate::database::repositories::session::DynSessionRepository<'_>,
 ) -> Option<String> {
     use crate::database::models::MediaFileType;
     // We assume the repository method returns outputs ordered by creation, taking the first thumbnail found

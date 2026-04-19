@@ -1,6 +1,5 @@
 //! DAG (Directed Acyclic Graph) repository for pipeline execution.
 
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 
@@ -12,74 +11,118 @@ use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
 
 /// DAG repository trait for pipeline execution management.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynDagRepository = dyn(box) DagRepository)]
 pub trait DagRepository: Send + Sync {
     // ========================================================================
     // DAG Execution CRUD
     // ========================================================================
 
     /// Create a new DAG execution record.
-    async fn create_dag(&self, dag: &DagExecutionDbModel) -> Result<()>;
+    fn create_dag(
+        &self,
+        dag: &DagExecutionDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Get a DAG execution by ID.
-    async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel>;
+    fn get_dag(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<DagExecutionDbModel>> + Send;
 
     /// Update DAG execution status.
-    async fn update_dag_status(&self, id: &str, status: &str, error: Option<&str>) -> Result<()>;
+    fn update_dag_status(
+        &self,
+        id: &str,
+        status: &str,
+        error: Option<&str>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Increment completed steps counter for a DAG.
-    async fn increment_dag_completed(&self, dag_id: &str) -> Result<()>;
+    fn increment_dag_completed(
+        &self,
+        dag_id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Increment failed steps counter for a DAG.
-    async fn increment_dag_failed(&self, dag_id: &str) -> Result<()>;
+    fn increment_dag_failed(
+        &self,
+        dag_id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// List DAG executions with optional status and session_id filters.
-    async fn list_dags(
+    fn list_dags(
         &self,
         status: Option<&str>,
         session_id: Option<&str>,
         limit: u32,
         offset: u32,
-    ) -> Result<Vec<DagExecutionDbModel>>;
+    ) -> impl std::future::Future<Output = Result<Vec<DagExecutionDbModel>>> + Send;
 
     /// Count DAG executions with optional status and session_id filters.
-    async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64>;
+    fn count_dags(
+        &self,
+        status: Option<&str>,
+        session_id: Option<&str>,
+    ) -> impl std::future::Future<Output = Result<u64>> + Send;
 
     /// Delete a DAG execution and all its steps.
-    async fn delete_dag(&self, id: &str) -> Result<()>;
+    fn delete_dag(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // ========================================================================
     // DAG Step Execution CRUD
     // ========================================================================
 
     /// Create a new step execution record.
-    async fn create_step(&self, step: &DagStepExecutionDbModel) -> Result<()>;
+    fn create_step(
+        &self,
+        step: &DagStepExecutionDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Create multiple step execution records in a transaction.
-    async fn create_steps(&self, steps: &[DagStepExecutionDbModel]) -> Result<()>;
+    fn create_steps(
+        &self,
+        steps: &[DagStepExecutionDbModel],
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Get a step execution by ID.
-    async fn get_step(&self, id: &str) -> Result<DagStepExecutionDbModel>;
+    fn get_step(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<DagStepExecutionDbModel>> + Send;
 
     /// Get a step execution by DAG ID and step ID.
-    async fn get_step_by_dag_and_step_id(
+    fn get_step_by_dag_and_step_id(
         &self,
         dag_id: &str,
         step_id: &str,
-    ) -> Result<DagStepExecutionDbModel>;
+    ) -> impl std::future::Future<Output = Result<DagStepExecutionDbModel>> + Send;
 
     /// Get all step executions for a DAG.
-    async fn get_steps_by_dag(&self, dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>>;
+    fn get_steps_by_dag(
+        &self,
+        dag_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<DagStepExecutionDbModel>>> + Send;
 
     /// Update a step execution.
-    async fn update_step(&self, step: &DagStepExecutionDbModel) -> Result<()>;
+    fn update_step(
+        &self,
+        step: &DagStepExecutionDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Update step status.
-    async fn update_step_status(&self, id: &str, status: &str) -> Result<()>;
+    fn update_step_status(
+        &self,
+        id: &str,
+        status: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Update step status and job ID.
-    async fn update_step_status_with_job(&self, id: &str, status: &str, job_id: &str)
-    -> Result<()>;
+    fn update_step_status_with_job(
+        &self,
+        id: &str,
+        status: &str,
+        job_id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // ========================================================================
     // Core DAG Operations (Atomic)
@@ -87,19 +130,27 @@ pub trait DagRepository: Send + Sync {
 
     /// Atomically complete a step and check for ready dependents.
     /// Returns steps that are now ready to run (all dependencies complete).
-    async fn complete_step_and_check_dependents(
+    fn complete_step_and_check_dependents(
         &self,
         step_id: &str,
         outputs: &[String],
-    ) -> Result<Vec<ReadyStep>>;
+    ) -> impl std::future::Future<Output = Result<Vec<ReadyStep>>> + Send;
 
     /// Atomically fail a DAG and cancel all pending/blocked steps.
     /// Returns job IDs of steps that had jobs created (for cancellation).
-    async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>>;
+    fn fail_dag_and_cancel_steps(
+        &self,
+        dag_id: &str,
+        error: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
 
     /// Atomically cancel a DAG and cancel all pending/blocked steps.
     /// Returns job IDs of steps that had jobs created (for cancellation).
-    async fn cancel_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>>;
+    fn cancel_dag_and_cancel_steps(
+        &self,
+        dag_id: &str,
+        error: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
 
     /// Reset a previously-failed DAG execution for retry.
     ///
@@ -107,30 +158,46 @@ pub trait DagRepository: Send + Sync {
     /// can be scheduled again:
     /// - DAG: status -> PROCESSING, clear error/completed_at, recompute failed_steps
     /// - Steps: CANCELLED -> BLOCKED, FAILED -> PROCESSING (preserves job_id)
-    async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()>;
+    fn reset_dag_for_retry(
+        &self,
+        dag_id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // ========================================================================
     // Query Operations
     // ========================================================================
 
     /// Get concatenated outputs from all specified dependency steps.
-    async fn get_dependency_outputs(
+    fn get_dependency_outputs(
         &self,
         dag_id: &str,
         step_ids: &[String],
-    ) -> Result<Vec<String>>;
+    ) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
 
     /// Check if all dependencies for a step are complete.
-    async fn check_all_dependencies_complete(&self, dag_id: &str, step_id: &str) -> Result<bool>;
+    fn check_all_dependencies_complete(
+        &self,
+        dag_id: &str,
+        step_id: &str,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// Get statistics for a DAG execution.
-    async fn get_dag_stats(&self, dag_id: &str) -> Result<DagExecutionStats>;
+    fn get_dag_stats(
+        &self,
+        dag_id: &str,
+    ) -> impl std::future::Future<Output = Result<DagExecutionStats>> + Send;
 
     /// Get job IDs for all processing steps in a DAG.
-    async fn get_processing_job_ids(&self, dag_id: &str) -> Result<Vec<String>>;
+    fn get_processing_job_ids(
+        &self,
+        dag_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
 
     /// Get pending root steps for a DAG (for initial job creation).
-    async fn get_pending_root_steps(&self, dag_id: &str) -> Result<Vec<DagStepExecutionDbModel>>;
+    fn get_pending_root_steps(
+        &self,
+        dag_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<DagStepExecutionDbModel>>> + Send;
 }
 
 /// SQLx implementation of DagRepository.
@@ -145,7 +212,6 @@ impl SqlxDagRepository {
     }
 }
 
-#[async_trait]
 impl DagRepository for SqlxDagRepository {
     // ========================================================================
     // DAG Execution CRUD

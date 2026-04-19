@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use futures::{SinkExt, StreamExt};
 use std::future::Future;
 use rustls::{ClientConfig, crypto::aws_lc_rs};
@@ -670,7 +669,6 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
     }
 }
 
-#[async_trait]
 impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
     fn platform(&self) -> &str {
         self.protocol.platform()

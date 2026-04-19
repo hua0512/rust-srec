@@ -22,6 +22,11 @@ use crate::database::models::{
     StreamerDbModel, TemplateConfigDbModel, UserDbModel,
 };
 use crate::database::models::{JobPreset, PipelinePreset};
+use crate::database::repositories::NotificationRepository;
+use crate::database::repositories::filter::FilterRepository;
+use crate::database::repositories::preset::{JobPresetRepository, PipelinePresetRepository};
+use crate::database::repositories::streamer::StreamerRepository;
+use crate::database::repositories::user::UserRepository;
 
 /// Current schema version for exports.
 const EXPORT_SCHEMA_VERSION: &str = "0.1.5";
@@ -1750,7 +1755,10 @@ mod tests {
     use crate::api::auth_service::{AuthConfig, AuthService};
     use crate::api::jwt::JwtService;
     use crate::database::models::RefreshTokenDbModel;
-    use crate::database::repositories::{RefreshTokenRepository, UserRepository};
+    use crate::database::repositories::{
+        DynUserRepository, RefreshTokenRepository, UserRepository,
+        refresh_token::DynRefreshTokenRepository,
+    };
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -1868,7 +1876,6 @@ mod tests {
             users: Vec<UserDbModel>,
         }
 
-        #[async_trait::async_trait]
         impl UserRepository for TestUserRepo {
             async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
                 Ok(())
@@ -1919,11 +1926,11 @@ mod tests {
             }
         }
 
+        #[derive(Clone)]
         struct TestTokenRepo {
-            revoked_for_users: Mutex<Vec<String>>,
+            revoked_for_users: Arc<Mutex<Vec<String>>>,
         }
 
-        #[async_trait::async_trait]
         impl RefreshTokenRepository for TestTokenRepo {
             async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
                 Ok(())
@@ -1967,13 +1974,13 @@ mod tests {
         let user1 = UserDbModel::new("user1", "hash1", vec!["user".to_string()]);
         let user2 = UserDbModel::new("user2", "hash2", vec!["user".to_string()]);
 
-        let user_repo: Arc<dyn UserRepository> = Arc::new(TestUserRepo {
+        let user_repo = DynUserRepository::new_arc(TestUserRepo {
             users: vec![user1.clone(), user2.clone()],
         });
-        let token_repo = Arc::new(TestTokenRepo {
-            revoked_for_users: Mutex::new(vec![]),
-        });
-        let token_repo_dyn: Arc<dyn RefreshTokenRepository> = token_repo.clone();
+        let token_repo = TestTokenRepo {
+            revoked_for_users: Arc::new(Mutex::new(vec![])),
+        };
+        let token_repo_dyn = DynRefreshTokenRepository::new_arc(token_repo.clone());
 
         let jwt = Arc::new(JwtService::new("secret", "issuer", "aud", Some(3600)));
         let auth = AuthService::new(user_repo, token_repo_dyn, jwt, AuthConfig::default());

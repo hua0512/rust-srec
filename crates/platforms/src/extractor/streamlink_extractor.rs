@@ -1,7 +1,6 @@
 use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo};
-use async_trait::async_trait;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
@@ -204,7 +203,6 @@ impl StreamlinkExtractor {
     }
 }
 
-#[async_trait]
 impl PlatformExtractor for StreamlinkExtractor {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

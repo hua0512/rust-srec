@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
 use std::sync::LazyLock;
@@ -231,7 +230,6 @@ impl Weibo {
     }
 }
 
-#[async_trait]
 impl PlatformExtractor for Weibo {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

@@ -14,7 +14,7 @@ use tower_http::trace::TraceLayer;
 use tracing::Span;
 
 use crate::api::routes;
-use crate::database::repositories::NotificationRepository;
+use crate::database::repositories::DynNotificationRepository;
 use crate::error::Result;
 use crate::notification::NotificationService;
 
@@ -76,10 +76,10 @@ use crate::credentials::CredentialRefreshService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
     config::SqlxConfigRepository,
-    filter::FilterRepository,
-    preset::PipelinePresetRepository,
-    session::SessionRepository,
-    streamer::{SqlxStreamerRepository, StreamerRepository},
+    filter::DynFilterRepository,
+    preset::{DynJobPresetRepository, DynPipelinePresetRepository},
+    session::DynSessionRepository,
+    streamer::{DynStreamerRepository, SqlxStreamerRepository},
 };
 use crate::downloader::DownloadManager;
 use crate::metrics::HealthChecker;
@@ -109,19 +109,19 @@ pub struct AppState {
     /// Download manager
     pub download_manager: Option<Arc<DownloadManager>>,
     /// Session repository for session and output queries
-    pub session_repository: Option<Arc<dyn SessionRepository>>,
+    pub session_repository: Option<Arc<DynSessionRepository<'static>>>,
     /// Filter repository for streamer filters
-    pub filter_repository: Option<Arc<dyn FilterRepository>>,
+    pub filter_repository: Option<Arc<DynFilterRepository<'static>>>,
     /// Health checker for real health status
     pub health_checker: Option<Arc<HealthChecker>>,
     /// Streamer repository for querying streamer details
-    pub streamer_repository: Option<Arc<dyn StreamerRepository>>,
+    pub streamer_repository: Option<Arc<DynStreamerRepository<'static>>>,
     /// Pipeline preset repository for pipeline presets (workflow sequences)
-    pub pipeline_preset_repository: Option<Arc<dyn PipelinePresetRepository>>,
+    pub pipeline_preset_repository: Option<Arc<DynPipelinePresetRepository<'static>>>,
     /// Job preset repository for job presets (reusable processor configs)
-    pub job_preset_repository: Option<Arc<dyn crate::database::repositories::JobPresetRepository>>,
+    pub job_preset_repository: Option<Arc<DynJobPresetRepository<'static>>>,
     /// Notification repository for channel/subscription management
-    pub notification_repository: Option<Arc<dyn NotificationRepository>>,
+    pub notification_repository: Option<Arc<DynNotificationRepository<'static>>>,
     /// Notification service for testing and reloading
     pub notification_service: Option<Arc<NotificationService>>,
     /// Web push service for browser notifications (VAPID)
@@ -244,14 +244,17 @@ impl AppState {
     /// Set the session repository.
     pub fn with_session_repository(
         mut self,
-        session_repository: Arc<dyn SessionRepository>,
+        session_repository: Arc<DynSessionRepository<'static>>,
     ) -> Self {
         self.session_repository = Some(session_repository);
         self
     }
 
     /// Set the filter repository.
-    pub fn with_filter_repository(mut self, filter_repository: Arc<dyn FilterRepository>) -> Self {
+    pub fn with_filter_repository(
+        mut self,
+        filter_repository: Arc<DynFilterRepository<'static>>,
+    ) -> Self {
         self.filter_repository = Some(filter_repository);
         self
     }
@@ -259,7 +262,7 @@ impl AppState {
     /// Set the streamer repository.
     pub fn with_streamer_repository(
         mut self,
-        streamer_repository: Arc<dyn StreamerRepository>,
+        streamer_repository: Arc<DynStreamerRepository<'static>>,
     ) -> Self {
         self.streamer_repository = Some(streamer_repository);
         self
@@ -295,7 +298,7 @@ impl AppState {
     /// Set the pipeline preset repository.
     pub fn with_pipeline_preset_repository(
         mut self,
-        repo: Arc<dyn PipelinePresetRepository>,
+        repo: Arc<DynPipelinePresetRepository<'static>>,
     ) -> Self {
         self.pipeline_preset_repository = Some(repo);
         self
@@ -304,14 +307,14 @@ impl AppState {
     /// Set the job preset repository.
     pub fn with_job_preset_repository(
         mut self,
-        repo: Arc<dyn crate::database::repositories::JobPresetRepository>,
+        repo: Arc<DynJobPresetRepository<'static>>,
     ) -> Self {
         self.job_preset_repository = Some(repo);
         self
     }
 
     /// Set the notification repository.
-    pub fn with_notification_repository(mut self, repo: Arc<dyn NotificationRepository>) -> Self {
+    pub fn with_notification_repository(mut self, repo: Arc<DynNotificationRepository<'static>>) -> Self {
         self.notification_repository = Some(repo);
         self
     }

@@ -8,7 +8,6 @@ use crate::{
     },
     media::{MediaInfo, stream_info::StreamInfo},
 };
-use async_trait::async_trait;
 use md5::{Digest, Md5};
 use regex::Regex;
 use reqwest::Client;
@@ -173,7 +172,6 @@ impl Twitcasting {
 
 impl HlsExtractor for Twitcasting {}
 
-#[async_trait]
 impl PlatformExtractor for Twitcasting {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

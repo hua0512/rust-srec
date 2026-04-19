@@ -1,6 +1,5 @@
 //! Download engine trait and related types.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use flv_fix::FlvPipelineConfig;
 use hls_fix::HlsPipelineConfig;
@@ -665,7 +664,7 @@ pub struct DownloadInfo {
 }
 
 /// Trait for download engines.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynDownloadEngine = dyn(box) DownloadEngine)]
 pub trait DownloadEngine: Send + Sync {
     /// Get the engine type.
     fn engine_type(&self) -> EngineType;
@@ -674,13 +673,18 @@ pub trait DownloadEngine: Send + Sync {
     ///
     /// Returns a handle that can be used to monitor and cancel the download.
     /// The engine should emit events through the handle's event channel.
-    async fn start(&self, handle: Arc<DownloadHandle>)
-    -> std::result::Result<(), EngineStartError>;
+    fn start(
+        &self,
+        handle: Arc<DownloadHandle>,
+    ) -> impl std::future::Future<Output = std::result::Result<(), EngineStartError>> + Send;
 
     /// Stop a download.
     ///
     /// This should gracefully stop the download and clean up resources.
-    async fn stop(&self, handle: &DownloadHandle) -> Result<()>;
+    fn stop(
+        &self,
+        handle: &DownloadHandle,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Check if the engine is available (e.g., binary exists).
     fn is_available(&self) -> bool;

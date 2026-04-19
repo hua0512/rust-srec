@@ -5,11 +5,11 @@ use crate::downloader::ClientPool;
 use crate::hls::config::HlsConfig;
 use crate::hls::decryption::{DecryptionService, KeyFetcher};
 use crate::hls::events::HlsStreamEvent;
-use crate::hls::fetcher::{SegmentDownloader, SegmentFetcher};
+use crate::hls::fetcher::{DynSegmentDownloader, SegmentFetcher};
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::output::OutputManager;
-use crate::hls::playlist::{InitialPlaylist, PlaylistEngine, PlaylistProvider};
-use crate::hls::processor::{SegmentProcessor, SegmentTransformer};
+use crate::hls::playlist::{DynPlaylistProvider, InitialPlaylist, PlaylistEngine, PlaylistProvider};
+use crate::hls::processor::{DynSegmentTransformer, SegmentProcessor};
 use crate::hls::scheduler::{ScheduledSegmentJob, SegmentScheduler};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -65,25 +65,25 @@ impl HlsStreamCoordinator {
             Arc::clone(&key_fetcher),
             cache_manager.clone(),
         ));
-        let segment_fetcher: Arc<dyn SegmentDownloader> = Arc::new(SegmentFetcher::with_metrics(
+        let segment_fetcher = DynSegmentDownloader::new_arc(SegmentFetcher::with_metrics(
             Arc::clone(&clients),
             Arc::clone(&config),
             cache_manager.clone(),
             Arc::clone(&performance_metrics),
             token.clone(),
         ));
-        let segment_processor: Arc<dyn SegmentTransformer> =
-            Arc::new(SegmentProcessor::with_metrics(
-                Arc::clone(&config),
-                Arc::clone(&decryption_service),
-                cache_manager.clone(),
-                Arc::clone(&performance_metrics),
-            ));
-        let playlist_engine: Arc<dyn PlaylistProvider> = Arc::new(PlaylistEngine::new(
-            Arc::clone(&clients),
-            cache_manager,
+        let segment_processor = DynSegmentTransformer::new_arc(SegmentProcessor::with_metrics(
             Arc::clone(&config),
+            Arc::clone(&decryption_service),
+            cache_manager.clone(),
+            Arc::clone(&performance_metrics),
         ));
+        let playlist_engine: Arc<DynPlaylistProvider<'static>> =
+            DynPlaylistProvider::new_arc(PlaylistEngine::new(
+                Arc::clone(&clients),
+                cache_manager,
+                Arc::clone(&config),
+            ));
 
         // Channels - sized for optimal throughput
         let (client_event_tx, client_event_rx) = mpsc::channel(32);

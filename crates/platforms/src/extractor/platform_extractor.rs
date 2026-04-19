@@ -2,7 +2,6 @@ use crate::extractor::default::DEFAULT_UA;
 use crate::media::StreamInfo;
 
 use super::{super::media::media_info::MediaInfo, error::ExtractorError};
-use async_trait::async_trait;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, Method, RequestBuilder};
 use rustc_hash::FxHashMap;
@@ -442,7 +441,7 @@ impl Extractor {
     }
 }
 
-#[async_trait]
+#[dynosaur::dynosaur(pub DynPlatformExtractor = dyn(box) PlatformExtractor)]
 pub trait PlatformExtractor: Send + Sync {
     fn get_extractor(&self) -> &Extractor;
 
@@ -454,11 +453,13 @@ pub trait PlatformExtractor: Send + Sync {
         &self.get_extractor().platform_params
     }
 
-    async fn extract(&self) -> Result<MediaInfo, ExtractorError>;
+    fn extract(&self) -> impl std::future::Future<Output = Result<MediaInfo, ExtractorError>> + Send;
 
     #[allow(unused_variables)]
-    async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
-        // Default implementation, can be overridden by specific extractors
-        Ok(())
+    fn get_url(
+        &self,
+        stream_info: &mut StreamInfo,
+    ) -> impl std::future::Future<Output = Result<(), ExtractorError>> + Send {
+        async { Ok(()) }
     }
 }

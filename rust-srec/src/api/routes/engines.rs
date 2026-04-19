@@ -14,7 +14,9 @@ use crate::database::models::{
     EngineConfigurationDbModel, EngineType, FfmpegEngineConfig, MesioEngineConfig,
     StreamlinkEngineConfig,
 };
-use crate::downloader::engine::{DownloadEngine, FfmpegEngine, MesioEngine, StreamlinkEngine};
+use crate::downloader::engine::{
+    DownloadEngine, DynDownloadEngine, FfmpegEngine, MesioEngine, StreamlinkEngine,
+};
 
 /// Create the engines router.
 pub fn router() -> Router<AppState> {
@@ -256,21 +258,21 @@ pub async fn test_engine(
         ApiError::internal(format!("Invalid engine type: {}", config.engine_type))
     })?;
 
-    let engine: Box<dyn DownloadEngine> = match engine_type {
+    let engine: Box<DynDownloadEngine<'static>> = match engine_type {
         EngineType::Ffmpeg => {
             let engine_config: FfmpegEngineConfig = serde_json::from_str(&config.config)
                 .map_err(|e| ApiError::internal(format!("Invalid ffmpeg config: {}", e)))?;
-            Box::new(FfmpegEngine::with_config(engine_config))
+            DynDownloadEngine::new_box(FfmpegEngine::with_config(engine_config))
         }
         EngineType::Streamlink => {
             let engine_config: StreamlinkEngineConfig = serde_json::from_str(&config.config)
                 .map_err(|e| ApiError::internal(format!("Invalid streamlink config: {}", e)))?;
-            Box::new(StreamlinkEngine::with_config(engine_config))
+            DynDownloadEngine::new_box(StreamlinkEngine::with_config(engine_config))
         }
         EngineType::Mesio => {
             let engine_config: MesioEngineConfig = serde_json::from_str(&config.config)
                 .map_err(|e| ApiError::internal(format!("Invalid mesio config: {}", e)))?;
-            Box::new(MesioEngine::with_config(engine_config))
+            DynDownloadEngine::new_box(MesioEngine::with_config(engine_config))
         }
     };
 

@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::Result;
-use crate::database::repositories::JobRepository;
+use crate::database::repositories::{DynJobRepository, JobRepository};
 
 /// Configuration for job purging.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,13 +126,13 @@ impl TimeWindow {
 /// Job Purge Service for automatic cleanup of old jobs.
 pub struct JobPurgeService {
     config: PurgeConfig,
-    job_repository: Arc<dyn JobRepository>,
+    job_repository: Arc<DynJobRepository<'static>>,
     time_window: Option<TimeWindow>,
 }
 
 impl JobPurgeService {
     /// Create a new JobPurgeService.
-    pub fn new(config: PurgeConfig, job_repository: Arc<dyn JobRepository>) -> Self {
+    pub fn new(config: PurgeConfig, job_repository: Arc<DynJobRepository<'static>>) -> Self {
         let time_window = config
             .time_window
             .as_ref()

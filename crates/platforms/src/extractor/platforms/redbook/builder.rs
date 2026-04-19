@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
 use std::sync::LazyLock;
@@ -323,7 +322,6 @@ impl RedBook {
     }
 }
 
-#[async_trait]
 impl PlatformExtractor for RedBook {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

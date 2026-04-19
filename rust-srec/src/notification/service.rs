@@ -28,7 +28,8 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use super::channels::{
-    ChannelConfig, DiscordChannel, EmailChannel, GotifyChannel, NotificationChannel,
+    ChannelConfig, DiscordChannel, DynNotificationChannel, EmailChannel, GotifyChannel,
+    NotificationChannel,
     TelegramChannel, WebhookChannel,
 };
 use super::events::canonicalize_subscription_event_name;
@@ -40,7 +41,7 @@ use crate::database::models::{
     NotificationChannelDbModel, NotificationDeadLetterDbModel, NotificationEventLogDbModel,
     TelegramChannelSettings, WebhookChannelSettings,
 };
-use crate::database::repositories::NotificationRepository;
+use crate::database::repositories::{DynNotificationRepository, NotificationRepository};
 use crate::downloader::DownloadManagerEvent;
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
@@ -177,7 +178,7 @@ struct RuntimeChannel {
     db_channel_id: Option<String>,
     display_name: String,
     channel_type: String,
-    channel: Arc<dyn NotificationChannel>,
+    channel: Arc<DynNotificationChannel<'static>>,
 }
 
 /// A notification pending delivery.
@@ -228,7 +229,7 @@ struct RetryParams {
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
     dead_letter_cleanup_ts: Arc<AtomicU64>,
     circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
-    notification_repo: Option<Arc<dyn NotificationRepository>>,
+    notification_repo: Option<Arc<DynNotificationRepository<'static>>>,
     config: NotificationServiceConfig,
     next_dead_letter_id: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
@@ -241,7 +242,7 @@ struct ProcessingParams {
     dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
     dead_letter_cleanup_ts: Arc<AtomicU64>,
     circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
-    notification_repo: Option<Arc<dyn NotificationRepository>>,
+    notification_repo: Option<Arc<DynNotificationRepository<'static>>>,
     config: NotificationServiceConfig,
     next_dead_letter_id: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
@@ -250,7 +251,7 @@ struct ProcessingParams {
 /// The notification service.
 pub struct NotificationService {
     config: NotificationServiceConfig,
-    notification_repo: Option<Arc<dyn NotificationRepository>>,
+    notification_repo: Option<Arc<DynNotificationRepository<'static>>>,
     web_push_service: Option<Arc<WebPushService>>,
     web_push_tx: parking_lot::RwLock<Option<mpsc::Sender<WebPushQueuedEvent>>>,
     web_push_worker_started: AtomicBool,
@@ -306,7 +307,7 @@ impl NotificationService {
 
     pub fn with_repository(
         config: NotificationServiceConfig,
-        notification_repo: Arc<dyn NotificationRepository>,
+        notification_repo: Arc<DynNotificationRepository<'static>>,
     ) -> Self {
         let mut service = Self::with_config(config);
         service.notification_repo = Some(notification_repo);
@@ -444,12 +445,22 @@ impl NotificationService {
         let mut used_keys: HashSet<String> = HashSet::new();
 
         for (idx, channel_config) in self.config.channels.iter().enumerate() {
-            let channel: Arc<dyn NotificationChannel> = match channel_config {
-                ChannelConfig::Discord(c) => Arc::new(DiscordChannel::new(c.clone())),
-                ChannelConfig::Email(c) => Arc::new(EmailChannel::new(c.clone())),
-                ChannelConfig::Gotify(c) => Arc::new(GotifyChannel::new(c.clone())),
-                ChannelConfig::Telegram(c) => Arc::new(TelegramChannel::new(c.clone())),
-                ChannelConfig::Webhook(c) => Arc::new(WebhookChannel::new(c.clone())),
+            let channel: Arc<DynNotificationChannel<'static>> = match channel_config {
+                ChannelConfig::Discord(c) => {
+                    DynNotificationChannel::new_arc(DiscordChannel::new(c.clone()))
+                }
+                ChannelConfig::Email(c) => {
+                    DynNotificationChannel::new_arc(EmailChannel::new(c.clone()))
+                }
+                ChannelConfig::Gotify(c) => {
+                    DynNotificationChannel::new_arc(GotifyChannel::new(c.clone()))
+                }
+                ChannelConfig::Telegram(c) => {
+                    DynNotificationChannel::new_arc(TelegramChannel::new(c.clone()))
+                }
+                ChannelConfig::Webhook(c) => {
+                    DynNotificationChannel::new_arc(WebhookChannel::new(c.clone()))
+                }
             };
 
             if channel.is_enabled() {
@@ -507,12 +518,22 @@ impl NotificationService {
 
     /// Add a channel dynamically.
     pub fn add_channel(&self, config: ChannelConfig) {
-        let channel: Arc<dyn NotificationChannel> = match &config {
-            ChannelConfig::Discord(c) => Arc::new(DiscordChannel::new(c.clone())),
-            ChannelConfig::Email(c) => Arc::new(EmailChannel::new(c.clone())),
-            ChannelConfig::Gotify(c) => Arc::new(GotifyChannel::new(c.clone())),
-            ChannelConfig::Telegram(c) => Arc::new(TelegramChannel::new(c.clone())),
-            ChannelConfig::Webhook(c) => Arc::new(WebhookChannel::new(c.clone())),
+        let channel: Arc<DynNotificationChannel<'static>> = match &config {
+            ChannelConfig::Discord(c) => {
+                DynNotificationChannel::new_arc(DiscordChannel::new(c.clone()))
+            }
+            ChannelConfig::Email(c) => {
+                DynNotificationChannel::new_arc(EmailChannel::new(c.clone()))
+            }
+            ChannelConfig::Gotify(c) => {
+                DynNotificationChannel::new_arc(GotifyChannel::new(c.clone()))
+            }
+            ChannelConfig::Telegram(c) => {
+                DynNotificationChannel::new_arc(TelegramChannel::new(c.clone()))
+            }
+            ChannelConfig::Webhook(c) => {
+                DynNotificationChannel::new_arc(WebhookChannel::new(c.clone()))
+            }
         };
 
         if channel.is_enabled() {
@@ -678,23 +699,25 @@ impl NotificationService {
             })
             .unwrap_or(NotificationPriority::Normal);
 
-        let runtime_channel: Arc<dyn NotificationChannel> = match channel_type {
+        let runtime_channel: Arc<DynNotificationChannel<'static>> = match channel_type {
             ChannelType::Discord => {
                 let settings: DiscordChannelSettings =
                     serde_json::from_value(settings_json.clone())?;
-                Arc::new(DiscordChannel::new(super::channels::DiscordConfig {
-                    id: None,
-                    name: None,
-                    enabled: true,
-                    webhook_url: settings.webhook_url,
-                    username: settings.username,
-                    avatar_url: settings.avatar_url,
-                    min_priority,
-                }))
+                DynNotificationChannel::new_arc(DiscordChannel::new(
+                    super::channels::DiscordConfig {
+                        id: None,
+                        name: None,
+                        enabled: true,
+                        webhook_url: settings.webhook_url,
+                        username: settings.username,
+                        avatar_url: settings.avatar_url,
+                        min_priority,
+                    },
+                ))
             }
             ChannelType::Email => {
                 let settings: EmailChannelSettings = serde_json::from_value(settings_json.clone())?;
-                Arc::new(EmailChannel::new(super::channels::EmailConfig {
+                DynNotificationChannel::new_arc(EmailChannel::new(super::channels::EmailConfig {
                     id: None,
                     name: None,
                     enabled: true,
@@ -723,19 +746,21 @@ impl NotificationService {
             ChannelType::Telegram => {
                 let settings: TelegramChannelSettings =
                     serde_json::from_value(settings_json.clone())?;
-                Arc::new(TelegramChannel::new(super::channels::TelegramConfig {
-                    id: None,
-                    name: None,
-                    enabled: true,
-                    bot_token: settings.bot_token,
-                    chat_id: settings.chat_id,
-                    parse_mode: settings_json
-                        .get("parse_mode")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("HTML")
-                        .to_string(),
-                    min_priority,
-                }))
+                DynNotificationChannel::new_arc(TelegramChannel::new(
+                    super::channels::TelegramConfig {
+                        id: None,
+                        name: None,
+                        enabled: true,
+                        bot_token: settings.bot_token,
+                        chat_id: settings.chat_id,
+                        parse_mode: settings_json
+                            .get("parse_mode")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("HTML")
+                            .to_string(),
+                        min_priority,
+                    },
+                ))
             }
             ChannelType::Webhook => {
                 let settings: WebhookChannelSettings =
@@ -764,7 +789,7 @@ impl NotificationService {
                     None
                 };
 
-                Arc::new(WebhookChannel::new(super::channels::WebhookConfig {
+                DynNotificationChannel::new_arc(WebhookChannel::new(super::channels::WebhookConfig {
                     id: None,
                     name: None,
                     enabled: settings.enabled.unwrap_or(true),
@@ -779,7 +804,7 @@ impl NotificationService {
             ChannelType::Gotify => {
                 let settings: GotifyChannelSettings =
                     serde_json::from_value(settings_json.clone())?;
-                Arc::new(GotifyChannel::new(super::channels::GotifyConfig {
+                DynNotificationChannel::new_arc(GotifyChannel::new(super::channels::GotifyConfig {
                     id: None,
                     name: None,
                     enabled: true,
@@ -1970,7 +1995,6 @@ mod tests {
         attempts: Arc<std::sync::atomic::AtomicU32>,
     }
 
-    #[async_trait::async_trait]
     impl NotificationChannel for TestChannel {
         fn channel_type(&self) -> &'static str {
             self.channel_type
@@ -2015,7 +2039,7 @@ mod tests {
             db_channel_id: None,
             display_name: "ok".to_string(),
             channel_type: "test".to_string(),
-            channel: Arc::new(TestChannel {
+            channel: DynNotificationChannel::new_arc(TestChannel {
                 channel_type: "ok",
                 fail_for_attempts: 0,
                 attempts: ok_attempts.clone(),
@@ -2034,7 +2058,7 @@ mod tests {
             db_channel_id: None,
             display_name: "flaky".to_string(),
             channel_type: "test".to_string(),
-            channel: Arc::new(TestChannel {
+            channel: DynNotificationChannel::new_arc(TestChannel {
                 channel_type: "flaky",
                 fail_for_attempts: 1,
                 attempts: flaky_attempts.clone(),
@@ -2147,27 +2171,27 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct MockNotificationRepo {
-        channels: tokio::sync::Mutex<Vec<NotificationChannelDbModel>>,
-        subscriptions: tokio::sync::Mutex<HashMap<String, Vec<String>>>,
-        subscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
-        unsubscribe_calls: tokio::sync::Mutex<Vec<(String, String)>>,
-        dead_letters: tokio::sync::Mutex<Vec<NotificationDeadLetterDbModel>>,
+        channels: Arc<tokio::sync::Mutex<Vec<NotificationChannelDbModel>>>,
+        subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Vec<String>>>>,
+        subscribe_calls: Arc<tokio::sync::Mutex<Vec<(String, String)>>>,
+        unsubscribe_calls: Arc<tokio::sync::Mutex<Vec<(String, String)>>>,
+        dead_letters: Arc<tokio::sync::Mutex<Vec<NotificationDeadLetterDbModel>>>,
     }
 
     impl MockNotificationRepo {
         fn new() -> Self {
             Self {
-                channels: tokio::sync::Mutex::new(Vec::new()),
-                subscriptions: tokio::sync::Mutex::new(HashMap::new()),
-                subscribe_calls: tokio::sync::Mutex::new(Vec::new()),
-                unsubscribe_calls: tokio::sync::Mutex::new(Vec::new()),
-                dead_letters: tokio::sync::Mutex::new(Vec::new()),
+                channels: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+                subscriptions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+                subscribe_calls: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+                unsubscribe_calls: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+                dead_letters: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             }
         }
     }
 
-    #[async_trait::async_trait]
     impl NotificationRepository for MockNotificationRepo {
         async fn get_channel(&self, _id: &str) -> Result<NotificationChannelDbModel> {
             unimplemented!()
@@ -2281,9 +2305,11 @@ mod tests {
 
     #[tokio::test]
     async fn db_subscriptions_filter_delivery() {
-        let repo = Arc::new(MockNotificationRepo::new());
-        let service =
-            NotificationService::with_repository(NotificationServiceConfig::default(), repo);
+        let repo = MockNotificationRepo::new();
+        let service = NotificationService::with_repository(
+            NotificationServiceConfig::default(),
+            DynNotificationRepository::new_arc(repo.clone()),
+        );
 
         let subscribed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
         let unsubscribed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
@@ -2293,7 +2319,7 @@ mod tests {
             db_channel_id: Some("channel-1".to_string()),
             display_name: "Channel 1".to_string(),
             channel_type: "WEBHOOK".to_string(),
-            channel: Arc::new(TestChannel {
+            channel: DynNotificationChannel::new_arc(TestChannel {
                 channel_type: "subscribed",
                 fail_for_attempts: 0,
                 attempts: subscribed_attempts.clone(),
@@ -2312,7 +2338,7 @@ mod tests {
             db_channel_id: Some("channel-2".to_string()),
             display_name: "Channel 2".to_string(),
             channel_type: "WEBHOOK".to_string(),
-            channel: Arc::new(TestChannel {
+            channel: DynNotificationChannel::new_arc(TestChannel {
                 channel_type: "unsubscribed",
                 fail_for_attempts: 0,
                 attempts: unsubscribed_attempts.clone(),
@@ -2346,14 +2372,17 @@ mod tests {
 
     #[tokio::test]
     async fn dead_letters_persisted_to_repository() {
-        let repo = Arc::new(MockNotificationRepo::new());
+        let repo = MockNotificationRepo::new();
         let config = NotificationServiceConfig {
             max_retries: 1,
             initial_retry_delay_ms: 1,
             max_retry_delay_ms: 5,
             ..Default::default()
         };
-        let service = NotificationService::with_repository(config, repo.clone());
+        let service = NotificationService::with_repository(
+            config,
+            DynNotificationRepository::new_arc(repo.clone()),
+        );
 
         let attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
         let fail_channel = Arc::new(RuntimeChannel {
@@ -2361,7 +2390,7 @@ mod tests {
             db_channel_id: Some("channel-1".to_string()),
             display_name: "Channel 1".to_string(),
             channel_type: "WEBHOOK".to_string(),
-            channel: Arc::new(TestChannel {
+            channel: DynNotificationChannel::new_arc(TestChannel {
                 channel_type: "fail",
                 fail_for_attempts: 1,
                 attempts: attempts.clone(),
@@ -2399,10 +2428,10 @@ mod tests {
 
     #[tokio::test]
     async fn reload_from_db_normalizes_and_migrates_subscription_names() {
-        let repo = Arc::new(MockNotificationRepo::new());
+        let repo = MockNotificationRepo::new();
         let service = NotificationService::with_repository(
             NotificationServiceConfig::default(),
-            repo.clone(),
+            DynNotificationRepository::new_arc(repo.clone()),
         );
 
         let db_channel = NotificationChannelDbModel {

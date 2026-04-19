@@ -11,7 +11,6 @@
 //! Progress tracking is handled by the writers internally via `WriterTask` and
 //! `WriterState`, eliminating the need for duplicate tracking in the engine.
 
-use async_trait::async_trait;
 use axum::http::HeaderMap;
 use mesio::flv::FlvProtocolConfig;
 use mesio::{FlvProtocolBuilder, HlsProtocolBuilder, MesioDownloaderFactory, ProtocolType};
@@ -103,7 +102,6 @@ impl Default for MesioEngine {
     }
 }
 
-#[async_trait]
 impl DownloadEngine for MesioEngine {
     fn engine_type(&self) -> EngineType {
         EngineType::Mesio

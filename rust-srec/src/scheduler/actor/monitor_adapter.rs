@@ -6,7 +6,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 
 use crate::monitor::{FilterReason, LiveStatus, ProcessStatusResult};
 use crate::streamer::StreamerMetadata;
@@ -18,16 +17,16 @@ use super::messages::{BatchDetectionResult, CheckResult};
 /// This trait abstracts the status checking operation, allowing
 /// StreamerActors to perform checks without direct coupling to
 /// the StreamMonitor implementation.
-#[async_trait]
-pub trait StatusChecker: Send + Sync + 'static {
+#[dynosaur::dynosaur(pub DynStatusChecker = dyn(box) StatusChecker)]
+pub trait StatusChecker: Send + Sync {
     /// Check the status of a streamer.
     ///
     /// Returns a tuple of `(CheckResult, LiveStatus)` with the detected state.
     /// The `LiveStatus` can be used for `process_status()` if the caller decides to emit events.
-    async fn check_status(
+    fn check_status(
         &self,
         streamer: &StreamerMetadata,
-    ) -> Result<(CheckResult, LiveStatus), CheckError>;
+    ) -> impl std::future::Future<Output = Result<(CheckResult, LiveStatus), CheckError>> + Send;
 
     /// Process a detected status and return whether monitor side effects were applied.
     ///
@@ -39,18 +38,18 @@ pub trait StatusChecker: Send + Sync + 'static {
     /// The scheduler actor relies on this distinction to avoid entering a sticky runtime `Live`
     /// state when a LIVE observation was suppressed and no [`crate::monitor::MonitorEvent::StreamerLive`]
     /// event was emitted.
-    async fn process_status(
+    fn process_status(
         &self,
         streamer: &StreamerMetadata,
         status: LiveStatus,
-    ) -> Result<ProcessStatusResult, CheckError>;
+    ) -> impl std::future::Future<Output = Result<ProcessStatusResult, CheckError>> + Send;
 
     /// Handle an error during status checking.
-    async fn handle_error(
+    fn handle_error(
         &self,
         streamer: &StreamerMetadata,
         error: &str,
-    ) -> Result<(), CheckError>;
+    ) -> impl std::future::Future<Output = Result<(), CheckError>> + Send;
 
     /// Set the streamer to temporarily disabled due to an infrastructure-level
     /// block (engine circuit breaker, output-root write gate, etc.).
@@ -61,11 +60,11 @@ pub trait StatusChecker: Send + Sync + 'static {
     ///
     /// See [`crate::monitor::InfraBlockReason`] for the per-reason
     /// behavior (which state is written, whether `last_error` is overwritten).
-    async fn set_infra_blocked(
+    fn set_infra_blocked(
         &self,
         streamer: &StreamerMetadata,
         reason: crate::monitor::InfraBlockReason,
-    ) -> Result<(), CheckError>;
+    ) -> impl std::future::Future<Output = Result<(), CheckError>> + Send;
 }
 
 /// Trait for batch status checking.
@@ -73,16 +72,16 @@ pub trait StatusChecker: Send + Sync + 'static {
 /// This trait abstracts batch detection operations, allowing
 /// PlatformActors to perform batch checks without direct coupling
 /// to the BatchDetector implementation.
-#[async_trait]
-pub trait BatchChecker: Send + Sync + 'static {
+#[dynosaur::dynosaur(pub DynBatchChecker = dyn(box) BatchChecker)]
+pub trait BatchChecker: Send + Sync {
     /// Perform a batch status check for multiple streamers.
     ///
     /// Returns results for each streamer in the batch.
-    async fn batch_check(
+    fn batch_check(
         &self,
         platform_id: &str,
         streamers: Vec<StreamerMetadata>,
-    ) -> Result<Vec<BatchDetectionResult>, CheckError>;
+    ) -> impl std::future::Future<Output = Result<Vec<BatchDetectionResult>, CheckError>> + Send;
 }
 
 /// Error type for check operations.
@@ -145,7 +144,6 @@ where
     }
 }
 
-#[async_trait]
 impl<SR, FR, SSR, CR> StatusChecker for MonitorStatusChecker<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
@@ -220,7 +218,6 @@ where
     }
 }
 
-#[async_trait]
 impl<SR, FR, SSR, CR> BatchChecker for MonitorBatchChecker<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
@@ -355,7 +352,6 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
 #[derive(Clone)]
 pub struct NoOpStatusChecker;
 
-#[async_trait]
 impl StatusChecker for NoOpStatusChecker {
     async fn check_status(
         &self,
@@ -400,7 +396,6 @@ impl StatusChecker for NoOpStatusChecker {
 #[derive(Clone)]
 pub struct NoOpBatchChecker;
 
-#[async_trait]
 impl BatchChecker for NoOpBatchChecker {
     async fn batch_check(
         &self,

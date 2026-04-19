@@ -6,7 +6,6 @@
 
 use std::time::Duration;
 
-use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -175,7 +174,6 @@ impl TelegramChannel {
     }
 }
 
-#[async_trait]
 impl NotificationChannel for TelegramChannel {
     fn channel_type(&self) -> &'static str {
         "telegram"

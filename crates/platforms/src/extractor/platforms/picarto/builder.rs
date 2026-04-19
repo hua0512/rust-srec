@@ -131,7 +131,6 @@ impl Picarto {
 
 impl HlsExtractor for Picarto {}
 
-#[async_trait::async_trait]
 impl PlatformExtractor for Picarto {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

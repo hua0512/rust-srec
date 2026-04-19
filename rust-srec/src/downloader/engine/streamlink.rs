@@ -1,6 +1,5 @@
 //! Streamlink download engine implementation.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use pipeline_common::expand_filename_template;
 use std::path::PathBuf;
@@ -214,7 +213,6 @@ impl Default for StreamlinkEngine {
     }
 }
 
-#[async_trait]
 impl DownloadEngine for StreamlinkEngine {
     fn engine_type(&self) -> EngineType {
         EngineType::Streamlink

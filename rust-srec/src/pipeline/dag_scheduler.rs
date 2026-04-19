@@ -14,7 +14,9 @@ use crate::database::models::{
     DagExecutionDbModel, DagExecutionStatus, DagPipelineDefinition, DagStepExecutionDbModel,
     DagStepStatus, JobDbModel, PipelineStep, ReadyStep,
 };
-use crate::database::repositories::{DagRepository, JobRepository};
+use crate::database::repositories::{
+    DagRepository, DynDagRepository, DynJobRepository, JobRepository,
+};
 use crate::pipeline::{Job, JobQueue, JobStatus};
 use crate::{Error, Result};
 
@@ -64,16 +66,16 @@ pub struct DagCreationResult {
 /// DAG Scheduler for orchestrating DAG pipeline execution.
 pub struct DagScheduler {
     job_queue: Arc<JobQueue>,
-    dag_repository: Arc<dyn DagRepository>,
-    job_repository: Arc<dyn JobRepository>,
+    dag_repository: Arc<DynDagRepository<'static>>,
+    job_repository: Arc<DynJobRepository<'static>>,
 }
 
 impl DagScheduler {
     /// Create a new DagScheduler.
     pub fn new(
         job_queue: Arc<JobQueue>,
-        dag_repository: Arc<dyn DagRepository>,
-        job_repository: Arc<dyn JobRepository>,
+        dag_repository: Arc<DynDagRepository<'static>>,
+        job_repository: Arc<DynJobRepository<'static>>,
     ) -> Self {
         Self {
             job_queue,
@@ -880,7 +882,6 @@ mod tests {
 
     struct NoopJobRepository;
 
-    #[async_trait::async_trait]
     impl JobRepository for NoopJobRepository {
         async fn create_job(&self, _job: &crate::database::models::JobDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
@@ -1109,14 +1110,14 @@ mod tests {
     #[tokio::test]
     async fn test_cancel_dag_marks_parent_cancelled() {
         let pool = setup_test_pool().await;
-        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+        let dag_repo = DynDagRepository::new_arc(crate::database::repositories::dag::SqlxDagRepository::new(
             pool.clone(),
             pool,
         ));
         let scheduler = DagScheduler::new(
             Arc::new(JobQueue::new()),
             dag_repo.clone(),
-            Arc::new(NoopJobRepository),
+            DynJobRepository::new_arc(NoopJobRepository),
         );
 
         let dag_def = DagPipelineDefinition::new(

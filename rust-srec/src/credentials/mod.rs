@@ -23,9 +23,11 @@ mod types;
 pub mod platforms;
 
 pub use error::CredentialError;
-pub use manager::{CredentialManager, CredentialStatus, RefreshState, RefreshedCredentials};
+pub use manager::{
+    CredentialManager, CredentialStatus, DynCredentialManager, RefreshState, RefreshedCredentials,
+};
 pub use resolver::CredentialResolver;
 pub use service::CredentialRefreshService;
-pub use store::CredentialStore;
+pub use store::{CredentialStore, DynCredentialStore};
 pub use tracker::{DailyCheckTracker, RefreshFailureTracker};
 pub use types::{CredentialEvent, CredentialScope, CredentialSource};

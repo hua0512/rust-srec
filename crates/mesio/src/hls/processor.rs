@@ -9,20 +9,19 @@ use crate::hls::decryption::DecryptionService;
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::scheduler::ScheduledSegmentJob;
 use crate::hls::segment_utils::create_hls_data;
-use async_trait::async_trait;
 use bytes::Bytes;
 use hls::HlsData;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{trace, warn};
 
-#[async_trait]
+#[dynosaur::dynosaur(pub DynSegmentTransformer = dyn(box) SegmentTransformer)]
 pub trait SegmentTransformer: Send + Sync {
-    async fn process_segment_from_job(
+    fn process_segment_from_job(
         &self,
         raw_data: Bytes,
         job: &ScheduledSegmentJob,
-    ) -> Result<HlsData, HlsDownloaderError>;
+    ) -> impl std::future::Future<Output = Result<HlsData, HlsDownloaderError>> + Send;
 }
 
 pub struct SegmentProcessor {
@@ -65,7 +64,6 @@ impl SegmentProcessor {
     }
 }
 
-#[async_trait]
 impl SegmentTransformer for SegmentProcessor {
     async fn process_segment_from_job(
         &self,

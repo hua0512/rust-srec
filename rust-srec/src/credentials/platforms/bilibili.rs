@@ -5,7 +5,6 @@
 //! - Token refresh: via token_refresh utilities (OAuth2/APP flow)
 //! - Fallback validation: via NAV API for cookie-only users
 
-use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use reqwest::Client;
 use std::sync::OnceLock;
@@ -122,7 +121,6 @@ impl BilibiliCredentialManager {
     }
 }
 
-#[async_trait]
 impl CredentialManager for BilibiliCredentialManager {
     fn platform_id(&self) -> &'static str {
         "bilibili"

@@ -1,6 +1,5 @@
 //! Generic webhook notification channel.
 
-use async_trait::async_trait;
 use reqwest::{Client, header::HeaderMap};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -150,7 +149,6 @@ impl WebhookChannel {
     }
 }
 
-#[async_trait]
 impl NotificationChannel for WebhookChannel {
     fn channel_type(&self) -> &'static str {
         "webhook"

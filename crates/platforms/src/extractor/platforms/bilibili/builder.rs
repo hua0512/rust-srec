@@ -1,6 +1,5 @@
 use std::{fmt::Display, sync::LazyLock};
 
-use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
 use tracing::debug;
@@ -323,7 +322,6 @@ impl Bilibili {
     }
 }
 
-#[async_trait]
 impl PlatformExtractor for Bilibili {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

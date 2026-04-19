@@ -28,5 +28,6 @@ pub use remux::RemuxProcessor;
 pub use tdl::TdlUploadProcessor;
 pub use thumbnail::ThumbnailProcessor;
 pub use traits::{
-    JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType,
+    DynProcessor, JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput,
+    ProcessorType,
 };

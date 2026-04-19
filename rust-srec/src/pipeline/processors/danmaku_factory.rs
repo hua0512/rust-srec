@@ -6,7 +6,6 @@
 //! - Runs DanmakuFactory to generate `.ass` files
 //! - Returns outputs that include the original inputs plus generated `.ass` paths for downstream steps
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -186,7 +185,6 @@ impl Default for DanmakuFactoryProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for DanmakuFactoryProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Cpu
