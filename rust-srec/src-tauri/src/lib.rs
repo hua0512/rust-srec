@@ -936,18 +936,14 @@ pub fn run() {
                     })
                     .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| match event {
                         TrayIconEvent::Click {
-                            button,
-                            button_state,
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
                             ..
                         } => {
-                            if button == MouseButton::Left && button_state == MouseButtonState::Up {
-                                toggle_main_window(tray.app_handle());
-                            }
+                            toggle_main_window(tray.app_handle());
                         }
-                        TrayIconEvent::DoubleClick { button, .. } => {
-                            if button == MouseButton::Left {
-                                toggle_main_window(tray.app_handle());
-                            }
+                        TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => {
+                            toggle_main_window(tray.app_handle());
                         }
                         _ => {}
                     })
