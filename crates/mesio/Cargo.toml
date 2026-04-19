@@ -23,6 +23,7 @@ reqwest = { workspace = true, features = [
 ] }
 url = { workspace = true }
 async-trait = { workspace = true }
+dynosaur = { workspace = true }
 thiserror = { workspace = true }
 m3u8-rs = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
