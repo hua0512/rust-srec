@@ -15,8 +15,8 @@ importers:
         specifier: 2.0.0-alpha.17
         version: 2.0.0-alpha.17(postcss@8.5.10)(sass@1.99.0)(typescript@5.9.3)
       vitepress-mermaid-preview:
-        specifier: ^0.1.1
-        version: 0.1.1(typescript@5.9.3)
+        specifier: ^0.2.1
+        version: 0.2.1(typescript@5.9.3)
 
 packages:
 
@@ -1302,8 +1302,8 @@ packages:
       yaml:
         optional: true
 
-  vitepress-mermaid-preview@0.1.1:
-    resolution: {integrity: sha512-aAUGWdjdLlDY2T+cMXmASt7TunrNs8IayaF8IyScW2RH3oSg5s6miyPhgIV58WQHDQ/SJNISrBFsTRbQZ1XqQw==}
+  vitepress-mermaid-preview@0.2.1:
+    resolution: {integrity: sha512-uzRsyC2/q9Le32m1kFSjZ1DtDoeySFBLHCW3yVEUeLOE0LEMVNw3ogK7twamCsaZ26YviK/cd0ZCaxhSTHYg9Q==}
 
   vitepress@2.0.0-alpha.17:
     resolution: {integrity: sha512-Z3VPUpwk/bHYqt1uMVOOK1/4xFiWQov1GNc2FvMdz6kvje4JRXEOngVI9C+bi5jeedMSHiA4dwKkff1NCvbZ9Q==}
@@ -2602,7 +2602,7 @@ snapshots:
       fsevents: 2.3.3
       sass: 1.99.0
 
-  vitepress-mermaid-preview@0.1.1(typescript@5.9.3):
+  vitepress-mermaid-preview@0.2.1(typescript@5.9.3):
     dependencies:
       '@flypeng/tool': 5.7.5
       '@vitejs/plugin-vue': 6.0.6(vite@7.3.2(sass@1.99.0))(vue@3.5.32(typescript@5.9.3))
