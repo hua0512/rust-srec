@@ -1166,11 +1166,14 @@ impl StreamerActor {
                     .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
                 if let Err(e) = self
                     .status_checker
-                    .set_circuit_breaker_blocked(&metadata, retry_after_secs)
+                    .set_infra_blocked(
+                        &metadata,
+                        crate::monitor::InfraBlockReason::CircuitBreaker { retry_after_secs },
+                    )
                     .await
                 {
                     warn!(
-                        "StreamerActor {} failed to persist circuit breaker blocked state: {}",
+                        "StreamerActor {} failed to persist infra block state: {}",
                         self.id, e
                     );
                 }
@@ -1178,6 +1181,55 @@ impl StreamerActor {
                 self.state.streamer_state = StreamerState::TemporalDisabled;
                 // Schedule check after the circuit breaker cooldown period
                 // The next check will re-detect Live and try to start download again
+                self.state.next_check = Some(
+                    std::time::Instant::now() + std::time::Duration::from_secs(retry_after_secs),
+                );
+            }
+            DownloadEndPolicy::OutputRootBlocked {
+                path,
+                io_kind,
+                retry_after_secs,
+                ..
+            } => {
+                // Output-root write gate blocked the download — the recording
+                // filesystem is unwritable. This is an infrastructure-level
+                // issue (not a per-streamer fault), so we transition to
+                // OutOfSpace via set_infra_blocked (which does NOT bump
+                // consecutive_error_count) and schedule the next check after
+                // the gate cooldown. When the gate recovers, its
+                // recovery_hook will clear this streamer's disabled_until and
+                // last_error so it re-enters the live-check rotation
+                // immediately on the next tick.
+                info!(
+                    "StreamerActor {} download blocked by output root gate: {} ({:?}), retry in {}s",
+                    self.id,
+                    path.display(),
+                    io_kind,
+                    retry_after_secs
+                );
+
+                let metadata = self
+                    .get_metadata()
+                    .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
+                if let Err(e) = self
+                    .status_checker
+                    .set_infra_blocked(
+                        &metadata,
+                        crate::monitor::InfraBlockReason::OutputRootUnavailable {
+                            path: path.clone(),
+                            io_kind,
+                            retry_after_secs,
+                        },
+                    )
+                    .await
+                {
+                    warn!(
+                        "StreamerActor {} failed to persist output-root block state: {}",
+                        self.id, e
+                    );
+                }
+
+                self.state.streamer_state = StreamerState::OutOfSpace;
                 self.state.next_check = Some(
                     std::time::Instant::now() + std::time::Duration::from_secs(retry_after_secs),
                 );
@@ -1572,10 +1624,10 @@ mod tests {
             Ok(())
         }
 
-        async fn set_circuit_breaker_blocked(
+        async fn set_infra_blocked(
             &self,
             _streamer: &StreamerMetadata,
-            _retry_after_secs: u64,
+            _reason: crate::monitor::InfraBlockReason,
         ) -> Result<(), CheckError> {
             Ok(())
         }

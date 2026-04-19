@@ -19,5 +19,6 @@ pub use detector::{FilterReason, LiveStatus, StreamDetector, StreamInfo};
 pub use events::{FatalErrorType, MonitorEvent, MonitorEventBroadcaster};
 pub use rate_limiter::{RateLimiter, RateLimiterConfig, RateLimiterManager};
 pub use service::{
-    ProcessStatusResult, ProcessStatusSuppression, StreamMonitor, StreamMonitorConfig,
+    InfraBlockReason, ProcessStatusResult, ProcessStatusSuppression, StreamMonitor,
+    StreamMonitorConfig,
 };

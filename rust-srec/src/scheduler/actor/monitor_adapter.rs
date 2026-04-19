@@ -52,19 +52,19 @@ pub trait StatusChecker: Send + Sync + 'static {
         error: &str,
     ) -> Result<(), CheckError>;
 
-    /// Set the streamer to temporarily disabled due to circuit breaker block.
+    /// Set the streamer to temporarily disabled due to an infrastructure-level
+    /// block (engine circuit breaker, output-root write gate, etc.).
     ///
-    /// This sets the state to `TemporalDisabled` and stores the retry time
-    /// without incrementing the error count (since it's an infrastructure issue,
-    /// not a streamer issue).
+    /// Writes `disabled_until` and the appropriate state/`last_error` without
+    /// incrementing `consecutive_error_count` because infrastructure issues
+    /// are not counted against the streamer's own exponential backoff.
     ///
-    /// # Arguments
-    /// * `streamer` - The streamer metadata
-    /// * `retry_after_secs` - Seconds until the circuit breaker allows retries
-    async fn set_circuit_breaker_blocked(
+    /// See [`crate::monitor::InfraBlockReason`] for the per-reason
+    /// behavior (which state is written, whether `last_error` is overwritten).
+    async fn set_infra_blocked(
         &self,
         streamer: &StreamerMetadata,
-        retry_after_secs: u64,
+        reason: crate::monitor::InfraBlockReason,
     ) -> Result<(), CheckError>;
 }
 
@@ -191,14 +191,12 @@ where
         Ok(())
     }
 
-    async fn set_circuit_breaker_blocked(
+    async fn set_infra_blocked(
         &self,
         streamer: &StreamerMetadata,
-        retry_after_secs: u64,
+        reason: crate::monitor::InfraBlockReason,
     ) -> Result<(), CheckError> {
-        self.monitor
-            .set_circuit_breaker_blocked(streamer, retry_after_secs)
-            .await?;
+        self.monitor.set_infra_blocked(streamer, reason).await?;
         Ok(())
     }
 }
@@ -394,10 +392,10 @@ impl StatusChecker for NoOpStatusChecker {
         Ok(())
     }
 
-    async fn set_circuit_breaker_blocked(
+    async fn set_infra_blocked(
         &self,
         _streamer: &StreamerMetadata,
-        _retry_after_secs: u64,
+        _reason: crate::monitor::InfraBlockReason,
     ) -> Result<(), CheckError> {
         Ok(())
     }

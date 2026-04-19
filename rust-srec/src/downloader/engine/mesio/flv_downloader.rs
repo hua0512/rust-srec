@@ -395,6 +395,7 @@ mod tests {
                     SegmentEvent::Progress(_) => "Progress",
                     SegmentEvent::DownloadCompleted { .. } => "DownloadCompleted",
                     SegmentEvent::DownloadFailed { .. } => "DownloadFailed",
+                    SegmentEvent::DiskFull { .. } => "DiskFull",
                 })
                 .collect::<Vec<_>>()
         );

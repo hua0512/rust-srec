@@ -97,6 +97,7 @@ export default defineConfig({
                             text: 'Release Notes',
                             items: [
                                 { text: 'Overview', link: '/en/release-notes/' },
+                                { text: 'Unreleased', link: '/en/release-notes/unreleased' },
                                 { text: 'v0.2.1', link: '/en/release-notes/v0.2.1' }
                             ]
                         }
@@ -171,6 +172,7 @@ export default defineConfig({
                             text: '更新日志',
                             items: [
                                 { text: '概览', link: '/zh/release-notes/' },
+                                { text: '未发布', link: '/zh/release-notes/unreleased' },
                                 { text: 'v0.2.1', link: '/zh/release-notes/v0.2.1' }
                             ]
                         }

@@ -14,7 +14,7 @@ use super::traits::{
     EngineType, SegmentEvent, SegmentInfo,
 };
 use super::utils::{
-    OutputRecordReader, ensure_output_dir, is_segment_start, parse_opened_path, parse_progress,
+    OutputRecordReader, is_disk_full_line, is_segment_start, parse_opened_path, parse_progress,
 };
 use crate::Result;
 use crate::database::models::engine::FfmpegEngineConfig;
@@ -168,14 +168,12 @@ impl DownloadEngine for FfmpegEngine {
         handle: Arc<DownloadHandle>,
     ) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
-        // 1. Ensure output directory exists before spawning process
-        if let Err(e) = ensure_output_dir(&config.output_dir).await {
-            return Err(EngineStartError::new(
-                DownloadFailureKind::Io,
-                e.to_string(),
-            ));
-        }
-
+        // Output directory is now prepared by
+        // `DownloadManager::prepare_output_dir` before this method is called,
+        // so the ffmpeg engine no longer needs to run `ensure_output_dir`
+        // itself. Centralizing that call means the output-root write gate
+        // has a single hook point and error classification runs consistently
+        // for every engine.
         let args = self.build_args(&config);
         let segment_mode = config.max_segment_duration_secs > 0;
         let single_output_path = if segment_mode {
@@ -266,6 +264,7 @@ impl DownloadEngine for FfmpegEngine {
 
         let event_tx = handle.event_tx.clone();
         let streamer_id = config.streamer_id.clone();
+        let output_dir = config.output_dir.clone();
 
         // 3. Spawn stderr reader task - waits for exit status before emitting event
         tokio::spawn(async move {
@@ -282,6 +281,10 @@ impl DownloadEngine for FfmpegEngine {
             let mut has_active_segment_fs_bytes = false;
             let mut last_active_segment_stat_at = Instant::now();
             let mut last_progress_snapshot: Option<(u64, f64, f64)> = None;
+            // Set once when a disk-full signature is detected in stderr, so
+            // a later ProcessExit path doesn't double-emit DiskFull for the
+            // same incident.
+            let mut disk_full_reported = false;
 
             if let Some(path) = single_output_path {
                 let index = 0u32;
@@ -448,6 +451,29 @@ impl DownloadEngine for FfmpegEngine {
                                 if line.contains("Error") || line.contains("error") {
                                     warn!("FFmpeg error for {}: {}", streamer_id, line);
                                 }
+
+                                // Detect mid-stream disk-full. ffmpeg prints the
+                                // verbatim "No space left on device" string (and
+                                // often a "-28" errno reference) when ENOSPC hits
+                                // the muxer. Catching it here lets the manager
+                                // trip the output-root write gate BEFORE ffmpeg
+                                // exits, which is crucial for #508 where today's
+                                // date dir already exists so prepare_output_dir
+                                // never sees the failure.
+                                if !disk_full_reported && is_disk_full_line(&line) {
+                                    disk_full_reported = true;
+                                    warn!(
+                                        streamer_id = %streamer_id,
+                                        output_dir = %output_dir.display(),
+                                        "FFmpeg signalled disk full; emitting DiskFull event for gate"
+                                    );
+                                    let _ = event_tx
+                                        .send(SegmentEvent::DiskFull {
+                                            output_dir: output_dir.clone(),
+                                            detail: format!("ffmpeg: {}", line),
+                                        })
+                                        .await;
+                                }
                             }
                             Ok(None) => {
                                 // EOF - process ended
@@ -508,6 +534,29 @@ impl DownloadEngine for FfmpegEngine {
                         .await;
                 }
                 Some(code) => {
+                    // If ffmpeg exited with code 228 and we didn't already
+                    // detect ENOSPC from stderr, emit DiskFull as a fallback.
+                    // This is the conventional ffmpeg exit code for
+                    // "I/O error during writing" and is a strong disk-full
+                    // signal when combined with stderr that mentioned the
+                    // muxer writing path.
+                    if code == 228 && !disk_full_reported {
+                        // The stderr loop has already exited by this point,
+                        // so we don't need to update `disk_full_reported` —
+                        // the variable will not be read again.
+                        warn!(
+                            streamer_id = %streamer_id,
+                            output_dir = %output_dir.display(),
+                            "FFmpeg exited with code 228; assuming disk-full and emitting DiskFull event"
+                        );
+                        let _ = event_tx
+                            .send(SegmentEvent::DiskFull {
+                                output_dir: output_dir.clone(),
+                                detail: "ffmpeg exit 228 (I/O error, likely ENOSPC)".to_string(),
+                            })
+                            .await;
+                    }
+
                     // Non-zero exit code - failure
                     let _ = event_tx
                         .send(SegmentEvent::DownloadFailed {

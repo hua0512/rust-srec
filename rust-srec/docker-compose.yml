@@ -17,6 +17,10 @@ services:
       - OUTPUT_DIR=/app/output
       - API_PORT=8080
       - API_BIND_ADDRESS=0.0.0.0
+      # Output-root write gate (#508). Empty = auto-discover from config.
+      - RUST_SREC_OUTPUT_ROOTS=${RUST_SREC_OUTPUT_ROOTS:-}
+      # Backend locale for notification strings (en | zh-CN).
+      - RUST_SREC_LOCALE=${RUST_SREC_LOCALE:-en}
       # JWT Configuration
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_ISSUER=${JWT_ISSUER:-rust-srec}

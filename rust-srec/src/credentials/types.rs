@@ -204,13 +204,11 @@ impl CredentialEvent {
         match self {
             Self::Refreshed {
                 platform, scope, ..
-            } => {
-                format!(
-                    "✅ {} credentials refreshed successfully ({})",
-                    platform,
-                    scope.describe()
-                )
-            }
+            } => crate::t_str!(
+                "notification.credential.refreshed.message",
+                platform = platform.as_str(),
+                scope = scope.describe().as_str(),
+            ),
             Self::RefreshFailed {
                 platform,
                 scope,
@@ -219,28 +217,18 @@ impl CredentialEvent {
                 failure_count,
                 ..
             } => {
-                if *requires_relogin {
-                    format!(
-                        "❌ {} credential refresh failed - MANUAL RE-LOGIN REQUIRED\n\
-                         Scope: {}\n\
-                         Error: {}\n\
-                         Failures: {}",
-                        platform,
-                        scope.describe(),
-                        error,
-                        failure_count
-                    )
+                let key = if *requires_relogin {
+                    "notification.credential.refresh_failed.message.requires_relogin"
                 } else {
-                    format!(
-                        "⚠️ {} credential refresh failed (attempt {})\n\
-                         Scope: {}\n\
-                         Error: {}",
-                        platform,
-                        failure_count,
-                        scope.describe(),
-                        error
-                    )
-                }
+                    "notification.credential.refresh_failed.message.retrying"
+                };
+                crate::t_str!(
+                    key,
+                    platform = platform.as_str(),
+                    scope = scope.describe().as_str(),
+                    error = error.as_str(),
+                    failure_count = failure_count.to_string().as_str(),
+                )
             }
             Self::Invalid {
                 platform,
@@ -249,17 +237,20 @@ impl CredentialEvent {
                 error_code,
                 ..
             } => {
-                format!(
-                    "🚫 {} credentials are INVALID - manual re-login required\n\
-                     Scope: {}\n\
-                     Reason: {}\n\
-                     Error code: {}",
-                    platform,
-                    scope.describe(),
-                    reason,
-                    error_code
-                        .map(|c| c.to_string())
-                        .unwrap_or_else(|| "N/A".to_string())
+                // Pre-format the optional error_code as a string so the YAML
+                // can just interpolate without conditional syntax. "N/A" is
+                // intentional — it's the same sentinel the old format! path
+                // used, and the zh-CN translation keeps it to avoid having
+                // to branch on Option inside the YAML.
+                let error_code = error_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "N/A".to_string());
+                crate::t_str!(
+                    "notification.credential.invalid.message",
+                    platform = platform.as_str(),
+                    scope = scope.describe().as_str(),
+                    reason = reason.as_str(),
+                    error_code = error_code.as_str(),
                 )
             }
             Self::ExpiringSoon {
@@ -269,14 +260,13 @@ impl CredentialEvent {
                 expires_at,
                 ..
             } => {
-                format!(
-                    "⏰ {} credentials expiring in {} days ({})\n\
-                     Scope: {}\n\
-                     Action: Consider refreshing soon",
-                    platform,
-                    days_remaining,
-                    expires_at.format("%Y-%m-%d"),
-                    scope.describe()
+                let expires_at = expires_at.format("%Y-%m-%d").to_string();
+                crate::t_str!(
+                    "notification.credential.expiring_soon.message",
+                    platform = platform.as_str(),
+                    scope = scope.describe().as_str(),
+                    days_remaining = days_remaining.to_string().as_str(),
+                    expires_at = expires_at.as_str(),
                 )
             }
         }

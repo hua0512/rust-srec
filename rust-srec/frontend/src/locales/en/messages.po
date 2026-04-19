@@ -423,7 +423,7 @@ msgstr "AFTER: {0}"
 msgid "Album"
 msgstr "Album"
 
-#: src/components/notifications/subscription-manager.tsx:170
+#: src/components/notifications/subscription-manager.tsx:176
 msgid "Alerts when disk space is running low."
 msgstr "Alerts when disk space is running low."
 
@@ -677,7 +677,7 @@ msgstr "Automate your stream recordings with ease and reliability."
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "Automatically generate a thumbnail for the first segment of each session."
 
-#: src/components/notifications/subscription-manager.tsx:427
+#: src/components/notifications/subscription-manager.tsx:437
 msgid "available"
 msgstr "available"
 
@@ -899,7 +899,7 @@ msgstr "Caching"
 #: src/components/filters/FilterDialog.tsx:247
 #: src/components/notifications/channel-card.tsx:226
 #: src/components/notifications/channel-form.tsx:400
-#: src/components/notifications/subscription-manager.tsx:435
+#: src/components/notifications/subscription-manager.tsx:445
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:174
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
@@ -1569,9 +1569,13 @@ msgstr "CRF (Constant Rate Factor)"
 msgid "Critical"
 msgstr "Critical"
 
-#: src/components/notifications/subscription-manager.tsx:174
+#: src/components/notifications/subscription-manager.tsx:184
 msgid "Critical alert when the processing queue is full."
 msgstr "Critical alert when the processing queue is full."
+
+#: src/components/notifications/subscription-manager.tsx:179
+msgid "Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue."
+msgstr "Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue."
 
 #: src/components/notifications/browser-channel-dialog.tsx:150
 #: src/components/notifications/desktop-channel-dialog.tsx:50
@@ -1579,7 +1583,7 @@ msgstr "Critical alert when the processing queue is full."
 msgid "Critical Only"
 msgstr "Critical Only"
 
-#: src/components/notifications/subscription-manager.tsx:168
+#: src/components/notifications/subscription-manager.tsx:174
 msgid "Critical system errors or streamer failures."
 msgstr "Critical system errors or streamer failures."
 
@@ -1925,7 +1929,7 @@ msgstr "Description"
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
-#: src/components/notifications/subscription-manager.tsx:342
+#: src/components/notifications/subscription-manager.tsx:352
 msgid "Deselect All"
 msgstr "Deselect All"
 
@@ -2887,7 +2891,7 @@ msgstr "Failed to update settings"
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
 
-#: src/components/notifications/subscription-manager.tsx:231
+#: src/components/notifications/subscription-manager.tsx:241
 msgid "Failed to update subscriptions"
 msgstr "Failed to update subscriptions"
 
@@ -4029,7 +4033,7 @@ msgstr "Manage specialized extraction and identification options."
 msgid "Manage storage paths and file formats."
 msgstr "Manage storage paths and file formats."
 
-#: src/components/notifications/subscription-manager.tsx:296
+#: src/components/notifications/subscription-manager.tsx:306
 msgid "Manage Subscriptions"
 msgstr "Manage Subscriptions"
 
@@ -4542,7 +4546,7 @@ msgstr "No logs available for this execution."
 msgid "No logs to display"
 msgstr "No logs to display"
 
-#: src/components/notifications/subscription-manager.tsx:361
+#: src/components/notifications/subscription-manager.tsx:371
 msgid "No matching events found"
 msgstr "No matching events found"
 
@@ -5781,11 +5785,11 @@ msgstr "Real-time status of all system components and resources."
 msgid "Reason"
 msgstr "Reason"
 
-#: src/components/notifications/subscription-manager.tsx:138
+#: src/components/notifications/subscription-manager.tsx:144
 msgid "Receive a notification when a stream ends."
 msgstr "Receive a notification when a stream ends."
 
-#: src/components/notifications/subscription-manager.tsx:136
+#: src/components/notifications/subscription-manager.tsx:142
 msgid "Receive a notification when a streamer goes live."
 msgstr "Receive a notification when a streamer goes live."
 
@@ -6163,7 +6167,7 @@ msgstr "Sanitized streamer name"
 #: src/components/config/platforms/platform-editor.tsx:159
 #: src/components/config/templates/template-editor.tsx:213
 #: src/components/filters/FilterDialog.tsx:260
-#: src/components/notifications/subscription-manager.tsx:445
+#: src/components/notifications/subscription-manager.tsx:455
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:543
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
@@ -6236,7 +6240,7 @@ msgstr "Search by name or description..."
 msgid "Search engines..."
 msgstr "Search engines..."
 
-#: src/components/notifications/subscription-manager.tsx:327
+#: src/components/notifications/subscription-manager.tsx:337
 msgid "Search events..."
 msgstr "Search events..."
 
@@ -6336,7 +6340,7 @@ msgid "Select a streamer"
 msgstr "Select a streamer"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:181
-#: src/components/notifications/subscription-manager.tsx:345
+#: src/components/notifications/subscription-manager.tsx:355
 msgid "Select All"
 msgstr "Select All"
 
@@ -6403,7 +6407,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "Select the days required for this filter to apply."
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:299
+#: src/components/notifications/subscription-manager.tsx:309
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
@@ -6425,7 +6429,7 @@ msgstr "Select type"
 msgid "Select your preferred color scheme."
 msgstr "Select your preferred color scheme."
 
-#: src/components/notifications/subscription-manager.tsx:424
+#: src/components/notifications/subscription-manager.tsx:434
 msgid "selected"
 msgstr "selected"
 
@@ -6919,7 +6923,7 @@ msgstr "Streams & Metadata"
 msgid "Subscriptions"
 msgstr "Subscriptions"
 
-#: src/components/notifications/subscription-manager.tsx:224
+#: src/components/notifications/subscription-manager.tsx:234
 msgid "Subscriptions updated"
 msgstr "Subscriptions updated"
 
@@ -7414,59 +7418,59 @@ msgstr "Triggered after each segment recording"
 msgid "Triggered after the entire session ends"
 msgstr "Triggered after the entire session ends"
 
-#: src/components/notifications/subscription-manager.tsx:144
+#: src/components/notifications/subscription-manager.tsx:150
 msgid "Triggered when a download fails with an error."
 msgstr "Triggered when a download fails with an error."
 
-#: src/components/notifications/subscription-manager.tsx:150
+#: src/components/notifications/subscription-manager.tsx:156
 msgid "Triggered when a download is manually cancelled."
 msgstr "Triggered when a download is manually cancelled."
 
-#: src/components/notifications/subscription-manager.tsx:153
+#: src/components/notifications/subscription-manager.tsx:159
 msgid "Triggered when a download is rejected (e.g., circuit breaker)."
 msgstr "Triggered when a download is rejected (e.g., circuit breaker)."
 
-#: src/components/notifications/subscription-manager.tsx:142
+#: src/components/notifications/subscription-manager.tsx:148
 msgid "Triggered when a download successfully completes."
 msgstr "Triggered when a download successfully completes."
 
-#: src/components/notifications/subscription-manager.tsx:148
+#: src/components/notifications/subscription-manager.tsx:154
 msgid "Triggered when a file segment is finished."
 msgstr "Triggered when a file segment is finished."
 
-#: src/components/notifications/subscription-manager.tsx:140
+#: src/components/notifications/subscription-manager.tsx:146
 msgid "Triggered when a new download recording begins."
 msgstr "Triggered when a new download recording begins."
 
-#: src/components/notifications/subscription-manager.tsx:146
+#: src/components/notifications/subscription-manager.tsx:152
 msgid "Triggered when a new file segment is created."
 msgstr "Triggered when a new file segment is created."
 
-#: src/components/notifications/subscription-manager.tsx:164
+#: src/components/notifications/subscription-manager.tsx:170
 msgid "Triggered when a pipeline job fails."
 msgstr "Triggered when a pipeline job fails."
 
-#: src/components/notifications/subscription-manager.tsx:162
+#: src/components/notifications/subscription-manager.tsx:168
 msgid "Triggered when a pipeline job finishes successfully."
 msgstr "Triggered when a pipeline job finishes successfully."
 
-#: src/components/notifications/subscription-manager.tsx:166
+#: src/components/notifications/subscription-manager.tsx:172
 msgid "Triggered when a pipeline job is cancelled."
 msgstr "Triggered when a pipeline job is cancelled."
 
-#: src/components/notifications/subscription-manager.tsx:160
+#: src/components/notifications/subscription-manager.tsx:166
 msgid "Triggered when a post-processing pipeline job starts."
 msgstr "Triggered when a post-processing pipeline job starts."
 
-#: src/components/notifications/subscription-manager.tsx:157
+#: src/components/notifications/subscription-manager.tsx:163
 msgid "Triggered when streamer configuration is dynamically updated."
 msgstr "Triggered when streamer configuration is dynamically updated."
 
-#: src/components/notifications/subscription-manager.tsx:178
+#: src/components/notifications/subscription-manager.tsx:188
 msgid "Triggered when the application shuts down."
 msgstr "Triggered when the application shuts down."
 
-#: src/components/notifications/subscription-manager.tsx:176
+#: src/components/notifications/subscription-manager.tsx:186
 msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
@@ -7853,7 +7857,7 @@ msgstr "Wait time before starting."
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 
-#: src/components/notifications/subscription-manager.tsx:172
+#: src/components/notifications/subscription-manager.tsx:182
 msgid "Warning when the processing queue gets too long."
 msgstr "Warning when the processing queue gets too long."
 

@@ -995,18 +995,29 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 reason,
                 retry_after_secs,
                 session_id,
+                kind,
                 ..
             } => {
                 let retry_secs = retry_after_secs.unwrap_or(60);
-                send_to_actor(
-                    streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndPolicy::CircuitBreakerBlocked {
-                        reason,
+                let policy = match kind {
+                    crate::downloader::DownloadRejectedKind::CircuitBreaker => {
+                        DownloadEndPolicy::CircuitBreakerBlocked {
+                            reason,
+                            retry_after_secs: retry_secs,
+                            session_id,
+                        }
+                    }
+                    crate::downloader::DownloadRejectedKind::OutputRootUnavailable {
+                        path,
+                        io_kind,
+                    } => DownloadEndPolicy::OutputRootBlocked {
+                        path,
+                        io_kind,
                         retry_after_secs: retry_secs,
                         session_id,
-                    }),
-                )
-                .await;
+                    },
+                };
+                send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
             }
             DownloadManagerEvent::Progress {
                 download_id,

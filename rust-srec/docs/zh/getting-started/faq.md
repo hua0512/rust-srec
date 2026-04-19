@@ -27,3 +27,16 @@
 ## 如何安装这些工具？
 
 请参考我们的[安装指南](./installation)以了解如何在你的平台上安装必要的依赖项。
+
+## 磁盘满了，清理后录制没有恢复，怎么办？
+
+请先查看 `/health` 接口或界面里的系统健康页面，关注 `output-root` 组件：
+
+- **状态 `Degraded`、`error_kind: not_found`**——非常可能是您通过宿主机操作（宝塔文件管理器、对挂载源目录执行 `mv` 等）清理文件，导致 Docker 绑定挂载失效。容器持有一个孤儿 inode，必须重启才能恢复。请阅读 [Docker 故障排查](./docker.md#使用绑定挂载时如何释放磁盘空间)中的安全清理方式。
+- **状态 `Degraded`、`error_kind: storage_full`**——磁盘确实写满了，但挂载点正常。请通过 Docker 文档中任一种安全清理方式释放空间（rust-srec 界面、`docker exec`、扩容卷）。**无需重启**。写入门会在下一次尝试下载时（约 30 秒内）自动恢复，所有受影响的主播会在同一个监视周期内解除退避、恢复录制。
+- **状态 `Degraded`、`error_kind: permission_denied`**——请检查容器内目标目录的属主和权限。
+- **状态 `Degraded`、`error_kind: read_only`**——文件系统被以只读方式重新挂载。需要以读写方式重新挂载。
+- **状态 `Degraded`、`error_kind: timed_out`**——文件系统挂起（NFS stale handle、损坏的绑定挂载、挂起的块设备）。请检查底层存储。
+- **状态 `Healthy` 但录制仍未恢复**——从应用视角看文件系统是好的。请在界面上查看单个主播的状态，他们可能由于其它原因（CDN 故障、频率限制等）还在退避中。查看日志中具体的 `last_error`。
+
+写入门切换到 `Degraded` 时会发出一条 critical 级的 `output_path_inaccessible` 通知，其中包含相同的 `error_kind` 以及按语言本地化的恢复建议。详见[通知系统文档](../concepts/notifications.md#基础设施关键事件)。
