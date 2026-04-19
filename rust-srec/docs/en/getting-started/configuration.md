@@ -126,7 +126,7 @@ The following environment variables can be configured in your <a :href="withBase
 |----------|-------------|---------|
 | `RUST_LOG` | Logging level (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
 | `DATABASE_URL` | SQL database connection string | `sqlite:///app/data/rust-srec.db` |
-| `RUST_SREC_LOCALE` | Locale for backend-emitted notification strings. Currently affects the `output_path_inaccessible` event only; other events are still English-only. Supported: `en`, `zh-CN`. | `en` |
+| `RUST_SREC_LOCALE` | Locale for backend-emitted notification strings. Affects every notification event — stream online/offline, download lifecycle, segments, pipeline jobs, system alerts, credential events. Supported: `en`, `zh-CN`. | `en` |
 | `RUST_SREC_OUTPUT_ROOTS` | Comma-separated list of **absolute** paths to treat as output-root boundaries for the write gate. If unset, the gate uses a heuristic that takes the first **two named components** of each resolved output path (e.g. `/rec/huya` for `/rec/huya/X/20260415`, `/home/user` for `/home/user/recordings/X/20260415`). Two named components is the smallest safe default — it avoids accidentally sharing a gate key across unrelated users in `/home/...` layouts. For a single-mount `/rec`-style layout where you want one gate key per mount (and therefore one aggregated notification on failure instead of one per platform), set this explicitly: `RUST_SREC_OUTPUT_ROOTS=/rec`. | - |
 
 ### Resource Limits (Docker)

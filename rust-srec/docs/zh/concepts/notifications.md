@@ -42,7 +42,7 @@ flowchart LR
 | `out_of_space` | 预警：磁盘使用率超过配置阈值，但录制仍在运行。 | 不适用（仅预警） |
 | `output_path_inaccessible` | **[输出根写入门](./architecture.md#输出根写入门)已实际阻止录制**，原因是 `create_dir_all` 或中途写入时遇到 ENOENT / ENOSPC / EACCES / EROFS / 超时等错误。每次 `Healthy → Degraded` 状态切换**只发出一次**（不是每次失败都发）。 | 真正的 ENOSPC：是，磁盘释放后约 30 秒内自动恢复。失效的 Docker 绑定挂载：**否**，必须重启容器。详见 [Docker 故障排查](../getting-started/docker.md#使用绑定挂载时如何释放磁盘空间)。 |
 
-设置环境变量 `RUST_SREC_LOCALE` 后，`output_path_inaccessible` 的描述文本会按语言本地化。目前支持：`en`、`zh-CN`。描述会根据底层 `io::ErrorKind` 分支——`NotFound`（挂载失效）会显示与 `StorageFull`（磁盘真正写满）不同的恢复建议。
+设置环境变量 `RUST_SREC_LOCALE` 后，**所有通知事件**都会按语言本地化——直播上/下线、录制生命周期、分段、流水线任务、系统告警、凭据事件——并通过所有外部渠道（Telegram、Gotify、Discord、Webhook、邮件、Web Push）按配置语言下发。目前支持：`en`、`zh-CN`。此外，`output_path_inaccessible` 的描述还会根据底层 `io::ErrorKind` 分支——`NotFound`（挂载失效）会显示与 `StorageFull`（磁盘真正写满）不同的恢复建议。
 
 ## 优先级与过滤
 

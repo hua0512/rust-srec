@@ -20,9 +20,9 @@
 
   该状态此前存在于领域模型中，但从未在运行时被写入。现在当写入门阻塞某个主播时，状态会点亮为 `OutOfSpace`；写入门恢复时会自动清除。在主播列表中以停止状态徽章显示。
 
-- 基于 `rust-i18n` 的**后端本地化基础**
+- 基于 `rust-i18n` 的**后端通知本地化**
 
-  新增 `rust-srec/locales/{en,zh-CN}.yml` 文件，新增 `RUST_SREC_LOCALE` 环境变量。目前仅本地化了新的 `output_path_inaccessible` 通知事件（提供英文和简体中文两种语言）；其余通知事件仍保持英文，可在后续版本中逐步迁移。
+  新增 `rust-srec/locales/{en,zh-CN}.yml` 文件，新增 `RUST_SREC_LOCALE` 环境变量。**所有通知事件**均已本地化（英文和简体中文）——包括直播上下线、录制生命周期、分段、流水线任务、系统告警和凭据事件。推送到外部接收端（Telegram、Gotify、Discord、Webhook、邮件、Web Push）的通知会自动遵循该语言设置。
 
 - 新增 **`output_path_inaccessible` 通知事件**与前端订阅
 
@@ -37,7 +37,7 @@
 | 变量 | 用途 |
 |---|---|
 | `RUST_SREC_OUTPUT_ROOTS` | 以逗号分隔的绝对路径列表，作为写入门的输出根边界。未设置时，写入门会基于 `OUTPUT_DIR` 通过 2 段启发式推导一个根。 |
-| `RUST_SREC_LOCALE` | 后端通知字符串的语言环境。目前仅影响 `output_path_inaccessible`。支持：`en`、`zh-CN`，默认 `en`。 |
+| `RUST_SREC_LOCALE` | 后端通知字符串的语言环境。影响所有通知事件（直播、录制、分段、流水线、系统、凭据）。支持：`en`、`zh-CN`，默认 `en`。 |
 
 详见[配置说明](../getting-started/configuration.md#后端服务)。
 

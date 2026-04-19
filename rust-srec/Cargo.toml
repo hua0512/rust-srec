@@ -80,8 +80,8 @@ tar = { workspace = true }
 # Filesystem (used at runtime by the output-root write gate's startup probe)
 tempfile = { workspace = true }
 
-# Backend i18n (currently localizes only the OutputPathInaccessible notification;
-# other events are still plain English literals — rust-i18n supports mixed mode)
+# Backend i18n for every NotificationEvent variant (including credential events);
+# API errors and health messages stay English by design.
 rust-i18n = "3"
 
 [build-dependencies]

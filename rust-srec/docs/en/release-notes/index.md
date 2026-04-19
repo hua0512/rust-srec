@@ -4,7 +4,7 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — output-root write gate for recording filesystem failure resilience (#508), runtime ENOSPC detection in ffmpeg/streamlink, backend localization seed via `rust-i18n`, new `output_path_inaccessible` notification, `RUST_SREC_OUTPUT_ROOTS` and `RUST_SREC_LOCALE` env vars
+- [`unreleased`](./unreleased.md) — output-root write gate for recording filesystem failure resilience (#508), runtime ENOSPC detection in ffmpeg/streamlink, backend notification localization via `rust-i18n` (en + zh-CN, all events), new `output_path_inaccessible` notification, `RUST_SREC_OUTPUT_ROOTS` and `RUST_SREC_LOCALE` env vars
 
 ## Latest release
 

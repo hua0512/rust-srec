@@ -20,9 +20,9 @@ This update is centered on a single large feature — the **output-root write ga
 
   The state existed in the domain model but was never set at runtime. It now lights up when the write gate blocks a streamer, and clears automatically when the gate recovers. Visible in the streamer list as a stop-state badge.
 
-- Added **backend localization seed** via `rust-i18n`
+- Added **backend notification localization** via `rust-i18n`
 
-  New `rust-srec/locales/{en,zh-CN}.yml` files, new `RUST_SREC_LOCALE` environment variable. Currently only the new `output_path_inaccessible` notification is localized (in both English and Simplified Chinese); other notification events remain English-only and can be migrated incrementally in follow-up releases.
+  New `rust-srec/locales/{en,zh-CN}.yml` files, new `RUST_SREC_LOCALE` environment variable. **Every notification event** is localized in both English and Simplified Chinese — stream online/offline, download lifecycle, segments, pipeline jobs, system alerts, and credential events. Channels that deliver to external receivers (Telegram, Gotify, Discord, webhook, email, web push) honor the locale automatically.
 
 - Added **`output_path_inaccessible` notification event** and frontend subscription
 
@@ -37,7 +37,7 @@ This update is centered on a single large feature — the **output-root write ga
 | Variable | Purpose |
 |---|---|
 | `RUST_SREC_OUTPUT_ROOTS` | Comma-separated list of absolute paths to treat as output-root boundaries for the write gate. If unset, the gate derives one root from `OUTPUT_DIR` with a 2-component heuristic. |
-| `RUST_SREC_LOCALE` | Backend locale for notification strings. Currently affects `output_path_inaccessible` only. Supported: `en`, `zh-CN`. Defaults to `en`. |
+| `RUST_SREC_LOCALE` | Backend locale for notification strings. Affects every notification event (stream, download, segment, pipeline, system, credential). Supported: `en`, `zh-CN`. Defaults to `en`. |
 
 See the [configuration doc](../getting-started/configuration.md#backend-service) for details.
 

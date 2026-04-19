@@ -42,7 +42,7 @@ Two events are emitted when the recording filesystem itself is in trouble:
 | `out_of_space` | Proactive: the configured disk usage threshold is crossed while recordings are still running. | N/A (advisory) |
 | `output_path_inaccessible` | **The [output-root write gate](./architecture.md#output-root-write-gate) has actually blocked recordings** because `create_dir_all` or a mid-stream write failed with ENOENT / ENOSPC / EACCES / EROFS / timeout on a tracked output root. Emitted **exactly once per `Healthy → Degraded` transition** — not once per failed attempt. | Genuine ENOSPC: yes, automatically within ~30 seconds of the disk being freed. Stale Docker bind mount: **no**, container must be restarted. See the [Docker troubleshooting guide](../getting-started/docker.md#freeing-up-disk-space-when-using-bind-mounts). |
 
-The `output_path_inaccessible` description is locale-aware when the `RUST_SREC_LOCALE` environment variable is set. Supported locales: `en`, `zh-CN`. The description branches on the underlying `io::ErrorKind` so a `NotFound` (stale mount) gets different recovery instructions than a `StorageFull` (genuine ENOSPC).
+Every notification event is locale-aware when the `RUST_SREC_LOCALE` environment variable is set — stream online/offline, download lifecycle, segments, pipeline jobs, system alerts, and credential events — and the text is delivered through external channels (Telegram, Gotify, Discord, webhook, email, web push) in the configured locale. Supported locales: `en`, `zh-CN`. The `output_path_inaccessible` description additionally branches on the underlying `io::ErrorKind` so a `NotFound` (stale mount) gets different recovery instructions than a `StorageFull` (genuine ENOSPC).
 
 ## Priority & Filtering
 

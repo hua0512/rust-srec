@@ -941,11 +941,9 @@ impl DownloadManager {
             // gate has already recorded the failure; this event carries the
             // structured routing payload to the scheduler.
             if let DownloadFailureKind::OutputRootUnavailable { io_kind } = engine_err.kind {
-                // Ask the gate for its own resolved root so the event payload,
-                // the gate's DashMap key, and the /health snapshot all
-                // report the SAME path. Falling back to empty
-                // configured_roots (which was the earlier code) could give
-                // a different path when users set RUST_SREC_OUTPUT_ROOTS.
+                // Resolve the root through the gate itself so the event
+                // payload, the gate's DashMap key, and the /health
+                // snapshot all agree on the same path representation.
                 let path = self
                     .output_root_gate
                     .get()
@@ -1066,11 +1064,10 @@ impl DownloadManager {
         let circuit_breakers_ref = self.circuit_breakers.get(&engine_key);
         let normal_limit = self.normal_limit.clone();
         let high_priority_limit = self.high_priority_limit.clone();
-        // Clone the gate handle (if attached) so the segment event loop can
-        // route runtime ENOSPC signals from the engine stderr readers into
-        // `gate.record_failure`. Without this the gate would never trip for
-        // the mid-stream disk-full case (today's date dir already exists,
-        // so prepare_output_dir is a no-op and can't catch it).
+        // Handle into the segment event loop so runtime ENOSPC from the
+        // engine stderr readers can reach `gate.record_failure` — the
+        // mid-stream case where today's date dir already exists and
+        // `prepare_output_dir` has nothing to detect.
         let output_root_gate_ref: Option<Arc<OutputRootGate>> =
             self.output_root_gate.get().cloned();
 
@@ -1219,15 +1216,10 @@ impl DownloadManager {
                         break;
                     }
                     SegmentEvent::DiskFull { output_dir, detail } => {
-                        // An engine stderr reader detected a mid-stream
-                        // ENOSPC signature (e.g., ffmpeg emitted "No space
-                        // left on device" or exited with code 228). Route
-                        // the signal into the output-root write gate so
-                        // subsequent streamers writing under the same root
-                        // are short-circuited before reaching the engine.
-                        // This is NOT a terminal event — ffmpeg's own
-                        // DownloadFailed will follow on exit. We just feed
-                        // the gate here and keep processing events.
+                        // Out-of-band signal only — the engine will still
+                        // emit its own DownloadFailed on exit. Feeding the
+                        // gate here short-circuits other streamers under
+                        // the same root before they reach the engine.
                         if let Some(gate) = output_root_gate_ref.as_ref() {
                             let synthetic_io_err =
                                 std::io::Error::new(std::io::ErrorKind::StorageFull, detail);

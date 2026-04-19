@@ -1,21 +1,136 @@
 notification:
+  # ============ 直播事件 ============
+  stream_online:
+    title: "🔴 %{streamer_name} 开播了！"
+    description:
+      with_category: "%{title}（%{category}）"
+      plain: "%{title}"
+  stream_offline:
+    title: "⚫ %{streamer_name} 已下播"
+    description:
+      with_duration: "本场直播时长：%{duration}"
+      plain: "直播已结束"
+
+  # ============ 录制事件 ============
+  download_started:
+    title: "⬇️ 开始录制 %{streamer_name}"
+    description: "会话：%{session_id}"
+  download_completed:
+    title: "✅ 完成录制 %{streamer_name}"
+    description: "大小：%{size}，时长：%{duration}"
+  download_error:
+    title: "❌ %{streamer_name} 录制出错"
+    description:
+      recoverable: "%{error_message}（将重试）"
+      unrecoverable: "%{error_message}"
+  download_cancelled:
+    title: "⏹️ 已取消 %{streamer_name} 的录制"
+    description: "会话:%{session_id}"
+  download_rejected:
+    title: "🚫 %{streamer_name} 的录制被拒绝"
+    description: "%{reason}"
+  config_updated:
+    title: "⚙️ 已更新 %{streamer_name} 的配置"
+    description: "更新类型:%{update_type}"
+
+  # ============ 分段事件 ============
+  segment_started:
+    title: "📼 开始录制 %{streamer_name} 的分段 %{segment_index}"
+    description: "路径:%{segment_path}"
+  segment_completed:
+    title: "✅ 完成录制 %{streamer_name} 的分段 %{segment_index}"
+    description: "路径:%{segment_path},大小:%{size},时长:%{duration}"
+
+  # ============ 流水线事件 ============
+  pipeline_started:
+    title: "⚙️ 开始 %{job_type} 任务"
+    description: "任务 ID:%{job_id}"
+  pipeline_completed:
+    title: "✅ 完成 %{job_type} 任务"
+    description:
+      with_output: "输出:%{output_path}(%{duration})"
+      without_output: "完成耗时 %{duration}"
+  pipeline_failed:
+    title: "❌ %{job_type} 任务失败"
+    description: "%{error_message}"
+  pipeline_cancelled:
+    title: "⚪ 已取消 %{job_type} 任务"
+    description:
+      with_pipeline: "任务 %{job_id} 已取消(流水线:%{pipeline_id})"
+      plain: "任务 %{job_id} 已取消"
+  pipeline_queue_warning:
+    title: "⚠️ 流水线队列告警:积压 %{queue_depth} 个任务"
+    description: "队列深度 %{queue_depth} 超过告警阈值 %{threshold}"
+  pipeline_queue_critical:
+    title: "🚨 流水线队列严重告警:积压 %{queue_depth} 个任务"
+    description: "队列深度 %{queue_depth} 超过严重阈值 %{threshold}"
+
+  # ============ 系统事件 ============
+  fatal_error:
+    title: "🚨 %{streamer_name} 致命错误:%{error_type}"
+    description: "%{message}"
+  out_of_space:
+    title: "💾 %{path} 磁盘空间不足"
+    description: "可用空间:%{available}(阈值:%{threshold})"
+  system_startup:
+    title: "🚀 系统已启动 (v%{version})"
+    description: "系统初始化成功 (v%{version})"
+  system_shutdown:
+    title: "🛑 系统正在关闭:%{reason}"
+    description: "%{reason}"
+
+  # ============ 输出根写入门(#508) ============
+  # 已在写入门 PR 中本地化并发布,保持不变。
   output_path_inaccessible:
-    title: "💾 输出路径无法写入：%{path}"
+    title: "💾 输出路径无法写入:%{path}"
     description:
       not_found: |-
-        输出路径 %{path} 无法写入：目录或挂载已失效。
+        输出路径 %{path} 无法写入:目录或挂载已失效。
 
-        如果您是通过宿主机文件管理器（例如宝塔面板）清理的绑定挂载目录，Docker 挂载已变为孤儿状态，必须重启容器才能恢复。请改用 rust-srec 界面或 `docker exec` 清理录制文件。
+        如果您是通过宿主机文件管理器(例如宝塔面板)清理的绑定挂载目录,Docker 挂载已变为孤儿状态,必须重启容器才能恢复。请改用 rust-srec 界面或 `docker exec` 清理录制文件。
 
         详见 Docker 部署文档中的故障排查章节。
       storage_full: |-
-        输出路径 %{path} 磁盘空间不足，录制已暂停，直到有可用空间。
+        输出路径 %{path} 磁盘空间不足,录制已暂停,直到有可用空间。
 
-        请通过 rust-srec 界面、`docker exec` 或扩容底层卷来释放空间。空间恢复后，录制会在 30 秒内自动恢复。
+        请通过 rust-srec 界面、`docker exec` 或扩容底层卷来释放空间。空间恢复后,录制会在 30 秒内自动恢复。
       permission_denied: |-
         输出路径 %{path} 因权限错误无法写入。请检查容器内该目录的所有者和权限。
       read_only: |-
         输出路径 %{path} 以只读方式挂载。必须以读写方式重新挂载文件系统后才能继续录制。
       timed_out: |-
-        对 %{path} 的可写性探测超时。文件系统可能已挂起（NFS stale handle、损坏的绑定挂载、挂起的块设备等）。
-      other: "输出路径 %{path} 无法写入：%{kind}。"
+        对 %{path} 的可写性探测超时。文件系统可能已挂起(NFS stale handle、损坏的绑定挂载、挂起的块设备等)。
+      other: "输出路径 %{path} 无法写入:%{kind}。"
+
+  # ============ 凭据事件 ============
+  credential:
+    refreshed:
+      title: "🔐 已刷新 %{platform} 凭据(%{scope})"
+      message: "✅ %{platform} 凭据刷新成功(%{scope})"
+    refresh_failed:
+      title:
+        requires_relogin: "🔐 %{platform} 凭据刷新失败(需要重新登录)(%{scope})"
+        retrying: "🔐 %{platform} 凭据刷新失败(%{scope})"
+      message:
+        requires_relogin: |-
+          ❌ %{platform} 凭据刷新失败 - 需要手动重新登录
+          范围:%{scope}
+          错误:%{error}
+          失败次数:%{failure_count}
+        retrying: |-
+          ⚠️ %{platform} 凭据刷新失败(第 %{failure_count} 次尝试)
+          范围:%{scope}
+          错误:%{error}
+    invalid:
+      title: "🔐 %{platform} 凭据无效(%{scope})"
+      message: |-
+        🚫 %{platform} 凭据无效 - 需要手动重新登录
+        范围:%{scope}
+        原因:%{reason}
+        错误码:%{error_code}
+    expiring_soon:
+      title: "🔐 %{platform} 凭据即将过期(%{scope})"
+      message: |-
+        ⏰ %{platform} 凭据将在 %{days_remaining} 天后过期(%{expires_at})
+        范围:%{scope}
+        建议:尽快刷新

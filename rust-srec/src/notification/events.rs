@@ -627,127 +627,116 @@ impl NotificationEvent {
     }
 
     /// Get a human-readable title for this event.
+    ///
+    /// Localized via [`crate::t_str!`]. The active locale is picked at
+    /// startup from `RUST_SREC_LOCALE` (see [`crate::i18n`]); currently
+    /// `en` and `zh-CN` are supported.
+    ///
+    /// Numeric placeholders (`segment_index`, `queue_depth`, etc.) are
+    /// stringified with `.to_string()` before passing to the macro because
+    /// `rust_i18n` placeholders take `&str`. The YAML stays free of
+    /// Rust-specific formatting.
     pub fn title(&self) -> String {
         match self {
-            Self::StreamOnline { streamer_name, .. } => {
-                format!("🔴 {} is now live!", streamer_name)
-            }
-            Self::StreamOffline { streamer_name, .. } => {
-                format!("⚫ {} went offline", streamer_name)
-            }
-            Self::DownloadStarted { streamer_name, .. } => {
-                format!("⬇️ Started recording {}", streamer_name)
-            }
-            Self::DownloadCompleted { streamer_name, .. } => {
-                format!("✅ Finished recording {}", streamer_name)
-            }
-            Self::DownloadError { streamer_name, .. } => {
-                format!("❌ Download error for {}", streamer_name)
-            }
+            Self::StreamOnline { streamer_name, .. } => crate::t_str!(
+                "notification.stream_online.title",
+                streamer_name = streamer_name.as_str(),
+            ),
+            Self::StreamOffline { streamer_name, .. } => crate::t_str!(
+                "notification.stream_offline.title",
+                streamer_name = streamer_name.as_str(),
+            ),
+            Self::DownloadStarted { streamer_name, .. } => crate::t_str!(
+                "notification.download_started.title",
+                streamer_name = streamer_name.as_str(),
+            ),
+            Self::DownloadCompleted { streamer_name, .. } => crate::t_str!(
+                "notification.download_completed.title",
+                streamer_name = streamer_name.as_str(),
+            ),
+            Self::DownloadError { streamer_name, .. } => crate::t_str!(
+                "notification.download_error.title",
+                streamer_name = streamer_name.as_str(),
+            ),
             Self::SegmentStarted {
                 streamer_name,
                 segment_index,
                 ..
-            } => {
-                format!("📼 Segment {} started for {}", segment_index, streamer_name)
-            }
+            } => crate::t_str!(
+                "notification.segment_started.title",
+                streamer_name = streamer_name.as_str(),
+                segment_index = segment_index.to_string().as_str(),
+            ),
             Self::SegmentCompleted {
                 streamer_name,
                 segment_index,
                 ..
-            } => {
-                format!(
-                    "✅ Segment {} completed for {}",
-                    segment_index, streamer_name
-                )
-            }
-            Self::DownloadCancelled { streamer_name, .. } => {
-                format!("⏹️ Download cancelled for {}", streamer_name)
-            }
-            Self::DownloadRejected { streamer_name, .. } => {
-                format!("🚫 Download rejected for {}", streamer_name)
-            }
-            Self::ConfigUpdated { streamer_name, .. } => {
-                format!("⚙️ Config updated for {}", streamer_name)
-            }
-            Self::PipelineStarted { job_type, .. } => {
-                format!("⚙️ Started {} job", job_type)
-            }
-            Self::PipelineCompleted { job_type, .. } => {
-                format!("✅ Completed {} job", job_type)
-            }
-            Self::PipelineFailed { job_type, .. } => {
-                format!("❌ Failed {} job", job_type)
-            }
-            Self::PipelineCancelled { job_type, .. } => {
-                format!("⚪ Cancelled {} job", job_type)
-            }
+            } => crate::t_str!(
+                "notification.segment_completed.title",
+                streamer_name = streamer_name.as_str(),
+                segment_index = segment_index.to_string().as_str(),
+            ),
+            Self::DownloadCancelled { streamer_name, .. } => crate::t_str!(
+                "notification.download_cancelled.title",
+                streamer_name = streamer_name.as_str(),
+            ),
+            Self::DownloadRejected { streamer_name, .. } => crate::t_str!(
+                "notification.download_rejected.title",
+                streamer_name = streamer_name.as_str(),
+            ),
+            Self::ConfigUpdated { streamer_name, .. } => crate::t_str!(
+                "notification.config_updated.title",
+                streamer_name = streamer_name.as_str(),
+            ),
+            Self::PipelineStarted { job_type, .. } => crate::t_str!(
+                "notification.pipeline_started.title",
+                job_type = job_type.as_str(),
+            ),
+            Self::PipelineCompleted { job_type, .. } => crate::t_str!(
+                "notification.pipeline_completed.title",
+                job_type = job_type.as_str(),
+            ),
+            Self::PipelineFailed { job_type, .. } => crate::t_str!(
+                "notification.pipeline_failed.title",
+                job_type = job_type.as_str(),
+            ),
+            Self::PipelineCancelled { job_type, .. } => crate::t_str!(
+                "notification.pipeline_cancelled.title",
+                job_type = job_type.as_str(),
+            ),
             Self::FatalError {
                 streamer_name,
                 error_type,
                 ..
-            } => {
-                format!("🚨 Fatal error for {}: {}", streamer_name, error_type)
-            }
+            } => crate::t_str!(
+                "notification.fatal_error.title",
+                streamer_name = streamer_name.as_str(),
+                error_type = error_type.as_str(),
+            ),
             Self::OutOfSpace { path, .. } => {
-                format!("💾 Low disk space on {}", path)
+                crate::t_str!("notification.out_of_space.title", path = path.as_str(),)
             }
-            Self::OutputPathInaccessible { path, .. } => crate::i18n::t!(
+            Self::OutputPathInaccessible { path, .. } => crate::t_str!(
                 "notification.output_path_inaccessible.title",
-                path = path.as_str()
-            )
-            .to_string(),
-            Self::PipelineQueueWarning { queue_depth, .. } => {
-                format!("⚠️ Pipeline queue warning: {} jobs", queue_depth)
-            }
-            Self::PipelineQueueCritical { queue_depth, .. } => {
-                format!("🚨 Pipeline queue critical: {} jobs", queue_depth)
-            }
-            Self::SystemStartup { version, .. } => {
-                format!("🚀 System started (v{})", version)
-            }
-            Self::SystemShutdown { reason, .. } => {
-                format!("🛑 System shutting down: {}", reason)
-            }
-            Self::Credential { event } => match event {
-                CredentialEvent::Refreshed {
-                    platform, scope, ..
-                } => format!(
-                    "🔐 {} credentials refreshed ({})",
-                    platform,
-                    scope.describe()
-                ),
-                CredentialEvent::RefreshFailed {
-                    platform,
-                    scope,
-                    requires_relogin,
-                    ..
-                } => {
-                    if *requires_relogin {
-                        format!(
-                            "🔐 {} refresh failed (re-login required) ({})",
-                            platform,
-                            scope.describe()
-                        )
-                    } else {
-                        format!("🔐 {} refresh failed ({})", platform, scope.describe())
-                    }
-                }
-                CredentialEvent::Invalid {
-                    platform, scope, ..
-                } => {
-                    format!("🔐 {} credentials invalid ({})", platform, scope.describe())
-                }
-                CredentialEvent::ExpiringSoon {
-                    platform, scope, ..
-                } => {
-                    format!(
-                        "🔐 {} credentials expiring soon ({})",
-                        platform,
-                        scope.describe()
-                    )
-                }
-            },
+                path = path.as_str(),
+            ),
+            Self::PipelineQueueWarning { queue_depth, .. } => crate::t_str!(
+                "notification.pipeline_queue_warning.title",
+                queue_depth = queue_depth.to_string().as_str(),
+            ),
+            Self::PipelineQueueCritical { queue_depth, .. } => crate::t_str!(
+                "notification.pipeline_queue_critical.title",
+                queue_depth = queue_depth.to_string().as_str(),
+            ),
+            Self::SystemStartup { version, .. } => crate::t_str!(
+                "notification.system_startup.title",
+                version = version.as_str(),
+            ),
+            Self::SystemShutdown { reason, .. } => crate::t_str!(
+                "notification.system_shutdown.title",
+                reason = reason.as_str(),
+            ),
+            Self::Credential { event } => credential_title(event),
         }
     }
 
@@ -757,100 +746,137 @@ impl NotificationEvent {
             Self::StreamOnline {
                 title, category, ..
             } => match category {
-                Some(cat) => format!("{} ({})", title, cat),
-                None => title.clone(),
+                Some(cat) => crate::t_str!(
+                    "notification.stream_online.description.with_category",
+                    title = title.as_str(),
+                    category = cat.as_str(),
+                ),
+                None => crate::t_str!(
+                    "notification.stream_online.description.plain",
+                    title = title.as_str(),
+                ),
             },
             Self::StreamOffline { duration_secs, .. } => match duration_secs {
-                Some(secs) => format!("Stream duration: {}", format_duration(*secs)),
-                None => "Stream ended".to_string(),
+                Some(secs) => crate::t_str!(
+                    "notification.stream_offline.description.with_duration",
+                    duration = format_duration(*secs).as_str(),
+                ),
+                None => crate::t_str!("notification.stream_offline.description.plain"),
             },
-            Self::DownloadStarted { session_id, .. } => {
-                format!("Session: {}", session_id)
-            }
+            Self::DownloadStarted { session_id, .. } => crate::t_str!(
+                "notification.download_started.description",
+                session_id = session_id.as_str(),
+            ),
             Self::DownloadCompleted {
                 file_size_bytes,
                 duration_secs,
                 ..
-            } => {
-                format!(
-                    "Size: {}, Duration: {}",
-                    format_bytes(*file_size_bytes),
-                    format_duration(*duration_secs)
-                )
-            }
+            } => crate::t_str!(
+                "notification.download_completed.description",
+                size = format_bytes(*file_size_bytes).as_str(),
+                duration = format_duration(*duration_secs).as_str(),
+            ),
             Self::DownloadError {
                 error_message,
                 recoverable,
                 ..
             } => {
-                if *recoverable {
-                    format!("{} (will retry)", error_message)
+                let key = if *recoverable {
+                    "notification.download_error.description.recoverable"
                 } else {
-                    error_message.clone()
-                }
+                    "notification.download_error.description.unrecoverable"
+                };
+                crate::t_str!(key, error_message = error_message.as_str())
             }
-            Self::SegmentStarted { segment_path, .. } => {
-                format!("Path: {}", segment_path)
-            }
+            Self::SegmentStarted { segment_path, .. } => crate::t_str!(
+                "notification.segment_started.description",
+                segment_path = segment_path.as_str(),
+            ),
             Self::SegmentCompleted {
                 segment_path,
                 size_bytes,
                 duration_secs,
                 ..
-            } => {
-                format!(
-                    "Path: {}, Size: {}, Duration: {}",
-                    segment_path,
-                    format_bytes(*size_bytes),
-                    format_duration(*duration_secs)
-                )
-            }
-            Self::DownloadCancelled { session_id, .. } => {
-                format!("Session: {}", session_id)
-            }
-            Self::DownloadRejected { reason, .. } => reason.clone(),
-            Self::ConfigUpdated { update_type, .. } => {
-                format!("Update type: {}", update_type)
-            }
-            Self::PipelineStarted { job_id, .. } => {
-                format!("Job ID: {}", job_id)
-            }
+            } => crate::t_str!(
+                "notification.segment_completed.description",
+                segment_path = segment_path.as_str(),
+                size = format_bytes(*size_bytes).as_str(),
+                duration = format_duration(*duration_secs).as_str(),
+            ),
+            Self::DownloadCancelled { session_id, .. } => crate::t_str!(
+                "notification.download_cancelled.description",
+                session_id = session_id.as_str(),
+            ),
+            Self::DownloadRejected { reason, .. } => crate::t_str!(
+                "notification.download_rejected.description",
+                reason = reason.as_str(),
+            ),
+            Self::ConfigUpdated { update_type, .. } => crate::t_str!(
+                "notification.config_updated.description",
+                update_type = update_type.as_str(),
+            ),
+            Self::PipelineStarted { job_id, .. } => crate::t_str!(
+                "notification.pipeline_started.description",
+                job_id = job_id.as_str(),
+            ),
             Self::PipelineCompleted {
                 output_path,
                 duration_secs,
                 ..
-            } => match output_path {
-                Some(path) => format!("Output: {} ({})", path, format_duration(*duration_secs)),
-                None => format!("Completed in {}", format_duration(*duration_secs)),
-            },
-            Self::PipelineFailed { error_message, .. } => error_message.clone(),
+            } => {
+                let duration = format_duration(*duration_secs);
+                match output_path {
+                    Some(path) => crate::t_str!(
+                        "notification.pipeline_completed.description.with_output",
+                        output_path = path.as_str(),
+                        duration = duration.as_str(),
+                    ),
+                    None => crate::t_str!(
+                        "notification.pipeline_completed.description.without_output",
+                        duration = duration.as_str(),
+                    ),
+                }
+            }
+            Self::PipelineFailed { error_message, .. } => crate::t_str!(
+                "notification.pipeline_failed.description",
+                error_message = error_message.as_str(),
+            ),
             Self::PipelineCancelled {
                 job_id,
                 pipeline_id,
                 ..
             } => match pipeline_id {
-                Some(pid) => format!("Job {} cancelled (pipeline: {})", job_id, pid),
-                None => format!("Job {} cancelled", job_id),
+                Some(pid) => crate::t_str!(
+                    "notification.pipeline_cancelled.description.with_pipeline",
+                    job_id = job_id.as_str(),
+                    pipeline_id = pid.as_str(),
+                ),
+                None => crate::t_str!(
+                    "notification.pipeline_cancelled.description.plain",
+                    job_id = job_id.as_str(),
+                ),
             },
-            Self::FatalError { message, .. } => message.clone(),
+            Self::FatalError { message, .. } => crate::t_str!(
+                "notification.fatal_error.description",
+                message = message.as_str(),
+            ),
             Self::OutOfSpace {
                 available_bytes,
                 threshold_bytes,
                 ..
-            } => {
-                format!(
-                    "Available: {} (threshold: {})",
-                    format_bytes(*available_bytes),
-                    format_bytes(*threshold_bytes)
-                )
-            }
+            } => crate::t_str!(
+                "notification.out_of_space.description",
+                available = format_bytes(*available_bytes).as_str(),
+                threshold = format_bytes(*threshold_bytes).as_str(),
+            ),
             Self::OutputPathInaccessible {
                 path, error_kind, ..
             } => {
-                // Map the kind string to a per-kind i18n description; falls back
-                // to the `other` key if we don't have a dedicated branch. The
-                // kind strings here MUST stay in sync with
-                // `IoErrorKindSer::as_str` (covered by a unit test in traits.rs).
+                // Map the kind string to a per-kind i18n description; falls
+                // back to the `other` key if we don't have a dedicated
+                // branch. The kind strings here MUST stay in sync with
+                // `IoErrorKindSer::as_str` (covered by a unit test in
+                // traits.rs).
                 let key = match error_kind.as_str() {
                     "not_found" => "notification.output_path_inaccessible.description.not_found",
                     "storage_full" => {
@@ -863,32 +889,34 @@ impl NotificationEvent {
                     "timed_out" => "notification.output_path_inaccessible.description.timed_out",
                     _ => "notification.output_path_inaccessible.description.other",
                 };
-                crate::i18n::t!(key, path = path.as_str(), kind = error_kind.as_str()).to_string()
+                crate::t_str!(key, path = path.as_str(), kind = error_kind.as_str())
             }
             Self::PipelineQueueWarning {
                 queue_depth,
                 threshold,
                 ..
-            } => {
-                format!(
-                    "Queue depth {} exceeds warning threshold {}",
-                    queue_depth, threshold
-                )
-            }
+            } => crate::t_str!(
+                "notification.pipeline_queue_warning.description",
+                queue_depth = queue_depth.to_string().as_str(),
+                threshold = threshold.to_string().as_str(),
+            ),
             Self::PipelineQueueCritical {
                 queue_depth,
                 threshold,
                 ..
-            } => {
-                format!(
-                    "Queue depth {} exceeds critical threshold {}",
-                    queue_depth, threshold
-                )
-            }
-            Self::SystemStartup { version, .. } => {
-                format!("System initialized successfully (v{})", version)
-            }
-            Self::SystemShutdown { reason, .. } => reason.clone(),
+            } => crate::t_str!(
+                "notification.pipeline_queue_critical.description",
+                queue_depth = queue_depth.to_string().as_str(),
+                threshold = threshold.to_string().as_str(),
+            ),
+            Self::SystemStartup { version, .. } => crate::t_str!(
+                "notification.system_startup.description",
+                version = version.as_str(),
+            ),
+            Self::SystemShutdown { reason, .. } => crate::t_str!(
+                "notification.system_shutdown.description",
+                reason = reason.as_str(),
+            ),
             Self::Credential { event } => event.to_message(),
         }
     }
@@ -951,6 +979,54 @@ impl NotificationEvent {
             .iter()
             .copied()
             .find(|e| e.event_type == canonical)
+    }
+}
+
+/// Build the localized title for a [`CredentialEvent`] when wrapped in a
+/// [`NotificationEvent::Credential`]. Split out because the credential
+/// variant has two nested match layers (`CredentialEvent` variant +
+/// `requires_relogin` branching in `RefreshFailed`); inlining it would
+/// have made the main `title()` match unreadable.
+fn credential_title(event: &CredentialEvent) -> String {
+    match event {
+        CredentialEvent::Refreshed {
+            platform, scope, ..
+        } => crate::t_str!(
+            "notification.credential.refreshed.title",
+            platform = platform.as_str(),
+            scope = scope.describe().as_str(),
+        ),
+        CredentialEvent::RefreshFailed {
+            platform,
+            scope,
+            requires_relogin,
+            ..
+        } => {
+            let key = if *requires_relogin {
+                "notification.credential.refresh_failed.title.requires_relogin"
+            } else {
+                "notification.credential.refresh_failed.title.retrying"
+            };
+            crate::t_str!(
+                key,
+                platform = platform.as_str(),
+                scope = scope.describe().as_str(),
+            )
+        }
+        CredentialEvent::Invalid {
+            platform, scope, ..
+        } => crate::t_str!(
+            "notification.credential.invalid.title",
+            platform = platform.as_str(),
+            scope = scope.describe().as_str(),
+        ),
+        CredentialEvent::ExpiringSoon {
+            platform, scope, ..
+        } => crate::t_str!(
+            "notification.credential.expiring_soon.title",
+            platform = platform.as_str(),
+            scope = scope.describe().as_str(),
+        ),
     }
 }
 
@@ -1326,5 +1402,326 @@ mod tests {
         assert!(from_camel.is_some());
         let from_dotted = NotificationEvent::event_type_info("output.path_inaccessible");
         assert!(from_dotted.is_some());
+    }
+
+    // ========== Full-notification i18n round-trip (Phase 2) ==========
+
+    /// One plausible instance of every `NotificationEvent` variant.
+    /// Field values are picked so the variant-specific placeholders are
+    /// present and checkable after localization.
+    ///
+    /// New variants added to `NotificationEvent` MUST be added here or
+    /// `all_notification_variants_localize` will catch the omission via
+    /// the exhaustive count assertion.
+    fn sample_events() -> Vec<NotificationEvent> {
+        use crate::credentials::{CredentialEvent, CredentialScope};
+        let now = Utc::now();
+        vec![
+            NotificationEvent::StreamOnline {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                title: "Test title".into(),
+                category: Some("Gaming".into()),
+                timestamp: now,
+            },
+            NotificationEvent::StreamOffline {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                duration_secs: Some(1234.0),
+                timestamp: now,
+            },
+            NotificationEvent::DownloadStarted {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                session_id: "sess-1".into(),
+                timestamp: now,
+            },
+            NotificationEvent::DownloadCompleted {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                session_id: "sess-1".into(),
+                file_size_bytes: 1024 * 1024 * 100,
+                duration_secs: 3600.0,
+                timestamp: now,
+            },
+            NotificationEvent::DownloadError {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                error_message: "timeout".into(),
+                recoverable: true,
+                timestamp: now,
+            },
+            NotificationEvent::SegmentStarted {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                session_id: "sess-1".into(),
+                segment_path: "/rec/seg-0001.mp4".into(),
+                segment_index: 1,
+                timestamp: now,
+            },
+            NotificationEvent::SegmentCompleted {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                session_id: "sess-1".into(),
+                segment_path: "/rec/seg-0001.mp4".into(),
+                segment_index: 1,
+                size_bytes: 1024 * 1024,
+                duration_secs: 10.0,
+                timestamp: now,
+            },
+            NotificationEvent::DownloadCancelled {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                session_id: "sess-1".into(),
+                timestamp: now,
+            },
+            NotificationEvent::DownloadRejected {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                session_id: "sess-1".into(),
+                reason: "circuit breaker open".into(),
+                timestamp: now,
+            },
+            NotificationEvent::ConfigUpdated {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                update_type: "Cookies".into(),
+                timestamp: now,
+            },
+            NotificationEvent::PipelineStarted {
+                job_id: "job-1".into(),
+                job_type: "remux".into(),
+                streamer_id: "s1".into(),
+                timestamp: now,
+            },
+            NotificationEvent::PipelineCompleted {
+                job_id: "job-1".into(),
+                job_type: "remux".into(),
+                output_path: Some("/out/final.mp4".into()),
+                duration_secs: 42.0,
+                timestamp: now,
+            },
+            NotificationEvent::PipelineFailed {
+                job_id: "job-1".into(),
+                job_type: "remux".into(),
+                error_message: "ffmpeg exited with code 1".into(),
+                timestamp: now,
+            },
+            NotificationEvent::PipelineCancelled {
+                job_id: "job-1".into(),
+                job_type: "remux".into(),
+                pipeline_id: Some("pipeline-xyz".into()),
+                timestamp: now,
+            },
+            NotificationEvent::FatalError {
+                streamer_id: "s1".into(),
+                streamer_name: "TestStreamer".into(),
+                error_type: "ProtocolError".into(),
+                message: "connection reset".into(),
+                timestamp: now,
+            },
+            NotificationEvent::OutOfSpace {
+                path: "/rec".into(),
+                available_bytes: 1024 * 1024,
+                threshold_bytes: 1024 * 1024 * 1024,
+                timestamp: now,
+            },
+            NotificationEvent::OutputPathInaccessible {
+                path: "/rec".into(),
+                error_kind: "not_found".into(),
+                timestamp: now,
+            },
+            NotificationEvent::PipelineQueueWarning {
+                queue_depth: 120,
+                threshold: 100,
+                timestamp: now,
+            },
+            NotificationEvent::PipelineQueueCritical {
+                queue_depth: 500,
+                threshold: 200,
+                timestamp: now,
+            },
+            NotificationEvent::SystemStartup {
+                version: "0.2.1".into(),
+                timestamp: now,
+            },
+            NotificationEvent::SystemShutdown {
+                reason: "SIGTERM".into(),
+                timestamp: now,
+            },
+            NotificationEvent::Credential {
+                event: CredentialEvent::Refreshed {
+                    scope: CredentialScope::Platform {
+                        platform_id: "bilibili".into(),
+                        platform_name: "bilibili".into(),
+                    },
+                    platform: "bilibili".into(),
+                    expires_at: Some(now),
+                    timestamp: now,
+                },
+            },
+            NotificationEvent::Credential {
+                event: CredentialEvent::RefreshFailed {
+                    scope: CredentialScope::Platform {
+                        platform_id: "bilibili".into(),
+                        platform_name: "bilibili".into(),
+                    },
+                    platform: "bilibili".into(),
+                    error: "401 Unauthorized".into(),
+                    requires_relogin: true,
+                    failure_count: 3,
+                    timestamp: now,
+                },
+            },
+            NotificationEvent::Credential {
+                event: CredentialEvent::RefreshFailed {
+                    scope: CredentialScope::Platform {
+                        platform_id: "bilibili".into(),
+                        platform_name: "bilibili".into(),
+                    },
+                    platform: "bilibili".into(),
+                    error: "429 Rate Limited".into(),
+                    requires_relogin: false,
+                    failure_count: 1,
+                    timestamp: now,
+                },
+            },
+            NotificationEvent::Credential {
+                event: CredentialEvent::Invalid {
+                    scope: CredentialScope::Platform {
+                        platform_id: "bilibili".into(),
+                        platform_name: "bilibili".into(),
+                    },
+                    platform: "bilibili".into(),
+                    reason: "token revoked".into(),
+                    error_code: Some(-412),
+                    timestamp: now,
+                },
+            },
+            NotificationEvent::Credential {
+                event: CredentialEvent::ExpiringSoon {
+                    scope: CredentialScope::Platform {
+                        platform_id: "bilibili".into(),
+                        platform_name: "bilibili".into(),
+                    },
+                    platform: "bilibili".into(),
+                    expires_at: now,
+                    days_remaining: 5,
+                    timestamp: now,
+                },
+            },
+        ]
+    }
+
+    /// For every variant, assert that `title()` and `description()` produce
+    /// non-empty strings that are NOT the raw key literal (which is what
+    /// rust-i18n returns when a key is missing from every locale). Runs
+    /// against both `en` and `zh-CN` so missing translations in either
+    /// locale are caught at CI time.
+    #[test]
+    fn all_notification_variants_localize_in_both_locales() {
+        let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+
+        let events = sample_events();
+        // If a new variant is added to NotificationEvent without extending
+        // sample_events, we want a visible signal. This assert is a
+        // self-doc; bump it alongside the match arms in title/description.
+        assert_eq!(
+            events.len(),
+            26,
+            "sample_events is out of sync with NotificationEvent; add a sample for the new variant so its localization is covered"
+        );
+
+        for locale in ["en", "zh-CN"] {
+            crate::i18n::set_locale(locale);
+            for (i, event) in events.iter().enumerate() {
+                let title = event.title();
+                let description = event.description();
+                assert!(
+                    !title.is_empty(),
+                    "locale={} variant #{} ({}): empty title",
+                    locale,
+                    i,
+                    event.event_type(),
+                );
+                assert!(
+                    !description.is_empty(),
+                    "locale={} variant #{} ({}): empty description",
+                    locale,
+                    i,
+                    event.event_type(),
+                );
+                assert!(
+                    !title.starts_with("notification."),
+                    "locale={} variant #{} ({}): title returned the raw key ({:?}) — translation missing",
+                    locale,
+                    i,
+                    event.event_type(),
+                    title,
+                );
+                assert!(
+                    !description.starts_with("notification."),
+                    "locale={} variant #{} ({}): description returned the raw key ({:?}) — translation missing",
+                    locale,
+                    i,
+                    event.event_type(),
+                    description,
+                );
+            }
+        }
+
+        crate::i18n::set_locale("en");
+    }
+
+    /// Spot-check that a few high-visibility variants render recognizable
+    /// Chinese text when the locale is zh-CN. Cheap but catches accidental
+    /// copy-paste of English into the Chinese YAML.
+    #[test]
+    fn zh_cn_has_actual_chinese_text() {
+        let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+
+        crate::i18n::set_locale("zh-CN");
+
+        let online = NotificationEvent::StreamOnline {
+            streamer_id: "s1".into(),
+            streamer_name: "TestStreamer".into(),
+            title: "Test title".into(),
+            category: None,
+            timestamp: Utc::now(),
+        };
+        assert!(
+            online.title().contains("开播"),
+            "StreamOnline title should contain '开播', got: {}",
+            online.title()
+        );
+
+        let fatal = NotificationEvent::FatalError {
+            streamer_id: "s1".into(),
+            streamer_name: "TestStreamer".into(),
+            error_type: "Protocol".into(),
+            message: "boom".into(),
+            timestamp: Utc::now(),
+        };
+        assert!(
+            fatal.title().contains("致命错误"),
+            "FatalError title should contain '致命错误', got: {}",
+            fatal.title()
+        );
+
+        let startup = NotificationEvent::SystemStartup {
+            version: "0.2.1".into(),
+            timestamp: Utc::now(),
+        };
+        assert!(
+            startup.title().contains("系统已启动"),
+            "SystemStartup title should contain '系统已启动', got: {}",
+            startup.title()
+        );
+
+        crate::i18n::set_locale("en");
     }
 }

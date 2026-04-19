@@ -134,8 +134,8 @@ where
 
 /// Extract the static root-prefix from a user-configured `output_folder`
 /// template (e.g. `"/rec/{platform}/{streamer}/%Y%m%d"`), used by the
-/// startup probe to discover unique mount roots from the config system
-/// without merging per-streamer configs.
+/// startup probe to derive a mount root from a template without
+/// evaluating its placeholders.
 ///
 /// Algorithm:
 /// 1. Truncate at the first `{` (curly-brace variable) or `%` (strftime
@@ -143,8 +143,9 @@ where
 ///    part of the mount.
 /// 2. Trim to end at the last `/` so we don't emit a partial directory
 ///    name (e.g. `/recordings-` from `/recordings-{streamer}/files`).
-/// 3. Return `None` for empty/root-only prefixes that carry no useful
-///    probe signal.
+/// 3. Return `None` for relative, empty, or root-only prefixes that
+///    carry no useful probe signal (relative templates would anchor to
+///    the container's CWD, which is unpredictable).
 ///
 /// Examples:
 ///   `"/rec/{platform}/{streamer}"` → `Some("/rec/")`
@@ -154,9 +155,6 @@ where
 ///   `"{streamer}/files"` (no root) → `None`
 ///   `"recordings/{streamer}"` (relative) → `None`
 fn static_root_prefix(template: &str) -> Option<String> {
-    // Only absolute templates produce probe-worthy roots. A relative
-    // template would anchor to the container's CWD (unpredictable), same
-    // reasoning that makes `parse_output_roots_env` reject relative entries.
     if !template.starts_with('/') {
         return None;
     }
@@ -2090,10 +2088,12 @@ impl ServiceContainer {
             .map(|s| s.id)
             .collect();
         if !streamer_ids.is_empty() {
-            let merge_futures = streamer_ids.iter().map(|id| {
+            let merge_futures = streamer_ids.into_iter().map(|id| {
                 let cs = self.config_service.clone();
-                let id = id.clone();
-                async move { (id.clone(), cs.get_config_for_streamer(&id).await) }
+                async move {
+                    let result = cs.get_config_for_streamer(&id).await;
+                    (id, result)
+                }
             });
             let results = futures::future::join_all(merge_futures).await;
             for (id, result) in results {

@@ -4,7 +4,7 @@
 
 ## 未发布
 
-- [`unreleased`](./unreleased.md) — 输出根写入门提升录制文件系统故障弹性（#508）、ffmpeg/streamlink 的运行时 ENOSPC 检测、通过 `rust-i18n` 引入的后端本地化基础、新增 `output_path_inaccessible` 通知事件、新增 `RUST_SREC_OUTPUT_ROOTS` 与 `RUST_SREC_LOCALE` 环境变量
+- [`unreleased`](./unreleased.md) — 输出根写入门提升录制文件系统故障弹性（#508）、ffmpeg/streamlink 的运行时 ENOSPC 检测、通过 `rust-i18n` 引入的后端通知本地化（英文 + 简体中文，覆盖所有通知事件）、新增 `output_path_inaccessible` 通知事件、新增 `RUST_SREC_OUTPUT_ROOTS` 与 `RUST_SREC_LOCALE` 环境变量
 
 ## 最新版本
 

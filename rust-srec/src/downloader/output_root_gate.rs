@@ -308,11 +308,27 @@ impl OutputRootGate {
             )
             .is_ok();
 
+        if was_healthy {
+            warn!(
+                root = %root.display(),
+                kind = kind.as_str(),
+                error = %msg,
+                "Output root marked Degraded; pausing downloads writing under this root"
+            );
+        } else {
+            debug!(
+                root = %root.display(),
+                kind = kind.as_str(),
+                error = %msg,
+                "Refreshed Degraded root metadata"
+            );
+        }
+
         // Update cold metadata under the mutex.
         {
             let mut meta = entry.meta.lock();
             meta.last_error_kind = kind;
-            meta.last_error_msg = msg.clone();
+            meta.last_error_msg = msg;
             if was_healthy {
                 meta.since_unix = unix_now();
                 meta.rejected_count = 0;
@@ -322,20 +338,7 @@ impl OutputRootGate {
         entry.last_attempt_unix.store(unix_now(), Ordering::Release);
 
         if was_healthy {
-            warn!(
-                root = %root.display(),
-                kind = kind.as_str(),
-                error = %msg,
-                "Output root marked Degraded; pausing downloads writing under this root"
-            );
             self.spawn_notification(&root, kind);
-        } else {
-            debug!(
-                root = %root.display(),
-                kind = kind.as_str(),
-                error = %msg,
-                "Refreshed Degraded root metadata"
-            );
         }
     }
 

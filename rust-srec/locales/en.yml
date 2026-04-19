@@ -1,4 +1,86 @@
 notification:
+  # ============ Stream events ============
+  stream_online:
+    title: "🔴 %{streamer_name} is now live!"
+    description:
+      with_category: "%{title} (%{category})"
+      plain: "%{title}"
+  stream_offline:
+    title: "⚫ %{streamer_name} went offline"
+    description:
+      with_duration: "Stream duration: %{duration}"
+      plain: "Stream ended"
+
+  # ============ Download events ============
+  download_started:
+    title: "⬇️ Started recording %{streamer_name}"
+    description: "Session: %{session_id}"
+  download_completed:
+    title: "✅ Finished recording %{streamer_name}"
+    description: "Size: %{size}, Duration: %{duration}"
+  download_error:
+    title: "❌ Download error for %{streamer_name}"
+    description:
+      recoverable: "%{error_message} (will retry)"
+      unrecoverable: "%{error_message}"
+  download_cancelled:
+    title: "⏹️ Download cancelled for %{streamer_name}"
+    description: "Session: %{session_id}"
+  download_rejected:
+    title: "🚫 Download rejected for %{streamer_name}"
+    description: "%{reason}"
+  config_updated:
+    title: "⚙️ Config updated for %{streamer_name}"
+    description: "Update type: %{update_type}"
+
+  # ============ Segment events ============
+  segment_started:
+    title: "📼 Segment %{segment_index} started for %{streamer_name}"
+    description: "Path: %{segment_path}"
+  segment_completed:
+    title: "✅ Segment %{segment_index} completed for %{streamer_name}"
+    description: "Path: %{segment_path}, Size: %{size}, Duration: %{duration}"
+
+  # ============ Pipeline events ============
+  pipeline_started:
+    title: "⚙️ Started %{job_type} job"
+    description: "Job ID: %{job_id}"
+  pipeline_completed:
+    title: "✅ Completed %{job_type} job"
+    description:
+      with_output: "Output: %{output_path} (%{duration})"
+      without_output: "Completed in %{duration}"
+  pipeline_failed:
+    title: "❌ Failed %{job_type} job"
+    description: "%{error_message}"
+  pipeline_cancelled:
+    title: "⚪ Cancelled %{job_type} job"
+    description:
+      with_pipeline: "Job %{job_id} cancelled (pipeline: %{pipeline_id})"
+      plain: "Job %{job_id} cancelled"
+  pipeline_queue_warning:
+    title: "⚠️ Pipeline queue warning: %{queue_depth} jobs"
+    description: "Queue depth %{queue_depth} exceeds warning threshold %{threshold}"
+  pipeline_queue_critical:
+    title: "🚨 Pipeline queue critical: %{queue_depth} jobs"
+    description: "Queue depth %{queue_depth} exceeds critical threshold %{threshold}"
+
+  # ============ System events ============
+  fatal_error:
+    title: "🚨 Fatal error for %{streamer_name}: %{error_type}"
+    description: "%{message}"
+  out_of_space:
+    title: "💾 Low disk space on %{path}"
+    description: "Available: %{available} (threshold: %{threshold})"
+  system_startup:
+    title: "🚀 System started (v%{version})"
+    description: "System initialized successfully (v%{version})"
+  system_shutdown:
+    title: "🛑 System shutting down: %{reason}"
+    description: "%{reason}"
+
+  # ============ Output-root write gate (#508) ============
+  # Already localized and shipped in the gate PR; preserved verbatim.
   output_path_inaccessible:
     title: "💾 Output path inaccessible: %{path}"
     description:
@@ -19,3 +101,36 @@ notification:
       timed_out: |-
         Writability probe for %{path} timed out. The filesystem may be hung (NFS stale handle, broken bind mount, hung block device).
       other: "The output path %{path} is not writable: %{kind}."
+
+  # ============ Credential events ============
+  credential:
+    refreshed:
+      title: "🔐 %{platform} credentials refreshed (%{scope})"
+      message: "✅ %{platform} credentials refreshed successfully (%{scope})"
+    refresh_failed:
+      title:
+        requires_relogin: "🔐 %{platform} refresh failed (re-login required) (%{scope})"
+        retrying: "🔐 %{platform} refresh failed (%{scope})"
+      message:
+        requires_relogin: |-
+          ❌ %{platform} credential refresh failed - MANUAL RE-LOGIN REQUIRED
+          Scope: %{scope}
+          Error: %{error}
+          Failures: %{failure_count}
+        retrying: |-
+          ⚠️ %{platform} credential refresh failed (attempt %{failure_count})
+          Scope: %{scope}
+          Error: %{error}
+    invalid:
+      title: "🔐 %{platform} credentials invalid (%{scope})"
+      message: |-
+        🚫 %{platform} credentials are INVALID - manual re-login required
+        Scope: %{scope}
+        Reason: %{reason}
+        Error code: %{error_code}
+    expiring_soon:
+      title: "🔐 %{platform} credentials expiring soon (%{scope})"
+      message: |-
+        ⏰ %{platform} credentials expiring in %{days_remaining} days (%{expires_at})
+        Scope: %{scope}
+        Action: Consider refreshing soon
