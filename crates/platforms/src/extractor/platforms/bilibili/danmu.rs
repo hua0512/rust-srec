@@ -3,7 +3,6 @@
 //! Implements danmu collection for Bilibili live streaming using the generic
 //! WebSocket provider with binary protocol and Brotli/Zlib compression.
 
-use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
 use flate2::read::ZlibDecoder;
@@ -593,7 +592,6 @@ impl BilibiliDanmuProtocol {
     }
 }
 
-#[async_trait]
 impl DanmuProtocol for BilibiliDanmuProtocol {
     fn platform(&self) -> &str {
         "bilibili"

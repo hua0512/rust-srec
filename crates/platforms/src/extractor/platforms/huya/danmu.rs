@@ -3,7 +3,6 @@
 //! Implements danmu collection for the Huya streaming platform using the generic
 //! WebSocket provider with TARS protocol for message encoding/decoding.
 
-use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use chrono::Utc;
 use rustc_hash::FxHashMap;
@@ -66,7 +65,6 @@ impl HuyaDanmuProtocol {
     }
 }
 
-#[async_trait]
 impl DanmuProtocol for HuyaDanmuProtocol {
     fn platform(&self) -> &str {
         "huya"

@@ -1,4 +1,5 @@
-use async_trait::async_trait;
+use std::future::Future;
+
 use m3u8_rs::{MasterPlaylist, Playlist};
 use reqwest::Client;
 use serde::Serialize;
@@ -7,17 +8,16 @@ use url::Url;
 use super::error::ExtractorError;
 use crate::media::{MediaFormat, StreamFormat, stream_info::StreamInfo};
 
-#[async_trait]
-pub trait HlsExtractor {
+pub trait HlsExtractor: Sync {
     /// Extract HLS streams without query parameters
-    async fn extract_hls_stream(
+    fn extract_hls_stream(
         &self,
         client: &Client,
         headers: Option<reqwest::header::HeaderMap>,
         m3u8_url: &str,
         quality_name: Option<&str>,
         extras: Option<serde_json::Value>,
-    ) -> Result<Vec<StreamInfo>, ExtractorError> {
+    ) -> impl Future<Output = Result<Vec<StreamInfo>, ExtractorError>> + Send {
         self.extract_hls_stream_with_params::<()>(
             client,
             headers,
@@ -26,11 +26,10 @@ pub trait HlsExtractor {
             quality_name,
             extras,
         )
-        .await
     }
 
     /// Extract HLS streams with query parameters
-    async fn extract_hls_stream_with_params<Q>(
+    fn extract_hls_stream_with_params<Q>(
         &self,
         client: &Client,
         headers: Option<reqwest::header::HeaderMap>,
@@ -38,48 +37,50 @@ pub trait HlsExtractor {
         m3u8_url: &str,
         quality_name: Option<&str>,
         extras: Option<serde_json::Value>,
-    ) -> Result<Vec<StreamInfo>, ExtractorError>
+    ) -> impl Future<Output = Result<Vec<StreamInfo>, ExtractorError>> + Send
     where
         Q: Serialize + Send + Sync + ?Sized,
     {
-        let base_url =
-            Url::parse(m3u8_url).map_err(|e| ExtractorError::HlsPlaylistError(e.to_string()))?;
+        async move {
+            let base_url = Url::parse(m3u8_url)
+                .map_err(|e| ExtractorError::HlsPlaylistError(e.to_string()))?;
 
-        let mut request = client.get(m3u8_url).headers(headers.unwrap_or_default());
+            let mut request = client.get(m3u8_url).headers(headers.unwrap_or_default());
 
-        if let Some(params) = params {
-            request = request.query(params);
-        }
-
-        let response = request.send().await?.bytes().await?;
-        let playlist = m3u8_rs::parse_playlist_res(&response)
-            .map_err(|e| ExtractorError::HlsPlaylistError(e.to_string()))?;
-
-        let streams = match playlist {
-            Playlist::MasterPlaylist(pl) => process_master_playlist(pl, &base_url, extras),
-            Playlist::MediaPlaylist(pl) => {
-                let media_format = if pl
-                    .segments
-                    .iter()
-                    .any(|s| s.uri.contains("fmp4") || s.uri.contains(".m4s"))
-                {
-                    MediaFormat::Fmp4
-                } else if pl.segments.iter().any(|s| s.uri.contains(".mp4")) {
-                    MediaFormat::Mp4
-                } else {
-                    MediaFormat::Ts
-                };
-
-                vec![
-                    StreamInfo::builder(m3u8_url.to_string(), StreamFormat::Hls, media_format)
-                        .quality(quality_name.unwrap_or("Source"))
-                        .extras_opt(extras)
-                        .build(),
-                ]
+            if let Some(params) = params {
+                request = request.query(params);
             }
-        };
 
-        Ok(streams)
+            let response = request.send().await?.bytes().await?;
+            let playlist = m3u8_rs::parse_playlist_res(&response)
+                .map_err(|e| ExtractorError::HlsPlaylistError(e.to_string()))?;
+
+            let streams = match playlist {
+                Playlist::MasterPlaylist(pl) => process_master_playlist(pl, &base_url, extras),
+                Playlist::MediaPlaylist(pl) => {
+                    let media_format = if pl
+                        .segments
+                        .iter()
+                        .any(|s| s.uri.contains("fmp4") || s.uri.contains(".m4s"))
+                    {
+                        MediaFormat::Fmp4
+                    } else if pl.segments.iter().any(|s| s.uri.contains(".mp4")) {
+                        MediaFormat::Mp4
+                    } else {
+                        MediaFormat::Ts
+                    };
+
+                    vec![
+                        StreamInfo::builder(m3u8_url.to_string(), StreamFormat::Hls, media_format)
+                            .quality(quality_name.unwrap_or("Source"))
+                            .extras_opt(extras)
+                            .build(),
+                    ]
+                }
+            };
+
+            Ok(streams)
+        }
     }
 }
 

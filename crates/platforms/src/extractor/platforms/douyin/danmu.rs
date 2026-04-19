@@ -3,7 +3,6 @@
 //! Implements danmu collection for the Douyin streaming platform using the generic
 //! WebSocket provider with Protobuf protocol for message encoding/decoding.
 
-use async_trait::async_trait;
 
 use bytes::Bytes;
 use flate2::read::GzDecoder;
@@ -275,7 +274,6 @@ impl DouyinDanmuProtocol {
     }
 }
 
-#[async_trait]
 impl DanmuProtocol for DouyinDanmuProtocol {
     fn platform(&self) -> &str {
         "douyin"
