@@ -644,24 +644,15 @@ pub enum TaskCompletionAction {
 }
 
 /// Error type for spawn operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum SpawnError {
     /// An actor with the given ID already exists.
+    #[error("Actor already exists: {0}")]
     ActorExists(String),
     /// Registry error.
+    #[error("Registry error: {0}")]
     RegistryError(String),
 }
-
-impl std::fmt::Display for SpawnError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SpawnError::ActorExists(id) => write!(f, "Actor already exists: {}", id),
-            SpawnError::RegistryError(e) => write!(f, "Registry error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for SpawnError {}
 
 /// Report from a shutdown operation.
 #[derive(Debug, Clone)]

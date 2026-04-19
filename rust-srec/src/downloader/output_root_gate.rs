@@ -85,7 +85,8 @@ pub type RecoveryHook = Arc<dyn Fn(&Path) + Send + Sync>;
 
 /// Error returned by [`OutputRootGate::check`] when the gate has blocked a
 /// download from starting.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("output root {} is unwritable ({}): {message}", .root.display(), .kind.as_str())]
 pub struct GateBlocked {
     /// The resolved root that is in the Degraded state.
     pub root: PathBuf,
@@ -95,20 +96,6 @@ pub struct GateBlocked {
     /// from the original `io::Error::to_string()`).
     pub message: String,
 }
-
-impl std::fmt::Display for GateBlocked {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "output root {} is unwritable ({}): {}",
-            self.root.display(),
-            self.kind.as_str(),
-            self.message
-        )
-    }
-}
-
-impl std::error::Error for GateBlocked {}
 
 /// Snapshot of one tracked root, used by the `/health` endpoint.
 #[derive(Debug, Clone)]

@@ -86,7 +86,8 @@ pub trait BatchChecker: Send + Sync + 'static {
 }
 
 /// Error type for check operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("{message}")]
 pub struct CheckError {
     /// Error message.
     pub message: String,
@@ -111,14 +112,6 @@ impl CheckError {
         }
     }
 }
-
-impl std::fmt::Display for CheckError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl std::error::Error for CheckError {}
 
 impl From<crate::Error> for CheckError {
     fn from(err: crate::Error) -> Self {
