@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use futures::{SinkExt, StreamExt};
+use std::future::Future;
 use rustls::{ClientConfig, crypto::aws_lc_rs};
 use rustls_platform_verifier::BuilderVerifierExt;
 use std::collections::HashMap;
@@ -228,7 +229,6 @@ fn merge_cookie_headers(base: Option<&str>, extra: Option<&str>) -> Option<Strin
 }
 
 /// Protocol definitions for a specific platform.
-#[async_trait]
 pub trait DanmuProtocol: Send + Sync + 'static {
     /// Platform name (e.g., "huya", "bilibili")
     fn platform(&self) -> &str;
@@ -240,7 +240,7 @@ pub trait DanmuProtocol: Send + Sync + 'static {
     fn extract_room_id(&self, url: &str) -> Option<String>;
 
     /// Get the WebSocket URL for the room
-    async fn websocket_url(&self, room_id: &str) -> Result<String>;
+    fn websocket_url(&self, room_id: &str) -> impl Future<Output = Result<String>> + Send;
 
     /// Get custom headers for the WebSocket connection
     fn headers(&self, _room_id: &str) -> HeaderMap {
@@ -283,8 +283,11 @@ pub trait DanmuProtocol: Send + Sync + 'static {
     }
 
     /// Generate handshake messages to send upon connection
-    async fn handshake_messages(&self, _room_id: &str) -> Result<Vec<Message>> {
-        Ok(vec![])
+    fn handshake_messages(
+        &self,
+        _room_id: &str,
+    ) -> impl Future<Output = Result<Vec<Message>>> + Send {
+        async { Ok(vec![]) }
     }
 
     /// Generate heartbeat message (if any)
@@ -299,12 +302,12 @@ pub trait DanmuProtocol: Send + Sync + 'static {
 
     /// Decode a WebSocket message into a list of danmu items (messages or control events).
     /// `room_id` is provided so protocols can use it for responses that need the room context
-    async fn decode_message(
+    fn decode_message(
         &self,
         message: &Message,
         room_id: &str,
         tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>>;
+    ) -> impl Future<Output = Result<Vec<DanmuItem>>> + Send;
 }
 
 /// Internal state for a WebSocket connection

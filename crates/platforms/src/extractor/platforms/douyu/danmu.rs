@@ -3,7 +3,6 @@
 //! Implements danmu collection for the Douyu streaming platform using the generic
 //! WebSocket provider with STT (Serialized Text Transport) protocol for message encoding/decoding.
 
-use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::Utc;
 use std::time::Duration;
@@ -108,7 +107,6 @@ impl DouyuDanmuProtocol {
     }
 }
 
-#[async_trait]
 impl DanmuProtocol for DouyuDanmuProtocol {
     fn platform(&self) -> &str {
         "douyu"

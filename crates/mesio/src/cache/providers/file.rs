@@ -95,7 +95,6 @@ impl FileCache {
     }
 }
 
-#[async_trait::async_trait]
 impl CacheProvider for FileCache {
     async fn contains(&self, key: &CacheKey) -> CacheResult<bool> {
         if !self.enabled {

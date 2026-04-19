@@ -7,7 +7,6 @@
 //! 2. Get WebSocket URL: POST https://twitcasting.tv/eventpubsuburl.php with movie_id and password
 //! 3. Connect to the returned wss:// URL for real-time comments (JSON arrays)
 
-use async_trait::async_trait;
 use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::Deserialize;
@@ -346,7 +345,6 @@ impl TwitcastingDanmuProtocol {
     }
 }
 
-#[async_trait]
 impl DanmuProtocol for TwitcastingDanmuProtocol {
     fn platform(&self) -> &str {
         "twitcasting"

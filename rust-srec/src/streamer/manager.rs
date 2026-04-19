@@ -564,7 +564,7 @@ where
     /// Get streamers sorted by priority (High first, then Normal, then Low).
     pub fn get_all_sorted_by_priority(&self) -> Vec<StreamerMetadata> {
         let mut streamers: Vec<_> = self.get_all();
-        streamers.sort_by(|a, b| b.priority.cmp(&a.priority));
+        streamers.sort_by_key(|s| std::cmp::Reverse(s.priority));
         streamers
     }
 

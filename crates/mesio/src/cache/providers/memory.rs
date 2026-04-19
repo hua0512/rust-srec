@@ -63,7 +63,6 @@ impl MemoryCache {
     }
 }
 
-#[async_trait::async_trait]
 impl CacheProvider for MemoryCache {
     async fn contains(&self, key: &CacheKey) -> CacheResult<bool> {
         Ok(self.cache.contains_key(key))

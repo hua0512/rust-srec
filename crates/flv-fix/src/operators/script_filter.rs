@@ -269,13 +269,11 @@ mod tests {
                 FlvData::Header(_) => {
                     in_first_segment = false; // Switch to second segment after seeing second header
                 }
-                FlvData::Tag(tag) => {
-                    if tag.tag_type == FlvTagType::ScriptData {
-                        if in_first_segment {
-                            first_segment_script_count += 1;
-                        } else {
-                            second_segment_script_count += 1;
-                        }
+                FlvData::Tag(tag) if tag.tag_type == FlvTagType::ScriptData => {
+                    if in_first_segment {
+                        first_segment_script_count += 1;
+                    } else {
+                        second_segment_script_count += 1;
                     }
                 }
                 _ => {}

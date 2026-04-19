@@ -2,7 +2,6 @@
 //!
 //! Implements danmu collection for the Twitch streaming platform using IRC over WebSocket.
 
-use async_trait::async_trait;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -132,7 +131,6 @@ impl TwitchDanmuProtocol {
     }
 }
 
-#[async_trait]
 impl DanmuProtocol for TwitchDanmuProtocol {
     fn platform(&self) -> &str {
         "twitch"
@@ -213,40 +211,11 @@ impl DanmuProtocol for TwitchDanmuProtocol {
         tx: &mpsc::Sender<Message>,
     ) -> Result<Vec<DanmuItem>> {
         match message {
-            Message::Text(text) => {
-                let mut items = Vec::new();
-
-                // Handle each line (Twitch may send multiple messages in one frame)
-                for line in text.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() {
-                        continue;
-                    }
-
-                    // debug!("Twitch IRC: {}", trimmed);
-
-                    // Handle PING - respond with PONG
-                    if trimmed.starts_with("PING") {
-                        let pong_data = trimmed.strip_prefix("PING ").unwrap_or(":tmi.twitch.tv");
-                        let pong = format!("PONG {}", pong_data);
-                        debug!("Sending PONG: {}", pong);
-                        let _ = tx.send(Message::Text(pong.into())).await;
-                        continue;
-                    }
-
-                    // Parse chat messages
-                    if let Some(danmu) = Self::parse_irc_message(trimmed) {
-                        items.push(DanmuItem::Message(danmu));
-                    }
-                }
-
-                Ok(items)
-            }
+            Message::Text(text) => Self::decode_text(text, tx).await,
             Message::Binary(data) => {
                 // Twitch IRC uses text, but handle binary just in case
-                if let Ok(text) = String::from_utf8(data.to_vec()) {
-                    // Recursively process as text
-                    Box::pin(self.decode_message(&Message::Text(text.into()), _room_id, tx)).await
+                if let Ok(text) = std::str::from_utf8(data) {
+                    Self::decode_text(text, tx).await
                 } else {
                     Ok(vec![])
                 }
@@ -258,6 +227,36 @@ impl DanmuProtocol for TwitchDanmuProtocol {
             }
             _ => Ok(vec![]),
         }
+    }
+}
+
+impl TwitchDanmuProtocol {
+    async fn decode_text(text: &str, tx: &mpsc::Sender<Message>) -> Result<Vec<DanmuItem>> {
+        let mut items = Vec::new();
+
+        // Handle each line (Twitch may send multiple messages in one frame)
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Handle PING - respond with PONG
+            if trimmed.starts_with("PING") {
+                let pong_data = trimmed.strip_prefix("PING ").unwrap_or(":tmi.twitch.tv");
+                let pong = format!("PONG {}", pong_data);
+                debug!("Sending PONG: {}", pong);
+                let _ = tx.send(Message::Text(pong.into())).await;
+                continue;
+            }
+
+            // Parse chat messages
+            if let Some(danmu) = Self::parse_irc_message(trimmed) {
+                items.push(DanmuItem::Message(danmu));
+            }
+        }
+
+        Ok(items)
     }
 }
 
