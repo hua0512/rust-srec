@@ -73,16 +73,16 @@ pub trait StatusChecker: Send + Sync + 'static {
 /// This trait abstracts batch detection operations, allowing
 /// PlatformActors to perform batch checks without direct coupling
 /// to the BatchDetector implementation.
-#[async_trait]
-pub trait BatchChecker: Send + Sync + 'static {
+#[dynosaur::dynosaur(pub DynBatchChecker = dyn(box) BatchChecker)]
+pub trait BatchChecker: Send + Sync {
     /// Perform a batch status check for multiple streamers.
     ///
     /// Returns results for each streamer in the batch.
-    async fn batch_check(
+    fn batch_check(
         &self,
         platform_id: &str,
         streamers: Vec<StreamerMetadata>,
-    ) -> Result<Vec<BatchDetectionResult>, CheckError>;
+    ) -> impl std::future::Future<Output = Result<Vec<BatchDetectionResult>, CheckError>> + Send;
 }
 
 /// Error type for check operations.
@@ -220,7 +220,6 @@ where
     }
 }
 
-#[async_trait]
 impl<SR, FR, SSR, CR> BatchChecker for MonitorBatchChecker<SR, FR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
@@ -400,7 +399,6 @@ impl StatusChecker for NoOpStatusChecker {
 #[derive(Clone)]
 pub struct NoOpBatchChecker;
 
-#[async_trait]
 impl BatchChecker for NoOpBatchChecker {
     async fn batch_check(
         &self,

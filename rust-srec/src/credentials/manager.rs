@@ -1,6 +1,5 @@
 //! Platform-specific credential manager trait.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use super::CredentialError;
@@ -87,7 +86,7 @@ impl RefreshState {
 /// Platform-specific credential management trait.
 ///
 /// Implementations handle the specific refresh protocols for each platform.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynCredentialManager = dyn(box) CredentialManager)]
 pub trait CredentialManager: Send + Sync {
     /// Platform identifier (e.g., "bilibili", "douyin").
     fn platform_id(&self) -> &'static str;
@@ -100,7 +99,10 @@ pub trait CredentialManager: Send + Sync {
     /// # Returns
     /// * `Ok(CredentialStatus)` - Check completed successfully
     /// * `Err(...)` - Network or parsing error during check
-    async fn check_status(&self, cookies: &str) -> Result<CredentialStatus, CredentialError>;
+    fn check_status(
+        &self,
+        cookies: &str,
+    ) -> impl std::future::Future<Output = Result<CredentialStatus, CredentialError>> + Send;
 
     /// Perform credential refresh.
     ///
@@ -110,7 +112,10 @@ pub trait CredentialManager: Send + Sync {
     /// # Returns
     /// * `Ok(RefreshedCredentials)` - Refresh successful
     /// * `Err(...)` - Refresh failed (may need re-login)
-    async fn refresh(&self, state: &RefreshState) -> Result<RefreshedCredentials, CredentialError>;
+    fn refresh(
+        &self,
+        state: &RefreshState,
+    ) -> impl std::future::Future<Output = Result<RefreshedCredentials, CredentialError>> + Send;
 
     /// Validate credentials are working (e.g., make authenticated API call).
     ///
@@ -121,7 +126,10 @@ pub trait CredentialManager: Send + Sync {
     /// * `Ok(true)` - Credentials are working
     /// * `Ok(false)` - Credentials are invalid
     /// * `Err(...)` - Validation check failed
-    async fn validate(&self, cookies: &str) -> Result<bool, CredentialError>;
+    fn validate(
+        &self,
+        cookies: &str,
+    ) -> impl std::future::Future<Output = Result<bool, CredentialError>> + Send;
 
     /// Whether this manager supports automatic refresh.
     fn supports_auto_refresh(&self) -> bool {

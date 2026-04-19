@@ -22,6 +22,8 @@ use crate::database::models::{
     StreamerDbModel, TemplateConfigDbModel, UserDbModel,
 };
 use crate::database::models::{JobPreset, PipelinePreset};
+use crate::database::repositories::filter::FilterRepository;
+use crate::database::repositories::preset::{JobPresetRepository, PipelinePresetRepository};
 
 /// Current schema version for exports.
 const EXPORT_SCHEMA_VERSION: &str = "0.1.5";

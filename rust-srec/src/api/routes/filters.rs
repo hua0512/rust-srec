@@ -10,6 +10,7 @@ use serde_json::Value;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{CreateFilterRequest, FilterResponse, UpdateFilterRequest};
 use crate::api::server::AppState;
+use crate::database::repositories::filter::FilterRepository;
 use crate::database::models::{
     CategoryFilterConfig, CronFilterConfig, FilterConfigValidator, FilterDbModel, FilterType,
     KeywordFilterConfig, RegexFilterConfig, TimeBasedFilterConfig,

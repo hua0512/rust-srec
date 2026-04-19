@@ -8,7 +8,7 @@ use crate::hls::events::HlsStreamEvent;
 use crate::hls::fetcher::{SegmentDownloader, SegmentFetcher};
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::output::OutputManager;
-use crate::hls::playlist::{InitialPlaylist, PlaylistEngine, PlaylistProvider};
+use crate::hls::playlist::{DynPlaylistProvider, InitialPlaylist, PlaylistEngine, PlaylistProvider};
 use crate::hls::processor::{SegmentProcessor, SegmentTransformer};
 use crate::hls::scheduler::{ScheduledSegmentJob, SegmentScheduler};
 use std::sync::Arc;
@@ -79,11 +79,12 @@ impl HlsStreamCoordinator {
                 cache_manager.clone(),
                 Arc::clone(&performance_metrics),
             ));
-        let playlist_engine: Arc<dyn PlaylistProvider> = Arc::new(PlaylistEngine::new(
-            Arc::clone(&clients),
-            cache_manager,
-            Arc::clone(&config),
-        ));
+        let playlist_engine: Arc<DynPlaylistProvider<'static>> =
+            DynPlaylistProvider::new_arc(PlaylistEngine::new(
+                Arc::clone(&clients),
+                cache_manager,
+                Arc::clone(&config),
+            ));
 
         // Channels - sized for optimal throughput
         let (client_event_tx, client_event_rx) = mpsc::channel(32);

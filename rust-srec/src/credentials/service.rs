@@ -15,9 +15,11 @@ use crate::notification::{NotificationEvent, NotificationService};
 use crate::streamer::StreamerMetadata;
 
 use super::error::CredentialError;
-use super::manager::{CredentialManager, CredentialStatus, RefreshState, RefreshedCredentials};
+use super::manager::{
+    CredentialManager, CredentialStatus, DynCredentialManager, RefreshState, RefreshedCredentials,
+};
 use super::resolver::CredentialResolver;
-use super::store::CredentialStore;
+use super::store::{CredentialStore, DynCredentialStore};
 use super::tracker::{DailyCheckTracker, RefreshFailureTracker};
 use super::types::{CredentialEvent, CredentialScope, CredentialSource};
 
@@ -26,8 +28,8 @@ use super::types::{CredentialEvent, CredentialScope, CredentialSource};
 /// Orchestrates detection, refresh, and persistence of platform credentials.
 pub struct CredentialRefreshService<R: ConfigRepository> {
     resolver: Arc<CredentialResolver<R>>,
-    store: Arc<dyn CredentialStore>,
-    managers: HashMap<String, Arc<dyn CredentialManager>>,
+    store: Arc<DynCredentialStore<'static>>,
+    managers: HashMap<String, Arc<DynCredentialManager<'static>>>,
     daily_tracker: Arc<DailyCheckTracker>,
     failure_tracker: Arc<RefreshFailureTracker>,
     /// Per-scope locks to prevent concurrent refreshes
@@ -38,7 +40,10 @@ pub struct CredentialRefreshService<R: ConfigRepository> {
 
 impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     /// Create a new credential refresh service.
-    pub fn new(resolver: Arc<CredentialResolver<R>>, store: Arc<dyn CredentialStore>) -> Self {
+    pub fn new(
+        resolver: Arc<CredentialResolver<R>>,
+        store: Arc<DynCredentialStore<'static>>,
+    ) -> Self {
         Self {
             resolver,
             store,
@@ -56,7 +61,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     }
 
     /// Register a credential manager for a platform.
-    pub fn register_manager(&mut self, manager: Arc<dyn CredentialManager>) {
+    pub fn register_manager(&mut self, manager: Arc<DynCredentialManager<'static>>) {
         let platform_id = manager.platform_id().to_string();
         self.managers.insert(platform_id, manager);
     }
@@ -380,7 +385,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     fn get_manager(
         &self,
         platform_name: &str,
-    ) -> Result<&Arc<dyn CredentialManager>, CredentialError> {
+    ) -> Result<&Arc<DynCredentialManager<'static>>, CredentialError> {
         self.managers
             .get(platform_name)
             .ok_or_else(|| CredentialError::UnsupportedPlatform(platform_name.to_string()))

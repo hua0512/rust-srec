@@ -26,7 +26,7 @@ use crate::Result;
 use crate::database::models::engine::{
     FfmpegEngineConfig, MesioEngineConfig, StreamlinkEngineConfig,
 };
-use crate::database::repositories::config::ConfigRepository;
+use crate::database::repositories::config::{ConfigRepository, DynConfigRepository};
 use crate::downloader::SegmentInfo;
 
 fn parse_engine_config<T: DeserializeOwned>(engine: &'static str, raw: &str) -> Result<T> {
@@ -263,7 +263,7 @@ pub struct DownloadManager {
     /// Broadcast sender for download events
     event_tx: broadcast::Sender<DownloadManagerEvent>,
     /// Config repository for resolving custom engines.
-    config_repo: Option<Arc<dyn ConfigRepository>>,
+    config_repo: Option<Arc<DynConfigRepository<'static>>>,
 }
 
 /// Type of configuration that was updated.
@@ -523,7 +523,7 @@ impl DownloadManager {
     }
 
     /// Set the config repository.
-    pub fn with_config_repo(mut self, config_repo: Arc<dyn ConfigRepository>) -> Self {
+    pub fn with_config_repo(mut self, config_repo: Arc<DynConfigRepository<'static>>) -> Self {
         self.config_repo = Some(config_repo);
         self
     }

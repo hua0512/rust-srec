@@ -1,6 +1,5 @@
 //! Configuration repository.
 
-use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::SqlitePool;
 
@@ -10,35 +9,91 @@ use crate::database::models::{
 use crate::{Error, Result};
 
 /// Configuration repository trait.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynConfigRepository = dyn(box) ConfigRepository)]
 pub trait ConfigRepository: Send + Sync {
     // Global Config
-    async fn get_global_config(&self) -> Result<GlobalConfigDbModel>;
-    async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()>;
-    async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()>;
+    fn get_global_config(
+        &self,
+    ) -> impl std::future::Future<Output = Result<GlobalConfigDbModel>> + Send;
+    fn update_global_config(
+        &self,
+        config: &GlobalConfigDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn create_global_config(
+        &self,
+        config: &GlobalConfigDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // Platform Config
-    async fn get_platform_config(&self, id: &str) -> Result<PlatformConfigDbModel>;
-    async fn get_platform_config_by_name(&self, name: &str) -> Result<PlatformConfigDbModel>;
-    async fn list_platform_configs(&self) -> Result<Vec<PlatformConfigDbModel>>;
-    async fn create_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()>;
-    async fn update_platform_config(&self, config: &PlatformConfigDbModel) -> Result<()>;
-    async fn delete_platform_config(&self, id: &str) -> Result<()>;
+    fn get_platform_config(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<PlatformConfigDbModel>> + Send;
+    fn get_platform_config_by_name(
+        &self,
+        name: &str,
+    ) -> impl std::future::Future<Output = Result<PlatformConfigDbModel>> + Send;
+    fn list_platform_configs(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<PlatformConfigDbModel>>> + Send;
+    fn create_platform_config(
+        &self,
+        config: &PlatformConfigDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_platform_config(
+        &self,
+        config: &PlatformConfigDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_platform_config(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // Template Config
-    async fn get_template_config(&self, id: &str) -> Result<TemplateConfigDbModel>;
-    async fn get_template_config_by_name(&self, name: &str) -> Result<TemplateConfigDbModel>;
-    async fn list_template_configs(&self) -> Result<Vec<TemplateConfigDbModel>>;
-    async fn create_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
-    async fn update_template_config(&self, config: &TemplateConfigDbModel) -> Result<()>;
-    async fn delete_template_config(&self, id: &str) -> Result<()>;
+    fn get_template_config(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<TemplateConfigDbModel>> + Send;
+    fn get_template_config_by_name(
+        &self,
+        name: &str,
+    ) -> impl std::future::Future<Output = Result<TemplateConfigDbModel>> + Send;
+    fn list_template_configs(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<TemplateConfigDbModel>>> + Send;
+    fn create_template_config(
+        &self,
+        config: &TemplateConfigDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_template_config(
+        &self,
+        config: &TemplateConfigDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_template_config(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // Engine Config
-    async fn get_engine_config(&self, id: &str) -> Result<EngineConfigurationDbModel>;
-    async fn list_engine_configs(&self) -> Result<Vec<EngineConfigurationDbModel>>;
-    async fn create_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()>;
-    async fn update_engine_config(&self, config: &EngineConfigurationDbModel) -> Result<()>;
-    async fn delete_engine_config(&self, id: &str) -> Result<()>;
+    fn get_engine_config(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<EngineConfigurationDbModel>> + Send;
+    fn list_engine_configs(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<EngineConfigurationDbModel>>> + Send;
+    fn create_engine_config(
+        &self,
+        config: &EngineConfigurationDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_engine_config(
+        &self,
+        config: &EngineConfigurationDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_engine_config(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 /// SQLx implementation of ConfigRepository.
@@ -53,7 +108,6 @@ impl SqlxConfigRepository {
     }
 }
 
-#[async_trait]
 impl ConfigRepository for SqlxConfigRepository {
     async fn get_global_config(&self) -> Result<GlobalConfigDbModel> {
         let config =

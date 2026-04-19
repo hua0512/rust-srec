@@ -6,7 +6,6 @@ use crate::hls::HlsDownloaderError;
 use crate::hls::config::{HlsConfig, HlsVariantSelectionPolicy};
 use crate::hls::scheduler::ScheduledSegmentJob;
 use crate::hls::twitch_processor::TwitchPlaylistProcessor;
-use async_trait::async_trait;
 use m3u8_rs::{MasterPlaylist, MediaPlaylist, MediaSegment, parse_playlist_res};
 use moka::future::Cache;
 use moka::policy::EvictionPolicy;
@@ -19,23 +18,25 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
-#[async_trait]
+#[dynosaur::dynosaur(pub DynPlaylistProvider = dyn(box) PlaylistProvider)]
 pub trait PlaylistProvider: Send + Sync {
-    async fn load_initial_playlist(&self, url: &str)
-    -> Result<InitialPlaylist, HlsDownloaderError>;
-    async fn select_media_playlist(
+    fn load_initial_playlist(
+        &self,
+        url: &str,
+    ) -> impl std::future::Future<Output = Result<InitialPlaylist, HlsDownloaderError>> + Send;
+    fn select_media_playlist(
         &self,
         initial_playlist_with_base_url: &InitialPlaylist,
         policy: &HlsVariantSelectionPolicy,
-    ) -> Result<MediaPlaylistDetails, HlsDownloaderError>;
-    async fn monitor_media_playlist(
+    ) -> impl std::future::Future<Output = Result<MediaPlaylistDetails, HlsDownloaderError>> + Send;
+    fn monitor_media_playlist(
         &self,
         playlist_url: &str,
         initial_playlist: MediaPlaylist,
         base_url: String,
         segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
         token: CancellationToken,
-    ) -> Result<(), HlsDownloaderError>;
+    ) -> impl std::future::Future<Output = Result<(), HlsDownloaderError>> + Send;
 }
 
 #[derive(Debug, Clone)]
@@ -147,7 +148,6 @@ impl AdaptiveRefreshTracker {
     }
 }
 
-#[async_trait]
 impl PlaylistProvider for PlaylistEngine {
     async fn load_initial_playlist(
         &self,

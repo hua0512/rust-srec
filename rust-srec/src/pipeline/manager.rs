@@ -37,7 +37,8 @@ use crate::database::models::{
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
 use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRepository};
 use crate::database::repositories::{
-    DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
+    DagRepository, DynJobPresetRepository, DynPipelinePresetRepository, JobPresetRepository,
+    JobRepository, PipelinePresetRepository, SessionRepository,
 };
 use crate::downloader::DownloadManagerEvent;
 use crate::utils::filename::sanitize_filename;
@@ -233,9 +234,9 @@ pub struct PipelineManager<
     /// Job purge service for automatic cleanup of old jobs.
     purge_service: Option<Arc<JobPurgeService>>,
     /// Job preset repository for resolving named pipeline steps.
-    preset_repo: Option<Arc<dyn JobPresetRepository>>,
+    preset_repo: Option<Arc<DynJobPresetRepository<'static>>>,
     /// Pipeline preset repository for resolving workflow steps.
-    pipeline_preset_repo: Option<Arc<dyn PipelinePresetRepository>>,
+    pipeline_preset_repo: Option<Arc<DynPipelinePresetRepository<'static>>>,
     /// Config service for resolving pipeline rules.
     config_service: Option<Arc<ConfigService<CR, SR>>>,
     /// Last observed queue depth status (edge-trigger warnings).
@@ -482,7 +483,10 @@ where
     }
 
     /// Set the job preset repository.
-    pub fn with_preset_repository(mut self, preset_repo: Arc<dyn JobPresetRepository>) -> Self {
+    pub fn with_preset_repository(
+        mut self,
+        preset_repo: Arc<DynJobPresetRepository<'static>>,
+    ) -> Self {
         self.preset_repo = Some(preset_repo);
         self
     }
@@ -490,7 +494,7 @@ where
     /// Set the pipeline preset repository (for workflow expansion).
     pub fn with_pipeline_preset_repository(
         mut self,
-        pipeline_preset_repo: Arc<dyn PipelinePresetRepository>,
+        pipeline_preset_repo: Arc<DynPipelinePresetRepository<'static>>,
     ) -> Self {
         self.pipeline_preset_repo = Some(pipeline_preset_repo);
         self

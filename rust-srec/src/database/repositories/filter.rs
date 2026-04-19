@@ -1,24 +1,41 @@
 //! Filter repository.
 
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::database::models::FilterDbModel;
 use crate::{Error, Result};
 
 /// Filter repository trait.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynFilterRepository = dyn(box) FilterRepository)]
 pub trait FilterRepository: Send + Sync {
-    async fn get_filter(&self, id: &str) -> Result<FilterDbModel>;
-    async fn get_filters_for_streamer(&self, streamer_id: &str) -> Result<Vec<FilterDbModel>>;
-    async fn create_filter(&self, filter: &FilterDbModel) -> Result<()>;
-    async fn update_filter(&self, filter: &FilterDbModel) -> Result<()>;
-    async fn delete_filter(&self, id: &str) -> Result<()>;
-    async fn delete_filters_for_streamer(&self, streamer_id: &str) -> Result<()>;
+    fn get_filter(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<FilterDbModel>> + Send;
+    fn get_filters_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<FilterDbModel>>> + Send;
+    fn create_filter(
+        &self,
+        filter: &FilterDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_filter(
+        &self,
+        filter: &FilterDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_filter(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_filters_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Alias for get_filters_for_streamer.
-    async fn get_by_streamer(&self, streamer_id: &str) -> Result<Vec<FilterDbModel>> {
-        self.get_filters_for_streamer(streamer_id).await
+    fn get_by_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<FilterDbModel>>> + Send {
+        async move { self.get_filters_for_streamer(streamer_id).await }
     }
 }
 
@@ -34,7 +51,6 @@ impl SqlxFilterRepository {
     }
 }
 
-#[async_trait]
 impl FilterRepository for SqlxFilterRepository {
     async fn get_filter(&self, id: &str) -> Result<FilterDbModel> {
         sqlx::query_as::<_, FilterDbModel>("SELECT * FROM filters WHERE id = ?")

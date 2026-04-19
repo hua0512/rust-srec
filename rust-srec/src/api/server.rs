@@ -76,8 +76,8 @@ use crate::credentials::CredentialRefreshService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
     config::SqlxConfigRepository,
-    filter::FilterRepository,
-    preset::PipelinePresetRepository,
+    filter::DynFilterRepository,
+    preset::{DynJobPresetRepository, DynPipelinePresetRepository},
     session::SessionRepository,
     streamer::{SqlxStreamerRepository, StreamerRepository},
 };
@@ -111,15 +111,15 @@ pub struct AppState {
     /// Session repository for session and output queries
     pub session_repository: Option<Arc<dyn SessionRepository>>,
     /// Filter repository for streamer filters
-    pub filter_repository: Option<Arc<dyn FilterRepository>>,
+    pub filter_repository: Option<Arc<DynFilterRepository<'static>>>,
     /// Health checker for real health status
     pub health_checker: Option<Arc<HealthChecker>>,
     /// Streamer repository for querying streamer details
     pub streamer_repository: Option<Arc<dyn StreamerRepository>>,
     /// Pipeline preset repository for pipeline presets (workflow sequences)
-    pub pipeline_preset_repository: Option<Arc<dyn PipelinePresetRepository>>,
+    pub pipeline_preset_repository: Option<Arc<DynPipelinePresetRepository<'static>>>,
     /// Job preset repository for job presets (reusable processor configs)
-    pub job_preset_repository: Option<Arc<dyn crate::database::repositories::JobPresetRepository>>,
+    pub job_preset_repository: Option<Arc<DynJobPresetRepository<'static>>>,
     /// Notification repository for channel/subscription management
     pub notification_repository: Option<Arc<dyn NotificationRepository>>,
     /// Notification service for testing and reloading
@@ -251,7 +251,10 @@ impl AppState {
     }
 
     /// Set the filter repository.
-    pub fn with_filter_repository(mut self, filter_repository: Arc<dyn FilterRepository>) -> Self {
+    pub fn with_filter_repository(
+        mut self,
+        filter_repository: Arc<DynFilterRepository<'static>>,
+    ) -> Self {
         self.filter_repository = Some(filter_repository);
         self
     }
@@ -295,7 +298,7 @@ impl AppState {
     /// Set the pipeline preset repository.
     pub fn with_pipeline_preset_repository(
         mut self,
-        repo: Arc<dyn PipelinePresetRepository>,
+        repo: Arc<DynPipelinePresetRepository<'static>>,
     ) -> Self {
         self.pipeline_preset_repository = Some(repo);
         self
@@ -304,7 +307,7 @@ impl AppState {
     /// Set the job preset repository.
     pub fn with_job_preset_repository(
         mut self,
-        repo: Arc<dyn crate::database::repositories::JobPresetRepository>,
+        repo: Arc<DynJobPresetRepository<'static>>,
     ) -> Self {
         self.job_preset_repository = Some(repo);
         self
