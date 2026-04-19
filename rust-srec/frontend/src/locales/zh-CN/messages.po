@@ -215,6 +215,11 @@ msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "接受无效证书（默认：关闭）"
 
+#: src/components/streamers/card/use-streamer-status.tsx:170
+#: src/components/streamers/card/use-streamer-status.tsx:179
+msgid "Account Not Found"
+msgstr "账号不存在"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:494
 msgid "Action"
 msgstr "操作"
@@ -926,7 +931,7 @@ msgid "Cancel Pipeline?"
 msgstr "取消处理管道？"
 
 #: src/components/pipeline/status-config.ts:110
-#: src/components/streamers/card/use-streamer-status.tsx:41
+#: src/components/streamers/card/use-streamer-status.tsx:42
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:117
 msgid "Cancelled"
 msgstr "已取消"
@@ -1043,7 +1048,7 @@ msgstr "已触发检查"
 msgid "Checking"
 msgstr "检查中"
 
-#: src/components/streamers/card/use-streamer-status.tsx:236
+#: src/components/streamers/card/use-streamer-status.tsx:273
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
 
@@ -1983,7 +1988,7 @@ msgid "Disable"
 msgstr "禁用"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:202
-#: src/components/streamers/card/use-streamer-status.tsx:46
+#: src/components/streamers/card/use-streamer-status.tsx:47
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:534
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:544
@@ -2408,7 +2413,7 @@ msgid "Environment Variables"
 msgstr "环境变量"
 
 #: src/components/config/engines/engine-card.tsx:150
-#: src/components/streamers/card/use-streamer-status.tsx:45
+#: src/components/streamers/card/use-streamer-status.tsx:46
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:38
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:66
@@ -2421,7 +2426,8 @@ msgstr "环境变量"
 msgid "Error"
 msgstr "错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:196
+#: src/components/streamers/card/use-streamer-status.tsx:193
+#: src/components/streamers/card/use-streamer-status.tsx:233
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:607
 msgid "Error Details"
 msgstr "错误详情"
@@ -2929,7 +2935,7 @@ msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 HEVC/H.265 编码（CQ 24）。
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取得良好平衡。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:40
+#: src/components/streamers/card/use-streamer-status.tsx:41
 msgid "Fatal Error"
 msgstr "严重错误"
 
@@ -3642,9 +3648,9 @@ msgstr "输入路径（逗号分隔）"
 msgid "Inset"
 msgstr "嵌入"
 
-#: src/components/streamers/card/use-streamer-status.tsx:37
-#: src/components/streamers/card/use-streamer-status.tsx:224
-#: src/components/streamers/card/use-streamer-status.tsx:233
+#: src/components/streamers/card/use-streamer-status.tsx:38
+#: src/components/streamers/card/use-streamer-status.tsx:261
+#: src/components/streamers/card/use-streamer-status.tsx:270
 msgid "Inspecting"
 msgstr "检查中"
 
@@ -3790,7 +3796,7 @@ msgstr "关键字"
 msgid "Language"
 msgstr "语言"
 
-#: src/components/streamers/card/use-streamer-status.tsx:295
+#: src/components/streamers/card/use-streamer-status.tsx:332
 msgid "Last Activity"
 msgstr "最后活动"
 
@@ -3848,8 +3854,8 @@ msgstr "列表"
 msgid "List of allowed file extensions (without dot)."
 msgstr "允许的文件扩展名列表（不含点号）。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:36
-#: src/components/streamers/card/use-streamer-status.tsx:211
+#: src/components/streamers/card/use-streamer-status.tsx:37
+#: src/components/streamers/card/use-streamer-status.tsx:248
 #: src/components/streamers/edit/recent-sessions-list.tsx:75
 #: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:174
@@ -4316,8 +4322,8 @@ msgstr "监控并管理处理任务"
 msgid "Monitor this streamer"
 msgstr "监控此主播"
 
-#: src/components/streamers/card/use-streamer-status.tsx:170
-#: src/components/streamers/card/use-streamer-status.tsx:179
+#: src/components/streamers/card/use-streamer-status.tsx:207
+#: src/components/streamers/card/use-streamer-status.tsx:216
 msgid "Monitoring Stopped"
 msgstr "已停止监控"
 
@@ -4720,7 +4726,7 @@ msgstr "普通+"
 msgid "Not available"
 msgstr "不可用"
 
-#: src/components/streamers/card/use-streamer-status.tsx:42
+#: src/components/streamers/card/use-streamer-status.tsx:43
 msgid "Not Found"
 msgstr "未找到主播"
 
@@ -4826,9 +4832,9 @@ msgstr "OAuth 令牌"
 msgid "Off Canvas"
 msgstr "侧滑"
 
-#: src/components/streamers/card/use-streamer-status.tsx:35
-#: src/components/streamers/card/use-streamer-status.tsx:281
-#: src/components/streamers/card/use-streamer-status.tsx:290
+#: src/components/streamers/card/use-streamer-status.tsx:36
+#: src/components/streamers/card/use-streamer-status.tsx:318
+#: src/components/streamers/card/use-streamer-status.tsx:327
 #: src/components/streamers/edit/recent-sessions-list.tsx:73
 #: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:72
@@ -4946,7 +4952,7 @@ msgstr "附加到 `tdl login` 的可选额外参数。"
 msgid "Options"
 msgstr "选项"
 
-#: src/components/streamers/card/use-streamer-status.tsx:39
+#: src/components/streamers/card/use-streamer-status.tsx:40
 msgid "Out of Space"
 msgstr "空间不足"
 
@@ -5008,7 +5014,7 @@ msgstr "输出设置"
 msgid "Outputs"
 msgstr "输出"
 
-#: src/components/streamers/card/use-streamer-status.tsx:254
+#: src/components/streamers/card/use-streamer-status.tsx:291
 msgid "Outside Schedule"
 msgstr "不在计划时间内"
 
@@ -5781,7 +5787,7 @@ msgstr "实时日志"
 msgid "Real-time status of all system components and resources."
 msgstr "所有系统组件与资源的实时状态。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:183
+#: src/components/streamers/card/use-streamer-status.tsx:220
 msgid "Reason"
 msgstr "原因"
 
@@ -5824,7 +5830,7 @@ msgstr "录制"
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
-#: src/components/streamers/card/use-streamer-status.tsx:264
+#: src/components/streamers/card/use-streamer-status.tsx:301
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
@@ -6218,8 +6224,8 @@ msgstr "已扫描！请在手机上确认"
 msgid "Schedule recording times"
 msgstr "安排录制时间"
 
-#: src/components/streamers/card/use-streamer-status.tsx:38
-#: src/components/streamers/card/use-streamer-status.tsx:245
+#: src/components/streamers/card/use-streamer-status.tsx:39
+#: src/components/streamers/card/use-streamer-status.tsx:282
 msgid "Scheduled"
 msgstr "已计划"
 
@@ -6876,6 +6882,10 @@ msgstr "主播 ID 是必需的"
 msgid "Streamer is on cooldown"
 msgstr "主播处于冷却期"
 
+#: src/components/streamers/card/use-streamer-status.tsx:180
+msgid "Streamer no longer exists on the platform"
+msgstr "该主播已不在平台上"
+
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:408
 msgid "Streamer pagination"
 msgstr "主播分页"
@@ -7117,7 +7127,7 @@ msgstr "模板"
 msgid "Templates"
 msgstr "模板"
 
-#: src/components/streamers/card/use-streamer-status.tsx:44
+#: src/components/streamers/card/use-streamer-status.tsx:45
 #: src/components/streamers/card/use-streamer-status.tsx:114
 #: src/components/streamers/card/use-streamer-status.tsx:123
 msgid "Temporarily Paused"
@@ -7150,6 +7160,10 @@ msgstr "频道或直播流的直接链接。"
 #: src/components/not-found.tsx:17
 msgid "The page you are looking for does not exist."
 msgstr "你要访问的页面不存在。"
+
+#: src/components/streamers/card/use-streamer-status.tsx:183
+msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
+msgstr "平台返回该账号不存在。可能已被删除、被封禁，或链接/ID 有误。请考虑移除或更新此主播。"
 
 #: src/components/sessions/timeline-tab.tsx:34
 msgid "The stream title remained constant throughout the session."
@@ -7211,7 +7225,7 @@ msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 msgid "This stream is already active"
 msgstr "该流已处于活动状态"
 
-#: src/components/streamers/card/use-streamer-status.tsx:257
+#: src/components/streamers/card/use-streamer-status.tsx:294
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
 
