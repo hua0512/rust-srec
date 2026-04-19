@@ -232,21 +232,9 @@ impl TimingState {
 
         for (key, value) in props.iter() {
             match key.as_ref() {
-                "fps" => {
-                    if fps_value.is_none() {
-                        fps_value = Some(value);
-                    }
-                }
-                "framerate" => {
-                    if framerate_value.is_none() {
-                        framerate_value = Some(value);
-                    }
-                }
-                "audiosamplerate" => {
-                    if audio_rate_value.is_none() {
-                        audio_rate_value = Some(value);
-                    }
-                }
+                "fps" if fps_value.is_none() => fps_value = Some(value),
+                "framerate" if framerate_value.is_none() => framerate_value = Some(value),
+                "audiosamplerate" if audio_rate_value.is_none() => audio_rate_value = Some(value),
                 _ => {}
             }
         }

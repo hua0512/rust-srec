@@ -98,7 +98,7 @@ pub fn validate_av1_media_segment_with_track_ids_and_options(
         return Ok(Av1MediaValidationSummary::default());
     }
 
-    let track_ids_sorted = av1_track_ids.windows(2).all(|pair| pair[0] <= pair[1]);
+    let track_ids_sorted = av1_track_ids.array_windows::<2>().all(|[a, b]| a <= b);
     validate_av1_tracks_in_fragment(media_segment, av1_track_ids, track_ids_sorted, options)
 }
 

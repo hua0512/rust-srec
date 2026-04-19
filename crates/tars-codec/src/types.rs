@@ -116,8 +116,8 @@ impl Ord for TarsValue {
                 // Compare HashMaps by converting to sorted vectors
                 let mut a_vec: Vec<_> = a.iter().collect();
                 let mut b_vec: Vec<_> = b.iter().collect();
-                a_vec.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
-                b_vec.sort_by(|(k1, _), (k2, _)| k1.cmp(k2));
+                a_vec.sort_by_key(|(k, _)| *k);
+                b_vec.sort_by_key(|(k, _)| *k);
                 a_vec.cmp(&b_vec)
             }
             (TarsValue::List(a), TarsValue::List(b)) => {
@@ -211,7 +211,7 @@ impl Hash for TarsValue {
                 if v.len() <= 3 {
                     // For small maps, collect and sort with faster unstable sort
                     let mut pairs: Vec<_> = v.iter().collect();
-                    pairs.sort_unstable_by(|(k1, _), (k2, _)| k1.cmp(k2));
+                    pairs.sort_unstable_by_key(|(k, _)| *k);
                     // Hash length first for better distribution
                     v.len().hash(state);
                     for (k, val) in pairs {

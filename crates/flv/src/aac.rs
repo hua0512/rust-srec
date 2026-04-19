@@ -71,15 +71,11 @@ impl AacPacket {
 
     pub(crate) fn is_stereo(&self) -> bool {
         match self {
-            AacPacket::SequenceHeader(data) => {
-                // Check if the first byte is 0xFF and the second byte is 0xF1
-                if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xF1 {
-                    // Check the channel configuration in the 4th byte
-                    let channel_config = (data[3] >> 3) & 0x0F;
-                    channel_config == 2 // Stereo
-                } else {
-                    false
-                }
+            AacPacket::SequenceHeader(data)
+                if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xF1 =>
+            {
+                let channel_config = (data[3] >> 3) & 0x0F;
+                channel_config == 2 // Stereo
             }
             _ => false,
         }
@@ -87,39 +83,31 @@ impl AacPacket {
 
     pub(crate) fn sample_rate(&self) -> f32 {
         match self {
-            AacPacket::SequenceHeader(data) => {
-                // Check if the first byte is 0xFF and the second byte is 0xF1
-                if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xF1 {
-                    // Check the sample rate index in the 2nd byte
-                    let sample_rate_index = (data[2] >> 2) & 0x03;
-                    match sample_rate_index {
-                        0 => 96000.0,
-                        1 => 88200.0,
-                        2 => 64000.0,
-                        3 => 48000.0,
-                        _ => 44100.0, // Default to 44100 Hz
-                    }
-                } else {
-                    44100.0 // Default to 44100 Hz
+            AacPacket::SequenceHeader(data)
+                if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xF1 =>
+            {
+                let sample_rate_index = (data[2] >> 2) & 0x03;
+                match sample_rate_index {
+                    0 => 96000.0,
+                    1 => 88200.0,
+                    2 => 64000.0,
+                    3 => 48000.0,
+                    _ => 44100.0,
                 }
             }
-            _ => 44100.0, // Default to 44100 Hz
+            _ => 44100.0,
         }
     }
 
     pub(crate) fn sample_size(&self) -> u32 {
         match self {
-            AacPacket::SequenceHeader(data) => {
-                // Check if the first byte is 0xFF and the second byte is 0xF1
-                if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xF1 {
-                    // Check the sample size in the 3rd byte
-                    let sample_size = (data[2] >> 4) & 0x0F;
-                    sample_size as u32
-                } else {
-                    16 // Default to 16 bits
-                }
+            AacPacket::SequenceHeader(data)
+                if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xF1 =>
+            {
+                let sample_size = (data[2] >> 4) & 0x0F;
+                sample_size as u32
             }
-            _ => 16, // Default to 16 bits
+            _ => 16,
         }
     }
 }
