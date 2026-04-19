@@ -2,7 +2,6 @@
 //!
 //! Defines the interface for platform-specific danmu providers.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
@@ -96,20 +95,30 @@ impl ConnectionConfig {
 }
 
 /// Trait for platform-specific danmu providers.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynDanmuProvider = dyn(box) DanmuProvider)]
 pub trait DanmuProvider: Send + Sync {
     /// Get the platform name this provider handles.
     fn platform(&self) -> &str;
 
     /// Connect to the danmu stream for a room.
-    async fn connect(&self, room_id: &str, config: ConnectionConfig) -> Result<DanmuConnection>;
+    fn connect(
+        &self,
+        room_id: &str,
+        config: ConnectionConfig,
+    ) -> impl std::future::Future<Output = Result<DanmuConnection>> + Send;
 
     /// Disconnect from the danmu stream.
-    async fn disconnect(&self, connection: &mut DanmuConnection) -> Result<()>;
+    fn disconnect(
+        &self,
+        connection: &mut DanmuConnection,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Receive the next danmu item (message or control event).
     /// Returns None if the connection is closed.
-    async fn receive(&self, connection: &DanmuConnection) -> Result<Option<DanmuItem>>;
+    fn receive(
+        &self,
+        connection: &DanmuConnection,
+    ) -> impl std::future::Future<Output = Result<Option<DanmuItem>>> + Send;
 
     /// Check if the provider supports the given URL.
     fn supports_url(&self, url: &str) -> bool;

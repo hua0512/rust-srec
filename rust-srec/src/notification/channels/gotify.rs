@@ -2,7 +2,6 @@
 //!
 //! Sends messages via the Gotify REST API (`POST /message?token=<app_token>`).
 
-use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -101,7 +100,6 @@ impl GotifyChannel {
     }
 }
 
-#[async_trait]
 impl NotificationChannel for GotifyChannel {
     fn channel_type(&self) -> &'static str {
         "gotify"

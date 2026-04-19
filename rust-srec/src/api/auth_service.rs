@@ -17,7 +17,10 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
 use crate::database::models::RefreshTokenDbModel;
-use crate::database::repositories::{RefreshTokenRepository, UserRepository};
+use crate::database::repositories::{
+    DynUserRepository, RefreshTokenRepository, UserRepository,
+    refresh_token::DynRefreshTokenRepository,
+};
 
 use super::jwt::JwtService;
 
@@ -173,8 +176,8 @@ pub struct SessionInfo {
 
 /// Authentication service for managing user authentication and tokens.
 pub struct AuthService {
-    user_repo: Arc<dyn UserRepository>,
-    token_repo: Arc<dyn RefreshTokenRepository>,
+    user_repo: Arc<DynUserRepository<'static>>,
+    token_repo: Arc<DynRefreshTokenRepository<'static>>,
     jwt_service: Arc<JwtService>,
     config: AuthConfig,
 }
@@ -182,8 +185,8 @@ pub struct AuthService {
 impl AuthService {
     /// Create a new AuthService.
     pub fn new(
-        user_repo: Arc<dyn UserRepository>,
-        token_repo: Arc<dyn RefreshTokenRepository>,
+        user_repo: Arc<DynUserRepository<'static>>,
+        token_repo: Arc<DynRefreshTokenRepository<'static>>,
         jwt_service: Arc<JwtService>,
         config: AuthConfig,
     ) -> Self {
@@ -195,7 +198,7 @@ impl AuthService {
         }
     }
 
-    pub fn user_repository(&self) -> Arc<dyn UserRepository> {
+    pub fn user_repository(&self) -> Arc<DynUserRepository<'static>> {
         self.user_repo.clone()
     }
 
@@ -772,8 +775,8 @@ mod tests {
         use std::sync::Arc;
 
         // Create mock repositories using a simple in-memory implementation
-        let user_repo = Arc::new(MockUserRepository);
-        let token_repo = Arc::new(MockRefreshTokenRepository);
+        let user_repo = DynUserRepository::new_arc(MockUserRepository);
+        let token_repo = DynRefreshTokenRepository::new_arc(MockRefreshTokenRepository);
         let jwt_service = Arc::new(JwtService::new(
             "test-secret-key-32-chars-long!!",
             "test-issuer",
@@ -787,7 +790,6 @@ mod tests {
     // Mock implementations for testing
     struct MockUserRepository;
 
-    #[async_trait::async_trait]
     impl UserRepository for MockUserRepository {
         async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
             Ok(())
@@ -823,7 +825,6 @@ mod tests {
 
     struct MockRefreshTokenRepository;
 
-    #[async_trait::async_trait]
     impl RefreshTokenRepository for MockRefreshTokenRepository {
         async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
             Ok(())
@@ -854,25 +855,25 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
     struct SpyRefreshTokenRepository {
-        token: Mutex<RefreshTokenDbModel>,
-        revoke_all_called: AtomicBool,
-        revoke_called: AtomicBool,
-        create_called: AtomicBool,
+        token: Arc<Mutex<RefreshTokenDbModel>>,
+        revoke_all_called: Arc<AtomicBool>,
+        revoke_called: Arc<AtomicBool>,
+        create_called: Arc<AtomicBool>,
     }
 
     impl SpyRefreshTokenRepository {
         fn new(token: RefreshTokenDbModel) -> Self {
             Self {
-                token: Mutex::new(token),
-                revoke_all_called: AtomicBool::new(false),
-                revoke_called: AtomicBool::new(false),
-                create_called: AtomicBool::new(false),
+                token: Arc::new(Mutex::new(token)),
+                revoke_all_called: Arc::new(AtomicBool::new(false)),
+                revoke_called: Arc::new(AtomicBool::new(false)),
+                create_called: Arc::new(AtomicBool::new(false)),
             }
         }
     }
 
-    #[async_trait::async_trait]
     impl RefreshTokenRepository for SpyRefreshTokenRepository {
         async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
             self.create_called.store(true, Ordering::SeqCst);
@@ -920,7 +921,6 @@ mod tests {
         user: UserDbModel,
     }
 
-    #[async_trait::async_trait]
     impl UserRepository for SpyUserRepository {
         async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
             Ok(())
@@ -967,8 +967,9 @@ mod tests {
             RefreshTokenDbModel::new("user-1", token_hash, Utc::now() + Duration::days(7), None);
         stored.revoked_at = Some((Utc::now() - Duration::hours(2)).timestamp_millis());
 
-        let token_repo = Arc::new(SpyRefreshTokenRepository::new(stored));
-        let user_repo = Arc::new(MockUserRepository);
+        let token_repo = SpyRefreshTokenRepository::new(stored);
+        let token_repo_dyn = DynRefreshTokenRepository::new_arc(token_repo.clone());
+        let user_repo = DynUserRepository::new_arc(MockUserRepository);
         let jwt_service = Arc::new(JwtService::new(
             "test-secret-key-32-chars-long!!",
             "test-issuer",
@@ -978,7 +979,7 @@ mod tests {
 
         let service = AuthService::new(
             user_repo,
-            token_repo.clone(),
+            token_repo_dyn,
             jwt_service,
             AuthConfig::default(),
         );
@@ -997,8 +998,9 @@ mod tests {
             RefreshTokenDbModel::new("user-1", token_hash, Utc::now() + Duration::days(7), None);
         stored.revoked_at = Some((Utc::now() - Duration::hours(2)).timestamp_millis());
 
-        let token_repo = Arc::new(SpyRefreshTokenRepository::new(stored));
-        let user_repo = Arc::new(MockUserRepository);
+        let token_repo = SpyRefreshTokenRepository::new(stored);
+        let token_repo_dyn = DynRefreshTokenRepository::new_arc(token_repo.clone());
+        let user_repo = DynUserRepository::new_arc(MockUserRepository);
         let jwt_service = Arc::new(JwtService::new(
             "test-secret-key-32-chars-long!!",
             "test-issuer",
@@ -1011,7 +1013,7 @@ mod tests {
             ..Default::default()
         };
 
-        let service = AuthService::new(user_repo, token_repo.clone(), jwt_service, config);
+        let service = AuthService::new(user_repo, token_repo_dyn, jwt_service, config);
 
         let result = service.refresh_tokens(refresh_token).await;
         assert!(matches!(result, Err(AuthError::TokenRevoked)));
@@ -1031,12 +1033,13 @@ mod tests {
         );
         stored.revoked_at = Some((Utc::now() - Duration::seconds(1)).timestamp_millis());
 
-        let token_repo = Arc::new(SpyRefreshTokenRepository::new(stored));
+        let token_repo = SpyRefreshTokenRepository::new(stored);
+        let token_repo_dyn = DynRefreshTokenRepository::new_arc(token_repo.clone());
 
         let mut user = UserDbModel::new("u", "hash", vec!["admin".to_string()]);
         user.id = "user-1".to_string();
         user.must_change_password = false;
-        let user_repo = Arc::new(SpyUserRepository { user });
+        let user_repo = DynUserRepository::new_arc(SpyUserRepository { user });
 
         let jwt_service = Arc::new(JwtService::new(
             "test-secret-key-32-chars-long!!",
@@ -1050,7 +1053,7 @@ mod tests {
             ..Default::default()
         };
 
-        let service = AuthService::new(user_repo, token_repo.clone(), jwt_service, config);
+        let service = AuthService::new(user_repo, token_repo_dyn, jwt_service, config);
 
         let result = service.refresh_tokens(refresh_token).await;
         assert!(result.is_ok());
@@ -1281,7 +1284,6 @@ mod property_tests {
 
         struct MockUserRepo;
 
-        #[async_trait::async_trait]
         impl UserRepository for MockUserRepo {
             async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
                 Ok(())
@@ -1325,7 +1327,6 @@ mod property_tests {
 
         struct MockTokenRepo;
 
-        #[async_trait::async_trait]
         impl RefreshTokenRepository for MockTokenRepo {
             async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
                 Ok(())
@@ -1356,8 +1357,8 @@ mod property_tests {
             }
         }
 
-        let user_repo = Arc::new(MockUserRepo);
-        let token_repo = Arc::new(MockTokenRepo);
+        let user_repo = DynUserRepository::new_arc(MockUserRepo);
+        let token_repo = DynRefreshTokenRepository::new_arc(MockTokenRepo);
         let jwt_service = Arc::new(JwtService::new(
             "test-secret-key-32-chars-long!!",
             "test-issuer",

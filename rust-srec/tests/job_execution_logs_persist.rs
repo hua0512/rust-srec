@@ -3,6 +3,7 @@ use std::sync::Arc;
 use rust_srec::database;
 use rust_srec::database::models::Pagination;
 use rust_srec::database::repositories::JobRepository;
+use rust_srec::database::repositories::job::DynJobRepository;
 use rust_srec::database::repositories::SqlxJobRepository;
 use rust_srec::pipeline::{Job, JobExecutionInfo, JobLogEntry, JobQueue, JobQueueConfig, LogLevel};
 use tempfile::TempDir;
@@ -19,8 +20,11 @@ async fn update_execution_info_persists_logs_to_job_execution_logs() {
     let pool = database::init_pool(&db_url).await.unwrap();
     database::run_migrations(&pool).await.unwrap();
 
-    let repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool));
-    let queue = JobQueue::with_repository(JobQueueConfig::default(), repo.clone());
+    let repo = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    let queue = JobQueue::with_repository(
+        JobQueueConfig::default(),
+        DynJobRepository::new_arc(SqlxJobRepository::new(pool.clone(), pool)),
+    );
 
     let job = Job::new(
         "remux",

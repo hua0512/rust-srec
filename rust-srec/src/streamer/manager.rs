@@ -767,7 +767,6 @@ where
 mod tests {
     use super::*;
     use crate::database::models::StreamerDbModel;
-    use async_trait::async_trait;
     use std::sync::Mutex;
 
     /// Mock streamer repository for testing.
@@ -789,7 +788,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl StreamerRepository for MockStreamerRepository {
         async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>> {
             Ok(self.streamers.lock().unwrap().clone())

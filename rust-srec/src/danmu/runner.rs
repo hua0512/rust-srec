@@ -13,7 +13,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use platforms_parser::danmaku::{
-    ConnectionConfig, DanmuConnection, DanmuControlEvent, DanmuItem, DanmuProvider,
+    ConnectionConfig, DanmuConnection, DanmuControlEvent, DanmuItem, DanmuProvider, DynDanmuProvider,
     message::{DanmuMessage, DanmuType},
 };
 
@@ -50,7 +50,7 @@ pub(crate) struct CollectionRunner {
     room_id: String,
 
     // Provider and connection
-    provider: Arc<dyn DanmuProvider>,
+    provider: Arc<DynDanmuProvider<'static>>,
     connection: DanmuConnection,
 
     // Current segment writer
@@ -72,7 +72,7 @@ pub(crate) struct RunnerParams {
     pub session_id: String,
     pub streamer_id: String,
     pub room_id: String,
-    pub provider: Arc<dyn DanmuProvider>,
+    pub provider: Arc<DynDanmuProvider<'static>>,
     pub conn_config: ConnectionConfig,
     pub stats: StatisticsAggregator,
     pub sampler: Box<dyn DanmuSampler>,

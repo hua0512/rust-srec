@@ -1,6 +1,5 @@
 //! Email notification channel using SMTP.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
@@ -141,7 +140,6 @@ impl EmailChannel {
     }
 }
 
-#[async_trait]
 impl NotificationChannel for EmailChannel {
     fn channel_type(&self) -> &'static str {
         "email"

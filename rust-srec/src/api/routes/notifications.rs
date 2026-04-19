@@ -10,6 +10,7 @@ use url::Url;
 use crate::api::error::ApiError;
 use crate::api::jwt::Claims;
 use crate::api::server::AppState;
+use crate::database::repositories::NotificationRepository;
 use crate::database::models::notification::{
     ChannelType, NotificationChannelDbModel, NotificationEventLogDbModel,
 };

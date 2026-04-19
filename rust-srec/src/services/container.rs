@@ -25,22 +25,22 @@ use crate::credentials::{
 use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
-    ConfigRepository, NotificationRepository, SqlxNotificationRepository,
+    ConfigRepository, DynNotificationRepository, SqlxNotificationRepository,
 };
 use crate::database::repositories::{
     SqlxCredentialStore,
     config::{DynConfigRepository, SqlxConfigRepository},
-    dag::SqlxDagRepository,
+    dag::{DynDagRepository, SqlxDagRepository},
     filter::{DynFilterRepository, SqlxFilterRepository},
-    job::SqlxJobRepository,
+    job::{DynJobRepository, SqlxJobRepository},
     preset::{
         DynJobPresetRepository, DynPipelinePresetRepository, SqliteJobPresetRepository,
         SqlitePipelinePresetRepository,
     },
-    refresh_token::SqlxRefreshTokenRepository,
-    session::SqlxSessionRepository,
-    streamer::SqlxStreamerRepository,
-    user::SqlxUserRepository,
+    refresh_token::{DynRefreshTokenRepository, SqlxRefreshTokenRepository},
+    session::{DynSessionRepository, SqlxSessionRepository},
+    streamer::{DynStreamerRepository, SqlxStreamerRepository},
+    user::{DynUserRepository, SqlxUserRepository},
 };
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
@@ -306,7 +306,7 @@ pub struct ServiceContainer {
     /// Notification service.
     pub notification_service: Arc<NotificationService>,
     /// Notification repository.
-    pub notification_repository: Arc<dyn NotificationRepository>,
+    pub notification_repository: Arc<DynNotificationRepository<'static>>,
     /// Web push service for browser notifications (VAPID), if configured.
     pub web_push_service: Option<Arc<WebPushService>>,
     /// Metrics collector.
@@ -382,6 +382,9 @@ impl ServiceContainer {
         // Create additional repositories for StreamMonitor
         let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), write_pool.clone()));
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
+        let session_repo_dyn: Arc<DynSessionRepository<'static>> = DynSessionRepository::new_arc(
+            SqlxSessionRepository::new(pool.clone(), write_pool.clone()),
+        );
 
         // Create config service with custom cache
         let cache = ConfigCache::with_ttl(cache_ttl);
@@ -408,10 +411,9 @@ impl ServiceContainer {
         );
 
         // Create notification service with default config (also used for credential events).
-        let notification_repository = Arc::new(SqlxNotificationRepository::new(
-            pool.clone(),
-            write_pool.clone(),
-        ));
+        let notification_repository = DynNotificationRepository::new_arc(
+            SqlxNotificationRepository::new(pool.clone(), write_pool.clone()),
+        );
         let web_push_service = WebPushService::from_env(pool.clone(), write_pool.clone())
             .unwrap_or_else(|e| {
                 warn!(error = %e, "Web push service disabled due to configuration error");
@@ -470,7 +472,8 @@ impl ServiceContainer {
         download_manager.set_output_root_gate(output_root_gate.clone());
 
         // Create job repository for pipeline persistence
-        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
+        let job_repo =
+            DynJobRepository::new_arc(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
 
         // Create job preset repository
         let preset_repo = DynJobPresetRepository::new_arc(SqliteJobPresetRepository::new(
@@ -503,12 +506,12 @@ impl ServiceContainer {
             global_config.pipeline_execute_timeout_secs.max(1) as u64;
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(pipeline_config, job_repo)
-                .with_session_repository(session_repo.clone())
+                .with_session_repository(session_repo_dyn.clone())
                 .with_streamer_repository(streamer_repo.clone())
                 .with_preset_repository(preset_repo)
                 .with_pipeline_preset_repository(pipeline_preset_repo)
                 .with_config_service(config_service.clone())
-                .with_dag_repository(Arc::new(SqlxDagRepository::new(
+                .with_dag_repository(DynDagRepository::new_arc(SqlxDagRepository::new(
                     pool.clone(),
                     write_pool.clone(),
                 ))),
@@ -520,7 +523,7 @@ impl ServiceContainer {
         // Create danmu service with default config
         let danmu_service = Arc::new(
             DanmuService::new(DanmuServiceConfig::default())
-                .with_session_repository(session_repo.clone()),
+                .with_session_repository(session_repo_dyn.clone()),
         );
 
         // Create metrics collector
@@ -641,6 +644,9 @@ impl ServiceContainer {
         let monitor_repos_start = Instant::now();
         let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), write_pool.clone()));
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
+        let session_repo_dyn: Arc<DynSessionRepository<'static>> = DynSessionRepository::new_arc(
+            SqlxSessionRepository::new(pool.clone(), write_pool.clone()),
+        );
         let monitor_repos_ms = monitor_repos_start.elapsed().as_millis();
 
         // Create config service with custom cache
@@ -702,7 +708,8 @@ impl ServiceContainer {
 
         // Create job repository for pipeline persistence
         let pipeline_repo_start = Instant::now();
-        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
+        let job_repo =
+            DynJobRepository::new_arc(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
 
         // Create job preset repository
         let preset_repo = DynJobPresetRepository::new_arc(SqliteJobPresetRepository::new(
@@ -736,12 +743,12 @@ impl ServiceContainer {
             global_config.pipeline_execute_timeout_secs.max(1) as u64;
         let pipeline_manager = Arc::new(
             PipelineManager::with_repository(effective_pipeline_config, job_repo)
-                .with_session_repository(session_repo.clone())
+                .with_session_repository(session_repo_dyn.clone())
                 .with_streamer_repository(streamer_repo.clone())
                 .with_preset_repository(preset_repo)
                 .with_pipeline_preset_repository(pipeline_preset_repo)
                 .with_config_service(config_service.clone())
-                .with_dag_repository(Arc::new(SqlxDagRepository::new(
+                .with_dag_repository(DynDagRepository::new_arc(SqlxDagRepository::new(
                     pool.clone(),
                     write_pool.clone(),
                 ))),
@@ -756,15 +763,14 @@ impl ServiceContainer {
         // Create danmu service with custom config
         let danmu_service_start = Instant::now();
         let danmu_service =
-            Arc::new(DanmuService::new(danmu_config).with_session_repository(session_repo));
+            Arc::new(DanmuService::new(danmu_config).with_session_repository(session_repo_dyn));
         let danmu_service_ms = danmu_service_start.elapsed().as_millis();
 
         // Create notification service with default config
         let notification_service_start = Instant::now();
-        let notification_repository = Arc::new(SqlxNotificationRepository::new(
-            pool.clone(),
-            write_pool.clone(),
-        ));
+        let notification_repository = DynNotificationRepository::new_arc(
+            SqlxNotificationRepository::new(pool.clone(), write_pool.clone()),
+        );
         let web_push_service = WebPushService::from_env(pool.clone(), write_pool.clone())
             .unwrap_or_else(|e| {
                 warn!(error = %e, "Web push service disabled due to configuration error");
@@ -1065,11 +1071,11 @@ impl ServiceContainer {
         // Create AuthService if JWT is configured
         let auth_service = if let Some(ref jwt) = jwt_service {
             // Create user and refresh token repositories
-            let user_repo = Arc::new(SqlxUserRepository::new(
+            let user_repo = DynUserRepository::new_arc(SqlxUserRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
             ));
-            let token_repo = Arc::new(SqlxRefreshTokenRepository::new(
+            let token_repo = DynRefreshTokenRepository::new_arc(SqlxRefreshTokenRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
             ));
@@ -1104,7 +1110,7 @@ impl ServiceContainer {
 
         // Wire SessionRepository, FilterRepository, and PipelinePresetRepository into AppState
         state = state
-            .with_session_repository(Arc::new(SqlxSessionRepository::new(
+            .with_session_repository(DynSessionRepository::new_arc(SqlxSessionRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
             )))
@@ -1112,7 +1118,7 @@ impl ServiceContainer {
                 self.pool.clone(),
                 self.write_pool.clone(),
             )))
-            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(
+            .with_streamer_repository(DynStreamerRepository::new_arc(SqlxStreamerRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
             )))
@@ -1184,11 +1190,11 @@ impl ServiceContainer {
         ));
 
         // Create AuthService (always enabled when a JWT secret is provided)
-        let user_repo = Arc::new(SqlxUserRepository::new(
+        let user_repo = DynUserRepository::new_arc(SqlxUserRepository::new(
             self.pool.clone(),
             self.write_pool.clone(),
         ));
-        let token_repo = Arc::new(SqlxRefreshTokenRepository::new(
+        let token_repo = DynRefreshTokenRepository::new_arc(SqlxRefreshTokenRepository::new(
             self.pool.clone(),
             self.write_pool.clone(),
         ));
@@ -1217,7 +1223,7 @@ impl ServiceContainer {
 
         // Wire SessionRepository, FilterRepository, and PipelinePresetRepository into AppState
         state = state
-            .with_session_repository(Arc::new(SqlxSessionRepository::new(
+            .with_session_repository(DynSessionRepository::new_arc(SqlxSessionRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
             )))
@@ -1225,7 +1231,7 @@ impl ServiceContainer {
                 self.pool.clone(),
                 self.write_pool.clone(),
             )))
-            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(
+            .with_streamer_repository(DynStreamerRepository::new_arc(SqlxStreamerRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
             )))

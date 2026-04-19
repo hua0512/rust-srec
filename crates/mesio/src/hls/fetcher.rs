@@ -6,7 +6,6 @@ use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
 use crate::hls::retry::{RetryAction, RetryPolicy, is_retryable_reqwest_error, retry_with_backoff};
 use crate::{CacheManager, cache::CacheKey};
-use async_trait::async_trait;
 use bytes::Bytes;
 use indicatif::ProgressStyle;
 use std::sync::Arc;
@@ -18,12 +17,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::hls::scheduler::ScheduledSegmentJob;
 
-#[async_trait]
+#[dynosaur::dynosaur(pub DynSegmentDownloader = dyn(box) SegmentDownloader)]
 pub trait SegmentDownloader: Send + Sync {
-    async fn download_segment_from_job(
+    fn download_segment_from_job(
         &self,
         job: &ScheduledSegmentJob,
-    ) -> Result<Bytes, HlsDownloaderError>;
+    ) -> impl std::future::Future<Output = Result<Bytes, HlsDownloaderError>> + Send;
 }
 
 pub struct SegmentFetcher {
@@ -257,7 +256,6 @@ impl SegmentFetcher {
     }
 }
 
-#[async_trait]
 impl SegmentDownloader for SegmentFetcher {
     /// Downloads a segment from the given job.
     /// If the segment is already cached, it retrieves it from the cache.

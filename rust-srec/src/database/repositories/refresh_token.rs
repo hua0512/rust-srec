@@ -1,35 +1,49 @@
 //! Refresh token repository for database operations.
 
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::Result;
 use crate::database::models::RefreshTokenDbModel;
 
 /// Refresh token repository trait for token data access operations.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynRefreshTokenRepository = dyn(box) RefreshTokenRepository)]
 pub trait RefreshTokenRepository: Send + Sync {
     /// Create a new refresh token in the database.
-    async fn create(&self, token: &RefreshTokenDbModel) -> Result<()>;
+    fn create(
+        &self,
+        token: &RefreshTokenDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Find a refresh token by its hash.
-    async fn find_by_token_hash(&self, hash: &str) -> Result<Option<RefreshTokenDbModel>>;
+    fn find_by_token_hash(
+        &self,
+        hash: &str,
+    ) -> impl std::future::Future<Output = Result<Option<RefreshTokenDbModel>>> + Send;
 
     /// Find all active (non-revoked, non-expired) tokens for a user.
-    async fn find_active_by_user(&self, user_id: &str) -> Result<Vec<RefreshTokenDbModel>>;
+    fn find_active_by_user(
+        &self,
+        user_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<RefreshTokenDbModel>>> + Send;
 
     /// Revoke a specific token by its ID.
-    async fn revoke(&self, id: &str) -> Result<()>;
+    fn revoke(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Revoke all tokens for a specific user.
-    async fn revoke_all_for_user(&self, user_id: &str) -> Result<()>;
+    fn revoke_all_for_user(
+        &self,
+        user_id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Clean up expired tokens from the database.
     /// Returns the number of tokens deleted.
-    async fn cleanup_expired(&self) -> Result<u64>;
+    fn cleanup_expired(&self) -> impl std::future::Future<Output = Result<u64>> + Send;
 
     /// Count active tokens for a user.
-    async fn count_active_by_user(&self, user_id: &str) -> Result<i64>;
+    fn count_active_by_user(
+        &self,
+        user_id: &str,
+    ) -> impl std::future::Future<Output = Result<i64>> + Send;
 }
 
 /// SQLx implementation of RefreshTokenRepository.
@@ -45,7 +59,6 @@ impl SqlxRefreshTokenRepository {
     }
 }
 
-#[async_trait]
 impl RefreshTokenRepository for SqlxRefreshTokenRepository {
     async fn create(&self, token: &RefreshTokenDbModel) -> Result<()> {
         sqlx::query(

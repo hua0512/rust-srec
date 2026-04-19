@@ -11,6 +11,7 @@ use tower_http::services::ServeFile;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
+use crate::database::repositories::SessionRepository;
 
 /// Create the media router.
 pub fn router() -> Router<AppState> {

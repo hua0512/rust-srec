@@ -1,48 +1,64 @@
 //! User repository for database operations.
 
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::Result;
 use crate::database::models::UserDbModel;
 
 /// User repository trait for user data access operations.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynUserRepository = dyn(box) UserRepository)]
 pub trait UserRepository: Send + Sync {
     /// Create a new user in the database.
-    async fn create(&self, user: &UserDbModel) -> Result<()>;
+    fn create(&self, user: &UserDbModel) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Find a user by their unique ID.
-    async fn find_by_id(&self, id: &str) -> Result<Option<UserDbModel>>;
+    fn find_by_id(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<Option<UserDbModel>>> + Send;
 
     /// Find a user by their username.
-    async fn find_by_username(&self, username: &str) -> Result<Option<UserDbModel>>;
+    fn find_by_username(
+        &self,
+        username: &str,
+    ) -> impl std::future::Future<Output = Result<Option<UserDbModel>>> + Send;
 
     /// Find a user by their email address.
-    async fn find_by_email(&self, email: &str) -> Result<Option<UserDbModel>>;
+    fn find_by_email(
+        &self,
+        email: &str,
+    ) -> impl std::future::Future<Output = Result<Option<UserDbModel>>> + Send;
 
     /// Update an existing user.
-    async fn update(&self, user: &UserDbModel) -> Result<()>;
+    fn update(&self, user: &UserDbModel) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Delete a user by their ID.
-    async fn delete(&self, id: &str) -> Result<()>;
+    fn delete(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// List users with pagination.
-    async fn list(&self, limit: i64, offset: i64) -> Result<Vec<UserDbModel>>;
+    fn list(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> impl std::future::Future<Output = Result<Vec<UserDbModel>>> + Send;
 
     /// Update the last login timestamp (epoch ms) for a user.
-    async fn update_last_login(&self, id: &str, time_ms: i64) -> Result<()>;
+    fn update_last_login(
+        &self,
+        id: &str,
+        time_ms: i64,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Update a user's password hash.
-    async fn update_password(
+    fn update_password(
         &self,
         id: &str,
         password_hash: &str,
         clear_must_change: bool,
-    ) -> Result<()>;
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Count total number of users.
-    async fn count(&self) -> Result<i64>;
+    fn count(&self) -> impl std::future::Future<Output = Result<i64>> + Send;
 }
 
 /// SQLx implementation of UserRepository.
@@ -58,7 +74,6 @@ impl SqlxUserRepository {
     }
 }
 
-#[async_trait]
 impl UserRepository for SqlxUserRepository {
     async fn create(&self, user: &UserDbModel) -> Result<()> {
         sqlx::query(

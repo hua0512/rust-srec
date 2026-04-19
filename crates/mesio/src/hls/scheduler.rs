@@ -2,10 +2,10 @@
 
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::{BatchSchedulerConfig, HlsConfig};
-use crate::hls::fetcher::SegmentDownloader;
+use crate::hls::fetcher::{DynSegmentDownloader, SegmentDownloader};
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::prefetch::PrefetchManager;
-use crate::hls::processor::SegmentTransformer;
+use crate::hls::processor::{DynSegmentTransformer, SegmentTransformer};
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use hls::HlsData;
@@ -170,8 +170,8 @@ pub struct ProcessedSegmentOutput {
 
 pub struct SegmentScheduler {
     config: Arc<HlsConfig>,
-    segment_fetcher: Arc<dyn SegmentDownloader>,
-    segment_processor: Arc<dyn SegmentTransformer>,
+    segment_fetcher: Arc<DynSegmentDownloader<'static>>,
+    segment_processor: Arc<DynSegmentTransformer<'static>>,
     segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
     output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
     token: CancellationToken,
@@ -198,8 +198,8 @@ pub struct SegmentScheduler {
 impl SegmentScheduler {
     pub fn new(
         config: Arc<HlsConfig>,
-        segment_fetcher: Arc<dyn SegmentDownloader>,
-        segment_processor: Arc<dyn SegmentTransformer>,
+        segment_fetcher: Arc<DynSegmentDownloader<'static>>,
+        segment_processor: Arc<DynSegmentTransformer<'static>>,
         segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
         output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
         token: CancellationToken,
@@ -228,8 +228,8 @@ impl SegmentScheduler {
     /// Create a new SegmentScheduler with performance metrics
     pub fn with_metrics(
         config: Arc<HlsConfig>,
-        segment_fetcher: Arc<dyn SegmentDownloader>,
-        segment_processor: Arc<dyn SegmentTransformer>,
+        segment_fetcher: Arc<DynSegmentDownloader<'static>>,
+        segment_processor: Arc<DynSegmentTransformer<'static>>,
         segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
         output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
         token: CancellationToken,
@@ -249,8 +249,8 @@ impl SegmentScheduler {
 
     /// Result of segment processing, including metadata for prefetch tracking
     async fn perform_segment_processing(
-        segment_fetcher: Arc<dyn SegmentDownloader>,
-        segment_processor: Arc<dyn SegmentTransformer>,
+        segment_fetcher: Arc<DynSegmentDownloader<'static>>,
+        segment_processor: Arc<DynSegmentTransformer<'static>>,
         job: ScheduledSegmentJob,
     ) -> (
         u64,
@@ -372,8 +372,8 @@ impl SegmentScheduler {
         futures: &mut FuturesUnordered<F>,
         buffer_size: &mut usize,
         in_flight_segments: &mut HashSet<u64>,
-        segment_fetcher: &Arc<dyn SegmentDownloader>,
-        segment_processor: &Arc<dyn SegmentTransformer>,
+        segment_fetcher: &Arc<DynSegmentDownloader<'static>>,
+        segment_processor: &Arc<DynSegmentTransformer<'static>>,
         max_concurrency: usize,
     ) where
         F: From<
@@ -415,8 +415,8 @@ impl SegmentScheduler {
         futures: &mut FuturesUnordered<F>,
         buffer_size: &mut usize,
         in_flight_segments: &mut HashSet<u64>,
-        segment_fetcher: &Arc<dyn SegmentDownloader>,
-        segment_processor: &Arc<dyn SegmentTransformer>,
+        segment_fetcher: &Arc<DynSegmentDownloader<'static>>,
+        segment_processor: &Arc<DynSegmentTransformer<'static>>,
     ) where
         F: From<
             std::pin::Pin<

@@ -1,6 +1,5 @@
 //! Streamer repository.
 
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::database::models::StreamerDbModel;
@@ -9,46 +8,106 @@ use crate::{Error, Result};
 use chrono::{DateTime, Utc};
 
 /// Streamer repository trait.
-#[async_trait]
+#[dynosaur::dynosaur(pub DynStreamerRepository = dyn(box) StreamerRepository)]
 pub trait StreamerRepository: Send + Sync {
-    async fn get_streamer(&self, id: &str) -> Result<StreamerDbModel>;
-    async fn get_streamer_by_url(&self, url: &str) -> Result<StreamerDbModel>;
-    async fn list_streamers(&self) -> Result<Vec<StreamerDbModel>>;
-    async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>>;
-    async fn list_streamers_by_state(&self, state: &str) -> Result<Vec<StreamerDbModel>>;
-    async fn list_streamers_by_priority(&self, priority: &str) -> Result<Vec<StreamerDbModel>>;
-    async fn list_streamers_by_platform(&self, platform_id: &str) -> Result<Vec<StreamerDbModel>>;
-    async fn list_streamers_by_template(&self, template_id: &str) -> Result<Vec<StreamerDbModel>>;
-    async fn list_active_streamers(&self) -> Result<Vec<StreamerDbModel>>;
-    async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()>;
-    async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()>;
-    async fn update_streamer_state(&self, id: &str, state: &str) -> Result<()>;
-    async fn update_streamer_priority(&self, id: &str, priority: &str) -> Result<()>;
-    async fn increment_error_count(&self, id: &str) -> Result<i32>;
-    async fn reset_error_count(&self, id: &str) -> Result<()>;
-    async fn set_disabled_until(&self, id: &str, until: Option<i64>) -> Result<()>;
-    async fn update_last_live_time(&self, id: &str, time: i64) -> Result<()>;
-    async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()>;
-    async fn delete_streamer(&self, id: &str) -> Result<()>;
+    fn get_streamer(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<StreamerDbModel>> + Send;
+    fn get_streamer_by_url(
+        &self,
+        url: &str,
+    ) -> impl std::future::Future<Output = Result<StreamerDbModel>> + Send;
+    fn list_streamers(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<StreamerDbModel>>> + Send;
+    fn list_all_streamers(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<StreamerDbModel>>> + Send;
+    fn list_streamers_by_state(
+        &self,
+        state: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<StreamerDbModel>>> + Send;
+    fn list_streamers_by_priority(
+        &self,
+        priority: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<StreamerDbModel>>> + Send;
+    fn list_streamers_by_platform(
+        &self,
+        platform_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<StreamerDbModel>>> + Send;
+    fn list_streamers_by_template(
+        &self,
+        template_id: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<StreamerDbModel>>> + Send;
+    fn list_active_streamers(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<StreamerDbModel>>> + Send;
+    fn create_streamer(
+        &self,
+        streamer: &StreamerDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_streamer(
+        &self,
+        streamer: &StreamerDbModel,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_streamer_state(
+        &self,
+        id: &str,
+        state: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_streamer_priority(
+        &self,
+        id: &str,
+        priority: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn increment_error_count(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<i32>> + Send;
+    fn reset_error_count(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn set_disabled_until(
+        &self,
+        id: &str,
+        until: Option<i64>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_last_live_time(
+        &self,
+        id: &str,
+        time: i64,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn update_avatar(
+        &self,
+        id: &str,
+        avatar_url: Option<&str>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn delete_streamer(&self, id: &str) -> impl std::future::Future<Output = Result<()>> + Send;
 
     // Methods for StreamerManager
-    async fn clear_streamer_error_state(&self, id: &str) -> Result<()>;
-    async fn clear_streamer_last_error(&self, id: &str) -> Result<()>;
-    async fn record_streamer_error(
+    fn clear_streamer_error_state(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn clear_streamer_last_error(
+        &self,
+        id: &str,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn record_streamer_error(
         &self,
         id: &str,
         error_count: i32,
         disabled_until: Option<DateTime<Utc>>,
         error: Option<&str>,
-    ) -> Result<()>;
-    async fn record_streamer_success(
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn record_streamer_success(
         &self,
         id: &str,
         last_live_time: Option<DateTime<Utc>>,
-    ) -> Result<()>;
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 /// SQLx implementation of StreamerRepository.
+#[derive(Clone)]
 pub struct SqlxStreamerRepository {
     pool: SqlitePool,
     write_pool: SqlitePool,
@@ -60,7 +119,6 @@ impl SqlxStreamerRepository {
     }
 }
 
-#[async_trait]
 impl StreamerRepository for SqlxStreamerRepository {
     async fn get_streamer(&self, id: &str) -> Result<StreamerDbModel> {
         sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers WHERE id = ?")
