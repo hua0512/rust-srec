@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG RUST_VERSION=1.92.0
+ARG RUST_VERSION=1.95.0
 
 # =============================================================================
 # Stage 0: Chef - Rust toolchain + cargo-chef (shared base)
