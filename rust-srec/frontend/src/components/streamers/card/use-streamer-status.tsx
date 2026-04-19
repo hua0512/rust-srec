@@ -177,9 +177,7 @@ export function useStreamerStatus(
             theme="orange"
             icon={<UserX className="h-3.5 w-3.5" />}
             title={<Trans>Account Not Found</Trans>}
-            subtitle={
-              <Trans>Streamer no longer exists on the platform</Trans>
-            }
+            subtitle={<Trans>Streamer no longer exists on the platform</Trans>}
           >
             <div className="text-xs text-muted-foreground leading-relaxed">
               <Trans>

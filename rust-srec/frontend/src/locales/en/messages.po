@@ -215,6 +215,11 @@ msgstr "Absolute path or 'streamlink' in PATH"
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "Accept Invalid Certs (Default: Off)"
 
+#: src/components/streamers/card/use-streamer-status.tsx:170
+#: src/components/streamers/card/use-streamer-status.tsx:179
+msgid "Account Not Found"
+msgstr "Account Not Found"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:494
 msgid "Action"
 msgstr "Action"
@@ -926,7 +931,7 @@ msgid "Cancel Pipeline?"
 msgstr "Cancel Pipeline?"
 
 #: src/components/pipeline/status-config.ts:110
-#: src/components/streamers/card/use-streamer-status.tsx:41
+#: src/components/streamers/card/use-streamer-status.tsx:42
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:117
 msgid "Cancelled"
 msgstr "Cancelled"
@@ -1043,7 +1048,7 @@ msgstr "Check triggered"
 msgid "Checking"
 msgstr "Checking"
 
-#: src/components/streamers/card/use-streamer-status.tsx:236
+#: src/components/streamers/card/use-streamer-status.tsx:273
 msgid "Checking stream status..."
 msgstr "Checking stream status..."
 
@@ -1983,7 +1988,7 @@ msgid "Disable"
 msgstr "Disable"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:202
-#: src/components/streamers/card/use-streamer-status.tsx:46
+#: src/components/streamers/card/use-streamer-status.tsx:47
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:534
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:544
@@ -2408,7 +2413,7 @@ msgid "Environment Variables"
 msgstr "Environment Variables"
 
 #: src/components/config/engines/engine-card.tsx:150
-#: src/components/streamers/card/use-streamer-status.tsx:45
+#: src/components/streamers/card/use-streamer-status.tsx:46
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:38
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:66
@@ -2421,7 +2426,8 @@ msgstr "Environment Variables"
 msgid "Error"
 msgstr "Error"
 
-#: src/components/streamers/card/use-streamer-status.tsx:196
+#: src/components/streamers/card/use-streamer-status.tsx:193
+#: src/components/streamers/card/use-streamer-status.tsx:233
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:607
 msgid "Error Details"
 msgstr "Error Details"
@@ -2929,7 +2935,7 @@ msgstr "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Sma
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 
-#: src/components/streamers/card/use-streamer-status.tsx:40
+#: src/components/streamers/card/use-streamer-status.tsx:41
 msgid "Fatal Error"
 msgstr "Fatal Error"
 
@@ -3642,9 +3648,9 @@ msgstr "Input Paths (comma separated)"
 msgid "Inset"
 msgstr "Inset"
 
-#: src/components/streamers/card/use-streamer-status.tsx:37
-#: src/components/streamers/card/use-streamer-status.tsx:224
-#: src/components/streamers/card/use-streamer-status.tsx:233
+#: src/components/streamers/card/use-streamer-status.tsx:38
+#: src/components/streamers/card/use-streamer-status.tsx:261
+#: src/components/streamers/card/use-streamer-status.tsx:270
 msgid "Inspecting"
 msgstr "Inspecting"
 
@@ -3790,7 +3796,7 @@ msgstr "Keyword"
 msgid "Language"
 msgstr "Language"
 
-#: src/components/streamers/card/use-streamer-status.tsx:295
+#: src/components/streamers/card/use-streamer-status.tsx:332
 msgid "Last Activity"
 msgstr "Last Activity"
 
@@ -3848,8 +3854,8 @@ msgstr "List"
 msgid "List of allowed file extensions (without dot)."
 msgstr "List of allowed file extensions (without dot)."
 
-#: src/components/streamers/card/use-streamer-status.tsx:36
-#: src/components/streamers/card/use-streamer-status.tsx:211
+#: src/components/streamers/card/use-streamer-status.tsx:37
+#: src/components/streamers/card/use-streamer-status.tsx:248
 #: src/components/streamers/edit/recent-sessions-list.tsx:75
 #: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:174
@@ -4316,8 +4322,8 @@ msgstr "Monitor and manage processing jobs"
 msgid "Monitor this streamer"
 msgstr "Monitor this streamer"
 
-#: src/components/streamers/card/use-streamer-status.tsx:170
-#: src/components/streamers/card/use-streamer-status.tsx:179
+#: src/components/streamers/card/use-streamer-status.tsx:207
+#: src/components/streamers/card/use-streamer-status.tsx:216
 msgid "Monitoring Stopped"
 msgstr "Monitoring Stopped"
 
@@ -4720,7 +4726,7 @@ msgstr "Normal+"
 msgid "Not available"
 msgstr "Not available"
 
-#: src/components/streamers/card/use-streamer-status.tsx:42
+#: src/components/streamers/card/use-streamer-status.tsx:43
 msgid "Not Found"
 msgstr "Not Found"
 
@@ -4826,9 +4832,9 @@ msgstr "OAuth Token"
 msgid "Off Canvas"
 msgstr "Off Canvas"
 
-#: src/components/streamers/card/use-streamer-status.tsx:35
-#: src/components/streamers/card/use-streamer-status.tsx:281
-#: src/components/streamers/card/use-streamer-status.tsx:290
+#: src/components/streamers/card/use-streamer-status.tsx:36
+#: src/components/streamers/card/use-streamer-status.tsx:318
+#: src/components/streamers/card/use-streamer-status.tsx:327
 #: src/components/streamers/edit/recent-sessions-list.tsx:73
 #: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:72
@@ -4946,7 +4952,7 @@ msgstr "Optional extra arguments appended to `tdl login`."
 msgid "Options"
 msgstr "Options"
 
-#: src/components/streamers/card/use-streamer-status.tsx:39
+#: src/components/streamers/card/use-streamer-status.tsx:40
 msgid "Out of Space"
 msgstr "Out of Space"
 
@@ -5008,7 +5014,7 @@ msgstr "Output Settings"
 msgid "Outputs"
 msgstr "Outputs"
 
-#: src/components/streamers/card/use-streamer-status.tsx:254
+#: src/components/streamers/card/use-streamer-status.tsx:291
 msgid "Outside Schedule"
 msgstr "Outside Schedule"
 
@@ -5781,7 +5787,7 @@ msgstr "Real-Time Logs"
 msgid "Real-time status of all system components and resources."
 msgstr "Real-time status of all system components and resources."
 
-#: src/components/streamers/card/use-streamer-status.tsx:183
+#: src/components/streamers/card/use-streamer-status.tsx:220
 msgid "Reason"
 msgstr "Reason"
 
@@ -5824,7 +5830,7 @@ msgstr "Recording"
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
-#: src/components/streamers/card/use-streamer-status.tsx:264
+#: src/components/streamers/card/use-streamer-status.tsx:301
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
@@ -6218,8 +6224,8 @@ msgstr "Scanned! Please confirm on your phone"
 msgid "Schedule recording times"
 msgstr "Schedule recording times"
 
-#: src/components/streamers/card/use-streamer-status.tsx:38
-#: src/components/streamers/card/use-streamer-status.tsx:245
+#: src/components/streamers/card/use-streamer-status.tsx:39
+#: src/components/streamers/card/use-streamer-status.tsx:282
 msgid "Scheduled"
 msgstr "Scheduled"
 
@@ -6876,6 +6882,10 @@ msgstr "Streamer ID is required"
 msgid "Streamer is on cooldown"
 msgstr "Streamer is on cooldown"
 
+#: src/components/streamers/card/use-streamer-status.tsx:180
+msgid "Streamer no longer exists on the platform"
+msgstr "Streamer no longer exists on the platform"
+
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:408
 msgid "Streamer pagination"
 msgstr "Streamer pagination"
@@ -7117,7 +7127,7 @@ msgstr "templates"
 msgid "Templates"
 msgstr "Templates"
 
-#: src/components/streamers/card/use-streamer-status.tsx:44
+#: src/components/streamers/card/use-streamer-status.tsx:45
 #: src/components/streamers/card/use-streamer-status.tsx:114
 #: src/components/streamers/card/use-streamer-status.tsx:123
 msgid "Temporarily Paused"
@@ -7150,6 +7160,10 @@ msgstr "The direct link to the channel or stream."
 #: src/components/not-found.tsx:17
 msgid "The page you are looking for does not exist."
 msgstr "The page you are looking for does not exist."
+
+#: src/components/streamers/card/use-streamer-status.tsx:183
+msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
+msgstr "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 
 #: src/components/sessions/timeline-tab.tsx:34
 msgid "The stream title remained constant throughout the session."
@@ -7211,7 +7225,7 @@ msgstr "This step is linked to the preset <0>{presetName}</0>."
 msgid "This stream is already active"
 msgstr "This stream is already active"
 
-#: src/components/streamers/card/use-streamer-status.tsx:257
+#: src/components/streamers/card/use-streamer-status.tsx:294
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "This streamer is currently live, but outside your configured recording schedule."
 
