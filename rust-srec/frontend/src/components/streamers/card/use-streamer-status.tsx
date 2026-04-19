@@ -9,6 +9,7 @@ import {
   Activity,
   XCircle,
   Loader2,
+  UserX,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { StreamerSchema } from '@/api/schemas';
@@ -62,7 +63,6 @@ export function useStreamerStatus(
 
     const stopStates = [
       'FATAL_ERROR',
-      'NOT_FOUND',
       'OUT_OF_SPACE',
       'DISABLED',
       'CANCELLED',
@@ -156,6 +156,45 @@ export function useStreamerStatus(
                   <Trans>Last Error</Trans>
                 </p>
                 <div className="text-xs bg-muted/40 text-muted-foreground/90 p-2.5 rounded-md font-mono break-all border border-border/40 shadow-sm leading-relaxed max-h-[120px] overflow-y-auto">
+                  {streamer.last_error}
+                </div>
+              </div>
+            )}
+          </StatusInfoTooltip>
+        ),
+      };
+    }
+
+    if (streamer.state === 'NOT_FOUND') {
+      return {
+        label: <Trans>Account Not Found</Trans>,
+        color:
+          'bg-orange-500/10 text-orange-600 border-orange-500/20 hover:bg-orange-500/20 dark:text-orange-400 dark:border-orange-400/30',
+        iconColor: 'bg-orange-500',
+        pulsing: false,
+        tooltip: (
+          <StatusInfoTooltip
+            theme="orange"
+            icon={<UserX className="h-3.5 w-3.5" />}
+            title={<Trans>Account Not Found</Trans>}
+            subtitle={
+              <Trans>Streamer no longer exists on the platform</Trans>
+            }
+          >
+            <div className="text-xs text-muted-foreground leading-relaxed">
+              <Trans>
+                The platform reported this account as missing. It may have been
+                deleted, banned, or the URL/ID is incorrect. Consider removing
+                or updating this streamer.
+              </Trans>
+            </div>
+            {streamer.last_error && (
+              <div className="mt-1 pt-2 border-t border-border/10">
+                <p className="text-[10px] text-muted-foreground mb-1.5 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3 text-[var(--tooltip-theme-color)]" />
+                  <Trans>Error Details</Trans>
+                </p>
+                <div className="text-xs bg-muted/50 p-2 rounded-md font-mono text-muted-foreground break-all border border-border/50 leading-relaxed">
                   {streamer.last_error}
                 </div>
               </div>
