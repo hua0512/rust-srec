@@ -13,8 +13,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use std::fmt::Display;
-
 use crate::Result;
 
 /// Type of download engine.
@@ -476,7 +474,8 @@ impl DownloadFailureKind {
 /// Error returned by [`DownloadEngine::start`] carrying a classified
 /// [`DownloadFailureKind`] so the manager can make informed retry and
 /// circuit-breaker decisions without hardcoding `Other`.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
 pub struct EngineStartError {
     /// Classified failure kind.
     pub kind: DownloadFailureKind,
@@ -493,14 +492,6 @@ impl EngineStartError {
         }
     }
 }
-
-impl Display for EngineStartError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl std::error::Error for EngineStartError {}
 
 impl From<crate::Error> for EngineStartError {
     fn from(err: crate::Error) -> Self {

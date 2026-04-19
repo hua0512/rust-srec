@@ -330,24 +330,15 @@ impl ActorRegistry {
 }
 
 /// Error type for registry operations.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RegistryError {
     /// An actor with the given ID already exists.
+    #[error("Actor already exists: {0}")]
     ActorExists(String),
     /// The actor was not found.
+    #[error("Actor not found: {0}")]
     ActorNotFound(String),
 }
-
-impl std::fmt::Display for RegistryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RegistryError::ActorExists(id) => write!(f, "Actor already exists: {}", id),
-            RegistryError::ActorNotFound(id) => write!(f, "Actor not found: {}", id),
-        }
-    }
-}
-
-impl std::error::Error for RegistryError {}
 
 #[cfg(test)]
 mod tests {

@@ -21,27 +21,18 @@ pub const DEFAULT_SEND_TIMEOUT: Duration = Duration::from_millis(100);
 pub const BACKPRESSURE_THRESHOLD: f64 = 0.8;
 
 /// Error type for send operations.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SendError {
     /// The actor has stopped and is no longer accepting messages.
+    #[error("Actor has stopped")]
     ActorStopped,
     /// The mailbox is full and the send timed out.
+    #[error("Mailbox is full")]
     MailboxFull,
     /// The send operation timed out.
+    #[error("Send operation timed out")]
     Timeout,
 }
-
-impl fmt::Display for SendError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SendError::ActorStopped => write!(f, "Actor has stopped"),
-            SendError::MailboxFull => write!(f, "Mailbox is full"),
-            SendError::Timeout => write!(f, "Send operation timed out"),
-        }
-    }
-}
-
-impl std::error::Error for SendError {}
 
 /// Metadata about an actor.
 #[derive(Debug, Clone)]

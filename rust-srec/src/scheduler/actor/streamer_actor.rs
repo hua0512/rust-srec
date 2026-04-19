@@ -54,7 +54,8 @@ pub enum ActorOutcome {
 }
 
 /// Error type for actor operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("{message}")]
 pub struct ActorError {
     /// Error message.
     pub message: String,
@@ -79,14 +80,6 @@ impl ActorError {
         }
     }
 }
-
-impl std::fmt::Display for ActorError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl std::error::Error for ActorError {}
 
 /// A self-managing actor for monitoring a single streamer.
 ///

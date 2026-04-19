@@ -821,14 +821,9 @@ mod tests {
     // Dummy data type for testing
     struct TestData(String);
 
-    #[derive(Debug)]
+    #[derive(Debug, thiserror::Error)]
+    #[error("TestStrategyError: {0}")]
     struct TestStrategyError(String);
-    impl std::fmt::Display for TestStrategyError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "TestStrategyError: {}", self.0)
-        }
-    }
-    impl std::error::Error for TestStrategyError {}
 
     struct TestStrategy {
         item_count_to_rotate: usize,
