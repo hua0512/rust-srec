@@ -1,6 +1,5 @@
 use std::sync::{Arc, LazyLock};
 
-use async_trait::async_trait;
 
 use parking_lot::RwLock;
 use regex::Regex;
@@ -1033,7 +1032,6 @@ impl Douyu {
     }
 }
 
-#[async_trait]
 impl PlatformExtractor for Douyu {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

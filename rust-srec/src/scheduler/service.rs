@@ -33,8 +33,9 @@ use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorHandle, ConfigRouter, ConfigScope, DownloadEndPolicy, DynBatchChecker, MonitorBatchChecker,
-    MonitorStatusChecker, PlatformConfig, PlatformMapping, PlatformMessage, RoutingPlan,
+    ActorHandle, ConfigRouter, ConfigScope, DownloadEndPolicy, DynBatchChecker, DynStatusChecker,
+    MonitorBatchChecker, MonitorStatusChecker, PlatformConfig, PlatformMapping, PlatformMessage,
+    RoutingPlan,
     ShutdownReport, StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig,
     TaskCompletionAction,
 };
@@ -298,7 +299,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         CR: ConfigRepository + Send + Sync + 'static,
     {
         // Create status and batch checkers directly from the StreamMonitor
-        let status_checker = Arc::new(MonitorStatusChecker::new(monitor.clone()));
+        let status_checker = DynStatusChecker::new_arc(MonitorStatusChecker::new(monitor.clone()));
         let batch_checker = DynBatchChecker::new_arc(MonitorBatchChecker::new(monitor.clone()));
 
         // Pass the shared metadata store to the supervisor

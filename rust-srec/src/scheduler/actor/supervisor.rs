@@ -19,7 +19,7 @@ use tracing::{debug, error, info, warn};
 use super::handle::ActorHandle;
 use super::messages::{PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage};
 use super::monitor_adapter::{
-    DynBatchChecker, NoOpBatchChecker, NoOpStatusChecker, StatusChecker,
+    DynBatchChecker, DynStatusChecker, NoOpBatchChecker, NoOpStatusChecker,
 };
 use super::platform_actor::PlatformActor;
 use super::registry::{ActorRegistry, ActorTaskResult};
@@ -103,7 +103,7 @@ pub struct Supervisor {
     /// Platform actor senders for streamer-platform association.
     platform_senders: HashMap<String, mpsc::Sender<PlatformMessage>>,
     /// Status checker for streamer actors.
-    status_checker: Arc<dyn StatusChecker>,
+    status_checker: Arc<DynStatusChecker<'static>>,
     /// Batch checker for platform actors.
     batch_checker: Arc<DynBatchChecker<'static>>,
 }
@@ -136,7 +136,7 @@ impl Supervisor {
             cancellation_token,
             config,
             metadata_store,
-            Arc::new(NoOpStatusChecker),
+            DynStatusChecker::new_arc(NoOpStatusChecker),
             DynBatchChecker::new_arc(NoOpBatchChecker),
         )
     }
@@ -149,7 +149,7 @@ impl Supervisor {
         cancellation_token: CancellationToken,
         config: SupervisorConfig,
         metadata_store: Arc<DashMap<String, StreamerMetadata>>,
-        status_checker: Arc<dyn StatusChecker>,
+        status_checker: Arc<DynStatusChecker<'static>>,
         batch_checker: Arc<DynBatchChecker<'static>>,
     ) -> Self {
         Self {

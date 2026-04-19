@@ -8,7 +8,6 @@ use crate::extractor::platforms::twitch::models::TwitchResponse;
 use crate::extractor::utils::{capture_group_1_or_invalid_url, extras_get_str};
 use crate::media::StreamInfo;
 use crate::media::media_info::MediaInfo;
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rand::RngExt;
 use regex::Regex;
@@ -295,7 +294,6 @@ impl Twitch {
 
 impl HlsExtractor for Twitch {}
 
-#[async_trait]
 impl PlatformExtractor for Twitch {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

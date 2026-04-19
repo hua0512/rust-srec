@@ -389,8 +389,8 @@ mod tests {
         }
     }
 
-    fn create_noop_checker() -> Arc<dyn super::super::monitor_adapter::StatusChecker> {
-        Arc::new(NoOpStatusChecker)
+    fn create_noop_checker() -> Arc<super::super::monitor_adapter::DynStatusChecker<'static>> {
+        super::super::monitor_adapter::DynStatusChecker::new_arc(NoOpStatusChecker)
     }
 
     #[test]

@@ -4,7 +4,6 @@
 //! supporting multiple input files in a single archive.
 //!
 
-use async_trait::async_trait;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde::{Deserialize, Serialize};
@@ -527,7 +526,6 @@ impl Default for CompressionProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for CompressionProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Cpu

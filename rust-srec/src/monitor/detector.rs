@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorFactory;
+use platforms_parser::extractor::platform_extractor::PlatformExtractor;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace, warn};
 

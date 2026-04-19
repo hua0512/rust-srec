@@ -4,7 +4,6 @@
 //! using ffmpeg. It supports common container formats like MP4, MKV, and FLV.
 //!
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -393,7 +392,6 @@ impl Default for MetadataProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for MetadataProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Cpu

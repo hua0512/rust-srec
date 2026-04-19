@@ -1,6 +1,5 @@
 //! Rclone processor for cloud storage operations.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
@@ -475,7 +474,6 @@ impl Default for RcloneProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for RcloneProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Io

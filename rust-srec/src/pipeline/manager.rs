@@ -19,8 +19,9 @@ use super::dag_scheduler::{
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, JobStatus, QueueDepthStatus};
 use super::processors::{
     AssBurnInProcessor, AudioExtractProcessor, CompressionProcessor, CopyMoveProcessor,
-    DanmakuFactoryProcessor, DeleteProcessor, ExecuteCommandProcessor, MetadataProcessor,
-    Processor, RcloneProcessor, RemuxProcessor, TdlUploadProcessor, ThumbnailProcessor,
+    DanmakuFactoryProcessor, DeleteProcessor, DynProcessor, ExecuteCommandProcessor,
+    MetadataProcessor, Processor, RcloneProcessor, RemuxProcessor, TdlUploadProcessor,
+    ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
 use super::purge::{JobPurgeService, PurgeConfig};
@@ -219,7 +220,7 @@ pub struct PipelineManager<
     /// IO worker pool.
     io_pool: WorkerPool,
     /// Processors.
-    processors: Vec<Arc<dyn Processor>>,
+    processors: Vec<Arc<DynProcessor<'static>>>,
     /// Event broadcaster.
     event_tx: broadcast::Sender<PipelineEvent>,
     /// Session repository for persistence (optional).
@@ -327,19 +328,19 @@ where
         let execute_timeout_secs = config.execute_timeout_secs;
 
         // Create default processors
-        let processors: Vec<Arc<dyn Processor>> = vec![
-            Arc::new(RemuxProcessor::new()),
-            Arc::new(DanmakuFactoryProcessor::new()),
-            Arc::new(AssBurnInProcessor::new()),
-            Arc::new(RcloneProcessor::new()),
-            Arc::new(TdlUploadProcessor::new()),
-            Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
-            Arc::new(ThumbnailProcessor::new()),
-            Arc::new(CopyMoveProcessor::new()),
-            Arc::new(AudioExtractProcessor::new()),
-            Arc::new(CompressionProcessor::new()),
-            Arc::new(MetadataProcessor::new()),
-            Arc::new(DeleteProcessor::new()),
+        let processors: Vec<Arc<DynProcessor<'static>>> = vec![
+            DynProcessor::new_arc(RemuxProcessor::new()),
+            DynProcessor::new_arc(DanmakuFactoryProcessor::new()),
+            DynProcessor::new_arc(AssBurnInProcessor::new()),
+            DynProcessor::new_arc(RcloneProcessor::new()),
+            DynProcessor::new_arc(TdlUploadProcessor::new()),
+            DynProcessor::new_arc(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
+            DynProcessor::new_arc(ThumbnailProcessor::new()),
+            DynProcessor::new_arc(CopyMoveProcessor::new()),
+            DynProcessor::new_arc(AudioExtractProcessor::new()),
+            DynProcessor::new_arc(CompressionProcessor::new()),
+            DynProcessor::new_arc(MetadataProcessor::new()),
+            DynProcessor::new_arc(DeleteProcessor::new()),
         ];
 
         // Create throttle controller if enabled
@@ -404,19 +405,19 @@ where
         };
 
         // Create default processors
-        let processors: Vec<Arc<dyn Processor>> = vec![
-            Arc::new(RemuxProcessor::new()),
-            Arc::new(DanmakuFactoryProcessor::new()),
-            Arc::new(AssBurnInProcessor::new()),
-            Arc::new(RcloneProcessor::new()),
-            Arc::new(TdlUploadProcessor::new()),
-            Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
-            Arc::new(ThumbnailProcessor::new()),
-            Arc::new(CopyMoveProcessor::new()),
-            Arc::new(AudioExtractProcessor::new()),
-            Arc::new(CompressionProcessor::new()),
-            Arc::new(MetadataProcessor::new()),
-            Arc::new(DeleteProcessor::new()),
+        let processors: Vec<Arc<DynProcessor<'static>>> = vec![
+            DynProcessor::new_arc(RemuxProcessor::new()),
+            DynProcessor::new_arc(DanmakuFactoryProcessor::new()),
+            DynProcessor::new_arc(AssBurnInProcessor::new()),
+            DynProcessor::new_arc(RcloneProcessor::new()),
+            DynProcessor::new_arc(TdlUploadProcessor::new()),
+            DynProcessor::new_arc(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
+            DynProcessor::new_arc(ThumbnailProcessor::new()),
+            DynProcessor::new_arc(CopyMoveProcessor::new()),
+            DynProcessor::new_arc(AudioExtractProcessor::new()),
+            DynProcessor::new_arc(CompressionProcessor::new()),
+            DynProcessor::new_arc(MetadataProcessor::new()),
+            DynProcessor::new_arc(DeleteProcessor::new()),
         ];
 
         // Create throttle controller if enabled
@@ -578,7 +579,7 @@ where
         info!("Starting Pipeline Manager");
 
         // Get CPU and IO processors
-        let cpu_processors: Vec<Arc<dyn Processor>> = self
+        let cpu_processors: Vec<Arc<DynProcessor<'static>>> = self
             .processors
             .iter()
             .filter(|p| p.processor_type() == super::processors::ProcessorType::Cpu)
@@ -590,7 +591,7 @@ where
             cpu_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
         );
 
-        let io_processors: Vec<Arc<dyn Processor>> = self
+        let io_processors: Vec<Arc<DynProcessor<'static>>> = self
             .processors
             .iter()
             .filter(|p| p.processor_type() == super::processors::ProcessorType::Io)

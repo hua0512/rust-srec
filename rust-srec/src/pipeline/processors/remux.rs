@@ -1,6 +1,5 @@
 //! Remux/transcode processor for converting video formats.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::process::Command;
@@ -719,7 +718,6 @@ impl Default for RemuxProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for RemuxProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Cpu
@@ -821,7 +819,7 @@ impl Processor for RemuxProcessor {
                 let input_path_string = make_absolute(input_path).await;
                 let input_path = input_path_string.as_str();
                 if let Err(e) = tokio::fs::remove_file(input_path).await {
-                    let _ = ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
+                    ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
                     logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Warn,
                         format!("Failed to remove input file {}: {}", input_path, e),

@@ -1,6 +1,5 @@
 //! Telegram upload processor using the `tdl` CLI (https://github.com/iyear/tdl).
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::process::Command;
@@ -230,7 +229,6 @@ impl Default for TdlUploadProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for TdlUploadProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Io

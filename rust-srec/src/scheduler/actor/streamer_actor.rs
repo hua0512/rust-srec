@@ -32,7 +32,7 @@ use super::messages::{
     StreamerConfig, StreamerMessage,
 };
 use super::metrics::ActorMetrics;
-use super::monitor_adapter::StatusChecker;
+use super::monitor_adapter::{DynStatusChecker, StatusChecker};
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::DownloadStopCause;
 use crate::monitor::{LiveStatus, ProcessStatusResult, ProcessStatusSuppression};
@@ -113,7 +113,7 @@ pub struct StreamerActor {
     /// State persistence path (optional).
     state_path: Option<PathBuf>,
     /// Status checker for performing actual status checks.
-    status_checker: Arc<dyn StatusChecker>,
+    status_checker: Arc<DynStatusChecker<'static>>,
 }
 
 /// Default priority mailbox capacity (smaller than normal mailbox).
@@ -134,7 +134,7 @@ impl StreamerActor {
         metadata_store: Arc<DashMap<String, StreamerMetadata>>,
         config: StreamerConfig,
         cancellation_token: CancellationToken,
-        status_checker: Arc<dyn StatusChecker>,
+        status_checker: Arc<DynStatusChecker<'static>>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
         let is_high_priority = config.priority == Priority::High;
@@ -177,7 +177,7 @@ impl StreamerActor {
         metadata_store: Arc<DashMap<String, StreamerMetadata>>,
         config: StreamerConfig,
         cancellation_token: CancellationToken,
-        status_checker: Arc<dyn StatusChecker>,
+        status_checker: Arc<DynStatusChecker<'static>>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
         let (priority_tx, priority_rx) = mpsc::channel(DEFAULT_PRIORITY_MAILBOX_CAPACITY);
@@ -223,7 +223,7 @@ impl StreamerActor {
         config: StreamerConfig,
         cancellation_token: CancellationToken,
         platform_actor: mpsc::Sender<PlatformMessage>,
-        status_checker: Arc<dyn StatusChecker>,
+        status_checker: Arc<DynStatusChecker<'static>>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (mut actor, handle) = Self::with_priority_channel(
             streamer_id,
@@ -1332,7 +1332,7 @@ impl StreamerActor {
         default_config: StreamerConfig,
         cancellation_token: CancellationToken,
         state_dir: Option<&PathBuf>,
-        status_checker: std::sync::Arc<dyn StatusChecker>,
+        status_checker: std::sync::Arc<DynStatusChecker<'static>>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (mut actor, handle) = Self::new(
             streamer_id.clone(),
@@ -1372,7 +1372,7 @@ impl StreamerActor {
         default_config: StreamerConfig,
         cancellation_token: CancellationToken,
         state_dir: Option<&PathBuf>,
-        status_checker: std::sync::Arc<dyn StatusChecker>,
+        status_checker: std::sync::Arc<DynStatusChecker<'static>>,
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (mut actor, handle) = Self::with_priority_channel(
             streamer_id.clone(),
@@ -1522,7 +1522,6 @@ mod tests {
     use crate::domain::Priority;
     use crate::monitor::{ProcessStatusResult, ProcessStatusSuppression};
     use crate::scheduler::actor::monitor_adapter::{CheckError, NoOpStatusChecker};
-    use async_trait::async_trait;
     use std::collections::VecDeque;
     use std::sync::Arc;
     use std::sync::Mutex;
@@ -1564,8 +1563,8 @@ mod tests {
         }
     }
 
-    fn create_noop_checker() -> Arc<dyn StatusChecker> {
-        Arc::new(NoOpStatusChecker)
+    fn create_noop_checker() -> Arc<DynStatusChecker<'static>> {
+        DynStatusChecker::new_arc(NoOpStatusChecker)
     }
 
     #[derive(Debug)]
@@ -1583,7 +1582,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl StatusChecker for SequenceStatusChecker {
         async fn check_status(
             &self,
@@ -2122,7 +2120,7 @@ mod tests {
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let checker: Arc<dyn StatusChecker> = Arc::new(SequenceStatusChecker::new(
+        let checker: Arc<DynStatusChecker<'static>> = DynStatusChecker::new_arc(SequenceStatusChecker::new(
             vec![(
                 CheckResult::success(StreamerState::Live),
                 LiveStatus::Live {
@@ -2169,7 +2167,7 @@ mod tests {
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let checker: Arc<dyn StatusChecker> = Arc::new(SequenceStatusChecker::new(
+        let checker: Arc<DynStatusChecker<'static>> = DynStatusChecker::new_arc(SequenceStatusChecker::new(
             vec![
                 (
                     CheckResult::success(StreamerState::Live),
@@ -2234,7 +2232,7 @@ mod tests {
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let checker: Arc<dyn StatusChecker> = Arc::new(SequenceStatusChecker::new(
+        let checker: Arc<DynStatusChecker<'static>> = DynStatusChecker::new_arc(SequenceStatusChecker::new(
             vec![(
                 CheckResult::success(StreamerState::Live),
                 LiveStatus::Live {
@@ -2303,7 +2301,7 @@ mod tests {
         let config = create_test_config();
         let token = CancellationToken::new();
 
-        let checker: Arc<dyn StatusChecker> = Arc::new(SequenceStatusChecker::new(
+        let checker: Arc<DynStatusChecker<'static>> = DynStatusChecker::new_arc(SequenceStatusChecker::new(
             vec![(
                 CheckResult::success(StreamerState::Live),
                 LiveStatus::Live {

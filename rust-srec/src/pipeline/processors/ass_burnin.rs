@@ -8,7 +8,6 @@
 //!
 //! This processor is manifest-aware (prefers `video_inputs` + `danmu_inputs`) and batch-safe.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -318,7 +317,6 @@ impl Default for AssBurnInProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for AssBurnInProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Cpu

@@ -1,6 +1,5 @@
 //! Execute command processor for running arbitrary shell commands.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
@@ -200,7 +199,6 @@ impl Default for ExecuteCommandProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for ExecuteCommandProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Cpu
@@ -233,7 +231,7 @@ impl Processor for ExecuteCommandProcessor {
 
         let command = Self::substitute_variables(&config.command, input);
 
-        let _ = ctx.info(format!("Executing command: {}", command));
+        ctx.info(format!("Executing command: {}", command));
 
         // Take snapshot of output directory before execution (if scanning enabled)
         let before_snapshot: Option<HashSet<String>> = if let Some(ref dir) = config.scan_output_dir
@@ -250,7 +248,7 @@ impl Processor for ExecuteCommandProcessor {
                     crate::utils::fs::ensure_dir_all_with_op("creating output directory", dir_path)
                         .await
                 {
-                    let _ = ctx.warn(format!("Failed to create output directory {}: {}", dir, e));
+                    ctx.warn(format!("Failed to create output directory {}: {}", dir, e));
                 }
             }
 
@@ -296,7 +294,7 @@ impl Processor for ExecuteCommandProcessor {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => return Err(e),
             Err(_) => {
-                let _ = ctx.error(format!("Command timed out after {}s", self.timeout_secs));
+                ctx.error(format!("Command timed out after {}s", self.timeout_secs));
                 // Child process cleanup depends on implementation details of utils::run_command_with_logs
                 // ideally that helper should handle cancellation/timeout cleanups if possible.
                 // For now, we return timeout error.
@@ -313,7 +311,7 @@ impl Processor for ExecuteCommandProcessor {
                 .map(|l| l.message.clone())
                 .unwrap_or_else(|| "Command failed".to_string());
 
-            let _ = ctx.error(format!(
+            ctx.error(format!(
                 "Command failed with status: {}",
                 command_output.status
             ));
@@ -326,7 +324,7 @@ impl Processor for ExecuteCommandProcessor {
 
         let duration = command_output.duration;
 
-        let _ = ctx.info(format!("Command completed in {:.2}s", duration));
+        ctx.info(format!("Command completed in {:.2}s", duration));
 
         // Get file sizes for metrics if paths exist
         let input_path = input.inputs.first().map(|s| s.as_str()).unwrap_or("");
@@ -368,7 +366,7 @@ impl Processor for ExecuteCommandProcessor {
                     input.inputs.clone()
                 }
             } else {
-                let _ = ctx.info(format!(
+                ctx.info(format!(
                     "Detected {} new files in output directory",
                     new_files.len()
                 ));

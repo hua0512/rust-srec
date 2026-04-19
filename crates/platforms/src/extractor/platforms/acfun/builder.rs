@@ -1,6 +1,5 @@
 use std::sync::LazyLock;
 
-use async_trait::async_trait;
 use regex::Regex;
 use reqwest::{Client, header};
 
@@ -47,7 +46,6 @@ impl Acfun {
     }
 }
 
-#[async_trait]
 impl PlatformExtractor for Acfun {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

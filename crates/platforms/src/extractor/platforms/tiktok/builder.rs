@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use async_trait::async_trait;
 use regex::Regex;
 use reqwest::Client;
 use serde_json::json;
@@ -222,7 +221,6 @@ impl TikTok {
     }
 }
 
-#[async_trait]
 impl PlatformExtractor for TikTok {
     fn get_extractor(&self) -> &Extractor {
         &self.extractor

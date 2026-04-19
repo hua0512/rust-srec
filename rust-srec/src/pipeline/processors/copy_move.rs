@@ -11,7 +11,6 @@
 //! - `{platform}` - Platform name
 //! - Time placeholders: `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, etc.
 
-use async_trait::async_trait;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 use std::io::ErrorKind;
@@ -133,7 +132,6 @@ impl Default for CopyMoveProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for CopyMoveProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Io

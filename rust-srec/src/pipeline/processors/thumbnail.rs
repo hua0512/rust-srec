@@ -1,6 +1,5 @@
 //! Thumbnail processor for extracting video thumbnails.
 
-use async_trait::async_trait;
 use std::path::Path;
 use tokio::process::Command;
 use tracing::debug;
@@ -315,7 +314,6 @@ impl Default for ThumbnailProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for ThumbnailProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Cpu

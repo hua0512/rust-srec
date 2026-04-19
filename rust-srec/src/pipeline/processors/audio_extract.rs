@@ -5,7 +5,6 @@
 //! stream copy without re-encoding.
 //!
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::process::Command;
@@ -474,7 +473,6 @@ impl Default for AudioExtractProcessor {
     }
 }
 
-#[async_trait]
 impl Processor for AudioExtractProcessor {
     fn processor_type(&self) -> ProcessorType {
         ProcessorType::Cpu
