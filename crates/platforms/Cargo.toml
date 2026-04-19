@@ -40,7 +40,6 @@ regex = { workspace = true, default-features = false, features = [
  # Logging
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-async-trait = { workspace = true }
 dynosaur = { workspace = true }
 tars-codec = { path = "../tars-codec"}
 rustc-hash = { workspace = true }

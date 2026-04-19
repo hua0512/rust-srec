@@ -3670,7 +3670,6 @@ name = "mesio-engine"
 version = "0.4.0"
 dependencies = [
  "aes 0.9.0-rc.4",
- "async-trait",
  "bytes",
  "cbc",
  "cipher 0.5.1",
@@ -4654,7 +4653,6 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 name = "platforms-parser"
 version = "0.2.0"
 dependencies = [
- "async-trait",
  "base64 0.22.1",
  "brotli",
  "byteorder",
@@ -5528,7 +5526,6 @@ dependencies = [
  "aes-gcm",
  "anyhow",
  "argon2",
- "async-trait",
  "axum",
  "base64 0.22.1",
  "bytes",
