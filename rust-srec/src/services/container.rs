@@ -40,7 +40,8 @@ use crate::database::repositories::{
 };
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
-    DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
+    DEFAULT_GATE_COOLDOWN_SECS, DownloadConfig, DownloadManager, DownloadManagerConfig,
+    DownloadManagerEvent, LAST_ERROR_GATE_PREFIX, OutputRootGate, RecoveryHook,
     engine::DownloadProgress,
 };
 use crate::logging::LoggingConfig;
@@ -53,6 +54,182 @@ use crate::scheduler::Scheduler;
 use crate::streamer::StreamerManager;
 use crate::utils::filename::sanitize_filename;
 use pipeline_common::expand_path_template;
+
+/// Build the recovery hook closure for the output-root write gate.
+///
+/// The closure iterates the streamer metadata store, finds every streamer
+/// whose `last_error` starts with [`LAST_ERROR_GATE_PREFIX`] (i.e., was
+/// placed in backoff by `InfraBlockReason::OutputRootUnavailable`), and
+/// clears their error state via `StreamerManager::clear_error_state` so
+/// they immediately re-enter the live-check rotation.
+///
+/// Invoked by [`OutputRootGate::mark_healthy`] on every `Degraded → Healthy`
+/// transition. Runs inside a `tokio::spawn`'d task (see gate implementation),
+/// so blocking inside the closure is OK.
+fn build_output_root_gate_recovery_hook<R>(
+    streamer_manager: Arc<StreamerManager<R>>,
+) -> RecoveryHook
+where
+    R: crate::database::repositories::streamer::StreamerRepository + Send + Sync + 'static,
+    StreamerManager<R>: Send + Sync + 'static,
+{
+    Arc::new(move |root: &std::path::Path| {
+        // Build the exact prefix this root's streamers would carry in
+        // `last_error`. `set_infra_blocked` writes
+        //     "output-root blocked: {root.display()} ({io_kind})"
+        // so we filter by "output-root blocked: {root.display()} " (with
+        // trailing space) to discriminate between streamers blocked on THIS
+        // root vs a different Degraded root. Without the trailing space,
+        // "/rec" would also match "/rec/huya" — which would wipe streamers
+        // that are still legitimately blocked.
+        let root_marker = format!("{} {} ", LAST_ERROR_GATE_PREFIX, root.display());
+
+        // Snapshot affected streamer IDs first so we don't hold a DashMap
+        // iterator across await points. `metadata_store()` returns an
+        // `Arc<DashMap<_>>`; iteration holds per-bucket read locks.
+        let affected_ids: Vec<String> = streamer_manager
+            .metadata_store()
+            .iter()
+            .filter(|entry| {
+                entry
+                    .last_error
+                    .as_deref()
+                    .is_some_and(|s| s.starts_with(&root_marker))
+            })
+            .map(|entry| entry.key().clone())
+            .collect();
+
+        if affected_ids.is_empty() {
+            debug!(
+                root = %root.display(),
+                "Output-root gate recovery hook fired but no affected streamers found"
+            );
+            return;
+        }
+
+        info!(
+            root = %root.display(),
+            count = affected_ids.len(),
+            "Output-root gate recovered; clearing error state for affected streamers"
+        );
+
+        // The hook is called inside a tokio task that the gate spawned on
+        // its own runtime, so we can safely spawn another task here for
+        // the per-streamer async DB writes. We fire them all in parallel
+        // because a single slow write shouldn't hold up fleet recovery.
+        let sm = streamer_manager.clone();
+        tokio::spawn(async move {
+            for id in affected_ids {
+                if let Err(e) = sm.clear_error_state(&id).await {
+                    warn!(
+                        streamer_id = %id,
+                        error = %e,
+                        "Failed to clear error state during gate recovery (non-fatal)"
+                    );
+                }
+            }
+        });
+    })
+}
+
+/// Extract the static root-prefix from a user-configured `output_folder`
+/// template (e.g. `"/rec/{platform}/{streamer}/%Y%m%d"`), used by the
+/// startup probe to discover unique mount roots from the config system
+/// without merging per-streamer configs.
+///
+/// Algorithm:
+/// 1. Truncate at the first `{` (curly-brace variable) or `%` (strftime
+///    placeholder) — everything after is streamer/date-dependent and not
+///    part of the mount.
+/// 2. Trim to end at the last `/` so we don't emit a partial directory
+///    name (e.g. `/recordings-` from `/recordings-{streamer}/files`).
+/// 3. Return `None` for empty/root-only prefixes that carry no useful
+///    probe signal.
+///
+/// Examples:
+///   `"/rec/{platform}/{streamer}"` → `Some("/rec/")`
+///   `"/home/{user}/recordings/"` → `Some("/home/")`
+///   `"/app/output"` (no placeholder) → `Some("/app/")`
+///   `"/recordings-{streamer}/files"` → `None` (last-complete-segment is `/`)
+///   `"{streamer}/files"` (no root) → `None`
+///   `"recordings/{streamer}"` (relative) → `None`
+fn static_root_prefix(template: &str) -> Option<String> {
+    // Only absolute templates produce probe-worthy roots. A relative
+    // template would anchor to the container's CWD (unpredictable), same
+    // reasoning that makes `parse_output_roots_env` reject relative entries.
+    if !template.starts_with('/') {
+        return None;
+    }
+    let cut = template.find(['{', '%']).unwrap_or(template.len());
+    let prefix = &template[..cut];
+    let last_slash = prefix.rfind('/')?;
+    let result = &prefix[..=last_slash];
+    if result.is_empty() || result == "/" {
+        None
+    } else {
+        Some(result.to_string())
+    }
+}
+
+/// Read `RUST_SREC_OUTPUT_ROOTS` from the environment and parse it into a
+/// list of absolute paths. The value is comma-separated; empty entries are
+/// skipped. Relative paths are rejected with a warning (they would anchor
+/// to the current working directory, which is unpredictable inside Docker).
+fn parse_output_roots_env() -> Vec<std::path::PathBuf> {
+    let raw = match std::env::var("RUST_SREC_OUTPUT_ROOTS") {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    raw.split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| {
+            let p = std::path::PathBuf::from(s);
+            if p.is_absolute() {
+                Some(p)
+            } else {
+                warn!(
+                    entry = %s,
+                    "Ignoring non-absolute entry in RUST_SREC_OUTPUT_ROOTS"
+                );
+                None
+            }
+        })
+        .collect()
+}
+
+/// Synchronous writability probe used by `run_output_root_startup_probe`.
+///
+/// Creates a temp file inside `root` with restrictive permissions, writes
+/// zero bytes, and drops it (RAII unlink via the `tempfile` crate). Returns
+/// the underlying `io::Error` on any failure so the gate can classify via
+/// `IoErrorKindSer::from_io_kind`.
+///
+/// Kept separate from `OutputRootGate::record_failure` so the gate itself
+/// stays ignorant of how failures are discovered — it just accepts an
+/// `io::Error` from any caller.
+fn probe_root_writable(root: &std::path::Path) -> std::io::Result<()> {
+    // Ensure the root itself is a directory. `std::fs::metadata` follows
+    // symlinks, which is what we want — a dangling symlink would trip the
+    // gate with ENOENT, correctly.
+    let meta = std::fs::metadata(root)?;
+    if !meta.is_dir() {
+        return Err(std::io::Error::other(format!(
+            "root path {} is not a directory",
+            root.display()
+        )));
+    }
+
+    // tempfile::Builder::tempfile_in uses O_EXCL + restrictive mode by
+    // default on Unix, which is what we want: no symlink/TOCTOU window
+    // and no leftover probe file even if the process is killed.
+    let mut file = tempfile::Builder::new()
+        .prefix(".rust-srec-probe-")
+        .tempfile_in(root)?;
+    std::io::Write::write_all(&mut file, b"")?;
+    // `file` drops here and the tempfile crate unlinks it.
+    Ok(())
+}
 
 fn should_end_stream_on_danmu_stream_closed(platform_specific_config: Option<&str>) -> bool {
     platform_specific_config
@@ -114,6 +291,10 @@ pub struct ServiceContainer {
     pub event_broadcaster: ConfigEventBroadcaster,
     /// Download manager.
     pub download_manager: Arc<DownloadManager>,
+    /// Output-root write gate (#508). Shared by the download manager for
+    /// pre-start checks + runtime ENOSPC routing and by the health checker
+    /// for aggregated `/health` reporting.
+    pub output_root_gate: Arc<OutputRootGate>,
     /// Pipeline manager.
     pub pipeline_manager: Arc<PipelineManager>,
     /// Monitor event broadcaster.
@@ -171,6 +352,11 @@ impl ServiceContainer {
         cache_ttl: Duration,
         event_capacity: usize,
     ) -> Result<Self> {
+        // Apply the backend locale before any `t!` call can run. Reads
+        // `RUST_SREC_LOCALE`; no-op when unset. Must precede anything that
+        // may emit a localized notification string.
+        crate::i18n::init_from_env();
+
         info!("Initializing service container");
 
         // Create repositories
@@ -259,6 +445,20 @@ impl ServiceContainer {
         let download_manager = Arc::new(
             DownloadManager::with_config(download_config).with_config_repo(config_repo.clone()),
         );
+
+        // Build the output-root write gate (#508) now that StreamerManager
+        // and NotificationService are both available. The gate holds a
+        // Weak<NotificationService> so its lifetime stays independent, and
+        // a recovery hook closure that resets affected streamers when a
+        // root transitions back to Healthy. Attach via the late-bind
+        // setter since `download_manager` is already wrapped in Arc.
+        let output_root_gate = OutputRootGate::new(
+            Arc::downgrade(&notification_service),
+            build_output_root_gate_recovery_hook(streamer_manager.clone()),
+            parse_output_roots_env(),
+            Duration::from_secs(DEFAULT_GATE_COOLDOWN_SECS),
+        );
+        download_manager.set_output_root_gate(output_root_gate.clone());
 
         // Create job repository for pipeline persistence
         let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
@@ -367,6 +567,7 @@ impl ServiceContainer {
             streamer_manager,
             event_broadcaster,
             download_manager,
+            output_root_gate,
             pipeline_manager,
             monitor_event_broadcaster,
             danmu_service,
@@ -566,6 +767,19 @@ impl ServiceContainer {
         let notification_service_ms = notification_service_start.elapsed().as_millis();
         let web_push_enabled = web_push_service.is_some();
 
+        // Build the output-root write gate (#508) AFTER both StreamerManager
+        // and NotificationService are available. Late-bind into the already
+        // Arc-wrapped download manager via `set_output_root_gate`, which
+        // uses a OnceLock internally so subsequent reads on the hot path
+        // stay lock-free.
+        let output_root_gate = OutputRootGate::new(
+            Arc::downgrade(&notification_service),
+            build_output_root_gate_recovery_hook(streamer_manager.clone()),
+            parse_output_roots_env(),
+            Duration::from_secs(DEFAULT_GATE_COOLDOWN_SECS),
+        );
+        download_manager.set_output_root_gate(output_root_gate.clone());
+
         // Create metrics collector
         let metrics_collector_start = Instant::now();
         let metrics_collector = Arc::new(MetricsCollector::new());
@@ -656,6 +870,7 @@ impl ServiceContainer {
             streamer_manager,
             event_broadcaster,
             download_manager,
+            output_root_gate,
             pipeline_manager,
             monitor_event_broadcaster,
             danmu_service,
@@ -743,6 +958,14 @@ impl ServiceContainer {
             elapsed_ms = notifications_health_checks_ms,
             "Startup: notifications + health checks"
         );
+
+        // One-shot output-root write gate startup probe (#508). Discovers
+        // broken mounts (e.g., stale Docker bind mounts from host-side
+        // cleanup) on container boot rather than waiting for the first
+        // monitor tick to try starting a download. Per-root probes run in
+        // parallel with a bounded per-root timeout so a hung mount can't
+        // wedge startup.
+        self.run_output_root_startup_probe().await;
 
         // Start database maintenance scheduler
         let maintenance_start = Instant::now();
@@ -1743,6 +1966,216 @@ impl ServiceContainer {
         info!("Notification service event listeners started");
     }
 
+    /// Run the output-root write gate's one-shot startup probe.
+    ///
+    /// Collects the set of root paths to probe from:
+    ///
+    /// 1. `RUST_SREC_OUTPUT_ROOTS` env var (if set).
+    /// 2. Otherwise, resolves each streamer's configured `output_folder`
+    ///    through `expand_path_template` + `resolve_root` and deduplicates.
+    ///
+    /// Each root is probed in parallel via `spawn_blocking` (sync `tempfile`
+    /// creation, write zero bytes, RAII unlink) wrapped in a 5-second
+    /// tokio timeout. A timeout or any error feeds the synthetic
+    /// `io::Error` into `gate.record_failure`, so broken mounts are
+    /// visible in `/health` from second zero rather than waiting for the
+    /// first monitor tick to attempt a download.
+    ///
+    /// This is the ONLY synthetic probe in the design — all other gate
+    /// transitions are event-driven via real `ensure_output_dir` calls
+    /// and engine stderr readers. See
+    /// `crate::downloader::output_root_gate` for the rationale.
+    async fn run_output_root_startup_probe(&self) {
+        use std::collections::HashSet;
+
+        // Build the union of roots to probe from all sources. Every source
+        // feeds through the gate's own `resolve_path` so the keys match
+        // what the runtime hot path will use — and we dedupe via HashSet
+        // so overlapping templates (e.g. three platforms all writing to
+        // `/rec/...`) produce a single probe.
+        let mut roots: HashSet<std::path::PathBuf> = HashSet::new();
+
+        // 1. Explicit env var always wins — if the user configured it,
+        //    they know exactly what mounts they want watched.
+        for root in parse_output_roots_env() {
+            roots.insert(root);
+        }
+
+        // 2. `OUTPUT_DIR` env var, only when the operator set it. When
+        //    unset, step 3 (global config `output_folder`) covers the
+        //    canonical default — probing `./output` here would register
+        //    a root the downloader never uses on a typical install, and
+        //    the tempfile probe would silently create that directory.
+        if let Ok(raw) = std::env::var("OUTPUT_DIR")
+            && !raw.trim().is_empty()
+        {
+            roots.insert(
+                self.output_root_gate
+                    .resolve_path(std::path::Path::new(raw.trim())),
+            );
+        }
+
+        // 3. Global config's `output_folder` template. This is the
+        //    source the download path actually consults; it may be
+        //    `/rec/{platform}/{streamer}/...`-style.
+        match self.config_service.get_global_config().await {
+            Ok(global) => {
+                if let Some(prefix) = static_root_prefix(&global.output_folder) {
+                    roots.insert(
+                        self.output_root_gate
+                            .resolve_path(std::path::Path::new(&prefix)),
+                    );
+                }
+            }
+            Err(e) => warn!(
+                error = %e,
+                "Output-root startup probe: failed to read global config (continuing with env roots)"
+            ),
+        }
+
+        // 4. Platform-level overrides. Platforms are a small fixed set
+        //    (one entry per streaming site). One list call.
+        match self.config_service.list_platform_configs().await {
+            Ok(platforms) => {
+                for p in platforms {
+                    if let Some(folder) = p.output_folder.as_ref()
+                        && let Some(prefix) = static_root_prefix(folder)
+                    {
+                        roots.insert(
+                            self.output_root_gate
+                                .resolve_path(std::path::Path::new(&prefix)),
+                        );
+                    }
+                }
+            }
+            Err(e) => warn!(
+                error = %e,
+                "Output-root startup probe: failed to list platform configs (continuing)"
+            ),
+        }
+
+        // 5. Template-level overrides. Templates are user-defined
+        //    presets shared across streamers; there are typically a
+        //    handful. One list call, cached.
+        match self.config_service.list_template_configs().await {
+            Ok(templates) => {
+                for t in templates {
+                    if let Some(folder) = t.output_folder.as_ref()
+                        && let Some(prefix) = static_root_prefix(folder)
+                    {
+                        roots.insert(
+                            self.output_root_gate
+                                .resolve_path(std::path::Path::new(&prefix)),
+                        );
+                    }
+                }
+            }
+            Err(e) => warn!(
+                error = %e,
+                "Output-root startup probe: failed to list template configs (continuing)"
+            ),
+        }
+
+        // 6. Per-streamer overrides. `get_config_for_streamer` is cached
+        //    with in-flight dedup, so the N merges we do here are the same
+        //    N merges the first download of each streamer would have done
+        //    lazily — we're just paying the cost concentrated at boot,
+        //    which in turn pre-warms the cache for faster first-download
+        //    latency. Runs in parallel via `join_all` so total wall-clock
+        //    is bounded by the slowest single merge (typically < 50ms).
+        let streamer_ids: Vec<String> = self
+            .streamer_manager
+            .get_all()
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        if !streamer_ids.is_empty() {
+            let merge_futures = streamer_ids.iter().map(|id| {
+                let cs = self.config_service.clone();
+                let id = id.clone();
+                async move { (id.clone(), cs.get_config_for_streamer(&id).await) }
+            });
+            let results = futures::future::join_all(merge_futures).await;
+            for (id, result) in results {
+                match result {
+                    Ok(merged) => {
+                        if let Some(prefix) = static_root_prefix(&merged.output_folder) {
+                            roots.insert(
+                                self.output_root_gate
+                                    .resolve_path(std::path::Path::new(&prefix)),
+                            );
+                        }
+                    }
+                    Err(e) => debug!(
+                        streamer_id = %id,
+                        error = %e,
+                        "Output-root startup probe: skipping streamer whose config failed to merge"
+                    ),
+                }
+            }
+        }
+
+        if roots.is_empty() {
+            debug!("Output-root startup probe: no roots to probe");
+            return;
+        }
+
+        info!(count = roots.len(), "Running output-root startup probe");
+
+        let mut handles = Vec::with_capacity(roots.len());
+        for root in roots {
+            let gate = self.output_root_gate.clone();
+            handles.push(tokio::spawn(async move {
+                let probe_result = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    tokio::task::spawn_blocking({
+                        let root = root.clone();
+                        move || probe_root_writable(&root)
+                    }),
+                )
+                .await;
+
+                match probe_result {
+                    Ok(Ok(Ok(()))) => {
+                        debug!(root = %root.display(), "Startup probe: healthy");
+                    }
+                    Ok(Ok(Err(io_err))) => {
+                        warn!(
+                            root = %root.display(),
+                            error = %io_err,
+                            "Startup probe: output root unwritable"
+                        );
+                        gate.record_failure(&root, &io_err);
+                    }
+                    Ok(Err(join_err)) => {
+                        warn!(
+                            root = %root.display(),
+                            error = %join_err,
+                            "Startup probe: spawn_blocking failed (likely panic)"
+                        );
+                        let synthetic = std::io::Error::other("probe task panicked");
+                        gate.record_failure(&root, &synthetic);
+                    }
+                    Err(_timeout) => {
+                        warn!(
+                            root = %root.display(),
+                            "Startup probe: timed out after 5s (hung mount?)"
+                        );
+                        let synthetic =
+                            std::io::Error::new(std::io::ErrorKind::TimedOut, "probe timed out");
+                        gate.record_failure(&root, &synthetic);
+                    }
+                }
+            }));
+        }
+
+        for h in handles {
+            let _ = h.await;
+        }
+
+        info!("Output-root startup probe complete");
+    }
+
     /// Register health checks for all components.
     async fn register_health_checks(&self) {
         use crate::metrics::ComponentHealth;
@@ -1791,7 +2224,24 @@ impl ServiceContainer {
         }
 
         // Disk space health checks (output dir and DB directory).
-        let output_dir = std::env::var("OUTPUT_DIR").unwrap_or_else(|_| "./output".to_string());
+        // Priority: explicit OUTPUT_DIR env, then the static prefix of the
+        // global config's `output_folder` template (matches what the
+        // download path will actually consult), then `./output` as a last
+        // resort for display when neither source is usable.
+        let output_dir = {
+            let env_dir = std::env::var("OUTPUT_DIR")
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty());
+            match env_dir {
+                Some(v) => v,
+                None => match self.config_service.get_global_config().await {
+                    Ok(cfg) => static_root_prefix(&cfg.output_folder)
+                        .unwrap_or_else(|| "./output".to_string()),
+                    Err(_) => "./output".to_string(),
+                },
+            }
+        };
         // Ensure path is absolute for disk lookup
         let output_dir_path = if let Ok(cwd) = std::env::current_dir() {
             cwd.join(&output_dir)
@@ -1862,6 +2312,19 @@ impl ServiceContainer {
                 )
                 .await;
         }
+
+        // Output-root write gate health check (#508). Aggregated: one
+        // "output-root" component whose status reflects the worst state
+        // across all tracked roots, with a detailed message listing each
+        // Degraded root by kind and age. See
+        // `HealthChecker::check_output_root_gate` for the shape.
+        let gate_for_health = self.output_root_gate.clone();
+        self.health_checker
+            .register(
+                "output-root",
+                Arc::new(move || HealthChecker::check_output_root_gate(&gate_for_health)),
+            )
+            .await;
 
         // Download manager health check
         let dm = download_manager.clone();
@@ -2755,5 +3218,146 @@ mod tests {
             segments_completed: 1,
             ..DownloadProgress::default()
         }));
+    }
+
+    // ========== Output-root gate recovery hook filter (P1 regression) ==========
+
+    /// The recovery hook filters streamers by a per-root prefix built from
+    /// `set_infra_blocked`'s `last_error` format. Earlier versions filtered
+    /// on just `"output-root blocked:"`, which caused a Degraded → Healthy
+    /// transition on root A to also reset streamers blocked on root B.
+    /// This test locks in the fix: the prefix must include the root path +
+    /// a trailing space, so `/rec` cannot match `/rec/huya` entries and
+    /// vice versa.
+    #[test]
+    fn recovery_hook_prefix_discriminates_between_sibling_roots() {
+        use crate::downloader::LAST_ERROR_GATE_PREFIX;
+        use std::path::Path;
+
+        let root_a = Path::new("/rec/huya");
+        let root_b = Path::new("/rec/douyu");
+
+        let marker_a = format!("{} {} ", LAST_ERROR_GATE_PREFIX, root_a.display());
+        let marker_b = format!("{} {} ", LAST_ERROR_GATE_PREFIX, root_b.display());
+
+        // Realistic `last_error` values as written by set_infra_blocked.
+        let le_a_not_found = format!(
+            "{} {} (not_found)",
+            LAST_ERROR_GATE_PREFIX,
+            root_a.display()
+        );
+        let le_a_storage = format!(
+            "{} {} (storage_full)",
+            LAST_ERROR_GATE_PREFIX,
+            root_a.display()
+        );
+        let le_b_not_found = format!(
+            "{} {} (not_found)",
+            LAST_ERROR_GATE_PREFIX,
+            root_b.display()
+        );
+        let le_unrelated = "connection refused".to_string();
+
+        // Root A marker must match root A entries regardless of io_kind.
+        assert!(le_a_not_found.starts_with(&marker_a));
+        assert!(le_a_storage.starts_with(&marker_a));
+        // Root A marker must NOT match root B entries.
+        assert!(!le_b_not_found.starts_with(&marker_a));
+        // Root B marker must match its own entries.
+        assert!(le_b_not_found.starts_with(&marker_b));
+        // Neither marker should match unrelated errors.
+        assert!(!le_unrelated.starts_with(&marker_a));
+        assert!(!le_unrelated.starts_with(&marker_b));
+    }
+
+    /// Even more important: a shorter root marker must not accidentally
+    /// match longer sibling roots that share its prefix. If the gate
+    /// ever gets two roots where one is a prefix of the other (e.g. a
+    /// user sets `RUST_SREC_OUTPUT_ROOTS=/rec` and `/rec/archive`), the
+    /// `/rec` recovery must NOT reset streamers blocked on `/rec/archive`.
+    /// The trailing space in the marker is what makes this safe.
+    #[test]
+    fn recovery_hook_prefix_is_safe_against_prefix_collisions() {
+        use crate::downloader::LAST_ERROR_GATE_PREFIX;
+
+        let short_marker = format!("{} {} ", LAST_ERROR_GATE_PREFIX, "/rec");
+        let long_entry = format!("{} /rec/archive (not_found)", LAST_ERROR_GATE_PREFIX);
+
+        // Without the trailing space, this would match. With it, it doesn't.
+        assert!(!long_entry.starts_with(&short_marker));
+
+        // Sanity: the long root's own marker matches.
+        let long_marker = format!("{} {} ", LAST_ERROR_GATE_PREFIX, "/rec/archive");
+        assert!(long_entry.starts_with(&long_marker));
+    }
+
+    // ========== static_root_prefix (startup probe config discovery) ==========
+
+    #[test]
+    fn static_root_prefix_typical_rust_srec_template() {
+        // The default rust-srec template uses {platform}/{streamer}/%Y%m%d.
+        // Everything after `/rec/` is dynamic so the prefix is `/rec/`.
+        assert_eq!(
+            super::static_root_prefix("/rec/{platform}/{streamer}/%Y%m%d"),
+            Some("/rec/".to_string())
+        );
+    }
+
+    #[test]
+    fn static_root_prefix_strftime_only() {
+        // No `{...}` variables — only strftime placeholders. Prefix is
+        // everything before the first `%`.
+        assert_eq!(
+            super::static_root_prefix("/rec/recordings/%Y-%m-%d"),
+            Some("/rec/recordings/".to_string())
+        );
+    }
+
+    #[test]
+    fn static_root_prefix_static_template_no_placeholders() {
+        // Literal path. Whole string is the "prefix". Still trims to the
+        // last slash to keep the result a complete directory path.
+        assert_eq!(
+            super::static_root_prefix("/app/output"),
+            Some("/app/".to_string())
+        );
+        // If it already ends with a slash, preserve it.
+        assert_eq!(
+            super::static_root_prefix("/app/output/"),
+            Some("/app/output/".to_string())
+        );
+    }
+
+    #[test]
+    fn static_root_prefix_partial_directory_name_rejected() {
+        // Template interpolates into the middle of a directory name
+        // (`/recordings-{streamer}/...`). The prefix `/recordings-` is
+        // not a complete directory — the last slash is at position 0, so
+        // the result is just `/`, which we reject as too broad.
+        assert_eq!(
+            super::static_root_prefix("/recordings-{streamer}/files"),
+            None
+        );
+    }
+
+    #[test]
+    fn static_root_prefix_no_leading_slash_rejected() {
+        // Relative template (no root `/`). Can't produce a probe key.
+        assert_eq!(super::static_root_prefix("{streamer}/files"), None);
+        assert_eq!(super::static_root_prefix("recordings/{streamer}"), None);
+    }
+
+    #[test]
+    fn static_root_prefix_empty_template() {
+        assert_eq!(super::static_root_prefix(""), None);
+    }
+
+    #[test]
+    fn static_root_prefix_multi_level_static_prefix() {
+        // Deep static prefix before the first placeholder.
+        assert_eq!(
+            super::static_root_prefix("/mnt/storage/recordings/{platform}/{streamer}"),
+            Some("/mnt/storage/recordings/".to_string())
+        );
     }
 }

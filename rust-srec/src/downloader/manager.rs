@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
@@ -16,9 +17,10 @@ use tracing::{debug, error, info, warn};
 
 use super::engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
-    DownloadProgress, DownloadStatus, EngineType, FfmpegEngine, MesioEngine, SegmentEvent,
-    StreamlinkEngine,
+    DownloadProgress, DownloadStatus, EngineStartError, EngineType, FfmpegEngine, IoErrorKindSer,
+    MesioEngine, SegmentEvent, StreamlinkEngine,
 };
+use super::output_root_gate::OutputRootGate;
 use super::resilience::{CircuitBreakerManager, EngineKey, RetryConfig};
 use crate::Result;
 use crate::database::models::engine::{
@@ -30,6 +32,21 @@ use crate::downloader::SegmentInfo;
 fn parse_engine_config<T: DeserializeOwned>(engine: &'static str, raw: &str) -> Result<T> {
     serde_json::from_str(raw)
         .map_err(|e| crate::Error::Other(format!("Failed to parse {} config: {}", engine, e)))
+}
+
+/// Walk the `std::error::Error::source()` chain of `err` and return the
+/// first `std::io::Error` found, if any. Used by `prepare_output_dir` to
+/// hand the output-root write gate the raw `io::Error` so it can classify
+/// the `ErrorKind` correctly (ENOENT vs ENOSPC vs EACCES etc.).
+fn io_error_in_chain<'a>(err: &'a (dyn std::error::Error + 'static)) -> Option<&'a std::io::Error> {
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = current {
+        if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+            return Some(io_err);
+        }
+        current = e.source();
+    }
+    None
 }
 
 #[derive(Debug)]
@@ -232,6 +249,17 @@ pub struct DownloadManager {
     engines: RwLock<HashMap<EngineType, Arc<dyn DownloadEngine>>>,
     /// Circuit breaker manager.
     circuit_breakers: CircuitBreakerManager,
+    /// Output-root write gate. Optional so existing tests and simple callers
+    /// (e.g. CLI utilities) can run without installing a full gate + recovery
+    /// hook + notification service. Production is always wired up in
+    /// [`crate::services::container`].
+    ///
+    /// Stored in a `OnceLock` so the services container can construct the
+    /// download manager first and attach the gate later (one of the two
+    /// container builders initializes `NotificationService` after the
+    /// download manager, and the gate depends on the former). After the
+    /// one-shot write, reads are lock-free.
+    output_root_gate: OnceLock<Arc<OutputRootGate>>,
     /// Broadcast sender for download events
     event_tx: broadcast::Sender<DownloadManagerEvent>,
     /// Config repository for resolving custom engines.
@@ -376,7 +404,8 @@ pub enum DownloadManagerEvent {
         streamer_name: String,
         error: String,
     },
-    /// Download was rejected before starting (e.g., circuit breaker open).
+    /// Download was rejected before starting (e.g., circuit breaker open,
+    /// output-root filesystem unwritable).
     ///
     /// Unlike DownloadFailed, this indicates the download never started.
     /// No download_id is available because the download was never created.
@@ -385,8 +414,32 @@ pub enum DownloadManagerEvent {
         streamer_name: String,
         session_id: String,
         reason: String,
-        /// How long to wait before retrying (circuit breaker cooldown).
+        /// How long to wait before retrying (cooldown of whichever subsystem
+        /// rejected the download).
         retry_after_secs: Option<u64>,
+        /// Why the download was rejected. Carries the payload the scheduler
+        /// needs to route this to the correct [`DownloadEndPolicy`] variant
+        /// and, ultimately, the correct [`crate::monitor::InfraBlockReason`].
+        kind: DownloadRejectedKind,
+    },
+}
+
+/// Reason a [`DownloadManagerEvent::DownloadRejected`] event was emitted.
+///
+/// Distinct from the free-form `reason` string because the scheduler needs
+/// structured data to decide which state to transition the streamer into —
+/// circuit-breaker blocks go to `TemporalDisabled`, gate blocks go to
+/// `OutOfSpace`.
+#[derive(Debug, Clone)]
+pub enum DownloadRejectedKind {
+    /// Engine circuit breaker is open for the resolved engine.
+    CircuitBreaker,
+    /// Output-root write gate has the target filesystem in the Degraded state.
+    /// The payload mirrors the gate's `GateBlocked` so the scheduler can
+    /// construct an [`crate::monitor::InfraBlockReason::OutputRootUnavailable`].
+    OutputRootUnavailable {
+        path: std::path::PathBuf,
+        io_kind: IoErrorKindSer,
     },
 }
 
@@ -420,6 +473,7 @@ impl DownloadManager {
             pending_updates: Arc::new(DashMap::new()),
             engines: RwLock::new(HashMap::new()),
             circuit_breakers,
+            output_root_gate: OnceLock::new(),
             event_tx,
             config_repo: None,
         };
@@ -442,6 +496,30 @@ impl DownloadManager {
         }
 
         manager
+    }
+
+    /// Attach an output-root write gate during construction.
+    ///
+    /// Prefer this over [`Self::set_output_root_gate`] when the gate's
+    /// dependencies are available at construction time. When they aren't
+    /// (e.g. the services container builds `NotificationService` after
+    /// `DownloadManager`), use `set_output_root_gate` instead.
+    pub fn with_output_root_gate(self, gate: Arc<OutputRootGate>) -> Self {
+        self.set_output_root_gate(gate);
+        self
+    }
+
+    /// Late-bind the output-root write gate. Used by
+    /// [`crate::services::container`] when the download manager is already
+    /// wrapped in `Arc` and its dependencies are ready.
+    ///
+    /// Attempting to set the gate a second time is a no-op that logs a
+    /// warning (OnceLock::set returns Err). The gate is expected to be
+    /// configured exactly once per process.
+    pub fn set_output_root_gate(&self, gate: Arc<OutputRootGate>) {
+        if self.output_root_gate.set(gate).is_err() {
+            warn!("Ignoring attempt to replace already-configured output-root gate");
+        }
     }
 
     /// Set the config repository.
@@ -501,6 +579,7 @@ impl DownloadManager {
                 session_id: config.session_id.clone(),
                 reason: format!("Circuit breaker open for engine {}", engine_key),
                 retry_after_secs: Some(self.config.read().circuit_breaker_cooldown_secs),
+                kind: DownloadRejectedKind::CircuitBreaker,
             });
 
             // Try to find an alternative engine
@@ -512,8 +591,87 @@ impl DownloadManager {
             )));
         }
 
+        // Check the output-root write gate BEFORE acquiring any resources.
+        // Hot path is ~O(1) when the gate map is empty (no previous failures),
+        // so this has negligible cost on healthy systems. See
+        // `crate::downloader::output_root_gate` for the design.
+        if let Some(gate) = self.output_root_gate.get()
+            && let Err(blocked) = gate.check(&config.output_dir)
+        {
+            warn!(
+                root = %blocked.root.display(),
+                kind = blocked.kind.as_str(),
+                "Output root gate rejected download (Degraded); emitting DownloadRejected"
+            );
+            let cooldown = super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS;
+            let _ = self.event_tx.send(DownloadManagerEvent::DownloadRejected {
+                streamer_id: config.streamer_id.clone(),
+                streamer_name: config.streamer_name.clone(),
+                session_id: config.session_id.clone(),
+                reason: blocked.to_string(),
+                retry_after_secs: Some(cooldown),
+                kind: DownloadRejectedKind::OutputRootUnavailable {
+                    path: blocked.root.clone(),
+                    io_kind: blocked.kind,
+                },
+            });
+            return Err(crate::Error::Other(format!(
+                "Output root {} is unwritable ({}); gate has the filesystem in Degraded state",
+                blocked.root.display(),
+                blocked.kind.as_str()
+            )));
+        }
+
         self.start_download_with_engine(config, engine, engine_type, engine_key, is_high_priority)
             .await
+    }
+
+    /// Prepare the output directory before starting an engine.
+    ///
+    /// This replaces the `ensure_output_dir` call that used to live inside
+    /// each engine's `start()`. Centralizing it here means:
+    ///
+    /// - One call site for the filesystem side-effect, which in turn means
+    ///   one place to wire the output-root write gate (record failures,
+    ///   mark successful recoveries).
+    /// - Consistent error classification via the (now-correct)
+    ///   `EngineStartError::from(crate::Error)` impl that walks the error
+    ///   source chain for `io::ErrorKind`.
+    /// - Engines stop depending on `crate::utils::fs` and
+    ///   `crate::downloader::engine::utils::ensure_output_dir`.
+    ///
+    /// Behaviour:
+    ///
+    /// 1. Call the real `ensure_output_dir` (tokio `create_dir_all`).
+    /// 2. On `Ok`: if a gate is attached, call `mark_healthy` — idempotent,
+    ///    a no-op unless the root was previously in Degraded state, so the
+    ///    happy path pays only one `DashMap::get` for untracked roots.
+    /// 3. On `Err`: if a gate is attached, walk the `crate::Error` source
+    ///    chain to find the underlying `io::Error` and feed it to
+    ///    `record_failure` before propagating. Emits at most one
+    ///    `OutputPathInaccessible` notification per `Healthy → Degraded`
+    ///    transition; idempotent for subsequent failures on an already
+    ///    Degraded root.
+    async fn prepare_output_dir(
+        &self,
+        config: &DownloadConfig,
+    ) -> std::result::Result<(), EngineStartError> {
+        match super::engine::utils::ensure_output_dir(&config.output_dir).await {
+            Ok(()) => {
+                if let Some(gate) = self.output_root_gate.get() {
+                    gate.mark_healthy(&config.output_dir);
+                }
+                Ok(())
+            }
+            Err(crate_err) => {
+                if let Some(gate) = self.output_root_gate.get()
+                    && let Some(io_err) = io_error_in_chain(&crate_err)
+                {
+                    gate.record_failure(&config.output_dir, io_err);
+                }
+                Err(EngineStartError::from(crate_err))
+            }
+        }
     }
 
     /// Resolve engine to use.
@@ -765,6 +923,48 @@ impl DownloadManager {
             )));
         }
 
+        // Prepare the output directory BEFORE acquiring a semaphore permit —
+        // otherwise a ENOENT/ENOSPC failure would hold a download slot until
+        // we release on the error path, starving healthy streamers. Engines
+        // used to do this themselves in their own start() methods; centralizing
+        // it here eliminates the duplication between ffmpeg.rs and streamlink.rs
+        // and gives the output-root write gate a single failure site to hook
+        // into. See `prepare_output_dir` for the details.
+        if let Err(engine_err) = self.prepare_output_dir(&config).await {
+            warn!(
+                "Failed to prepare output directory for streamer {}: {}",
+                config.streamer_id, engine_err
+            );
+            // For OutputRootUnavailable we also emit a DownloadRejected event
+            // so the scheduler can translate to OutputRootBlocked and push
+            // the streamer into OutOfSpace state via set_infra_blocked. The
+            // gate has already recorded the failure; this event carries the
+            // structured routing payload to the scheduler.
+            if let DownloadFailureKind::OutputRootUnavailable { io_kind } = engine_err.kind {
+                // Ask the gate for its own resolved root so the event payload,
+                // the gate's DashMap key, and the /health snapshot all
+                // report the SAME path. Falling back to empty
+                // configured_roots (which was the earlier code) could give
+                // a different path when users set RUST_SREC_OUTPUT_ROOTS.
+                let path = self
+                    .output_root_gate
+                    .get()
+                    .map(|g| g.resolve_path(&config.output_dir))
+                    .unwrap_or_else(|| {
+                        super::output_root_gate::resolve_root(&config.output_dir, &[])
+                    });
+                let _ = self.event_tx.send(DownloadManagerEvent::DownloadRejected {
+                    streamer_id: config.streamer_id.clone(),
+                    streamer_name: config.streamer_name.clone(),
+                    session_id: config.session_id.clone(),
+                    reason: engine_err.message.clone(),
+                    retry_after_secs: Some(super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS),
+                    kind: DownloadRejectedKind::OutputRootUnavailable { path, io_kind },
+                });
+            }
+            return Err(crate::Error::Other(engine_err.message));
+        }
+
         // Apply any pending concurrency reconfiguration before trying to acquire permits.
         self.normal_limit.apply_best_effort();
         self.high_priority_limit.apply_best_effort();
@@ -866,6 +1066,13 @@ impl DownloadManager {
         let circuit_breakers_ref = self.circuit_breakers.get(&engine_key);
         let normal_limit = self.normal_limit.clone();
         let high_priority_limit = self.high_priority_limit.clone();
+        // Clone the gate handle (if attached) so the segment event loop can
+        // route runtime ENOSPC signals from the engine stderr readers into
+        // `gate.record_failure`. Without this the gate would never trip for
+        // the mid-stream disk-full case (today's date dir already exists,
+        // so prepare_output_dir is a no-op and can't catch it).
+        let output_root_gate_ref: Option<Arc<OutputRootGate>> =
+            self.output_root_gate.get().cloned();
 
         tokio::spawn(async move {
             // Limit how often we broadcast progress updates (per download).
@@ -1010,6 +1217,26 @@ impl DownloadManager {
                             "Download completed"
                         );
                         break;
+                    }
+                    SegmentEvent::DiskFull { output_dir, detail } => {
+                        // An engine stderr reader detected a mid-stream
+                        // ENOSPC signature (e.g., ffmpeg emitted "No space
+                        // left on device" or exited with code 228). Route
+                        // the signal into the output-root write gate so
+                        // subsequent streamers writing under the same root
+                        // are short-circuited before reaching the engine.
+                        // This is NOT a terminal event — ffmpeg's own
+                        // DownloadFailed will follow on exit. We just feed
+                        // the gate here and keep processing events.
+                        if let Some(gate) = output_root_gate_ref.as_ref() {
+                            let synthetic_io_err =
+                                std::io::Error::new(std::io::ErrorKind::StorageFull, detail);
+                            gate.record_failure(&output_dir, &synthetic_io_err);
+                        } else {
+                            debug!(
+                                "DiskFull event received but no output-root gate attached; ignoring"
+                            );
+                        }
                     }
                     SegmentEvent::DownloadFailed { kind, message } => {
                         if kind.affects_circuit_breaker() {
@@ -1819,5 +2046,230 @@ mod tests {
             }
             _ => panic!("Expected ConfigUpdateFailed event"),
         }
+    }
+
+    // ========== Output-root write gate integration (#508) ==========
+
+    /// Build a `DownloadConfig` pointed at `output_dir`, with the other
+    /// fields set to minimal plausible values. The URL/streamer fields are
+    /// only used for logging — we never actually spawn an engine in these
+    /// tests.
+    fn test_config_with_output_dir(output_dir: std::path::PathBuf) -> DownloadConfig {
+        DownloadConfig::new(
+            "https://example.com/test.flv",
+            output_dir,
+            "test-streamer-id",
+            "TestStreamer",
+            "test-session-id",
+        )
+    }
+
+    /// Wrap a `DownloadManager` with a freshly constructed gate and return
+    /// both the manager and a counter the recovery hook bumps each time it
+    /// fires. Used by the three `prepare_output_dir_*` tests below.
+    fn manager_with_gate() -> (
+        DownloadManager,
+        Arc<std::sync::atomic::AtomicUsize>,
+        Arc<super::super::output_root_gate::OutputRootGate>,
+    ) {
+        use super::super::output_root_gate::{OutputRootGate, RecoveryHook};
+        use std::sync::Weak;
+        use std::sync::atomic::AtomicUsize;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let c2 = counter.clone();
+        let hook: RecoveryHook = Arc::new(move |_root: &std::path::Path| {
+            c2.fetch_add(1, Ordering::SeqCst);
+        });
+        let gate = OutputRootGate::new(
+            Weak::new(),
+            hook,
+            vec![],
+            Duration::from_secs(1), // short cooldown for the test runner
+        );
+        let manager = DownloadManager::new();
+        manager.set_output_root_gate(gate.clone());
+        (manager, counter, gate)
+    }
+
+    #[tokio::test]
+    async fn prepare_output_dir_happy_path_returns_ok() {
+        // Baseline: a real, writable temp dir. The gate starts Healthy and
+        // stays Healthy; `ensure_output_dir` creates the nested subdir that
+        // doesn't yet exist inside the temp root.
+        let temp = tempfile::tempdir().expect("tempdir");
+        let nested = temp.path().join("huya").join("X").join("20260415");
+        let (manager, counter, gate) = manager_with_gate();
+
+        let config = test_config_with_output_dir(nested.clone());
+        let result = manager.prepare_output_dir(&config).await;
+
+        assert!(result.is_ok(), "happy path should succeed: {:?}", result);
+        assert!(
+            nested.is_dir(),
+            "nested output dir should have been created"
+        );
+        // Recovery hook only fires on a Degraded → Healthy transition.
+        // A first-ever success against an untracked root is a no-op for the
+        // gate, so the counter stays at zero.
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+        // And the gate snapshot should be empty (no roots ever tracked).
+        assert!(gate.snapshot().is_empty());
+    }
+
+    #[tokio::test]
+    async fn prepare_output_dir_on_unwritable_parent_trips_gate() {
+        // Force create_dir_all to fail portably. GHA's Windows runner
+        // runs as admin, so `C:\nonexistent\...` is creatable there;
+        // Linux CI sandboxes often mount `/` read-only → EROFS. Instead,
+        // put a regular file in a tempdir and point the output path at
+        // a child of it — `create_dir_all` then fails with NotADirectory
+        // on Unix and ERROR_DIRECTORY on Windows, both of which the gate
+        // classifies into DownloadFailureKind::OutputRootUnavailable.
+        // We don't pin the exact io_kind because the classification
+        // bucket (never `Other`) is what's actually under test.
+        let temp = tempfile::tempdir().expect("tempdir");
+        let blocker = temp.path().join("blocker");
+        std::fs::write(&blocker, b"i am a file, not a dir").unwrap();
+        let bad_output = blocker.join("huya").join("X").join("20260415");
+        let (manager, counter, gate) = manager_with_gate();
+
+        let config = test_config_with_output_dir(bad_output.clone());
+        let result = manager.prepare_output_dir(&config).await;
+
+        // Must fail with OutputRootUnavailable{...}, NOT the generic Io
+        // kind — this proves `EngineStartError::from` correctly walked
+        // the error chain and the manager's `prepare_output_dir` routed
+        // the io::Error into the gate before returning.
+        let err = result.expect_err("should fail on unwritable parent");
+        let io_kind = match err.kind {
+            DownloadFailureKind::OutputRootUnavailable { io_kind } => io_kind,
+            other => panic!("expected OutputRootUnavailable{{_}}, got {:?}", other),
+        };
+        assert!(
+            !matches!(io_kind, IoErrorKindSer::Other),
+            "expected a classified io_kind (NotFound / PermissionDenied / \
+             ReadOnlyFilesystem / StorageFull / TimedOut), got Other"
+        );
+
+        // The gate must now be tracking a Degraded root with a matching
+        // cached error kind.
+        let snapshot = gate.snapshot();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(
+            snapshot[0].state,
+            crate::downloader::RootHealthState::Degraded
+        );
+        let last_error = snapshot[0]
+            .last_error
+            .as_ref()
+            .expect("degraded root must have cached error");
+        assert_eq!(last_error.0, io_kind);
+
+        // A second `prepare_output_dir` call inside the cooldown window
+        // must fast-reject via `gate.check()`, not re-try `create_dir_all`.
+        // This is the key property that stops the 508 cascade.
+        let result2 = manager.prepare_output_dir(&config).await;
+        let err2 = result2.expect_err("second call should fast-reject");
+        assert!(matches!(
+            err2.kind,
+            DownloadFailureKind::OutputRootUnavailable { .. }
+        ));
+        // Recovery hook must NOT have fired — we're still Degraded.
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn prepare_output_dir_recovers_after_path_becomes_valid() {
+        // Trip the gate by pointing at a child of a regular file (fails
+        // portably on Unix ENOTDIR and Windows ERROR_DIRECTORY — tokio's
+        // create_dir_all will not recreate a file-as-directory ancestor).
+        // Then fix the filesystem, wait past the cooldown, retry. The
+        // winning CAS caller should see ensure_output_dir succeed, flip
+        // the gate to Healthy, and fire the recovery hook exactly once.
+        let temp = tempfile::tempdir().expect("tempdir");
+
+        use super::super::output_root_gate::{OutputRootGate, RecoveryHook};
+        use std::sync::Weak;
+        use std::sync::atomic::AtomicUsize;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let c2 = counter.clone();
+        let hook: RecoveryHook = Arc::new(move |_root: &std::path::Path| {
+            c2.fetch_add(1, Ordering::SeqCst);
+        });
+        let configured_root = temp.path().to_path_buf();
+        let gate = OutputRootGate::new(
+            Weak::new(),
+            hook,
+            vec![configured_root.clone()],
+            Duration::from_secs(1),
+        );
+        let manager = DownloadManager::new();
+        manager.set_output_root_gate(gate.clone());
+
+        // `doomed` is a regular file; any path under it will fail
+        // create_dir_all because an ancestor component is not a directory.
+        let doomed = temp.path().join("doomed");
+        std::fs::write(&doomed, b"i am a file, not a dir").unwrap();
+        let under_doomed = doomed.join("will-fail");
+
+        // Now `create_dir_all(under_doomed)` will fail with NotADirectory
+        // or similar because one of the ancestor components is a regular
+        // file. On Linux this surfaces as ErrorKind::NotFound or
+        // ErrorKind::NotADirectory depending on kernel version; either
+        // way the gate records a failure.
+        let bad_config = test_config_with_output_dir(under_doomed.clone());
+        let first = manager.prepare_output_dir(&bad_config).await;
+        assert!(first.is_err(), "should fail when ancestor is a file");
+        let snap = gate.snapshot();
+        assert_eq!(snap.len(), 1, "gate should be tracking the configured root");
+        assert_eq!(snap[0].state, crate::downloader::RootHealthState::Degraded);
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+
+        // Fix the filesystem: remove the blocking file and recreate the
+        // directory structure. Wait past the 1s cooldown before retrying.
+        std::fs::remove_file(&doomed).unwrap();
+        std::fs::create_dir_all(&under_doomed).unwrap();
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+
+        // Retry. The winning CAS caller's ensure_output_dir succeeds, the
+        // gate flips to Healthy, the recovery hook fires.
+        let second = manager.prepare_output_dir(&bad_config).await;
+        assert!(
+            second.is_ok(),
+            "retry should succeed after cooldown and filesystem fix: {:?}",
+            second
+        );
+
+        // Recovery hook is spawned on a tokio task; yield so it runs.
+        tokio::task::yield_now().await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            1,
+            "recovery hook should fire exactly once per Degraded→Healthy transition"
+        );
+
+        // Gate snapshot should now show Healthy.
+        let snap = gate.snapshot();
+        assert_eq!(snap.len(), 1);
+        assert_eq!(snap[0].state, crate::downloader::RootHealthState::Healthy);
+    }
+
+    #[tokio::test]
+    async fn prepare_output_dir_without_gate_is_transparent() {
+        // Safety guarantee: installing no gate must leave prepare_output_dir
+        // behaving exactly like the old inline `ensure_output_dir` call —
+        // success creates the dir, failure returns a classified
+        // EngineStartError, no panics, no hidden state.
+        let temp = tempfile::tempdir().expect("tempdir");
+        let nested = temp.path().join("a").join("b").join("c");
+        let manager = DownloadManager::new();
+        // Deliberately NO set_output_root_gate.
+
+        let config = test_config_with_output_dir(nested.clone());
+        assert!(manager.prepare_output_dir(&config).await.is_ok());
+        assert!(nested.is_dir());
     }
 }

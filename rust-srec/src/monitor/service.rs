@@ -1303,19 +1303,18 @@ impl<
         Ok(())
     }
 
-    /// Set a streamer to temporarily disabled due to circuit breaker block.
+    /// Set a streamer to temporarily disabled due to an infrastructure-level
+    /// block (circuit breaker, output-root gate, etc.).
     ///
-    /// This sets the state to `TemporalDisabled` and stores the disabled_until timestamp
-    /// without incrementing the error count (since it's an infrastructure issue,
-    /// not a streamer issue).
+    /// Writes `disabled_until` and the appropriate state/last_error without
+    /// incrementing the error count — infrastructure issues are not counted
+    /// against the streamer's own exponential backoff.
     ///
-    /// # Arguments
-    /// * `streamer` - The streamer metadata
-    /// * `retry_after_secs` - Seconds until the circuit breaker allows retries
-    pub async fn set_circuit_breaker_blocked(
+    /// See [`InfraBlockReason`] for the per-reason behavior.
+    pub async fn set_infra_blocked(
         &self,
         streamer: &StreamerMetadata,
-        retry_after_secs: u64,
+        reason: InfraBlockReason,
     ) -> Result<()> {
         // If the user disabled the streamer, don't mutate backoff state.
         if let Some(fresh) = self.streamer_manager.get_streamer(&streamer.id)
@@ -1323,34 +1322,116 @@ impl<
         {
             debug!(
                 streamer_id = %streamer.id,
-                "skipping circuit breaker backoff for disabled streamer"
+                reason = reason.as_log_str(),
+                "skipping infra block for disabled streamer"
             );
             return Ok(());
         }
 
         let now = chrono::Utc::now();
-        let disabled_until = now + chrono::Duration::seconds(retry_after_secs as i64);
+        let disabled_until = now + chrono::Duration::seconds(reason.retry_after_secs() as i64);
+        let target_state = reason.target_state();
+        let last_error_update = reason.last_error_override();
 
         info!(
             streamer_id = %streamer.id,
             streamer_name = %streamer.name,
             disabled_until = %disabled_until,
-            retry_after_secs,
-            "temporarily disabled (circuit breaker)"
+            retry_after_secs = reason.retry_after_secs(),
+            reason = reason.as_log_str(),
+            target_state = ?target_state,
+            "temporarily disabled (infra block)"
         );
 
         let mut tx = self.begin_immediate().await?;
 
-        // Set state to TEMPORAL_DISABLED with disabled_until timestamp
-        // Note: We don't increment error count since this is infrastructure-level, not streamer-level
+        // set_disabled_until writes state = TEMPORAL_DISABLED by default. For
+        // reasons that require a different state (e.g. OutOfSpace for the
+        // gate) we override with an explicit update_state call in the same tx.
         StreamerTxOps::set_disabled_until(&mut tx, &streamer.id, Some(disabled_until)).await?;
+        if target_state != StreamerState::TemporalDisabled {
+            StreamerTxOps::update_state(&mut tx, &streamer.id, &target_state.to_string()).await?;
+        }
+
+        // For reasons that carry a distinctive last_error marker (used later
+        // by the gate's recovery hook to filter which streamers to reset),
+        // write it now. Circuit breaker blocks leave last_error alone so any
+        // recent legitimate error text is preserved.
+        if let Some(msg) = last_error_update {
+            StreamerTxOps::update_last_error(&mut tx, &streamer.id, Some(&msg)).await?;
+        }
 
         tx.commit().await?;
 
-        self.reload_streamer_cache(&streamer.id, "circuit breaker block")
+        self.reload_streamer_cache(&streamer.id, "infra block")
             .await;
 
         Ok(())
+    }
+}
+
+/// Reason a streamer is being put into infrastructure-level backoff via
+/// [`MonitorService::set_infra_blocked`]. The reason determines the target
+/// [`StreamerState`], the retry window, and whether `last_error` is rewritten.
+#[derive(Debug, Clone)]
+pub enum InfraBlockReason {
+    /// Engine circuit breaker is open for the engine this streamer is trying
+    /// to use. Preserves whatever `last_error` is already on the streamer
+    /// (the CDN error that tripped the breaker is usually what the user
+    /// actually wants to see).
+    CircuitBreaker { retry_after_secs: u64 },
+    /// Output-root write gate has the target filesystem in a Degraded state.
+    /// Transitions the streamer to [`StreamerState::OutOfSpace`] and writes a
+    /// distinctive `last_error` with the `"output-root blocked: "` prefix so
+    /// the gate's recovery hook can filter affected streamers when the
+    /// filesystem comes back.
+    OutputRootUnavailable {
+        path: std::path::PathBuf,
+        io_kind: crate::downloader::IoErrorKindSer,
+        retry_after_secs: u64,
+    },
+}
+
+impl InfraBlockReason {
+    fn retry_after_secs(&self) -> u64 {
+        match self {
+            Self::CircuitBreaker { retry_after_secs } => *retry_after_secs,
+            Self::OutputRootUnavailable {
+                retry_after_secs, ..
+            } => *retry_after_secs,
+        }
+    }
+
+    fn target_state(&self) -> StreamerState {
+        match self {
+            Self::CircuitBreaker { .. } => StreamerState::TemporalDisabled,
+            Self::OutputRootUnavailable { .. } => StreamerState::OutOfSpace,
+        }
+    }
+
+    fn last_error_override(&self) -> Option<String> {
+        match self {
+            Self::CircuitBreaker { .. } => None,
+            Self::OutputRootUnavailable { path, io_kind, .. } => {
+                // This string format is load-bearing: the gate recovery hook
+                // filters streamers by matching the `LAST_ERROR_GATE_PREFIX`
+                // prefix. If you change the prefix here, also update
+                // `crate::downloader::output_root_gate::LAST_ERROR_GATE_PREFIX`.
+                Some(format!(
+                    "{} {} ({})",
+                    crate::downloader::LAST_ERROR_GATE_PREFIX,
+                    path.display(),
+                    io_kind.as_str()
+                ))
+            }
+        }
+    }
+
+    fn as_log_str(&self) -> &'static str {
+        match self {
+            Self::CircuitBreaker { .. } => "circuit_breaker",
+            Self::OutputRootUnavailable { .. } => "output_root_unavailable",
+        }
     }
 }
 

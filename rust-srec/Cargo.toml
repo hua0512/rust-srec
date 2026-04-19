@@ -77,11 +77,17 @@ zip = { workspace = true }
 flate2 = { workspace = true }
 tar = { workspace = true }
 
+# Filesystem (used at runtime by the output-root write gate's startup probe)
+tempfile = { workspace = true }
+
+# Backend i18n (currently localizes only the OutputPathInaccessible notification;
+# other events are still plain English literals — rust-i18n supports mixed mode)
+rust-i18n = "3"
+
 [build-dependencies]
 prost-build = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
 m3u8-rs = { workspace = true }
 
 

@@ -344,6 +344,65 @@ pub struct SegmentInfo {
     pub split_reason_details_json: Option<String>,
 }
 
+/// Serializable subset of [`std::io::ErrorKind`] used by the output-root write gate.
+///
+/// `std::io::ErrorKind` does not implement `Serialize`/`Deserialize` and has many
+/// variants we don't care about. This enum covers the kinds the gate classifies
+/// distinctly for notifications and recovery messaging; everything else falls
+/// into [`IoErrorKindSer::Other`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IoErrorKindSer {
+    /// `ENOENT` — path or one of its ancestors does not exist. The fingerprint
+    /// of a stale Docker bind mount where the host source directory was
+    /// renamed/deleted leaving an orphaned inode.
+    NotFound,
+    /// `ENOSPC` — disk full.
+    StorageFull,
+    /// `EACCES`/`EPERM` — permission denied.
+    PermissionDenied,
+    /// `EROFS` — filesystem mounted read-only.
+    ReadOnlyFilesystem,
+    /// Probe or operation timed out (e.g., hung NFS mount during the startup probe).
+    TimedOut,
+    /// Any other `io::ErrorKind` we don't classify distinctly.
+    Other,
+}
+
+impl IoErrorKindSer {
+    /// Classify a [`std::io::ErrorKind`] into the gate's narrower enum.
+    pub fn from_io_kind(kind: std::io::ErrorKind) -> Self {
+        match kind {
+            // ENOTDIR (Unix) / ERROR_DIRECTORY (Windows) → NotADirectory;
+            // ERROR_ALREADY_EXISTS (Windows, what create_dir_all surfaces
+            // when an ancestor component exists as a non-directory) →
+            // AlreadyExists. All three mean "the gate-tracked path has no
+            // usable directory", so bucket with NotFound — same "stale
+            // mount / restart container" recovery text applies.
+            std::io::ErrorKind::NotFound
+            | std::io::ErrorKind::NotADirectory
+            | std::io::ErrorKind::AlreadyExists => Self::NotFound,
+            std::io::ErrorKind::StorageFull => Self::StorageFull,
+            std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
+            std::io::ErrorKind::ReadOnlyFilesystem => Self::ReadOnlyFilesystem,
+            std::io::ErrorKind::TimedOut => Self::TimedOut,
+            _ => Self::Other,
+        }
+    }
+
+    /// Stable lowercase string for log fields and `notification.*.description.<key>` lookups.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::NotFound => "not_found",
+            Self::StorageFull => "storage_full",
+            Self::PermissionDenied => "permission_denied",
+            Self::ReadOnlyFilesystem => "read_only",
+            Self::TimedOut => "timed_out",
+            Self::Other => "other",
+        }
+    }
+}
+
 /// Classified error kind for download failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DownloadFailureKind {
@@ -355,8 +414,16 @@ pub enum DownloadFailureKind {
     HttpServerError { status: u16 },
     /// Network-level failure: connection refused/reset, DNS, TLS, timeout.
     Network,
-    /// Local filesystem I/O error (write failure, disk full).
+    /// Local filesystem I/O error (write failure, disk full) that does NOT
+    /// affect the entire output root. Reserved for cases where the failure is
+    /// scoped to a single file or operation; for root-wide failures use
+    /// [`Self::OutputRootUnavailable`] instead so the write gate can short-circuit.
     Io,
+    /// Output root (e.g. a configured recording directory) is unwritable.
+    /// Caught at the filesystem boundary by the output-root write gate; does
+    /// not count toward the engine circuit breaker because it is infrastructure,
+    /// not engine fault.
+    OutputRootUnavailable { io_kind: IoErrorKindSer },
     /// Stream source unavailable (all sources failed, playlist empty, stream ended).
     SourceUnavailable,
     /// Configuration/protocol error (invalid URL, unsupported protocol).
@@ -376,11 +443,17 @@ impl DownloadFailureKind {
     ///
     /// Permanent HTTP client errors (4xx except 429) and configuration errors
     /// are NOT counted because they indicate the specific resource is gone or
-    /// misconfigured, not that the engine is malfunctioning.
+    /// misconfigured, not that the engine is malfunctioning. Output-root
+    /// failures are also excluded because they are infrastructure-level and
+    /// already gated by [`crate::downloader::output_root_gate`]; routing them
+    /// into the engine circuit breaker would double-block recovery.
     pub fn affects_circuit_breaker(&self) -> bool {
         !matches!(
             self,
-            Self::HttpClientError { .. } | Self::Configuration | Self::Cancelled
+            Self::HttpClientError { .. }
+                | Self::Configuration
+                | Self::Cancelled
+                | Self::OutputRootUnavailable { .. }
         )
     }
 
@@ -392,6 +465,7 @@ impl DownloadFailureKind {
                 | Self::HttpServerError { .. }
                 | Self::Network
                 | Self::Io
+                | Self::OutputRootUnavailable { .. }
                 | Self::SourceUnavailable
                 | Self::ProcessExit { .. }
                 | Self::Other
@@ -430,11 +504,42 @@ impl std::error::Error for EngineStartError {}
 
 impl From<crate::Error> for EngineStartError {
     fn from(err: crate::Error) -> Self {
+        // Walk the error source chain to find the first std::io::Error and
+        // classify by its ErrorKind. Filesystem failures from the recording
+        // path (ENOENT/ENOSPC/EACCES/EROFS) become `OutputRootUnavailable`
+        // so the manager and the write gate can treat them as infra-level;
+        // other I/O errors stay as `Io`. Without this, every `crate::Error`
+        // collapsed to `DownloadFailureKind::Other` and lost retry/CB context.
+        let kind = io_error_kind_in_chain(&err)
+            .map(|k| match IoErrorKindSer::from_io_kind(k) {
+                IoErrorKindSer::NotFound
+                | IoErrorKindSer::StorageFull
+                | IoErrorKindSer::PermissionDenied
+                | IoErrorKindSer::ReadOnlyFilesystem
+                | IoErrorKindSer::TimedOut => DownloadFailureKind::OutputRootUnavailable {
+                    io_kind: IoErrorKindSer::from_io_kind(k),
+                },
+                IoErrorKindSer::Other => DownloadFailureKind::Io,
+            })
+            .unwrap_or(DownloadFailureKind::Other);
         Self {
-            kind: DownloadFailureKind::Other,
+            kind,
             message: err.to_string(),
         }
     }
+}
+
+/// Walk `err`'s `std::error::Error::source()` chain and return the
+/// `std::io::ErrorKind` of the first `std::io::Error` encountered, if any.
+fn io_error_kind_in_chain(err: &(dyn std::error::Error + 'static)) -> Option<std::io::ErrorKind> {
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = current {
+        if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+            return Some(io_err.kind());
+        }
+        current = e.source();
+    }
+    None
 }
 
 /// Events emitted by download engines.
@@ -464,6 +569,27 @@ pub enum SegmentEvent {
         kind: DownloadFailureKind,
         /// Human-readable error message for logging and display.
         message: String,
+    },
+    /// The recording output filesystem appears unwritable mid-stream
+    /// (e.g., ffmpeg emitted `"No space left on device"` or exited with
+    /// code 228). Emitted by engines *before* propagating the underlying
+    /// failure, so the download manager can route it into the output-root
+    /// write gate via `gate.record_failure` without having to parse the
+    /// generic `DownloadFailed` message field.
+    ///
+    /// This is how the gate detects mid-stream ENOSPC — the common 508
+    /// scenario where the disk fills while today's date directory already
+    /// exists, meaning `prepare_output_dir` is a no-op and cannot catch
+    /// the failure on its own.
+    DiskFull {
+        /// Resolved output directory the engine was writing to. The
+        /// manager passes this to `gate.record_failure` so `resolve_root`
+        /// can determine the gate key.
+        output_dir: PathBuf,
+        /// Human-readable detail from the engine (e.g., "ffmpeg: No space
+        /// left on device, exit 228"). Shown in logs and the gate's
+        /// RootMeta.last_error_msg.
+        detail: String,
     },
 }
 
@@ -623,5 +749,113 @@ mod tests {
         assert_eq!(progress.segments_completed, 0);
         assert_eq!(progress.media_duration_secs, 0.0);
         assert_eq!(progress.playback_ratio, 0.0);
+    }
+
+    #[test]
+    fn io_error_kind_classification() {
+        use std::io::ErrorKind;
+        assert_eq!(
+            IoErrorKindSer::from_io_kind(ErrorKind::NotFound),
+            IoErrorKindSer::NotFound
+        );
+        assert_eq!(
+            IoErrorKindSer::from_io_kind(ErrorKind::StorageFull),
+            IoErrorKindSer::StorageFull
+        );
+        assert_eq!(
+            IoErrorKindSer::from_io_kind(ErrorKind::PermissionDenied),
+            IoErrorKindSer::PermissionDenied
+        );
+        assert_eq!(
+            IoErrorKindSer::from_io_kind(ErrorKind::ReadOnlyFilesystem),
+            IoErrorKindSer::ReadOnlyFilesystem
+        );
+        assert_eq!(
+            IoErrorKindSer::from_io_kind(ErrorKind::TimedOut),
+            IoErrorKindSer::TimedOut
+        );
+        assert_eq!(
+            IoErrorKindSer::from_io_kind(ErrorKind::ConnectionRefused),
+            IoErrorKindSer::Other
+        );
+    }
+
+    #[test]
+    fn output_root_unavailable_does_not_affect_circuit_breaker() {
+        let kind = DownloadFailureKind::OutputRootUnavailable {
+            io_kind: IoErrorKindSer::NotFound,
+        };
+        assert!(!kind.affects_circuit_breaker());
+        assert!(kind.is_recoverable());
+    }
+
+    #[test]
+    fn engine_start_error_from_io_path_classifies_as_output_root_unavailable() {
+        // crate::Error::IoPath wraps an io::Error in its source chain — the
+        // From impl should walk the chain, find the io::Error, and produce
+        // OutputRootUnavailable for the kinds we care about.
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "no such directory");
+        let crate_err = crate::Error::io_path(
+            "creating output directory",
+            std::path::Path::new("/rec/huya/X/20260415"),
+            io_err,
+        );
+        let engine_err: EngineStartError = crate_err.into();
+        assert_eq!(
+            engine_err.kind,
+            DownloadFailureKind::OutputRootUnavailable {
+                io_kind: IoErrorKindSer::NotFound
+            }
+        );
+        // Path::display() on Windows uses backslashes; normalize before matching.
+        assert!(
+            engine_err.message.replace('\\', "/").contains("/rec/huya/X/20260415"),
+            "msg={}",
+            engine_err.message
+        );
+    }
+
+    #[test]
+    fn engine_start_error_from_storage_full_classifies_correctly() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::StorageFull, "no space");
+        let crate_err: crate::Error = io_err.into();
+        let engine_err: EngineStartError = crate_err.into();
+        assert_eq!(
+            engine_err.kind,
+            DownloadFailureKind::OutputRootUnavailable {
+                io_kind: IoErrorKindSer::StorageFull
+            }
+        );
+    }
+
+    #[test]
+    fn engine_start_error_from_other_io_classifies_as_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
+        let crate_err: crate::Error = io_err.into();
+        let engine_err: EngineStartError = crate_err.into();
+        assert_eq!(engine_err.kind, DownloadFailureKind::Io);
+    }
+
+    #[test]
+    fn engine_start_error_from_non_io_error_classifies_as_other() {
+        let crate_err = crate::Error::Validation("bad input".to_string());
+        let engine_err: EngineStartError = crate_err.into();
+        assert_eq!(engine_err.kind, DownloadFailureKind::Other);
+    }
+
+    #[test]
+    fn io_error_kind_ser_string_matches_yaml_keys() {
+        // These string values are used as the leaf segment of i18n keys
+        // like `notification.output_path_inaccessible.description.<as_str>`.
+        // Keep them in sync with `rust-srec/locales/{en,zh-CN}.yml`.
+        assert_eq!(IoErrorKindSer::NotFound.as_str(), "not_found");
+        assert_eq!(IoErrorKindSer::StorageFull.as_str(), "storage_full");
+        assert_eq!(
+            IoErrorKindSer::PermissionDenied.as_str(),
+            "permission_denied"
+        );
+        assert_eq!(IoErrorKindSer::ReadOnlyFilesystem.as_str(), "read_only");
+        assert_eq!(IoErrorKindSer::TimedOut.as_str(), "timed_out");
+        assert_eq!(IoErrorKindSer::Other.as_str(), "other");
     }
 }

@@ -1,0 +1,21 @@
+notification:
+  output_path_inaccessible:
+    title: "💾 输出路径无法写入：%{path}"
+    description:
+      not_found: |-
+        输出路径 %{path} 无法写入：目录或挂载已失效。
+
+        如果您是通过宿主机文件管理器（例如宝塔面板）清理的绑定挂载目录，Docker 挂载已变为孤儿状态，必须重启容器才能恢复。请改用 rust-srec 界面或 `docker exec` 清理录制文件。
+
+        详见 Docker 部署文档中的故障排查章节。
+      storage_full: |-
+        输出路径 %{path} 磁盘空间不足，录制已暂停，直到有可用空间。
+
+        请通过 rust-srec 界面、`docker exec` 或扩容底层卷来释放空间。空间恢复后，录制会在 30 秒内自动恢复。
+      permission_denied: |-
+        输出路径 %{path} 因权限错误无法写入。请检查容器内该目录的所有者和权限。
+      read_only: |-
+        输出路径 %{path} 以只读方式挂载。必须以读写方式重新挂载文件系统后才能继续录制。
+      timed_out: |-
+        对 %{path} 的可写性探测超时。文件系统可能已挂起（NFS stale handle、损坏的绑定挂载、挂起的块设备等）。
+      other: "输出路径 %{path} 无法写入：%{kind}。"

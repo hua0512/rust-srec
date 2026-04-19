@@ -1,0 +1,21 @@
+notification:
+  output_path_inaccessible:
+    title: "💾 Output path inaccessible: %{path}"
+    description:
+      not_found: |-
+        The output path %{path} is not writable: the directory or mount appears orphaned.
+
+        If you cleared recording files via a host file manager (for example BaoTa panel) on a bind-mounted Docker volume, the mount is now stale and the container must be restarted to recover. Clean up recordings through the rust-srec UI or `docker exec` instead.
+
+        See the Docker troubleshooting docs for safe cleanup paths.
+      storage_full: |-
+        The output path %{path} is out of disk space. Recordings are paused until space is available.
+
+        Free space via the rust-srec UI, remove files via `docker exec`, or expand the underlying volume. The gate will automatically resume recordings within 30 seconds of space becoming available.
+      permission_denied: |-
+        The output path %{path} is not writable due to a permission error. Check ownership and mode of the directory inside the container.
+      read_only: |-
+        The output path %{path} is mounted read-only. Recordings cannot continue until the filesystem is remounted read-write.
+      timed_out: |-
+        Writability probe for %{path} timed out. The filesystem may be hung (NFS stale handle, broken bind mount, hung block device).
+      other: "The output path %{path} is not writable: %{kind}."

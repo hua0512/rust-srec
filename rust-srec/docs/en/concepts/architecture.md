@@ -258,6 +258,27 @@ Most cross-service coordination happens via Tokio `broadcast` channels.
 events and apply download concurrency adjustments if a `DownloadLimitAdjuster` is wired in.
 :::
 
+### Output-root write gate
+
+The download manager runs an **output-root write gate** (in `downloader::output_root_gate`) that operates at the filesystem boundary, complementing the engine-level circuit breakers that operate at the network/process boundary. It exists so that a single filesystem failure (disk full, stale bind mount, lost permissions) does not cascade into dozens of per-streamer retries that would flood the logs and DB outbox.
+
+```
+Healthy ──(record_failure: pre-start ENOENT / runtime ENOSPC / startup probe)──► Degraded
+                                                                                    │
+                              (mark_healthy: next real ensure_output_dir succeeds)  │
+Healthy ◄───────────────────────────────────────────────────────────────────────────┘
+```
+
+Key properties:
+
+- **Lock-free fast path.** `check()` on a Healthy root is an atomic load plus a `DashMap::get`. No mutex on the hot path, no cost when there are no tracked failures.
+- **Single-flight cooldown via CAS.** When a root is `Degraded`, only one caller per cooldown window (30s default) is allowed through to attempt the real `create_dir_all`. Other concurrent callers fast-reject with the cached error. Mirrors the half-open pattern in `CircuitBreaker`.
+- **No background probe task.** The real `ensure_output_dir` call is the probe — the gate piggybacks on actual download attempts. A single one-shot probe runs at container startup to surface broken mounts from second zero.
+- **Recovery hook.** On `Degraded → Healthy` transition the gate clears `consecutive_error_count`, `disabled_until`, and `last_error` for every streamer whose backoff was caused by the gate (filtered by the `"output-root blocked:"` prefix). The whole affected fleet cascades out of backoff on the same tick.
+- **One notification per transition.** The `Healthy → Degraded` CAS is also what decides which caller emits the critical `output_path_inaccessible` notification, so users see exactly one alert per incident regardless of how many concurrent streamers are affected.
+
+Exposed in `/health` as a single aggregated `output-root` component listing each Degraded root with its classified `io::ErrorKind`, rejected count, and staleness. See the [notifications doc](./notifications.md#critical-infrastructure-events) for the event shape and the [Docker troubleshooting guide](../getting-started/docker.md#freeing-up-disk-space-when-using-bind-mounts) for the stale-mount failure mode.
+
 ## Observability, health, and shutdown
 
 - Logging uses `tracing` with a reloadable filter and log retention cleanup

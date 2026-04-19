@@ -27,3 +27,16 @@ Different platforms and hardware configurations may benefit from different build
 ## How do I install these tools?
 
 Please refer to our [Installation Guide](./installation) for instructions on how to install the necessary dependencies for your platform.
+
+## I ran out of disk space. I cleared files, but recordings don't resume. What do I do?
+
+Check the `/health` endpoint or the system health page in the UI. Look at the `output-root` component:
+
+- **Status `Degraded`, `error_kind: not_found`** — you most likely cleared files via a host-side operation (BaoTa file manager, `mv` on the mount source directory, etc.) that broke the Docker bind mount. The container is holding an orphaned inode and needs to be restarted. See the [Docker troubleshooting guide](./docker.md#freeing-up-disk-space-when-using-bind-mounts) for safe cleanup paths.
+- **Status `Degraded`, `error_kind: storage_full`** — the disk is genuinely full but the filesystem mount is healthy. Free space via any of the safe cleanup paths in the Docker guide (rust-srec UI, `docker exec`, volume expansion). **No restart needed.** The gate auto-recovers within ~30 seconds of the next attempted download, and every affected streamer cascades out of backoff on the same monitor tick.
+- **Status `Degraded`, `error_kind: permission_denied`** — check ownership and mode of the target directory inside the container.
+- **Status `Degraded`, `error_kind: read_only`** — the filesystem was remounted read-only. You'll need to remount it read-write.
+- **Status `Degraded`, `error_kind: timed_out`** — the filesystem is hung (stale NFS handle, broken bind mount, dead block device). Investigate the underlying storage.
+- **Status `Healthy` but recordings still don't resume** — the filesystem is fine from the app's perspective. Check the individual streamer's state in the UI; they may be in backoff from an unrelated error (CDN issues, rate limits). See the logs for the specific `last_error`.
+
+One critical `output_path_inaccessible` notification is also emitted when the gate transitions to `Degraded`, and it contains the same `error_kind` plus a localized recovery hint. See the [notifications doc](../concepts/notifications.md#critical-infrastructure-events).

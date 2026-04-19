@@ -136,6 +136,16 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
         aliases: &["out_of_space", "disk.out_of_space", "OutOfSpace"],
     },
     NotificationEventTypeInfo {
+        event_type: "output_path_inaccessible",
+        label: "Output Path Inaccessible",
+        priority: NotificationPriority::Critical,
+        aliases: &[
+            "output_path_inaccessible",
+            "output.path_inaccessible",
+            "OutputPathInaccessible",
+        ],
+    },
+    NotificationEventTypeInfo {
         event_type: "pipeline_queue_warning",
         label: "Pipeline Queue Warning",
         priority: NotificationPriority::High,
@@ -502,6 +512,20 @@ pub enum NotificationEvent {
         threshold_bytes: u64,
         timestamp: DateTime<Utc>,
     },
+    /// Recording output path is unwritable (caught at the filesystem boundary
+    /// by the output-root write gate). Distinct from `OutOfSpace`, which is a
+    /// proactive disk-pressure warning; this fires when the gate has actually
+    /// blocked downloads because `create_dir_all` / mid-stream writes failed.
+    /// Emitted exactly once per `Healthy → Degraded` transition.
+    OutputPathInaccessible {
+        /// Resolved root path that the gate is guarding (e.g. `/rec`).
+        path: String,
+        /// Stable string identifying the underlying io error kind. Maps to the
+        /// `notification.output_path_inaccessible.description.<kind>` i18n key
+        /// via [`crate::downloader::engine::traits::IoErrorKindSer::as_str`].
+        error_kind: String,
+        timestamp: DateTime<Utc>,
+    },
     /// Pipeline queue depth warning.
     PipelineQueueWarning {
         queue_depth: usize,
@@ -563,6 +587,7 @@ impl NotificationEvent {
             // System events
             Self::FatalError { .. } => NotificationPriority::Critical,
             Self::OutOfSpace { .. } => NotificationPriority::Critical,
+            Self::OutputPathInaccessible { .. } => NotificationPriority::Critical,
             Self::PipelineQueueWarning { .. } => NotificationPriority::High,
             Self::PipelineQueueCritical { .. } => NotificationPriority::Critical,
             Self::SystemStartup { .. } => NotificationPriority::Normal,
@@ -592,6 +617,7 @@ impl NotificationEvent {
             Self::PipelineCancelled { .. } => "pipeline_cancelled",
             Self::FatalError { .. } => "fatal_error",
             Self::OutOfSpace { .. } => "out_of_space",
+            Self::OutputPathInaccessible { .. } => "output_path_inaccessible",
             Self::PipelineQueueWarning { .. } => "pipeline_queue_warning",
             Self::PipelineQueueCritical { .. } => "pipeline_queue_critical",
             Self::SystemStartup { .. } => "system_startup",
@@ -666,6 +692,11 @@ impl NotificationEvent {
             Self::OutOfSpace { path, .. } => {
                 format!("💾 Low disk space on {}", path)
             }
+            Self::OutputPathInaccessible { path, .. } => crate::i18n::t!(
+                "notification.output_path_inaccessible.title",
+                path = path.as_str()
+            )
+            .to_string(),
             Self::PipelineQueueWarning { queue_depth, .. } => {
                 format!("⚠️ Pipeline queue warning: {} jobs", queue_depth)
             }
@@ -813,6 +844,27 @@ impl NotificationEvent {
                     format_bytes(*threshold_bytes)
                 )
             }
+            Self::OutputPathInaccessible {
+                path, error_kind, ..
+            } => {
+                // Map the kind string to a per-kind i18n description; falls back
+                // to the `other` key if we don't have a dedicated branch. The
+                // kind strings here MUST stay in sync with
+                // `IoErrorKindSer::as_str` (covered by a unit test in traits.rs).
+                let key = match error_kind.as_str() {
+                    "not_found" => "notification.output_path_inaccessible.description.not_found",
+                    "storage_full" => {
+                        "notification.output_path_inaccessible.description.storage_full"
+                    }
+                    "permission_denied" => {
+                        "notification.output_path_inaccessible.description.permission_denied"
+                    }
+                    "read_only" => "notification.output_path_inaccessible.description.read_only",
+                    "timed_out" => "notification.output_path_inaccessible.description.timed_out",
+                    _ => "notification.output_path_inaccessible.description.other",
+                };
+                crate::i18n::t!(key, path = path.as_str(), kind = error_kind.as_str()).to_string()
+            }
             Self::PipelineQueueWarning {
                 queue_depth,
                 threshold,
@@ -860,6 +912,7 @@ impl NotificationEvent {
             | Self::PipelineCancelled { timestamp, .. }
             | Self::FatalError { timestamp, .. }
             | Self::OutOfSpace { timestamp, .. }
+            | Self::OutputPathInaccessible { timestamp, .. }
             | Self::PipelineQueueWarning { timestamp, .. }
             | Self::PipelineQueueCritical { timestamp, .. }
             | Self::SystemStartup { timestamp, .. }
@@ -1144,5 +1197,134 @@ mod tests {
         assert_eq!(reject_event.priority(), NotificationPriority::High);
         assert_eq!(reject_event.event_type(), "download_rejected");
         assert!(reject_event.description().contains("Circuit breaker open"));
+    }
+
+    /// `rust_i18n::set_locale` mutates a process global, so locale-sensitive
+    /// tests must serialize on this lock to avoid racing the i18n module's
+    /// own tests (and each other).
+    static OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn output_path_inaccessible_basic_metadata() {
+        let event = NotificationEvent::OutputPathInaccessible {
+            path: "/rec".to_string(),
+            error_kind: "not_found".to_string(),
+            timestamp: Utc::now(),
+        };
+        assert_eq!(event.priority(), NotificationPriority::Critical);
+        assert_eq!(event.event_type(), "output_path_inaccessible");
+        assert_eq!(event.streamer_id(), None, "infra event has no streamer_id");
+    }
+
+    #[test]
+    fn output_path_inaccessible_localizes_to_english() {
+        let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        crate::i18n::set_locale("en");
+        let event = NotificationEvent::OutputPathInaccessible {
+            path: "/rec".to_string(),
+            error_kind: "not_found".to_string(),
+            timestamp: Utc::now(),
+        };
+        let title = event.title();
+        let description = event.description();
+        assert!(title.contains("/rec"), "title: {}", title);
+        assert!(
+            title.contains("Output path inaccessible"),
+            "title: {}",
+            title
+        );
+        assert!(description.contains("/rec"), "description: {}", description);
+        assert!(
+            description.contains("BaoTa"),
+            "description should mention BaoTa for the not_found stale-mount case: {}",
+            description
+        );
+        assert!(
+            description.contains("restart"),
+            "description should mention container restart: {}",
+            description
+        );
+    }
+
+    #[test]
+    fn output_path_inaccessible_localizes_to_chinese() {
+        let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        crate::i18n::set_locale("zh-CN");
+        let event = NotificationEvent::OutputPathInaccessible {
+            path: "/rec".to_string(),
+            error_kind: "not_found".to_string(),
+            timestamp: Utc::now(),
+        };
+        let title = event.title();
+        let description = event.description();
+        assert!(title.contains("/rec"), "title: {}", title);
+        assert!(title.contains("输出路径"), "title: {}", title);
+        assert!(
+            description.contains("宝塔"),
+            "description should mention 宝塔 for the not_found stale-mount case: {}",
+            description
+        );
+        assert!(
+            description.contains("重启容器"),
+            "description should mention container restart: {}",
+            description
+        );
+        crate::i18n::set_locale("en");
+    }
+
+    #[test]
+    fn output_path_inaccessible_all_error_kinds_resolve() {
+        // Every IoErrorKindSer::as_str() value must map to a real i18n key,
+        // not the literal key string. Defends against silent misalignment
+        // between the YAML files and the description() match arms.
+        let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        crate::i18n::set_locale("en");
+        for kind in [
+            "not_found",
+            "storage_full",
+            "permission_denied",
+            "read_only",
+            "timed_out",
+            "other",
+        ] {
+            let event = NotificationEvent::OutputPathInaccessible {
+                path: "/rec".to_string(),
+                error_kind: kind.to_string(),
+                timestamp: Utc::now(),
+            };
+            let description = event.description();
+            assert!(
+                description.contains("/rec"),
+                "kind={} description={:?}",
+                kind,
+                description
+            );
+            assert!(
+                !description.starts_with("notification."),
+                "kind={} returned untranslated key: {:?}",
+                kind,
+                description
+            );
+        }
+    }
+
+    #[test]
+    fn output_path_inaccessible_in_event_type_registry() {
+        let info = NotificationEvent::event_type_info("output_path_inaccessible")
+            .expect("event type should be registered");
+        assert_eq!(info.event_type, "output_path_inaccessible");
+        assert_eq!(info.priority, NotificationPriority::Critical);
+
+        // Aliases resolve back to the canonical type
+        let from_camel = NotificationEvent::event_type_info("OutputPathInaccessible");
+        assert!(from_camel.is_some());
+        let from_dotted = NotificationEvent::event_type_info("output.path_inaccessible");
+        assert!(from_dotted.is_some());
     }
 }

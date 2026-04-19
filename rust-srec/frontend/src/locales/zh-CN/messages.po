@@ -423,7 +423,7 @@ msgstr "在: {0} 之后"
 msgid "Album"
 msgstr "专辑"
 
-#: src/components/notifications/subscription-manager.tsx:170
+#: src/components/notifications/subscription-manager.tsx:176
 msgid "Alerts when disk space is running low."
 msgstr "磁盘空间不足时发出警报。"
 
@@ -677,7 +677,7 @@ msgstr "轻松自动化您的直播录制。"
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "自动为每个会话的第一段生成封面图。"
 
-#: src/components/notifications/subscription-manager.tsx:427
+#: src/components/notifications/subscription-manager.tsx:437
 msgid "available"
 msgstr "可选"
 
@@ -899,7 +899,7 @@ msgstr "缓存"
 #: src/components/filters/FilterDialog.tsx:247
 #: src/components/notifications/channel-card.tsx:226
 #: src/components/notifications/channel-form.tsx:400
-#: src/components/notifications/subscription-manager.tsx:435
+#: src/components/notifications/subscription-manager.tsx:445
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:174
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:197
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
@@ -1569,9 +1569,13 @@ msgstr "CRF（恒定码率因子）"
 msgid "Critical"
 msgstr "严重"
 
-#: src/components/notifications/subscription-manager.tsx:174
+#: src/components/notifications/subscription-manager.tsx:184
 msgid "Critical alert when the processing queue is full."
 msgstr "处理队列已满时发出严重警报。"
+
+#: src/components/notifications/subscription-manager.tsx:179
+msgid "Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue."
+msgstr "录制输出文件系统无法写入、录制无法继续时的严重告警。"
 
 #: src/components/notifications/browser-channel-dialog.tsx:150
 #: src/components/notifications/desktop-channel-dialog.tsx:50
@@ -1579,7 +1583,7 @@ msgstr "处理队列已满时发出严重警报。"
 msgid "Critical Only"
 msgstr "仅限严重"
 
-#: src/components/notifications/subscription-manager.tsx:168
+#: src/components/notifications/subscription-manager.tsx:174
 msgid "Critical system errors or streamer failures."
 msgstr "严重的系统错误或主播故障。"
 
@@ -1925,7 +1929,7 @@ msgstr "描述"
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
-#: src/components/notifications/subscription-manager.tsx:342
+#: src/components/notifications/subscription-manager.tsx:352
 msgid "Deselect All"
 msgstr "取消全选"
 
@@ -2887,7 +2891,7 @@ msgstr "更新设置失败"
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
 
-#: src/components/notifications/subscription-manager.tsx:231
+#: src/components/notifications/subscription-manager.tsx:241
 msgid "Failed to update subscriptions"
 msgstr "更新订阅失败"
 
@@ -4029,7 +4033,7 @@ msgstr "管理专门的提取和识别选项。"
 msgid "Manage storage paths and file formats."
 msgstr "管理存储路径和文件格式。"
 
-#: src/components/notifications/subscription-manager.tsx:296
+#: src/components/notifications/subscription-manager.tsx:306
 msgid "Manage Subscriptions"
 msgstr "管理订阅"
 
@@ -4542,7 +4546,7 @@ msgstr "该执行记录暂无日志。"
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
-#: src/components/notifications/subscription-manager.tsx:361
+#: src/components/notifications/subscription-manager.tsx:371
 msgid "No matching events found"
 msgstr "未找到匹配的事件"
 
@@ -5781,11 +5785,11 @@ msgstr "所有系统组件与资源的实时状态。"
 msgid "Reason"
 msgstr "原因"
 
-#: src/components/notifications/subscription-manager.tsx:138
+#: src/components/notifications/subscription-manager.tsx:144
 msgid "Receive a notification when a stream ends."
 msgstr "当直播结束时接收通知。"
 
-#: src/components/notifications/subscription-manager.tsx:136
+#: src/components/notifications/subscription-manager.tsx:142
 msgid "Receive a notification when a streamer goes live."
 msgstr "当主播开播时接收通知。"
 
@@ -6163,7 +6167,7 @@ msgstr "清理后的主播名称"
 #: src/components/config/platforms/platform-editor.tsx:159
 #: src/components/config/templates/template-editor.tsx:213
 #: src/components/filters/FilterDialog.tsx:260
-#: src/components/notifications/subscription-manager.tsx:445
+#: src/components/notifications/subscription-manager.tsx:455
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:543
 #: src/components/streamers/edit/streamer-save-fab.tsx:53
@@ -6236,7 +6240,7 @@ msgstr "按名称或描述搜索..."
 msgid "Search engines..."
 msgstr "搜索引擎..."
 
-#: src/components/notifications/subscription-manager.tsx:327
+#: src/components/notifications/subscription-manager.tsx:337
 msgid "Search events..."
 msgstr "搜索事件..."
 
@@ -6336,7 +6340,7 @@ msgid "Select a streamer"
 msgstr "选择主播"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:181
-#: src/components/notifications/subscription-manager.tsx:345
+#: src/components/notifications/subscription-manager.tsx:355
 msgid "Select All"
 msgstr "全选"
 
@@ -6403,7 +6407,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:299
+#: src/components/notifications/subscription-manager.tsx:309
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
@@ -6425,7 +6429,7 @@ msgstr "选择类型"
 msgid "Select your preferred color scheme."
 msgstr "选择你偏好的配色方案。"
 
-#: src/components/notifications/subscription-manager.tsx:424
+#: src/components/notifications/subscription-manager.tsx:434
 msgid "selected"
 msgstr "已选"
 
@@ -6919,7 +6923,7 @@ msgstr "流与元数据"
 msgid "Subscriptions"
 msgstr "订阅"
 
-#: src/components/notifications/subscription-manager.tsx:224
+#: src/components/notifications/subscription-manager.tsx:234
 msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
@@ -7414,59 +7418,59 @@ msgstr "每个分段录制后触发"
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
-#: src/components/notifications/subscription-manager.tsx:144
+#: src/components/notifications/subscription-manager.tsx:150
 msgid "Triggered when a download fails with an error."
 msgstr "当下载因错误失败时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:150
+#: src/components/notifications/subscription-manager.tsx:156
 msgid "Triggered when a download is manually cancelled."
 msgstr "当下载被手动取消时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:153
+#: src/components/notifications/subscription-manager.tsx:159
 msgid "Triggered when a download is rejected (e.g., circuit breaker)."
 msgstr "当下载被拒绝时触发（例如熔断器）。"
 
-#: src/components/notifications/subscription-manager.tsx:142
+#: src/components/notifications/subscription-manager.tsx:148
 msgid "Triggered when a download successfully completes."
 msgstr "当下载成功完成时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:148
+#: src/components/notifications/subscription-manager.tsx:154
 msgid "Triggered when a file segment is finished."
 msgstr "当文件分段完成时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:140
+#: src/components/notifications/subscription-manager.tsx:146
 msgid "Triggered when a new download recording begins."
 msgstr "当新的下载录制开始时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:146
+#: src/components/notifications/subscription-manager.tsx:152
 msgid "Triggered when a new file segment is created."
 msgstr "当创建新的文件分段时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:164
+#: src/components/notifications/subscription-manager.tsx:170
 msgid "Triggered when a pipeline job fails."
 msgstr "当处理任务失败时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:162
+#: src/components/notifications/subscription-manager.tsx:168
 msgid "Triggered when a pipeline job finishes successfully."
 msgstr "当处理任务成功完成时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:166
+#: src/components/notifications/subscription-manager.tsx:172
 msgid "Triggered when a pipeline job is cancelled."
 msgstr "当处理任务被取消时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:160
+#: src/components/notifications/subscription-manager.tsx:166
 msgid "Triggered when a post-processing pipeline job starts."
 msgstr "当后处理任务开始时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:157
+#: src/components/notifications/subscription-manager.tsx:163
 msgid "Triggered when streamer configuration is dynamically updated."
 msgstr "当主播配置被动态更新时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:178
+#: src/components/notifications/subscription-manager.tsx:188
 msgid "Triggered when the application shuts down."
 msgstr "应用关闭时触发。"
 
-#: src/components/notifications/subscription-manager.tsx:176
+#: src/components/notifications/subscription-manager.tsx:186
 msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
@@ -7853,7 +7857,7 @@ msgstr "开始前等待时间。"
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
 
-#: src/components/notifications/subscription-manager.tsx:172
+#: src/components/notifications/subscription-manager.tsx:182
 msgid "Warning when the processing queue gets too long."
 msgstr "处理队列过长时发出警告。"
 

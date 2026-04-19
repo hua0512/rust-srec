@@ -153,6 +153,11 @@ impl Streamer {
     }
 
     /// Reset error count and disabled_until.
+    ///
+    /// Note: the domain entity does not carry `last_error` (only the
+    /// in-memory `StreamerMetadata` cache and the DB row do). The output-root
+    /// write gate's recovery hook clears the cache field and persists via
+    /// [`crate::streamer::manager::StreamerManager::reset_errors_and_clear_last_error`].
     pub fn reset_errors(&mut self) {
         self.consecutive_error_count = 0;
         self.disabled_until = None;

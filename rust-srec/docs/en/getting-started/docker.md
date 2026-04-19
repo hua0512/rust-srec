@@ -250,6 +250,64 @@ Once the GPU is accessible to the container, go to your recording preset setting
 | `nvidia-smi` not found inside container | Container Toolkit not configured | Run `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
 | High CPU usage despite GPU enabled | Wrong encoder selected | Ensure the preset uses `h264_nvenc` or `hevc_nvenc`, not software encoders |
 
+## Freeing up disk space when using bind mounts
+
+::: danger Read this before using BaoTa, cPanel, or any other host-side file manager to clean up recordings.
+Cleaning up recordings **through the host filesystem** on a directory that is bind-mounted into the rust-srec container can leave the container unable to write recordings until it is restarted — even though the host shows free space. This is a Linux VFS behavior, not a rust-srec bug. The workaround is simple once you know about it.
+:::
+
+### Safe cleanup paths (recommended)
+
+In order of preference:
+
+1. **Delete recordings through the rust-srec web UI.** The app deletes files from inside the container via its own filesystem view — always safe, always correct.
+2. **`docker exec -it <container> rm -rf /rec/<path>`** — operates inside the container's mount namespace, always safe.
+3. **`docker exec -it <container> sh`** and clean up interactively.
+4. **Expand the underlying host volume** (any method — cloud-disk resize, LVM extend, adding a new disk). Always safe.
+
+### Dangerous cleanup paths (causes "recordings don't resume after disk was cleared")
+
+These are the patterns that trigger issue [#508](https://github.com/hua0512/rust-srec/issues/508) and similar reports:
+
+1. Host-side **`mv /host/rec /host/rec_backup`** or any rename of the mount source directory.
+2. Host-side **`rm -rf /host/rec`** followed by **`mkdir /host/rec`** to recreate it. The new directory is a different inode that the existing bind mount does NOT point at.
+3. Using **BaoTa (宝塔) panel's file manager** default delete action on a directory that backs a Docker bind mount. BaoTa's "delete" is implemented as "move to trash", which is the same as pattern 1.
+4. Any GUI or CLI tool that implements "safe delete" by moving the target to a trash/backup directory.
+
+### Why it happens (short version)
+
+Docker bind mounts are bound to an **inode**, not a path. When you rename or recreate the host directory, the inode underneath the container's `/rec` mount stays the same — but on most Linux filesystems (ext4, xfs), the kernel refuses to add new entries to a directory with `nlink == 0` (which is what a "deleted but still-referenced" inode is). So `create_dir_all` returns `ENOENT` forever, even though the disk has plenty of free space. Only destroying and recreating the container's mount namespace (`docker restart`) fixes it.
+
+### How rust-srec detects and reports it
+
+The **output-root write gate** catches this failure mode within one monitor tick and:
+
+- Flips `output-root` in `/health` to `Degraded` with `error_kind: not_found` and the path of the affected mount.
+- Emits exactly one critical `output_path_inaccessible` notification through every enabled channel (Discord, Email, Telegram, Gotify, Webhook, Web Push). The text branches on the error kind — the `not_found` variant includes the "restart the container" recovery instruction, translated if you set `RUST_SREC_LOCALE=zh-CN`.
+- Short-circuits subsequent download attempts at the filesystem boundary so the logs don't fill up with cascading retries and the DB outbox doesn't get churned.
+- Transitions every affected streamer to the `OUT_OF_SPACE` state, visible in the streamer list.
+
+After you `docker restart` the container, the gate reinitializes on boot (via a bounded 5-second startup probe). If the host path is fixed, the gate returns to `Healthy` and recordings resume on the next monitor tick.
+
+### If the error is actually disk-full (not stale mount)
+
+If `output-root` in `/health` shows `Degraded` with `error_kind: storage_full`, **no restart is needed**. Free space via any of the safe cleanup paths above, and the gate will auto-recover within 30 seconds of the next attempted download — the recovery hook clears every affected streamer's backoff so the whole fleet resumes on the same monitor tick.
+
+### Multi-mount deployments: `RUST_SREC_OUTPUT_ROOTS`
+
+The startup probe automatically discovers mount roots from every configuration layer — **global**, **platform**, **template**, and **per-streamer** `output_folder` settings. It merges the effective config for each streamer in parallel using the same caching path the runtime uses, deduplicates the resolved roots, and probes them concurrently at container boot. For the typical setup (one mount like `/rec`) this just works, and for heterogeneous layouts every mount any streamer could actually write to is preflighted from second zero.
+
+You only need to set `RUST_SREC_OUTPUT_ROOTS` explicitly when:
+
+- you want to probe mounts that aren't yet referenced by any streamer config (e.g. a new volume you plan to migrate to), or
+- you want to override the resolution heuristic — for example, forcing a single `/rec` gate key on a `/rec/{platform}/...` layout to consolidate all platforms under one gate entry.
+
+```env
+RUST_SREC_OUTPUT_ROOTS=/rec,/mnt/backup-slow
+```
+
+Values are comma-separated absolute paths. See the [configuration guide](./configuration.md#backend-service) for details.
+
 ## Accessing the Application
 
 - **Web Interface**: `http://localhost:[FRONTEND_PORT]` (Default: http://localhost:15275)

@@ -33,13 +33,25 @@ flowchart LR
 | **Email** | 通过 SMTP 发送电子邮件通知。 | SMTP 服务器, 端口, 账号/密码 |
 | **Webhook** | 发送自定义 JSON POST 请求到指定 URL。 | 目标 URL, 自定义 Headers |
 
+## 基础设施关键事件
+
+以下两个事件会在录制文件系统本身出现问题时触发：
+
+| 事件 | 触发时机 | 能否自动恢复？ |
+|------|---------|---------------|
+| `out_of_space` | 预警：磁盘使用率超过配置阈值，但录制仍在运行。 | 不适用（仅预警） |
+| `output_path_inaccessible` | **[输出根写入门](./architecture.md#输出根写入门)已实际阻止录制**，原因是 `create_dir_all` 或中途写入时遇到 ENOENT / ENOSPC / EACCES / EROFS / 超时等错误。每次 `Healthy → Degraded` 状态切换**只发出一次**（不是每次失败都发）。 | 真正的 ENOSPC：是，磁盘释放后约 30 秒内自动恢复。失效的 Docker 绑定挂载：**否**，必须重启容器。详见 [Docker 故障排查](../getting-started/docker.md#使用绑定挂载时如何释放磁盘空间)。 |
+
+设置环境变量 `RUST_SREC_LOCALE` 后，`output_path_inaccessible` 的描述文本会按语言本地化。目前支持：`en`、`zh-CN`。描述会根据底层 `io::ErrorKind` 分支——`NotFound`（挂载失效）会显示与 `StorageFull`（磁盘真正写满）不同的恢复建议。
+
 ## 优先级与过滤
 
 并非所有事件都需要立即通知。系统引入了 `NotificationPriority` 对事件进行分级：
 
-- **High (高)**: 严重故障（如存储空间不足）、监视致命错误。
-- **Info (中)**: 开播提醒、管道处理完成。
-- **Debug/Low (低)**: 主播状态微调、重试尝试（默认不发送）。
+- **Critical (严重)**: 会阻塞录制的系统级故障（`output_path_inaccessible`、`fatal_error`、`pipeline_queue_critical`）。
+- **High (高)**: 重要警告，录制可能仍能继续（`out_of_space`、`download_rejected`）。
+- **Normal (中)**: 上下线事件、管道生命周期、系统启停。
+- **Low (低)**: 细粒度状态变化、分段级进度（通常会被过滤）。
 
 您可以在配置中设置 `min_priority`，仅接收高于该级别的通知。
 

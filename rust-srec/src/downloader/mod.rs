@@ -11,17 +11,23 @@
 pub mod engine;
 
 mod manager;
+pub mod output_root_gate;
 mod resilience;
 mod stream_selector;
 
 pub use engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
-    SegmentEvent, SegmentInfo,
+    IoErrorKindSer, SegmentEvent, SegmentInfo,
+};
+
+pub use output_root_gate::{
+    DEFAULT_GATE_COOLDOWN_SECS, GateBlocked, LAST_ERROR_GATE_PREFIX, OutputRootGate, RecoveryHook,
+    RootHealth, RootHealthState,
 };
 
 pub use manager::{
     ConfigUpdateType, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
-    DownloadStopCause,
+    DownloadRejectedKind, DownloadStopCause,
 };
 pub use resilience::{CircuitBreaker, EngineKey, RetryConfig};
 pub use stream_selector::{StreamSelectionConfig, StreamSelector};

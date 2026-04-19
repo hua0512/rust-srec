@@ -31,6 +31,24 @@ impl StreamerTxOps {
         Ok(result.rows_affected())
     }
 
+    /// Update the `last_error` column within a transaction.
+    ///
+    /// Pass `None` to clear the field. Used by infrastructure-level blocks
+    /// (like the output-root gate) that need to stamp a distinctive marker
+    /// on `last_error` so a later recovery pass can filter affected streamers.
+    pub async fn update_last_error(
+        tx: &mut SqliteConnection,
+        streamer_id: &str,
+        last_error: Option<&str>,
+    ) -> Result<u64> {
+        let result = sqlx::query("UPDATE streamers SET last_error = ? WHERE id = ?")
+            .bind(last_error)
+            .bind(streamer_id)
+            .execute(tx)
+            .await?;
+        Ok(result.rows_affected())
+    }
+
     /// Set streamer to LIVE state and record `last_live_time`.
     pub async fn set_live(
         tx: &mut SqliteConnection,

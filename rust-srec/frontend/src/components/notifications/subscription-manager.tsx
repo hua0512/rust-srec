@@ -116,6 +116,12 @@ const getEventIcon = (eventType: string) => {
       return { icon: ZapOff, color: 'text-red-600', bg: 'bg-red-600/10' };
     case 'out_of_space':
       return { icon: HardDrive, color: 'text-red-600', bg: 'bg-red-600/10' };
+    case 'output_path_inaccessible':
+      // Distinct shade from `out_of_space` so users can tell them apart at
+      // a glance: `out_of_space` is a proactive warning (still running),
+      // `output_path_inaccessible` means the filesystem is actually
+      // unwritable (recordings are blocked).
+      return { icon: HardDrive, color: 'text-red-700', bg: 'bg-red-700/10' };
     case 'pipeline_queue_warning':
       return {
         icon: AlertTriangle,
@@ -168,6 +174,10 @@ const getEventDescription = (eventType: string, i18n: any) => {
       return i18n._(msg`Critical system errors or streamer failures.`);
     case 'out_of_space':
       return i18n._(msg`Alerts when disk space is running low.`);
+    case 'output_path_inaccessible':
+      return i18n._(
+        msg`Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue.`,
+      );
     case 'pipeline_queue_warning':
       return i18n._(msg`Warning when the processing queue gets too long.`);
     case 'pipeline_queue_critical':

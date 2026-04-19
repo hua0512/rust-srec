@@ -15,7 +15,7 @@ use super::traits::{
     EngineType, SegmentEvent, SegmentInfo,
 };
 use super::utils::{
-    OutputRecordReader, ensure_output_dir, is_segment_start, parse_opened_path, parse_progress,
+    OutputRecordReader, is_disk_full_line, is_segment_start, parse_opened_path, parse_progress,
 };
 use crate::Result;
 use crate::database::models::engine::StreamlinkEngineConfig;
@@ -225,14 +225,9 @@ impl DownloadEngine for StreamlinkEngine {
         handle: Arc<DownloadHandle>,
     ) -> std::result::Result<(), EngineStartError> {
         let config = handle.config_snapshot();
-        // 1. Ensure output directory exists before spawning processes
-        if let Err(e) = ensure_output_dir(&config.output_dir).await {
-            return Err(EngineStartError::new(
-                DownloadFailureKind::Io,
-                e.to_string(),
-            ));
-        }
-
+        // Output directory is now prepared by
+        // `DownloadManager::prepare_output_dir` before this method is called.
+        // See the matching comment in ffmpeg.rs for the rationale.
         let streamlink_args = self.build_streamlink_args(&config);
         let ffmpeg_args = self.build_ffmpeg_args(&config);
         let segment_mode = config.max_segment_duration_secs > 0;
@@ -421,6 +416,7 @@ impl DownloadEngine for StreamlinkEngine {
         // 3. Spawn task to monitor ffmpeg stderr and emit events - waits for exit status
         let event_tx_clone = event_tx.clone();
         let streamer_id_clone = streamer_id.clone();
+        let output_dir_clone = config.output_dir.clone();
         tokio::spawn(async move {
             let mut reader = OutputRecordReader::new(ffmpeg_stderr);
             let mut active_segment: Option<(u32, PathBuf, f64, DateTime<Utc>)> = None;
@@ -428,6 +424,10 @@ impl DownloadEngine for StreamlinkEngine {
             let mut segments_completed = 0u32;
             let mut total_bytes = 0u64;
             let mut total_duration = 0.0f64;
+            // Set once when a disk-full signature is detected in stderr so a
+            // later ProcessExit path doesn't double-emit DiskFull. See the
+            // matching comment in ffmpeg.rs for the rationale.
+            let mut disk_full_reported = false;
             let mut bytes_completed = 0u64;
             let mut media_duration_offset_secs = 0.0f64;
             let mut media_duration_total_secs = 0.0f64;
@@ -590,6 +590,26 @@ impl DownloadEngine for StreamlinkEngine {
 
                                     let _ = event_tx_clone.send(SegmentEvent::Progress(progress)).await;
                                 }
+
+                                // Detect mid-stream disk-full. Same pattern as
+                                // ffmpeg.rs — see the matching block there
+                                // for the rationale. Streamlink feeds stderr
+                                // from the spawned ffmpeg process, so the
+                                // same signatures apply.
+                                if !disk_full_reported && is_disk_full_line(&line) {
+                                    disk_full_reported = true;
+                                    warn!(
+                                        streamer_id = %streamer_id_clone,
+                                        output_dir = %output_dir_clone.display(),
+                                        "Streamlink+FFmpeg signalled disk full; emitting DiskFull event for gate"
+                                    );
+                                    let _ = event_tx_clone
+                                        .send(SegmentEvent::DiskFull {
+                                            output_dir: output_dir_clone.clone(),
+                                            detail: format!("streamlink+ffmpeg: {}", line),
+                                        })
+                                        .await;
+                                }
                             }
                             Ok(None) => {
                                 debug!("FFmpeg process ended for {}", streamer_id_clone);
@@ -649,6 +669,26 @@ impl DownloadEngine for StreamlinkEngine {
                         .await;
                 }
                 Some(code) => {
+                    // Fallback DiskFull emission for exit code 228 if we
+                    // didn't already catch it from stderr. Mirrors ffmpeg.rs.
+                    if code == 228 && !disk_full_reported {
+                        // The stderr loop has already exited by this point,
+                        // so we don't need to update `disk_full_reported` —
+                        // the variable will not be read again.
+                        warn!(
+                            streamer_id = %streamer_id_clone,
+                            output_dir = %output_dir_clone.display(),
+                            "Streamlink+FFmpeg exited with code 228; assuming disk-full"
+                        );
+                        let _ = event_tx_clone
+                            .send(SegmentEvent::DiskFull {
+                                output_dir: output_dir_clone.clone(),
+                                detail: "streamlink+ffmpeg exit 228 (I/O error, likely ENOSPC)"
+                                    .to_string(),
+                            })
+                            .await;
+                    }
+
                     // Non-zero exit code - failure
                     let _ = event_tx_clone
                         .send(SegmentEvent::DownloadFailed {

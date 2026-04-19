@@ -636,6 +636,7 @@ mod tests {
             session_id: "session-1".to_string(),
             reason: "Circuit breaker open".to_string(),
             retry_after_secs: Some(60),
+            kind: crate::downloader::DownloadRejectedKind::CircuitBreaker,
         };
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();

@@ -250,6 +250,64 @@ docker exec rust-srec nvidia-smi
 | 容器内找不到 `nvidia-smi` | Container Toolkit 未配置 | 运行 `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
 | 已启用 GPU 但 CPU 占用仍然很高 | 编码器选择错误 | 确保预设使用 `h264_nvenc` 或 `hevc_nvenc`，而非软件编码器 |
 
+## 使用绑定挂载时如何释放磁盘空间
+
+::: danger 在使用宝塔、cPanel 或其他宿主机文件管理器清理录制文件**之前**，请先阅读本节。
+在宿主机上直接对已经作为 Docker 绑定挂载（bind mount）传入 rust-srec 容器的目录进行**清理操作**，可能导致容器直到重启前都无法写入录制文件——哪怕宿主机显示有空闲空间。这是 Linux VFS 的行为，不是 rust-srec 的 bug。一旦知道原因，绕过方法非常简单。
+:::
+
+### 安全的清理方式（推荐）
+
+按优先级排序：
+
+1. **通过 rust-srec 网页界面删除录制文件**。应用会从容器内以自己的文件系统视图删除文件——永远安全、永远正确。
+2. **`docker exec -it <容器> rm -rf /rec/<路径>`**——在容器自己的挂载命名空间里操作，永远安全。
+3. **`docker exec -it <容器> sh`** 进容器交互式清理。
+4. **扩容宿主机底层卷**（任何方式：云盘扩容、LVM extend、加盘）。永远安全。
+
+### 危险的清理方式（会导致"清理磁盘后录制不恢复"）
+
+这些都是触发 [#508](https://github.com/hua0512/rust-srec/issues/508) 及类似问题的典型场景：
+
+1. 宿主机上执行 **`mv /host/rec /host/rec_backup`** 或任何对挂载源目录的重命名。
+2. 宿主机上 **`rm -rf /host/rec`** 然后 **`mkdir /host/rec`** 重建目录。新建的目录是一个新的 inode，原有的绑定挂载**并不指向**它。
+3. 用**宝塔面板文件管理器**对作为 Docker 绑定挂载源的目录使用默认删除。宝塔的"删除"实际上是"移动到回收站"，等价于上面的第 1 种模式。
+4. 任何通过"移动到回收站/备份目录"实现"安全删除"的 GUI 或命令行工具。
+
+### 原因简述
+
+Docker 绑定挂载绑定的是 **inode**，不是路径。当您在宿主机上重命名或重建目录时，容器内 `/rec` 挂载指向的 inode 保持不变——但绝大多数 Linux 文件系统（ext4、xfs）在 `nlink == 0`（也就是"已删除但仍被引用"）的目录下拒绝创建新条目。于是 `create_dir_all` 永远返回 `ENOENT`，哪怕磁盘有大量空闲空间。只有销毁并重建容器的挂载命名空间（`docker restart`）才能恢复。
+
+### rust-srec 如何检测和上报
+
+**输出根写入门（output-root write gate）**会在一次监视周期内捕获这类故障，并：
+
+- 把 `/health` 里的 `output-root` 组件翻转为 `Degraded`，标注 `error_kind: not_found` 和受影响挂载点的路径。
+- 通过每个已启用的通知渠道（Discord、Email、Telegram、Gotify、Webhook、Web Push）发出**恰好一条** critical 级的 `output_path_inaccessible` 通知。文案会根据错误类型分支——`not_found` 变体包含"请重启容器"的恢复说明，设置 `RUST_SREC_LOCALE=zh-CN` 后显示中文。
+- 在文件系统边界上短路后续的下载尝试，防止日志被级联重试淹没、也防止数据库 outbox 被大量写入。
+- 将每个受影响的主播状态切换为 `OUT_OF_SPACE`，在主播列表中可直接看到。
+
+执行 `docker restart` 后，容器启动时写入门会通过一次有界 5 秒的启动探测重新初始化。如果宿主机路径已修复，写入门会回到 `Healthy`，录制在下一个监视周期恢复。
+
+### 如果实际原因是磁盘真的写满（不是挂载失效）
+
+如果 `/health` 中的 `output-root` 显示 `Degraded`、`error_kind: storage_full`，**不需要重启**。通过上面任一安全清理方式释放空间即可，写入门会在下一次尝试下载时（约 30 秒内）自动恢复——恢复钩子会清除所有受影响主播的退避状态，整个队列在同一次监视周期内恢复运行。
+
+### 多挂载部署：`RUST_SREC_OUTPUT_ROOTS`
+
+启动探测会自动发现**所有配置层级**的挂载根——**全局**、**平台**、**模板**以及**单主播**的 `output_folder` 设置。它使用运行时相同的缓存路径并行合并每个主播的有效配置，去重解析后的根路径，并在容器启动时并行探测。对于典型的单挂载布局（如 `/rec`）这已经开箱即用；对于异构布局，任何主播实际可能写入的挂载都会在第一秒就被预检。
+
+您只有在以下情况需要显式设置 `RUST_SREC_OUTPUT_ROOTS`：
+
+- 希望探测尚未被任何主播配置引用的挂载（例如计划迁移的新卷），或
+- 希望覆盖默认的解析启发式——例如在 `/rec/{platform}/...` 布局上强制使用单一 `/rec` 门键，将所有平台合并到同一个门条目下。
+
+```env
+RUST_SREC_OUTPUT_ROOTS=/rec,/mnt/backup-slow
+```
+
+值为逗号分隔的绝对路径列表。详见[配置说明](./configuration.md#后端服务)。
+
 ## 访问应用
 
 - **Web 界面**：`http://localhost:[FRONTEND_PORT]` (默认：http://localhost:15275)
