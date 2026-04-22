@@ -27,7 +27,9 @@ use crate::database::repositories::{
     ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
 };
 use crate::domain::Priority;
-use crate::downloader::{DownloadManagerEvent, DownloadStopCause};
+use crate::downloader::{
+    DownloadManagerEvent, DownloadProgressEvent, DownloadStopCause, DownloadTerminalEvent,
+};
 use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
@@ -885,12 +887,12 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         let now = Instant::now();
         match event {
-            DownloadManagerEvent::DownloadStarted {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
                 streamer_id,
                 download_id,
                 session_id,
                 ..
-            } => {
+            }) => {
                 send_to_actor(
                     streamer_id,
                     StreamerMessage::DownloadStarted {
@@ -900,11 +902,11 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 )
                 .await;
             }
-            DownloadManagerEvent::DownloadCompleted {
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
                 streamer_id,
                 download_id,
                 ..
-            } => {
+            }) => {
                 if self.stopped_downloads.remove(&download_id).is_some() {
                     debug!(
                         streamer_id = %streamer_id,
@@ -919,12 +921,12 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 )
                 .await;
             }
-            DownloadManagerEvent::DownloadFailed {
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
                 streamer_id,
                 download_id,
                 error,
                 ..
-            } => {
+            }) => {
                 if self.stopped_downloads.remove(&download_id).is_some() {
                     debug!(
                         streamer_id = %streamer_id,
@@ -939,12 +941,12 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 )
                 .await;
             }
-            DownloadManagerEvent::DownloadCancelled {
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
                 streamer_id,
                 download_id,
                 cause,
                 ..
-            } => {
+            }) => {
                 let now_ms = crate::database::time::now_ms();
 
                 // Engines can still emit a terminal event after a stop request
@@ -990,14 +992,14 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
                 send_to_actor(streamer_id, StreamerMessage::DownloadEnded(end_reason)).await;
             }
-            DownloadManagerEvent::DownloadRejected {
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
                 streamer_id,
                 reason,
                 retry_after_secs,
                 session_id,
                 kind,
                 ..
-            } => {
+            }) => {
                 let retry_secs = retry_after_secs.unwrap_or(60);
                 let policy = match kind {
                     crate::downloader::DownloadRejectedKind::CircuitBreaker => {
@@ -1019,13 +1021,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 };
                 send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
             }
-            DownloadManagerEvent::Progress {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
                 download_id,
                 streamer_id,
                 session_id,
                 progress,
                 ..
-            } => {
+            }) => {
                 let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
                     Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
                     None => true,
@@ -1044,18 +1046,18 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     .await;
                 }
             }
-            DownloadManagerEvent::SegmentStarted {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
                 download_id,
                 streamer_id,
                 session_id,
                 ..
-            }
-            | DownloadManagerEvent::SegmentCompleted {
+            })
+            | DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                 download_id,
                 streamer_id,
                 session_id,
                 ..
-            } => {
+            }) => {
                 let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
                     Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
                     None => true,

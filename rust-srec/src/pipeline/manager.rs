@@ -39,7 +39,7 @@ use crate::database::repositories::streamer::{SqlxStreamerRepository, StreamerRe
 use crate::database::repositories::{
     DagRepository, JobPresetRepository, JobRepository, PipelinePresetRepository, SessionRepository,
 };
-use crate::downloader::DownloadManagerEvent;
+use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
 use crate::utils::filename::sanitize_filename;
 
 type BeforeRootJobsHook = Box<dyn FnOnce(&str) + Send>;
@@ -1949,7 +1949,7 @@ where
     /// Handle download manager events.
     pub async fn handle_download_event(&self, event: DownloadManagerEvent) {
         match event {
-            DownloadManagerEvent::SegmentCompleted {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                 streamer_id,
                 session_id,
                 segment_path,
@@ -1961,7 +1961,7 @@ where
                 split_reason_code,
                 split_reason_details_json,
                 ..
-            } => {
+            }) => {
                 debug!(
                     "Segment completed for {} (session: {}): {}",
                     streamer_id, session_id, segment_path
@@ -2162,75 +2162,144 @@ where
                     self.try_trigger_session_complete(&session_id).await;
                 }
             }
-            DownloadManagerEvent::DownloadCompleted {
-                streamer_id,
-                session_id,
+            DownloadManagerEvent::Terminal(terminal) => {
+                self.handle_terminal_download_event(terminal).await;
+            }
+            // All other Progress variants are no-ops here (DownloadStarted,
+            // Progress, SegmentStarted, ConfigUpdated, ConfigUpdateFailed).
+            // The session-scoped pipeline only reacts to SegmentCompleted and
+            // the Terminal variants handled above.
+            DownloadManagerEvent::Progress(
+                DownloadProgressEvent::DownloadStarted { .. }
+                | DownloadProgressEvent::Progress { .. }
+                | DownloadProgressEvent::SegmentStarted { .. }
+                | DownloadProgressEvent::ConfigUpdated { .. }
+                | DownloadProgressEvent::ConfigUpdateFailed { .. },
+            ) => {}
+        }
+    }
+
+    /// Handle a terminal download event. Each variant has a distinct log line
+    /// and bookkeeping step, then the shared session-complete dispatch runs
+    /// iff the variant's termination policy says the pipeline should fire
+    /// (see [`DownloadTerminalEvent::should_run_session_complete_pipeline`]).
+    async fn handle_terminal_download_event(&self, event: DownloadTerminalEvent) {
+        let streamer_id = event.streamer_id().to_owned();
+        let session_id = event.session_id().to_owned();
+
+        // Per-variant logging.
+        match &event {
+            DownloadTerminalEvent::Completed { .. } => {
+                info!(
+                    streamer_id = %streamer_id,
+                    session_id = %session_id,
+                    "Download completed"
+                );
+            }
+            DownloadTerminalEvent::Failed {
+                kind,
+                error,
+                recoverable,
                 ..
             } => {
                 info!(
-                    "Download completed for streamer {} session {}",
-                    streamer_id, session_id
+                    streamer_id = %streamer_id,
+                    session_id = %session_id,
+                    kind = ?kind,
+                    recoverable = %recoverable,
+                    error = %error,
+                    "Download failed"
                 );
-
-                if !self.session_complete_pipelines.contains_key(&session_id)
-                    && let Some(config_service) = &self.config_service
-                    && let Ok(config) = config_service.get_config_for_streamer(&streamer_id).await
-                    && let Some(def) = config.session_complete_pipeline.clone()
-                {
-                    self.session_complete_pipelines.insert(
-                        session_id.clone(),
-                        SessionCompletePipelineEntry {
-                            last_seen: std::time::Instant::now(),
-                            definition: def,
-                        },
-                    );
-                    self.session_complete_coordinator.init_session(
-                        &session_id,
-                        &streamer_id,
-                        config.record_danmu,
-                    );
-                }
-
-                if self.session_complete_pipelines.contains_key(&session_id) {
-                    if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
-                        entry.last_seen = std::time::Instant::now();
-                    }
-                    self.session_complete_coordinator
-                        .on_video_complete(&session_id);
-                    self.try_trigger_session_complete(&session_id).await;
-                }
             }
-            DownloadManagerEvent::DownloadCancelled {
-                streamer_id,
-                session_id,
-                cause,
-                ..
-            } => {
+            DownloadTerminalEvent::Cancelled { cause, .. } => {
                 info!(
                     streamer_id = %streamer_id,
                     session_id = %session_id,
                     cause = %cause.as_str(),
                     "Download cancelled"
                 );
-
-                // Do not treat DownloadCancelled as stream completion for session-complete purposes.
-                //
-                // On mesio (and other engines), cancellation is a *stop request*; the final segment
-                // may still be flushing and `SegmentCompleted`/`DownloadCompleted` can arrive later.
-                // Marking video complete here can trigger the session-complete pipeline before the
-                // final video output is recorded, resulting in missing `.flv` inputs/outputs.
-                if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
-                    entry.last_seen = std::time::Instant::now();
-                }
-                debug!(
+            }
+            DownloadTerminalEvent::Rejected { reason, kind, .. } => {
+                info!(
                     streamer_id = %streamer_id,
                     session_id = %session_id,
-                    cause = %cause.as_str(),
-                    "Download cancellation observed; waiting for DownloadCompleted before marking video complete"
+                    kind = ?kind,
+                    reason = %reason,
+                    "Download rejected"
                 );
             }
-            _ => {}
         }
+
+        // Refresh the cache entry's last_seen regardless of variant so that
+        // an observed Cancelled/Rejected doesn't let the entry GC while we
+        // wait for a subsequent Completed to arrive.
+        if let Some(mut entry) = self.session_complete_pipelines.get_mut(&session_id) {
+            entry.last_seen = std::time::Instant::now();
+        }
+
+        if !event.should_run_session_complete_pipeline() {
+            // Cancelled is a stop *request* on mesio and other engines; the
+            // final segment may still be flushing and `SegmentCompleted` /
+            // `DownloadCompleted` can arrive later. Firing here would cause
+            // missing `.flv` inputs/outputs.
+            // Rejected means the download never started — nothing on disk.
+            debug!(
+                streamer_id = %streamer_id,
+                session_id = %session_id,
+                variant = ?std::mem::discriminant(&event),
+                "Terminal event does not trigger session-complete pipeline; skipping"
+            );
+            return;
+        }
+
+        // Completed and Failed both indicate a session has reached its
+        // definitive final state with outputs on disk. Run the same
+        // bootstrap + trigger sequence the Completed arm used to run alone —
+        // this is the fix for #520 (session-complete pipeline not running
+        // when the engine ends with DownloadFailed rather than
+        // DownloadCompleted).
+        self.ensure_session_complete_pipeline_initialised(&streamer_id, &session_id)
+            .await;
+
+        if self.session_complete_pipelines.contains_key(&session_id) {
+            self.session_complete_coordinator
+                .on_video_complete(&session_id);
+            self.try_trigger_session_complete(&session_id).await;
+        }
+    }
+
+    /// Load the session-complete pipeline config for the streamer (if any)
+    /// and register it in `session_complete_pipelines`. Idempotent —
+    /// re-calling for the same session is a no-op.
+    async fn ensure_session_complete_pipeline_initialised(
+        &self,
+        streamer_id: &str,
+        session_id: &str,
+    ) {
+        if self.session_complete_pipelines.contains_key(session_id) {
+            return;
+        }
+        let Some(config_service) = &self.config_service else {
+            return;
+        };
+        let Ok(config) = config_service.get_config_for_streamer(streamer_id).await else {
+            return;
+        };
+        let Some(def) = config.session_complete_pipeline.clone() else {
+            return;
+        };
+        self.session_complete_pipelines.insert(
+            session_id.to_owned(),
+            SessionCompletePipelineEntry {
+                last_seen: std::time::Instant::now(),
+                definition: def,
+            },
+        );
+        self.session_complete_coordinator.init_session(
+            session_id,
+            streamer_id,
+            config.record_danmu,
+        );
     }
 
     /// Handle danmu service events.
@@ -2628,11 +2697,11 @@ where
                     }
                     event = rx.recv() => {
                         match event {
-                            Some(DownloadManagerEvent::DownloadCompleted {
+                            Some(DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
                                 streamer_id,
                                 session_id,
                                 ..
-                            }) => {
+                            })) => {
                                 info!(
                                     "Creating post-processing jobs for {} / {}",
                                     streamer_id, session_id
@@ -4691,5 +4760,197 @@ mod tests {
             .await;
         assert_eq!(manager.paired_segment_coordinator.active_pair_count(), 0);
         assert!(manager.paired_segment_pipelines.contains_key(&session_id));
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for #520 — session-complete pipeline firing on terminal download
+    // events (regression guard: Completed *and* Failed should trigger it;
+    // Cancelled and Rejected should not).
+    // -----------------------------------------------------------------------
+
+    use crate::downloader::{DownloadFailureKind, DownloadRejectedKind, DownloadStopCause};
+
+    fn completed_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
+        DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
+            download_id: "dl-1".to_string(),
+            streamer_id: streamer_id.to_string(),
+            streamer_name: "tester".to_string(),
+            session_id: session_id.to_string(),
+            total_bytes: 0,
+            total_duration_secs: 0.0,
+            total_segments: 0,
+            file_path: None,
+        })
+    }
+
+    fn failed_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
+        DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
+            download_id: "dl-1".to_string(),
+            streamer_id: streamer_id.to_string(),
+            streamer_name: "tester".to_string(),
+            session_id: session_id.to_string(),
+            kind: DownloadFailureKind::Network,
+            error: "stalled".to_string(),
+            recoverable: false,
+        })
+    }
+
+    fn cancelled_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
+        DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
+            download_id: "dl-1".to_string(),
+            streamer_id: streamer_id.to_string(),
+            streamer_name: "tester".to_string(),
+            session_id: session_id.to_string(),
+            cause: DownloadStopCause::User,
+        })
+    }
+
+    fn rejected_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
+        DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
+            streamer_id: streamer_id.to_string(),
+            streamer_name: "tester".to_string(),
+            session_id: session_id.to_string(),
+            reason: "test".to_string(),
+            retry_after_secs: None,
+            kind: DownloadRejectedKind::CircuitBreaker,
+        })
+    }
+
+    /// Pure policy predicate — codifies which terminal variants trigger the
+    /// session-complete pipeline. Matches the web player's own behaviour
+    /// (Completed and Failed finalise; Cancelled may still flush a final
+    /// segment and shouldn't trigger early; Rejected never started).
+    #[test]
+    fn test_terminal_should_run_session_complete_policy() {
+        assert!(
+            matches!(completed_event("s", "r"), DownloadManagerEvent::Terminal(t) if t.should_run_session_complete_pipeline())
+        );
+        assert!(
+            matches!(failed_event("s", "r"), DownloadManagerEvent::Terminal(t) if t.should_run_session_complete_pipeline())
+        );
+        assert!(
+            !matches!(cancelled_event("s", "r"), DownloadManagerEvent::Terminal(t) if t.should_run_session_complete_pipeline())
+        );
+        assert!(
+            !matches!(rejected_event("s", "r"), DownloadManagerEvent::Terminal(t) if t.should_run_session_complete_pipeline())
+        );
+    }
+
+    /// Regression for #520: a recording that ends with `DownloadFailed` (e.g.
+    /// HLS 404, stalled stream) must still fire the session-complete pipeline.
+    /// Before the fix, the pipeline manager's `_ => {}` catch-all swallowed
+    /// `DownloadFailed` and `on_video_complete` was never called.
+    #[tokio::test]
+    async fn test_handle_download_event_failed_triggers_session_complete() {
+        let session_repo = Arc::new(TestSessionRepository::new(Some(
+            chrono::Utc::now().timestamp_millis(),
+        )));
+        let manager: PipelineManager = PipelineManager::new().with_session_repository(session_repo);
+
+        let session_id = "session-failed".to_string();
+        let streamer_id = "streamer-1".to_string();
+
+        // Pre-register the pipeline entry (bypasses the config_service lookup;
+        // the fix still uses the already-cached entry when one exists).
+        manager.session_complete_pipelines.insert(
+            session_id.clone(),
+            SessionCompletePipelineEntry {
+                last_seen: std::time::Instant::now(),
+                definition: DagPipelineDefinition::new("empty", vec![]),
+            },
+        );
+        manager
+            .session_complete_coordinator
+            .init_session(&session_id, &streamer_id, false);
+        manager.session_complete_coordinator.on_raw_segment(
+            &session_id,
+            0,
+            PathBuf::from("/seg0.ts"),
+            SourceType::Video,
+        );
+
+        manager
+            .handle_download_event(failed_event(&session_id, &streamer_id))
+            .await;
+
+        // on_video_complete was called and try_trigger_session_complete ran.
+        assert_eq!(
+            manager.session_complete_coordinator.active_session_count(),
+            0,
+            "session-complete coordinator should have been drained after Failed"
+        );
+        assert!(
+            !manager.session_complete_pipelines.contains_key(&session_id),
+            "session_complete_pipelines entry should be drained after Failed"
+        );
+    }
+
+    /// Cancelled is a stop *request*; a final `Completed` may still arrive.
+    /// Firing the pipeline early would use a missing final segment.
+    #[tokio::test]
+    async fn test_handle_download_event_cancelled_does_not_trigger_session_complete() {
+        let manager: PipelineManager = PipelineManager::new();
+
+        let session_id = "session-cancelled".to_string();
+        let streamer_id = "streamer-1".to_string();
+
+        manager.session_complete_pipelines.insert(
+            session_id.clone(),
+            SessionCompletePipelineEntry {
+                last_seen: std::time::Instant::now(),
+                definition: DagPipelineDefinition::new("empty", vec![]),
+            },
+        );
+        manager
+            .session_complete_coordinator
+            .init_session(&session_id, &streamer_id, false);
+
+        manager
+            .handle_download_event(cancelled_event(&session_id, &streamer_id))
+            .await;
+
+        assert_eq!(
+            manager.session_complete_coordinator.active_session_count(),
+            1,
+            "coordinator must still be active after Cancelled (awaiting Completed)"
+        );
+        assert!(
+            manager.session_complete_pipelines.contains_key(&session_id),
+            "pipeline entry must still be present after Cancelled (awaiting Completed)"
+        );
+    }
+
+    /// Rejected means the download never started — no outputs, nothing to run.
+    #[tokio::test]
+    async fn test_handle_download_event_rejected_does_not_trigger_session_complete() {
+        let manager: PipelineManager = PipelineManager::new();
+
+        let session_id = "session-rejected".to_string();
+        let streamer_id = "streamer-1".to_string();
+
+        manager.session_complete_pipelines.insert(
+            session_id.clone(),
+            SessionCompletePipelineEntry {
+                last_seen: std::time::Instant::now(),
+                definition: DagPipelineDefinition::new("empty", vec![]),
+            },
+        );
+        manager
+            .session_complete_coordinator
+            .init_session(&session_id, &streamer_id, false);
+
+        manager
+            .handle_download_event(rejected_event(&session_id, &streamer_id))
+            .await;
+
+        assert_eq!(
+            manager.session_complete_coordinator.active_session_count(),
+            1,
+            "coordinator must still be active after Rejected"
+        );
+        assert!(
+            manager.session_complete_pipelines.contains_key(&session_id),
+            "pipeline entry must still be present after Rejected"
+        );
     }
 }

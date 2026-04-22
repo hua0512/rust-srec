@@ -41,7 +41,8 @@ use crate::database::repositories::{
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
     DEFAULT_GATE_COOLDOWN_SECS, DownloadConfig, DownloadManager, DownloadManagerConfig,
-    DownloadManagerEvent, LAST_ERROR_GATE_PREFIX, OutputRootGate, RecoveryHook,
+    DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent, LAST_ERROR_GATE_PREFIX,
+    OutputRootGate, RecoveryHook,
     engine::DownloadProgress,
 };
 use crate::logging::LoggingConfig;
@@ -1474,7 +1475,7 @@ impl ServiceContainer {
                     result = receiver.recv() => {
                         match result {
                             Ok(download_event) => {
-                                if let DownloadManagerEvent::Progress { progress, .. } = &download_event
+                                if let DownloadManagerEvent::Progress(DownloadProgressEvent::Progress { progress, .. }) = &download_event
                                     && !should_record_recovery_from_progress(progress)
                                 {
                                     continue;
@@ -1505,12 +1506,12 @@ impl ServiceContainer {
                 }
 
                 // Handle download failure for error tracking
-                if let DownloadManagerEvent::DownloadFailed {
+                if let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
                     ref streamer_id,
                     ref session_id,
                     ref error,
                     ..
-                } = download_event
+                }) = download_event
                 {
                     // Record error for exponential backoff
                     if let Some(metadata) = streamer_manager.get_streamer(streamer_id) {
@@ -1541,7 +1542,7 @@ impl ServiceContainer {
                 }
 
                 // Handle download cancellation - stop danmu collection
-                if let DownloadManagerEvent::DownloadCancelled { ref session_id, .. } =
+                if let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled { ref session_id, .. }) =
                     download_event
                     && danmu_service.is_collecting(session_id)
                 {
@@ -1561,11 +1562,11 @@ impl ServiceContainer {
                     }
                 }
 
-                if let DownloadManagerEvent::Progress {
+                if let DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
                     ref streamer_id,
                     ref progress,
                     ..
-                } = download_event
+                }) = download_event
                     && should_record_recovery_from_progress(progress)
                     && let Some(metadata) = streamer_manager.get_streamer(streamer_id)
                     && metadata.is_active()
@@ -1581,14 +1582,14 @@ impl ServiceContainer {
 
                 // Handle danmu segmentation
                 match &download_event {
-                    DownloadManagerEvent::SegmentStarted {
+                    DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
                         session_id,
                         streamer_id,
                         segment_path,
                         segment_index,
                         started_at,
                         ..
-                    } => {
+                    }) => {
                         if let Some(metadata) = streamer_manager.get_streamer(streamer_id)
                             && !metadata.is_disabled()
                             && metadata.last_error.is_some()
@@ -1618,14 +1619,14 @@ impl ServiceContainer {
                             }
                         }
                     }
-                    DownloadManagerEvent::SegmentCompleted {
+                    DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                         session_id,
                         streamer_id,
                         segment_path,
                         segment_index,
                         size_bytes,
                         ..
-                    } => {
+                    }) => {
                         // Decide discard *before* ending danmu segment so we can suppress the
                         // imminent DanmuEvent::SegmentCompleted (avoids pipeline race with deletion).
                         let mut discard = false;
