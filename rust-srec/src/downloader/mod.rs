@@ -27,7 +27,7 @@ pub use output_root_gate::{
 
 pub use manager::{
     ConfigUpdateType, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
-    DownloadRejectedKind, DownloadStopCause,
+    DownloadProgressEvent, DownloadRejectedKind, DownloadStopCause, DownloadTerminalEvent,
 };
 pub use resilience::{CircuitBreaker, EngineKey, RetryConfig};
 pub use stream_selector::{StreamSelectionConfig, StreamSelector};

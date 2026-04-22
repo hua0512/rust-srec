@@ -41,7 +41,7 @@ use crate::database::models::{
     TelegramChannelSettings, WebhookChannelSettings,
 };
 use crate::database::repositories::NotificationRepository;
-use crate::downloader::DownloadManagerEvent;
+use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
 
@@ -1551,25 +1551,25 @@ impl NotificationService {
                                 }
 
                                 let notification = match event {
-                                    DownloadManagerEvent::DownloadStarted {
+                                    DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         ..
-                                    } => Some(NotificationEvent::DownloadStarted {
+                                    }) => Some(NotificationEvent::DownloadStarted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::DownloadCompleted {
+                                    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         total_bytes,
                                         total_duration_secs,
                                         ..
-                                    } => Some(NotificationEvent::DownloadCompleted {
+                                    }) => Some(NotificationEvent::DownloadCompleted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1577,20 +1577,20 @@ impl NotificationService {
                                         duration_secs: total_duration_secs,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::DownloadFailed {
+                                    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
                                         streamer_id,
                                         streamer_name,
                                         error,
                                         recoverable,
                                         ..
-                                    } => Some(NotificationEvent::DownloadError {
+                                    }) => Some(NotificationEvent::DownloadError {
                                         streamer_id,
                                         streamer_name,
                                         error_message: error,
                                         recoverable,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::SegmentStarted {
+                                    DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1598,7 +1598,7 @@ impl NotificationService {
                                         segment_index,
                                         started_at,
                                         ..
-                                    } => Some(NotificationEvent::SegmentStarted {
+                                    }) => Some(NotificationEvent::SegmentStarted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1606,7 +1606,7 @@ impl NotificationService {
                                         segment_index,
                                         timestamp: started_at,
                                     }),
-                                    DownloadManagerEvent::SegmentCompleted {
+                                    DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1616,7 +1616,7 @@ impl NotificationService {
                                         duration_secs,
                                         size_bytes,
                                         ..
-                                    } => Some(NotificationEvent::SegmentCompleted {
+                                    }) => Some(NotificationEvent::SegmentCompleted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1626,36 +1626,36 @@ impl NotificationService {
                                         duration_secs,
                                         timestamp: completed_at,
                                     }),
-                                    DownloadManagerEvent::DownloadCancelled {
+                                    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         ..
-                                    } => Some(NotificationEvent::DownloadCancelled {
+                                    }) => Some(NotificationEvent::DownloadCancelled {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::DownloadRejected {
+                                    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         reason,
                                         ..
-                                    } => Some(NotificationEvent::DownloadRejected {
+                                    }) => Some(NotificationEvent::DownloadRejected {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         reason,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::ConfigUpdated {
+                                    DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdated {
                                         streamer_id,
                                         streamer_name,
                                         update_type,
                                         ..
-                                    } => Some(NotificationEvent::ConfigUpdated {
+                                    }) => Some(NotificationEvent::ConfigUpdated {
                                         streamer_id,
                                         streamer_name,
                                         update_type: format!("{:?}", update_type),
@@ -2067,7 +2067,7 @@ mod tests {
         let started_at = Utc::now();
         let completed_at = started_at + chrono::Duration::seconds(10);
 
-        let started_event = match (DownloadManagerEvent::SegmentStarted {
+        let started_event = match DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-1".to_string(),
             streamer_name: "Streamer".to_string(),
@@ -2076,7 +2076,7 @@ mod tests {
             segment_index: 1,
             started_at,
         }) {
-            DownloadManagerEvent::SegmentStarted {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
                 streamer_id,
                 streamer_name,
                 session_id,
@@ -2084,7 +2084,7 @@ mod tests {
                 segment_index,
                 started_at,
                 ..
-            } => NotificationEvent::SegmentStarted {
+            }) => NotificationEvent::SegmentStarted {
                 streamer_id,
                 streamer_name,
                 session_id,
@@ -2095,7 +2095,7 @@ mod tests {
             _ => unreachable!(),
         };
 
-        let completed_event = match (DownloadManagerEvent::SegmentCompleted {
+        let completed_event = match DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-1".to_string(),
             streamer_name: "Streamer".to_string(),
@@ -2109,7 +2109,7 @@ mod tests {
             split_reason_code: None,
             split_reason_details_json: None,
         }) {
-            DownloadManagerEvent::SegmentCompleted {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                 streamer_id,
                 streamer_name,
                 session_id,
@@ -2119,7 +2119,7 @@ mod tests {
                 duration_secs,
                 size_bytes,
                 ..
-            } => NotificationEvent::SegmentCompleted {
+            }) => NotificationEvent::SegmentCompleted {
                 streamer_id,
                 streamer_name,
                 session_id,
