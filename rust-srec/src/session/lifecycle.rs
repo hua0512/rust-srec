@@ -32,11 +32,12 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use tokio::sync::broadcast;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::Result;
 use crate::downloader::DownloadTerminalEvent;
 use crate::monitor::MonitorEvent;
+use crate::session::classifier::{EngineKind, OfflineClassifier};
 use crate::session::repository::{
     EndSessionInputs, EndSessionOutcome, SessionLifecycleRepository, StartSessionInputs,
     StartSessionOutcome,
@@ -50,6 +51,13 @@ pub const DEFAULT_TRANSITION_CHANNEL_CAPACITY: usize = 256;
 /// The single-owner service for recording-session state.
 pub struct SessionLifecycle {
     repo: Arc<SessionLifecycleRepository>,
+    /// Per-engine offline-signal classifier. On every Terminal::Failed,
+    /// the classifier decides whether the failure is a high-confidence
+    /// definitive-offline (HLS playlist 404, N consecutive Network
+    /// failures inside a window) so the session ends immediately without
+    /// waiting for the slower hysteresis path. Successful per-segment
+    /// completions reset the consecutive-failure counter.
+    classifier: Arc<OfflineClassifier>,
     /// `session_id` → in-memory session snapshot. Authoritative for the
     /// `is_active` query path served by the API and UI. DB remains the
     /// source of truth on cold-start.
@@ -63,18 +71,34 @@ pub struct SessionLifecycle {
 }
 
 impl SessionLifecycle {
-    pub fn new(repo: Arc<SessionLifecycleRepository>, capacity: usize) -> Self {
+    pub fn new(
+        repo: Arc<SessionLifecycleRepository>,
+        classifier: Arc<OfflineClassifier>,
+        capacity: usize,
+    ) -> Self {
         let (transition_tx, _) = broadcast::channel(capacity);
         Self {
             repo,
+            classifier,
             sessions: DashMap::new(),
             hard_ended: DashMap::new(),
             transition_tx,
         }
     }
 
-    pub fn with_default_capacity(repo: Arc<SessionLifecycleRepository>) -> Self {
-        Self::new(repo, DEFAULT_TRANSITION_CHANNEL_CAPACITY)
+    pub fn with_default_capacity(
+        repo: Arc<SessionLifecycleRepository>,
+        classifier: Arc<OfflineClassifier>,
+    ) -> Self {
+        Self::new(repo, classifier, DEFAULT_TRANSITION_CHANNEL_CAPACITY)
+    }
+
+    /// Note a successful per-segment completion for the streamer so the
+    /// classifier's consecutive-failure counter resets. Called from the
+    /// download-event subscription on [`crate::downloader::DownloadProgressEvent::
+    /// SegmentCompleted`].
+    pub fn on_segment_completed(&self, streamer_id: &str) {
+        self.classifier.note_successful_segment(streamer_id);
     }
 
     /// Subscribe to session transitions. The first subscriber must attach
@@ -238,6 +262,12 @@ impl SessionLifecycle {
         let outcome = self.repo.end(inputs).await?;
 
         if let Some(id) = outcome.resolved_session_id.as_deref() {
+            info!(
+                streamer_id = %args.streamer_id,
+                session_id = %id,
+                cause = TerminalCause::StreamerOffline.as_str(),
+                "Session ended (monitor-offline path)"
+            );
             self.mark_ended_in_memory(id, args.now, TerminalCause::StreamerOffline);
             let _ = self.transition_tx.send(SessionTransition::Ended {
                 session_id: id.to_string(),
@@ -267,11 +297,43 @@ impl SessionLifecycle {
     /// `handle_offline_with_session` → `on_offline_detected` if no follow-up
     /// arrives. Matches the plan's F10 upgrade-to-Completed scenario.
     pub async fn on_download_terminal(&self, event: &DownloadTerminalEvent) -> Result<()> {
-        let cause = terminal_cause_from(event);
         let session_id = event.session_id();
         let streamer_id = event.streamer_id();
         let streamer_name = event.streamer_name();
         let now = Utc::now();
+
+        // Promote the raw terminal cause into `DefinitiveOffline` when the
+        // classifier recognises an engine-side signal that unambiguously
+        // means the upstream stream is gone (HLS playlist 404, N consecutive
+        // Network failures in a 60 s window).
+        //
+        // NOTE: `EngineKind::MesioHls` is passed as the engine hint here.
+        // The classifier's rules don't distinguish mesio HLS from mesio FLV
+        // (both satisfy `EngineKind::is_mesio()`), and the Failed terminal
+        // event does not yet carry the exact engine. ffmpeg/streamlink
+        // engines emit different `DownloadFailureKind` variants (ProcessExit
+        // etc.) that the classifier rejects, so a misclassification due to
+        // the default hint is not possible in practice.
+        let cause = match event {
+            DownloadTerminalEvent::Failed { kind, .. } => {
+                match self
+                    .classifier
+                    .classify_failure(streamer_id, &EngineKind::MesioHls, kind)
+                {
+                    Some(signal) => {
+                        info!(
+                            streamer_id,
+                            session_id,
+                            signal = signal.as_str(),
+                            "on_download_terminal: promoted Failed → DefinitiveOffline"
+                        );
+                        TerminalCause::DefinitiveOffline { signal }
+                    }
+                    None => TerminalCause::Failed { kind: *kind },
+                }
+            }
+            _ => terminal_cause_from(event),
+        };
 
         if matches!(cause, TerminalCause::Cancelled { .. }) {
             debug!(
@@ -321,6 +383,13 @@ impl SessionLifecycle {
                 }
             }
         }
+
+        info!(
+            streamer_id,
+            session_id,
+            cause = cause.as_str(),
+            "Session ended (download-terminal path)"
+        );
 
         self.mark_ended_in_memory(session_id, now, cause.clone());
 
@@ -482,7 +551,11 @@ mod tests {
     }
 
     fn make_lifecycle(pool: SqlitePool) -> SessionLifecycle {
-        SessionLifecycle::new(Arc::new(SessionLifecycleRepository::new(pool)), 16)
+        SessionLifecycle::new(
+            Arc::new(SessionLifecycleRepository::new(pool)),
+            Arc::new(OfflineClassifier::new()),
+            16,
+        )
     }
 
     fn live_args<'a>(now: DateTime<Utc>) -> LiveDetectedArgs<'a> {
@@ -1499,5 +1572,282 @@ mod tests {
                 .unwrap();
             check_is_live(&pool, s.session_id(), false).await;
         }
+    }
+
+    // =========================================================================
+    // PR 2 — OfflineClassifier promotion inside on_download_terminal.
+    //
+    // The unit-level classifier rules live in `session::classifier::tests`.
+    // These scenarios assert the *integration* inside `SessionLifecycle`:
+    // Terminal::Failed variants that the classifier promotes end the session
+    // with TerminalCause::DefinitiveOffline (not plain Failed), and the
+    // `on_segment_completed` wiring resets the consecutive-failure counter.
+    // =========================================================================
+
+    /// HLS playlist 404 is promoted to `DefinitiveOffline { PlaylistGone }`.
+    #[tokio::test]
+    async fn pr2_hls_404_promotes_to_definitive_offline() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool);
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // drain Started
+
+        lifecycle
+            .on_download_terminal(&DownloadTerminalEvent::Failed {
+                download_id: "dl".into(),
+                streamer_id: STREAMER_ID.into(),
+                streamer_name: "Test".into(),
+                session_id: started.session_id().to_string(),
+                kind: crate::downloader::DownloadFailureKind::HttpClientError { status: 404 },
+                error: "playlist 404".into(),
+                recoverable: false,
+            })
+            .await
+            .unwrap();
+
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended { cause, .. } => {
+                assert!(matches!(
+                    cause,
+                    TerminalCause::DefinitiveOffline {
+                        signal: crate::session::OfflineSignal::PlaylistGone(404)
+                    }
+                ));
+                assert!(cause.should_run_session_complete_pipeline());
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
+    }
+
+    /// A single Network failure does not promote; a second one inside the
+    /// window promotes both sessions' second event to DefinitiveOffline.
+    #[tokio::test]
+    async fn pr2_two_consecutive_network_failures_promote() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool);
+
+        // First session: one Network failure → stays Failed, session ends
+        // as usual.
+        let first = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let mut rx = lifecycle.subscribe();
+
+        lifecycle
+            .on_download_terminal(&DownloadTerminalEvent::Failed {
+                download_id: "dl-1".into(),
+                streamer_id: STREAMER_ID.into(),
+                streamer_name: "Test".into(),
+                session_id: first.session_id().to_string(),
+                kind: crate::downloader::DownloadFailureKind::Network,
+                error: "timeout".into(),
+                recoverable: false,
+            })
+            .await
+            .unwrap();
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended { cause, .. } => {
+                assert!(
+                    matches!(cause, TerminalCause::Failed { .. }),
+                    "first Network must stay Failed, got {cause:?}"
+                );
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
+
+        // Start a fresh session (previous is still ended-in-memory; create
+        // new outside the gap window so we exercise a Created outcome).
+        let second_started_at = Utc::now() + chrono::Duration::seconds(120);
+        let second = lifecycle
+            .on_live_detected(live_args(second_started_at))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // drain Started
+
+        // Second Network failure for the same streamer — this one promotes.
+        lifecycle
+            .on_download_terminal(&DownloadTerminalEvent::Failed {
+                download_id: "dl-2".into(),
+                streamer_id: STREAMER_ID.into(),
+                streamer_name: "Test".into(),
+                session_id: second.session_id().to_string(),
+                kind: crate::downloader::DownloadFailureKind::Network,
+                error: "timeout".into(),
+                recoverable: false,
+            })
+            .await
+            .unwrap();
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended { cause, .. } => {
+                assert!(matches!(
+                    cause,
+                    TerminalCause::DefinitiveOffline {
+                        signal: crate::session::OfflineSignal::ConsecutiveFailures(2)
+                    }
+                ));
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
+    }
+
+    /// `on_segment_completed` resets the classifier's counter so a subsequent
+    /// Network failure is treated as the first-in-window again.
+    #[tokio::test]
+    async fn pr2_on_segment_completed_resets_counter() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool);
+
+        // Prime the counter with one Network failure.
+        let first = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let mut rx = lifecycle.subscribe();
+
+        lifecycle
+            .on_download_terminal(&DownloadTerminalEvent::Failed {
+                download_id: "dl-1".into(),
+                streamer_id: STREAMER_ID.into(),
+                streamer_name: "Test".into(),
+                session_id: first.session_id().to_string(),
+                kind: crate::downloader::DownloadFailureKind::Network,
+                error: "timeout".into(),
+                recoverable: false,
+            })
+            .await
+            .unwrap();
+        // drain the Ended
+        let _ = rx.recv().await.unwrap();
+
+        // Successful segment resets the counter.
+        lifecycle.on_segment_completed(STREAMER_ID);
+
+        // Start a fresh session and fail again — should NOT promote because
+        // the counter was reset.
+        let second_started_at = Utc::now() + chrono::Duration::seconds(120);
+        let second = lifecycle
+            .on_live_detected(live_args(second_started_at))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // drain Started
+
+        lifecycle
+            .on_download_terminal(&DownloadTerminalEvent::Failed {
+                download_id: "dl-2".into(),
+                streamer_id: STREAMER_ID.into(),
+                streamer_name: "Test".into(),
+                session_id: second.session_id().to_string(),
+                kind: crate::downloader::DownloadFailureKind::Network,
+                error: "timeout".into(),
+                recoverable: false,
+            })
+            .await
+            .unwrap();
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended { cause, .. } => {
+                assert!(
+                    matches!(cause, TerminalCause::Failed { .. }),
+                    "after reset, the next Network must stay Failed, got {cause:?}"
+                );
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
+    }
+
+    /// Plan §E1 — DefinitiveOffline bypasses the streamer's `disabled_until`
+    /// backoff for the session-end write. Monitor check-loop backoff stays
+    /// untouched (scheduled elsewhere by the actor), but the session row is
+    /// closed immediately so the UI and pipeline trigger don't wait for the
+    /// backoff window to expire.
+    #[tokio::test]
+    async fn e1_definitive_offline_bypasses_streamer_disabled_until() {
+        let pool = setup_pool().await;
+
+        // Place the streamer in a long backoff window.
+        let backoff_until_ms = (Utc::now() + chrono::Duration::seconds(240))
+            .timestamp_millis();
+        sqlx::query(
+            "UPDATE streamers SET disabled_until = ?, consecutive_error_count = 3 \
+             WHERE id = ?",
+        )
+        .bind(backoff_until_ms)
+        .bind(STREAMER_ID)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let lifecycle = make_lifecycle(pool.clone());
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // drain Started
+
+        // Classifier promotes the 404 to DefinitiveOffline; lifecycle closes
+        // the session immediately regardless of the 240-second backoff that
+        // would normally throttle monitor-loop observations.
+        lifecycle
+            .on_download_terminal(&DownloadTerminalEvent::Failed {
+                download_id: "dl".into(),
+                streamer_id: STREAMER_ID.into(),
+                streamer_name: "Test".into(),
+                session_id: started.session_id().to_string(),
+                kind: crate::downloader::DownloadFailureKind::HttpClientError { status: 404 },
+                error: "playlist 404".into(),
+                recoverable: false,
+            })
+            .await
+            .unwrap();
+
+        // Session ended within the single await above — no backoff wait.
+        assert!(!lifecycle.is_session_active(started.session_id()));
+        assert!(
+            db_session_end_time(&pool, started.session_id())
+                .await
+                .is_some(),
+            "session end_time must be written in one transition cycle"
+        );
+
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended { cause, .. } => {
+                assert!(matches!(
+                    cause,
+                    TerminalCause::DefinitiveOffline {
+                        signal: crate::session::OfflineSignal::PlaylistGone(404)
+                    }
+                ));
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
+
+        // Streamer-side backoff is unchanged by the session-end write —
+        // disabled_until and consecutive_error_count remain as seeded so
+        // the monitor's next tick is still throttled as before.
+        use sqlx::Row;
+        let row = sqlx::query(
+            "SELECT disabled_until, consecutive_error_count FROM streamers WHERE id = ?",
+        )
+        .bind(STREAMER_ID)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            row.get::<Option<i64>, _>(0),
+            Some(backoff_until_ms),
+            "disabled_until must remain set (only session-end bypasses backoff)"
+        );
+        assert_eq!(
+            row.get::<i32, _>(1),
+            3,
+            "consecutive_error_count must remain set"
+        );
     }
 }

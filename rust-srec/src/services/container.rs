@@ -401,6 +401,7 @@ impl ServiceContainer {
             Arc::new(crate::session::SessionLifecycleRepository::new(
                 write_pool.clone(),
             )),
+            Arc::new(crate::session::OfflineClassifier::new()),
         ));
 
         // Create stream monitor for real status detection
@@ -668,6 +669,7 @@ impl ServiceContainer {
             Arc::new(crate::session::SessionLifecycleRepository::new(
                 write_pool.clone(),
             )),
+            Arc::new(crate::session::OfflineClassifier::new()),
         ));
 
         // Create stream monitor for real status detection
@@ -1742,6 +1744,15 @@ impl ServiceContainer {
                                         "SessionLifecycle failed to process terminal download event",
                                     );
                                 }
+                            }
+                            Ok(DownloadManagerEvent::Progress(
+                                DownloadProgressEvent::SegmentCompleted { streamer_id, .. },
+                            )) => {
+                                // Successful segment → reset the classifier's
+                                // consecutive-failure counter for this streamer
+                                // (preserves Bilibili-style mid-stream RST
+                                // reconnects from being classified as offline).
+                                lifecycle.on_segment_completed(&streamer_id);
                             }
                             Ok(DownloadManagerEvent::Progress(_)) => {}
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {

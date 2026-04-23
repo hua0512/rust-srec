@@ -1489,6 +1489,7 @@ mod tests {
 
         let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
             Arc::new(crate::session::SessionLifecycleRepository::new(pool.clone())),
+            Arc::new(crate::session::OfflineClassifier::new()),
         ));
 
         StreamMonitor::new(
