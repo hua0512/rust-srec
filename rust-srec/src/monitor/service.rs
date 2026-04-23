@@ -4,7 +4,7 @@
 //! and state updates for streamers.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use dashmap::DashMap;
 use futures::StreamExt;
@@ -89,13 +89,6 @@ const STREAM_CHECK_HARD_TIMEOUT: Duration = Duration::from_secs(300);
 /// to temporarily reusing the most recent result for the same streamer.
 const IN_FLIGHT_DEDUP_WINDOW: Duration = Duration::from_millis(100);
 
-/// Cleanup interval for hard_ended_sessions pruning (10 minutes).
-const HARD_ENDED_CLEANUP_INTERVAL: Duration = Duration::from_secs(600);
-
-/// Maximum age for hard_ended_sessions entries before they are pruned (1 hour).
-/// This is much longer than typical session_gap values, so stale entries don't affect correctness.
-const HARD_ENDED_MAX_AGE: Duration = Duration::from_secs(3600);
-
 /// Configuration for the stream monitor.
 #[derive(Debug, Clone)]
 pub struct StreamMonitorConfig {
@@ -144,18 +137,15 @@ pub struct StreamMonitor<
     rate_limiter: RateLimiterManager,
     /// In-flight request deduplication.
     in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
-    /// Sessions that were authoritatively ended by danmu/control signals.
-    ///
-    /// When present for a streamer, session resumption by `session_gap` is suppressed
-    /// for that specific session ID (i.e., we always create a new session if the
-    /// streamer goes live again).
-    ///
-    /// Key: streamer_id, Value: (session_id, insertion_time) for time-based pruning.
-    hard_ended_sessions: Arc<DashMap<String, (String, Instant)>>,
     /// Sender for in-flight cleanup requests (single worker processes these).
     cleanup_tx: mpsc::Sender<String>,
     /// Event broadcaster for notifications.
     event_broadcaster: MonitorEventBroadcaster,
+    /// Single-owner session lifecycle service. StreamMonitor publishes
+    /// Live / Offline observations here; the lifecycle owns the atomic DB
+    /// bundle, the in-memory session map, and the `hard_ended` suppression
+    /// cache that used to live on this type.
+    session_lifecycle: Arc<crate::session::SessionLifecycle>,
     /// Database pool for transactional updates + outbox (serialized write pool).
     write_pool: SqlitePool,
     /// Notifies the outbox publisher that new events are available.
@@ -207,6 +197,7 @@ impl<
         session_repo: Arc<SSR>,
         config_service: Arc<crate::config::ConfigService<CR, SR>>,
         write_pool: SqlitePool,
+        session_lifecycle: Arc<crate::session::SessionLifecycle>,
     ) -> Self {
         Self::with_config(
             streamer_manager,
@@ -214,6 +205,7 @@ impl<
             session_repo,
             config_service,
             write_pool,
+            session_lifecycle,
             StreamMonitorConfig::default(),
         )
     }
@@ -225,6 +217,7 @@ impl<
         session_repo: Arc<SSR>,
         config_service: Arc<crate::config::ConfigService<CR, SR>>,
         write_pool: SqlitePool,
+        session_lifecycle: Arc<crate::session::SessionLifecycle>,
         config: StreamMonitorConfig,
     ) -> Self {
         // Create rate limiter with platform-specific configs
@@ -293,9 +286,9 @@ impl<
             batch_detector,
             rate_limiter,
             in_flight: in_flight.clone(),
-            hard_ended_sessions: Arc::new(DashMap::new()),
             cleanup_tx,
             event_broadcaster: MonitorEventBroadcaster::new(),
+            session_lifecycle,
             write_pool,
             outbox_notify: outbox_notify.clone(),
             cancellation: cancellation.clone(),
@@ -304,8 +297,7 @@ impl<
         };
 
         monitor.spawn_outbox_publisher(outbox_notify, cancellation.clone());
-        Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation.clone());
-        Self::spawn_hard_ended_cleanup(monitor.hard_ended_sessions.clone(), cancellation);
+        Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation);
 
         monitor
     }
@@ -318,22 +310,6 @@ impl<
     /// Get the event broadcaster for external use.
     pub fn event_broadcaster(&self) -> &MonitorEventBroadcaster {
         &self.event_broadcaster
-    }
-
-    /// Mark a session as authoritatively ended (e.g., via danmu/control event).
-    ///
-    /// This suppresses session resumption by `session_gap` for this specific session ID.
-    /// Entries are automatically pruned after `HARD_ENDED_MAX_AGE` to prevent memory leaks.
-    pub fn mark_session_hard_ended(&self, streamer_id: &str, session_id: &str) {
-        debug!(
-            streamer_id = %streamer_id,
-            session_id = %session_id,
-            "Marked session as hard-ended"
-        );
-        self.hard_ended_sessions.insert(
-            streamer_id.to_string(),
-            (session_id.to_string(), Instant::now()),
-        );
     }
 
     /// Stop the stream monitor's background tasks.
@@ -376,37 +352,6 @@ impl<
                 }
             }
             debug!("In-flight cleanup worker stopped");
-        });
-    }
-
-    /// Spawn a periodic cleanup task for hard_ended_sessions to prevent unbounded growth.
-    fn spawn_hard_ended_cleanup(
-        hard_ended_sessions: Arc<DashMap<String, (String, Instant)>>,
-        cancellation_token: CancellationToken,
-    ) {
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(HARD_ENDED_CLEANUP_INTERVAL);
-            loop {
-                tokio::select! {
-                    biased;
-
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Hard-ended sessions cleanup worker shutting down");
-                        break;
-                    }
-                    _ = interval.tick() => {
-                        let before = hard_ended_sessions.len();
-                        hard_ended_sessions.retain(|_, (_, inserted_at)| {
-                            inserted_at.elapsed() < HARD_ENDED_MAX_AGE
-                        });
-                        let removed = before.saturating_sub(hard_ended_sessions.len());
-                        if removed > 0 {
-                            debug!("Pruned {} stale hard_ended_sessions entries", removed);
-                        }
-                    }
-                }
-            }
-            debug!("Hard-ended sessions cleanup worker stopped");
         });
     }
 
@@ -814,140 +759,35 @@ impl<
 
         let now = chrono::Utc::now();
 
-        // Load config before acquiring an IMMEDIATE transaction; this avoids holding a write lock
-        // while doing unrelated reads.
+        // Load config before handing off to the lifecycle — the gap window
+        // feeds into the session resume-vs-new decision inside the atomic tx.
         let merged_config = self
             .config_service
             .get_config_for_streamer(&streamer.id)
             .await?;
         let gap_secs = merged_config.session_gap_time_secs;
 
-        // Transaction: (session create/resume + streamer state update + outbox event).
-        // If anything fails, the database remains consistent and no event is emitted.
-        // Use BEGIN IMMEDIATE to prevent deadlocks during concurrent checks.
-        let mut tx = self.begin_immediate().await?;
-
-        // Logic for session management (creation or resumption)
-        // Check for last session
-        let last_session = SessionTxOps::get_last_session(&mut tx, &streamer.id).await?;
-
-        let session_id = if let Some(session) = last_session {
-            match session.end_time {
-                None => {
-                    debug!("Reusing active session {}", session.id);
-                    SessionTxOps::update_titles(
-                        &mut tx,
-                        &session.id,
-                        session.titles.as_deref(),
-                        &title,
-                        now,
-                    )
-                    .await?;
-                    session.id.clone()
-                }
-                Some(end_time_ms) => {
-                    let end_time = crate::database::time::ms_to_datetime(end_time_ms);
-                    let end_time_str = end_time.to_rfc3339();
-
-                    // If this session was authoritatively ended (e.g., via danmu stream-closed),
-                    // do not resume it even if it's within the session gap window.
-                    let suppress_resume = self
-                        .hard_ended_sessions
-                        .get(&streamer.id)
-                        .is_some_and(|entry| entry.value().0 == session.id);
-                    if suppress_resume {
-                        info!(
-                            "Creating new session for {} (previous session {} was hard-ended)",
-                            streamer.name, session.id
-                        );
-                        self.hard_ended_sessions.remove(&streamer.id);
-                        let new_id = uuid::Uuid::new_v4().to_string();
-                        SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title)
-                            .await?;
-                        info!("Created new session {}", new_id);
-                        new_id
-                    } else
-                    // Check if the stream is a continuation (monitoring gap)
-                    if SessionTxOps::should_resume_by_continuation(end_time, started_at) {
-                        info!(
-                            "Resuming session {} (stream started at {:?}, before session end at {})",
-                            session.id, started_at, end_time_str
-                        );
-                        SessionTxOps::resume_session(&mut tx, &session.id).await?;
-                        SessionTxOps::update_titles(
-                            &mut tx,
-                            &session.id,
-                            session.titles.as_deref(),
-                            &title,
-                            now,
-                        )
-                        .await?;
-                        session.id.clone()
-                    } else if SessionTxOps::should_resume_by_gap(end_time, now, gap_secs) {
-                        // Resume within gap threshold
-                        let offline_duration_secs = (now - end_time).num_seconds();
-                        info!(
-                            "Resuming session {} (offline for {}s, threshold: {}s)",
-                            session.id, offline_duration_secs, gap_secs
-                        );
-                        SessionTxOps::resume_session(&mut tx, &session.id).await?;
-                        SessionTxOps::update_titles(
-                            &mut tx,
-                            &session.id,
-                            session.titles.as_deref(),
-                            &title,
-                            now,
-                        )
-                        .await?;
-                        session.id.clone()
-                    } else {
-                        // Create new session
-                        let offline_duration_secs = (now - end_time).num_seconds();
-                        info!(
-                            "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
-                            streamer.name, offline_duration_secs, gap_secs
-                        );
-                        let new_id = uuid::Uuid::new_v4().to_string();
-                        SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title)
-                            .await?;
-                        info!("Created new session {}", new_id);
-                        new_id
-                    }
-                }
-            }
-        } else {
-            // No previous session, create new
-            let new_id = uuid::Uuid::new_v4().to_string();
-            SessionTxOps::create_session(&mut tx, &new_id, &streamer.id, now, &title).await?;
-            info!("Created new session {}", new_id);
-            new_id
-        };
-
-        StreamerTxOps::set_live(&mut tx, &streamer.id, now).await?;
-
-        if let Some(ref new_avatar_url) = avatar
-            && !new_avatar_url.is_empty()
-            && avatar != streamer.avatar_url
-        {
-            StreamerTxOps::update_avatar(&mut tx, &streamer.id, new_avatar_url).await?;
-        }
-
-        // Enqueue live event for notifications and download triggering.
-        let event = MonitorEvent::StreamerLive {
-            streamer_id: streamer.id.clone(),
-            session_id: session_id.clone(),
-            streamer_name: streamer.name.clone(),
-            streamer_url: streamer.url.clone(),
-            title: title.clone(),
-            category: category.clone(),
-            streams,
-            media_headers,
-            media_extras,
-            timestamp: now,
-        };
-        MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
-
-        tx.commit().await?;
+        // Delegate the atomic session+streamer+outbox bundle to
+        // `SessionLifecycle`. It owns the in-memory session map and the
+        // `hard_ended` suppression cache, and emits `SessionTransition::Started`
+        // on success.
+        self.session_lifecycle
+            .on_live_detected(crate::session::LiveDetectedArgs {
+                streamer_id: &streamer.id,
+                streamer_name: &streamer.name,
+                streamer_url: &streamer.url,
+                current_avatar: streamer.avatar_url.as_deref(),
+                new_avatar: avatar.as_deref(),
+                title: &title,
+                category: category.as_deref(),
+                streams: &streams,
+                media_headers: media_headers.as_ref(),
+                media_extras: media_extras.as_ref(),
+                started_at,
+                gap_threshold_secs: gap_secs,
+                now,
+            })
+            .await?;
 
         self.reload_streamer_cache(&streamer.id, "state update")
             .await;
@@ -998,19 +838,19 @@ impl<
         {
             let now = chrono::Utc::now();
 
-            let mut tx = self.begin_immediate().await?;
+            let outcome = self
+                .session_lifecycle
+                .on_offline_detected(crate::session::OfflineDetectedArgs {
+                    streamer_id: &streamer.id,
+                    streamer_name: &streamer.name,
+                    session_id: session_id.as_deref(),
+                    state_was_live: streamer.state == StreamerState::Live,
+                    clear_errors: has_errors,
+                    now,
+                })
+                .await?;
 
-            let resolved_session_id = if let Some(id) = session_id {
-                SessionTxOps::end_session(&mut tx, &id, now).await?;
-                Some(id)
-            } else {
-                SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?
-            };
-
-            let should_emit_offline =
-                streamer.state == StreamerState::Live || resolved_session_id.is_some();
-
-            if should_emit_offline {
+            if outcome.offline_event_emitted {
                 info!(
                     streamer_id = %streamer.id,
                     streamer_name = %streamer.name,
@@ -1019,28 +859,9 @@ impl<
                 );
             }
 
-            StreamerTxOps::set_offline(&mut tx, &streamer.id).await?;
-
-            // Clear any accumulated errors since we successfully checked
-            if has_errors {
-                StreamerTxOps::clear_error_state(&mut tx, &streamer.id).await?;
-            }
-
-            if should_emit_offline {
-                let event = MonitorEvent::StreamerOffline {
-                    streamer_id: streamer.id.clone(),
-                    streamer_name: streamer.name.clone(),
-                    session_id: resolved_session_id.clone(),
-                    timestamp: now,
-                };
-                MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
-            }
-
-            tx.commit().await?;
-
             self.reload_streamer_cache(&streamer.id, "offline update")
                 .await;
-            if should_emit_offline {
+            if outcome.offline_event_emitted {
                 self.notify_outbox();
             }
         } else if has_errors {
@@ -1177,7 +998,7 @@ impl<
         tx.commit().await?;
 
         if let Some(ref session_id) = ended_session_id {
-            self.mark_session_hard_ended(&streamer.id, session_id);
+            self.session_lifecycle.mark_hard_ended(&streamer.id, session_id);
         }
 
         self.reload_streamer_cache(&streamer.id, "state update")
@@ -1666,12 +1487,17 @@ mod tests {
         streamer_manager.hydrate().await.unwrap();
         let config_service = Arc::new(ConfigService::new(config_repo, streamer_repo));
 
+        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
+            Arc::new(crate::session::SessionLifecycleRepository::new(pool.clone())),
+        ));
+
         StreamMonitor::new(
             streamer_manager,
             filter_repo,
             session_repo,
             config_service,
             pool.clone(),
+            session_lifecycle,
         )
     }
 

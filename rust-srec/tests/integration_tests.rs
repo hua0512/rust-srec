@@ -1158,8 +1158,15 @@ mod end_to_end_tests {
     use rust_srec::database::repositories::streamer::SqlxStreamerRepository;
     use rust_srec::domain::StreamerState;
     use rust_srec::monitor::{FilterReason, LiveStatus, MonitorEvent, StreamMonitor};
+    use rust_srec::session::{SessionLifecycle, SessionLifecycleRepository};
     use rust_srec::streamer::{StreamerManager, StreamerMetadata};
     use std::sync::Arc;
+
+    fn make_session_lifecycle(pool: &DbPool) -> Arc<SessionLifecycle> {
+        Arc::new(SessionLifecycle::with_default_capacity(Arc::new(
+            SessionLifecycleRepository::new(pool.clone()),
+        )))
+    }
 
     async fn setup_platform(pool: &DbPool) -> String {
         let id = uuid::Uuid::new_v4().to_string();
@@ -1245,6 +1252,7 @@ mod end_to_end_tests {
             session_repo,
             config_service,
             pool.clone(),
+            make_session_lifecycle(&pool),
         );
 
         // Subscribe to events
@@ -1345,6 +1353,7 @@ mod end_to_end_tests {
             session_repo,
             config_service,
             pool.clone(),
+            make_session_lifecycle(&pool),
         );
 
         // Subscribe to events
@@ -1434,6 +1443,7 @@ mod end_to_end_tests {
             session_repo,
             config_service,
             pool.clone(),
+            make_session_lifecycle(&pool),
         );
 
         // Create test metadata
@@ -1509,6 +1519,7 @@ mod end_to_end_tests {
             session_repo,
             config_service,
             pool.clone(),
+            make_session_lifecycle(&pool),
         );
 
         // Subscribe to events

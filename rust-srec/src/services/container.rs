@@ -298,6 +298,10 @@ pub struct ServiceContainer {
     pub pipeline_manager: Arc<PipelineManager>,
     /// Monitor event broadcaster.
     pub monitor_event_broadcaster: MonitorEventBroadcaster,
+    /// Single-owner session lifecycle service. Owns the in-memory session map,
+    /// hard-ended suppression cache, and the `SessionTransition` broadcast
+    /// channel consumed by pipeline/notification/API layers.
+    pub session_lifecycle: Arc<crate::session::SessionLifecycle>,
     /// Danmu service.
     pub danmu_service: Arc<DanmuService>,
     /// Notification service.
@@ -390,6 +394,15 @@ impl ServiceContainer {
             event_broadcaster.clone(),
         ));
 
+        // Construct the single-owner session lifecycle service up-front so
+        // the stream monitor can delegate its atomic session+streamer+outbox
+        // writes to it.
+        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
+            Arc::new(crate::session::SessionLifecycleRepository::new(
+                write_pool.clone(),
+            )),
+        ));
+
         // Create stream monitor for real status detection
         let mut stream_monitor = StreamMonitor::new(
             streamer_manager.clone(),
@@ -397,6 +410,7 @@ impl ServiceContainer {
             session_repo.clone(),
             config_service.clone(),
             write_pool.clone(),
+            session_lifecycle.clone(),
         );
 
         // Create notification service with default config (also used for credential events).
@@ -569,6 +583,7 @@ impl ServiceContainer {
             output_root_gate,
             pipeline_manager,
             monitor_event_broadcaster,
+            session_lifecycle,
             danmu_service,
             notification_service,
             notification_repository,
@@ -646,6 +661,15 @@ impl ServiceContainer {
         ));
         let streamer_manager_ms = streamer_manager_start.elapsed().as_millis();
 
+        // Construct the single-owner session lifecycle service up-front so
+        // the stream monitor can delegate its atomic session+streamer+outbox
+        // writes to it.
+        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
+            Arc::new(crate::session::SessionLifecycleRepository::new(
+                write_pool.clone(),
+            )),
+        ));
+
         // Create stream monitor for real status detection
         let stream_monitor_start = Instant::now();
         let mut stream_monitor = StreamMonitor::new(
@@ -654,6 +678,7 @@ impl ServiceContainer {
             session_repo.clone(),
             config_service.clone(),
             write_pool.clone(),
+            session_lifecycle.clone(),
         );
         let stream_monitor_ms = stream_monitor_start.elapsed().as_millis();
 
@@ -872,6 +897,7 @@ impl ServiceContainer {
             output_root_gate,
             pipeline_manager,
             monitor_event_broadcaster,
+            session_lifecycle,
             danmu_service,
             notification_service,
             notification_repository,
@@ -932,6 +958,11 @@ impl ServiceContainer {
 
         // Wire download events to pipeline manager
         self.setup_download_event_subscriptions();
+
+        // Wire download terminal events into SessionLifecycle so it can close
+        // the session row and emit SessionTransition::Ended for every
+        // terminal download outcome.
+        self.setup_session_lifecycle_subscriptions();
 
         // Wire monitor events to download manager and danmu service
         self.setup_monitor_event_subscriptions();
@@ -1505,60 +1536,21 @@ impl ServiceContainer {
                     break;
                 }
 
-                // Handle download failure for error tracking
+                // Handle download failure for streamer error tracking. Danmu
+                // collection is stopped separately by the SessionTransition
+                // subscriber in `setup_session_lifecycle_subscriptions` so
+                // Failed and Cancelled share one code path.
                 if let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
                     ref streamer_id,
-                    ref session_id,
                     ref error,
                     ..
                 }) = download_event
+                    && let Some(metadata) = streamer_manager.get_streamer(streamer_id)
                 {
-                    // Record error for exponential backoff
-                    if let Some(metadata) = streamer_manager.get_streamer(streamer_id) {
-                        if let Err(e) = stream_monitor.handle_error(&metadata, error).await {
-                            warn!("Failed to record download error for {}: {}", streamer_id, e);
-                        } else {
-                            debug!("Recorded download error for {}: {}", streamer_id, error);
-                        }
-                    }
-
-                    // Stop danmu collection when download fails
-                    if danmu_service.is_collecting(session_id) {
-                        match danmu_service.stop_collection(session_id).await {
-                            Ok(stats) => {
-                                info!(
-                                    "Stopped danmu collection after download failure for session {}: {} messages",
-                                    session_id, stats.total_count
-                                );
-                            }
-                            Err(e) => {
-                                warn!(
-                                    "Failed to stop danmu collection for session {}: {}",
-                                    session_id, e
-                                );
-                            }
-                        }
-                    }
-                }
-
-                // Handle download cancellation - stop danmu collection
-                if let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled { ref session_id, .. }) =
-                    download_event
-                    && danmu_service.is_collecting(session_id)
-                {
-                    match danmu_service.stop_collection(session_id).await {
-                        Ok(stats) => {
-                            info!(
-                                "Stopped danmu collection after download cancelled for session {}: {} messages",
-                                session_id, stats.total_count
-                            );
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to stop danmu collection for session {}: {}",
-                                session_id, e
-                            );
-                        }
+                    if let Err(e) = stream_monitor.handle_error(&metadata, error).await {
+                        warn!("Failed to record download error for {}: {}", streamer_id, e);
+                    } else {
+                        debug!("Recorded download error for {}: {}", streamer_id, error);
                     }
                 }
 
@@ -1721,6 +1713,142 @@ impl ServiceContainer {
         });
     }
 
+    /// Feed terminal download events into `SessionLifecycle` so every
+    /// terminal download outcome closes the session row and emits
+    /// `SessionTransition::Ended`, and feed those transitions into the
+    /// pipeline manager so the session-complete DAG fires at the right
+    /// moment (per `cause.should_run_session_complete_pipeline()`).
+    fn setup_session_lifecycle_subscriptions(&self) {
+        // Download terminals → SessionLifecycle.
+        let lifecycle = self.session_lifecycle.clone();
+        let mut download_rx = self.download_manager.subscribe();
+        let cancellation_token = self.cancellation_token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        debug!("SessionLifecycle download-event handler shutting down");
+                        break;
+                    }
+                    result = download_rx.recv() => {
+                        match result {
+                            Ok(DownloadManagerEvent::Terminal(event)) => {
+                                if let Err(e) = lifecycle.on_download_terminal(&event).await {
+                                    warn!(
+                                        session_id = %event.session_id(),
+                                        streamer_id = %event.streamer_id(),
+                                        error = %e,
+                                        "SessionLifecycle failed to process terminal download event",
+                                    );
+                                }
+                            }
+                            Ok(DownloadManagerEvent::Progress(_)) => {}
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("SessionLifecycle download-event handler lagged {} events", n);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                debug!("SessionLifecycle download-event channel closed");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // SessionTransition → PipelineManager.
+        let pipeline_manager = self.pipeline_manager.clone();
+        let mut transition_rx = self.session_lifecycle.subscribe();
+        let cancellation_token = self.cancellation_token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        debug!("Pipeline session-transition handler shutting down");
+                        break;
+                    }
+                    result = transition_rx.recv() => {
+                        match result {
+                            Ok(transition) => {
+                                pipeline_manager.handle_session_transition(transition).await;
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Pipeline session-transition handler lagged {} events", n);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                debug!("Pipeline session-transition channel closed");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // SessionTransition → stop danmu collection on Failed.
+        //
+        // Cancelled does not emit SessionTransition (the engine may still
+        // flush a Completed, so `SessionLifecycle` leaves the session in
+        // Recording); when the actor's cancellation path eventually pushes
+        // Offline through the monitor, danmu is stopped by the existing
+        // MonitorEvent::StreamerOffline branch. Completed cleanly ends the
+        // download and the platform-side danmu close signal stops the
+        // stream. Only Failed needs an explicit stop here because the
+        // engine has given up without a flush and the monitor may not
+        // observe offline for a full polling cycle.
+        let danmu_service = self.danmu_service.clone();
+        let mut transition_rx = self.session_lifecycle.subscribe();
+        let cancellation_token = self.cancellation_token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        debug!("Danmu session-transition handler shutting down");
+                        break;
+                    }
+                    result = transition_rx.recv() => {
+                        match result {
+                            Ok(crate::session::SessionTransition::Ended {
+                                session_id,
+                                cause: crate::session::TerminalCause::Failed { .. },
+                                ..
+                            }) => {
+                                if !danmu_service.is_collecting(&session_id) {
+                                    continue;
+                                }
+                                match danmu_service.stop_collection(&session_id).await {
+                                    Ok(stats) => {
+                                        info!(
+                                            "Stopped danmu collection after download failure for session {}: {} messages",
+                                            session_id, stats.total_count
+                                        );
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to stop danmu collection for session {}: {}",
+                                            session_id, e
+                                        );
+                                    }
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Danmu session-transition handler lagged {} events", n);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                debug!("Danmu session-transition channel closed");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     /// Set up monitor event subscriptions to download manager and danmu service.
     fn setup_monitor_event_subscriptions(&self) {
         let download_manager = self.download_manager.clone();
@@ -1764,6 +1892,7 @@ impl ServiceContainer {
         let streamer_manager = self.streamer_manager.clone();
         let config_service = self.config_service.clone();
         let stream_monitor = self.stream_monitor.clone();
+        let session_lifecycle = self.session_lifecycle.clone();
         let discarded_segment_keys = self.discarded_segment_keys.clone();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -1907,7 +2036,7 @@ impl ServiceContainer {
                                                 );
                                             }
 
-                                            stream_monitor.mark_session_hard_ended(streamer_id, session_id);
+                                            session_lifecycle.mark_hard_ended(streamer_id.clone(), session_id.clone());
                                             if let Some(streamer) = streamer_manager.get_streamer(streamer_id) {
                                                 if let Err(e) = stream_monitor
                                                     .handle_offline_with_session(&streamer, Some(session_id.clone()))
@@ -1960,8 +2089,14 @@ impl ServiceContainer {
         let monitor_rx = self.monitor_event_broadcaster.subscribe();
         let download_rx = self.download_manager.subscribe();
         let pipeline_rx = self.pipeline_manager.subscribe();
+        let session_rx = self.session_lifecycle.subscribe();
 
-        notification_service.start_event_listeners(monitor_rx, download_rx, pipeline_rx);
+        notification_service.start_event_listeners(
+            monitor_rx,
+            download_rx,
+            pipeline_rx,
+            session_rx,
+        );
         info!("Notification service event listeners started");
     }
 

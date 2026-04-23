@@ -76,6 +76,52 @@ pub enum MonitorEvent {
         reason: Option<String>,
         timestamp: DateTime<Utc>,
     },
+    /// Internal trigger emitted by the monitor to ask [`crate::session::
+    /// SessionLifecycle`] to start or resume a recording session.
+    ///
+    /// Distinct from [`Self::StreamerLive`], which is the outbox-destined
+    /// notification emitted *by* `SessionLifecycle` once the DB write lands.
+    /// This trigger must never be enqueued into `monitor_event_outbox` —
+    /// it is a pure in-process broadcast signal.
+    LiveDetected {
+        streamer_id: String,
+        streamer_name: String,
+        streamer_url: String,
+        current_avatar: Option<String>,
+        new_avatar: Option<String>,
+        title: String,
+        category: Option<String>,
+        streams: Vec<StreamInfo>,
+        media_headers: Option<HashMap<String, String>>,
+        media_extras: Option<HashMap<String, String>>,
+        /// Stream-side `started_at` used by the continuation rule.
+        started_at: Option<DateTime<Utc>>,
+        /// Gap window (seconds) for the resume-by-gap rule — sourced from
+        /// the streamer's effective configuration.
+        gap_threshold_secs: i64,
+        timestamp: DateTime<Utc>,
+    },
+    /// Internal trigger emitted by the monitor to ask [`crate::session::
+    /// SessionLifecycle`] to end the active session for a streamer.
+    ///
+    /// Distinct from [`Self::StreamerOffline`], which is the outbox-destined
+    /// notification emitted *by* `SessionLifecycle` once the DB write lands.
+    /// This trigger must never be enqueued into `monitor_event_outbox`.
+    OfflineDetected {
+        streamer_id: String,
+        streamer_name: String,
+        /// Explicit session id to end, if the monitor knows which session
+        /// was active. When `None`, the lifecycle falls back to closing
+        /// the active session for `streamer_id`.
+        session_id: Option<String>,
+        /// `true` if the streamer's pre-end state was `Live` — drives
+        /// whether `StreamerOffline` is emitted onto the outbox.
+        state_was_live: bool,
+        /// `true` if the streamer had accumulated transient errors that
+        /// should be cleared on this clean observation.
+        clear_errors: bool,
+        timestamp: DateTime<Utc>,
+    },
 }
 
 /// Types of fatal errors.
@@ -136,6 +182,12 @@ impl MonitorEvent {
             } => {
                 format!("{}: {} -> {}", streamer_name, old_state, new_state)
             }
+            MonitorEvent::LiveDetected { streamer_name, .. } => {
+                format!("{} live detected (lifecycle trigger)", streamer_name)
+            }
+            MonitorEvent::OfflineDetected { streamer_name, .. } => {
+                format!("{} offline detected (lifecycle trigger)", streamer_name)
+            }
         }
     }
 
@@ -152,6 +204,8 @@ impl MonitorEvent {
                 *consecutive_errors >= 3
             }
             MonitorEvent::StateChanged { .. } => false,
+            // Internal lifecycle triggers — never user-visible.
+            MonitorEvent::LiveDetected { .. } | MonitorEvent::OfflineDetected { .. } => false,
         }
     }
 }

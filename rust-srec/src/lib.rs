@@ -25,6 +25,7 @@ pub mod panic_hook;
 pub mod pipeline;
 pub mod scheduler;
 pub mod services;
+pub mod session;
 pub mod streamer;
 pub mod utils;
 

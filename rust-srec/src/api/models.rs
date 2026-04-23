@@ -723,6 +723,14 @@ pub struct SessionResponse {
     pub titles: Vec<TitleChange>,
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
+    /// `true` when the recording is still in progress (`end_time` is null).
+    ///
+    /// Lets the frontend render "live" status without parsing `end_time`,
+    /// and keeps the home-page vs session-detail views on the same signal.
+    /// Since the `SessionLifecycleRepository` atomic bundle writes
+    /// `end_time` and the streamer-state flag in the same transaction,
+    /// this field and `streamer.state == LIVE` cannot diverge.
+    pub is_live: bool,
     pub duration_secs: Option<u64>,
     pub output_count: u32,
     pub total_size_bytes: u64,

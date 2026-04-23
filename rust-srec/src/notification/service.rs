@@ -1431,10 +1431,12 @@ impl NotificationService {
         monitor_rx: broadcast::Receiver<MonitorEvent>,
         download_rx: broadcast::Receiver<DownloadManagerEvent>,
         pipeline_rx: broadcast::Receiver<PipelineEvent>,
+        session_rx: broadcast::Receiver<crate::session::SessionTransition>,
     ) {
         self.listen_for_monitor_events(monitor_rx);
         self.listen_for_download_events(download_rx);
         self.listen_for_pipeline_events(pipeline_rx);
+        self.listen_for_session_transitions(session_rx);
     }
 
     /// Listen for monitor events.
@@ -1461,32 +1463,11 @@ impl NotificationService {
                                     continue;
                                 }
 
+                                // StreamOnline/StreamOffline now come from
+                                // `SessionTransition` via
+                                // `listen_for_session_transitions`; the monitor
+                                // subscription only produces FatalError alerts.
                                 let notification = match event {
-                                    MonitorEvent::StreamerLive {
-                                        streamer_id,
-                                        streamer_name,
-                                        title,
-                                        category,
-                                        timestamp,
-                                        ..
-                                    } => Some(NotificationEvent::StreamOnline {
-                                        streamer_id,
-                                        streamer_name,
-                                        title,
-                                        category,
-                                        timestamp,
-                                    }),
-                                    MonitorEvent::StreamerOffline {
-                                        streamer_id,
-                                        streamer_name,
-                                        timestamp,
-                                        ..
-                                    } => Some(NotificationEvent::StreamOffline {
-                                        streamer_id,
-                                        streamer_name,
-                                        duration_secs: None,
-                                        timestamp,
-                                    }),
                                     MonitorEvent::FatalError {
                                         streamer_id,
                                         streamer_name,
@@ -1518,6 +1499,87 @@ impl NotificationService {
                             }
                             Err(broadcast::error::RecvError::Closed) => {
                                 debug!("Monitor event channel closed");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /// Listen for session lifecycle transitions and fan them out as
+    /// `NotificationEvent::StreamOnline` / `StreamOffline` payloads.
+    ///
+    /// Payload shape is byte-identical to the pre-refactor
+    /// `MonitorEvent::StreamerLive` / `StreamerOffline` routing — the
+    /// `SessionTransition::Started` / `Ended` variants carry the same
+    /// streamer_name / title / category / timestamp fields so the
+    /// notification channels see no change.
+    fn listen_for_session_transitions(
+        self: &Arc<Self>,
+        mut rx: broadcast::Receiver<crate::session::SessionTransition>,
+    ) {
+        let service = Arc::clone(self);
+        let config = service.config.clone();
+        let cancellation_token = service.cancellation_token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        debug!("Session transition listener shutting down");
+                        break;
+                    }
+                    result = rx.recv() => {
+                        match result {
+                            Ok(transition) => {
+                                if !config.enabled {
+                                    continue;
+                                }
+
+                                let notification = match transition {
+                                    crate::session::SessionTransition::Started {
+                                        streamer_id,
+                                        streamer_name,
+                                        title,
+                                        category,
+                                        started_at,
+                                        ..
+                                    } => Some(NotificationEvent::StreamOnline {
+                                        streamer_id,
+                                        streamer_name,
+                                        title,
+                                        category,
+                                        timestamp: started_at,
+                                    }),
+                                    crate::session::SessionTransition::Ended {
+                                        streamer_id,
+                                        streamer_name,
+                                        ended_at,
+                                        ..
+                                    } => Some(NotificationEvent::StreamOffline {
+                                        streamer_id,
+                                        streamer_name,
+                                        duration_secs: None,
+                                        timestamp: ended_at,
+                                    }),
+                                };
+
+                                if let Some(notification) = notification {
+                                    let service = service.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = service.notify(notification).await {
+                                            warn!("Failed to dispatch notification: {}", e);
+                                        }
+                                    });
+                                }
+                            }
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Session transition listener lagged by {} events", n);
+                            }
+                            Err(broadcast::error::RecvError::Closed) => {
+                                debug!("Session transition channel closed");
                                 break;
                             }
                         }
