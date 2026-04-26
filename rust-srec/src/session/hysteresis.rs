@@ -2,19 +2,40 @@
 //!
 //! When [`crate::session::SessionLifecycle`] observes a *non-authoritative*
 //! terminal event (mesio FLV clean disconnect, ffmpeg subprocess exit, network
-//! failure, …), it doesn't commit `Ended` immediately. Instead it parks the
-//! session in `SessionState::Hysteresis` and arms a timer. Three things can
-//! happen next:
+//! failure that the classifier didn't promote, …), it doesn't commit `Ended`
+//! immediately. Instead it parks the session in `SessionState::Hysteresis`
+//! and arms a backstop timer. Three things can happen next:
 //!
 //! 1. A `LiveDetected` arrives before the deadline. The hysteresis handle's
 //!    [`CancellationToken`] is tripped, the timer task exits without firing,
 //!    and the session transitions back to `Recording` (same `session_id`).
-//! 2. An *authoritative* terminal event arrives (e.g. `DanmuStreamClosed`,
-//!    HLS playlist 404, monitor `StreamerOffline`). The hysteresis is
-//!    cancelled and the session transitions directly to `Ended`.
+//! 2. An *authoritative* terminal event arrives (`StreamerOffline` from the
+//!    monitor, classifier-promoted `DefinitiveOffline`, HLS `EXT-X-ENDLIST`,
+//!    …). The hysteresis is cancelled and the session transitions directly
+//!    to `Ended`.
 //! 3. The deadline elapses with no resume. The timer task fires `Ended` via
 //!    the lifecycle's `enter_ended_state` path; the DB write commits and
 //!    the pipeline-complete DAG is scheduled.
+//!
+//! ## Why one window, derived from the scheduler config
+//!
+//! The actor (`scheduler::actor::streamer_actor`) already runs an offline-
+//! confirmation hysteresis: after seeing the streamer's status flip to
+//! NotLive it polls `offline_check_interval_ms` (default 20 s) and only
+//! emits `StreamerOffline` after `offline_check_count` (default 3)
+//! observations. That cadence is the *primary* mechanism that gates whether
+//! a stream end is real — `~ count × interval ≈ 60 s` of confirmation.
+//!
+//! The session-level hysteresis state is **driven by the actor's events**
+//! (`on_live_detected` resumes, `on_offline_detected` confirms `Ended`).
+//! The timer here is a **backstop**, not a parallel quiet period: it only
+//! fires if the actor never calls back (e.g. the streamer was manually
+//! disabled while in hysteresis, or the actor was removed). Sizing it to
+//! `(count + 1) × interval` keeps it strictly larger than the actor's
+//! confirmation latency, so under normal flow the actor's call always wins.
+//!
+//! No new tunable. The window tracks whatever the operator already set on
+//! `global_config.offline_check_*`.
 //!
 //! This module defines the data types only. The driver lives in
 //! [`crate::session::lifecycle::SessionLifecycle`] (it owns the
@@ -22,61 +43,72 @@
 //! the lifecycle's state to decide whether the cancellation was a resume,
 //! an authoritative override, or a no-op).
 
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
 use crate::session::state::TerminalCause;
 
-/// Default hysteresis quiet-period applied when no platform-specific override is set.
-///
-/// Justification: the 2026-04-26 production log showed a Huya stream where
-/// the platform reissued a fresh stream URL ~90 seconds after the engine
-/// observed a clean FLV disconnect. 90 s is long enough to absorb that
-/// reconnect cycle, short enough that the pipeline-complete DAG isn't
-/// delayed egregiously when the streamer really did stop.
-pub const DEFAULT_HYSTERESIS_WINDOW: Duration = Duration::from_secs(90);
-
-/// Maximum permitted hysteresis window. Defends against config typos that
-/// would park sessions for unreasonable durations.
+/// Hard cap on the derived hysteresis window. Defends against pathological
+/// scheduler configs (e.g. `offline_check_interval_ms = 600_000`) that
+/// would otherwise park sessions for unreasonable durations.
 pub const MAX_HYSTERESIS_WINDOW: Duration = Duration::from_secs(5 * 60);
 
-/// Tunable configuration for the hysteresis quiet-period.
+/// Default scheduler-derived window: `(3 + 1) × 20 s = 80 s`. Chosen to
+/// match the hard-coded defaults in
+/// [`crate::scheduler::SchedulerConfig::default`] so a freshly-installed
+/// instance has consistent behaviour without any explicit configuration.
+const DEFAULT_OFFLINE_CHECK_COUNT: u32 = 3;
+const DEFAULT_OFFLINE_CHECK_INTERVAL_MS: u64 = 20_000;
+
+/// Tunable backstop window for the lifecycle's hysteresis state.
 ///
-/// Loaded once at lifecycle construction; overrides can come from the
-/// per-platform configuration layer in a future PR. Today only the global
-/// default and per-platform overrides are honoured; per-streamer overrides
-/// are an explicit non-goal (would just push the tuning surface further out
-/// without measurably improving correctness).
-#[derive(Debug, Clone)]
+/// **Not a parallel tunable.** The window is derived from the existing
+/// `offline_check_count × offline_check_interval_ms` scheduler config — a
+/// single source of truth for "how long do we wait before declaring a
+/// stream really offline." The value here is `(count + 1) × interval`,
+/// adding one tick of slack so the actor's confirmed-offline event always
+/// lands before the lifecycle's safety-net timer fires.
+#[derive(Debug, Clone, Copy)]
 pub struct HysteresisConfig {
-    /// Window applied when no platform-specific override matches.
-    pub default_window: Duration,
-    /// Optional per-platform overrides. Key is the `platform_config.platform_name`
-    /// string (e.g. `"huya"`, `"douyin"`). Useful when one platform has
-    /// faster URL reissue than another.
-    pub per_platform: HashMap<String, Duration>,
+    window: Duration,
+}
+
+impl HysteresisConfig {
+    /// Build a config from the scheduler's existing offline-check tunables.
+    /// Window = `(count + 1) × interval_ms`, capped at
+    /// [`MAX_HYSTERESIS_WINDOW`].
+    pub fn from_scheduler(offline_check_count: u32, offline_check_interval_ms: u64) -> Self {
+        let count = offline_check_count.max(1) as u64;
+        let interval = offline_check_interval_ms.max(1_000);
+        let raw = Duration::from_millis((count + 1) * interval);
+        Self {
+            window: raw.min(MAX_HYSTERESIS_WINDOW),
+        }
+    }
+
+    /// Construct directly from a `Duration`. Reserved for tests that need
+    /// a sub-second window to drive timer expiry without sleeping.
+    #[cfg(test)]
+    pub fn from_window(window: Duration) -> Self {
+        Self {
+            window: window.min(MAX_HYSTERESIS_WINDOW),
+        }
+    }
+
+    /// The backstop window applied by the lifecycle when entering
+    /// `Hysteresis`. Always `≤ MAX_HYSTERESIS_WINDOW`.
+    pub fn window(&self) -> Duration {
+        self.window
+    }
 }
 
 impl Default for HysteresisConfig {
     fn default() -> Self {
-        Self {
-            default_window: DEFAULT_HYSTERESIS_WINDOW,
-            per_platform: HashMap::new(),
-        }
-    }
-}
-
-impl HysteresisConfig {
-    /// Resolve the window for a given platform name. Falls back to
-    /// `default_window` when no override is set. Capped at
-    /// [`MAX_HYSTERESIS_WINDOW`] to defend against pathological configs.
-    pub fn window_for_platform(&self, platform: Option<&str>) -> Duration {
-        let raw = platform
-            .and_then(|p| self.per_platform.get(p).copied())
-            .unwrap_or(self.default_window);
-        raw.min(MAX_HYSTERESIS_WINDOW)
+        Self::from_scheduler(
+            DEFAULT_OFFLINE_CHECK_COUNT,
+            DEFAULT_OFFLINE_CHECK_INTERVAL_MS,
+        )
     }
 }
 
@@ -156,37 +188,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_default_uses_default_window() {
+    fn from_scheduler_uses_count_plus_one_times_interval() {
+        // (3 + 1) × 20 000 ms = 80 000 ms = 80 s
+        let c = HysteresisConfig::from_scheduler(3, 20_000);
+        assert_eq!(c.window(), Duration::from_secs(80));
+    }
+
+    #[test]
+    fn from_scheduler_caps_at_max() {
+        // Config typo: (3 + 1) × 1h = 4h, must cap at 5 min.
+        let c = HysteresisConfig::from_scheduler(3, 60 * 60 * 1000);
+        assert_eq!(c.window(), MAX_HYSTERESIS_WINDOW);
+    }
+
+    #[test]
+    fn from_scheduler_floors_count_at_one() {
+        // count = 0 collapses to 1 to keep the math sensible.
+        let c = HysteresisConfig::from_scheduler(0, 20_000);
+        assert_eq!(c.window(), Duration::from_secs(40));
+    }
+
+    #[test]
+    fn from_scheduler_floors_interval_at_one_second() {
+        // interval = 50 ms collapses to 1 s.
+        let c = HysteresisConfig::from_scheduler(3, 50);
+        assert_eq!(c.window(), Duration::from_secs(4));
+    }
+
+    #[test]
+    fn default_matches_scheduler_default() {
+        // Scheduler default is count=3, interval=20s → window = 80s.
         let c = HysteresisConfig::default();
-        assert_eq!(c.window_for_platform(None), DEFAULT_HYSTERESIS_WINDOW);
-        assert_eq!(c.window_for_platform(Some("huya")), DEFAULT_HYSTERESIS_WINDOW);
-    }
-
-    #[test]
-    fn config_per_platform_override() {
-        let mut c = HysteresisConfig::default();
-        c.per_platform
-            .insert("douyin".into(), Duration::from_secs(45));
-        assert_eq!(c.window_for_platform(Some("douyin")), Duration::from_secs(45));
-        assert_eq!(c.window_for_platform(Some("huya")), DEFAULT_HYSTERESIS_WINDOW);
-        assert_eq!(c.window_for_platform(None), DEFAULT_HYSTERESIS_WINDOW);
-    }
-
-    #[test]
-    fn config_caps_window_at_max() {
-        let mut c = HysteresisConfig::default();
-        c.per_platform
-            .insert("buggy".into(), Duration::from_secs(60 * 60));
-        assert_eq!(c.window_for_platform(Some("buggy")), MAX_HYSTERESIS_WINDOW);
-    }
-
-    #[test]
-    fn config_caps_default_at_max() {
-        let c = HysteresisConfig {
-            default_window: Duration::from_secs(60 * 60),
-            per_platform: HashMap::new(),
-        };
-        assert_eq!(c.window_for_platform(None), MAX_HYSTERESIS_WINDOW);
+        assert_eq!(c.window(), Duration::from_secs(80));
     }
 
     #[test]

@@ -49,8 +49,7 @@ pub mod transition;
 
 pub use classifier::{EngineKind, OfflineClassifier};
 pub use hysteresis::{
-    DEFAULT_HYSTERESIS_WINDOW, HysteresisConfig, HysteresisHandle, HysteresisOutcome,
-    MAX_HYSTERESIS_WINDOW,
+    HysteresisConfig, HysteresisHandle, HysteresisOutcome, MAX_HYSTERESIS_WINDOW,
 };
 pub use lifecycle::{
     DEFAULT_TRANSITION_CHANNEL_CAPACITY, LiveDetectedArgs, OfflineDetectedArgs, SessionLifecycle,

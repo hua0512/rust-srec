@@ -397,11 +397,21 @@ impl ServiceContainer {
         // Construct the single-owner session lifecycle service up-front so
         // the stream monitor can delegate its atomic session+streamer+outbox
         // writes to it.
-        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
+        //
+        // The hysteresis backstop window is derived from the same scheduler
+        // tunables the actor uses for offline confirmation — single source
+        // of truth, no parallel tunable.
+        let hysteresis_config = crate::session::HysteresisConfig::from_scheduler(
+            global_config.offline_check_count as u32,
+            global_config.offline_check_delay_ms as u64,
+        );
+        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_config(
             Arc::new(crate::session::SessionLifecycleRepository::new(
                 write_pool.clone(),
             )),
             Arc::new(crate::session::OfflineClassifier::new()),
+            crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
+            hysteresis_config,
         ));
 
         // Create stream monitor for real status detection
@@ -665,11 +675,21 @@ impl ServiceContainer {
         // Construct the single-owner session lifecycle service up-front so
         // the stream monitor can delegate its atomic session+streamer+outbox
         // writes to it.
-        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
+        //
+        // The hysteresis backstop window is derived from the same scheduler
+        // tunables the actor uses for offline confirmation — single source
+        // of truth, no parallel tunable.
+        let hysteresis_config = crate::session::HysteresisConfig::from_scheduler(
+            global_config.offline_check_count as u32,
+            global_config.offline_check_delay_ms as u64,
+        );
+        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_config(
             Arc::new(crate::session::SessionLifecycleRepository::new(
                 write_pool.clone(),
             )),
             Arc::new(crate::session::OfflineClassifier::new()),
+            crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
+            hysteresis_config,
         ));
 
         // Create stream monitor for real status detection

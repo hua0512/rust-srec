@@ -513,9 +513,12 @@ impl SessionLifecycle {
             .get(session_id)
             .map(|e| e.started_at())
             .unwrap_or(observed_at);
-        let window = self
-            .hysteresis_config
-            .window_for_platform(/* platform-aware lookup is a future PR */ None);
+        // Backstop window. The actor's existing offline-confirmation
+        // hysteresis (count × interval) is the *primary* mechanism that
+        // resolves a hysteresis state; the timer below only fires if the
+        // actor never calls back. Window is derived from the same
+        // scheduler config the actor uses — see `HysteresisConfig`.
+        let window = self.hysteresis_config.window();
         let handle = HysteresisHandle::new(window);
         let deadline_inst = handle.deadline;
         let cancel = handle.cancel.clone();
@@ -913,10 +916,7 @@ mod tests {
         pool: SqlitePool,
         window: std::time::Duration,
     ) -> Arc<SessionLifecycle> {
-        let cfg = HysteresisConfig {
-            default_window: window,
-            ..HysteresisConfig::default()
-        };
+        let cfg = HysteresisConfig::from_window(window);
         Arc::new(SessionLifecycle::with_config(
             Arc::new(SessionLifecycleRepository::new(pool)),
             Arc::new(OfflineClassifier::new()),
