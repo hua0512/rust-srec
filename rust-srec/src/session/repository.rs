@@ -28,11 +28,20 @@ use uuid::Uuid;
 
 use crate::Result;
 use crate::database::repositories::{MonitorOutboxTxOps, SessionTxOps, StreamerTxOps};
-use crate::database::time::ms_to_datetime;
 use crate::database::{WritePool, begin_immediate};
 use crate::monitor::{MonitorEvent, StreamInfo};
 
 /// Inputs required by [`SessionLifecycleRepository::start_or_resume`].
+///
+/// Phase 3 of the hysteresis plan removed three fields that were vestigial
+/// once the lifecycle owns intermittent-stream handling:
+///
+/// - `gap_threshold_secs` — gap-resume retired; lifecycle handles
+///   intermittence via `Hysteresis` state instead.
+/// - `started_at` — fed only the continuation rule, also retired.
+/// - `hard_ended_session_id` — `SessionLifecycle::hard_ended` cache
+///   deleted; with no gap-resume, the DB's `end_time` is the source of
+///   truth and an explicit fence is unnecessary.
 #[derive(Debug, Clone)]
 pub struct StartSessionInputs {
     pub streamer_id: String,
@@ -45,19 +54,8 @@ pub struct StartSessionInputs {
     pub streams: Vec<StreamInfo>,
     pub media_headers: Option<HashMap<String, String>>,
     pub media_extras: Option<HashMap<String, String>>,
-    /// Stream-side `started_at` used by the continuation rule.
-    pub started_at: Option<DateTime<Utc>>,
     /// Reference time for the session `start_time` and event `timestamp`.
     pub now: DateTime<Utc>,
-    /// Gap window (seconds) for the resume-by-gap rule.
-    pub gap_threshold_secs: i64,
-    /// Session id that `SessionLifecycle` has observed as hard-ended
-    /// (e.g. via danmu stream close). When it matches the most-recent
-    /// session in the DB, that session will not be resumed even inside the
-    /// gap window; a fresh session is created instead. The match happens
-    /// inside the same `BEGIN IMMEDIATE` transaction as the read, so there
-    /// is no TOCTOU window against concurrent writers.
-    pub hard_ended_session_id: Option<String>,
 }
 
 /// Outcome of [`SessionLifecycleRepository::start_or_resume`].
@@ -65,20 +63,17 @@ pub struct StartSessionInputs {
 pub enum StartSessionOutcome {
     /// A brand-new session row was inserted.
     Created { session_id: String },
-    /// An ended session was reopened (end_time cleared) within the gap or
-    /// continuation window.
-    Resumed { session_id: String },
     /// The most-recent session row was still active (no end_time); only its
-    /// titles and the streamer state were updated.
+    /// titles and the streamer state were updated. This is also what the
+    /// lifecycle returns when resuming a session out of `Hysteresis` —
+    /// the session row was never ended in DB so reusing it is correct.
     ReusedActive { session_id: String },
 }
 
 impl StartSessionOutcome {
     pub fn session_id(&self) -> &str {
         match self {
-            Self::Created { session_id }
-            | Self::Resumed { session_id }
-            | Self::ReusedActive { session_id } => session_id,
+            Self::Created { session_id } | Self::ReusedActive { session_id } => session_id,
         }
     }
 }
@@ -128,109 +123,32 @@ impl SessionLifecycleRepository {
 
         let last = SessionTxOps::get_last_session(&mut tx, &inputs.streamer_id).await?;
 
+        // Two-branch decision (down from five pre-Phase-3):
+        //
+        //   - last session has `end_time IS NULL` → reuse it (ReusedActive)
+        //   - any other case (no prior session, or prior session is Ended)
+        //     → create a fresh session
+        //
+        // No gap-resume rule, no continuation rule, no hard-ended fence.
+        // Intermittent-stream handling moved out of here entirely; it lives
+        // in `SessionLifecycle`'s Hysteresis state machine. The DB's
+        // `end_time` is the source of truth for "this recording is over."
         let outcome = match last {
-            Some(session) => match session.end_time {
-                None => {
-                    debug!("Reusing active session {}", session.id);
-                    SessionTxOps::update_titles(
-                        &mut tx,
-                        &session.id,
-                        session.titles.as_deref(),
-                        &inputs.title,
-                        inputs.now,
-                    )
-                    .await?;
-                    StartSessionOutcome::ReusedActive {
-                        session_id: session.id,
-                    }
+            Some(session) if session.end_time.is_none() => {
+                debug!("Reusing active session {}", session.id);
+                SessionTxOps::update_titles(
+                    &mut tx,
+                    &session.id,
+                    session.titles.as_deref(),
+                    &inputs.title,
+                    inputs.now,
+                )
+                .await?;
+                StartSessionOutcome::ReusedActive {
+                    session_id: session.id,
                 }
-                Some(end_ms) => {
-                    let end_time = ms_to_datetime(end_ms);
-                    let end_time_str = end_time.to_rfc3339();
-
-                    let is_hard_ended = inputs
-                        .hard_ended_session_id
-                        .as_deref()
-                        .is_some_and(|h| h == session.id);
-                    if is_hard_ended {
-                        info!(
-                            "Creating new session for {} (previous session {} was hard-ended)",
-                            inputs.streamer_name, session.id
-                        );
-                        let new_id = Uuid::new_v4().to_string();
-                        SessionTxOps::create_session(
-                            &mut tx,
-                            &new_id,
-                            &inputs.streamer_id,
-                            inputs.now,
-                            &inputs.title,
-                        )
-                        .await?;
-                        info!("Created new session {}", new_id);
-                        StartSessionOutcome::Created { session_id: new_id }
-                    } else if SessionTxOps::should_resume_by_continuation(
-                        end_time,
-                        inputs.started_at,
-                    ) {
-                        info!(
-                            "Resuming session {} (stream started at {:?}, before session end at {})",
-                            session.id, inputs.started_at, end_time_str
-                        );
-                        SessionTxOps::resume_session(&mut tx, &session.id).await?;
-                        SessionTxOps::update_titles(
-                            &mut tx,
-                            &session.id,
-                            session.titles.as_deref(),
-                            &inputs.title,
-                            inputs.now,
-                        )
-                        .await?;
-                        StartSessionOutcome::Resumed {
-                            session_id: session.id,
-                        }
-                    } else if SessionTxOps::should_resume_by_gap(
-                        end_time,
-                        inputs.now,
-                        inputs.gap_threshold_secs,
-                    ) {
-                        let offline_secs = (inputs.now - end_time).num_seconds();
-                        info!(
-                            "Resuming session {} (offline for {}s, threshold: {}s)",
-                            session.id, offline_secs, inputs.gap_threshold_secs
-                        );
-                        SessionTxOps::resume_session(&mut tx, &session.id).await?;
-                        SessionTxOps::update_titles(
-                            &mut tx,
-                            &session.id,
-                            session.titles.as_deref(),
-                            &inputs.title,
-                            inputs.now,
-                        )
-                        .await?;
-                        StartSessionOutcome::Resumed {
-                            session_id: session.id,
-                        }
-                    } else {
-                        let offline_secs = (inputs.now - end_time).num_seconds();
-                        info!(
-                            "Creating new session for {} (offline for {}s exceeded threshold of {}s)",
-                            inputs.streamer_name, offline_secs, inputs.gap_threshold_secs
-                        );
-                        let new_id = Uuid::new_v4().to_string();
-                        SessionTxOps::create_session(
-                            &mut tx,
-                            &new_id,
-                            &inputs.streamer_id,
-                            inputs.now,
-                            &inputs.title,
-                        )
-                        .await?;
-                        info!("Created new session {}", new_id);
-                        StartSessionOutcome::Created { session_id: new_id }
-                    }
-                }
-            },
-            None => {
+            }
+            _ => {
                 let new_id = Uuid::new_v4().to_string();
                 SessionTxOps::create_session(
                     &mut tx,
@@ -445,10 +363,7 @@ mod tests {
         pool
     }
 
-    fn start_inputs(
-        now: DateTime<Utc>,
-        hard_ended_session_id: Option<String>,
-    ) -> StartSessionInputs {
+    fn start_inputs(now: DateTime<Utc>) -> StartSessionInputs {
         StartSessionInputs {
             streamer_id: STREAMER_ID.to_string(),
             streamer_name: "Test".to_string(),
@@ -460,10 +375,7 @@ mod tests {
             streams: vec![],
             media_headers: None,
             media_extras: None,
-            started_at: None,
             now,
-            gap_threshold_secs: 60,
-            hard_ended_session_id,
         }
     }
 
@@ -507,7 +419,7 @@ mod tests {
         let repo = SessionLifecycleRepository::new(pool.clone());
         let now = Utc::now();
 
-        let outcome = repo.start_or_resume(start_inputs(now, None)).await.unwrap();
+        let outcome = repo.start_or_resume(start_inputs(now)).await.unwrap();
 
         assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
         assert_eq!(streamer_state(&pool).await, "LIVE");
@@ -520,8 +432,8 @@ mod tests {
         let repo = SessionLifecycleRepository::new(pool.clone());
         let now = Utc::now();
 
-        let first = repo.start_or_resume(start_inputs(now, None)).await.unwrap();
-        let again = repo.start_or_resume(start_inputs(now, None)).await.unwrap();
+        let first = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        let again = repo.start_or_resume(start_inputs(now)).await.unwrap();
 
         assert!(matches!(again, StartSessionOutcome::ReusedActive { .. }));
         assert_eq!(first.session_id(), again.session_id());
@@ -529,85 +441,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_or_resume_within_gap_resumes_ended_session() {
+    async fn start_or_resume_after_ended_creates_new_session() {
+        // Phase 3 simplification: with gap-resume retired, ANY ended session
+        // followed by a new LiveDetected creates a fresh session row.
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let started_at = Utc::now() - chrono::Duration::seconds(120);
+        let started_at = Utc::now() - chrono::Duration::seconds(60);
 
-        let first = repo
-            .start_or_resume(start_inputs(started_at, None))
-            .await
-            .unwrap();
-        let session_id = first.session_id().to_string();
-
-        let ended_at = started_at + chrono::Duration::seconds(60);
-        repo.end(end_inputs(Some(session_id.clone()), true, ended_at))
-            .await
-            .unwrap();
-
-        // Within gap window (gap_threshold_secs = 60, offline = 30s).
-        let restart_now = ended_at + chrono::Duration::seconds(30);
-        let resumed = repo
-            .start_or_resume(start_inputs(restart_now, None))
-            .await
-            .unwrap();
-
-        assert!(matches!(resumed, StartSessionOutcome::Resumed { .. }));
-        assert_eq!(resumed.session_id(), &session_id);
-    }
-
-    #[tokio::test]
-    async fn start_or_resume_outside_gap_creates_new_session() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let started_at = Utc::now() - chrono::Duration::seconds(600);
-
-        let first = repo
-            .start_or_resume(start_inputs(started_at, None))
-            .await
-            .unwrap();
-
-        let ended_at = started_at + chrono::Duration::seconds(60);
+        let first = repo.start_or_resume(start_inputs(started_at)).await.unwrap();
+        let ended_at = started_at + chrono::Duration::seconds(30);
         repo.end(end_inputs(Some(first.session_id().to_string()), true, ended_at))
             .await
             .unwrap();
 
-        // Far outside the 60s gap window.
-        let restart_now = ended_at + chrono::Duration::seconds(300);
-        let outcome = repo
-            .start_or_resume(start_inputs(restart_now, None))
-            .await
-            .unwrap();
-
-        assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
-        assert_ne!(outcome.session_id(), first.session_id());
-    }
-
-    #[tokio::test]
-    async fn start_or_resume_suppress_forces_new_inside_gap() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let started_at = Utc::now() - chrono::Duration::seconds(120);
-
-        let first = repo
-            .start_or_resume(start_inputs(started_at, None))
-            .await
-            .unwrap();
-
-        let ended_at = started_at + chrono::Duration::seconds(60);
-        repo.end(end_inputs(Some(first.session_id().to_string()), true, ended_at))
-            .await
-            .unwrap();
-
-        // Inside gap window but caller flags the previous session as hard-ended.
-        let restart_now = ended_at + chrono::Duration::seconds(30);
-        let outcome = repo
-            .start_or_resume(start_inputs(
-                restart_now,
-                Some(first.session_id().to_string()),
-            ))
-            .await
-            .unwrap();
+        // No matter how soon we restart — no gap rule.
+        let restart_now = ended_at + chrono::Duration::seconds(5);
+        let outcome = repo.start_or_resume(start_inputs(restart_now)).await.unwrap();
 
         assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
         assert_ne!(outcome.session_id(), first.session_id());
@@ -619,7 +468,7 @@ mod tests {
         let repo = SessionLifecycleRepository::new(pool.clone());
         let now = Utc::now();
 
-        let started = repo.start_or_resume(start_inputs(now, None)).await.unwrap();
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         let id = started.session_id().to_string();
 
         let outcome = repo
@@ -642,7 +491,7 @@ mod tests {
         let repo = SessionLifecycleRepository::new(pool.clone());
         let now = Utc::now();
 
-        let started = repo.start_or_resume(start_inputs(now, None)).await.unwrap();
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
 
         let outcome = repo
             .end(end_inputs(None, true, now + chrono::Duration::seconds(10)))
@@ -662,7 +511,7 @@ mod tests {
         let repo = SessionLifecycleRepository::new(pool.clone());
         let now = Utc::now();
 
-        let started = repo.start_or_resume(start_inputs(now, None)).await.unwrap();
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         let id = started.session_id().to_string();
 
         let resolved = repo
@@ -684,7 +533,7 @@ mod tests {
         let repo = SessionLifecycleRepository::new(pool.clone());
         let now = Utc::now();
 
-        let started = repo.start_or_resume(start_inputs(now, None)).await.unwrap();
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
 
         let resolved = repo
             .end_session_only(STREAMER_ID, None, now + chrono::Duration::seconds(5))

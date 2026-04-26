@@ -783,11 +783,13 @@ impl<
                 streams: &streams,
                 media_headers: media_headers.as_ref(),
                 media_extras: media_extras.as_ref(),
-                started_at,
-                gap_threshold_secs: gap_secs,
                 now,
             })
             .await?;
+        // Phase 3 hysteresis plan: `started_at` and `gap_threshold_secs`
+        // (formerly fed gap-resume) are no longer plumbed; lifecycle owns
+        // intermittent-stream handling via Hysteresis state.
+        let _ = (started_at, gap_secs);
 
         self.reload_streamer_cache(&streamer.id, "state update")
             .await;
@@ -997,9 +999,12 @@ impl<
 
         tx.commit().await?;
 
-        if let Some(ref session_id) = ended_session_id {
-            self.session_lifecycle.mark_hard_ended(&streamer.id, session_id);
-        }
+        // Phase 3 hysteresis plan removed `mark_hard_ended` — once gap-resume
+        // is gone, the DB's `end_time` is the source of truth and an
+        // explicit fence is unnecessary. The `ended_session_id` here is
+        // already in `Ended` state in the DB; the next `LiveDetected`
+        // will create a fresh session as expected.
+        let _ = ended_session_id;
 
         self.reload_streamer_cache(&streamer.id, "state update")
             .await;

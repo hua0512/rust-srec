@@ -2047,7 +2047,14 @@ impl ServiceContainer {
                                                 );
                                             }
 
-                                            session_lifecycle.mark_hard_ended(streamer_id.clone(), session_id.clone());
+                                            // Phase 3 hysteresis plan: the danmu observer no longer
+                                            // pre-emptively flags the session as hard-ended. The
+                                            // subsequent `handle_offline_with_session` call routes
+                                            // to `lifecycle.on_offline_detected` which writes
+                                            // `end_time` atomically. With gap-resume removed, that
+                                            // DB write alone is sufficient to ensure the next
+                                            // `LiveDetected` creates a fresh session.
+                                            let _ = &session_lifecycle;
                                             if let Some(streamer) = streamer_manager.get_streamer(streamer_id) {
                                                 if let Err(e) = stream_monitor
                                                     .handle_offline_with_session(&streamer, Some(session_id.clone()))
