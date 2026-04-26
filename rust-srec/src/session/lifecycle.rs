@@ -240,6 +240,10 @@ impl SessionLifecycle {
             title: args.title.to_string(),
             category: args.category.map(|s| s.to_string()),
             started_at: args.now,
+            // Phase 1: lifecycle doesn't run the FSM yet; this Started is
+            // always a fresh session, never a Hysteresis resume. Phase 3
+            // sets this to true on the resume_from_hysteresis path.
+            from_hysteresis: false,
         });
 
         Ok(outcome)
@@ -275,6 +279,8 @@ impl SessionLifecycle {
                 streamer_name: args.streamer_name.to_string(),
                 ended_at: args.now,
                 cause: TerminalCause::StreamerOffline,
+                // Phase 1: no Hysteresis path yet; every Ended is direct.
+                via_hysteresis: false,
             });
         } else {
             debug!(
@@ -399,17 +405,29 @@ impl SessionLifecycle {
             streamer_name: streamer_name.to_string(),
             ended_at: now,
             cause,
+            // Phase 1: download-terminal path always direct → Ended.
+            via_hysteresis: false,
         });
 
         Ok(())
     }
 
+    /// Transition the in-memory entry for `session_id` to `Ended`. Preserves
+    /// the original `started_at` (and `streamer_id`) from the prior state if
+    /// present; otherwise falls back to `now` and an empty streamer id —
+    /// callers shouldn't ever hit that branch in production but we don't
+    /// want to silently drop the transition.
     fn mark_ended_in_memory(&self, session_id: &str, now: DateTime<Utc>, cause: TerminalCause) {
-        if let Some(mut entry) = self.sessions.get_mut(session_id) {
-            let state = entry.value_mut();
-            state.ended_at = Some(now);
-            state.terminal_cause = Some(cause);
-        }
+        let (streamer_id, started_at) = self
+            .sessions
+            .get(session_id)
+            .map(|e| (e.streamer_id().to_string(), e.started_at()))
+            .unwrap_or_else(|| (String::new(), now));
+
+        self.sessions.insert(
+            session_id.to_string(),
+            SessionState::ended(streamer_id, session_id, started_at, now, cause),
+        );
     }
 }
 
@@ -731,6 +749,7 @@ mod tests {
             total_duration_secs: 0.0,
             total_segments: 0,
             file_path: None,
+            engine_signal: crate::downloader::EngineEndSignal::Unknown,
         };
         lifecycle.on_download_terminal(&event).await.unwrap();
 
@@ -874,6 +893,7 @@ mod tests {
             total_duration_secs: 0.0,
             total_segments: 0,
             file_path: None,
+            engine_signal: crate::downloader::EngineEndSignal::Unknown,
         }
     }
 

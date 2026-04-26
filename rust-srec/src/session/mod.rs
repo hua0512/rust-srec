@@ -26,22 +26,32 @@
 //!
 //! ## Modules
 //!
-//! - [`state`]: `SessionState`, `TerminalCause`, `OfflineSignal` and the
-//!   `should_run_session_complete_pipeline` policy method.
-//! - [`transition`]: `SessionTransition` — the broadcast event type.
+//! - [`state`]: `SessionState` (Recording / Hysteresis / Ended FSM),
+//!   `TerminalCause`, `OfflineSignal` and the
+//!   `should_run_session_complete_pipeline` + `is_authoritative_end` policy
+//!   methods.
+//! - [`transition`]: `SessionTransition` — the broadcast event type
+//!   (Started / Ending / Resumed / Ended).
 //! - [`classifier`]: per-engine "is this engine failure a definitive offline
-//!   signal?" classifier. PR 1 ships a stub returning `None`; PR 2 implements it.
+//!   signal?" classifier.
+//! - [`hysteresis`]: hysteresis quiet-period primitives — config and
+//!   per-session timer handle. The driver lives in [`lifecycle`].
 //! - [`repository`]: atomic-tx wrappers around `SessionTxOps` /
 //!   `StreamerTxOps` / `MonitorOutboxTxOps`.
 //! - [`lifecycle`]: the `SessionLifecycle` service itself.
 
 pub mod classifier;
+pub mod hysteresis;
 pub mod lifecycle;
 pub mod repository;
 pub mod state;
 pub mod transition;
 
 pub use classifier::{EngineKind, OfflineClassifier};
+pub use hysteresis::{
+    DEFAULT_HYSTERESIS_WINDOW, HysteresisConfig, HysteresisHandle, HysteresisOutcome,
+    MAX_HYSTERESIS_WINDOW,
+};
 pub use lifecycle::{
     DEFAULT_TRANSITION_CHANNEL_CAPACITY, LiveDetectedArgs, OfflineDetectedArgs, SessionLifecycle,
 };

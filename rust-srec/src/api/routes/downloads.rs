@@ -552,6 +552,7 @@ mod tests {
             total_duration_secs: 3600.0,
             total_segments: 360,
             file_path: Some("/path/to/video.mp4".to_string()),
+            engine_signal: crate::downloader::EngineEndSignal::Unknown,
         });
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();

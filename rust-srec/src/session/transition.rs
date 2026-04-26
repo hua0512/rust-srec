@@ -1,17 +1,22 @@
 //! `SessionTransition` — the narrow event stream emitted by `SessionLifecycle`.
 //!
-//! Two variants only:
+//! Four variants:
 //!
-//! - [`SessionTransition::Started`]: a new recording session entered the
-//!   `Recording` state. Emitted after the atomic write of the new session row.
-//! - [`SessionTransition::Ended`]: a recording session entered the `Ended`
-//!   state. Emitted after the atomic write of `ended_at` (and the streamer's
-//!   offline flag, where applicable).
+//! - [`SessionTransition::Started`] — entered `Recording`. Either fresh
+//!   `Created` or resumed out of `Hysteresis` (`from_hysteresis: bool`).
+//! - [`SessionTransition::Ending`] — entered `Hysteresis`. Pipeline /
+//!   notification subscribers do nothing on this event; they wait for
+//!   `Ended`. Actor uses it to switch to short-polling cadence.
+//! - [`SessionTransition::Resumed`] — `Hysteresis` cancelled by a timely
+//!   resume. Subscribers cancel any work scheduled by `Ending` (today: no
+//!   such work; reserved for future async coordination).
+//! - [`SessionTransition::Ended`] — confirmed final end. Pipeline fires.
+//!   `end_time` is set in DB. The `via_hysteresis` flag tells subscribers
+//!   whether the end was reached via timer expiry (true) or directly from
+//!   an authoritative cause (false).
 //!
-//! Consumers that need finer pipeline-stage notifications subscribe to
-//! `pipeline::manager`'s own event channel — that's the right boundary.
-//! `SessionTransition` is intentionally narrow so the broadcaster does not
-//! need to fan out per-segment / per-DAG noise.
+//! `Ending` and `Resumed` are additive variants. Subscribers that care only
+//! about the final state filter on `Ended` and continue working as before.
 //!
 //! Backwards compatibility: today's `MonitorEvent::StreamerLive` /
 //! `StreamerOffline` are still emitted (now from `SessionLifecycle`, not
@@ -30,8 +35,12 @@ use chrono::{DateTime, Utc};
 /// fields at the persistence/wire boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionTransition {
-    /// Emitted after a new session row is written. The session is now in the
-    /// `Recording` state.
+    /// Emitted after a session enters `Recording`.
+    ///
+    /// `from_hysteresis` indicates whether this is a fresh session or a
+    /// resume out of the hysteresis quiet-period. Subscribers that want to
+    /// dedup notifications between an `Ending`/`Resumed` cycle can ignore
+    /// `from_hysteresis: true` events.
     Started {
         session_id: String,
         streamer_id: String,
@@ -42,12 +51,39 @@ pub enum SessionTransition {
         /// for notification payload consumers.
         category: Option<String>,
         started_at: DateTime<Utc>,
+        /// `true` when this `Started` is a resume out of `Hysteresis`
+        /// (same `session_id` continues); `false` for a fresh session.
+        from_hysteresis: bool,
     },
-    /// Emitted after a session is moved to the `Ended` state. The session row
-    /// has `ended_at` set; the streamer's `is_live` flag is also flipped in
-    /// the same atomic transaction.
-    ///
-    /// Pipeline manager consumes this; it consults
+    /// Emitted after a session enters `Hysteresis` (non-authoritative end).
+    /// The session is held in a quiet-period; pipeline / notification
+    /// consumers should NOT treat this as a final end.
+    Ending {
+        session_id: String,
+        streamer_id: String,
+        streamer_name: String,
+        cause: TerminalCause,
+        /// When the terminal event was observed (engine emitted Completed/Failed).
+        observed_at: DateTime<Utc>,
+        /// Wall-clock deadline by which a `LiveDetected` resume must arrive
+        /// to absorb the session. After this, the timer fires `Ended`.
+        resume_deadline: DateTime<Utc>,
+    },
+    /// Emitted when `Hysteresis` is cancelled by a `LiveDetected` arriving
+    /// before the deadline. The session continues recording with the same
+    /// `session_id`. Subscribers cancel any scheduled work that was waiting
+    /// on `Ended` for this session.
+    Resumed {
+        session_id: String,
+        streamer_id: String,
+        resumed_at: DateTime<Utc>,
+        /// How long we spent in `Hysteresis` before the resume arrived.
+        hysteresis_duration: chrono::Duration,
+    },
+    /// Emitted after a session is moved to `Ended`. The session row's
+    /// `end_time` has been written; the streamer's `is_live` flag is also
+    /// flipped if the path was the monitor offline path (in the same
+    /// atomic tx). Pipeline manager consumes this; it consults
     /// [`TerminalCause::should_run_session_complete_pipeline`] to decide
     /// whether to schedule the session-complete DAG.
     Ended {
@@ -59,6 +95,10 @@ pub enum SessionTransition {
         streamer_name: String,
         ended_at: DateTime<Utc>,
         cause: TerminalCause,
+        /// `true` when the end was reached via `Hysteresis` timer expiry;
+        /// `false` for a direct `Recording → Ended` transition (authoritative
+        /// cause). Useful for telemetry / debugging.
+        via_hysteresis: bool,
     },
 }
 
@@ -66,14 +106,20 @@ impl SessionTransition {
     /// Streamer id, present on every variant.
     pub fn streamer_id(&self) -> &str {
         match self {
-            Self::Started { streamer_id, .. } | Self::Ended { streamer_id, .. } => streamer_id,
+            Self::Started { streamer_id, .. }
+            | Self::Ending { streamer_id, .. }
+            | Self::Resumed { streamer_id, .. }
+            | Self::Ended { streamer_id, .. } => streamer_id,
         }
     }
 
     /// Session id, present on every variant.
     pub fn session_id(&self) -> &str {
         match self {
-            Self::Started { session_id, .. } | Self::Ended { session_id, .. } => session_id,
+            Self::Started { session_id, .. }
+            | Self::Ending { session_id, .. }
+            | Self::Resumed { session_id, .. }
+            | Self::Ended { session_id, .. } => session_id,
         }
     }
 
@@ -81,8 +127,16 @@ impl SessionTransition {
     pub fn kind_str(&self) -> &'static str {
         match self {
             Self::Started { .. } => "started",
+            Self::Ending { .. } => "ending",
+            Self::Resumed { .. } => "resumed",
             Self::Ended { .. } => "ended",
         }
+    }
+
+    /// `true` for `Ended` only — the moment subscribers should treat as
+    /// the final state. Useful when filtering at the broadcast boundary.
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Ended { .. })
     }
 }
 
@@ -99,6 +153,27 @@ mod tests {
             title: "t".into(),
             category: None,
             started_at: Utc::now(),
+            from_hysteresis: false,
+        }
+    }
+
+    fn ending() -> SessionTransition {
+        SessionTransition::Ending {
+            session_id: "s1".into(),
+            streamer_id: "r1".into(),
+            streamer_name: "test".into(),
+            cause: TerminalCause::Completed,
+            observed_at: Utc::now(),
+            resume_deadline: Utc::now() + chrono::Duration::seconds(90),
+        }
+    }
+
+    fn resumed() -> SessionTransition {
+        SessionTransition::Resumed {
+            session_id: "s1".into(),
+            streamer_id: "r1".into(),
+            resumed_at: Utc::now(),
+            hysteresis_duration: chrono::Duration::seconds(20),
         }
     }
 
@@ -111,23 +186,31 @@ mod tests {
             cause: TerminalCause::DefinitiveOffline {
                 signal: OfflineSignal::PlaylistGone(404),
             },
+            via_hysteresis: false,
         }
     }
 
     #[test]
-    fn accessors_work_for_started() {
-        let t = started();
-        assert_eq!(t.streamer_id(), "r1");
-        assert_eq!(t.session_id(), "s1");
-        assert_eq!(t.kind_str(), "started");
+    fn accessors_work_for_all_variants() {
+        for t in [started(), ending(), resumed(), ended()] {
+            assert_eq!(t.streamer_id(), "r1");
+            assert_eq!(t.session_id(), "s1");
+        }
     }
 
     #[test]
-    fn accessors_work_for_ended() {
-        let t = ended();
-        assert_eq!(t.streamer_id(), "r1");
-        assert_eq!(t.session_id(), "s1");
-        assert_eq!(t.kind_str(), "ended");
+    fn kind_str_is_stable() {
+        assert_eq!(started().kind_str(), "started");
+        assert_eq!(ending().kind_str(), "ending");
+        assert_eq!(resumed().kind_str(), "resumed");
+        assert_eq!(ended().kind_str(), "ended");
     }
 
+    #[test]
+    fn only_ended_is_terminal() {
+        assert!(!started().is_terminal());
+        assert!(!ending().is_terminal());
+        assert!(!resumed().is_terminal());
+        assert!(ended().is_terminal());
+    }
 }

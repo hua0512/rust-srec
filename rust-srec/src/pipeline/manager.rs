@@ -4719,7 +4719,9 @@ mod tests {
     // Cancelled and Rejected should not).
     // -----------------------------------------------------------------------
 
-    use crate::downloader::{DownloadFailureKind, DownloadRejectedKind, DownloadStopCause};
+    use crate::downloader::{
+        DownloadFailureKind, DownloadRejectedKind, DownloadStopCause, EngineEndSignal,
+    };
 
     fn completed_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
         DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
@@ -4731,6 +4733,7 @@ mod tests {
             total_duration_secs: 0.0,
             total_segments: 0,
             file_path: None,
+            engine_signal: EngineEndSignal::Unknown,
         })
     }
 
@@ -4776,6 +4779,7 @@ mod tests {
             cause: crate::session::TerminalCause::Failed {
                 kind: DownloadFailureKind::Network,
             },
+            via_hysteresis: false,
         }
     }
 
@@ -4788,6 +4792,7 @@ mod tests {
             cause: crate::session::TerminalCause::Cancelled {
                 cause: DownloadStopCause::User,
             },
+            via_hysteresis: false,
         }
     }
 
@@ -4800,6 +4805,7 @@ mod tests {
             cause: crate::session::TerminalCause::Rejected {
                 reason: "test".to_string(),
             },
+            via_hysteresis: false,
         }
     }
 

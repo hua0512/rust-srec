@@ -279,6 +279,56 @@ pub enum ConfigUpdateType {
     Multiple,
 }
 
+/// How the engine observed the end of a stream when emitting
+/// [`DownloadTerminalEvent::Completed`].
+///
+/// Different signals carry different confidence about whether the upstream
+/// stream is *actually* over vs. whether we just got disconnected and the
+/// streamer will reappear with a fresh URL.
+///
+/// Consumers (today: [`crate::session::SessionLifecycle`]) use this to choose
+/// between firing the session-complete pipeline immediately and entering a
+/// hysteresis quiet-period that absorbs reconnects.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EngineEndSignal {
+    /// HLS playlist contained `#EXT-X-ENDLIST`. The platform itself marked
+    /// the stream as complete — definitively over.
+    HlsEndlist,
+    /// Connection closed cleanly with no explicit end marker. Could be EOF,
+    /// could be a reconnect-friendly drop. Ambiguous; the lifecycle should
+    /// hold the session in hysteresis to absorb a possible resume.
+    ///
+    /// Used by mesio FLV (TCP close), mesio HLS without `#EXT-X-ENDLIST`,
+    /// and any other engine that observes a clean disconnect without a
+    /// platform-asserted end marker.
+    CleanDisconnect,
+    /// Subprocess (ffmpeg / streamlink) exited with status 0. Ambiguous —
+    /// could be EOF, could be the process being killed cleanly externally.
+    SubprocessExitZero,
+    /// Engine doesn't expose a finer signal. Treat as non-authoritative
+    /// (default for back-fill / unknown engines).
+    #[default]
+    Unknown,
+}
+
+impl EngineEndSignal {
+    /// Whether this signal alone is sufficient to mark the stream as done
+    /// without waiting for hysteresis. Today, only HLS `#EXT-X-ENDLIST` is.
+    pub fn is_authoritative(&self) -> bool {
+        matches!(self, Self::HlsEndlist)
+    }
+
+    /// Short, stable label for logging / metrics.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::HlsEndlist => "hls_endlist",
+            Self::CleanDisconnect => "clean_disconnect",
+            Self::SubprocessExitZero => "subprocess_exit_zero",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 /// Reason why a download was stopped.
 ///
 /// Used to disambiguate user cancellation from internal orchestration stops.
@@ -411,6 +461,14 @@ pub enum DownloadProgressEvent {
 #[derive(Debug, Clone)]
 pub enum DownloadTerminalEvent {
     /// Download completed normally — all segments flushed, outputs finalised.
+    ///
+    /// Important: a `Completed` event is *not* by itself authoritative
+    /// proof that the upstream stream is over. A clean TCP close or a
+    /// subprocess exiting with status 0 can mean either "EOF" or "we
+    /// reconnected." Engines pass an [`EngineEndSignal`] hint with the
+    /// event so [`crate::session::SessionLifecycle`] can tell HLS
+    /// `#EXT-X-ENDLIST` (definitively over) apart from FLV clean
+    /// disconnect (might be a reconnect-friendly drop).
     Completed {
         download_id: String,
         streamer_id: String,
@@ -420,6 +478,10 @@ pub enum DownloadTerminalEvent {
         total_duration_secs: f64,
         total_segments: u32,
         file_path: Option<String>,
+        /// How the engine observed the end. Lifecycle reads this to decide
+        /// whether to enter hysteresis (clean disconnect / subprocess exit
+        /// → ambiguous) or commit Ended directly (HLS endlist → authoritative).
+        engine_signal: EngineEndSignal,
     },
     /// Download failed — the engine gave up. Whatever output is on disk is
     /// final; no more segments will arrive.
@@ -1367,6 +1429,11 @@ impl DownloadManager {
                             total_duration_secs,
                             total_segments,
                             file_path: output_path,
+                            // Phase 1 default. Phase 2 plumbs the real signal
+                            // through from the engine (HlsEndlist for mesio
+                            // HLS w/ EXT-X-ENDLIST, CleanDisconnect otherwise,
+                            // SubprocessExitZero for ffmpeg/streamlink).
+                            engine_signal: EngineEndSignal::Unknown,
                         }));
 
                         debug!(

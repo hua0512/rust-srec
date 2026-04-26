@@ -1564,6 +1564,14 @@ impl NotificationService {
                                         duration_secs: None,
                                         timestamp: ended_at,
                                     }),
+                                    // Hysteresis quiet-period transitions are
+                                    // intentionally ignored here. Only the final
+                                    // `Ended` produces a StreamOffline notification.
+                                    // `Resumed` similarly yields no user-facing
+                                    // notification — the original Started already
+                                    // fired and remains valid.
+                                    crate::session::SessionTransition::Ending { .. }
+                                    | crate::session::SessionTransition::Resumed { .. } => None,
                                 };
 
                                 if let Some(notification) = notification {
