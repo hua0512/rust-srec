@@ -549,10 +549,17 @@ pub enum SegmentEvent {
     /// Download progress update.
     Progress(DownloadProgress),
     /// Download completed.
+    ///
+    /// `engine_signal` tells `crate::session::SessionLifecycle` what *kind*
+    /// of end this was — important because a clean TCP close (mesio FLV) is
+    /// not authoritative the way an HLS `#EXT-X-ENDLIST` (mesio HLS) is.
+    /// Engines populate this on emission; the manager forwards it into
+    /// `DownloadTerminalEvent::Completed.engine_signal` unchanged.
     DownloadCompleted {
         total_bytes: u64,
         total_duration_secs: f64,
         total_segments: u32,
+        engine_signal: crate::downloader::EngineEndSignal,
     },
     /// Download failed.
     DownloadFailed {

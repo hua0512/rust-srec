@@ -286,6 +286,13 @@ impl HlsDownloader {
             &self.event_tx,
             &streamer_id,
             "HLS",
+            // TODO(hysteresis): plumb EXT-X-ENDLIST detection through here
+            // so HLS playlists that explicitly mark end-of-stream can pass
+            // `EngineEndSignal::HlsEndlist` (authoritative → bypass
+            // hysteresis). Until then, treat HLS the same as FLV — clean
+            // disconnect with no end marker. Worst case: pipeline fires
+            // ~90s late on real EOF.
+            crate::downloader::EngineEndSignal::CleanDisconnect,
         )
         .await
         .map_err(EngineStartError::from)
@@ -373,6 +380,13 @@ impl HlsDownloader {
             &self.event_tx,
             &streamer_id,
             "HLS",
+            // TODO(hysteresis): plumb EXT-X-ENDLIST detection through here
+            // so HLS playlists that explicitly mark end-of-stream can pass
+            // `EngineEndSignal::HlsEndlist` (authoritative → bypass
+            // hysteresis). Until then, treat HLS the same as FLV — clean
+            // disconnect with no end marker. Worst case: pipeline fires
+            // ~90s late on real EOF.
+            crate::downloader::EngineEndSignal::CleanDisconnect,
         )
         .await
         .map_err(EngineStartError::from)

@@ -1386,6 +1386,7 @@ impl DownloadManager {
                         total_bytes,
                         total_duration_secs,
                         total_segments,
+                        engine_signal,
                     } => {
                         circuit_breakers_ref.record_success();
 
@@ -1429,11 +1430,10 @@ impl DownloadManager {
                             total_duration_secs,
                             total_segments,
                             file_path: output_path,
-                            // Phase 1 default. Phase 2 plumbs the real signal
-                            // through from the engine (HlsEndlist for mesio
-                            // HLS w/ EXT-X-ENDLIST, CleanDisconnect otherwise,
-                            // SubprocessExitZero for ffmpeg/streamlink).
-                            engine_signal: EngineEndSignal::Unknown,
+                            // Forwarded from the engine's SegmentEvent::
+                            // DownloadCompleted unchanged. Lifecycle reads
+                            // this to decide hysteresis vs direct Ended.
+                            engine_signal,
                         }));
 
                         debug!(

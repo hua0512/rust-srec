@@ -307,7 +307,11 @@ pub(super) async fn consume_stream<T, E: Display>(
 /// Handle the writer result, await pipeline tasks, emit events, and return
 /// `DownloadStats`.
 ///
-/// `processing_tasks` should be empty for raw-mode calls.
+/// `processing_tasks` should be empty for raw-mode calls. `engine_signal`
+/// describes how this download ended from the engine's POV — see
+/// [`crate::downloader::EngineEndSignal`]. Caller passes `CleanDisconnect`
+/// for mesio FLV's TCP-close path and `HlsEndlist` for HLS when the
+/// playlist contained `#EXT-X-ENDLIST`.
 ///
 /// Replaces 4 identical ~40-line match blocks (plus 2 pipeline-await blocks).
 pub(super) async fn handle_writer_result(
@@ -317,6 +321,7 @@ pub(super) async fn handle_writer_result(
     event_tx: &mpsc::Sender<SegmentEvent>,
     streamer_id: &str,
     protocol: &str,
+    engine_signal: crate::downloader::EngineEndSignal,
 ) -> crate::Result<DownloadStats> {
     match settle_run(writer_result, processing_tasks).await {
         Ok(stats) => {
@@ -345,6 +350,7 @@ pub(super) async fn handle_writer_result(
                     total_bytes: download_stats.total_bytes,
                     total_duration_secs: download_stats.total_duration_secs,
                     total_segments: download_stats.files_created,
+                    engine_signal,
                 })
                 .await;
 
