@@ -27,9 +27,13 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::Result;
-use crate::database::repositories::{MonitorOutboxTxOps, SessionTxOps, StreamerTxOps};
+use crate::database::models::SessionEventDbModel;
+use crate::database::repositories::{
+    MonitorOutboxTxOps, SessionEventTxOps, SessionTxOps, StreamerTxOps,
+};
 use crate::database::{WritePool, begin_immediate};
 use crate::monitor::{MonitorEvent, StreamInfo};
+use crate::session::events::{SessionEventPayload, TerminalCauseDto};
 
 /// Inputs required by [`SessionLifecycleRepository::start_or_resume`].
 ///
@@ -91,6 +95,15 @@ pub struct EndSessionInputs {
     pub state_was_live: bool,
     /// `true` to clear accumulated transient errors on a clean offline obs.
     pub clear_errors: bool,
+    /// Wire-format cause for the `session_ended` audit row. Pre-computed by
+    /// the caller (typically `SessionLifecycle::on_offline_detected`) so the
+    /// audit row is written inside the same `BEGIN IMMEDIATE` boundary as
+    /// the `live_sessions.end_time` update. The two cannot diverge.
+    pub cause: crate::session::TerminalCauseDto,
+    /// `true` if the session was in `Hysteresis` state when the end
+    /// observation arrived. Recorded on the audit row so operators can tell
+    /// "ended via timer expiry" vs "ended directly by authoritative event."
+    pub via_hysteresis: bool,
     pub now: DateTime<Utc>,
 }
 
@@ -109,6 +122,27 @@ pub struct SessionLifecycleRepository {
 impl SessionLifecycleRepository {
     pub fn new(write_pool: WritePool) -> Self {
         Self { write_pool }
+    }
+
+    /// Build the canonical [`SessionEventDbModel`] for a typed payload.
+    /// Centralised so the JSON encoding rules and the `kind` discriminator
+    /// stay aligned in one place.
+    fn event_row(
+        session_id: &str,
+        streamer_id: &str,
+        payload: &SessionEventPayload,
+        occurred_at: DateTime<Utc>,
+    ) -> SessionEventDbModel {
+        SessionEventDbModel {
+            id: 0,
+            session_id: session_id.to_string(),
+            streamer_id: streamer_id.to_string(),
+            kind: payload.kind().as_str().to_string(),
+            occurred_at: occurred_at.timestamp_millis(),
+            // `to_string` on a typed enum should never fail; the `unwrap_or`
+            // keeps the audit row alive even if it somehow does.
+            payload: serde_json::to_string(payload).ok(),
+        }
     }
 
     /// Atomic "session started" bundle: one `BEGIN IMMEDIATE` transaction
@@ -144,6 +178,9 @@ impl SessionLifecycleRepository {
                     inputs.now,
                 )
                 .await?;
+                // No `session_started` row on the reuse path — the prior
+                // `Created` insert already wrote one. Title changes are
+                // captured by the existing `titles` JSON array.
                 StartSessionOutcome::ReusedActive {
                     session_id: session.id,
                 }
@@ -158,6 +195,22 @@ impl SessionLifecycleRepository {
                     &inputs.title,
                 )
                 .await?;
+                // Record the `session_started` row in the same tx as the
+                // `live_sessions` insert. `from_hysteresis` is always
+                // `false` here — the resume-out-of-hysteresis path returns
+                // early in `SessionLifecycle::on_live_detected` and never
+                // calls `start_or_resume`.
+                let payload = SessionEventPayload::SessionStarted {
+                    from_hysteresis: false,
+                    title: Some(inputs.title.clone()),
+                };
+                let row = Self::event_row(
+                    &new_id,
+                    &inputs.streamer_id,
+                    &payload,
+                    inputs.now,
+                );
+                SessionEventTxOps::insert(&mut tx, &row).await?;
                 info!("Created new session {}", new_id);
                 StartSessionOutcome::Created { session_id: new_id }
             }
@@ -192,7 +245,9 @@ impl SessionLifecycleRepository {
     }
 
     /// Light "session ended" bundle: close the session row only, without
-    /// touching streamer state or the outbox.
+    /// touching streamer state or the outbox. Writes a `session_ended`
+    /// audit row in the same transaction so the `live_sessions.end_time`
+    /// flip and the audit log can never disagree.
     ///
     /// Used on the `DownloadTerminalEvent` path — the download stopped but
     /// the monitor has not (yet) observed offline, so we must not flip the
@@ -203,6 +258,8 @@ impl SessionLifecycleRepository {
         &self,
         streamer_id: &str,
         session_id: Option<&str>,
+        cause: TerminalCauseDto,
+        via_hysteresis: bool,
         now: DateTime<Utc>,
     ) -> Result<Option<String>> {
         let mut tx = begin_immediate(&self.write_pool).await?;
@@ -213,6 +270,18 @@ impl SessionLifecycleRepository {
         } else {
             SessionTxOps::end_active_session(&mut tx, streamer_id, now).await?
         };
+
+        // Same-tx audit row. Skipped when no session was actually closed
+        // (e.g. caller passed `None` and there was no active session) —
+        // there's nothing for the row to reference.
+        if let Some(ref id) = resolved {
+            let payload = SessionEventPayload::SessionEnded {
+                cause,
+                via_hysteresis,
+            };
+            let row = Self::event_row(id, streamer_id, &payload, now);
+            SessionEventTxOps::insert(&mut tx, &row).await?;
+        }
 
         tx.commit().await?;
 
@@ -249,6 +318,17 @@ impl SessionLifecycleRepository {
                 timestamp: inputs.now,
             };
             MonitorOutboxTxOps::enqueue_event(&mut tx, &inputs.streamer_id, &event).await?;
+        }
+
+        // Same-tx audit row. Skipped when no session was resolved — see the
+        // mirror branch in `end_session_only`.
+        if let Some(ref id) = resolved_session_id {
+            let payload = SessionEventPayload::SessionEnded {
+                cause: inputs.cause,
+                via_hysteresis: inputs.via_hysteresis,
+            };
+            let row = Self::event_row(id, &inputs.streamer_id, &payload, inputs.now);
+            SessionEventTxOps::insert(&mut tx, &row).await?;
         }
 
         tx.commit().await?;
@@ -309,6 +389,28 @@ mod tests {
                 created_at INTEGER,
                 completed_at INTEGER,
                 persisted_at INTEGER NOT NULL
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Mirror the production migration; the `CHECK` constraint is the
+        // production guard against typos in the `kind` discriminator.
+        sqlx::query(
+            r#"CREATE TABLE session_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                streamer_id TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN (
+                    'session_started',
+                    'hysteresis_entered',
+                    'session_resumed',
+                    'session_ended'
+                )),
+                occurred_at INTEGER NOT NULL,
+                payload TEXT,
+                FOREIGN KEY (session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
             )"#,
         )
         .execute(&pool)
@@ -390,6 +492,8 @@ mod tests {
             session_id,
             state_was_live,
             clear_errors: false,
+            cause: TerminalCauseDto::StreamerOffline,
+            via_hysteresis: false,
             now,
         }
     }
@@ -515,7 +619,13 @@ mod tests {
         let id = started.session_id().to_string();
 
         let resolved = repo
-            .end_session_only(STREAMER_ID, Some(&id), now + chrono::Duration::seconds(5))
+            .end_session_only(
+                STREAMER_ID,
+                Some(&id),
+                TerminalCauseDto::Completed,
+                false,
+                now + chrono::Duration::seconds(5),
+            )
             .await
             .unwrap();
 
@@ -536,7 +646,13 @@ mod tests {
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
 
         let resolved = repo
-            .end_session_only(STREAMER_ID, None, now + chrono::Duration::seconds(5))
+            .end_session_only(
+                STREAMER_ID,
+                None,
+                TerminalCauseDto::Completed,
+                false,
+                now + chrono::Duration::seconds(5),
+            )
             .await
             .unwrap();
 

@@ -800,7 +800,9 @@ impl<
 
     /// Handle a streamer going offline.
     async fn handle_offline(&self, streamer: &StreamerMetadata) -> Result<()> {
-        self.handle_offline_with_session(streamer, None).await
+        // Monitor-driven offline carries no engine-boundary signal; the
+        // platform's status check is the source of truth here.
+        self.handle_offline_with_session(streamer, None, None).await
     }
 
     /// Handle a streamer going offline with optional session ID.
@@ -825,10 +827,12 @@ impl<
         &self,
         streamer: &StreamerMetadata,
         session_id: Option<String>,
+        signal: Option<crate::session::state::OfflineSignal>,
     ) -> Result<()> {
         trace!(
             streamer_id = %streamer.id,
             streamer_name = %streamer.name,
+            signal = signal.as_ref().map(|s| s.as_str()).unwrap_or("(none)"),
             "status=OFFLINE (monitor)"
         );
 
@@ -848,6 +852,7 @@ impl<
                     session_id: session_id.as_deref(),
                     state_was_live: streamer.state == StreamerState::Live,
                     clear_errors: has_errors,
+                    signal,
                     now,
                 })
                 .await?;
@@ -1470,6 +1475,30 @@ mod tests {
         .await
         .unwrap();
 
+        // Mirror the production migration so atomic-tx audit-row writes
+        // inside `SessionLifecycleRepository::end` succeed.
+        sqlx::query(
+            r#"
+            CREATE TABLE session_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                streamer_id TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN (
+                    'session_started',
+                    'hysteresis_entered',
+                    'session_resumed',
+                    'session_ended'
+                )),
+                occurred_at INTEGER NOT NULL,
+                payload TEXT,
+                FOREIGN KEY (session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
         pool
     }
 
@@ -1640,7 +1669,7 @@ mod tests {
         let streamer = monitor.streamer_manager.get_streamer("streamer-1").unwrap();
 
         monitor
-            .handle_offline_with_session(&streamer, None)
+            .handle_offline_with_session(&streamer, None, None)
             .await
             .unwrap();
 
@@ -1697,7 +1726,7 @@ mod tests {
         let streamer = monitor.streamer_manager.get_streamer("streamer-2").unwrap();
 
         monitor
-            .handle_offline_with_session(&streamer, None)
+            .handle_offline_with_session(&streamer, None, None)
             .await
             .unwrap();
 

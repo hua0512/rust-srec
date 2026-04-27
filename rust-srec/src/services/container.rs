@@ -418,6 +418,15 @@ impl ServiceContainer {
                     )
                 })
             });
+        // Standalone session-event repository for the two best-effort
+        // audit writes (`hysteresis_entered`, `session_resumed`). Atomic-tx
+        // writes for `session_started` / `session_ended` go through the
+        // `SessionLifecycleRepository` directly.
+        let session_event_repo: Arc<dyn crate::database::repositories::SessionEventRepository> =
+            Arc::new(crate::database::repositories::SqlxSessionEventRepository::new(
+                pool.clone(),
+                write_pool.clone(),
+            ));
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
                 Arc::new(crate::session::SessionLifecycleRepository::new(
@@ -427,7 +436,8 @@ impl ServiceContainer {
                 crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
                 hysteresis_config,
             )
-            .with_hysteresis_resolver(hysteresis_resolver),
+            .with_hysteresis_resolver(hysteresis_resolver)
+            .with_event_repo(session_event_repo.clone()),
         );
 
         // Create stream monitor for real status detection
@@ -709,6 +719,11 @@ impl ServiceContainer {
                     )
                 })
             });
+        let session_event_repo: Arc<dyn crate::database::repositories::SessionEventRepository> =
+            Arc::new(crate::database::repositories::SqlxSessionEventRepository::new(
+                pool.clone(),
+                write_pool.clone(),
+            ));
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
                 Arc::new(crate::session::SessionLifecycleRepository::new(
@@ -718,7 +733,8 @@ impl ServiceContainer {
                 crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
                 hysteresis_config,
             )
-            .with_hysteresis_resolver(hysteresis_resolver),
+            .with_hysteresis_resolver(hysteresis_resolver)
+            .with_event_repo(session_event_repo.clone()),
         );
 
         // Create stream monitor for real status detection
@@ -1180,12 +1196,18 @@ impl ServiceContainer {
         // Wire credential refresh service into AppState for API endpoints.
         state = state.with_credential_service(self.credential_service.clone());
 
-        // Wire SessionRepository, FilterRepository, and PipelinePresetRepository into AppState
+        // Wire SessionRepository, SessionEventRepository, FilterRepository, and PipelinePresetRepository into AppState
         state = state
             .with_session_repository(Arc::new(SqlxSessionRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
             )))
+            .with_session_event_repository(Arc::new(
+                crate::database::repositories::SqlxSessionEventRepository::new(
+                    self.pool.clone(),
+                    self.write_pool.clone(),
+                ),
+            ))
             .with_filter_repository(Arc::new(SqlxFilterRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
@@ -1289,12 +1311,18 @@ impl ServiceContainer {
         // Wire credential refresh service into AppState for API endpoints.
         state = state.with_credential_service(self.credential_service.clone());
 
-        // Wire SessionRepository, FilterRepository, and PipelinePresetRepository into AppState
+        // Wire SessionRepository, SessionEventRepository, FilterRepository, and PipelinePresetRepository into AppState
         state = state
             .with_session_repository(Arc::new(SqlxSessionRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
             )))
+            .with_session_event_repository(Arc::new(
+                crate::database::repositories::SqlxSessionEventRepository::new(
+                    self.pool.clone(),
+                    self.write_pool.clone(),
+                ),
+            ))
             .with_filter_repository(Arc::new(SqlxFilterRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
@@ -2179,10 +2207,20 @@ impl ServiceContainer {
                                             // `end_time` atomically. With gap-resume removed, that
                                             // DB write alone is sufficient to ensure the next
                                             // `LiveDetected` creates a fresh session.
+                                            //
+                                            // Pass `Some(DanmuStreamClosed)` so the lifecycle
+                                            // promotes the cause to
+                                            // `TerminalCause::DefinitiveOffline { signal }` —
+                                            // preserves "danmu triggered this end" in the audit
+                                            // log instead of the generic `StreamerOffline`.
                                             let _ = &session_lifecycle;
                                             if let Some(streamer) = streamer_manager.get_streamer(streamer_id) {
                                                 if let Err(e) = stream_monitor
-                                                    .handle_offline_with_session(&streamer, Some(session_id.clone()))
+                                                    .handle_offline_with_session(
+                                                        &streamer,
+                                                        Some(session_id.clone()),
+                                                        Some(crate::session::state::OfflineSignal::DanmuStreamClosed),
+                                                    )
                                                     .await
                                                 {
                                                     warn!(

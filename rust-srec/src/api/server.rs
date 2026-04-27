@@ -79,6 +79,7 @@ use crate::database::repositories::{
     filter::FilterRepository,
     preset::PipelinePresetRepository,
     session::SessionRepository,
+    session_event::SessionEventRepository,
     streamer::{SqlxStreamerRepository, StreamerRepository},
 };
 use crate::downloader::DownloadManager;
@@ -110,6 +111,10 @@ pub struct AppState {
     pub download_manager: Option<Arc<DownloadManager>>,
     /// Session repository for session and output queries
     pub session_repository: Option<Arc<dyn SessionRepository>>,
+    /// Session-event repository for the timeline read path on
+    /// `GET /api/sessions/{id}`. Optional — when `None`, the route returns
+    /// `events: []` (e.g. test harnesses that don't seed the table).
+    pub session_event_repository: Option<Arc<dyn SessionEventRepository>>,
     /// Filter repository for streamer filters
     pub filter_repository: Option<Arc<dyn FilterRepository>>,
     /// Health checker for real health status
@@ -162,6 +167,7 @@ impl AppState {
             danmu_service: None,
             download_manager: None,
             session_repository: None,
+            session_event_repository: None,
             filter_repository: None,
             health_checker: None,
             streamer_repository: None,
@@ -192,6 +198,7 @@ impl AppState {
             danmu_service: None,
             download_manager: None,
             session_repository: None,
+            session_event_repository: None,
             filter_repository: None,
             health_checker: None,
             streamer_repository: None,
@@ -226,6 +233,7 @@ impl AppState {
             danmu_service: Some(danmu_service),
             download_manager: Some(download_manager),
             session_repository: None,
+            session_event_repository: None,
             filter_repository: None,
             health_checker: None,
             streamer_repository: None,
@@ -247,6 +255,17 @@ impl AppState {
         session_repository: Arc<dyn SessionRepository>,
     ) -> Self {
         self.session_repository = Some(session_repository);
+        self
+    }
+
+    /// Set the session-event repository (powers the Timeline tab on the
+    /// session detail page). Optional — when unset, the route returns an
+    /// empty `events` array.
+    pub fn with_session_event_repository(
+        mut self,
+        session_event_repository: Arc<dyn SessionEventRepository>,
+    ) -> Self {
+        self.session_event_repository = Some(session_event_repository);
         self
     }
 

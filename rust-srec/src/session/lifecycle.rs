@@ -36,9 +36,12 @@ use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
 use crate::Result;
+use crate::database::models::SessionEventDbModel;
+use crate::database::repositories::SessionEventRepository;
 use crate::downloader::DownloadTerminalEvent;
 use crate::monitor::MonitorEvent;
 use crate::session::classifier::{EngineKind, OfflineClassifier};
+use crate::session::events::SessionEventPayload;
 use crate::session::hysteresis::{HysteresisConfig, HysteresisHandle};
 use crate::session::repository::{
     EndSessionInputs, EndSessionOutcome, SessionLifecycleRepository, StartSessionInputs,
@@ -105,6 +108,14 @@ pub struct SessionLifecycle {
     /// Bounds memory while letting the idempotency guard dedupe any
     /// near-simultaneous duplicate authoritative-end events.
     ended_retention: Duration,
+    /// Optional handle to the standalone session-event repository, used for
+    /// the two best-effort writes that have no surrounding atomic tx
+    /// (`hysteresis_entered`, `session_resumed`). The atomic-tx writes for
+    /// `session_started` / `session_ended` go through
+    /// `SessionLifecycleRepository` directly. When `None`, hysteresis /
+    /// resumed events silently no-op — used by tests that don't care about
+    /// the audit log.
+    event_repo: Option<Arc<dyn SessionEventRepository>>,
     transition_tx: broadcast::Sender<SessionTransition>,
 }
 
@@ -142,6 +153,7 @@ impl SessionLifecycle {
             hysteresis_config,
             hysteresis_resolver: None,
             ended_retention: ENDED_RETENTION_DEFAULT,
+            event_repo: None,
             transition_tx,
         }
     }
@@ -151,6 +163,16 @@ impl SessionLifecycle {
     /// default `hysteresis_config` is used.
     pub fn with_hysteresis_resolver(mut self, resolver: HysteresisWindowFn) -> Self {
         self.hysteresis_resolver = Some(resolver);
+        self
+    }
+
+    /// Attach the standalone session-event repository used for best-effort
+    /// audit writes from in-memory transitions (`hysteresis_entered`,
+    /// `session_resumed`). The atomic-tx writes for `session_started` /
+    /// `session_ended` route through `SessionLifecycleRepository` and don't
+    /// depend on this.
+    pub fn with_event_repo(mut self, event_repo: Arc<dyn SessionEventRepository>) -> Self {
+        self.event_repo = Some(event_repo);
         self
     }
 
@@ -187,6 +209,41 @@ impl SessionLifecycle {
 
     pub fn subscriber_count(&self) -> usize {
         self.transition_tx.receiver_count()
+    }
+
+    /// Best-effort write of an audit row for an in-memory transition that
+    /// has no surrounding DB tx (`hysteresis_entered`, `session_resumed`).
+    /// A failure logs and continues — the audit log must never block the
+    /// in-memory FSM, and the eventual `session_ended` row is still
+    /// written atomically and tells the full story.
+    async fn record_event_best_effort(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        payload: SessionEventPayload,
+        occurred_at: DateTime<Utc>,
+    ) {
+        let Some(repo) = self.event_repo.as_ref() else {
+            return;
+        };
+        let kind = payload.kind().as_str();
+        let row = SessionEventDbModel {
+            id: 0,
+            session_id: session_id.to_string(),
+            streamer_id: streamer_id.to_string(),
+            kind: kind.to_string(),
+            occurred_at: occurred_at.timestamp_millis(),
+            payload: serde_json::to_string(&payload).ok(),
+        };
+        if let Err(e) = repo.insert(&row).await {
+            warn!(
+                session_id,
+                streamer_id,
+                kind,
+                error = %e,
+                "best-effort session event persistence failed"
+            );
+        }
     }
 
     /// `true` if the session is tracked in-memory and has not committed to
@@ -269,6 +326,7 @@ impl SessionLifecycle {
                 session_id,
                 state_was_live,
                 clear_errors,
+                signal,
                 timestamp,
             } => {
                 self.on_offline_detected(OfflineDetectedArgs {
@@ -277,6 +335,7 @@ impl SessionLifecycle {
                     session_id: session_id.as_deref(),
                     state_was_live: *state_was_live,
                     clear_errors: *clear_errors,
+                    signal: signal.clone(),
                     now: *timestamp,
                 })
                 .await
@@ -356,33 +415,80 @@ impl SessionLifecycle {
         &self,
         args: OfflineDetectedArgs<'_>,
     ) -> Result<EndSessionOutcome> {
+        // Early dedup: if the in-memory map says this session is already in
+        // `Ended` state (within `ended_retention`), short-circuit before we
+        // hit the DB. Without this guard a duplicate authoritative-end —
+        // observed in production when the monitor races and emits two
+        // `OfflineDetected` events ~5 ms apart — would re-run `repo.end`
+        // and write a second `session_ended` audit row before the in-memory
+        // CAS check at the top of `enter_ended_state` kicks in.
+        if let Some(id) = args.session_id
+            && self
+                .sessions
+                .get(id)
+                .is_some_and(|e| e.value().is_ended())
+        {
+            debug!(
+                session_id = id,
+                "on_offline_detected: session already Ended in memory, skipping"
+            );
+            return Ok(EndSessionOutcome {
+                resolved_session_id: Some(id.to_string()),
+                offline_event_emitted: false,
+            });
+        }
+
+        // Resolve cause and via_hysteresis BEFORE the DB write so the audit
+        // row inside `repo.end`'s atomic transaction carries the same values
+        // the in-memory `SessionTransition::Ended` broadcast will carry.
+        //
+        // When the caller supplied a definitive-offline signal (e.g. the
+        // danmu observer plumbing through `DanmuStreamClosed`), promote the
+        // cause to `DefinitiveOffline { signal }` so the audit log and
+        // downstream telemetry preserve *what* caused the end — not just
+        // "monitor said offline."
+        let cause = match args.signal.clone() {
+            Some(signal) => TerminalCause::DefinitiveOffline { signal },
+            None => TerminalCause::StreamerOffline,
+        };
+        // `was_in_hysteresis` is an in-memory check; the repo can't see it.
+        // If the caller named an explicit session, consult its state
+        // directly. Otherwise scan the small in-memory hysteresis map for a
+        // matching streamer (typically 0 or 1 entries, a hysteresis session
+        // is by definition the only active session for its streamer).
+        let was_in_hysteresis = match args.session_id {
+            Some(id) => self
+                .sessions
+                .get(id)
+                .is_some_and(|e| e.value().is_hysteresis()),
+            None => self
+                .hysteresis_session_for_streamer(args.streamer_id)
+                .is_some(),
+        };
+
         // The full atomic bundle (end_session + set_offline + clear_errors
-        // + StreamerOffline outbox event) lives in `repo.end`. We run it
-        // first so the DB writes commit, then update in-memory state and
-        // emit the transition via `enter_ended_state` (with DB-write Skip
-        // since we already wrote).
+        // + StreamerOffline outbox event + `session_ended` audit row) lives
+        // in `repo.end`. We run it first so the DB writes commit, then
+        // update in-memory state and emit the transition via
+        // `enter_ended_state` (with DB-write Skip since we already wrote).
         let inputs = EndSessionInputs {
             streamer_id: args.streamer_id.to_string(),
             streamer_name: args.streamer_name.to_string(),
             session_id: args.session_id.map(|s| s.to_string()),
             state_was_live: args.state_was_live,
             clear_errors: args.clear_errors,
+            cause: (&cause).into(),
+            via_hysteresis: was_in_hysteresis,
             now: args.now,
         };
         let outcome = self.repo.end(inputs).await?;
 
         if let Some(id) = outcome.resolved_session_id.as_deref() {
-            // If the session was in Hysteresis, was_in_hysteresis is true
-            // and we mark via_hysteresis=true on the transition for telemetry.
-            let was_in_hysteresis = self
-                .sessions
-                .get(id)
-                .is_some_and(|e| e.value().is_hysteresis());
             self.enter_ended_state(
                 id,
                 args.streamer_id,
                 args.streamer_name,
-                TerminalCause::StreamerOffline,
+                cause,
                 args.now,
                 was_in_hysteresis,
                 DbWritePath::Skip,
@@ -508,7 +614,8 @@ impl SessionLifecycle {
                 engine_signal = engine_signal.as_ref().map(|s| s.as_str()).unwrap_or("(none)"),
                 "on_download_terminal: ambiguous end → Hysteresis"
             );
-            self.enter_hysteresis_state(session_id, streamer_id, streamer_name, cause, now);
+            self.enter_hysteresis_state(session_id, streamer_id, streamer_name, cause, now)
+                .await;
         }
 
         Ok(())
@@ -541,7 +648,7 @@ impl SessionLifecycle {
     /// Idempotent: a second call for a session already in Hysteresis is a
     /// no-op (the original timer wins). Repeat ambiguous events for the
     /// same session inside the window therefore don't extend the window.
-    fn enter_hysteresis_state(
+    async fn enter_hysteresis_state(
         self: &Arc<Self>,
         session_id: &str,
         streamer_id: &str,
@@ -616,6 +723,21 @@ impl SessionLifecycle {
             window_secs = window.as_secs(),
             "Session entering hysteresis quiet-period"
         );
+
+        // Best-effort audit row. The function logs and continues on failure
+        // so a transient DB hiccup doesn't block the in-memory FSM. Awaiting
+        // inline (vs spawning) keeps tests deterministic and ensures we
+        // never lose the row to runtime shutdown racing the spawned task.
+        self.record_event_best_effort(
+            session_id,
+            streamer_id,
+            SessionEventPayload::HysteresisEntered {
+                cause: (&cause).into(),
+                resume_deadline,
+            },
+            observed_at,
+        )
+        .await;
 
         // Spawn the timer task. It owns nothing but Arc-clones of the maps,
         // the repo, and the broadcast sender. When it fires, it calls back
@@ -697,6 +819,19 @@ impl SessionLifecycle {
             "Session resumed from hysteresis"
         );
 
+        // Best-effort `session_resumed` audit row. We're already on an
+        // async path so awaiting is fine; any failure is non-fatal.
+        let resumed_secs = u64::try_from(hysteresis_duration.num_seconds()).unwrap_or(0);
+        self.record_event_best_effort(
+            session_id,
+            args.streamer_id,
+            SessionEventPayload::SessionResumed {
+                hysteresis_duration_secs: resumed_secs,
+            },
+            args.now,
+        )
+        .await;
+
         // Also emit a Started so notification consumers that filter on
         // Started see the resume as a logical re-online (with from_hysteresis=true).
         let _ = self.transition_tx.send(SessionTransition::Started {
@@ -708,6 +843,22 @@ impl SessionLifecycle {
             started_at: args.now,
             from_hysteresis: true,
         });
+
+        // The resume path doesn't go through `start_or_resume`, so the
+        // atomic `session_started { from_hysteresis: false }` row from the
+        // initial create is the only one in the audit log. Record a paired
+        // best-effort `session_started { from_hysteresis: true }` so the
+        // timeline shows the full Recording → Hysteresis → Recording loop.
+        self.record_event_best_effort(
+            session_id,
+            args.streamer_id,
+            SessionEventPayload::SessionStarted {
+                from_hysteresis: true,
+                title: Some(args.title.to_string()),
+            },
+            args.now,
+        )
+        .await;
 
         StartSessionOutcome::ReusedActive {
             session_id: session_id.to_string(),
@@ -747,7 +898,10 @@ impl SessionLifecycle {
             handle.cancel();
         }
 
-        // DB write — exactly the path the caller specified.
+        // DB write — exactly the path the caller specified. The cause +
+        // via_hysteresis are forwarded into the repo so the `session_ended`
+        // audit row inside its tx carries the same values we're about to
+        // broadcast on `SessionTransition::Ended`. The two cannot diverge.
         match db_write {
             DbWritePath::Skip => {
                 debug!(session_id, "enter_ended_state: caller already wrote DB");
@@ -755,7 +909,13 @@ impl SessionLifecycle {
             DbWritePath::EndSessionOnly => {
                 if !session_id.is_empty() {
                     self.repo
-                        .end_session_only(streamer_id, Some(session_id), ended_at)
+                        .end_session_only(
+                            streamer_id,
+                            Some(session_id),
+                            (&cause).into(),
+                            via_hysteresis,
+                            ended_at,
+                        )
                         .await?;
                 }
             }
@@ -858,6 +1018,14 @@ pub struct OfflineDetectedArgs<'a> {
     pub session_id: Option<&'a str>,
     pub state_was_live: bool,
     pub clear_errors: bool,
+    /// Optional definitive-offline signal that originated this call. Set by
+    /// the danmu observer (`DanmuStreamClosed`) and other engine-boundary
+    /// detectors that can confidently say "the stream is over." When
+    /// `Some`, the lifecycle records the session-end cause as
+    /// [`TerminalCause::DefinitiveOffline`] (carrying the signal) instead
+    /// of the default [`TerminalCause::StreamerOffline`] — which preserves
+    /// the trigger detail in the audit log and downstream telemetry.
+    pub signal: Option<crate::session::state::OfflineSignal>,
     pub now: DateTime<Utc>,
 }
 
@@ -963,6 +1131,27 @@ mod tests {
                 delivered_at INTEGER,
                 attempts INTEGER DEFAULT 0,
                 last_error TEXT
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // Mirror the production migration so atomic-tx audit-row writes
+        // inside `start_or_resume` / `end` / `end_session_only` succeed.
+        sqlx::query(
+            r#"CREATE TABLE session_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                streamer_id TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN (
+                    'session_started',
+                    'hysteresis_entered',
+                    'session_resumed',
+                    'session_ended'
+                )),
+                occurred_at INTEGER NOT NULL,
+                payload TEXT,
+                FOREIGN KEY (session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
             )"#,
         )
         .execute(&pool)
@@ -1076,6 +1265,7 @@ mod tests {
                 session_id: Some(started.session_id()),
                 state_was_live: true,
                 clear_errors: false,
+                signal: None,
                 now: offline_now,
             })
             .await
@@ -1214,6 +1404,7 @@ mod tests {
                 session_id: Some(first.session_id()),
                 state_was_live: true,
                 clear_errors: false,
+                signal: None,
                 now: started_now + chrono::Duration::seconds(60),
             })
             .await
@@ -1516,6 +1707,7 @@ mod tests {
                 session_id: None,
                 state_was_live: true,
                 clear_errors: false,
+                signal: None,
                 now: Utc::now(),
             })
             .await
@@ -1675,6 +1867,7 @@ mod tests {
                 session_id: Some(first.session_id()),
                 state_was_live: true,
                 clear_errors: false,
+                signal: None,
                 now: base + chrono::Duration::seconds(10),
             })
             .await
@@ -1872,6 +2065,7 @@ mod tests {
                     session_id: Some(s.session_id()),
                     state_was_live: true,
                     clear_errors: false,
+                    signal: None,
                     now: Utc::now(),
                 })
                 .await
@@ -2439,6 +2633,7 @@ mod tests {
                 session_id: Some(started.session_id()),
                 state_was_live: true,
                 clear_errors: false,
+                signal: None,
                 now: Utc::now(),
             })
             .await
@@ -2489,6 +2684,7 @@ mod tests {
                 session_id: Some(started.session_id()),
                 state_was_live: true,
                 clear_errors: false,
+                signal: None,
                 now: Utc::now(),
             })
             .await
@@ -2535,6 +2731,7 @@ mod tests {
             session_id: Some(&session_id),
             state_was_live: true,
             clear_errors: false,
+            signal: None,
             now,
         };
 
@@ -2548,5 +2745,296 @@ mod tests {
             Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
             other => panic!("duplicate end re-broadcast: {other:?}"),
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Suite K — `session_events` audit-log persistence.
+    //
+    // Verifies the four lifecycle transitions land in the `session_events`
+    // table with the right `kind`, ordering, and payload shape.
+    // Atomic-tx writes (`session_started`, `session_ended`) go through
+    // `SessionLifecycleRepository`. Best-effort writes
+    // (`hysteresis_entered`, `session_resumed`) require the lifecycle to
+    // hold an `event_repo`, which `make_lifecycle_with_events` wires in.
+    // -----------------------------------------------------------------
+
+    use crate::database::repositories::{
+        SessionEventRepository, SqlxSessionEventRepository,
+    };
+    use crate::session::events::{SessionEventPayload, TerminalCauseDto};
+    use crate::session::state::OfflineSignal;
+
+    fn make_lifecycle_with_events(pool: SqlitePool) -> Arc<SessionLifecycle> {
+        // Tiny hysteresis window so suite-K tests can exercise the
+        // hysteresis path without sleeping for 90s. Tiny `ended_retention`
+        // so the in-memory dedup map doesn't leak between scenarios.
+        let cfg = HysteresisConfig::from_window(std::time::Duration::from_millis(25));
+        let event_repo: Arc<dyn SessionEventRepository> =
+            Arc::new(SqlxSessionEventRepository::new(pool.clone(), pool.clone()));
+        Arc::new(
+            SessionLifecycle::with_config(
+                Arc::new(SessionLifecycleRepository::new(pool)),
+                Arc::new(OfflineClassifier::new()),
+                16,
+                cfg,
+            )
+            .with_event_repo(event_repo)
+            .with_ended_retention(std::time::Duration::from_millis(50)),
+        )
+    }
+
+    async fn read_events(pool: &SqlitePool, session_id: &str) -> Vec<(String, Option<String>)> {
+        sqlx::query_as::<_, (String, Option<String>)>(
+            "SELECT kind, payload FROM session_events
+             WHERE session_id = ? ORDER BY occurred_at ASC, id ASC",
+        )
+        .bind(session_id)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    }
+
+    fn parse_payload(raw: &Option<String>) -> SessionEventPayload {
+        let raw = raw.as_deref().expect("payload present");
+        serde_json::from_str(raw).expect("payload deserialises")
+    }
+
+    /// `on_live_detected` for a fresh streamer writes one `session_started`
+    /// row inside the same atomic tx as the `live_sessions` insert.
+    #[tokio::test]
+    async fn k1_session_started_persisted_on_create() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_with_events(pool.clone());
+
+        let outcome = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let sid = outcome.session_id();
+
+        let rows = read_events(&pool, sid).await;
+        assert_eq!(rows.len(), 1, "exactly one event row");
+        assert_eq!(rows[0].0, "session_started");
+        match parse_payload(&rows[0].1) {
+            SessionEventPayload::SessionStarted {
+                from_hysteresis,
+                title,
+            } => {
+                assert!(!from_hysteresis, "fresh sessions are not from hysteresis");
+                assert_eq!(title.as_deref(), Some("Live!"));
+            }
+            other => panic!("wrong payload variant: {other:?}"),
+        }
+    }
+
+    /// A second `on_live_detected` while the session is still active reuses
+    /// the row instead of creating one — and writes no extra audit event.
+    #[tokio::test]
+    async fn k2_session_started_not_duplicated_on_reused_active() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_with_events(pool.clone());
+
+        let first = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let again = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        assert_eq!(first.session_id(), again.session_id());
+
+        let rows = read_events(&pool, first.session_id()).await;
+        assert_eq!(
+            rows.len(),
+            1,
+            "ReusedActive must not write a second session_started row"
+        );
+    }
+
+    /// Ambiguous engine-end (clean disconnect on FLV) → `hysteresis_entered`
+    /// row, written best-effort with the original cause preserved.
+    #[tokio::test]
+    async fn k3_hysteresis_entered_persisted() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_with_events(pool.clone());
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let sid = started.session_id().to_string();
+
+        // Clean-disconnect Completed is not authoritative → enters hysteresis.
+        let event = DownloadTerminalEvent::Completed {
+            download_id: "dl-1".into(),
+            streamer_id: STREAMER_ID.into(),
+            streamer_name: "Test".into(),
+            session_id: sid.clone(),
+            total_bytes: 0,
+            total_duration_secs: 0.0,
+            total_segments: 0,
+            file_path: None,
+            engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+        };
+        lifecycle.on_download_terminal(&event).await.unwrap();
+
+        let rows = read_events(&pool, &sid).await;
+        // session_started + hysteresis_entered (in that chronological order).
+        assert_eq!(
+            rows.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            vec!["session_started", "hysteresis_entered"]
+        );
+        match parse_payload(&rows[1].1) {
+            SessionEventPayload::HysteresisEntered { cause, .. } => {
+                // The cause carried into the audit row should be `Completed`
+                // (the engine signal hint goes via a sibling field elsewhere).
+                assert!(
+                    matches!(cause, TerminalCauseDto::Completed),
+                    "unexpected cause: {cause:?}"
+                );
+            }
+            other => panic!("wrong payload variant: {other:?}"),
+        }
+    }
+
+    /// hysteresis → live_detected within window → both `session_resumed` and
+    /// `session_started { from_hysteresis: true }` rows in order.
+    #[tokio::test]
+    async fn k4_resumed_then_started_pair_persisted() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_with_events(pool.clone());
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let sid = started.session_id().to_string();
+
+        // Enter hysteresis.
+        let event = DownloadTerminalEvent::Completed {
+            download_id: "dl-1".into(),
+            streamer_id: STREAMER_ID.into(),
+            streamer_name: "Test".into(),
+            session_id: sid.clone(),
+            total_bytes: 0,
+            total_duration_secs: 0.0,
+            total_segments: 0,
+            file_path: None,
+            engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+        };
+        lifecycle.on_download_terminal(&event).await.unwrap();
+        // Resume before the (25 ms) timer fires.
+        lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+
+        let rows = read_events(&pool, &sid).await;
+        let kinds: Vec<&str> = rows.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "session_started",
+                "hysteresis_entered",
+                "session_resumed",
+                "session_started",
+            ],
+            "expected the full Recording → Hysteresis → Recording sequence"
+        );
+        match parse_payload(&rows[3].1) {
+            SessionEventPayload::SessionStarted {
+                from_hysteresis, ..
+            } => assert!(
+                from_hysteresis,
+                "the second session_started must mark from_hysteresis=true"
+            ),
+            other => panic!("wrong payload variant: {other:?}"),
+        }
+    }
+
+    /// Authoritative end driven by a danmu signal preserves the cause as
+    /// `DefinitiveOffline { signal: DanmuStreamClosed }` — proves the
+    /// `OfflineSignal` plumbing through `OfflineDetectedArgs.signal` lands
+    /// in the audit log as advertised.
+    #[tokio::test]
+    async fn k5_session_ended_persisted_with_definitive_offline_signal() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_with_events(pool.clone());
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let sid = started.session_id().to_string();
+
+        // Mirror what the danmu observer in `services/container.rs` does
+        // for a `DanmuControlEvent::StreamClosed`.
+        lifecycle
+            .on_offline_detected(OfflineDetectedArgs {
+                streamer_id: STREAMER_ID,
+                streamer_name: "Test",
+                session_id: Some(&sid),
+                state_was_live: true,
+                clear_errors: false,
+                signal: Some(OfflineSignal::DanmuStreamClosed),
+                now: Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        let rows = read_events(&pool, &sid).await;
+        let last = rows.last().expect("at least one event");
+        assert_eq!(last.0, "session_ended");
+        match parse_payload(&last.1) {
+            SessionEventPayload::SessionEnded { cause, via_hysteresis } => {
+                assert!(!via_hysteresis, "direct authoritative end, not via timer");
+                match cause {
+                    TerminalCauseDto::DefinitiveOffline {
+                        signal: OfflineSignal::DanmuStreamClosed,
+                    } => {}
+                    other => panic!(
+                        "expected DefinitiveOffline {{ DanmuStreamClosed }}, got {other:?}"
+                    ),
+                }
+            }
+            other => panic!("wrong payload variant: {other:?}"),
+        }
+    }
+
+    /// `enter_ended_state`'s 60s `Ended` retention dedup means duplicate
+    /// `on_offline_detected` calls land on the CAS guard before reaching
+    /// the tx — so exactly one `session_ended` row is persisted per
+    /// session, even when the monitor races and emits the offline twice.
+    #[tokio::test]
+    async fn k6_session_ended_dedup_persists_one_row() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_with_events(pool.clone());
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let sid = started.session_id().to_string();
+        let now = Utc::now();
+        let mk_args = || OfflineDetectedArgs {
+            streamer_id: STREAMER_ID,
+            streamer_name: "Test",
+            session_id: Some(&sid),
+            state_was_live: true,
+            clear_errors: false,
+            signal: None,
+            now,
+        };
+
+        lifecycle.on_offline_detected(mk_args()).await.unwrap();
+        lifecycle.on_offline_detected(mk_args()).await.unwrap();
+
+        let rows = read_events(&pool, &sid).await;
+        let ended_count = rows.iter().filter(|(k, _)| k == "session_ended").count();
+        assert_eq!(
+            ended_count, 1,
+            "duplicate authoritative-end must not double-write the audit row"
+        );
     }
 }

@@ -130,6 +130,30 @@ pub struct TitleEntry {
     pub title: String,
 }
 
+/// One row from the `session_events` table.
+///
+/// Append-only audit log of `SessionLifecycle` transitions. The `kind` column
+/// is the discriminator string (`session_started` / `hysteresis_entered` /
+/// `session_resumed` / `session_ended`); `payload` is JSON-encoded
+/// [`crate::session::SessionEventPayload`]. See the migration for column
+/// semantics.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SessionEventDbModel {
+    /// Surrogate key (auto-increment). Stable for a given DB; not stable
+    /// across exports/imports.
+    pub id: i64,
+    pub session_id: String,
+    pub streamer_id: String,
+    /// One of the four kind discriminators; the `CHECK` constraint on the
+    /// table enforces this at insert time.
+    pub kind: String,
+    /// Milliseconds since Unix epoch (UTC).
+    pub occurred_at: i64,
+    /// JSON-encoded `SessionEventPayload`. `None` only if a future kind has
+    /// no payload fields.
+    pub payload: Option<String>,
+}
+
 /// Media output database model.
 /// Represents a single file generated during a live session.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

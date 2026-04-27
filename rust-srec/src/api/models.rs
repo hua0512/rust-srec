@@ -731,6 +731,12 @@ pub struct SessionResponse {
     pub streamer_avatar: Option<String>,
     pub title: String,
     pub titles: Vec<TitleChange>,
+    /// Lifecycle audit log for this session, oldest first. One entry per
+    /// state-machine transition (`session_started`, `hysteresis_entered`,
+    /// `session_resumed`, `session_ended`). Empty for sessions that ended
+    /// before the `session_events` migration ran.
+    #[serde(default)]
+    pub events: Vec<SessionEventResponse>,
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
     /// `true` when the recording is still in progress (`end_time` is null).
@@ -746,6 +752,23 @@ pub struct SessionResponse {
     pub total_size_bytes: u64,
     pub danmu_count: Option<u64>,
     pub thumbnail_url: Option<String>,
+}
+
+/// One row from the `session_events` audit log, exposed on the session
+/// detail Timeline tab. `payload` is the typed
+/// [`crate::session::SessionEventPayload`] discriminated union (with `kind`
+/// matching the top-level field) — the frontend zod schema parses it as a
+/// discriminated union for exhaustive rendering.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct SessionEventResponse {
+    /// Stable string discriminator: `session_started`, `hysteresis_entered`,
+    /// `session_resumed`, or `session_ended`.
+    pub kind: String,
+    pub occurred_at: DateTime<Utc>,
+    /// Parsed JSON payload. `None` when the underlying row had no payload
+    /// or when the payload failed to parse — the frontend treats both the
+    /// same (renders the row with kind only).
+    pub payload: Option<serde_json::Value>,
 }
 
 /// Full danmu statistics for a session.

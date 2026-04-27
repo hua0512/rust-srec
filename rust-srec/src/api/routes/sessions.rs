@@ -19,8 +19,8 @@ use axum::{
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
     DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, PageResponse, PaginatedResponse,
-    PaginationParams, SessionDanmuStatisticsResponse, SessionFilterParams, SessionResponse,
-    SessionSegmentResponse, TitleChange,
+    PaginationParams, SessionDanmuStatisticsResponse, SessionEventResponse, SessionFilterParams,
+    SessionResponse, SessionSegmentResponse, TitleChange,
 };
 use crate::api::server::AppState;
 use crate::database::models::{
@@ -256,6 +256,10 @@ pub async fn list_sessions(
             streamer_name,
             title,
             titles,
+            // Lifecycle audit log isn't loaded on the list endpoint — N+1
+            // queries on a paginated response. Frontend lists don't render
+            // it; the detail endpoint populates it.
+            events: Vec::new(),
             start_time,
             end_time,
             is_live: end_time.is_none(),
@@ -376,12 +380,29 @@ pub async fn get_session(
     // Get thumbnail URL
     let thumbnail_url = get_thumbnail_url(&session.id, session_repository.as_ref()).await;
 
+    // Load the lifecycle audit log for the Timeline tab. Repository is
+    // optional in `AppState` (test harnesses may omit it) and a query
+    // failure here must not break the rest of the response — fall back to
+    // an empty list and log.
+    let events = match state.session_event_repository.as_ref() {
+        Some(repo) => match repo.list_for_session(&id).await {
+            Ok(rows) => map_session_events(rows),
+            Err(e) => {
+                tracing::warn!(session_id = %id, error = %e,
+                    "Failed to load session events; returning empty timeline");
+                Vec::new()
+            }
+        },
+        None => Vec::new(),
+    };
+
     let response = SessionResponse {
         id: session.id.clone(),
         streamer_id: session.streamer_id,
         streamer_name,
         title,
         titles,
+        events,
         start_time,
         end_time,
         is_live: end_time.is_none(),
@@ -394,6 +415,29 @@ pub async fn get_session(
     };
 
     Ok(Json(response))
+}
+
+/// Map persisted session-event rows to the wire-format `SessionEventResponse`.
+/// A row with malformed `payload` JSON degrades to `payload: None` rather
+/// than dropping the row outright — operators still see "something happened
+/// here" with the kind discriminator, which matches the frontend's
+/// fallback rendering.
+fn map_session_events(
+    rows: Vec<crate::database::models::SessionEventDbModel>,
+) -> Vec<SessionEventResponse> {
+    rows.into_iter()
+        .map(|row| {
+            let payload = row
+                .payload
+                .as_deref()
+                .and_then(|raw| serde_json::from_str(raw).ok());
+            SessionEventResponse {
+                kind: row.kind,
+                occurred_at: crate::database::time::ms_to_datetime(row.occurred_at),
+                payload,
+            }
+        })
+        .collect()
 }
 
 /// Get full danmu statistics for a session by ID.

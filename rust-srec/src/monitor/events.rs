@@ -120,6 +120,14 @@ pub enum MonitorEvent {
         /// `true` if the streamer had accumulated transient errors that
         /// should be cleared on this clean observation.
         clear_errors: bool,
+        /// Optional definitive-offline signal that originated this event.
+        /// When `Some`, the lifecycle records the session-end cause as
+        /// [`crate::session::TerminalCause::DefinitiveOffline`] (carrying
+        /// the signal) instead of the default
+        /// [`crate::session::TerminalCause::StreamerOffline`]. Used by the
+        /// danmu observer to preserve `DanmuStreamClosed` in the audit log;
+        /// other call sites pass `None`.
+        signal: Option<crate::session::state::OfflineSignal>,
         timestamp: DateTime<Utc>,
     },
 }

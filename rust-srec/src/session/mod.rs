@@ -36,11 +36,14 @@
 //!   signal?" classifier.
 //! - [`hysteresis`]: hysteresis quiet-period primitives — config and
 //!   per-session timer handle. The driver lives in [`lifecycle`].
+//! - [`events`]: typed wire-format for the `session_events` audit log
+//!   (`SessionEventKind`, `SessionEventPayload`, `TerminalCauseDto`).
 //! - [`repository`]: atomic-tx wrappers around `SessionTxOps` /
 //!   `StreamerTxOps` / `MonitorOutboxTxOps`.
 //! - [`lifecycle`]: the `SessionLifecycle` service itself.
 
 pub mod classifier;
+pub mod events;
 pub mod hysteresis;
 pub mod lifecycle;
 pub mod repository;
@@ -48,6 +51,7 @@ pub mod state;
 pub mod transition;
 
 pub use classifier::{EngineKind, OfflineClassifier};
+pub use events::{SessionEventKind, SessionEventPayload, TerminalCauseDto};
 pub use hysteresis::{
     HysteresisConfig, HysteresisHandle, HysteresisOutcome, MAX_HYSTERESIS_WINDOW,
 };
