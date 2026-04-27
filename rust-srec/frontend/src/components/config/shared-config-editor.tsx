@@ -27,6 +27,7 @@ import { StreamSelectionTab } from './shared/stream-selection-tab';
 import { LimitsCard } from './shared/limits-card';
 import { OutputSettingsCard } from './shared/output-settings-card';
 import { RecordDanmuCard } from './shared/record-danmu-card';
+import { OfflineCheckCard } from './shared/offline-check-card';
 
 import { EventHooksForm } from './shared/event-hooks-form';
 const PipelineConfigAdapter = lazy(() =>
@@ -56,6 +57,9 @@ export interface SharedConfigPaths {
   pipeline: string;
   sessionCompletePipeline?: string;
   pairedSegmentPipeline?: string;
+  // Per-platform / per-template / per-streamer overrides for the
+  // offline-confirmation cadence. Omit to skip the card entirely.
+  offlineCheck?: string;
 }
 
 export type ConfigTabType =
@@ -297,6 +301,7 @@ export function SharedConfigEditor<T extends FieldValues>({
               initial="hidden"
               animate="visible"
               exit="exit"
+              className="space-y-6"
             >
               <NetworkSettingsCard
                 form={form}
@@ -309,6 +314,14 @@ export function SharedConfigEditor<T extends FieldValues>({
                 credentialScope={credentialScope}
                 credentialPlatformNameHint={credentialPlatformNameHint}
               />
+              {paths.offlineCheck !== undefined && (
+                <OfflineCheckCard
+                  form={form}
+                  basePath={
+                    paths.offlineCheck === '' ? undefined : paths.offlineCheck
+                  }
+                />
+              )}
             </motion.div>
           </TabsContent>
         )}

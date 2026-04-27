@@ -134,6 +134,21 @@ export const StreamerSpecificConfigSchema = z.object({
     .preprocess((v) => (v === '' ? null : v), z.string().nullable().optional())
     .nullable()
     .optional(),
+  // Per-streamer override for the offline-confirmation cadence.
+  offline_check_count: z
+    .preprocess(
+      (v) => (v === '' ? null : typeof v === 'string' ? Number(v) : v),
+      z.number().int().min(1).nullable().optional(),
+    )
+    .nullable()
+    .optional(),
+  offline_check_delay_ms: z
+    .preprocess(
+      (v) => (v === '' ? null : typeof v === 'string' ? Number(v) : v),
+      z.number().int().min(1000).nullable().optional(),
+    )
+    .nullable()
+    .optional(),
 });
 
 // Form-specific schema without preprocessors for proper type inference with react-hook-form
@@ -157,6 +172,8 @@ export const StreamerSpecificConfigFormSchema = z.object({
   cookies: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
   engines_override: z.string().nullable().optional(),
+  offline_check_count: z.number().int().min(1).nullable().optional(),
+  offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),
 });
 
 export const StreamerSchema = z.object({

@@ -225,8 +225,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 cookies, platform_specific_config, proxy_config, record_danmu,
                 output_folder, output_filename_template, download_engine, stream_selection_config,
                 output_file_format, min_segment_size_bytes, max_download_duration_secs, max_part_size_bytes,
-                download_retry_policy, event_hooks, pipeline, session_complete_pipeline, paired_segment_pipeline
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                download_retry_policy, event_hooks, pipeline, session_complete_pipeline, paired_segment_pipeline,
+                offline_check_count, offline_check_delay_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -250,6 +251,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
+        .bind(config.offline_check_count)
+        .bind(config.offline_check_delay_ms)
         .execute(&self.write_pool)
         .await?;
         Ok(())
@@ -278,7 +281,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 event_hooks = ?,
                 pipeline = ?,
                 session_complete_pipeline = ?,
-                paired_segment_pipeline = ?
+                paired_segment_pipeline = ?,
+                offline_check_count = ?,
+                offline_check_delay_ms = ?
             WHERE id = ?
             "#,
         )
@@ -302,6 +307,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
+        .bind(config.offline_check_count)
+        .bind(config.offline_check_delay_ms)
         .bind(&config.id)
         .execute(&self.write_pool)
         .await?;
@@ -350,8 +357,10 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_download_duration_secs, max_part_size_bytes, record_danmu,
                 platform_overrides, download_retry_policy, danmu_sampling_config,
                 download_engine, engines_override, proxy_config, event_hooks, stream_selection_config,
-                pipeline, session_complete_pipeline, paired_segment_pipeline, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                pipeline, session_complete_pipeline, paired_segment_pipeline,
+                offline_check_count, offline_check_delay_ms,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
             "#,
         )
@@ -376,6 +385,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
+        .bind(config.offline_check_count)
+        .bind(config.offline_check_delay_ms)
         .bind(config.created_at)
         .bind(config.updated_at)
         .execute(&self.write_pool)
@@ -407,6 +418,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 pipeline = ?,
                 session_complete_pipeline = ?,
                 paired_segment_pipeline = ?,
+                offline_check_count = ?,
+                offline_check_delay_ms = ?,
                 updated_at = ?
             WHERE id = ?
             "#,
@@ -431,6 +444,8 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
+        .bind(config.offline_check_count)
+        .bind(config.offline_check_delay_ms)
         .bind(Utc::now())
         .bind(&config.id)
         .execute(&self.write_pool)

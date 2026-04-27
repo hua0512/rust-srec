@@ -231,6 +231,7 @@ export function TemplateEditor({
               pipeline: 'pipeline',
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',
+              offlineCheck: '',
             }}
             credentialScope={
               template ? { type: 'template', id: template.id } : undefined

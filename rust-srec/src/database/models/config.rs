@@ -126,6 +126,8 @@ pub struct PlatformConfigDbModel {
     pub session_complete_pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
     pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
 }
 
 /// Template configuration database model.
@@ -164,6 +166,8 @@ pub struct TemplateConfigDbModel {
     pub session_complete_pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for paired (video+danmu) segment triggering.
     pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -192,6 +196,8 @@ impl TemplateConfigDbModel {
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,
+            offline_check_count: None,
+            offline_check_delay_ms: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

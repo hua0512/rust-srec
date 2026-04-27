@@ -364,11 +364,16 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Create a StreamerConfig from scheduler config and metadata.
+    ///
+    /// `offline_check_*` come from the metadata's resolved per-streamer
+    /// values (populated by the resolver at registration / config-update
+    /// time). Falls back to the global scheduler config when the metadata
+    /// hasn't been resolved yet (e.g. defensive default during early boot).
     fn create_streamer_config(&self, metadata: &StreamerMetadata) -> StreamerConfig {
         StreamerConfig {
             check_interval_ms: self.config.check_interval_ms,
-            offline_check_interval_ms: self.config.offline_check_interval_ms,
-            offline_check_count: self.config.offline_check_count,
+            offline_check_interval_ms: metadata.effective_offline_check_delay_ms,
+            offline_check_count: metadata.effective_offline_check_count,
             priority: metadata.priority,
             batch_capable: self.is_batch_capable_platform(&metadata.platform_config_id),
         }
@@ -758,11 +763,22 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             .as_ref()
             .map(|m| self.is_batch_capable_platform(&m.platform_config_id))
             .unwrap_or(false);
+        // Per-streamer offline-check cadence is cached on metadata (set by
+        // the resolver fan-out). Fall back to the scheduler-wide global
+        // when no metadata is registered yet.
+        let offline_check_interval_ms = metadata
+            .as_ref()
+            .map(|m| m.effective_offline_check_delay_ms)
+            .unwrap_or(self.config.offline_check_interval_ms);
+        let offline_check_count = metadata
+            .as_ref()
+            .map(|m| m.effective_offline_check_count)
+            .unwrap_or(self.config.offline_check_count);
 
         StreamerConfig {
             check_interval_ms: self.config.check_interval_ms,
-            offline_check_interval_ms: self.config.offline_check_interval_ms,
-            offline_check_count: self.config.offline_check_count,
+            offline_check_interval_ms,
+            offline_check_count,
             priority,
             batch_capable,
         }

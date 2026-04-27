@@ -1205,6 +1205,8 @@ mod end_to_end_tests {
             avatar_url: None,
             streamer_specific_config: None,
             last_error: None,
+            effective_offline_check_count: 3,
+            effective_offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

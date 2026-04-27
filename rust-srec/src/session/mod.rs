@@ -52,7 +52,8 @@ pub use hysteresis::{
     HysteresisConfig, HysteresisHandle, HysteresisOutcome, MAX_HYSTERESIS_WINDOW,
 };
 pub use lifecycle::{
-    DEFAULT_TRANSITION_CHANNEL_CAPACITY, LiveDetectedArgs, OfflineDetectedArgs, SessionLifecycle,
+    DEFAULT_TRANSITION_CHANNEL_CAPACITY, HysteresisWindowFn, LiveDetectedArgs, OfflineDetectedArgs,
+    SessionLifecycle,
 };
 pub use repository::{
     EndSessionInputs, EndSessionOutcome, SessionLifecycleRepository, StartSessionInputs,

@@ -405,14 +405,30 @@ impl ServiceContainer {
             global_config.offline_check_count as u32,
             global_config.offline_check_delay_ms as u64,
         );
-        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_config(
-            Arc::new(crate::session::SessionLifecycleRepository::new(
-                write_pool.clone(),
-            )),
-            Arc::new(crate::session::OfflineClassifier::new()),
-            crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
-            hysteresis_config,
-        ));
+        // Per-streamer resolver: read the cached effective values off the
+        // streamer manager's metadata so platform/template/streamer
+        // overrides take effect at hysteresis-arming time.
+        let sm_for_resolver = streamer_manager.clone();
+        let hysteresis_resolver: crate::session::HysteresisWindowFn =
+            std::sync::Arc::new(move |streamer_id: &str| {
+                sm_for_resolver.get_streamer(streamer_id).map(|m| {
+                    crate::session::HysteresisConfig::from_scheduler(
+                        m.effective_offline_check_count,
+                        m.effective_offline_check_delay_ms,
+                    )
+                })
+            });
+        let session_lifecycle = Arc::new(
+            crate::session::SessionLifecycle::with_config(
+                Arc::new(crate::session::SessionLifecycleRepository::new(
+                    write_pool.clone(),
+                )),
+                Arc::new(crate::session::OfflineClassifier::new()),
+                crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
+                hysteresis_config,
+            )
+            .with_hysteresis_resolver(hysteresis_resolver),
+        );
 
         // Create stream monitor for real status detection
         let mut stream_monitor = StreamMonitor::new(
@@ -683,14 +699,27 @@ impl ServiceContainer {
             global_config.offline_check_count as u32,
             global_config.offline_check_delay_ms as u64,
         );
-        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_config(
-            Arc::new(crate::session::SessionLifecycleRepository::new(
-                write_pool.clone(),
-            )),
-            Arc::new(crate::session::OfflineClassifier::new()),
-            crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
-            hysteresis_config,
-        ));
+        let sm_for_resolver = streamer_manager.clone();
+        let hysteresis_resolver: crate::session::HysteresisWindowFn =
+            std::sync::Arc::new(move |streamer_id: &str| {
+                sm_for_resolver.get_streamer(streamer_id).map(|m| {
+                    crate::session::HysteresisConfig::from_scheduler(
+                        m.effective_offline_check_count,
+                        m.effective_offline_check_delay_ms,
+                    )
+                })
+            });
+        let session_lifecycle = Arc::new(
+            crate::session::SessionLifecycle::with_config(
+                Arc::new(crate::session::SessionLifecycleRepository::new(
+                    write_pool.clone(),
+                )),
+                Arc::new(crate::session::OfflineClassifier::new()),
+                crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
+                hysteresis_config,
+            )
+            .with_hysteresis_resolver(hysteresis_resolver),
+        );
 
         // Create stream monitor for real status detection
         let stream_monitor_start = Instant::now();
@@ -957,6 +986,20 @@ impl ServiceContainer {
         );
 
         info!("Hydrated {} streamers", streamer_count);
+
+        // Populate effective_offline_check_* on the in-memory metadata cache
+        // for every hydrated streamer. Without this, freshly hydrated metadata
+        // sits at default (3 / 20_000) and platform/template/streamer overrides
+        // wouldn't take effect until each streamer's config was independently
+        // resolved (e.g. on first config-update event).
+        for metadata in self.streamer_manager.get_all() {
+            Self::refresh_metadata_offline_check(
+                &self.streamer_manager,
+                &self.config_service,
+                &metadata.id,
+            )
+            .await;
+        }
 
         // Recover jobs from database on startup.
         // This resets PROCESSING jobs to PENDING for re-execution.
@@ -1331,6 +1374,17 @@ impl ServiceContainer {
                                         // Ensure merged config cache is not stale after streamer/template/platform changes.
                                         config_service.invalidate_streamer(&streamer_id);
 
+                                        // Refresh the cached effective offline_check_* on the
+                                        // streamer metadata so the actor's StreamerConfig and
+                                        // SessionLifecycle hysteresis backstop pick up any new
+                                        // per-streamer override.
+                                        Self::refresh_metadata_offline_check(
+                                            &streamer_manager,
+                                            &config_service,
+                                            &streamer_id,
+                                        )
+                                        .await;
+
                                         // Config update event - handles name, URL, priority, template changes.
                                         // If the update includes a state transition to an inactive state
                                         // (e.g., user disables a streamer via API), we must still perform
@@ -1379,15 +1433,66 @@ impl ServiceContainer {
                                             "Received platform config update event: {}",
                                             platform_id
                                         );
+                                        // Refresh effective offline_check_* on every streamer
+                                        // bound to this platform. The cache invalidation runs
+                                        // upstream; we just need to repopulate metadata.
+                                        let affected: Vec<String> = streamer_manager
+                                            .get_all()
+                                            .into_iter()
+                                            .filter(|m| m.platform_config_id == platform_id)
+                                            .map(|m| m.id)
+                                            .collect();
+                                        for id in affected {
+                                            Self::refresh_metadata_offline_check(
+                                                &streamer_manager,
+                                                &config_service,
+                                                &id,
+                                            )
+                                            .await;
+                                        }
                                     }
                                     ConfigUpdateEvent::TemplateUpdated { template_id } => {
                                         debug!(
                                             "Received template config update event: {}",
                                             template_id
                                         );
+                                        let affected: Vec<String> = streamer_manager
+                                            .get_all()
+                                            .into_iter()
+                                            .filter(|m| {
+                                                m.template_config_id.as_deref()
+                                                    == Some(template_id.as_str())
+                                            })
+                                            .map(|m| m.id)
+                                            .collect();
+                                        for id in affected {
+                                            Self::refresh_metadata_offline_check(
+                                                &streamer_manager,
+                                                &config_service,
+                                                &id,
+                                            )
+                                            .await;
+                                        }
                                     }
                                     ConfigUpdateEvent::GlobalUpdated => {
                                         debug!("Received global config update event");
+
+                                        // Refresh effective offline_check_* on every streamer
+                                        // since the global default may have changed (and any
+                                        // streamer not overriding this layer inherits from it).
+                                        let all_ids: Vec<String> = streamer_manager
+                                            .get_all()
+                                            .into_iter()
+                                            .map(|m| m.id)
+                                            .collect();
+                                        for id in all_ids {
+                                            Self::refresh_metadata_offline_check(
+                                                &streamer_manager,
+                                                &config_service,
+                                                &id,
+                                            )
+                                            .await;
+                                        }
 
                                         match config_service.get_global_config().await {
                                             Ok(global) => {
@@ -2776,6 +2881,25 @@ impl ServiceContainer {
 
         // Note: Actor removal is handled by the Scheduler's own config event handler.
         // We don't do it here because scheduler.run() holds the RwLock write lock forever.
+    }
+
+    /// Refresh `effective_offline_check_*` on `StreamerMetadata` from the
+    /// freshly resolved merged config. The actor's `StreamerConfig` and the
+    /// `SessionLifecycle` hysteresis backstop both read from these cached
+    /// fields, so calling this keeps both consumers in lockstep with the
+    /// 4-layer config hierarchy.
+    async fn refresh_metadata_offline_check(
+        streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
+        config_service: &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
+        streamer_id: &str,
+    ) {
+        match config_service.get_config_for_streamer(streamer_id).await {
+            Ok(merged) => streamer_manager.apply_resolved_config(streamer_id, &merged),
+            Err(e) => debug!(
+                "Skipping offline_check refresh for {}: {}",
+                streamer_id, e
+            ),
+        }
     }
 
     /// Handle monitor events to trigger downloads and danmu collection.

@@ -85,6 +85,12 @@ export const PlatformConfigSchema = z.object({
     .pipe(DagPipelineDefinitionSchema.nullable().optional())
     .nullable()
     .optional(),
+
+  // Per-platform overrides for the global offline-confirmation cadence.
+  // NULL = inherit from global. Floors mirror server-side
+  // `HysteresisConfig::from_scheduler` clamping.
+  offline_check_count: z.number().int().min(1).nullable().optional(),
+  offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),
 });
 
 export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;

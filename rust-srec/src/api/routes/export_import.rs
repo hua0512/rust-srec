@@ -331,6 +331,10 @@ pub struct TemplateExport {
     pub pipeline: Option<serde_json::Value>,
     pub session_complete_pipeline: Option<serde_json::Value>,
     pub paired_segment_pipeline: Option<serde_json::Value>,
+    #[serde(default)]
+    pub offline_check_count: Option<i32>,
+    #[serde(default)]
+    pub offline_check_delay_ms: Option<i64>,
 }
 
 /// Streamer for export (uses URL as identifier).
@@ -391,6 +395,10 @@ pub struct PlatformExport {
     pub pipeline: Option<serde_json::Value>,
     pub session_complete_pipeline: Option<serde_json::Value>,
     pub paired_segment_pipeline: Option<serde_json::Value>,
+    #[serde(default)]
+    pub offline_check_count: Option<i32>,
+    #[serde(default)]
+    pub offline_check_delay_ms: Option<i64>,
 }
 
 /// Notification channel for export (uses name as identifier).
@@ -728,6 +736,8 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
                 pipeline: t.pipeline.clone().map(parse_db_config),
                 session_complete_pipeline: t.session_complete_pipeline.clone().map(parse_db_config),
                 paired_segment_pipeline: t.paired_segment_pipeline.clone().map(parse_db_config),
+                offline_check_count: t.offline_check_count,
+                offline_check_delay_ms: t.offline_check_delay_ms,
             })
             .collect(),
         streamers: streamer_exports,
@@ -762,6 +772,8 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
                 pipeline: p.pipeline.clone().map(parse_db_config),
                 session_complete_pipeline: p.session_complete_pipeline.clone().map(parse_db_config),
                 paired_segment_pipeline: p.paired_segment_pipeline.clone().map(parse_db_config),
+                offline_check_count: p.offline_check_count,
+                offline_check_delay_ms: p.offline_check_delay_ms,
             })
             .collect(),
         notification_channels: channel_exports,
@@ -1039,6 +1051,8 @@ pub async fn import_config(
                 .paired_segment_pipeline
                 .clone()
                 .map(json_value_to_db_string);
+            updated.offline_check_count = template_export.offline_check_count;
+            updated.offline_check_delay_ms = template_export.offline_check_delay_ms;
             updated.updated_at = Utc::now();
 
             config_service
@@ -1107,6 +1121,8 @@ pub async fn import_config(
                 .paired_segment_pipeline
                 .clone()
                 .map(json_value_to_db_string);
+            new_template.offline_check_count = template_export.offline_check_count;
+            new_template.offline_check_delay_ms = template_export.offline_check_delay_ms;
 
             config_service
                 .create_template_config(&new_template)
@@ -1216,6 +1232,8 @@ pub async fn import_config(
                 .paired_segment_pipeline
                 .clone()
                 .map(json_value_to_db_string);
+            updated.offline_check_count = platform_export.offline_check_count;
+            updated.offline_check_delay_ms = platform_export.offline_check_delay_ms;
 
             config_service
                 .update_platform_config(&updated)

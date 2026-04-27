@@ -58,6 +58,12 @@ pub struct MergedConfig {
     pub platform_extras: Option<serde_json::Value>,
     /// Whether to automatically generate thumbnails for new sessions
     pub auto_thumbnail: bool,
+
+    // Offline-confirmation cadence (used by both the StreamerActor and the
+    // SessionLifecycle hysteresis backstop). Always populated — global is
+    // the authoritative base; platform/template/streamer can override.
+    pub offline_check_count: u32,
+    pub offline_check_delay_ms: u64,
 }
 
 impl MergedConfig {
@@ -93,6 +99,8 @@ pub struct MergedConfigBuilder {
     paired_segment_pipeline: Option<DagPipelineDefinition>,
     platform_extras: Option<serde_json::Value>,
     auto_thumbnail: Option<bool>,
+    offline_check_count: Option<u32>,
+    offline_check_delay_ms: Option<u64>,
 }
 
 impl MergedConfigBuilder {
@@ -114,6 +122,8 @@ impl MergedConfigBuilder {
         session_complete_pipeline: Option<DagPipelineDefinition>,
         paired_segment_pipeline: Option<DagPipelineDefinition>,
         auto_thumbnail: bool,
+        offline_check_count: u32,
+        offline_check_delay_ms: u64,
     ) -> Self {
         debug!(
             "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, session_gap={}s, pipeline_steps={}",
@@ -141,6 +151,8 @@ impl MergedConfigBuilder {
         self.session_complete_pipeline = session_complete_pipeline;
         self.paired_segment_pipeline = paired_segment_pipeline;
         self.auto_thumbnail = Some(auto_thumbnail);
+        self.offline_check_count = Some(offline_check_count);
+        self.offline_check_delay_ms = Some(offline_check_delay_ms);
         self
     }
 
@@ -167,6 +179,8 @@ impl MergedConfigBuilder {
         pipeline: Option<DagPipelineDefinition>,
         session_complete_pipeline: Option<DagPipelineDefinition>,
         paired_segment_pipeline: Option<DagPipelineDefinition>,
+        offline_check_count: Option<i32>,
+        offline_check_delay_ms: Option<i64>,
     ) -> Self {
         debug!(
             "[Layer 2: Platform] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, pipeline_steps={}",
@@ -265,6 +279,14 @@ impl MergedConfigBuilder {
                 self.event_hooks = Some(v);
             }
         }
+        if let Some(v) = offline_check_count {
+            debug!("Platform override: offline_check_count = {}", v);
+            self.offline_check_count = Some(v.max(1) as u32);
+        }
+        if let Some(v) = offline_check_delay_ms {
+            debug!("Platform override: offline_check_delay_ms = {}", v);
+            self.offline_check_delay_ms = Some((v.max(1_000)) as u64);
+        }
 
         self
     }
@@ -292,6 +314,8 @@ impl MergedConfigBuilder {
         session_complete_pipeline: Option<DagPipelineDefinition>,
         paired_segment_pipeline: Option<DagPipelineDefinition>,
         platform_extras: Option<serde_json::Value>,
+        offline_check_count: Option<i32>,
+        offline_check_delay_ms: Option<i64>,
     ) -> Self {
         debug!(
             "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}, platform_extras={}",
@@ -392,6 +416,14 @@ impl MergedConfigBuilder {
         if let Some(extras) = platform_extras {
             debug!("Template override: platform_extras");
             self.platform_extras = merge_platform_extras(self.platform_extras.take(), Some(extras));
+        }
+        if let Some(v) = offline_check_count {
+            debug!("Template override: offline_check_count = {}", v);
+            self.offline_check_count = Some(v.max(1) as u32);
+        }
+        if let Some(v) = offline_check_delay_ms {
+            debug!("Template override: offline_check_delay_ms = {}", v);
+            self.offline_check_delay_ms = Some((v.max(1_000)) as u64);
         }
         self
     }
@@ -540,6 +572,18 @@ impl MergedConfigBuilder {
                 self.platform_extras =
                     merge_platform_extras(self.platform_extras.take(), Some(extras));
             }
+
+            if let Some(v) = config.get("offline_check_count").and_then(|v| v.as_u64()) {
+                debug!("Streamer config override: offline_check_count = {}", v);
+                self.offline_check_count = Some((v as u32).max(1));
+            }
+            if let Some(v) = config
+                .get("offline_check_delay_ms")
+                .and_then(|v| v.as_u64())
+            {
+                debug!("Streamer config override: offline_check_delay_ms = {}", v);
+                self.offline_check_delay_ms = Some(v.max(1_000));
+            }
         }
         self
     }
@@ -615,6 +659,8 @@ impl MergedConfigBuilder {
             paired_segment_pipeline: self.paired_segment_pipeline,
             platform_extras: self.platform_extras,
             auto_thumbnail: self.auto_thumbnail.unwrap_or(true),
+            offline_check_count: self.offline_check_count.unwrap_or(3).max(1),
+            offline_check_delay_ms: self.offline_check_delay_ms.unwrap_or(20_000).max(1_000),
         }
     }
 }
@@ -643,6 +689,8 @@ mod tests {
                 None, // session_complete_pipeline
                 None, // paired_segment_pipeline
                 true,
+                3,
+                20_000,
             )
             .with_platform(
                 Some(60000),
@@ -664,6 +712,8 @@ mod tests {
                 None,
                 None, // session_complete_pipeline
                 None, // paired_segment_pipeline
+                None, // offline_check_count
+                None, // offline_check_delay_ms
             )
             .build();
 
@@ -690,6 +740,8 @@ mod tests {
                 None,
                 None,
                 true,
+                3,
+                20_000,
             )
             .with_platform(
                 Some(60000),
@@ -711,6 +763,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None, // offline_check_count
+                None, // offline_check_delay_ms
             )
             .with_template(
                 Some("./custom".to_string()),
@@ -732,6 +786,8 @@ mod tests {
                 None, // session_complete_pipeline
                 None, // paired_segment_pipeline
                 None, // platform_extras
+                None, // offline_check_count
+                None, // offline_check_delay_ms
             )
             .build();
 
@@ -783,6 +839,8 @@ mod tests {
                 None,
                 None,
                 true,
+                3,
+                20_000,
             )
             .with_platform(
                 Some(60000),
@@ -804,6 +862,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None, // offline_check_count
+                None, // offline_check_delay_ms
             )
             .with_streamer(Some(&streamer_config))
             .build();
@@ -850,6 +910,8 @@ mod tests {
                 None,
                 None,
                 true,
+                3,
+                20_000,
             )
             .with_platform(
                 Some(60000),
@@ -871,6 +933,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None, // offline_check_count
+                None, // offline_check_delay_ms
             )
             .with_streamer(Some(&streamer_config))
             .build();
@@ -917,6 +981,8 @@ mod tests {
                 None,
                 None,
                 true,
+                3,
+                20_000,
             )
             .with_platform(
                 Some(60000),
@@ -938,6 +1004,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None, // offline_check_count
+                None, // offline_check_delay_ms
             )
             .with_streamer(Some(&streamer_config))
             .build();
@@ -959,5 +1027,141 @@ mod tests {
             &paired.steps[0].step,
             PipelineStep::Inline { processor, .. } if processor == "execute"
         ));
+    }
+
+    /// Verifies the precedence chain Global → Platform → Template → Streamer
+    /// for `offline_check_*`, plus the floor enforcement at each layer.
+    #[test]
+    fn test_offline_check_layer_override_and_floors() {
+        // Global = 3 / 20_000. Platform overrides count to 5. Template
+        // overrides delay_ms to 30_000. Streamer overrides count to 7.
+        let streamer_config = serde_json::json!({
+            "offline_check_count": 7,
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(
+                "/app/output".to_string(),
+                "{streamer}".to_string(),
+                "flv".to_string(),
+                1024,
+                0,
+                8589934592,
+                false,
+                ProxyConfig::disabled(),
+                "mesio".to_string(),
+                600,
+                None,
+                None,
+                None,
+                true,
+                3,
+                20_000,
+            )
+            .with_platform(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(5),
+                None,
+            )
+            .with_template(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(30_000),
+            )
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        // Streamer wins for count, template wins for delay_ms.
+        assert_eq!(config.offline_check_count, 7);
+        assert_eq!(config.offline_check_delay_ms, 30_000);
+    }
+
+    /// Verifies floors: out-of-range values are clamped to safe minimums
+    /// (count >= 1, delay_ms >= 1000) so a typo can't park sessions in a
+    /// pathological hysteresis window.
+    #[test]
+    fn test_offline_check_floors() {
+        let config = MergedConfig::builder()
+            .with_global(
+                "/app/output".to_string(),
+                "{streamer}".to_string(),
+                "flv".to_string(),
+                1024,
+                0,
+                8589934592,
+                false,
+                ProxyConfig::disabled(),
+                "mesio".to_string(),
+                600,
+                None,
+                None,
+                None,
+                true,
+                3,
+                20_000,
+            )
+            .with_platform(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(0),
+                Some(50),
+            )
+            .build();
+
+        assert_eq!(config.offline_check_count, 1);
+        assert_eq!(config.offline_check_delay_ms, 1_000);
     }
 }

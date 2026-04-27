@@ -28,7 +28,7 @@ pub use config_router::{ConfigRouter, ConfigScope, PlatformMapping, RoutingPlan,
 pub use handle::{ActorHandle, ActorMetadata, SendError};
 pub use messages::{
     BatchDetectionResult, CheckResult, DownloadEndPolicy, PlatformActorState, PlatformConfig,
-    PlatformMessage, StreamerActorState, StreamerConfig, StreamerMessage, SupervisorMessage,
+    PlatformMessage, StreamerActorState, StreamerConfig, StreamerMessage,
 };
 pub use metrics::{
     ActorMetrics, ActorType, LifecycleEvent, MetricsSnapshot, SchedulerMetrics,

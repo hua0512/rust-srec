@@ -3,7 +3,6 @@
 //! This module defines the message enums for communication between actors:
 //! - `StreamerMessage`: Messages sent to StreamerActors
 //! - `PlatformMessage`: Messages sent to PlatformActors
-//! - `SupervisorMessage`: Messages sent to the Supervisor (Scheduler)
 
 use std::time::Instant;
 
@@ -183,24 +182,6 @@ pub enum PlatformMessage {
     Stop,
     /// Query current state (response sent via oneshot channel).
     GetState(oneshot::Sender<PlatformActorState>),
-}
-
-/// Messages for the Supervisor (Scheduler).
-#[derive(Debug)]
-pub enum SupervisorMessage {
-    /// Spawn a new streamer actor.
-    SpawnStreamer(StreamerMetadata),
-    /// Remove a streamer actor.
-    RemoveStreamer(String),
-    /// Actor crashed, needs restart.
-    ActorCrashed {
-        /// ID of the crashed actor.
-        actor_id: String,
-        /// Error message describing the crash.
-        error: String,
-    },
-    /// Shutdown all actors.
-    Shutdown,
 }
 
 /// Configuration for a StreamerActor.

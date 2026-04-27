@@ -120,6 +120,8 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             global_session_complete_pipeline,
             global_paired_segment_pipeline,
             global_config.auto_thumbnail,
+            global_config.offline_check_count.max(0) as u32,
+            global_config.offline_check_delay_ms.max(0) as u64,
         );
 
         // Layer 2: Platform config
@@ -239,6 +241,8 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             platform_pipeline,
             platform_session_complete_pipeline,
             platform_paired_segment_pipeline,
+            platform_config.offline_check_count,
+            platform_config.offline_check_delay_ms,
         );
 
         let mut credential_source: Option<CredentialSource> = streamer
@@ -444,6 +448,8 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 template_session_complete_pipeline,
                 template_paired_segment_pipeline,
                 template_platform_extras, // platform_extras from platform_overrides
+                template_config.offline_check_count,
+                template_config.offline_check_delay_ms,
             );
 
             // Template platform overrides are more specific than top-level template

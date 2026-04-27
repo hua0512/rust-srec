@@ -326,6 +326,10 @@ pub struct PlatformConfigResponse {
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
+    /// Override for the global `offline_check_count`. NULL inherits.
+    pub offline_check_count: Option<u32>,
+    /// Override for the global `offline_check_delay_ms`. NULL inherits.
+    pub offline_check_delay_ms: Option<u64>,
 }
 
 // ============================================================================
@@ -355,6 +359,8 @@ pub struct CreateTemplateRequest {
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
 }
 
 /// Request to update a template.
@@ -380,6 +386,8 @@ pub struct UpdateTemplateRequest {
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
 }
 
 /// Template response.
@@ -406,6 +414,8 @@ pub struct TemplateResponse {
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
     pub usage_count: u32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

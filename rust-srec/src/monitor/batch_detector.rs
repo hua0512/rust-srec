@@ -291,6 +291,8 @@ mod tests {
             last_error: None,
             last_live_time: None,
             streamer_specific_config: None,
+            effective_offline_check_count: 3,
+            effective_offline_check_delay_ms: 20_000,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }

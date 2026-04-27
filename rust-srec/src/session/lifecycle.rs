@@ -28,6 +28,7 @@
 //! consumer migration commits (plan step 4.x).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -48,6 +49,13 @@ use crate::session::transition::SessionTransition;
 
 /// Default broadcast capacity for [`SessionTransition`] subscribers.
 pub const DEFAULT_TRANSITION_CHANNEL_CAPACITY: usize = 256;
+
+/// Default retention for `Ended` entries in `self.sessions`. Long enough to
+/// dedupe any plausible duplicate authoritative-end event (we have observed
+/// the monitor emit a second `OfflineDetected` ~5 ms after the first when
+/// two status checks race), short enough that the map stays bounded by
+/// recent activity rather than the lifetime of the process.
+pub const ENDED_RETENTION_DEFAULT: Duration = Duration::from_secs(60);
 
 /// The single-owner service for recording-session state.
 ///
@@ -71,6 +79,13 @@ pub struct SessionLifecycle {
     /// `session_id` → in-memory session snapshot. Source of truth for the
     /// in-process `is_session_active` query (returns true for `Recording`
     /// AND `Hysteresis`). DB `end_time` is authoritative on cold-start.
+    ///
+    /// `Ended` entries are retained for `ended_retention` (default 60 s) so
+    /// the CAS-style guard at the top of `enter_ended_state` actually catches
+    /// duplicate authoritative-end events. A scheduled task evicts each
+    /// `Ended` entry after the retention window — bounding the map at
+    /// `O(active sessions + active hysteresis windows + sessions ended in
+    /// the last `ended_retention` seconds)`.
     sessions: Arc<DashMap<String, SessionState>>,
     /// `session_id` → `HysteresisHandle`. One entry per session in the
     /// hysteresis quiet-period. The handle owns the cancellation token
@@ -78,10 +93,30 @@ pub struct SessionLifecycle {
     /// (`on_live_detected`) or an authoritative end overriding hysteresis
     /// (`on_offline_detected`, danmu close, etc.).
     hysteresis: Arc<DashMap<String, HysteresisHandle>>,
-    /// Tunable: hysteresis window length. Per-platform overrides go here.
+    /// Default hysteresis window length, used when no per-streamer
+    /// resolver is wired in or the resolver returns nothing for a streamer.
     hysteresis_config: HysteresisConfig,
+    /// Optional per-streamer override resolver. When `Some`, the lifecycle
+    /// queries it at hysteresis-arming time so the backstop window tracks
+    /// each streamer's effective `offline_check_*` (set on its
+    /// `StreamerMetadata` by the config resolver).
+    hysteresis_resolver: Option<HysteresisWindowFn>,
+    /// How long to keep `Ended` entries in `sessions` before evicting them.
+    /// Bounds memory while letting the idempotency guard dedupe any
+    /// near-simultaneous duplicate authoritative-end events.
+    ended_retention: Duration,
     transition_tx: broadcast::Sender<SessionTransition>,
 }
+
+/// Closure type for resolving a per-streamer hysteresis window.
+///
+/// Wired at lifecycle construction (see
+/// [`SessionLifecycle::with_hysteresis_resolver`]) — typically captures an
+/// `Arc<StreamerManager>` and reads the per-streamer
+/// `effective_offline_check_count` / `effective_offline_check_delay_ms`
+/// values cached on `StreamerMetadata`. Returning `None` falls back to the
+/// lifecycle's default `HysteresisConfig`.
+pub type HysteresisWindowFn = Arc<dyn Fn(&str) -> Option<HysteresisConfig> + Send + Sync>;
 
 impl SessionLifecycle {
     pub fn new(
@@ -105,8 +140,27 @@ impl SessionLifecycle {
             sessions: Arc::new(DashMap::new()),
             hysteresis: Arc::new(DashMap::new()),
             hysteresis_config,
+            hysteresis_resolver: None,
+            ended_retention: ENDED_RETENTION_DEFAULT,
             transition_tx,
         }
+    }
+
+    /// Attach a per-streamer hysteresis-window resolver. The lifecycle calls
+    /// this at hysteresis-arming time; if the resolver returns `None`, the
+    /// default `hysteresis_config` is used.
+    pub fn with_hysteresis_resolver(mut self, resolver: HysteresisWindowFn) -> Self {
+        self.hysteresis_resolver = Some(resolver);
+        self
+    }
+
+    /// Override the retention applied to `Ended` entries before they are
+    /// evicted from the in-memory `sessions` map. Reserved for tests that
+    /// need to observe eviction without sleeping for the production default.
+    #[cfg(test)]
+    pub fn with_ended_retention(mut self, retention: Duration) -> Self {
+        self.ended_retention = retention;
+        self
     }
 
     pub fn with_default_capacity(
@@ -517,8 +571,15 @@ impl SessionLifecycle {
         // hysteresis (count × interval) is the *primary* mechanism that
         // resolves a hysteresis state; the timer below only fires if the
         // actor never calls back. Window is derived from the same
-        // scheduler config the actor uses — see `HysteresisConfig`.
-        let window = self.hysteresis_config.window();
+        // scheduler config the actor uses — see `HysteresisConfig`. If a
+        // per-streamer resolver was wired in we ask it first so platform /
+        // template / streamer overrides take effect.
+        let resolved_config = self
+            .hysteresis_resolver
+            .as_ref()
+            .and_then(|r| r(streamer_id))
+            .unwrap_or(self.hysteresis_config);
+        let window = resolved_config.window();
         let handle = HysteresisHandle::new(window);
         let deadline_inst = handle.deadline;
         let cancel = handle.cancel.clone();
@@ -735,11 +796,19 @@ impl SessionLifecycle {
             via_hysteresis,
         });
 
-        // Evict from the in-memory map. The transition has been broadcast,
-        // so any subscribers that need post-Ended snapshots have already
-        // received them. Eviction bounds the map at
-        // O(active sessions + active hysteresis windows).
-        self.sessions.remove(session_id);
+        // Defer eviction by `ended_retention` so the CAS-style idempotency
+        // guard at the top of this function actually catches a duplicate
+        // authoritative-end event (e.g. the monitor occasionally emits two
+        // `OfflineDetected` events ~5 ms apart for the same streamer).
+        // Without this delay the entry would be gone by the time the second
+        // call lands and we'd broadcast `SessionTransition::Ended` twice.
+        let sessions = self.sessions.clone();
+        let session_id_owned = session_id.to_string();
+        let retention = self.ended_retention;
+        tokio::spawn(async move {
+            tokio::time::sleep(retention).await;
+            sessions.remove(&session_id_owned);
+        });
 
         Ok(())
     }
@@ -2388,12 +2457,23 @@ mod tests {
         assert!(rx.try_recv().is_err(), "timer must be cancelled, no late Ended");
     }
 
-    /// I9 — sessions map evicts entries on Ended. Memory bounded by
-    /// active+hysteresis only.
+    /// I9 — sessions map evicts Ended entries after the retention window
+    /// elapses. Until then the entry is retained so duplicate
+    /// authoritative-end events are deduped by `enter_ended_state`'s
+    /// idempotency guard.
     #[tokio::test]
-    async fn i9_sessions_map_evicts_on_ended() {
+    async fn i9_sessions_map_evicts_on_ended_after_retention() {
         let pool = setup_pool().await;
-        let lifecycle = make_lifecycle_fast(pool);
+        let retention = std::time::Duration::from_millis(80);
+        let lifecycle = Arc::new(
+            SessionLifecycle::with_config(
+                Arc::new(SessionLifecycleRepository::new(pool)),
+                Arc::new(OfflineClassifier::new()),
+                16,
+                HysteresisConfig::from_window(std::time::Duration::from_millis(25)),
+            )
+            .with_ended_retention(retention),
+        );
 
         let started = lifecycle
             .on_live_detected(live_args(Utc::now()))
@@ -2401,7 +2481,7 @@ mod tests {
             .unwrap();
         assert_eq!(lifecycle.sessions.len(), 1, "Recording entry present");
 
-        // Authoritative end → Ended → evicted.
+        // Authoritative end → Ended → entry retained until retention elapses.
         lifecycle
             .on_offline_detected(OfflineDetectedArgs {
                 streamer_id: STREAMER_ID,
@@ -2416,13 +2496,57 @@ mod tests {
 
         assert_eq!(
             lifecycle.sessions.len(),
-            0,
-            "Ended entry must be evicted to bound memory"
+            1,
+            "Ended entry must be retained briefly so dedup-guard can fire"
         );
+        assert_eq!(lifecycle.hysteresis.len(), 0, "no hysteresis handle should remain");
+
+        // Wait past retention; the spawned eviction task fires.
+        tokio::time::sleep(retention + std::time::Duration::from_millis(50)).await;
         assert_eq!(
-            lifecycle.hysteresis.len(),
+            lifecycle.sessions.len(),
             0,
-            "no hysteresis handle should remain"
+            "Ended entry must be evicted after retention to bound memory"
         );
+    }
+
+    /// I10 — duplicate authoritative-end events emit a single
+    /// `SessionTransition::Ended`. The CAS-style guard at the top of
+    /// `enter_ended_state` short-circuits the second call thanks to the
+    /// retention window introduced in I9.
+    #[tokio::test]
+    async fn i10_double_end_dedup() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_fast(pool);
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let session_id = started.session_id().to_string();
+        // Drain the `Started` transition.
+        let _ = rx.recv().await;
+
+        let now = Utc::now();
+        let args = || OfflineDetectedArgs {
+            streamer_id: STREAMER_ID,
+            streamer_name: "Test",
+            session_id: Some(&session_id),
+            state_was_live: true,
+            clear_errors: false,
+            now,
+        };
+
+        lifecycle.on_offline_detected(args()).await.unwrap();
+        let first = rx.recv().await.expect("first Ended must be emitted");
+        assert!(matches!(first, SessionTransition::Ended { .. }));
+
+        // Second authoritative-end for the same session must not re-broadcast.
+        lifecycle.on_offline_detected(args()).await.unwrap();
+        match rx.try_recv() {
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
+            other => panic!("duplicate end re-broadcast: {other:?}"),
+        }
     }
 }
