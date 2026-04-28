@@ -179,7 +179,9 @@ function DefinitiveOfflineLabel({ signalType }: { signalType: string }) {
 function entryNodeIcon(entry: TimelineEntry) {
   switch (entry.kind) {
     case 'title':
-      return <Circle className="w-3 h-3 text-muted-foreground fill-muted-foreground/50" />;
+      return (
+        <Circle className="w-3 h-3 text-muted-foreground fill-muted-foreground/50" />
+      );
     case 'session_started':
       return <PlayCircle className="w-3.5 h-3.5 text-emerald-500" />;
     case 'hysteresis_entered':
@@ -197,11 +199,17 @@ function entryBadge(entry: TimelineEntry) {
   switch (entry.kind) {
     case 'title':
       return entry.isInitial ? (
-        <Badge variant="secondary" className="text-[10px] tracking-wider font-normal">
+        <Badge
+          variant="secondary"
+          className="text-[10px] tracking-wider font-normal"
+        >
           <Trans>INITIAL</Trans>
         </Badge>
       ) : (
-        <Badge variant="outline" className="text-[10px] tracking-wider font-normal">
+        <Badge
+          variant="outline"
+          className="text-[10px] tracking-wider font-normal"
+        >
           <Trans>UPDATE</Trans>
         </Badge>
       );
@@ -247,7 +255,10 @@ function entryBadge(entry: TimelineEntry) {
       );
     case 'unknown_event':
       return (
-        <Badge variant="outline" className="text-[10px] tracking-wider font-normal">
+        <Badge
+          variant="outline"
+          className="text-[10px] tracking-wider font-normal"
+        >
           {entry.rawKind.toUpperCase()}
         </Badge>
       );

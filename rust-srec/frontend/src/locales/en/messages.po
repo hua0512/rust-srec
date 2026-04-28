@@ -926,6 +926,7 @@ msgid "Cancel Pipeline?"
 msgstr "Cancel Pipeline?"
 
 #: src/components/pipeline/status-config.ts:110
+#: src/components/sessions/timeline-tab.tsx:154
 #: src/components/streamers/card/use-streamer-status.tsx:41
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:117
 msgid "Cancelled"
@@ -964,6 +965,11 @@ msgstr "Categories"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:239
 msgid "Category"
 msgstr "Category"
+
+#: src/components/sessions/timeline-tab.tsx:304
+#: src/components/sessions/timeline-tab.tsx:323
+msgid "Cause:"
+msgstr "Cause:"
 
 #: src/components/streamers/edit/active-download-card.tsx:99
 #: src/components/streamers/progress-indicator.tsx:142
@@ -1154,6 +1160,7 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 
 #: src/components/pipeline/status-config.ts:106
+#: src/components/sessions/timeline-tab.tsx:150
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:356
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:288
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:581
@@ -1299,6 +1306,10 @@ msgstr "Confirm new password"
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
+#: src/components/sessions/timeline-tab.tsx:330
+msgid "Confirmed via backstop timer."
+msgstr "Confirmed via backstop timer."
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:663
 msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
@@ -1324,6 +1335,11 @@ msgstr "Connection Instability"
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
+#: src/components/config/shared/offline-check-card.tsx:111
+msgid "Consecutive failed checks needed to confirm offline."
+msgstr "Consecutive failed checks needed to confirm offline."
+
+#: src/components/sessions/timeline-tab.tsx:171
 #: src/components/streamers/card/stream-avatar-info.tsx:133
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
@@ -1692,7 +1708,7 @@ msgstr "Danmaku to ASS Subtitles"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:208
+#: src/components/config/shared-config-editor.tsx:212
 msgid "Danmu"
 msgstr "Danmu"
 
@@ -1711,6 +1727,10 @@ msgstr "Danmu Statistics"
 #: src/components/sessions/danmu-stats-panel.tsx:159
 msgid "Danmu statistics are not available for this session."
 msgstr "Danmu statistics are not available for this session."
+
+#: src/components/sessions/timeline-tab.tsx:167
+msgid "Danmu Stream Closed"
+msgstr "Danmu Stream Closed"
 
 #: src/components/sessions/danmu-stats-panel.tsx:246
 msgid "Danmu/min"
@@ -1806,6 +1826,10 @@ msgstr "Define rules to automatically record or skip streams based on title, tim
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:162
 msgid "Define sequences of processing steps for your recordings"
 msgstr "Define sequences of processing steps for your recordings"
+
+#: src/components/sessions/timeline-tab.tsx:173
+msgid "Definitive Offline"
+msgstr "Definitive Offline"
 
 #: src/components/health/health-status-badge.tsx:48
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:629
@@ -2315,7 +2339,7 @@ msgstr "Encoding Settings"
 msgid "End"
 msgstr "End"
 
-#: src/components/sessions/timeline-tab.tsx:147
+#: src/components/sessions/timeline-tab.tsx:461
 msgid "End of History"
 msgstr "End of History"
 
@@ -2367,7 +2391,7 @@ msgstr "Engine used for downloads when not specified by platform/streamer."
 #: src/components/config/global/backup-restore-card.tsx:373
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/templates/template-editor.tsx:257
+#: src/components/config/templates/template-editor.tsx:258
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:60
@@ -2618,6 +2642,7 @@ msgid "ey..."
 msgstr "ey..."
 
 #: src/components/pipeline/status-config.ts:108
+#: src/components/sessions/timeline-tab.tsx:152
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:367
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:114
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:416
@@ -3041,7 +3066,7 @@ msgstr "Filter Window Size"
 msgid "Filtering & Behavior"
 msgstr "Filtering & Behavior"
 
-#: src/components/config/shared-config-editor.tsx:153
+#: src/components/config/shared-config-editor.tsx:157
 msgid "Filters"
 msgstr "Filters"
 
@@ -3167,9 +3192,9 @@ msgid "Gap Eval Interval (ms)"
 msgstr "Gap Eval Interval (ms)"
 
 #: src/components/config/engines/forms/mesio-form.tsx:268
-#: src/components/config/platforms/platform-editor.tsx:189
+#: src/components/config/platforms/platform-editor.tsx:190
 #: src/components/config/templates/tabs/platform-override-card.tsx:64
-#: src/components/config/templates/template-editor.tsx:247
+#: src/components/config/templates/template-editor.tsx:248
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
@@ -3424,7 +3449,7 @@ msgstr "HLS Tuning"
 msgid "Home"
 msgstr "Home"
 
-#: src/components/config/shared-config-editor.tsx:197
+#: src/components/config/shared-config-editor.tsx:201
 msgid "Hooks"
 msgstr "Hooks"
 
@@ -3594,11 +3619,16 @@ msgstr "Include Keywords"
 msgid "Include original files in outputs"
 msgstr "Include original files in outputs"
 
+#: src/components/config/shared/offline-check-card.tsx:74
+#: src/components/config/shared/offline-check-card.tsx:106
+msgid "Inherited"
+msgstr "Inherited"
+
 #: src/components/config/shared/output-settings-card.tsx:178
 msgid "Inherited / Default"
 msgstr "Inherited / Default"
 
-#: src/components/sessions/timeline-tab.tsx:112
+#: src/components/sessions/timeline-tab.tsx:206
 msgid "INITIAL"
 msgstr "INITIAL"
 
@@ -3679,6 +3709,10 @@ msgstr "Interval between checks when a streamer is live to detect when the strea
 #: src/components/config/platforms/tabs/general-tab.tsx:64
 msgid "Interval between checks."
 msgstr "Interval between checks."
+
+#: src/components/config/shared/offline-check-card.tsx:79
+msgid "Interval between offline checks."
+msgstr "Interval between offline checks."
 
 #: src/components/config/global/concurrency-card.tsx:246
 msgid "IO Job"
@@ -4402,7 +4436,7 @@ msgstr "Native"
 msgid "Native Resolution Thumbnail"
 msgstr "Native Resolution Thumbnail"
 
-#: src/components/config/shared-config-editor.tsx:175
+#: src/components/config/shared-config-editor.tsx:179
 msgid "Network"
 msgstr "Network"
 
@@ -4672,9 +4706,13 @@ msgstr "No templates found"
 msgid "No templates yet"
 msgstr "No templates yet"
 
-#: src/components/sessions/timeline-tab.tsx:31
-msgid "No Title Changes"
-msgstr "No Title Changes"
+#: src/components/sessions/timeline-tab.tsx:368
+msgid "No Timeline Events"
+msgstr "No Timeline Events"
+
+#: src/components/sessions/timeline-tab.tsx:371
+msgid "No title changes or lifecycle events were recorded for this session."
+msgstr "No title changes or lifecycle events were recorded for this session."
 
 #: src/components/sessions/danmu-stats-panel.tsx:424
 msgid "No word data"
@@ -4841,14 +4879,20 @@ msgstr "OFFLINE"
 
 #: src/components/config/global/network-system-card.tsx:101
 #: src/components/config/global/network-system-card.tsx:109
+#: src/components/config/shared/offline-check-card.tsx:39
 msgid "Offline Check"
 msgstr "Offline Check"
+
+#: src/components/config/shared/offline-check-card.tsx:61
+msgid "Offline Check Interval"
+msgstr "Offline Check Interval"
 
 #: src/components/config/global/network-system-card.tsx:151
 msgid "Offline Detection"
 msgstr "Offline Detection"
 
 #: src/components/config/global/network-system-card.tsx:143
+#: src/components/config/shared/offline-check-card.tsx:95
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
 
@@ -4952,7 +4996,7 @@ msgstr "Out of Space"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1982
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:164
+#: src/components/config/shared-config-editor.tsx:168
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -5041,6 +5085,10 @@ msgstr "Override global default."
 msgid "Override global defaults for this streamer."
 msgstr "Override global defaults for this streamer."
 
+#: src/components/config/shared/offline-check-card.tsx:42
+msgid "Override how aggressively the scheduler confirms a stream has ended."
+msgstr "Override how aggressively the scheduler confirms a stream has ended."
+
 #: src/components/config/shared/output-settings-card.tsx:72
 msgid "Override output folder."
 msgstr "Override output folder."
@@ -5080,23 +5128,23 @@ msgid "Page"
 msgstr "Page"
 
 #: src/components/config/global/pipeline-config-card.tsx:216
-#: src/components/config/shared-config-editor.tsx:441
+#: src/components/config/shared-config-editor.tsx:454
 msgid "Paired"
 msgstr "Paired"
 
-#: src/components/config/shared-config-editor.tsx:582
+#: src/components/config/shared-config-editor.tsx:595
 msgid "Paired pipeline is not supported for this entity."
 msgstr "Paired pipeline is not supported for this entity."
 
 #: src/components/config/global/pipeline-config-card.tsx:213
-#: src/components/config/shared-config-editor.tsx:438
+#: src/components/config/shared-config-editor.tsx:451
 msgid "Paired Segment"
 msgstr "Paired Segment"
 
 #: src/components/config/global/pipeline-config-card.tsx:224
 #: src/components/config/global/pipeline-config-card.tsx:309
-#: src/components/config/shared-config-editor.tsx:449
-#: src/components/config/shared-config-editor.tsx:552
+#: src/components/config/shared-config-editor.tsx:462
+#: src/components/config/shared-config-editor.tsx:565
 msgid "Paired Segment Pipeline"
 msgstr "Paired Segment Pipeline"
 
@@ -5186,6 +5234,10 @@ msgstr "Peak / min"
 msgid "Pending"
 msgstr "Pending"
 
+#: src/components/sessions/timeline-tab.tsx:235
+msgid "PENDING CONFIRMATION"
+msgstr "PENDING CONFIRMATION"
+
 #: src/components/streamers/card/use-streamer-status.tsx:97
 msgid "Pending Error Clears"
 msgstr "Pending Error Clears"
@@ -5202,14 +5254,14 @@ msgid "Per page:"
 msgstr "Per page:"
 
 #: src/components/config/global/pipeline-config-card.tsx:176
-#: src/components/config/shared-config-editor.tsx:399
+#: src/components/config/shared-config-editor.tsx:412
 msgid "Per-segment"
 msgstr "Per-segment"
 
 #: src/components/config/global/pipeline-config-card.tsx:187
 #: src/components/config/global/pipeline-config-card.tsx:292
-#: src/components/config/shared-config-editor.tsx:410
-#: src/components/config/shared-config-editor.tsx:521
+#: src/components/config/shared-config-editor.tsx:423
+#: src/components/config/shared-config-editor.tsx:534
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
@@ -5239,7 +5291,7 @@ msgstr "Phone & Code (2FA optional)"
 msgid "Pick a preset theme or import a custom one."
 msgstr "Pick a preset theme or import a custom one."
 
-#: src/components/config/shared-config-editor.tsx:219
+#: src/components/config/shared-config-editor.tsx:223
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
@@ -5370,7 +5422,7 @@ msgid "platforms"
 msgstr "platforms"
 
 #: src/components/config/global/backup-restore-card.tsx:390
-#: src/components/config/templates/template-editor.tsx:267
+#: src/components/config/templates/template-editor.tsx:268
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:48
@@ -5390,6 +5442,10 @@ msgstr "Player"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1915
 msgid "Playlist"
 msgstr "Playlist"
+
+#: src/components/sessions/timeline-tab.tsx:169
+msgid "Playlist Gone"
+msgstr "Playlist Gone"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1453
 msgid "Playlist TTL (ms)"
@@ -5564,7 +5620,7 @@ msgstr "Preview Unavailable"
 msgid "Previous"
 msgstr "Previous"
 
-#: src/components/sessions/timeline-tab.tsx:127
+#: src/components/sessions/timeline-tab.tsx:279
 msgid "Previous Title"
 msgstr "Previous Title"
 
@@ -5658,7 +5714,7 @@ msgstr "Protection Settings"
 msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
-#: src/components/config/shared-config-editor.tsx:186
+#: src/components/config/shared-config-editor.tsx:190
 msgid "Proxy"
 msgstr "Proxy"
 
@@ -5824,6 +5880,10 @@ msgstr "Recording"
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
+#: src/components/sessions/timeline-tab.tsx:295
+msgid "Recording started"
+msgstr "Recording started"
+
 #: src/components/streamers/card/use-streamer-status.tsx:264
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
@@ -5859,6 +5919,10 @@ msgstr "Regex Pattern"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:221
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "Regex patterns to exclude files. Matched against full path and filename."
+
+#: src/components/sessions/timeline-tab.tsx:156
+msgid "Rejected"
+msgstr "Rejected"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:118
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:162
@@ -5951,8 +6015,8 @@ msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "Required if the stream is password-protected by the broadcaster."
 
 #: src/components/config/global/pipeline-config-card.tsx:239
-#: src/components/config/shared-config-editor.tsx:464
-#: src/components/config/shared-config-editor.tsx:562
+#: src/components/config/shared-config-editor.tsx:477
+#: src/components/config/shared-config-editor.tsx:575
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
@@ -5997,6 +6061,19 @@ msgstr "Restore password"
 #: src/components/logging/log-viewer.tsx:396
 msgid "Resume"
 msgstr "Resume"
+
+#: src/components/sessions/timeline-tab.tsx:244
+msgid "RESUMED"
+msgstr "RESUMED"
+
+#. placeholder {0}: entry.hysteresisDurationSecs
+#: src/components/sessions/timeline-tab.tsx:314
+msgid "Resumed after {0}s in pending state."
+msgstr "Resumed after {0}s in pending state."
+
+#: src/components/sessions/timeline-tab.tsx:223
+msgid "RESUMED START"
+msgstr "RESUMED START"
 
 #: src/components/streamers/card/use-streamer-status.tsx:130
 msgid "Resuming in"
@@ -6082,17 +6159,17 @@ msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 
 #: src/components/config/global/pipeline-config-card.tsx:294
-#: src/components/config/shared-config-editor.tsx:524
+#: src/components/config/shared-config-editor.tsx:537
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "Runs for each recorded segment immediately after it's finished."
 
 #: src/components/config/global/pipeline-config-card.tsx:328
-#: src/components/config/shared-config-editor.tsx:601
+#: src/components/config/shared-config-editor.tsx:614
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "Runs once after the entire session ends and all segment pipelines have completed."
 
 #: src/components/config/global/pipeline-config-card.tsx:273
-#: src/components/config/shared-config-editor.tsx:500
+#: src/components/config/shared-config-editor.tsx:513
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 
@@ -6109,11 +6186,11 @@ msgid "Runs when a download encounters an error."
 msgstr "Runs when a download encounters an error."
 
 #: src/components/config/global/pipeline-config-card.tsx:233
-#: src/components/config/shared-config-editor.tsx:458
+#: src/components/config/shared-config-editor.tsx:471
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "Runs when both the video segment and its corresponding danmu segment are available."
 
-#: src/components/config/shared-config-editor.tsx:556
+#: src/components/config/shared-config-editor.tsx:569
 msgid "Runs when both video and danmu segments are available."
 msgstr "Runs when both video and danmu segments are available."
 
@@ -6302,7 +6379,7 @@ msgid "Security & Identity"
 msgstr "Security & Identity"
 
 #: src/components/config/global/pipeline-config-card.tsx:179
-#: src/components/config/shared-config-editor.tsx:402
+#: src/components/config/shared-config-editor.tsx:415
 msgid "Segment"
 msgstr "Segment"
 
@@ -6459,25 +6536,25 @@ msgid "Server URL"
 msgstr "Server URL"
 
 #: src/components/config/global/pipeline-config-card.tsx:259
-#: src/components/config/shared-config-editor.tsx:484
+#: src/components/config/shared-config-editor.tsx:497
 #: src/components/pipeline/outputs/output-card.tsx:201
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:262
 msgid "Session"
 msgstr "Session"
 
 #: src/components/config/global/pipeline-config-card.tsx:256
-#: src/components/config/shared-config-editor.tsx:481
+#: src/components/config/shared-config-editor.tsx:494
 msgid "Session Complete"
 msgstr "Session Complete"
 
 #: src/components/config/global/pipeline-config-card.tsx:267
 #: src/components/config/global/pipeline-config-card.tsx:326
-#: src/components/config/shared-config-editor.tsx:492
-#: src/components/config/shared-config-editor.tsx:598
+#: src/components/config/shared-config-editor.tsx:505
+#: src/components/config/shared-config-editor.tsx:611
 msgid "Session Complete Pipeline"
 msgstr "Session Complete Pipeline"
 
-#: src/components/config/shared-config-editor.tsx:621
+#: src/components/config/shared-config-editor.tsx:634
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
@@ -6492,6 +6569,10 @@ msgstr "Session Details"
 #: src/components/sessions/overview-tab.tsx:196
 msgid "Session Duration"
 msgstr "Session Duration"
+
+#: src/components/sessions/timeline-tab.tsx:253
+msgid "SESSION ENDED"
+msgstr "SESSION ENDED"
 
 #: src/components/config/global/network-system-card.tsx:285
 msgid "Session Gap"
@@ -6525,6 +6606,10 @@ msgstr "Session not found"
 #: src/components/sessions/overview-tab.tsx:137
 msgid "Session Preview"
 msgstr "Session Preview"
+
+#: src/components/sessions/timeline-tab.tsx:225
+msgid "SESSION STARTED"
+msgstr "SESSION STARTED"
 
 #: src/components/sessions/overview-tab.tsx:146
 msgid "Session thumbnail"
@@ -6667,7 +6752,7 @@ msgstr "Source"
 msgid "Space Saver"
 msgstr "Space Saver"
 
-#: src/components/config/platforms/platform-editor.tsx:199
+#: src/components/config/platforms/platform-editor.tsx:200
 #: src/components/config/templates/tabs/platform-override-card.tsx:70
 msgid "Specific"
 msgstr "Specific"
@@ -6875,6 +6960,10 @@ msgstr "Streamer ID is required"
 #: src/components/streamers/card/use-streamer-status.tsx:124
 msgid "Streamer is on cooldown"
 msgstr "Streamer is on cooldown"
+
+#: src/components/sessions/timeline-tab.tsx:158
+msgid "Streamer Offline"
+msgstr "Streamer Offline"
 
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:408
 msgid "Streamer pagination"
@@ -7151,10 +7240,6 @@ msgstr "The direct link to the channel or stream."
 msgid "The page you are looking for does not exist."
 msgstr "The page you are looking for does not exist."
 
-#: src/components/sessions/timeline-tab.tsx:34
-msgid "The stream title remained constant throughout the session."
-msgstr "The stream title remained constant throughout the session."
-
 #: src/components/config/engines/engine-editor.tsx:265
 msgid "The underlying tool used for downloading."
 msgstr "The underlying tool used for downloading."
@@ -7195,7 +7280,7 @@ msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and res
 msgstr "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
 
 #: src/components/config/global/pipeline-config-card.tsx:193
-#: src/components/config/shared-config-editor.tsx:418
+#: src/components/config/shared-config-editor.tsx:431
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 
@@ -7409,12 +7494,12 @@ msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
 #: src/components/config/global/pipeline-config-card.tsx:189
-#: src/components/config/shared-config-editor.tsx:412
+#: src/components/config/shared-config-editor.tsx:425
 msgid "Triggered after each segment recording"
 msgstr "Triggered after each segment recording"
 
 #: src/components/config/global/pipeline-config-card.tsx:269
-#: src/components/config/shared-config-editor.tsx:494
+#: src/components/config/shared-config-editor.tsx:507
 msgid "Triggered after the entire session ends"
 msgstr "Triggered after the entire session ends"
 
@@ -7475,7 +7560,7 @@ msgid "Triggered when the application starts up."
 msgstr "Triggered when the application starts up."
 
 #: src/components/config/global/pipeline-config-card.tsx:226
-#: src/components/config/shared-config-editor.tsx:451
+#: src/components/config/shared-config-editor.tsx:464
 msgid "Triggered when video and danmu are available"
 msgstr "Triggered when video and danmu are available"
 
@@ -7593,6 +7678,10 @@ msgstr "Unknown error"
 msgid "Unknown File"
 msgstr "Unknown File"
 
+#: src/components/sessions/timeline-tab.tsx:338
+msgid "Unrecognised event kind."
+msgstr "Unrecognised event kind."
+
 #: src/components/streamers/card/use-streamer-status.tsx:145
 msgid "Until"
 msgstr "Until"
@@ -7601,7 +7690,7 @@ msgstr "Until"
 msgid "Untitled Stream"
 msgstr "Untitled Stream"
 
-#: src/components/sessions/timeline-tab.tsx:114
+#: src/components/sessions/timeline-tab.tsx:213
 msgid "UPDATE"
 msgstr "UPDATE"
 
