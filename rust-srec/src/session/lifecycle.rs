@@ -1066,6 +1066,15 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
+        // Mirror the production partial unique index so multi-active-row
+        // states have to be deliberately seeded by tests that need them.
+        sqlx::query(
+            r#"CREATE UNIQUE INDEX live_sessions_one_active_per_streamer
+                ON live_sessions (streamer_id) WHERE end_time IS NULL"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         sqlx::query(
             r#"CREATE TABLE media_outputs (
                 id TEXT PRIMARY KEY,

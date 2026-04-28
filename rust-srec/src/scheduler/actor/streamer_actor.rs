@@ -1016,26 +1016,29 @@ impl StreamerActor {
         // Update state and schedule check based on reason
         match reason {
             DownloadEndPolicy::Stopped(DownloadStopCause::DanmuStreamClosed) => {
-                // Authoritative offline signal: platform explicitly told us the stream ended.
-                // Unlike ambiguous offline detection, we know for certain this stream is over.
-                // Reset hysteresis completely and use normal polling interval (no short polling).
-                let metadata = self
-                    .get_metadata()
-                    .ok_or_else(|| ActorError::fatal("Streamer removed from metadata store"))?;
-                if let Err(e) = self
-                    .status_checker
-                    .process_status(&metadata, LiveStatus::Offline)
-                    .await
-                {
-                    warn!(
-                        "StreamerActor {} failed to process offline status on DanmuStreamClosed: {}",
-                        self.id, e
-                    );
-                }
-
-                // Reset hysteresis completely - we definitively know the stream ended.
-                // This will cause schedule_next_check to use the normal (longer) interval
-                // since was_live becomes false.
+                // Authoritative offline signal: the platform's danmu stream
+                // explicitly told us the live ended. The container's danmu
+                // observer already owns the offline emission for this signal
+                // — it called `handle_offline_with_session(streamer,
+                // Some(session_id), Some(DanmuStreamClosed))` so the
+                // lifecycle records the cause as
+                // `TerminalCause::DefinitiveOffline { signal }`.
+                //
+                // We deliberately do NOT call `process_status(Offline)` here.
+                // The actor and the danmu observer both react to the same
+                // root event; if both call into the lifecycle, they race on
+                // `streamer.state == Live` (read from snapshots that lag
+                // each other by milliseconds), and Path B's `repo.end` with
+                // `session_id: None` falls back to the *active* session and
+                // ends a different row than Path A intended. Net result of
+                // the race: two `Session ended` rows, two
+                // `SessionTransition::Ended` broadcasts, two
+                // session-complete pipeline DAG fires for one stream.
+                // (Surfaced by the 柔柔 / 2026-04-28 logs.)
+                //
+                // The actor still updates its own scheduling state below —
+                // those touches are local to this struct and don't race
+                // with the DB-layer end.
                 self.state.streamer_state = StreamerState::NotLive;
                 self.state.hysteresis.reset();
                 self.state.schedule_next_check(&self.config, error_count);
@@ -2361,5 +2364,113 @@ mod tests {
         );
         let until = actor.state.time_until_next_check().unwrap();
         assert!(until <= Duration::from_secs(30));
+    }
+
+    /// `process_status` must NOT be called on the `Stopped(DanmuStreamClosed)`
+    /// path — the container's danmu observer is the canonical owner of the
+    /// offline emission for this signal. Calling `process_status` here too
+    /// would race the observer at the `streamer.state == Live` gate inside
+    /// `handle_offline_with_session`, ending whichever session the actor's
+    /// snapshot saw as active (frequently a different `session_id` than
+    /// the one the observer is closing). Surfaced by the 柔柔 / 2026-04-28
+    /// production logs.
+    #[derive(Debug, Default)]
+    struct AssertNotCalledStatusChecker;
+
+    #[async_trait]
+    impl StatusChecker for AssertNotCalledStatusChecker {
+        async fn check_status(
+            &self,
+            _streamer: &StreamerMetadata,
+        ) -> Result<(CheckResult, LiveStatus), CheckError> {
+            panic!("AssertNotCalledStatusChecker::check_status must not be called");
+        }
+
+        async fn process_status(
+            &self,
+            _streamer: &StreamerMetadata,
+            _status: LiveStatus,
+        ) -> Result<ProcessStatusResult, CheckError> {
+            panic!("AssertNotCalledStatusChecker::process_status must not be called");
+        }
+
+        async fn handle_error(
+            &self,
+            _streamer: &StreamerMetadata,
+            _error: &str,
+        ) -> Result<(), CheckError> {
+            panic!("AssertNotCalledStatusChecker::handle_error must not be called");
+        }
+
+        async fn set_infra_blocked(
+            &self,
+            _streamer: &StreamerMetadata,
+            _reason: crate::monitor::InfraBlockReason,
+        ) -> Result<(), CheckError> {
+            panic!("AssertNotCalledStatusChecker::set_infra_blocked must not be called");
+        }
+    }
+
+    #[tokio::test]
+    async fn danmu_stream_closed_does_not_call_process_status() {
+        let metadata_store = create_test_metadata_store();
+        let config = StreamerConfig::default();
+        let token = CancellationToken::new();
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            Arc::new(AssertNotCalledStatusChecker),
+        );
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+
+        // No panic ⇒ the actor did NOT route through `process_status`.
+        let result = actor
+            .handle_download_ended(super::super::messages::DownloadEndPolicy::Stopped(
+                DownloadStopCause::DanmuStreamClosed,
+            ))
+            .await;
+        assert!(result.is_ok(), "actor must complete cleanly without process_status");
+    }
+
+    #[tokio::test]
+    async fn danmu_stream_closed_resets_hysteresis_and_reschedules() {
+        let metadata_store = create_test_metadata_store();
+        let config = StreamerConfig::default();
+        let token = CancellationToken::new();
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            create_noop_checker(),
+        );
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.hysteresis.mark_offline_observed();
+        assert!(
+            actor.state.hysteresis.was_live(),
+            "fixture: hysteresis records the prior live state"
+        );
+        actor.state.next_check = None;
+
+        actor
+            .handle_download_ended(super::super::messages::DownloadEndPolicy::Stopped(
+                DownloadStopCause::DanmuStreamClosed,
+            ))
+            .await
+            .unwrap();
+
+        // The arm flips local in-memory state to NotLive, fully resets
+        // hysteresis (was_live becomes false → schedule_next_check uses
+        // the longer normal interval), and arms a next-check timer.
+        assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
+        assert!(
+            !actor.state.hysteresis.was_live(),
+            "DanmuStreamClosed is authoritative; hysteresis must be fully reset"
+        );
+        assert!(actor.state.next_check.is_some());
     }
 }

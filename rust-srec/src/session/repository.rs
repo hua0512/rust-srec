@@ -23,7 +23,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::Result;
@@ -156,6 +156,66 @@ impl SessionLifecycleRepository {
         let mut tx = begin_immediate(&self.write_pool).await?;
 
         let last = SessionTxOps::get_last_session(&mut tx, &inputs.streamer_id).await?;
+
+        // Self-heal: end any stale active session rows for this streamer.
+        //
+        // The partial unique index `live_sessions_one_active_per_streamer`
+        // (initial schema) caps the candidate set at 0 or 1 row in normal
+        // operation, so this is a no-op on a healthy DB. But the
+        // 2026-04-28 production logs (柔柔) showed at least one buggy
+        // build leaked enough state that operators could end up with
+        // multiple `end_time IS NULL` rows for one streamer. Without this
+        // step, the next `start_or_resume` would either:
+        //   - on the Created path, trip the unique index on INSERT and
+        //     fail the request loudly; or
+        //   - on the ReusedActive path, pick the most-recent active and
+        //     leave the older stale rows orphaned forever.
+        //
+        // Strategy: keep the most-recent active row (the one ReusedActive
+        // is about to pick up) and end every other active row inside this
+        // same `BEGIN IMMEDIATE` tx. If `last` is missing or already
+        // ended, `keep` is `None` and ALL actives are cleaned up.
+        //
+        // Each cleaned-up session also gets a
+        // `session_ended { rejected, "stale_active_replaced" }` audit row
+        // so the heal is observable. No `SessionTransition::Ended`
+        // broadcast — these rows represent state that should never have
+        // existed; firing the session-complete pipeline DAG retroactively
+        // would re-upload, re-notify, etc.
+        let keep_id = last
+            .as_ref()
+            .filter(|s| s.end_time.is_none())
+            .map(|s| s.id.as_str());
+        let cleaned = SessionTxOps::end_all_active_for_streamer(
+            &mut tx,
+            &inputs.streamer_id,
+            keep_id,
+            inputs.now,
+        )
+        .await?;
+        if !cleaned.is_empty() {
+            warn!(
+                streamer_id = %inputs.streamer_id,
+                kept = keep_id.unwrap_or("<none>"),
+                count = cleaned.len(),
+                "Cleaned up stale active session(s)"
+            );
+        }
+        for stale_id in &cleaned {
+            let payload = SessionEventPayload::SessionEnded {
+                cause: TerminalCauseDto::Rejected {
+                    reason: "stale_active_replaced".to_string(),
+                },
+                via_hysteresis: false,
+            };
+            let row = Self::event_row(
+                stale_id,
+                &inputs.streamer_id,
+                &payload,
+                inputs.now,
+            );
+            SessionEventTxOps::insert(&mut tx, &row).await?;
+        }
 
         // Two-branch decision (down from five pre-Phase-3):
         //
@@ -360,6 +420,17 @@ mod tests {
                 danmu_statistics_id TEXT,
                 total_size_bytes INTEGER DEFAULT 0
             )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // Mirror the production migration's partial unique index so tests
+        // exercise the same constraint. Without this, the cleanup-on-create
+        // tests would silently allow multi-active rows that production
+        // would reject.
+        sqlx::query(
+            r#"CREATE UNIQUE INDEX live_sessions_one_active_per_streamer
+                ON live_sessions (streamer_id) WHERE end_time IS NULL"#,
         )
         .execute(&pool)
         .await
@@ -671,5 +742,181 @@ mod tests {
         assert!(outcome.resolved_session_id.is_none());
         assert!(!outcome.offline_event_emitted);
         assert!(outbox_event_types(&pool).await.is_empty());
+    }
+
+    /// Self-heal path A: a previous buggy build left two stale active
+    /// rows for the same streamer (multiple `end_time IS NULL`). The next
+    /// `start_or_resume` reuses the most-recent active row (`stale-B`)
+    /// and ends the older one (`stale-A`) in the same `BEGIN IMMEDIATE`
+    /// tx, with a `session_ended { rejected, "stale_active_replaced" }`
+    /// audit row.
+    ///
+    /// Without this, the older stale row would stay `end_time IS NULL`
+    /// forever and the next `Created` path on this streamer would trip
+    /// the partial unique index.
+    #[tokio::test]
+    async fn start_or_resume_cleans_stale_active_keeping_most_recent() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+
+        // Drop the unique index, seed two stale active rows, then leave
+        // the index off (recreating it would fail with two active rows).
+        // This represents the corrupt state a buggy old build could have
+        // left in production.
+        sqlx::query("DROP INDEX live_sessions_one_active_per_streamer")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for (id, offset) in [("stale-A", -120), ("stale-B", -60)] {
+            sqlx::query(
+                "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
+                 VALUES (?, ?, ?, NULL, '[]', NULL, 0)",
+            )
+            .bind(id)
+            .bind(STREAMER_ID)
+            .bind((now + chrono::Duration::seconds(offset)).timestamp_millis())
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let outcome = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        // `get_last_session` returns the most-recent active (stale-B), so
+        // ReusedActive picks it up. The OLDER stale row (stale-A) is what
+        // gets cleaned.
+        match outcome {
+            StartSessionOutcome::ReusedActive { ref session_id } => {
+                assert_eq!(session_id, "stale-B", "the most-recent active row is reused");
+            }
+            other => panic!("expected ReusedActive(stale-B), got {other:?}"),
+        }
+
+        // After cleanup: stale-A is ended, stale-B is still active.
+        let active: Vec<String> = sqlx::query_scalar(
+            "SELECT id FROM live_sessions
+             WHERE streamer_id = ? AND end_time IS NULL",
+        )
+        .bind(STREAMER_ID)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(active, vec!["stale-B".to_string()]);
+
+        // One `session_ended { rejected, stale_active_replaced }` for
+        // stale-A. No `session_started` (this is a reuse, not a create).
+        let events: Vec<(String, Option<String>)> = sqlx::query_as(
+            "SELECT kind, payload FROM session_events
+             WHERE streamer_id = ? ORDER BY occurred_at ASC, id ASC",
+        )
+        .bind(STREAMER_ID)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let kinds: Vec<&str> = events.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(kinds, vec!["session_ended"]);
+
+        let (_, payload) = &events[0];
+        let parsed: serde_json::Value =
+            serde_json::from_str(payload.as_deref().unwrap()).unwrap();
+        assert_eq!(parsed["cause"]["type"], "rejected");
+        assert_eq!(parsed["cause"]["reason"], "stale_active_replaced");
+        assert_eq!(parsed["via_hysteresis"], false);
+    }
+
+    /// Self-heal path B: stale active rows exist, but the most-recent
+    /// session for the streamer is already ended. Cleanup must end ALL
+    /// active rows (since none of them is the canonical "current"),
+    /// then `Created` writes a fresh session.
+    #[tokio::test]
+    async fn start_or_resume_cleans_all_stale_active_when_most_recent_is_ended() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+
+        sqlx::query("DROP INDEX live_sessions_one_active_per_streamer")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // stale-A and stale-B: end_time NULL (corrupt). stale-C: properly
+        // ended, but with the *latest* start_time so `get_last_session`
+        // returns stale-C with end_time set → goes to Created branch.
+        for (id, offset, ended) in [
+            ("stale-A", -180, false),
+            ("stale-B", -120, false),
+            ("stale-C", -60, true),
+        ] {
+            let end_time = if ended {
+                Some((now + chrono::Duration::seconds(offset + 30)).timestamp_millis())
+            } else {
+                None
+            };
+            sqlx::query(
+                "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
+                 VALUES (?, ?, ?, ?, '[]', NULL, 0)",
+            )
+            .bind(id)
+            .bind(STREAMER_ID)
+            .bind((now + chrono::Duration::seconds(offset)).timestamp_millis())
+            .bind(end_time)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let outcome = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
+
+        let active: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM live_sessions
+             WHERE streamer_id = ? AND end_time IS NULL AND id != ?",
+        )
+        .bind(STREAMER_ID)
+        .bind(outcome.session_id())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(active, 0, "stale-A and stale-B must both be ended");
+
+        // Two `session_ended` (for the two stale actives) + one
+        // `session_started` (for the new session).
+        let kinds: Vec<String> = sqlx::query_scalar(
+            "SELECT kind FROM session_events
+             WHERE streamer_id = ? ORDER BY occurred_at ASC, id ASC",
+        )
+        .bind(STREAMER_ID)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            kinds,
+            vec!["session_ended", "session_ended", "session_started"]
+        );
+    }
+
+    /// Inverse case: a clean DB. `start_or_resume` must NOT write any
+    /// stale-replace audit rows when there's nothing to clean up.
+    #[tokio::test]
+    async fn start_or_resume_no_cleanup_when_no_stale_rows() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+
+        let outcome = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
+
+        let kinds: Vec<String> = sqlx::query_scalar(
+            "SELECT kind FROM session_events
+             WHERE streamer_id = ? ORDER BY occurred_at ASC, id ASC",
+        )
+        .bind(STREAMER_ID)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            kinds,
+            vec!["session_started"],
+            "no stale rows should produce no cleanup audit rows"
+        );
     }
 }
