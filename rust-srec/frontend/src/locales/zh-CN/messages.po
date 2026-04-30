@@ -1321,7 +1321,7 @@ msgstr "确认密码"
 
 #: src/components/sessions/timeline-tab.tsx:335
 msgid "Confirmed via backstop timer."
-msgstr "通过备份计时器确认。"
+msgstr "等待恢复超时后确认。"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:663
 msgid "Connect Timeout (ms)"
