@@ -174,6 +174,7 @@ impl HlsStreamCoordinator {
             let playlist_url = selected_media_playlist_url.unwrap_or(initial_url);
             let playlist_engine_clone = playlist_engine.clone();
             let base_url_clone = base_url.clone();
+            let client_event_tx_for_playlist = client_event_tx.clone();
 
             Some(tokio::spawn(async move {
                 let res = playlist_engine_clone
@@ -182,6 +183,7 @@ impl HlsStreamCoordinator {
                         initial_media_playlist,
                         base_url_clone,
                         segment_request_tx,
+                        client_event_tx_for_playlist,
                         token_for_playlist_engine,
                     )
                     .await;
@@ -287,6 +289,9 @@ mod tests {
 
                 Ok(HlsStreamEvent::DiscontinuityTagEncountered { .. }) => {
                     debug!("Received DiscontinuityTagEncountered event");
+                }
+                Ok(HlsStreamEvent::EndlistEncountered) => {
+                    debug!("Received EndlistEncountered event");
                 }
                 Ok(HlsStreamEvent::StreamEnded) => {
                     debug!("Received StreamEnded event");

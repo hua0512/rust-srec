@@ -208,6 +208,7 @@ impl FlvDownloader {
             &streamer_id,
             "FLV",
             classify_flv_error,
+            |_| {},
         )
         .await;
 
@@ -285,6 +286,7 @@ impl FlvDownloader {
             &streamer_id,
             "FLV",
             classify_flv_error,
+            |_| {},
         )
         .await;
 

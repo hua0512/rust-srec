@@ -63,6 +63,11 @@ pub enum SplitReason {
     StreamStructureChange { description: String },
     /// HLS playlist discontinuity tag encountered.
     Discontinuity,
+    /// HLS playlist `#EXT-X-ENDLIST` tag encountered — authoritative end of
+    /// the live stream. Surfaced as the final `HlsData::EndMarker` so the
+    /// engine wrapper can promote the terminal event to
+    /// `EngineEndSignal::HlsEndlist`.
+    EndOfStream,
 }
 
 impl fmt::Display for SplitReason {
@@ -98,6 +103,7 @@ impl fmt::Display for SplitReason {
                 write!(f, "stream structure change: {description}")
             }
             Self::Discontinuity => write!(f, "discontinuity"),
+            Self::EndOfStream => write!(f, "end of stream"),
         }
     }
 }

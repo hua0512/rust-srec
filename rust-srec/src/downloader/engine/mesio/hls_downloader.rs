@@ -5,12 +5,13 @@
 //! It supports both pipeline-processed and raw download modes.
 
 use futures::StreamExt;
-use hls::HlsData;
+use hls::{HlsData, SplitReason};
 use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
 use mesio::{DownloadStream, MesioDownloaderFactory, ProtocolType};
 use parking_lot::RwLock;
 use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
@@ -259,6 +260,14 @@ impl HlsDownloader {
             ));
         }
 
+        // Tap each HLS item to detect the authoritative EXT-X-ENDLIST marker
+        // emitted by mesio (see `crates/mesio/src/hls/playlist.rs` ENDLIST
+        // path). When set, the engine signal escalates from CleanDisconnect
+        // (ambiguous) to HlsEndlist (authoritative → lifecycle bypasses
+        // hysteresis).
+        let saw_endlist = Arc::new(AtomicBool::new(false));
+        let saw_endlist_for_inspect = Arc::clone(&saw_endlist);
+
         // Consume the rest of the HLS stream and send to pipeline
         let stream_error = helpers::consume_stream(
             hls_stream,
@@ -268,6 +277,11 @@ impl HlsDownloader {
             &streamer_id,
             "HLS",
             classify_download_error,
+            move |item: &HlsData| {
+                if matches!(item, HlsData::EndMarker(Some(SplitReason::EndOfStream))) {
+                    saw_endlist_for_inspect.store(true, Ordering::Relaxed);
+                }
+            },
         )
         .await;
 
@@ -279,6 +293,12 @@ impl HlsDownloader {
             .await
             .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
 
+        let engine_signal = if saw_endlist.load(Ordering::Relaxed) {
+            crate::downloader::EngineEndSignal::HlsEndlist
+        } else {
+            crate::downloader::EngineEndSignal::CleanDisconnect
+        };
+
         helpers::handle_writer_result(
             writer_result,
             stream_error,
@@ -286,13 +306,7 @@ impl HlsDownloader {
             &self.event_tx,
             &streamer_id,
             "HLS",
-            // TODO(hysteresis): plumb EXT-X-ENDLIST detection through here
-            // so HLS playlists that explicitly mark end-of-stream can pass
-            // `EngineEndSignal::HlsEndlist` (authoritative → bypass
-            // hysteresis). Until then, treat HLS the same as FLV — clean
-            // disconnect with no end marker. Worst case: pipeline fires
-            // ~90s late on real EOF.
-            crate::downloader::EngineEndSignal::CleanDisconnect,
+            engine_signal,
         )
         .await
         .map_err(EngineStartError::from)
@@ -353,6 +367,11 @@ impl HlsDownloader {
             ));
         }
 
+        // See `download_with_pipeline` for the rationale; raw mode uses the
+        // same EXT-X-ENDLIST observer.
+        let saw_endlist = Arc::new(AtomicBool::new(false));
+        let saw_endlist_for_inspect = Arc::clone(&saw_endlist);
+
         // Consume the rest of the HLS stream and send to writer
         let stream_error = helpers::consume_stream(
             hls_stream,
@@ -362,6 +381,11 @@ impl HlsDownloader {
             &streamer_id,
             "HLS",
             classify_download_error,
+            move |item: &HlsData| {
+                if matches!(item, HlsData::EndMarker(Some(SplitReason::EndOfStream))) {
+                    saw_endlist_for_inspect.store(true, Ordering::Relaxed);
+                }
+            },
         )
         .await;
 
@@ -373,6 +397,12 @@ impl HlsDownloader {
             .await
             .map_err(|e| crate::Error::Other(format!("Writer task panicked: {}", e)))?;
 
+        let engine_signal = if saw_endlist.load(Ordering::Relaxed) {
+            crate::downloader::EngineEndSignal::HlsEndlist
+        } else {
+            crate::downloader::EngineEndSignal::CleanDisconnect
+        };
+
         helpers::handle_writer_result(
             writer_result,
             stream_error,
@@ -380,13 +410,7 @@ impl HlsDownloader {
             &self.event_tx,
             &streamer_id,
             "HLS",
-            // TODO(hysteresis): plumb EXT-X-ENDLIST detection through here
-            // so HLS playlists that explicitly mark end-of-stream can pass
-            // `EngineEndSignal::HlsEndlist` (authoritative → bypass
-            // hysteresis). Until then, treat HLS the same as FLV — clean
-            // disconnect with no end marker. Worst case: pipeline fires
-            // ~90s late on real EOF.
-            crate::downloader::EngineEndSignal::CleanDisconnect,
+            engine_signal,
         )
         .await
         .map_err(EngineStartError::from)

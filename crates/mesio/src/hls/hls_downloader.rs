@@ -139,6 +139,12 @@ impl HlsDownloader {
                             hls::SplitReason::Discontinuity,
                         )))
                     }
+                    HlsStreamEvent::EndlistEncountered => {
+                        debug!("ENDLIST encountered, emitting EndOfStream marker");
+                        Some(Ok(HlsData::end_marker_with_reason(
+                            hls::SplitReason::EndOfStream,
+                        )))
+                    }
                     _ => None,
                 },
                 Err(e) => Some(Err(e)),

@@ -195,6 +195,7 @@ fn split_reason_code(reason: &SplitReason) -> &'static str {
         SplitReason::ResolutionChange { .. } => "resolution_change",
         SplitReason::StreamStructureChange { .. } => "stream_structure_change",
         SplitReason::Discontinuity => "discontinuity",
+        SplitReason::EndOfStream => "end_of_stream",
     }
 }
 
@@ -242,7 +243,8 @@ fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
         SplitReason::SizeLimit
         | SplitReason::DurationLimit
         | SplitReason::HeaderReceived
-        | SplitReason::Discontinuity => return None,
+        | SplitReason::Discontinuity
+        | SplitReason::EndOfStream => return None,
     };
 
     serde_json::to_string(&details).ok()
@@ -257,6 +259,11 @@ fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
 /// Returns `Some((kind, message))` if the stream yielded an error, or `None`
 /// if it completed cleanly (or was cancelled).
 ///
+/// `inspect` is invoked on every successful item before forwarding so callers
+/// can tap protocol-specific signals (e.g. HLS observing
+/// `HlsData::EndMarker(Some(SplitReason::EndOfStream))` to surface
+/// `EngineEndSignal::HlsEndlist`). FLV callers pass a no-op closure.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn consume_stream<T, E: Display>(
     stream: impl futures::Stream<Item = std::result::Result<T, E>> + Unpin,
     tx: &mpsc::Sender<std::result::Result<T, PipelineError>>,
@@ -265,6 +272,7 @@ pub(super) async fn consume_stream<T, E: Display>(
     streamer_id: &str,
     protocol: &str,
     classify: impl Fn(&E) -> DownloadFailureKind,
+    mut inspect: impl FnMut(&T),
 ) -> Option<(DownloadFailureKind, String)> {
     let mut stream = std::pin::pin!(stream);
     let mut stream_error: Option<(DownloadFailureKind, String)> = None;
@@ -277,6 +285,7 @@ pub(super) async fn consume_stream<T, E: Display>(
 
         match result {
             Ok(item) => {
+                inspect(&item);
                 if tx.send(Ok(item)).await.is_err() {
                     warn!("Channel closed, stopping {} download", protocol);
                     break;
