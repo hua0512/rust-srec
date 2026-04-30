@@ -218,7 +218,7 @@ msgstr "接受无效证书（默认：关闭）"
 #: src/components/streamers/card/use-streamer-status.tsx:170
 #: src/components/streamers/card/use-streamer-status.tsx:179
 msgid "Account Not Found"
-msgstr ""
+msgstr "账号不存在"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:494
 msgid "Action"
@@ -6989,7 +6989,7 @@ msgstr "主播处于冷却期"
 
 #: src/components/streamers/card/use-streamer-status.tsx:180
 msgid "Streamer no longer exists on the platform"
-msgstr ""
+msgstr "主播在平台上已不存在"
 
 #: src/components/sessions/timeline-tab.tsx:163
 msgctxt "terminal-cause"
@@ -7273,7 +7273,7 @@ msgstr "你要访问的页面不存在。"
 
 #: src/components/streamers/card/use-streamer-status.tsx:183
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
-msgstr ""
+msgstr "平台报告该账号已不存在。可能已被删除、封禁，或者 URL/ID 有误。建议删除或更新该主播。"
 
 #: src/components/config/engines/engine-editor.tsx:265
 msgid "The underlying tool used for downloading."

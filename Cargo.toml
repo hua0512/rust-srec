@@ -66,9 +66,9 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls-aws-lc-rs",
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
-mimalloc = "0.1.48"
+mimalloc = "0.1.50"
 argon2 = "0.5"
-zip = { version = "8.5", default-features = false, features = ["deflate"] }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 tar = "0.4"
 chrono-tz = "0.10"
 cron = "0.16"
@@ -83,8 +83,8 @@ byteorder = "1.5"
 brotli = "8.0"
 openssl = { version = "0.10", features = ["vendored"] }
 native-tls = "0.2.18"
-rustls = { version = "0.23.37", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
-rustls-platform-verifier = "0.6.2"
+rustls = { version = "0.23.40", default-features = false, features = ["logging", "aws-lc-rs", "tls12"] }
+rustls-platform-verifier = "0.7.0"
 libsm = "0.6.0"
 rustc-hash = "2.1"
 memchr = "2.7.6"
