@@ -4,9 +4,9 @@ import { z } from 'zod';
 
 // `OfflineSignal` from the Rust side — `#[serde(tag = "type", rename_all = "snake_case")]`.
 // Variants carry no extra fields here on the wire; richer variants like
-// `PlaylistGone(u16)` and `ConsecutiveFailures(u32)` serialise as
-// tuple-newtype JSON ({"type": "playlist_gone"} with the integer in a sibling
-// field), but on the frontend we only need the discriminator to render a
+// `ConsecutiveFailures(u32)` serialise as tuple-newtype JSON
+// ({"type": "consecutive_failures"} with the integer in a sibling field),
+// but on the frontend we only need the discriminator to render a
 // human-readable label.
 export const OfflineSignalSchema = z.object({
   type: z.string(),

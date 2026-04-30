@@ -2093,11 +2093,18 @@ mod tests {
     // `on_segment_completed` wiring resets the consecutive-failure counter.
     // =========================================================================
 
-    /// HLS playlist 404 is promoted to `DefinitiveOffline { PlaylistGone }`.
+    /// Two consecutive `Network` failures inside the classifier's window
+    /// promote the second terminal event to `DefinitiveOffline`. The first
+    /// failure parks the session in `Hysteresis` (ambiguous Failed → quiet
+    /// period); the second arrives while the FSM is still in `Hysteresis`,
+    /// the classifier hits its threshold, and the session ends authoritatively.
     #[tokio::test]
-    async fn pr2_hls_404_promotes_to_definitive_offline() {
+    async fn pr2_two_consecutive_network_failures_promote() {
         let pool = setup_pool().await;
-        let lifecycle = make_lifecycle(pool);
+        // Use the fast hysteresis window so the test isn't pinned to the
+        // 80 s default backstop. The classifier itself uses the lifecycle's
+        // default classifier (60 s window, threshold 2).
+        let lifecycle = make_lifecycle_fast(pool);
         let mut rx = lifecycle.subscribe();
 
         let started = lifecycle
@@ -2106,55 +2113,14 @@ mod tests {
             .unwrap();
         let _ = rx.recv().await.unwrap(); // drain Started
 
-        lifecycle
-            .on_download_terminal(&DownloadTerminalEvent::Failed {
-                download_id: "dl".into(),
-                streamer_id: STREAMER_ID.into(),
-                streamer_name: "Test".into(),
-                session_id: started.session_id().to_string(),
-                kind: crate::downloader::DownloadFailureKind::HttpClientError { status: 404 },
-                error: "playlist 404".into(),
-                recoverable: false,
-            })
-            .await
-            .unwrap();
-
-        match rx.recv().await.unwrap() {
-            SessionTransition::Ended { cause, .. } => {
-                assert!(matches!(
-                    cause,
-                    TerminalCause::DefinitiveOffline {
-                        signal: crate::session::OfflineSignal::PlaylistGone(404)
-                    }
-                ));
-                assert!(cause.should_run_session_complete_pipeline());
-            }
-            other => panic!("expected Ended, got {other:?}"),
-        }
-    }
-
-    /// A single Network failure does not promote; a second one inside the
-    /// window promotes both sessions' second event to DefinitiveOffline.
-    #[ignore = "obsolete under hysteresis FSM; suite I rewrite pending"]
-    #[tokio::test]
-    async fn pr2_two_consecutive_network_failures_promote() {
-        let pool = setup_pool().await;
-        let lifecycle = make_lifecycle(pool);
-
-        // First session: one Network failure → stays Failed, session ends
-        // as usual.
-        let first = lifecycle
-            .on_live_detected(live_args(Utc::now()))
-            .await
-            .unwrap();
-        let mut rx = lifecycle.subscribe();
-
+        // First Network failure: classifier returns None → ambiguous Failed
+        // → enter Hysteresis, emit `Ending`.
         lifecycle
             .on_download_terminal(&DownloadTerminalEvent::Failed {
                 download_id: "dl-1".into(),
                 streamer_id: STREAMER_ID.into(),
                 streamer_name: "Test".into(),
-                session_id: first.session_id().to_string(),
+                session_id: started.session_id().to_string(),
                 kind: crate::downloader::DownloadFailureKind::Network,
                 error: "timeout".into(),
                 recoverable: false,
@@ -2162,31 +2128,23 @@ mod tests {
             .await
             .unwrap();
         match rx.recv().await.unwrap() {
-            SessionTransition::Ended { cause, .. } => {
+            SessionTransition::Ending { cause, .. } => {
                 assert!(
                     matches!(cause, TerminalCause::Failed { .. }),
-                    "first Network must stay Failed, got {cause:?}"
+                    "first Network must enter Hysteresis with Failed cause, got {cause:?}"
                 );
             }
-            other => panic!("expected Ended, got {other:?}"),
+            other => panic!("expected Ending, got {other:?}"),
         }
 
-        // Start a fresh session (previous is still ended-in-memory; create
-        // new outside the gap window so we exercise a Created outcome).
-        let second_started_at = Utc::now() + chrono::Duration::seconds(120);
-        let second = lifecycle
-            .on_live_detected(live_args(second_started_at))
-            .await
-            .unwrap();
-        let _ = rx.recv().await.unwrap(); // drain Started
-
-        // Second Network failure for the same streamer — this one promotes.
+        // Second Network failure for the same session: classifier promotes
+        // → DefinitiveOffline → authoritative end (cancels Hysteresis).
         lifecycle
             .on_download_terminal(&DownloadTerminalEvent::Failed {
                 download_id: "dl-2".into(),
                 streamer_id: STREAMER_ID.into(),
                 streamer_name: "Test".into(),
-                session_id: second.session_id().to_string(),
+                session_id: started.session_id().to_string(),
                 kind: crate::downloader::DownloadFailureKind::Network,
                 error: "timeout".into(),
                 recoverable: false,
@@ -2194,13 +2152,18 @@ mod tests {
             .await
             .unwrap();
         match rx.recv().await.unwrap() {
-            SessionTransition::Ended { cause, .. } => {
+            SessionTransition::Ended { cause, via_hysteresis, .. } => {
                 assert!(matches!(
                     cause,
                     TerminalCause::DefinitiveOffline {
                         signal: crate::session::OfflineSignal::ConsecutiveFailures(2)
                     }
                 ));
+                assert!(cause.should_run_session_complete_pipeline());
+                assert!(
+                    !via_hysteresis,
+                    "DefinitiveOffline must override hysteresis with via_hysteresis=false"
+                );
             }
             other => panic!("expected Ended, got {other:?}"),
         }
@@ -2293,7 +2256,11 @@ mod tests {
         .await
         .unwrap();
 
-        let lifecycle = make_lifecycle(pool.clone());
+        // `make_lifecycle_fast` shrinks the hysteresis backstop to 25 ms so
+        // the test doesn't have to wait for the default 80 s window in case
+        // the classifier never promotes. The backoff-bypass invariant being
+        // tested is independent of the hysteresis window length.
+        let lifecycle = make_lifecycle_fast(pool.clone());
         let mut rx = lifecycle.subscribe();
 
         let started = lifecycle
@@ -2302,39 +2269,61 @@ mod tests {
             .unwrap();
         let _ = rx.recv().await.unwrap(); // drain Started
 
-        // Classifier promotes the 404 to DefinitiveOffline; lifecycle closes
-        // the session immediately regardless of the 240-second backoff that
-        // would normally throttle monitor-loop observations.
-        lifecycle
-            .on_download_terminal(&DownloadTerminalEvent::Failed {
-                download_id: "dl".into(),
-                streamer_id: STREAMER_ID.into(),
-                streamer_name: "Test".into(),
-                session_id: started.session_id().to_string(),
-                kind: crate::downloader::DownloadFailureKind::HttpClientError { status: 404 },
-                error: "playlist 404".into(),
-                recoverable: false,
-            })
-            .await
-            .unwrap();
+        // Drive DefinitiveOffline via the consecutive-Network rule (the 404
+        // fast-path was deleted because transient 404s overfired in
+        // production — see `session::classifier` docs). The first Failed
+        // event parks the session in Hysteresis; the second crosses the
+        // classifier threshold and forces an authoritative end.
+        for tag in ["dl-1", "dl-2"] {
+            lifecycle
+                .on_download_terminal(&DownloadTerminalEvent::Failed {
+                    download_id: tag.into(),
+                    streamer_id: STREAMER_ID.into(),
+                    streamer_name: "Test".into(),
+                    session_id: started.session_id().to_string(),
+                    kind: crate::downloader::DownloadFailureKind::Network,
+                    error: "timeout".into(),
+                    recoverable: false,
+                })
+                .await
+                .unwrap();
+        }
 
-        // Session ended within the single await above — no backoff wait.
+        // Session ended within the two synchronous awaits above — no backoff
+        // wait, no hysteresis-timer wait. The classifier promoted the second
+        // Failed straight to authoritative DefinitiveOffline, which cancels
+        // the in-flight Hysteresis handle and writes end_time in one tx.
         assert!(!lifecycle.is_session_active(started.session_id()));
         assert!(
             db_session_end_time(&pool, started.session_id())
                 .await
                 .is_some(),
-            "session end_time must be written in one transition cycle"
+            "session end_time must be written without waiting on backoff"
         );
 
+        // Receiver should see Ending (first Failed) followed by Ended
+        // (second Failed → DefinitiveOffline).
         match rx.recv().await.unwrap() {
-            SessionTransition::Ended { cause, .. } => {
+            SessionTransition::Ending { cause, .. } => {
+                assert!(
+                    matches!(cause, TerminalCause::Failed { .. }),
+                    "first Network must enter Hysteresis with Failed cause, got {cause:?}"
+                );
+            }
+            other => panic!("expected Ending, got {other:?}"),
+        }
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended { cause, via_hysteresis, .. } => {
                 assert!(matches!(
                     cause,
                     TerminalCause::DefinitiveOffline {
-                        signal: crate::session::OfflineSignal::PlaylistGone(404)
+                        signal: crate::session::OfflineSignal::ConsecutiveFailures(2)
                     }
                 ));
+                assert!(
+                    !via_hysteresis,
+                    "DefinitiveOffline must skip the hysteresis-timer path"
+                );
             }
             other => panic!("expected Ended, got {other:?}"),
         }
@@ -2539,8 +2528,13 @@ mod tests {
         assert!(lifecycle.is_session_active(started.session_id()));
     }
 
-    /// J1 — `DefinitiveOffline { PlaylistGone(404) }` skips Hysteresis.
-    /// Direct Ended; `via_hysteresis=false`.
+    /// J1 — `DefinitiveOffline { ConsecutiveFailures }` skips Hysteresis.
+    /// First Network failure parks the session in Hysteresis (`Ending` is
+    /// emitted). Second Network failure crosses the classifier threshold,
+    /// promotes to `DefinitiveOffline`, cancels the Hysteresis handle, and
+    /// emits `Ended` with `via_hysteresis=false`.
+    ///
+    /// (J4 covers the parallel HlsEndlist authoritative-end path.)
     #[tokio::test]
     async fn j1_definitive_offline_skips_hysteresis() {
         let pool = setup_pool().await;
@@ -2553,28 +2547,47 @@ mod tests {
             .unwrap();
         let _ = rx.recv().await.unwrap(); // Started
 
-        // HttpClientError(404) → classifier promotes to DefinitiveOffline →
-        // authoritative → straight to Ended.
+        // First Network → ambiguous Failed → Hysteresis.
         lifecycle
             .on_download_terminal(&DownloadTerminalEvent::Failed {
-                download_id: "dl".into(),
+                download_id: "dl-1".into(),
                 streamer_id: STREAMER_ID.into(),
                 streamer_name: "Test".into(),
                 session_id: started.session_id().to_string(),
-                kind: crate::downloader::DownloadFailureKind::HttpClientError { status: 404 },
-                error: "playlist 404".into(),
+                kind: crate::downloader::DownloadFailureKind::Network,
+                error: "timeout".into(),
+                recoverable: false,
+            })
+            .await
+            .unwrap();
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ending { cause, .. } => {
+                assert!(matches!(cause, TerminalCause::Failed { .. }));
+            }
+            other => panic!("expected Ending, got {other:?}"),
+        }
+
+        // Second Network → classifier promotes → DefinitiveOffline →
+        // authoritative → cancels Hysteresis and emits Ended.
+        lifecycle
+            .on_download_terminal(&DownloadTerminalEvent::Failed {
+                download_id: "dl-2".into(),
+                streamer_id: STREAMER_ID.into(),
+                streamer_name: "Test".into(),
+                session_id: started.session_id().to_string(),
+                kind: crate::downloader::DownloadFailureKind::Network,
+                error: "timeout".into(),
                 recoverable: false,
             })
             .await
             .unwrap();
 
-        // Next transition should be Ended directly (not Ending).
         match rx.recv().await.unwrap() {
             SessionTransition::Ended { cause, via_hysteresis, .. } => {
                 assert!(matches!(
                     cause,
                     TerminalCause::DefinitiveOffline {
-                        signal: crate::session::OfflineSignal::PlaylistGone(404)
+                        signal: crate::session::OfflineSignal::ConsecutiveFailures(2)
                     }
                 ));
                 assert!(!via_hysteresis, "authoritative end must skip Hysteresis");

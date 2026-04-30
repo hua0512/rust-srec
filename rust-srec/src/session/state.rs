@@ -246,10 +246,11 @@ impl TerminalCause {
     /// Authoritative signals come from sources that can confidently say "the
     /// stream is over": the platform's own websocket (`DanmuStreamClosed` →
     /// `Cancelled` plumbed via the danmu observer's `on_offline_detected`
-    /// call), the platform's status API (`StreamerOffline`), or an engine
-    /// boundary observation that constitutes platform-asserted end
-    /// (`DefinitiveOffline { PlaylistGone }`, HLS `#EXT-X-ENDLIST` →
-    /// `Completed` with [`crate::downloader::EngineEndSignal::HlsEndlist`]).
+    /// call), the platform's status API (`StreamerOffline`), the
+    /// classifier-derived `DefinitiveOffline { ConsecutiveFailures }`, or an
+    /// engine boundary observation that constitutes platform-asserted end
+    /// (HLS `#EXT-X-ENDLIST` → `Completed` with
+    /// [`crate::downloader::EngineEndSignal::HlsEndlist`]).
     ///
     /// `Completed` itself is ambiguous (mesio HLS-with-endlist is
     /// authoritative; mesio FLV clean disconnect is not). Callers that have
@@ -312,9 +313,6 @@ impl TerminalCause {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OfflineSignal {
-    /// HLS playlist returned 4xx (almost always 404). The platform deleted
-    /// the live URL — the stream really ended.
-    PlaylistGone(u16),
     /// Danmu websocket sent an explicit stream-closed control frame.
     DanmuStreamClosed,
     /// `n` consecutive engine failures of a kind that indicates "no more
@@ -327,7 +325,6 @@ impl OfflineSignal {
     /// Short, stable string for logging / metrics labels.
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::PlaylistGone(_) => "playlist_gone",
             Self::DanmuStreamClosed => "danmu_stream_closed",
             Self::ConsecutiveFailures(_) => "consecutive_failures",
         }
@@ -405,7 +402,7 @@ mod tests {
     #[test]
     fn terminal_cause_definitive_offline_runs_session_complete_pipeline() {
         let c = TerminalCause::DefinitiveOffline {
-            signal: OfflineSignal::PlaylistGone(404),
+            signal: OfflineSignal::ConsecutiveFailures(2),
         };
         assert!(c.should_run_session_complete_pipeline());
     }
@@ -429,7 +426,7 @@ mod tests {
     #[test]
     fn authority_definitive_offline_is_authoritative() {
         let c = TerminalCause::DefinitiveOffline {
-            signal: OfflineSignal::PlaylistGone(404),
+            signal: OfflineSignal::ConsecutiveFailures(2),
         };
         assert!(c.is_authoritative_end());
         assert!(c.is_authoritative_end_with_signal(None));
@@ -514,7 +511,6 @@ mod tests {
 
     #[test]
     fn offline_signal_as_str_is_stable() {
-        assert_eq!(OfflineSignal::PlaylistGone(404).as_str(), "playlist_gone");
         assert_eq!(
             OfflineSignal::DanmuStreamClosed.as_str(),
             "danmu_stream_closed"

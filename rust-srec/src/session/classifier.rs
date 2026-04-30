@@ -2,33 +2,49 @@
 //! [`OfflineSignal`] when the engine-side error is strong enough to be a
 //! definitive offline signal that bypasses the slower hysteresis path.
 //!
-//! Rules (PR 2):
+//! ## Rules
 //!
-//! - **mesio HLS / mesio FLV + `HttpClientError { status: 404 }`** → a
-//!   playlist/manifest 404 that the engine surfaces is a definitive
-//!   offline for the stream (the upstream platform has removed the
-//!   resource). Returns [`OfflineSignal::PlaylistGone(404)`].
 //! - **mesio HLS / mesio FLV + `Network` failures** — accumulate per
-//!   streamer; reaching the threshold inside the trailing window is
-//!   treated as a definitive offline. Returns
-//!   [`OfflineSignal::ConsecutiveFailures(threshold)`]. Counter resets when
-//!   a successful segment is observed (preserves Bilibili-style mid-stream
+//!   streamer; reaching the threshold inside the trailing window is treated
+//!   as a definitive offline. Returns
+//!   [`OfflineSignal::ConsecutiveFailures(threshold)`]. Counter resets when a
+//!   successful segment is observed (preserves Bilibili-style mid-stream
 //!   RST reconnects).
 //! - **ffmpeg / streamlink** — subprocess errors are too fuzzy to
 //!   classify with high confidence. Returns `None`; the slower monitor
 //!   path observes offline on the next successful status check.
-//! - **Everything else** — `None`. Includes `SourceUnavailable`
-//!   (the engine already gave up without a 404), `Processing` (writer
-//!   error, independent of upstream state), `Io`, `OutputRootUnavailable`
+//! - **Everything else** — `None`. Includes `HttpClientError` (4xx/404 — see
+//!   note below), `SourceUnavailable` (the engine already gave up),
+//!   `Processing` (writer error), `Io`, `OutputRootUnavailable`
 //!   (infrastructure), `Configuration`, `RateLimited`, server 5xx, etc.
+//!
+//! ## Why HTTP 404 is not classified
+//!
+//! Earlier revisions promoted any mesio 404 to `DefinitiveOffline`. That
+//! over-fired in two real production cases:
+//!
+//! 1. **FLV initial-request 404 on stream re-up** — Douyu and similar CDNs
+//!    occasionally return 404 on the freshly-issued FLV URL while the edge
+//!    propagates the new token. The platform monitor still reports `LIVE`,
+//!    so the only effect of the early end was three back-to-back empty
+//!    sessions (one per `LIVE` re-detection) before the actor's error
+//!    backoff finally engaged.
+//! 2. **HLS segment / playlist 404 mid-stream** — sliding-window eviction
+//!    races, signed-URL token expiry on platforms that 404 instead of 403,
+//!    and CDN edge desync all manifest as transient 404s on a stream that
+//!    is otherwise live.
+//!
+//! True end-of-stream signals are now sourced from:
+//! - Mesio HLS `#EXT-X-ENDLIST` → `EngineEndSignal::HlsEndlist`
+//!   (authoritative, bypasses hysteresis directly via the `Completed` path)
+//! - The consecutive-`Network` rule below, which catches genuinely-offline
+//!   streams without misfiring on transient 404s.
 //!
 //! ## Configuration
 //!
 //! Window and threshold are **derived from the scheduler's existing
 //! `offline_check_*` tunables** so operators only configure offline
 //! detection in one place. See [`OfflineClassifier::from_scheduler`].
-//! Default values match `SchedulerConfig::default` (`count = 3`,
-//! `interval = 20 s` → window 60 s) with a floor of 2 on the threshold.
 //!
 //! The classifier is stateful (holds the per-streamer consecutive-failure
 //! window). Constructed once per process and shared with
@@ -65,9 +81,9 @@ pub struct OfflineClassifier {
 
 impl OfflineClassifier {
     /// Construct a classifier with the [`Default`] window/threshold,
-    /// matching the historical hardcoded `(60 s, 2)` constants. Provided
-    /// as a thin shim for call sites that don't have the scheduler config
-    /// in scope (mostly tests and the legacy monitor service entry point).
+    /// matching `SchedulerConfig::default`. Provided as a thin shim for
+    /// call sites that don't have the scheduler config in scope (mostly
+    /// tests and the legacy monitor service entry point).
     pub fn new() -> Self {
         Self::default()
     }
@@ -96,7 +112,7 @@ impl OfflineClassifier {
     /// Construct directly from explicit window/threshold values. Used by
     /// the test-only [`OfflineClassifier::new`] / [`Default`] path so test
     /// fixtures get the historical `(60 s, 2)` defaults regardless of
-    /// changes to `SchedulerConfig::default`. Production code goes
+    /// changes to [`SchedulerConfig::default`]. Production code goes
     /// through [`Self::from_scheduler`].
     pub fn from_window_threshold(window: Duration, threshold: usize) -> Self {
         Self {
@@ -135,14 +151,6 @@ impl OfflineClassifier {
         }
 
         match failure {
-            DownloadFailureKind::HttpClientError { status: 404 } => {
-                info!(
-                    streamer_id,
-                    engine = ?engine_kind,
-                    "OfflineClassifier: mesio 404 → DefinitiveOffline(PlaylistGone)"
-                );
-                Some(OfflineSignal::PlaylistGone(404))
-            }
             DownloadFailureKind::Network => self.record_network_failure_and_check(streamer_id),
             _ => {
                 debug!(
@@ -209,16 +217,16 @@ impl OfflineClassifier {
 impl Default for OfflineClassifier {
     /// Default uses the historical fixed `(60 s window, threshold 2)`
     /// behaviour. Provided so test fixtures (`make_lifecycle`,
-    /// integration helpers) don't depend on scheduler-default drift —
-    /// production wires explicitly through [`Self::from_scheduler`].
+    /// integration helpers) don't depend on the scheduler-default drift
+    /// — production wires explicitly through [`Self::from_scheduler`].
     fn default() -> Self {
         Self::from_window_threshold(Duration::from_secs(60), 2)
     }
 }
 
 /// Which download engine produced the failure. Distinguishing engines is
-/// required because `mesio HLS` 404 (definitive) is not the same signal as
-/// `ffmpeg` exit-code-1 (fuzzy).
+/// required because mesio failures can be classified, but `ffmpeg`
+/// subprocess errors cannot.
 ///
 /// Mirrors the variants of `crate::downloader::engine::EngineType` with the
 /// mesio flavour split out (`HLS` vs `FLV`) because the rules are the same
@@ -241,35 +249,19 @@ impl EngineKind {
 mod tests {
     use super::*;
 
-    // ---- C1 — mesio HLS playlist 404 → PlaylistGone(404) -------------
-
-    #[test]
-    fn c1_mesio_hls_playlist_404_is_definitive_offline() {
-        let c = OfflineClassifier::new();
-        let result = c.classify_failure(
-            "s1",
-            &EngineKind::MesioHls,
-            &DownloadFailureKind::HttpClientError { status: 404 },
-        );
-        assert_eq!(result, Some(OfflineSignal::PlaylistGone(404)));
+    /// Helper: the test-default classifier (`60 s window, threshold 2`),
+    /// matching the historical hardcoded constants so existing assertions
+    /// stay numerically stable. Equivalent to `OfflineClassifier::new()` /
+    /// `Default::default()`.
+    fn classic_classifier() -> OfflineClassifier {
+        OfflineClassifier::new()
     }
 
-    #[test]
-    fn c1_mesio_flv_404_is_definitive_offline() {
-        let c = OfflineClassifier::new();
-        let result = c.classify_failure(
-            "s1",
-            &EngineKind::MesioFlv,
-            &DownloadFailureKind::HttpClientError { status: 404 },
-        );
-        assert_eq!(result, Some(OfflineSignal::PlaylistGone(404)));
-    }
-
-    // ---- C2 — mesio HLS network timeout alone → None -----------------
+    // ---- C2 — single Network failure does not classify ----------------
 
     #[test]
     fn c2_single_network_failure_does_not_classify() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
             &EngineKind::MesioHls,
@@ -278,11 +270,11 @@ mod tests {
         assert_eq!(result, None);
     }
 
-    // ---- C3 — two consecutive Network failures within 60 s → Some ----
+    // ---- C3 — two consecutive Network failures within window → Some ----
 
     #[test]
     fn c3_two_consecutive_network_failures_classify_as_definitive_offline() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
 
         let first = c.classify_failure(
             "s1",
@@ -307,7 +299,7 @@ mod tests {
 
     #[test]
     fn c4_expired_window_resets_counter() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
 
         // Manually seed the log with a timestamp just past the window so we
         // don't have to block the test for a minute.
@@ -331,7 +323,7 @@ mod tests {
 
     #[test]
     fn c5_successful_segment_resets_counter() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
 
         // First failure primes the counter.
         let first = c.classify_failure(
@@ -360,9 +352,7 @@ mod tests {
 
     #[test]
     fn c6_ffmpeg_http_404_does_not_classify() {
-        let c = OfflineClassifier::new();
-        // Even a 404 from an ffmpeg wrapper is not classified — ffmpeg
-        // surfaces process-exit noise rather than clean HTTP statuses.
+        let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
             &EngineKind::Ffmpeg,
@@ -373,7 +363,7 @@ mod tests {
 
     #[test]
     fn c6_ffmpeg_subprocess_error_is_none() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
             &EngineKind::Ffmpeg,
@@ -384,7 +374,7 @@ mod tests {
 
     #[test]
     fn c7_streamlink_subprocess_error_is_none() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
             &EngineKind::Streamlink,
@@ -395,7 +385,7 @@ mod tests {
 
     #[test]
     fn c7_streamlink_network_never_accumulates() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
         // Accumulate many Network failures on a streamlink engine; counter
         // should never fire because streamlink failures are not classified.
         for _ in 0..5 {
@@ -410,10 +400,33 @@ mod tests {
 
     // ---- Additional coverage ------------------------------------------
 
+    /// Mesio 404 (the previously-classified case) now returns `None` — the
+    /// FLV initial-request CDN race is not a definitive offline signal.
+    #[test]
+    fn mesio_404_no_longer_classifies() {
+        let c = classic_classifier();
+        assert_eq!(
+            c.classify_failure(
+                "s1",
+                &EngineKind::MesioHls,
+                &DownloadFailureKind::HttpClientError { status: 404 },
+            ),
+            None
+        );
+        assert_eq!(
+            c.classify_failure(
+                "s1",
+                &EngineKind::MesioFlv,
+                &DownloadFailureKind::HttpClientError { status: 404 },
+            ),
+            None
+        );
+    }
+
     /// Non-network, non-404 mesio failures return `None`.
     #[test]
     fn mesio_source_unavailable_returns_none() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
         let result = c.classify_failure(
             "s1",
             &EngineKind::MesioHls,
@@ -425,7 +438,7 @@ mod tests {
     /// HTTP 5xx and other client errors are not definitive.
     #[test]
     fn mesio_500_and_403_return_none() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
         assert_eq!(
             c.classify_failure(
                 "s1",
@@ -448,7 +461,7 @@ mod tests {
     /// counter.
     #[test]
     fn streamer_isolation_in_consecutive_counter() {
-        let c = OfflineClassifier::new();
+        let c = classic_classifier();
 
         let a1 = c.classify_failure(
             "a",

@@ -184,7 +184,7 @@ mod tests {
             streamer_name: "test".into(),
             ended_at: Utc::now(),
             cause: TerminalCause::DefinitiveOffline {
-                signal: OfflineSignal::PlaylistGone(404),
+                signal: OfflineSignal::ConsecutiveFailures(2),
             },
             via_hysteresis: false,
         }
