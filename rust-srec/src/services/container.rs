@@ -427,12 +427,21 @@ impl ServiceContainer {
                 pool.clone(),
                 write_pool.clone(),
             ));
+        // Classifier window/threshold derived from the same scheduler
+        // tunables — single source of truth alongside the hysteresis
+        // backstop (no parallel knob, no hardcoded 60 s).
+        let offline_classifier = Arc::new(
+            crate::session::OfflineClassifier::from_scheduler(
+                global_config.offline_check_count as u32,
+                global_config.offline_check_delay_ms as u64,
+            ),
+        );
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
                 Arc::new(crate::session::SessionLifecycleRepository::new(
                     write_pool.clone(),
                 )),
-                Arc::new(crate::session::OfflineClassifier::new()),
+                offline_classifier,
                 crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
                 hysteresis_config,
             )
@@ -724,12 +733,20 @@ impl ServiceContainer {
                 pool.clone(),
                 write_pool.clone(),
             ));
+        // Classifier window/threshold derived from the same scheduler
+        // tunables — see the primary container site for rationale.
+        let offline_classifier = Arc::new(
+            crate::session::OfflineClassifier::from_scheduler(
+                global_config.offline_check_count as u32,
+                global_config.offline_check_delay_ms as u64,
+            ),
+        );
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
                 Arc::new(crate::session::SessionLifecycleRepository::new(
                     write_pool.clone(),
                 )),
-                Arc::new(crate::session::OfflineClassifier::new()),
+                offline_classifier,
                 crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
                 hysteresis_config,
             )

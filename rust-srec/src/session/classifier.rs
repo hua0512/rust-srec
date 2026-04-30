@@ -9,10 +9,10 @@
 //!   offline for the stream (the upstream platform has removed the
 //!   resource). Returns [`OfflineSignal::PlaylistGone(404)`].
 //! - **mesio HLS / mesio FLV + `Network` failures** — accumulate per
-//!   streamer; two distinct failures inside a 60 s window are treated
-//!   as a definitive offline. Returns
-//!   [`OfflineSignal::ConsecutiveFailures(2)`]. Counter resets when a
-//!   successful segment is observed (preserves Bilibili-style mid-stream
+//!   streamer; reaching the threshold inside the trailing window is
+//!   treated as a definitive offline. Returns
+//!   [`OfflineSignal::ConsecutiveFailures(threshold)`]. Counter resets when
+//!   a successful segment is observed (preserves Bilibili-style mid-stream
 //!   RST reconnects).
 //! - **ffmpeg / streamlink** — subprocess errors are too fuzzy to
 //!   classify with high confidence. Returns `None`; the slower monitor
@@ -22,8 +22,16 @@
 //!   error, independent of upstream state), `Io`, `OutputRootUnavailable`
 //!   (infrastructure), `Configuration`, `RateLimited`, server 5xx, etc.
 //!
-//! The classifier is stateful (holds the per-streamer consecutive-
-//! failure window). Constructed once per process and shared with
+//! ## Configuration
+//!
+//! Window and threshold are **derived from the scheduler's existing
+//! `offline_check_*` tunables** so operators only configure offline
+//! detection in one place. See [`OfflineClassifier::from_scheduler`].
+//! Default values match `SchedulerConfig::default` (`count = 3`,
+//! `interval = 20 s` → window 60 s) with a floor of 2 on the threshold.
+//!
+//! The classifier is stateful (holds the per-streamer consecutive-failure
+//! window). Constructed once per process and shared with
 //! [`crate::session::SessionLifecycle`].
 
 use std::time::{Duration, Instant};
@@ -34,25 +42,75 @@ use tracing::{debug, info};
 use crate::downloader::DownloadFailureKind;
 use crate::session::state::OfflineSignal;
 
-/// Time window for the consecutive-failures rule (plan §2b).
-const CONSECUTIVE_FAILURE_WINDOW: Duration = Duration::from_secs(60);
-
-/// Number of failures inside [`CONSECUTIVE_FAILURE_WINDOW`] that trips
-/// the definitive-offline signal.
-const CONSECUTIVE_FAILURE_THRESHOLD: usize = 2;
+/// Floor for the classifier threshold. Operators who set
+/// `offline_check_count = 1` for very aggressive offline polling still get a
+/// safety margin against mid-stream RST reconnects, which the
+/// `note_successful_segment` reset covers but only after the segment lands.
+const MIN_CONSECUTIVE_FAILURE_THRESHOLD: usize = 2;
 
 /// A classifier inspects an engine failure and decides whether it is a
 /// definitive offline signal worth bypassing the slower hysteresis path.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct OfflineClassifier {
     /// Per-streamer timestamps of recent eligible (Network) failures.
-    /// Pruned to the trailing [`CONSECUTIVE_FAILURE_WINDOW`] on each update.
+    /// Pruned to the trailing [`Self::window`] on each update.
     failure_log: DashMap<String, Vec<Instant>>,
+    /// Trailing window for the consecutive-failures rule.
+    window: Duration,
+    /// Number of failures inside [`Self::window`] that trips the
+    /// definitive-offline signal. Floored at
+    /// [`MIN_CONSECUTIVE_FAILURE_THRESHOLD`].
+    threshold: usize,
 }
 
 impl OfflineClassifier {
+    /// Construct a classifier with the [`Default`] window/threshold,
+    /// matching the historical hardcoded `(60 s, 2)` constants. Provided
+    /// as a thin shim for call sites that don't have the scheduler config
+    /// in scope (mostly tests and the legacy monitor service entry point).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Build a classifier from the scheduler's existing offline-check
+    /// tunables — single source of truth for "how long do we wait before
+    /// declaring a stream really offline" across the
+    /// [`crate::session::HysteresisConfig`] backstop and this classifier.
+    ///
+    /// Window = `count × interval_ms` (matches the actor's offline
+    /// confirmation horizon). Threshold = `max(count, 2)` — a floor of 2
+    /// preserves Bilibili-RST safety even when an operator dials
+    /// `offline_check_count = 1` for very aggressive polling.
+    pub fn from_scheduler(offline_check_count: u32, offline_check_interval_ms: u64) -> Self {
+        let count = offline_check_count.max(1);
+        let interval = offline_check_interval_ms.max(1_000);
+        let window = Duration::from_millis(count as u64 * interval);
+        let threshold = (count as usize).max(MIN_CONSECUTIVE_FAILURE_THRESHOLD);
+        Self {
+            failure_log: DashMap::new(),
+            window,
+            threshold,
+        }
+    }
+
+    /// Construct directly from explicit window/threshold values. Used by
+    /// the test-only [`OfflineClassifier::new`] / [`Default`] path so test
+    /// fixtures get the historical `(60 s, 2)` defaults regardless of
+    /// changes to `SchedulerConfig::default`. Production code goes
+    /// through [`Self::from_scheduler`].
+    pub fn from_window_threshold(window: Duration, threshold: usize) -> Self {
+        Self {
+            failure_log: DashMap::new(),
+            window,
+            threshold: threshold.max(MIN_CONSECUTIVE_FAILURE_THRESHOLD),
+        }
+    }
+
+    /// Trailing window — primarily for test assertions on the prune
+    /// boundary.
+    #[cfg(test)]
+    pub fn window(&self) -> Duration {
+        self.window
     }
 
     /// Classify a terminal failure against the streamer's recent history.
@@ -85,9 +143,7 @@ impl OfflineClassifier {
                 );
                 Some(OfflineSignal::PlaylistGone(404))
             }
-            DownloadFailureKind::Network => {
-                self.record_network_failure_and_check(streamer_id)
-            }
+            DownloadFailureKind::Network => self.record_network_failure_and_check(streamer_id),
             _ => {
                 debug!(
                     streamer_id,
@@ -115,38 +171,48 @@ impl OfflineClassifier {
     /// trailing-window threshold has been reached.
     fn record_network_failure_and_check(&self, streamer_id: &str) -> Option<OfflineSignal> {
         let now = Instant::now();
+        let window = self.window;
+        let threshold = self.threshold;
         let mut entry = self.failure_log.entry(streamer_id.to_string()).or_default();
         let log = entry.value_mut();
 
         // Prune anything outside the window before appending.
-        log.retain(|t| now.duration_since(*t) < CONSECUTIVE_FAILURE_WINDOW);
+        log.retain(|t| now.duration_since(*t) < window);
         log.push(now);
         let count = log.len();
 
-        if count >= CONSECUTIVE_FAILURE_THRESHOLD {
+        if count >= threshold {
             // Clear after firing so the next N failures inside the next
             // window trip again (don't hold the counter at threshold).
             log.clear();
             info!(
                 streamer_id,
                 count,
-                threshold = CONSECUTIVE_FAILURE_THRESHOLD,
-                window_secs = CONSECUTIVE_FAILURE_WINDOW.as_secs(),
+                threshold,
+                window_secs = window.as_secs(),
                 "OfflineClassifier: consecutive Network failures → DefinitiveOffline(ConsecutiveFailures)"
             );
-            Some(OfflineSignal::ConsecutiveFailures(
-                CONSECUTIVE_FAILURE_THRESHOLD as u32,
-            ))
+            Some(OfflineSignal::ConsecutiveFailures(threshold as u32))
         } else {
             debug!(
                 streamer_id,
                 count,
-                threshold = CONSECUTIVE_FAILURE_THRESHOLD,
-                window_secs = CONSECUTIVE_FAILURE_WINDOW.as_secs(),
+                threshold,
+                window_secs = window.as_secs(),
                 "OfflineClassifier: Network failure logged; below threshold"
             );
             None
         }
+    }
+}
+
+impl Default for OfflineClassifier {
+    /// Default uses the historical fixed `(60 s window, threshold 2)`
+    /// behaviour. Provided so test fixtures (`make_lifecycle`,
+    /// integration helpers) don't depend on scheduler-default drift —
+    /// production wires explicitly through [`Self::from_scheduler`].
+    fn default() -> Self {
+        Self::from_window_threshold(Duration::from_secs(60), 2)
     }
 }
 
@@ -243,10 +309,10 @@ mod tests {
     fn c4_expired_window_resets_counter() {
         let c = OfflineClassifier::new();
 
-        // Manually seed the log with a timestamp 61 seconds in the past
-        // so we don't have to block the test for a minute.
+        // Manually seed the log with a timestamp just past the window so we
+        // don't have to block the test for a minute.
         let stale = Instant::now()
-            .checked_sub(CONSECUTIVE_FAILURE_WINDOW + Duration::from_secs(1))
+            .checked_sub(c.window() + Duration::from_secs(1))
             .expect("stale timestamp");
         c.failure_log.insert("s1".to_string(), vec![stale]);
 
@@ -414,6 +480,52 @@ mod tests {
             b_still,
             Some(OfflineSignal::ConsecutiveFailures(2)),
             "streamer b's counter is independent of a's firing"
+        );
+    }
+
+    // ---- from_scheduler / threshold floor ------------------------------
+
+    #[test]
+    fn from_scheduler_default_matches_60s_window_threshold_3() {
+        // With offline_check_count=3, threshold derives to 3 (count, since
+        // count > MIN floor of 2). Window = 3 × 20s = 60s.
+        let c = OfflineClassifier::from_scheduler(3, 20_000);
+        assert_eq!(c.window(), Duration::from_secs(60));
+        assert_eq!(c.threshold, 3);
+    }
+
+    #[test]
+    fn from_scheduler_threshold_floor_of_two() {
+        // count=1 must floor to 2 to retain Bilibili-RST safety.
+        let c = OfflineClassifier::from_scheduler(1, 30_000);
+        assert_eq!(c.threshold, 2);
+        assert_eq!(c.window(), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn from_scheduler_higher_count_widens_window() {
+        // count=5 → threshold=5, window = 5 × 10s = 50s. Two Network
+        // failures alone are NOT enough.
+        let c = OfflineClassifier::from_scheduler(5, 10_000);
+        assert_eq!(c.threshold, 5);
+
+        for _ in 0..4 {
+            assert_eq!(
+                c.classify_failure(
+                    "s",
+                    &EngineKind::MesioFlv,
+                    &DownloadFailureKind::Network
+                ),
+                None
+            );
+        }
+        assert_eq!(
+            c.classify_failure(
+                "s",
+                &EngineKind::MesioFlv,
+                &DownloadFailureKind::Network
+            ),
+            Some(OfflineSignal::ConsecutiveFailures(5))
         );
     }
 }
