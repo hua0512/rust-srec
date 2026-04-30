@@ -145,17 +145,22 @@ function buildEntries(
 // --- Cause rendering ---
 
 function TerminalCauseLabel({ cause }: { cause: TerminalCauseDto }) {
+  // `context="terminal-cause"` keeps these translations independent of the
+  // same English words used elsewhere (e.g. "Completed" for finished
+  // pipeline jobs at routes/.../pipeline/jobs/index.lazy.tsx). The
+  // semantics here are engine-level disconnect/abort reasons, not
+  // user-facing success states.
   switch (cause.type) {
     case 'completed':
-      return <Trans>Completed</Trans>;
+      return <Trans context="terminal-cause">Completed</Trans>;
     case 'failed':
-      return <Trans>Failed</Trans>;
+      return <Trans context="terminal-cause">Failed</Trans>;
     case 'cancelled':
-      return <Trans>Cancelled</Trans>;
+      return <Trans context="terminal-cause">Cancelled</Trans>;
     case 'rejected':
-      return <Trans>Rejected</Trans>;
+      return <Trans context="terminal-cause">Rejected</Trans>;
     case 'streamer_offline':
-      return <Trans>Streamer Offline</Trans>;
+      return <Trans context="terminal-cause">Streamer Offline</Trans>;
     case 'definitive_offline':
       return <DefinitiveOfflineLabel signalType={cause.signal.type} />;
   }
@@ -164,13 +169,13 @@ function TerminalCauseLabel({ cause }: { cause: TerminalCauseDto }) {
 function DefinitiveOfflineLabel({ signalType }: { signalType: string }) {
   switch (signalType) {
     case 'danmu_stream_closed':
-      return <Trans>Danmu Stream Closed</Trans>;
+      return <Trans context="terminal-cause">Danmu Stream Closed</Trans>;
     case 'playlist_gone':
-      return <Trans>Playlist Gone</Trans>;
+      return <Trans context="terminal-cause">Playlist Gone</Trans>;
     case 'consecutive_failures':
-      return <Trans>Consecutive Failures</Trans>;
+      return <Trans context="terminal-cause">Consecutive Failures</Trans>;
     default:
-      return <Trans>Definitive Offline</Trans>;
+      return <Trans context="terminal-cause">Definitive Offline</Trans>;
   }
 }
 

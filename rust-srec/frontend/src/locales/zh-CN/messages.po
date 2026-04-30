@@ -215,6 +215,11 @@ msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "接受无效证书（默认：关闭）"
 
+#: src/components/streamers/card/use-streamer-status.tsx:170
+#: src/components/streamers/card/use-streamer-status.tsx:179
+msgid "Account Not Found"
+msgstr ""
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:494
 msgid "Action"
 msgstr "操作"
@@ -926,9 +931,13 @@ msgid "Cancel Pipeline?"
 msgstr "取消处理管道？"
 
 #: src/components/pipeline/status-config.ts:110
-#: src/components/sessions/timeline-tab.tsx:154
-#: src/components/streamers/card/use-streamer-status.tsx:41
+#: src/components/streamers/card/use-streamer-status.tsx:42
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:117
+msgid "Cancelled"
+msgstr "已取消"
+
+#: src/components/sessions/timeline-tab.tsx:159
+msgctxt "terminal-cause"
 msgid "Cancelled"
 msgstr "已取消"
 
@@ -966,8 +975,8 @@ msgstr "分类"
 msgid "Category"
 msgstr "分类"
 
-#: src/components/sessions/timeline-tab.tsx:304
-#: src/components/sessions/timeline-tab.tsx:323
+#: src/components/sessions/timeline-tab.tsx:309
+#: src/components/sessions/timeline-tab.tsx:328
 msgid "Cause:"
 msgstr "原因："
 
@@ -1049,7 +1058,7 @@ msgstr "已触发检查"
 msgid "Checking"
 msgstr "检查中"
 
-#: src/components/streamers/card/use-streamer-status.tsx:236
+#: src/components/streamers/card/use-streamer-status.tsx:273
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
 
@@ -1160,7 +1169,6 @@ msgid "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。"
 
 #: src/components/pipeline/status-config.ts:106
-#: src/components/sessions/timeline-tab.tsx:150
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:356
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:288
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:581
@@ -1168,6 +1176,11 @@ msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:409
 msgid "Completed"
 msgstr "已完成"
+
+#: src/components/sessions/timeline-tab.tsx:155
+msgctxt "terminal-cause"
+msgid "Completed"
+msgstr "下载断开"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:57
 msgid "Complex patterns"
@@ -1306,7 +1319,7 @@ msgstr "确认新密码"
 msgid "Confirm Password"
 msgstr "确认密码"
 
-#: src/components/sessions/timeline-tab.tsx:330
+#: src/components/sessions/timeline-tab.tsx:335
 msgid "Confirmed via backstop timer."
 msgstr "通过备份计时器确认。"
 
@@ -1339,8 +1352,12 @@ msgstr "连接/活动超时"
 msgid "Consecutive failed checks needed to confirm offline."
 msgstr "确认离线所需的连续失败检查次数。"
 
-#: src/components/sessions/timeline-tab.tsx:171
 #: src/components/streamers/card/stream-avatar-info.tsx:133
+msgid "Consecutive Failures"
+msgstr "连续失败"
+
+#: src/components/sessions/timeline-tab.tsx:176
+msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
@@ -1728,7 +1745,8 @@ msgstr "弹幕统计"
 msgid "Danmu statistics are not available for this session."
 msgstr "此会话的弹幕统计暂不可用。"
 
-#: src/components/sessions/timeline-tab.tsx:167
+#: src/components/sessions/timeline-tab.tsx:172
+msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "弹幕流已关闭"
 
@@ -1827,9 +1845,10 @@ msgstr "根据标题、时间或语言定义自动录制或跳过的规则。"
 msgid "Define sequences of processing steps for your recordings"
 msgstr "为录制内容定义处理步骤序列"
 
-#: src/components/sessions/timeline-tab.tsx:173
+#: src/components/sessions/timeline-tab.tsx:178
+msgctxt "terminal-cause"
 msgid "Definitive Offline"
-msgstr "确定离线"
+msgstr "已确认离线"
 
 #: src/components/health/health-status-badge.tsx:48
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:629
@@ -2007,7 +2026,7 @@ msgid "Disable"
 msgstr "禁用"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:202
-#: src/components/streamers/card/use-streamer-status.tsx:46
+#: src/components/streamers/card/use-streamer-status.tsx:47
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:534
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:544
@@ -2339,7 +2358,7 @@ msgstr "编码设置"
 msgid "End"
 msgstr "结束"
 
-#: src/components/sessions/timeline-tab.tsx:461
+#: src/components/sessions/timeline-tab.tsx:466
 msgid "End of History"
 msgstr "历史结束"
 
@@ -2432,7 +2451,7 @@ msgid "Environment Variables"
 msgstr "环境变量"
 
 #: src/components/config/engines/engine-card.tsx:150
-#: src/components/streamers/card/use-streamer-status.tsx:45
+#: src/components/streamers/card/use-streamer-status.tsx:46
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:38
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:66
@@ -2445,7 +2464,8 @@ msgstr "环境变量"
 msgid "Error"
 msgstr "错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:196
+#: src/components/streamers/card/use-streamer-status.tsx:193
+#: src/components/streamers/card/use-streamer-status.tsx:233
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:607
 msgid "Error Details"
 msgstr "错误详情"
@@ -2642,12 +2662,16 @@ msgid "ey..."
 msgstr "ey..."
 
 #: src/components/pipeline/status-config.ts:108
-#: src/components/sessions/timeline-tab.tsx:152
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:367
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:114
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:416
 msgid "Failed"
 msgstr "失败"
+
+#: src/components/sessions/timeline-tab.tsx:157
+msgctxt "terminal-cause"
+msgid "Failed"
+msgstr "下载失败"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:82
 msgid "Failed steps retry initiated"
@@ -2954,7 +2978,7 @@ msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 HEVC/H.265 编码（CQ 24）。
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取得良好平衡。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:40
+#: src/components/streamers/card/use-streamer-status.tsx:41
 msgid "Fatal Error"
 msgstr "严重错误"
 
@@ -3628,7 +3652,7 @@ msgstr "继承自上层"
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
-#: src/components/sessions/timeline-tab.tsx:206
+#: src/components/sessions/timeline-tab.tsx:211
 msgid "INITIAL"
 msgstr "初始"
 
@@ -3672,9 +3696,9 @@ msgstr "输入路径（逗号分隔）"
 msgid "Inset"
 msgstr "嵌入"
 
-#: src/components/streamers/card/use-streamer-status.tsx:37
-#: src/components/streamers/card/use-streamer-status.tsx:224
-#: src/components/streamers/card/use-streamer-status.tsx:233
+#: src/components/streamers/card/use-streamer-status.tsx:38
+#: src/components/streamers/card/use-streamer-status.tsx:261
+#: src/components/streamers/card/use-streamer-status.tsx:270
 msgid "Inspecting"
 msgstr "检查中"
 
@@ -3773,7 +3797,7 @@ msgstr "任务超时"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:272
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:273
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -3824,7 +3848,7 @@ msgstr "关键字"
 msgid "Language"
 msgstr "语言"
 
-#: src/components/streamers/card/use-streamer-status.tsx:295
+#: src/components/streamers/card/use-streamer-status.tsx:332
 msgid "Last Activity"
 msgstr "最后活动"
 
@@ -3882,8 +3906,8 @@ msgstr "列表"
 msgid "List of allowed file extensions (without dot)."
 msgstr "允许的文件扩展名列表（不含点号）。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:36
-#: src/components/streamers/card/use-streamer-status.tsx:211
+#: src/components/streamers/card/use-streamer-status.tsx:37
+#: src/components/streamers/card/use-streamer-status.tsx:248
 #: src/components/streamers/edit/recent-sessions-list.tsx:75
 #: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:174
@@ -4350,8 +4374,8 @@ msgstr "监控并管理处理任务"
 msgid "Monitor this streamer"
 msgstr "监控此主播"
 
-#: src/components/streamers/card/use-streamer-status.tsx:170
-#: src/components/streamers/card/use-streamer-status.tsx:179
+#: src/components/streamers/card/use-streamer-status.tsx:207
+#: src/components/streamers/card/use-streamer-status.tsx:216
 msgid "Monitoring Stopped"
 msgstr "已停止监控"
 
@@ -4706,11 +4730,11 @@ msgstr "未找到模板"
 msgid "No templates yet"
 msgstr "暂无模板"
 
-#: src/components/sessions/timeline-tab.tsx:368
+#: src/components/sessions/timeline-tab.tsx:373
 msgid "No Timeline Events"
 msgstr "暂无时间线事件"
 
-#: src/components/sessions/timeline-tab.tsx:371
+#: src/components/sessions/timeline-tab.tsx:376
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "此会话未记录任何标题变更或生命周期事件。"
 
@@ -4758,7 +4782,7 @@ msgstr "普通+"
 msgid "Not available"
 msgstr "不可用"
 
-#: src/components/streamers/card/use-streamer-status.tsx:42
+#: src/components/streamers/card/use-streamer-status.tsx:43
 msgid "Not Found"
 msgstr "未找到主播"
 
@@ -4864,9 +4888,9 @@ msgstr "OAuth 令牌"
 msgid "Off Canvas"
 msgstr "侧滑"
 
-#: src/components/streamers/card/use-streamer-status.tsx:35
-#: src/components/streamers/card/use-streamer-status.tsx:281
-#: src/components/streamers/card/use-streamer-status.tsx:290
+#: src/components/streamers/card/use-streamer-status.tsx:36
+#: src/components/streamers/card/use-streamer-status.tsx:318
+#: src/components/streamers/card/use-streamer-status.tsx:327
 #: src/components/streamers/edit/recent-sessions-list.tsx:73
 #: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:72
@@ -4990,7 +5014,7 @@ msgstr "附加到 `tdl login` 的可选额外参数。"
 msgid "Options"
 msgstr "选项"
 
-#: src/components/streamers/card/use-streamer-status.tsx:39
+#: src/components/streamers/card/use-streamer-status.tsx:40
 msgid "Out of Space"
 msgstr "空间不足"
 
@@ -5052,7 +5076,7 @@ msgstr "输出设置"
 msgid "Outputs"
 msgstr "输出"
 
-#: src/components/streamers/card/use-streamer-status.tsx:254
+#: src/components/streamers/card/use-streamer-status.tsx:291
 msgid "Outside Schedule"
 msgstr "不在计划时间内"
 
@@ -5234,7 +5258,7 @@ msgstr "峰值/分钟"
 msgid "Pending"
 msgstr "待处理"
 
-#: src/components/sessions/timeline-tab.tsx:235
+#: src/components/sessions/timeline-tab.tsx:240
 msgid "PENDING CONFIRMATION"
 msgstr "待确认"
 
@@ -5443,7 +5467,8 @@ msgstr "播放器"
 msgid "Playlist"
 msgstr "播放列表"
 
-#: src/components/sessions/timeline-tab.tsx:169
+#: src/components/sessions/timeline-tab.tsx:174
+msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "播放列表已失效"
 
@@ -5620,7 +5645,7 @@ msgstr "预览不可用"
 msgid "Previous"
 msgstr "上一页"
 
-#: src/components/sessions/timeline-tab.tsx:279
+#: src/components/sessions/timeline-tab.tsx:284
 msgid "Previous Title"
 msgstr "上一个标题"
 
@@ -5837,7 +5862,7 @@ msgstr "实时日志"
 msgid "Real-time status of all system components and resources."
 msgstr "所有系统组件与资源的实时状态。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:183
+#: src/components/streamers/card/use-streamer-status.tsx:220
 msgid "Reason"
 msgstr "原因"
 
@@ -5880,15 +5905,15 @@ msgstr "录制"
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
-#: src/components/sessions/timeline-tab.tsx:295
+#: src/components/sessions/timeline-tab.tsx:300
 msgid "Recording started"
 msgstr "录制已开始"
 
-#: src/components/streamers/card/use-streamer-status.tsx:264
+#: src/components/streamers/card/use-streamer-status.tsx:301
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:260
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -5920,7 +5945,8 @@ msgstr "正则模式"
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "用于排除文件的正则模式。将针对完整路径和文件名进行匹配。"
 
-#: src/components/sessions/timeline-tab.tsx:156
+#: src/components/sessions/timeline-tab.tsx:161
+msgctxt "terminal-cause"
 msgid "Rejected"
 msgstr "已拒绝"
 
@@ -6062,16 +6088,16 @@ msgstr "重置密码"
 msgid "Resume"
 msgstr "继续"
 
-#: src/components/sessions/timeline-tab.tsx:244
+#: src/components/sessions/timeline-tab.tsx:249
 msgid "RESUMED"
 msgstr "已恢复"
 
 #. placeholder {0}: entry.hysteresisDurationSecs
-#: src/components/sessions/timeline-tab.tsx:314
+#: src/components/sessions/timeline-tab.tsx:319
 msgid "Resumed after {0}s in pending state."
 msgstr "在待确认状态 {0} 秒后恢复。"
 
-#: src/components/sessions/timeline-tab.tsx:223
+#: src/components/sessions/timeline-tab.tsx:228
 msgid "RESUMED START"
 msgstr "恢复启动"
 
@@ -6295,8 +6321,8 @@ msgstr "已扫描！请在手机上确认"
 msgid "Schedule recording times"
 msgstr "安排录制时间"
 
-#: src/components/streamers/card/use-streamer-status.tsx:38
-#: src/components/streamers/card/use-streamer-status.tsx:245
+#: src/components/streamers/card/use-streamer-status.tsx:39
+#: src/components/streamers/card/use-streamer-status.tsx:282
 msgid "Scheduled"
 msgstr "已计划"
 
@@ -6570,7 +6596,7 @@ msgstr "录制会话详情"
 msgid "Session Duration"
 msgstr "录制时长"
 
-#: src/components/sessions/timeline-tab.tsx:253
+#: src/components/sessions/timeline-tab.tsx:258
 msgid "SESSION ENDED"
 msgstr "会话已结束"
 
@@ -6607,7 +6633,7 @@ msgstr "未找到录制会话"
 msgid "Session Preview"
 msgstr "录制预览"
 
-#: src/components/sessions/timeline-tab.tsx:225
+#: src/components/sessions/timeline-tab.tsx:230
 msgid "SESSION STARTED"
 msgstr "会话已启动"
 
@@ -6961,7 +6987,12 @@ msgstr "主播 ID 是必需的"
 msgid "Streamer is on cooldown"
 msgstr "主播处于冷却期"
 
-#: src/components/sessions/timeline-tab.tsx:158
+#: src/components/streamers/card/use-streamer-status.tsx:180
+msgid "Streamer no longer exists on the platform"
+msgstr ""
+
+#: src/components/sessions/timeline-tab.tsx:163
+msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "主播离线"
 
@@ -7206,7 +7237,7 @@ msgstr "模板"
 msgid "Templates"
 msgstr "模板"
 
-#: src/components/streamers/card/use-streamer-status.tsx:44
+#: src/components/streamers/card/use-streamer-status.tsx:45
 #: src/components/streamers/card/use-streamer-status.tsx:114
 #: src/components/streamers/card/use-streamer-status.tsx:123
 msgid "Temporarily Paused"
@@ -7239,6 +7270,10 @@ msgstr "频道或直播流的直接链接。"
 #: src/components/not-found.tsx:17
 msgid "The page you are looking for does not exist."
 msgstr "你要访问的页面不存在。"
+
+#: src/components/streamers/card/use-streamer-status.tsx:183
+msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
+msgstr ""
 
 #: src/components/config/engines/engine-editor.tsx:265
 msgid "The underlying tool used for downloading."
@@ -7296,7 +7331,7 @@ msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 msgid "This stream is already active"
 msgstr "该流已处于活动状态"
 
-#: src/components/streamers/card/use-streamer-status.tsx:257
+#: src/components/streamers/card/use-streamer-status.tsx:294
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
 
@@ -7678,7 +7713,7 @@ msgstr "未知错误"
 msgid "Unknown File"
 msgstr "未知文件"
 
-#: src/components/sessions/timeline-tab.tsx:338
+#: src/components/sessions/timeline-tab.tsx:343
 msgid "Unrecognised event kind."
 msgstr "未识别的事件类型。"
 
@@ -7690,7 +7725,7 @@ msgstr "直到"
 msgid "Untitled Stream"
 msgstr "无标题直播"
 
-#: src/components/sessions/timeline-tab.tsx:213
+#: src/components/sessions/timeline-tab.tsx:218
 msgid "UPDATE"
 msgstr "更新"
 
