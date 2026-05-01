@@ -931,9 +931,16 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     );
                     return;
                 }
+                // Engine clean end is *ambiguous* about platform state; the
+                // session lifecycle decides authority from `engine_signal`
+                // (HlsEndlist → authoritative end; CleanDisconnect → enters
+                // hysteresis). Routing this through `StreamerOffline` would
+                // make the actor push `process_status(Offline)` and override
+                // the in-flight hysteresis. See `DownloadEndPolicy::Completed`
+                // doc-comment.
                 send_to_actor(
                     streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndPolicy::StreamerOffline),
+                    StreamerMessage::DownloadEnded(DownloadEndPolicy::Completed),
                 )
                 .await;
             }

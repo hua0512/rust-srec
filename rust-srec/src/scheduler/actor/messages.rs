@@ -94,6 +94,28 @@ pub enum DownloadEndPolicy {
     /// to detect quick restarts.
     StreamerOffline,
 
+    /// Engine reported a clean end of the download (TCP close on FLV, EOF
+    /// on HLS without `#EXT-X-ENDLIST`, etc.) but **the platform's online
+    /// status is ambiguous**. Authority is decided downstream by the
+    /// session lifecycle's
+    /// [`crate::session::TerminalCause::is_authoritative_end_with_signal`]
+    /// using the engine signal carried on
+    /// [`crate::downloader::DownloadTerminalEvent::Completed`]:
+    /// `HlsEndlist` is authoritative; `CleanDisconnect` enters hysteresis.
+    ///
+    /// The actor must NOT push `process_status(LiveStatus::Offline)` for
+    /// this variant. Doing so would emit a `MonitorEvent::StreamerOffline`
+    /// that the lifecycle treats as authoritative — overriding the
+    /// in-flight hysteresis quiet-period and forcing a direct end.
+    /// Same race shape (and same explicit fix) as
+    /// [`Self::Stopped`]`(`[`DownloadStopCause::DanmuStreamClosed`]`)`
+    /// at `streamer_actor::handle_download_ended`.
+    ///
+    /// Local actor scheduling state is updated (resume short polling,
+    /// mark offline-observed for post-live cadence). The next status
+    /// check confirms platform state through the normal monitor path.
+    Completed,
+
     /// Download stopped by internal orchestration (not user intent).
     ///
     /// The actor treats this like an end-of-stream signal, but continues monitoring.

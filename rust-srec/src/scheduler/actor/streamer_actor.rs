@@ -1056,6 +1056,37 @@ impl StreamerActor {
                 }
                 self.state.schedule_next_check(&self.config, error_count);
             }
+            DownloadEndPolicy::Completed => {
+                // Engine reported clean EOF without authoritative platform
+                // signal. The session lifecycle has already routed this
+                // through `on_download_terminal` and either entered Hysteresis
+                // (CleanDisconnect — most FLV/HLS clean disconnects) or ended
+                // authoritatively (HlsEndlist via the engine_signal path).
+                //
+                // We deliberately do NOT call
+                // `status_checker.process_status(LiveStatus::Offline)` here.
+                // If we did, the monitor would emit `StreamerOffline` and the
+                // lifecycle's `on_offline_detected` would override the
+                // in-flight hysteresis (it always wins because StreamerOffline
+                // is authoritative). That race produced 0-byte session rows
+                // for connection blips on Douyin and similar platforms (see
+                // 沈心 / 2026-05-01 logs and the Minana / 2026-04-29 case).
+                // Same precedent as the DanmuStreamClosed arm above:
+                // separate paths must not double-end the session.
+                //
+                // Local scheduling state only — switch to the post-live
+                // short-polling cadence so a quick stream restart is detected
+                // promptly. If the streamer is genuinely offline, the next
+                // status check (within `offline_check_interval_ms`) will
+                // surface it through the monitor path, cancelling hysteresis
+                // via `on_offline_detected` at the proper authority gradient.
+                self.state.streamer_state = StreamerState::NotLive;
+                if !self.state.hysteresis.was_live() {
+                    self.state.hysteresis.mark_live();
+                }
+                self.state.hysteresis.mark_offline_observed();
+                self.state.schedule_next_check(&self.config, error_count);
+            }
             DownloadEndPolicy::StreamerOffline | DownloadEndPolicy::Stopped(_) => {
                 // Streamer went offline normally. Push an Offline status to the monitor
                 // immediately so DB/session state is updated without waiting for the next check.
@@ -2119,6 +2150,56 @@ mod tests {
         assert!(actor.state.next_check.is_some());
         // Hysteresis should be preserved - let checks determine actual state
         assert!(actor.state.hysteresis.was_live());
+    }
+
+    /// `DownloadEndPolicy::Completed` (engine clean EOF without platform
+    /// authority) must update local scheduling state to the post-live
+    /// short-polling cadence — same as `StreamerOffline` — but must NOT
+    /// emit a `process_status(Offline)` push (the lifecycle's hysteresis
+    /// is the authoritative absorber for this case; a duplicate offline
+    /// emit would race and bypass it).
+    ///
+    /// We can't directly assert "no push" here without a tracking
+    /// `StatusChecker`, but we can lock in the local-state contract:
+    /// the post-live cadence assertions identical to
+    /// `test_streamer_actor_resume_on_download_end` for the
+    /// `StreamerOffline` path. If a future change re-routes `Completed`
+    /// through a different scheduling branch, this test fails and points
+    /// the maintainer at the contract.
+    #[tokio::test]
+    async fn test_streamer_actor_completed_uses_post_live_cadence() {
+        let metadata_store = create_test_metadata_store();
+        let config = StreamerConfig::default();
+        let token = CancellationToken::new();
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config.clone(),
+            token,
+            create_noop_checker(),
+        );
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.next_check = None;
+
+        let result = actor
+            .handle_download_ended(super::super::messages::DownloadEndPolicy::Completed)
+            .await;
+        assert!(result.is_ok());
+
+        assert_eq!(actor.state.streamer_state, StreamerState::NotLive);
+        assert!(actor.state.next_check.is_some());
+        // Same post-live cadence as `StreamerOffline`: was_live preserved,
+        // offline-observed counter incremented, next check arrives within
+        // the offline polling window (well under check_interval / 2).
+        assert!(actor.state.hysteresis.was_live());
+        assert_eq!(actor.state.hysteresis.offline_count(), 1);
+        let until = actor.state.time_until_next_check().unwrap();
+        assert!(
+            until < Duration::from_millis(config.check_interval_ms / 2),
+            "Completed must schedule next check within the post-live offline window"
+        );
     }
 
     #[tokio::test]
