@@ -1062,6 +1062,17 @@ impl ServiceContainer {
         // terminal download outcome.
         self.setup_session_lifecycle_subscriptions();
 
+        // Spawn the empty-session janitor. Periodically DELETEs ended
+        // sessions whose `total_size_bytes == 0` (transient connection
+        // blips that produced only sub-threshold files, deleted by the
+        // small-segment guard). CASCADE removes `session_events` /
+        // `danmu_statistics` children. See `session_janitor` module docs.
+        crate::services::SessionJanitor::new(
+            self.pool.clone(),
+            self.cancellation_token.child_token(),
+        )
+        .spawn();
+
         // Wire monitor events to download manager and danmu service
         self.setup_monitor_event_subscriptions();
 
