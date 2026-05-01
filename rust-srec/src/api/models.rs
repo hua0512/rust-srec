@@ -847,6 +847,12 @@ pub struct SessionFilterParams {
     pub active_only: Option<bool>,
     /// Search query (matches title, streamer name, etc.)
     pub search: Option<String>,
+    /// Include sessions that retained zero bytes (transient connection
+    /// blips that produced only sub-threshold files, deleted by the
+    /// small-segment guard). Default `false` so they don't clutter the
+    /// dashboard. Set `true` for diagnostic access — the rows are still
+    /// in the DB and reachable via `GET /sessions/:id`.
+    pub include_empty: Option<bool>,
 }
 
 // ============================================================================

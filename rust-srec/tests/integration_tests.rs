@@ -455,6 +455,131 @@ mod session_repository_tests {
         // Most recent first
         assert!(sessions[0].1 > sessions[1].1);
     }
+
+    /// Helper: insert a session with explicit `total_size_bytes` and an
+    /// optional `end_time`. Mirrors the production INSERT path in
+    /// `SqlxSessionRepository::create_session` plus the increment-on-output
+    /// effect on `total_size_bytes`.
+    async fn insert_session_with_size(
+        pool: &DbPool,
+        streamer_id: &str,
+        total_size_bytes: i64,
+        end_time_ms: Option<i64>,
+    ) -> String {
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let start_ms = chrono::Utc::now().timestamp_millis();
+        sqlx::query(
+            "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, total_size_bytes)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(&session_id)
+        .bind(streamer_id)
+        .bind(start_ms)
+        .bind(end_time_ms)
+        .bind(total_size_bytes)
+        .execute(pool)
+        .await
+        .expect("Failed to insert session with size");
+        session_id
+    }
+
+    /// Default `list_sessions_filtered` (no `include_empty`) hides ended
+    /// sessions whose `total_size_bytes == 0`. These are the connection-blip
+    /// 0-byte rows the small-segment guard discarded — noise on the
+    /// dashboard.
+    #[tokio::test]
+    async fn test_list_sessions_filtered_excludes_empty_by_default() {
+        use rust_srec::database::models::{Pagination, SessionFilters};
+        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+
+        let pool = setup_test_db().await;
+        let streamer_id = setup_streamer(&pool).await;
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let _empty_id =
+            insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
+        let real_id =
+            insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
+
+        let repo = SqlxSessionRepository::new(pool.clone(), pool);
+        let (sessions, total) = repo
+            .list_sessions_filtered(
+                &SessionFilters {
+                    streamer_id: Some(streamer_id.clone()),
+                    ..Default::default()
+                },
+                &Pagination::new(50, 0),
+            )
+            .await
+            .expect("list_sessions_filtered failed");
+
+        assert_eq!(total, 1, "default filter must hide the empty ended session");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, real_id);
+    }
+
+    /// `include_empty: Some(true)` opts in to seeing the discarded rows —
+    /// useful for diagnostics ("why did this brief blip happen?").
+    #[tokio::test]
+    async fn test_list_sessions_filtered_includes_empty_when_opted_in() {
+        use rust_srec::database::models::{Pagination, SessionFilters};
+        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+
+        let pool = setup_test_db().await;
+        let streamer_id = setup_streamer(&pool).await;
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
+        insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
+
+        let repo = SqlxSessionRepository::new(pool.clone(), pool);
+        let (_sessions, total) = repo
+            .list_sessions_filtered(
+                &SessionFilters {
+                    streamer_id: Some(streamer_id.clone()),
+                    include_empty: Some(true),
+                    ..Default::default()
+                },
+                &Pagination::new(50, 0),
+            )
+            .await
+            .expect("list_sessions_filtered failed");
+
+        assert_eq!(total, 2, "include_empty=true must return both rows");
+    }
+
+    /// Active sessions (`end_time IS NULL`) are kept regardless of size.
+    /// Their `total_size_bytes == 0` in the brief window between LIVE
+    /// detection and the first retained segment; we must NOT hide them.
+    #[tokio::test]
+    async fn test_list_sessions_filtered_keeps_active_empty_sessions() {
+        use rust_srec::database::models::{Pagination, SessionFilters};
+        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+
+        let pool = setup_test_db().await;
+        let streamer_id = setup_streamer(&pool).await;
+
+        let active_id = insert_session_with_size(&pool, &streamer_id, 0, None).await;
+
+        let repo = SqlxSessionRepository::new(pool.clone(), pool);
+        let (sessions, total) = repo
+            .list_sessions_filtered(
+                &SessionFilters {
+                    streamer_id: Some(streamer_id.clone()),
+                    ..Default::default()
+                },
+                &Pagination::new(50, 0),
+            )
+            .await
+            .expect("list_sessions_filtered failed");
+
+        assert_eq!(
+            total, 1,
+            "default filter must keep active sessions even with size 0"
+        );
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, active_id);
+    }
 }
 
 mod job_repository_tests {

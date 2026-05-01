@@ -53,6 +53,21 @@ pub struct SessionFilters {
     pub active_only: Option<bool>,
     /// Search query.
     pub search: Option<String>,
+    /// When `false` (the default), exclude *ended* sessions whose
+    /// `total_size_bytes == 0` — i.e. sessions that produced no retained
+    /// segments because the small-segment guard in `services::container`
+    /// discarded every file. These show up as 0-byte ghost cards on the
+    /// dashboard for transient connection blips and are noise for the
+    /// common "browse my recordings" case.
+    ///
+    /// Setting this to `true` includes those rows — useful for diagnostics
+    /// ("why did this brief blip happen?") and audit access via the
+    /// `session_events` trail.
+    ///
+    /// Active sessions (`end_time IS NULL`) are always returned regardless
+    /// of size: their `total_size_bytes` is legitimately 0 in the brief
+    /// window between LIVE detection and the first retained segment.
+    pub include_empty: Option<bool>,
 }
 
 impl SessionFilters {
