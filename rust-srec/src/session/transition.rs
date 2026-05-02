@@ -23,6 +23,7 @@
 //! from `monitor::service`) so the SSE / notification frontend contract is
 //! preserved byte-for-byte.
 
+use crate::session::download_start::DownloadStartPayload;
 use crate::session::state::TerminalCause;
 use chrono::{DateTime, Utc};
 
@@ -33,7 +34,11 @@ use chrono::{DateTime, Utc};
 /// process boundaries. Consumers that need a serialisable view (notification
 /// outbox, SSE) construct their own representation from `SessionTransition`'s
 /// fields at the persistence/wire boundary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `PartialEq` / `Eq` not derived: `Started.download_start` carries
+/// `Vec<StreamInfo>` from the platforms-parser crate, which doesn't implement
+/// `Eq`. Tests use `matches!` instead — see `accessors_work_for_all_variants`.
+#[derive(Debug, Clone)]
 pub enum SessionTransition {
     /// Emitted after a session enters `Recording`.
     ///
@@ -54,6 +59,18 @@ pub enum SessionTransition {
         /// `true` when this `Started` is a resume out of `Hysteresis`
         /// (same `session_id` continues); `false` for a fresh session.
         from_hysteresis: bool,
+        /// Sidecar payload for the container's resume-download subscriber.
+        ///
+        /// `Some(_)` means "please drive `start_download_for_streamer`" —
+        /// always populated by `lifecycle::resume_from_hysteresis` and by
+        /// `lifecycle::on_live_detected` for fresh sessions. `None` is
+        /// the test-fixture / notification-only default. See
+        /// [`DownloadStartPayload`] for the field rationale.
+        ///
+        /// Boxed so a `Started` without a payload stays one pointer wide
+        /// — historical consumers that never read the payload don't pay
+        /// the size of three media-metadata fields.
+        download_start: Option<Box<DownloadStartPayload>>,
     },
     /// Emitted after a session enters `Hysteresis` (non-authoritative end).
     /// The session is held in a quiet-period; pipeline / notification
@@ -154,6 +171,7 @@ mod tests {
             category: None,
             started_at: Utc::now(),
             from_hysteresis: false,
+            download_start: None,
         }
     }
 

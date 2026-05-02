@@ -399,6 +399,13 @@ impl SessionLifecycle {
             category: args.category.map(|s| s.to_string()),
             started_at: args.now,
             from_hysteresis: false,
+            // Fresh-session path: the `MonitorEvent::StreamerLive` outbox
+            // event from the atomic tx in `start_or_resume` already drives
+            // the container's download-start path, so this sidecar would
+            // be redundant. Pass `None` to keep `Started` notification-only
+            // for fresh sessions; the resume path is the only producer
+            // that needs to also drive the download via this channel.
+            download_start: None,
         });
 
         Ok(outcome)
@@ -834,6 +841,15 @@ impl SessionLifecycle {
 
         // Also emit a Started so notification consumers that filter on
         // Started see the resume as a logical re-online (with from_hysteresis=true).
+        //
+        // Crucially: the resume path short-circuits before `start_or_resume`,
+        // so no `MonitorEvent::StreamerLive` outbox event fires for this
+        // session this time around. Without `download_start` populated here,
+        // the container has no signal to restart the download → the FLV
+        // engine that disconnected at hysteresis-entry stays dead and the
+        // session "records" zero bytes for the rest of the broadcast (the
+        // kinetic/2026-05-02 1.5h gap). Populating the sidecar from `args`
+        // is what closes that gap.
         let _ = self.transition_tx.send(SessionTransition::Started {
             session_id: session_id.to_string(),
             streamer_id: args.streamer_id.to_string(),
@@ -842,6 +858,12 @@ impl SessionLifecycle {
             category: args.category.map(|s| s.to_string()),
             started_at: args.now,
             from_hysteresis: true,
+            download_start: Some(Box::new(crate::session::DownloadStartPayload {
+                streamer_url: args.streamer_url.to_string(),
+                streams: args.streams.clone(),
+                media_headers: args.media_headers.cloned(),
+                media_extras: args.media_extras.cloned(),
+            })),
         });
 
         // The resume path doesn't go through `start_or_resume`, so the
@@ -2620,6 +2642,97 @@ mod tests {
                 assert!(!via_hysteresis, "HlsEndlist authoritative → no hysteresis");
             }
             other => panic!("expected Ended, got {other:?}"),
+        }
+    }
+
+    /// N1 — `resume_from_hysteresis` must emit `SessionTransition::Started`
+    /// with `from_hysteresis: true` AND a populated `download_start`
+    /// payload. The container's resume-download subscriber relies on the
+    /// payload to (re)start the download for the resumed session — without
+    /// it, the streamer stays "Live" in memory but no recording happens
+    /// (kinetic / 2026-05-02 1.5h gap).
+    #[tokio::test]
+    async fn n1_resume_emits_started_with_download_start_payload() {
+        let pool = setup_pool().await;
+        let lifecycle =
+            make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
+        let mut rx = lifecycle.subscribe();
+
+        // Step 1: fresh start. Drain Started.
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        match rx.recv().await.unwrap() {
+            SessionTransition::Started {
+                from_hysteresis,
+                download_start,
+                ..
+            } => {
+                assert!(!from_hysteresis, "fresh-start must be from_hysteresis=false");
+                assert!(
+                    download_start.is_none(),
+                    "fresh-start path leaves download_start=None — \
+                     MonitorEvent::StreamerLive outbox event drives the download"
+                );
+            }
+            other => panic!("expected Started for fresh, got {other:?}"),
+        }
+
+        // Step 2: ambiguous end → Hysteresis. Drain Ending.
+        lifecycle
+            .on_download_terminal(&make_terminal_completed_clean_disconnect(started.session_id()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Ending
+
+        // Step 3: LiveDetected within window → resume. Should emit
+        // both Resumed AND Started{from_hysteresis: true, download_start: Some(_)}.
+        lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+
+        // Resumed transition fires first.
+        match rx.recv().await.unwrap() {
+            SessionTransition::Resumed { session_id, .. } => {
+                assert_eq!(session_id, started.session_id());
+            }
+            other => panic!("expected Resumed, got {other:?}"),
+        }
+
+        // Started transition fires second, with the download_start payload
+        // populated so the container's resume-download subscriber can drive
+        // start_download_for_streamer.
+        match rx.recv().await.unwrap() {
+            SessionTransition::Started {
+                from_hysteresis,
+                download_start,
+                streamer_id,
+                session_id,
+                ..
+            } => {
+                assert!(
+                    from_hysteresis,
+                    "resume must emit Started with from_hysteresis=true"
+                );
+                assert_eq!(streamer_id, STREAMER_ID);
+                assert_eq!(session_id, started.session_id());
+                let payload = download_start.as_deref().expect(
+                    "resume_from_hysteresis MUST populate download_start so the \
+                     container can restart the download (the kinetic 1.5h gap fix)",
+                );
+                assert_eq!(
+                    payload.streamer_url, "https://example.com",
+                    "streamer_url must be carried for the engine config"
+                );
+                // `streams` may legitimately be empty in this test fixture
+                // (`live_args` uses a static empty vec); we only require
+                // the payload itself to be present. The container's
+                // start_download_for_streamer has its own empty-streams
+                // guard at the production path.
+            }
+            other => panic!("expected Started{{from_hysteresis: true}}, got {other:?}"),
         }
     }
 

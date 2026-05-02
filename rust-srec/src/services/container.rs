@@ -1062,6 +1062,11 @@ impl ServiceContainer {
         // terminal download outcome.
         self.setup_session_lifecycle_subscriptions();
 
+        // Wire `SessionTransition::Started { from_hysteresis: true }` →
+        // synthetic `MonitorEvent::StreamerLive` so a hysteresis resume
+        // restarts the download. See `setup_resume_download_subscriber`.
+        self.setup_resume_download_subscriber();
+
         // Spawn the empty-session janitor. Periodically DELETEs ended
         // sessions whose `total_size_bytes == 0` (transient connection
         // blips that produced only sub-threshold files, deleted by the
@@ -2032,6 +2037,114 @@ impl ServiceContainer {
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                                 debug!("Danmu session-transition channel closed");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /// Subscribe to `SessionTransition::Started { from_hysteresis: true, .. }`
+    /// and (re)start the download for the resumed session.
+    ///
+    /// The lifecycle's `resume_from_hysteresis` short-circuits before
+    /// `start_or_resume`, so the `MonitorEvent::StreamerLive` outbox
+    /// event that drives `handle_monitor_event::StreamerLive` is never
+    /// emitted on a resume — leaving the streamer "Live" in memory but
+    /// with no actual download running. Without this subscriber, every
+    /// FLV TCP-close that resumes within the hysteresis window stops
+    /// recording for the rest of the broadcast (kinetic / 2026-05-02
+    /// 02:28 → 03:51 was a 1.5-hour silent gap).
+    ///
+    /// We synthesise a `MonitorEvent::StreamerLive` from the
+    /// `DownloadStartPayload` carried on the `Started` transition and
+    /// dispatch through the existing handler — same code path as a
+    /// fresh-session start. The handler's `has_active_download` guard
+    /// makes this idempotent against any race with a real
+    /// `MonitorEvent::StreamerLive` outbox event.
+    ///
+    /// Defence against the resume-vs-Ended race: before dispatching, we
+    /// re-check `is_session_active`. If the hysteresis-timer / direct
+    /// authoritative-end fired between the lifecycle's broadcast and
+    /// our dispatch, we skip — the session is already over.
+    fn setup_resume_download_subscriber(&self) {
+        let download_manager = self.download_manager.clone();
+        let streamer_manager = self.streamer_manager.clone();
+        let config_service = self.config_service.clone();
+        let danmu_service = self.danmu_service.clone();
+        let session_lifecycle = self.session_lifecycle.clone();
+        let mut transition_rx = self.session_lifecycle.subscribe();
+        let cancellation_token = self.cancellation_token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        debug!("Resume-download subscriber shutting down");
+                        break;
+                    }
+                    result = transition_rx.recv() => {
+                        match result {
+                            Ok(crate::session::SessionTransition::Started {
+                                from_hysteresis: true,
+                                download_start: Some(payload),
+                                session_id,
+                                streamer_id,
+                                streamer_name,
+                                title,
+                                category,
+                                started_at,
+                                ..
+                            }) => {
+                                if !session_lifecycle.is_session_active(&session_id) {
+                                    debug!(
+                                        session_id,
+                                        streamer_id,
+                                        "resume-download subscriber: session no longer active, skipping"
+                                    );
+                                    continue;
+                                }
+                                info!(
+                                    streamer_id,
+                                    session_id,
+                                    streamer_name,
+                                    "Session resumed from hysteresis — restarting download"
+                                );
+                                let synthetic = MonitorEvent::StreamerLive {
+                                    streamer_id,
+                                    session_id,
+                                    streamer_name,
+                                    streamer_url: payload.streamer_url,
+                                    title,
+                                    category,
+                                    streams: payload.streams,
+                                    media_headers: payload.media_headers,
+                                    media_extras: payload.media_extras,
+                                    timestamp: started_at,
+                                };
+                                Self::handle_monitor_event(
+                                    &download_manager,
+                                    &streamer_manager,
+                                    &config_service,
+                                    &danmu_service,
+                                    synthetic,
+                                )
+                                .await;
+                            }
+                            Ok(_) => {
+                                // Other transitions (Started fresh, Ending, Resumed,
+                                // Ended) are handled by other subscribers / paths.
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                warn!(
+                                    "resume-download subscriber lagged {} events",
+                                    n
+                                );
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                debug!("resume-download transition channel closed");
                                 break;
                             }
                         }

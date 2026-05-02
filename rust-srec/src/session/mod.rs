@@ -43,6 +43,7 @@
 //! - [`lifecycle`]: the `SessionLifecycle` service itself.
 
 pub mod classifier;
+pub mod download_start;
 pub mod events;
 pub mod hysteresis;
 pub mod lifecycle;
@@ -51,6 +52,7 @@ pub mod state;
 pub mod transition;
 
 pub use classifier::{EngineKind, OfflineClassifier};
+pub use download_start::DownloadStartPayload;
 pub use events::{SessionEventKind, SessionEventPayload, TerminalCauseDto};
 pub use hysteresis::{
     HysteresisConfig, HysteresisHandle, HysteresisOutcome, MAX_HYSTERESIS_WINDOW,
