@@ -214,6 +214,13 @@ pub enum TerminalCause {
     /// (e.g. HLS playlist 404, danmu stream closed, repeated stalls).
     /// Bypasses backoff for the session-end write.
     DefinitiveOffline { signal: OfflineSignal },
+    /// User explicitly disabled (or deleted) the streamer.
+    ///
+    /// Authoritative tear-down: bypasses hysteresis (we know the user's
+    /// intent), runs the session-complete pipeline (captured bytes deserve
+    /// processing), and suppresses the user-facing `StreamOffline`
+    /// notification (the user knows they disabled it).
+    UserDisabled,
 }
 
 impl TerminalCause {
@@ -237,6 +244,7 @@ impl TerminalCause {
                 | Self::Failed { .. }
                 | Self::StreamerOffline
                 | Self::DefinitiveOffline { .. }
+                | Self::UserDisabled
         )
     }
 
@@ -264,6 +272,9 @@ impl TerminalCause {
             Self::DefinitiveOffline { .. } => true,
             Self::StreamerOffline => true,
             Self::Rejected { .. } => true,
+            // User-initiated tear-down. Always authoritative — the user said
+            // stop, so we don't wait for hysteresis.
+            Self::UserDisabled => true,
             // Default: not authoritative without an engine signal.
             Self::Completed => false,
             Self::Failed { .. } => false,
@@ -300,6 +311,7 @@ impl TerminalCause {
             Self::Rejected { .. } => "rejected",
             Self::StreamerOffline => "streamer_offline",
             Self::DefinitiveOffline { .. } => "definitive_offline",
+            Self::UserDisabled => "user_disabled",
         }
     }
 }
@@ -413,6 +425,20 @@ mod tests {
             cause: DownloadStopCause::User,
         };
         assert!(!c.should_run_session_complete_pipeline());
+    }
+
+    #[test]
+    fn terminal_cause_user_disabled_runs_session_complete_pipeline() {
+        // User-initiated tear-down: captured bytes deserve processing.
+        assert!(TerminalCause::UserDisabled.should_run_session_complete_pipeline());
+    }
+
+    #[test]
+    fn terminal_cause_user_disabled_is_authoritative() {
+        // The user said stop. Don't wait for hysteresis.
+        assert!(TerminalCause::UserDisabled.is_authoritative_end());
+        assert!(TerminalCause::UserDisabled.is_authoritative_end_with_signal(None));
+        assert_eq!(TerminalCause::UserDisabled.as_str(), "user_disabled");
     }
 
     #[test]

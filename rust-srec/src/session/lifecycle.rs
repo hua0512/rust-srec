@@ -1056,6 +1056,243 @@ impl SessionLifecycle {
 
         Ok(())
     }
+
+    /// Find the active (Recording or Hysteresis) or recently-Ended session
+    /// for `streamer_id`. Used by `end_for_disable` to locate the session
+    /// to tear down. Returns the session id and a clone of the in-memory
+    /// snapshot.
+    fn find_session_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> Option<(String, SessionState)> {
+        self.sessions.iter().find_map(|entry| {
+            if entry.value().streamer_id() == streamer_id {
+                Some((entry.key().clone(), entry.value().clone()))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Tear down the active session because the user disabled (or deleted)
+    /// the streamer.
+    ///
+    /// Replaces the deleted `monitor::service::force_end_active_session`,
+    /// which wrote `live_sessions.end_time` directly via SQL but never
+    /// touched `SessionLifecycle`'s in-memory FSM. That divergence caused
+    /// the disable/re-enable bug observed on `kinetic（无畏契约）` 2026-05-02:
+    /// re-enable found the stale Hysteresis handle, took the
+    /// `resume_from_hysteresis` short-circuit, and silently restarted a
+    /// download under an already-ended `session_id` while the dashboard
+    /// showed the streamer as offline.
+    ///
+    /// Behaviour:
+    /// - Cancels any active hysteresis handle via the same CAS protocol
+    ///   used by `enter_ended_state` / `resume_from_hysteresis` — no race
+    ///   with concurrent resume or timer fire.
+    /// - Commits `live_sessions.end_time` plus a `session_events` audit
+    ///   row with [`TerminalCause::UserDisabled`], atomically.
+    /// - Does NOT touch `streamers.state` (the API route owns it) and does
+    ///   NOT enqueue `MonitorEvent::StreamerOffline` (the user knows they
+    ///   disabled it; downstream notification integrations don't need a
+    ///   synthetic offline push).
+    /// - Broadcasts `SessionTransition::Ended { cause: UserDisabled }` so
+    ///   pipeline-manager runs session-complete (captured bytes deserve
+    ///   processing) and notification-service skips `StreamOffline`.
+    ///
+    /// CAS-loss path (rare: the hysteresis timer fires concurrently with
+    /// the disable cleanup): we retro-actively rewrite the most recent
+    /// `session_ended` audit row's cause to `user_disabled` and patch the
+    /// in-memory `Ended.cause` to match. The original `SessionTransition::
+    /// Ended` broadcast (with the stale cause) has already shipped — we do
+    /// NOT re-broadcast, because subscribers like the notification service
+    /// would re-fire on the second event. The trade-off: in this rare
+    /// race, one trailing offline notification slips through with the
+    /// stale cause; the audit log is the source of truth and reflects the
+    /// user's actual intent.
+    ///
+    /// Returns:
+    /// - `Ok(Some(session_id))` if a session was actually torn down (or
+    ///   retro-corrected);
+    /// - `Ok(None)` if no active or recently-ended session existed for
+    ///   the streamer.
+    pub async fn end_for_disable(
+        &self,
+        streamer_id: &str,
+        streamer_name: &str,
+    ) -> Result<Option<String>> {
+        let now = Utc::now();
+
+        // Step 1: find the session in memory. The in-memory map is the
+        // source of truth for FSM state; if it has no entry we'll fall
+        // back to a DB lookup inside the repo to handle cold-start /
+        // post-restart cases (see Step 4).
+        let in_memory = self.find_session_for_streamer(streamer_id);
+        let session_id_hint = in_memory.as_ref().map(|(sid, _)| sid.clone());
+        let was_in_hysteresis = matches!(
+            in_memory.as_ref(),
+            Some((_, state)) if state.is_hysteresis()
+        );
+        let was_already_ended = matches!(
+            in_memory.as_ref(),
+            Some((_, state)) if state.is_ended()
+        );
+
+        // Step 2: claim the hysteresis CAS. Mirrors the protocol used by
+        // `enter_ended_state` / `resume_from_hysteresis` — keep this in
+        // lockstep with those when the protocol changes.
+        let claim = if let Some(sid) = session_id_hint.as_ref() {
+            self.hysteresis.remove(sid).map(|(_, h)| h)
+        } else {
+            None
+        };
+        if let Some(h) = &claim {
+            h.cancel();
+        }
+
+        let lost_cas = was_in_hysteresis && claim.is_none();
+
+        // Step 3: retro-update path. Either the session is already Ended
+        // (some other path wrote it) or we lost the CAS to a concurrent
+        // timer/authoritative-end. Rewrite the audit row's cause to
+        // user_disabled and patch the in-memory snapshot.
+        if was_already_ended || lost_cas {
+            let Some(sid) = session_id_hint else {
+                debug!(
+                    streamer_id,
+                    "end_for_disable: no in-memory session id to retro-update"
+                );
+                return Ok(None);
+            };
+            return self
+                .retro_update_user_disabled(&sid, streamer_id, streamer_name, now, lost_cas)
+                .await;
+        }
+
+        // Step 4: normal path. DB write first (commit → in-memory →
+        // broadcast). Repo handles the active-session lookup if we don't
+        // have a session_id hint (cold-start / process-restart safety).
+        let resolved = self
+            .repo
+            .end_for_disable(
+                streamer_id,
+                session_id_hint.as_deref(),
+                was_in_hysteresis,
+                now,
+            )
+            .await?;
+
+        let Some(session_id) = resolved else {
+            debug!(streamer_id, "end_for_disable: no active session to end");
+            return Ok(None);
+        };
+
+        // In-memory update. Pull `started_at` from the prior state if
+        // present; otherwise default to `now` (cold-start case where we
+        // recovered the session from the DB).
+        let started_at = self
+            .sessions
+            .get(&session_id)
+            .map(|e| e.started_at())
+            .unwrap_or(now);
+        self.sessions.insert(
+            session_id.clone(),
+            SessionState::ended(
+                streamer_id,
+                &session_id,
+                started_at,
+                now,
+                TerminalCause::UserDisabled,
+            ),
+        );
+
+        info!(
+            streamer_id,
+            session_id = %session_id,
+            cause = "user_disabled",
+            via_hysteresis = was_in_hysteresis,
+            "Session ended"
+        );
+
+        // Broadcast last — subscribers querying `session_snapshot` from
+        // inside the receiver must observe the post-update state.
+        let _ = self.transition_tx.send(SessionTransition::Ended {
+            session_id: session_id.clone(),
+            streamer_id: streamer_id.to_string(),
+            streamer_name: streamer_name.to_string(),
+            ended_at: now,
+            cause: TerminalCause::UserDisabled,
+            via_hysteresis: was_in_hysteresis,
+        });
+
+        // Defer in-memory eviction (see `enter_ended_state` for rationale).
+        let sessions = self.sessions.clone();
+        let session_id_owned = session_id.clone();
+        let retention = self.ended_retention;
+        tokio::spawn(async move {
+            tokio::time::sleep(retention).await;
+            sessions.remove(&session_id_owned);
+        });
+
+        Ok(Some(session_id))
+    }
+
+    /// Helper for [`Self::end_for_disable`] — retro-actively rewrite the
+    /// most recent `session_ended` audit row's cause to `user_disabled`
+    /// and update the in-memory snapshot. Used when the FSM state is
+    /// already `Ended` by the time disable cleanup runs (CAS lost to a
+    /// hysteresis timer or other authoritative path).
+    ///
+    /// Does NOT broadcast a fresh `SessionTransition::Ended`. The original
+    /// broadcast (with the stale cause) has already shipped to subscribers
+    /// like notification-service; re-broadcasting would double-fire side
+    /// effects. The audit log + in-memory patch are sufficient for
+    /// operators to see the corrected attribution.
+    async fn retro_update_user_disabled(
+        &self,
+        session_id: &str,
+        streamer_id: &str,
+        _streamer_name: &str,
+        _now: DateTime<Utc>,
+        lost_cas: bool,
+    ) -> Result<Option<String>> {
+        let updated = self
+            .repo
+            .rewrite_session_ended_cause(
+                session_id,
+                crate::session::events::TerminalCauseDto::UserDisabled,
+            )
+            .await?;
+
+        if !updated {
+            warn!(
+                streamer_id,
+                session_id,
+                lost_cas,
+                "end_for_disable: no session_ended audit row to retro-update"
+            );
+            return Ok(None);
+        }
+
+        // Patch the in-memory `Ended.cause` so consumers of `session_snapshot`
+        // and `subscribe()` receivers that re-query state see the corrected
+        // attribution.
+        if let Some(mut entry) = self.sessions.get_mut(session_id)
+            && let SessionState::Ended { cause, .. } = entry.value_mut()
+        {
+            *cause = TerminalCause::UserDisabled;
+        }
+
+        info!(
+            streamer_id,
+            session_id,
+            cause = "user_disabled",
+            lost_cas,
+            "Session end retroactively re-attributed to user_disabled"
+        );
+
+        Ok(Some(session_id.to_string()))
+    }
 }
 
 /// Which DB-write path `enter_ended_state` should take. The DB write is
@@ -3411,5 +3648,496 @@ mod tests {
             ended_count, 1,
             "duplicate authoritative-end must not double-write the audit row"
         );
+    }
+
+    // =========================================================================
+    // Scenario suite O — `end_for_disable` (replaces force_end_active_session).
+    //
+    // Verifies that user-initiated tear-down keeps in-memory FSM and DB in
+    // lockstep, runs the same CAS protocol as enter_ended_state, and
+    // produces a single authoritative `Ended` broadcast with cause
+    // user_disabled.
+    // =========================================================================
+
+    /// Helper: read latest session_ended audit row payload for a session.
+    async fn latest_session_ended_payload(pool: &SqlitePool, sid: &str) -> Option<String> {
+        sqlx::query_scalar(
+            "SELECT payload FROM session_events
+             WHERE session_id = ? AND kind = 'session_ended'
+             ORDER BY occurred_at DESC, id DESC LIMIT 1",
+        )
+        .bind(sid)
+        .fetch_optional(pool)
+        .await
+        .unwrap()
+    }
+
+    /// O1 — `end_for_disable` on an actively-recording session writes
+    /// `end_time`, transitions in-memory to `Ended`, broadcasts
+    /// `Ended { cause: UserDisabled, via_hysteresis: false }`, and writes a
+    /// matching `session_ended` audit row.
+    #[tokio::test]
+    async fn o1_end_for_disable_ends_active_recording_session() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool.clone());
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // drain Started
+
+        let sid = started.session_id().to_string();
+        let resolved = lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+        assert_eq!(resolved.as_deref(), Some(sid.as_str()));
+
+        // DB end_time set.
+        assert!(
+            db_session_end_time(&pool, &sid).await.is_some(),
+            "end_for_disable must set live_sessions.end_time"
+        );
+
+        // In-memory state Ended.
+        let snapshot = lifecycle.session_snapshot(&sid).expect("session in memory");
+        assert!(snapshot.is_ended());
+        assert!(!lifecycle.is_session_active(&sid));
+
+        // Broadcast: Ended { cause: UserDisabled, via_hysteresis: false }.
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended {
+                cause,
+                via_hysteresis,
+                ..
+            } => {
+                assert_eq!(cause, TerminalCause::UserDisabled);
+                assert!(!via_hysteresis);
+                // Pipeline policy: UserDisabled fires session-complete DAG
+                // (captured bytes deserve processing).
+                assert!(cause.should_run_session_complete_pipeline());
+            }
+            other => panic!("expected Ended {{cause:UserDisabled}}, got {other:?}"),
+        }
+
+        // Audit row carries user_disabled cause.
+        let payload = latest_session_ended_payload(&pool, &sid).await.unwrap();
+        assert!(payload.contains("\"user_disabled\""), "got: {payload}");
+    }
+
+    /// O2 — `end_for_disable` on a session in `Hysteresis` cancels the
+    /// timer (CAS won), writes Ended with `via_hysteresis: true`, and
+    /// emits a single Ended broadcast (no late timer-fire follow-up).
+    #[tokio::test]
+    async fn o2_end_for_disable_cancels_hysteresis_handle() {
+        let pool = setup_pool().await;
+        // Long window so the timer cannot fire during the test.
+        let lifecycle = make_lifecycle_with_window(pool.clone(), Duration::from_secs(60));
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started
+
+        // Park in Hysteresis.
+        lifecycle
+            .on_download_terminal(&make_terminal_completed_clean_disconnect(started.session_id()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Ending
+
+        let sid = started.session_id().to_string();
+        let resolved = lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+        assert_eq!(resolved.as_deref(), Some(sid.as_str()));
+
+        // Hysteresis handle removed, timer cancelled.
+        assert!(
+            !lifecycle.hysteresis.contains_key(&sid),
+            "hysteresis handle must be claimed and removed"
+        );
+
+        // Broadcast: Ended with via_hysteresis=true.
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended {
+                cause,
+                via_hysteresis,
+                ..
+            } => {
+                assert_eq!(cause, TerminalCause::UserDisabled);
+                assert!(
+                    via_hysteresis,
+                    "via_hysteresis must reflect that we tore down a Hysteresis state"
+                );
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
+
+        // No follow-up Ended from the timer (its cancel token was tripped).
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(
+            rx.try_recv().is_err(),
+            "no second Ended must arrive from the cancelled timer"
+        );
+    }
+
+    /// O3 — `end_for_disable` with no active session is `Ok(None)`, no
+    /// broadcast, no DB write.
+    #[tokio::test]
+    async fn o3_end_for_disable_no_active_session_returns_none() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool.clone());
+        let mut rx = lifecycle.subscribe();
+
+        let resolved = lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+        assert!(resolved.is_none());
+        assert!(rx.try_recv().is_err(), "no broadcast on empty tear-down");
+
+        // DB has no session_events row.
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM session_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    /// O4 — back-to-back `end_for_disable` calls collapse to a single
+    /// effective tear-down. Second call returns `Ok(None)` and emits no
+    /// second broadcast. Audit log has exactly one `session_ended` row.
+    #[tokio::test]
+    async fn o4_end_for_disable_idempotent_on_second_call() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool.clone());
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started
+
+        let sid = started.session_id().to_string();
+        let first = lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+        assert_eq!(first.as_deref(), Some(sid.as_str()));
+        let _ = rx.recv().await.unwrap(); // Ended
+
+        // Second call: idempotent. The session is already Ended in memory;
+        // the retro-update path runs and finds the same cause already set,
+        // returning the session id unchanged. No second `Ended` broadcast.
+        let second = lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+        assert_eq!(second.as_deref(), Some(sid.as_str()));
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            rx.try_recv().is_err(),
+            "second end_for_disable must not re-broadcast Ended"
+        );
+
+        // Audit log has exactly one `session_ended` row.
+        let ended_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM session_events WHERE session_id = ? AND kind = 'session_ended'",
+        )
+        .bind(&sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ended_count, 1);
+    }
+
+    /// O5 — `end_for_disable` loses CAS to a concurrent
+    /// `resume_from_hysteresis`. The CAS-loss path takes effect: we
+    /// observe in-memory Recording (resumed) and the audit row is
+    /// retro-updated to `user_disabled` only if a session_ended row
+    /// existed (in this scenario it does NOT — resume cancelled hysteresis
+    /// without writing Ended). Method returns `Ok(None)` cleanly.
+    #[tokio::test]
+    async fn o5_end_for_disable_loses_cas_to_resume() {
+        let pool = setup_pool().await;
+        let lifecycle =
+            make_lifecycle_with_window(pool.clone(), Duration::from_secs(60));
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started
+
+        // Park in Hysteresis.
+        lifecycle
+            .on_download_terminal(&make_terminal_completed_clean_disconnect(started.session_id()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Ending
+
+        // Manually consume the hysteresis handle to simulate "resume already won
+        // CAS but in-memory state is still Hysteresis."
+        let sid = started.session_id().to_string();
+        let claimed = lifecycle.hysteresis.remove(&sid);
+        assert!(claimed.is_some(), "test seed: handle must exist");
+
+        // end_for_disable now sees was_in_hysteresis=true, claim=None → retro path.
+        // No prior session_ended row → the rewrite finds nothing → Ok(None).
+        let resolved = lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+        assert!(
+            resolved.is_none(),
+            "lost-CAS with no session_ended row must return Ok(None)"
+        );
+
+        // No spurious Ended broadcast.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(rx.try_recv().is_err(), "no broadcast on lost CAS");
+    }
+
+    /// O5b — `end_for_disable` loses CAS to the hysteresis timer fire.
+    /// Timer ends the session with cause Completed; `end_for_disable` sees
+    /// the Ended state and retro-rewrites the audit row's cause to
+    /// `user_disabled`. Verifies cause-overwrite-on-CAS-loss behaviour.
+    #[tokio::test]
+    async fn o5b_end_for_disable_overwrites_cause_when_timer_wins() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_fast(pool.clone());
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started
+
+        // Park in Hysteresis (25 ms window).
+        lifecycle
+            .on_download_terminal(&make_terminal_completed_clean_disconnect(started.session_id()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Ending
+
+        // Wait for the timer to fire and write Ended with cause=Completed.
+        wait_for_hysteresis_to_expire().await;
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended { cause, .. } => {
+                assert_eq!(
+                    cause,
+                    TerminalCause::Completed,
+                    "timer-fire path uses the cause that put us into hysteresis"
+                );
+            }
+            other => panic!("expected Ended {{cause:Completed}}, got {other:?}"),
+        }
+
+        // Now disable cleanup arrives late. end_for_disable sees Ended in
+        // memory → retro-update path: rewrites session_ended row's cause
+        // and patches in-memory snapshot's cause to UserDisabled.
+        let sid = started.session_id().to_string();
+        let resolved = lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+        assert_eq!(resolved.as_deref(), Some(sid.as_str()));
+
+        // Audit row's cause is now user_disabled.
+        let payload = latest_session_ended_payload(&pool, &sid).await.unwrap();
+        assert!(
+            payload.contains("\"user_disabled\""),
+            "audit cause must be retro-updated to user_disabled, got: {payload}"
+        );
+        assert!(
+            !payload.contains("\"completed\""),
+            "audit cause must no longer be completed, got: {payload}"
+        );
+
+        // In-memory snapshot's cause was patched.
+        let snap = lifecycle.session_snapshot(&sid).expect("session in memory");
+        match snap {
+            SessionState::Ended { cause, .. } => assert_eq!(cause, TerminalCause::UserDisabled),
+            other => panic!("expected Ended state, got {other:?}"),
+        }
+
+        // No fresh Ended broadcast on retro-update (would double-fire
+        // notifications). Receiver is empty.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            rx.try_recv().is_err(),
+            "retro-update must NOT re-broadcast Ended"
+        );
+    }
+
+    /// O6 — `end_for_disable` does not touch the streamer row. The API
+    /// route owns `streamers.state`; the lifecycle method must not flip it.
+    #[tokio::test]
+    async fn o6_end_for_disable_does_not_touch_streamer_state() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool.clone());
+
+        let _started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+
+        // Pre-condition: start_or_resume flipped state to LIVE. Now manually
+        // simulate the API route's "set state Disabled" side-effect.
+        sqlx::query("UPDATE streamers SET state = 'DISABLED' WHERE id = ?")
+            .bind(STREAMER_ID)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+
+        let state: String = sqlx::query_scalar("SELECT state FROM streamers WHERE id = ?")
+            .bind(STREAMER_ID)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            state, "DISABLED",
+            "end_for_disable must NOT flip streamers.state (API route owns it)"
+        );
+    }
+
+    /// O7 — `end_for_disable` does not enqueue a `StreamerOffline` outbox
+    /// event. The user knows they disabled the streamer; downstream
+    /// integrations don't need a synthetic offline push.
+    #[tokio::test]
+    async fn o7_end_for_disable_skips_outbox_event() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool.clone());
+
+        let _started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        // After start_or_resume: outbox has one StreamerLive event.
+
+        lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+
+        let event_types: Vec<String> = sqlx::query_scalar(
+            "SELECT event_type FROM monitor_event_outbox ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            event_types,
+            vec!["StreamerLive"],
+            "end_for_disable must NOT enqueue StreamerOffline (no synthetic offline push)"
+        );
+    }
+
+    /// O8 — concurrent `end_for_disable` calls collapse to a single
+    /// effective tear-down. Exactly one returns `Some(session_id)` after
+    /// writing the row; others return either `Ok(None)` (no active row by
+    /// the time they reach the repo) or `Some(session_id)` via the
+    /// retro-update path. Exactly one `session_ended` audit row exists.
+    #[tokio::test]
+    async fn o8_end_for_disable_idempotent_under_concurrency() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool.clone());
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let sid = started.session_id().to_string();
+
+        // Spawn 8 concurrent end_for_disable calls.
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let lc = lifecycle.clone();
+            handles.push(tokio::spawn(async move {
+                lc.end_for_disable(STREAMER_ID, "Test").await
+            }));
+        }
+        for h in handles {
+            // All must succeed (no errors), regardless of which path won.
+            h.await.unwrap().unwrap();
+        }
+
+        // Audit log must contain exactly one session_ended row.
+        let ended_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM session_events WHERE session_id = ? AND kind = 'session_ended'",
+        )
+        .bind(&sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(ended_count, 1, "concurrent calls must collapse to one row");
+
+        // The single row's cause is user_disabled.
+        let payload = latest_session_ended_payload(&pool, &sid).await.unwrap();
+        assert!(payload.contains("\"user_disabled\""), "got: {payload}");
+    }
+
+    /// O9 — broadcast ordering: by the time a subscriber receives `Ended`,
+    /// the in-memory snapshot already reflects the Ended state and the DB
+    /// `end_time` is committed. Ordering: commit → in-memory → broadcast.
+    #[tokio::test]
+    async fn o9_end_for_disable_broadcast_after_commit_and_memory_update() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool.clone());
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started
+
+        let sid = started.session_id().to_string();
+        let lc = lifecycle.clone();
+        let pool_clone = pool.clone();
+        let sid_clone = sid.clone();
+        let observer = tokio::spawn(async move {
+            // Wait for the Ended broadcast.
+            loop {
+                match rx.recv().await.unwrap() {
+                    SessionTransition::Ended { .. } => break,
+                    _ => continue,
+                }
+            }
+            // At this point both invariants must hold:
+            // 1. In-memory snapshot is Ended.
+            let snap = lc.session_snapshot(&sid_clone).expect("session in memory");
+            assert!(
+                snap.is_ended(),
+                "in-memory state must be Ended before subscriber sees broadcast"
+            );
+            // 2. DB end_time is committed.
+            let end_time = db_session_end_time(&pool_clone, &sid_clone).await;
+            assert!(
+                end_time.is_some(),
+                "DB end_time must be committed before subscriber sees broadcast"
+            );
+        });
+
+        lifecycle
+            .end_for_disable(STREAMER_ID, "Test")
+            .await
+            .unwrap();
+
+        observer.await.unwrap();
     }
 }

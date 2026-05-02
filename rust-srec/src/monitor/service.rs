@@ -898,38 +898,6 @@ impl<
         Ok(())
     }
 
-    /// Force end any active session for a streamer.
-    ///
-    /// This is used during streamer disable/delete operations where we need to
-    /// end sessions regardless of the streamer's current in-memory state.
-    /// Unlike `handle_offline_with_session`, this does not check state transitions
-    /// and directly ends any active session in the database.
-    ///
-    /// # Arguments
-    /// * `streamer_id` - The ID of the streamer whose session should be ended
-    ///
-    /// # Returns
-    /// * `Ok(Some(session_id))` if a session was ended
-    /// * `Ok(None)` if no active session existed
-    pub async fn force_end_active_session(&self, streamer_id: &str) -> Result<Option<String>> {
-        let now = chrono::Utc::now();
-
-        let mut tx = self.begin_immediate().await?;
-
-        let session_id = SessionTxOps::end_active_session(&mut tx, streamer_id, now).await?;
-
-        if let Some(ref id) = session_id {
-            info!(
-                "Force ended active session {} for streamer {}",
-                id, streamer_id
-            );
-        }
-
-        tx.commit().await?;
-
-        Ok(session_id)
-    }
-
     /// Handle a filtered status (live but out of schedule, etc.).
     async fn handle_filtered(
         &self,

@@ -1554,6 +1554,15 @@ impl NotificationService {
                                         timestamp: started_at,
                                     }),
                                     crate::session::SessionTransition::Ended {
+                                        cause: crate::session::TerminalCause::UserDisabled,
+                                        ..
+                                    } => {
+                                        // User explicitly disabled / deleted the streamer.
+                                        // They know — no need to ping their notification
+                                        // channels with a synthetic offline event.
+                                        None
+                                    }
+                                    crate::session::SessionTransition::Ended {
                                         streamer_id,
                                         streamer_name,
                                         ended_at,

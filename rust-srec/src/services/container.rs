@@ -1413,7 +1413,7 @@ impl ServiceContainer {
         let download_manager = self.download_manager.clone();
         let pipeline_manager = self.pipeline_manager.clone();
         let danmu_service = self.danmu_service.clone();
-        let stream_monitor = self.stream_monitor.clone();
+        let session_lifecycle = self.session_lifecycle.clone();
         let mut receiver = self.event_broadcaster.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -1466,7 +1466,8 @@ impl ServiceContainer {
                                                 Self::handle_streamer_disabled(
                                                     &download_manager,
                                                     &danmu_service,
-                                                    &stream_monitor,
+                                                    &session_lifecycle,
+                                                    &streamer_manager,
                                                     &streamer_id,
                                                 )
                                                 .await;
@@ -1482,7 +1483,8 @@ impl ServiceContainer {
                                                 Self::handle_streamer_disabled(
                                                     &download_manager,
                                                     &danmu_service,
-                                                    &stream_monitor,
+                                                    &session_lifecycle,
+                                                    &streamer_manager,
                                                     &streamer_id,
                                                 )
                                                 .await;
@@ -1604,7 +1606,8 @@ impl ServiceContainer {
                                         Self::handle_streamer_disabled(
                                             &download_manager,
                                             &danmu_service,
-                                            &stream_monitor,
+                                            &session_lifecycle,
+                                            &streamer_manager,
                                             &streamer_id,
                                         ).await;
                                     }
@@ -1625,7 +1628,8 @@ impl ServiceContainer {
                                             Self::handle_streamer_disabled(
                                                 &download_manager,
                                                 &danmu_service,
-                                                &stream_monitor,
+                                                &session_lifecycle,
+                                                &streamer_manager,
                                                 &streamer_id,
                                             ).await;
                                         }
@@ -2973,14 +2977,8 @@ impl ServiceContainer {
     pub async fn handle_streamer_disabled(
         download_manager: &Arc<DownloadManager>,
         danmu_service: &Arc<DanmuService>,
-        stream_monitor: &Arc<
-            StreamMonitor<
-                SqlxStreamerRepository,
-                SqlxFilterRepository,
-                SqlxSessionRepository,
-                SqlxConfigRepository,
-            >,
-        >,
+        session_lifecycle: &Arc<crate::session::SessionLifecycle>,
+        streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
         streamer_id: &str,
     ) {
         // 1. Cancel active downloads (best-effort).
@@ -3046,14 +3044,23 @@ impl ServiceContainer {
             );
         }
 
-        // 3. End active streaming session (best-effort).
+        // 3. End active streaming session via the lifecycle FSM (best-effort).
         //
-        // NOTE: We use force_end_active_session instead of handle_offline_with_session
-        // because by the time this handler runs, the streamer's in-memory state has
-        // already been updated to Disabled by partial_update_streamer.
-        if let Err(e) = stream_monitor.force_end_active_session(streamer_id).await {
+        // Replaces the old `stream_monitor.force_end_active_session`, which
+        // wrote `live_sessions.end_time` directly via SQL but never touched
+        // `SessionLifecycle`'s in-memory state. That divergence caused the
+        // disable/re-enable bug: re-enable found the stale Hysteresis handle
+        // and silently restarted a download under an already-ended session_id.
+        let streamer_name = streamer_manager
+            .get_streamer(streamer_id)
+            .map(|m| m.name.clone())
+            .unwrap_or_default();
+        if let Err(e) = session_lifecycle
+            .end_for_disable(streamer_id, &streamer_name)
+            .await
+        {
             warn!(
-                "Failed to end session for disabled streamer {}: {}",
+                "Failed to end session via lifecycle for disabled streamer {}: {}",
                 streamer_id, e
             );
         }

@@ -163,6 +163,8 @@ function TerminalCauseLabel({ cause }: { cause: TerminalCauseDto }) {
       return <Trans context="terminal-cause">Streamer Offline</Trans>;
     case 'definitive_offline':
       return <DefinitiveOfflineLabel signalType={cause.signal.type} />;
+    case 'user_disabled':
+      return <Trans context="terminal-cause">User Disabled</Trans>;
   }
 }
 

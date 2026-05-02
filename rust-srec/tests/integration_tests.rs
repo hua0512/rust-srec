@@ -1693,4 +1693,141 @@ mod end_to_end_tests {
             _ => panic!("Expected TransientError event"),
         }
     }
+
+    /// Regression: disable a Live streamer with an active session via the
+    /// lifecycle's `end_for_disable`, then re-trigger LiveDetected. The
+    /// pre-fix `force_end_active_session` wrote DB-only and left the
+    /// in-memory FSM stuck in Hysteresis, so re-enable took the
+    /// `resume_from_hysteresis` short-circuit and silently restarted a
+    /// download under an already-ended session_id. With the fix, a new
+    /// `Created` outcome with a fresh session_id must be produced and the
+    /// old row must be ended in DB.
+    #[tokio::test]
+    async fn test_disable_then_reenable_creates_fresh_session() {
+        use rust_srec::session::{LiveDetectedArgs, StartSessionOutcome};
+
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+
+        let streamer_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, consecutive_error_count)
+             VALUES (?, 'TestStreamer', 'https://twitch.tv/teststreamer', ?, 'NOT_LIVE', 'NORMAL', 0)"
+        )
+            .bind(&streamer_id)
+            .bind(&platform_id)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert streamer");
+
+        let lifecycle = make_session_lifecycle(&pool);
+
+        let now = Utc::now();
+        let streams = Vec::new();
+        let live_args = LiveDetectedArgs {
+            streamer_id: &streamer_id,
+            streamer_name: "TestStreamer",
+            streamer_url: "https://twitch.tv/teststreamer",
+            current_avatar: None,
+            new_avatar: None,
+            title: "first session",
+            category: None,
+            streams: &streams,
+            media_headers: None,
+            media_extras: None,
+            now,
+        };
+
+        // Step 1: streamer goes live → fresh session.
+        let first = lifecycle
+            .on_live_detected(live_args)
+            .await
+            .expect("first live");
+        let first_id = first.session_id().to_string();
+        assert!(matches!(first, StartSessionOutcome::Created { .. }));
+
+        // Step 2: user disables — lifecycle tears down. (In production the
+        // download's CleanDisconnect would have parked the session in
+        // Hysteresis first; we test the simpler path here. The hysteresis
+        // path is covered by the lifecycle suite O.)
+        let resolved = lifecycle
+            .end_for_disable(&streamer_id, "TestStreamer")
+            .await
+            .expect("end_for_disable");
+        assert_eq!(resolved.as_deref(), Some(first_id.as_str()));
+
+        // DB end_time set on the first session.
+        let end_time: Option<i64> =
+            sqlx::query_scalar("SELECT end_time FROM live_sessions WHERE id = ?")
+                .bind(&first_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(end_time.is_some(), "first session must be ended in DB");
+
+        // In-memory state must be Ended (the bug we're fixing was that
+        // force_end_active_session only wrote DB, leaving in-memory state
+        // stale — re-enable would then take the resume_from_hysteresis
+        // short-circuit instead of creating a new session).
+        let snap = lifecycle
+            .session_snapshot(&first_id)
+            .expect("session in memory after disable");
+        assert!(snap.is_ended(), "in-memory state must be Ended after disable");
+
+        // Step 3: re-enable triggers fresh LiveDetected. Because the
+        // in-memory state is Ended (not Hysteresis), the lifecycle's
+        // `on_live_detected` falls through to `start_or_resume` which
+        // creates a fresh session_id.
+        let later = now + chrono::Duration::seconds(5);
+        let streams2 = Vec::new();
+        let relive_args = LiveDetectedArgs {
+            streamer_id: &streamer_id,
+            streamer_name: "TestStreamer",
+            streamer_url: "https://twitch.tv/teststreamer",
+            current_avatar: None,
+            new_avatar: None,
+            title: "second session",
+            category: None,
+            streams: &streams2,
+            media_headers: None,
+            media_extras: None,
+            now: later,
+        };
+        let second = lifecycle
+            .on_live_detected(relive_args)
+            .await
+            .expect("re-live");
+        let second_id = second.session_id().to_string();
+
+        assert!(
+            matches!(second, StartSessionOutcome::Created { .. }),
+            "re-enable must create a fresh session, got {second:?}"
+        );
+        assert_ne!(
+            first_id, second_id,
+            "fresh session must have a different id than the disabled one"
+        );
+
+        // Two rows in live_sessions: the first ended, the second active.
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ?",
+        )
+        .bind(&streamer_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 2);
+
+        let active_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL",
+        )
+        .bind(&streamer_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            active_count, 1,
+            "exactly one active session after re-enable"
+        );
+    }
 }

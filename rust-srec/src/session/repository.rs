@@ -348,6 +348,145 @@ impl SessionLifecycleRepository {
         Ok(resolved)
     }
 
+    /// Atomic "user disabled" tear-down: one `BEGIN IMMEDIATE` transaction
+    /// that closes the active session row and inserts the
+    /// `session_ended { cause: user_disabled }` audit row.
+    ///
+    /// Differs from [`Self::end`] in three ways:
+    ///
+    /// - does NOT touch `streamers.state` — the API route already wrote
+    ///   `Disabled` (or `Deleted`) before this is called;
+    /// - does NOT enqueue a [`MonitorEvent::StreamerOffline`] — the user
+    ///   knows they disabled the streamer; their downstream notification
+    ///   integrations don't need a synthetic offline push;
+    /// - is idempotent on a session that's already ended (returns
+    ///   `Ok(None)`); concurrent disable calls collapse to one effective
+    ///   tear-down.
+    ///
+    /// If `session_id` is `None`, falls back to the active session for the
+    /// streamer (matches `repo.end_session_only`'s shape). Returns the
+    /// session id that was actually closed, or `None` if there was no
+    /// active row to close.
+    pub async fn end_for_disable(
+        &self,
+        streamer_id: &str,
+        session_id: Option<&str>,
+        via_hysteresis: bool,
+        now: DateTime<Utc>,
+    ) -> Result<Option<String>> {
+        let mut tx = begin_immediate(&self.write_pool).await?;
+
+        // Resolve the active session id. When the caller named one, only
+        // proceed if its `end_time IS NULL` — that's the idempotency guard
+        // for repeated disable events. Without this, a second call would
+        // insert a duplicate `session_ended` audit row for the same id.
+        let resolved: Option<String> = if let Some(id) = session_id {
+            let still_active: Option<bool> = sqlx::query_scalar(
+                "SELECT end_time IS NULL FROM live_sessions WHERE id = ?",
+            )
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            match still_active {
+                Some(true) => Some(id.to_string()),
+                _ => None,
+            }
+        } else {
+            crate::database::repositories::SessionTxOps::get_active_session_id(
+                &mut tx,
+                streamer_id,
+            )
+            .await?
+        };
+
+        let Some(sid) = resolved else {
+            tx.commit().await?;
+            return Ok(None);
+        };
+
+        crate::database::repositories::SessionTxOps::end_session(&mut tx, &sid, now).await?;
+
+        let payload = SessionEventPayload::SessionEnded {
+            cause: TerminalCauseDto::UserDisabled,
+            via_hysteresis,
+        };
+        let row = Self::event_row(&sid, streamer_id, &payload, now);
+        SessionEventTxOps::insert(&mut tx, &row).await?;
+
+        tx.commit().await?;
+
+        Ok(Some(sid))
+    }
+
+    /// Retro-actively rewrite the most recent `session_ended` audit row's
+    /// cause for `session_id`. Used when the lifecycle's `end_for_disable`
+    /// loses a CAS race to the hysteresis timer (or any other authoritative
+    /// path) — the row was written with the wrong cause; we correct the
+    /// audit log to reflect the user's actual intent.
+    ///
+    /// Returns `true` if a row was updated, `false` if no `session_ended`
+    /// row existed for the session (defensive — should not happen in
+    /// practice because the caller only invokes this after observing the
+    /// session is already Ended).
+    pub async fn rewrite_session_ended_cause(
+        &self,
+        session_id: &str,
+        new_cause: TerminalCauseDto,
+    ) -> Result<bool> {
+        let mut tx = begin_immediate(&self.write_pool).await?;
+
+        // Pick the most recent `session_ended` row. Multiple rows can exist
+        // only as the result of a buggy retro-update path; we update the
+        // newest one and let any older row stand as historical record.
+        let existing: Option<(i64, Option<String>)> = sqlx::query_as(
+            "SELECT id, payload FROM session_events
+             WHERE session_id = ? AND kind = 'session_ended'
+             ORDER BY occurred_at DESC, id DESC LIMIT 1",
+        )
+        .bind(session_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let Some((row_id, payload_json)) = existing else {
+            tx.commit().await?;
+            return Ok(false);
+        };
+
+        // Parse → mutate cause → reserialise. Preserve `via_hysteresis` so
+        // operators can still tell "ended via timer expiry" vs "direct" —
+        // the user's tear-down landed on top of an existing FSM state and
+        // the via_hysteresis bit reflects that history.
+        let mut payload: SessionEventPayload = match payload_json
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()?
+        {
+            Some(p) => p,
+            None => {
+                tx.commit().await?;
+                return Ok(false);
+            }
+        };
+
+        match &mut payload {
+            SessionEventPayload::SessionEnded { cause, .. } => *cause = new_cause,
+            _ => {
+                tx.commit().await?;
+                return Ok(false);
+            }
+        }
+
+        let new_json = serde_json::to_string(&payload)?;
+        sqlx::query("UPDATE session_events SET payload = ? WHERE id = ?")
+            .bind(new_json)
+            .bind(row_id)
+            .execute(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
+        Ok(true)
+    }
+
     /// Atomic "session ended" bundle: one `BEGIN IMMEDIATE` transaction
     /// that closes the session row, marks the streamer Offline, optionally
     /// clears accumulated errors, and (if appropriate) enqueues
@@ -892,6 +1031,171 @@ mod tests {
             kinds,
             vec!["session_ended", "session_ended", "session_started"]
         );
+    }
+
+    // -------------------------------------------------------------------
+    // Suite Or — `end_for_disable` repository helper.
+    //
+    // Mirrors the lifecycle suite O but anchored at the repository tx
+    // boundary so we can spot-check atomicity, idempotency, and the
+    // audit-row payload shape independently of the FSM.
+    // -------------------------------------------------------------------
+
+    /// Or1 — `end_for_disable` writes `end_time`, inserts a
+    /// `session_ended` audit row with `cause: user_disabled`, and does
+    /// NOT touch streamer state or enqueue StreamerOffline.
+    #[tokio::test]
+    async fn or1_end_for_disable_atomic_writes() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        let sid = started.session_id().to_string();
+
+        let resolved = repo
+            .end_for_disable(
+                STREAMER_ID,
+                Some(&sid),
+                false,
+                now + chrono::Duration::seconds(5),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resolved.as_deref(), Some(sid.as_str()));
+
+        // end_time set.
+        let end_time: Option<i64> =
+            sqlx::query_scalar("SELECT end_time FROM live_sessions WHERE id = ?")
+                .bind(&sid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(end_time.is_some());
+
+        // Streamer state unchanged (still LIVE).
+        assert_eq!(streamer_state(&pool).await, "LIVE");
+
+        // Outbox has only the start event.
+        assert_eq!(outbox_event_types(&pool).await, vec!["StreamerLive"]);
+
+        // Audit row carries user_disabled.
+        let payload: String = sqlx::query_scalar(
+            "SELECT payload FROM session_events
+             WHERE session_id = ? AND kind = 'session_ended'
+             ORDER BY id DESC LIMIT 1",
+        )
+        .bind(&sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(payload.contains("\"user_disabled\""), "got: {payload}");
+    }
+
+    /// Or2 — `end_for_disable` is idempotent at the tx level. A second
+    /// call against the same already-ended id is a no-op (returns None),
+    /// inserts no second audit row.
+    #[tokio::test]
+    async fn or2_end_for_disable_idempotent_on_already_ended_id() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        let sid = started.session_id().to_string();
+
+        let _first = repo
+            .end_for_disable(STREAMER_ID, Some(&sid), false, now)
+            .await
+            .unwrap();
+        let second = repo
+            .end_for_disable(STREAMER_ID, Some(&sid), false, now)
+            .await
+            .unwrap();
+        assert!(
+            second.is_none(),
+            "second call against already-ended session must return Ok(None)"
+        );
+
+        // Exactly one session_ended audit row exists for this session.
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM session_events
+             WHERE session_id = ? AND kind = 'session_ended'",
+        )
+        .bind(&sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    /// Or3 — fallback to active session when `session_id` is `None`.
+    #[tokio::test]
+    async fn or3_end_for_disable_falls_back_to_active_session() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        let resolved = repo
+            .end_for_disable(STREAMER_ID, None, false, now)
+            .await
+            .unwrap();
+        assert_eq!(resolved.as_deref(), Some(started.session_id()));
+    }
+
+    /// Or4 — `rewrite_session_ended_cause` updates only the latest
+    /// `session_ended` row's payload cause and preserves
+    /// `via_hysteresis`.
+    #[tokio::test]
+    async fn or4_rewrite_session_ended_cause_updates_only_latest() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        let sid = started.session_id().to_string();
+
+        // End normally (cause=Completed, via_hysteresis=true) so the audit
+        // row exists. Use the light path so streamer state stays LIVE.
+        repo.end_session_only(STREAMER_ID, Some(&sid), TerminalCauseDto::Completed, true, now)
+            .await
+            .unwrap();
+
+        let updated = repo
+            .rewrite_session_ended_cause(&sid, TerminalCauseDto::UserDisabled)
+            .await
+            .unwrap();
+        assert!(updated);
+
+        let payload: String = sqlx::query_scalar(
+            "SELECT payload FROM session_events
+             WHERE session_id = ? AND kind = 'session_ended'
+             ORDER BY id DESC LIMIT 1",
+        )
+        .bind(&sid)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(payload.contains("\"user_disabled\""), "got: {payload}");
+        assert!(
+            payload.contains("\"via_hysteresis\":true"),
+            "via_hysteresis must be preserved across rewrite, got: {payload}"
+        );
+    }
+
+    /// Or5 — `rewrite_session_ended_cause` returns false when there is no
+    /// session_ended row to rewrite.
+    #[tokio::test]
+    async fn or5_rewrite_session_ended_cause_returns_false_when_no_row() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+
+        let updated = repo
+            .rewrite_session_ended_cause("nonexistent", TerminalCauseDto::UserDisabled)
+            .await
+            .unwrap();
+        assert!(!updated);
     }
 
     /// Inverse case: a clean DB. `start_or_resume` must NOT write any

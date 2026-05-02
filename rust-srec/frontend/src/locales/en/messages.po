@@ -975,8 +975,8 @@ msgstr "Categories"
 msgid "Category"
 msgstr "Category"
 
-#: src/components/sessions/timeline-tab.tsx:309
-#: src/components/sessions/timeline-tab.tsx:328
+#: src/components/sessions/timeline-tab.tsx:311
+#: src/components/sessions/timeline-tab.tsx:330
 msgid "Cause:"
 msgstr "Cause:"
 
@@ -1319,7 +1319,7 @@ msgstr "Confirm new password"
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
-#: src/components/sessions/timeline-tab.tsx:335
+#: src/components/sessions/timeline-tab.tsx:337
 msgid "Confirmed via backstop timer."
 msgstr "Confirmed via backstop timer."
 
@@ -1356,7 +1356,7 @@ msgstr "Consecutive failed checks needed to confirm offline."
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
 
-#: src/components/sessions/timeline-tab.tsx:176
+#: src/components/sessions/timeline-tab.tsx:178
 msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
@@ -1745,7 +1745,7 @@ msgstr "Danmu Statistics"
 msgid "Danmu statistics are not available for this session."
 msgstr "Danmu statistics are not available for this session."
 
-#: src/components/sessions/timeline-tab.tsx:172
+#: src/components/sessions/timeline-tab.tsx:174
 msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "Danmu Stream Closed"
@@ -1845,7 +1845,7 @@ msgstr "Define rules to automatically record or skip streams based on title, tim
 msgid "Define sequences of processing steps for your recordings"
 msgstr "Define sequences of processing steps for your recordings"
 
-#: src/components/sessions/timeline-tab.tsx:178
+#: src/components/sessions/timeline-tab.tsx:180
 msgctxt "terminal-cause"
 msgid "Definitive Offline"
 msgstr "Definitive Offline"
@@ -2358,7 +2358,7 @@ msgstr "Encoding Settings"
 msgid "End"
 msgstr "End"
 
-#: src/components/sessions/timeline-tab.tsx:466
+#: src/components/sessions/timeline-tab.tsx:468
 msgid "End of History"
 msgstr "End of History"
 
@@ -3652,7 +3652,7 @@ msgstr "Inherited"
 msgid "Inherited / Default"
 msgstr "Inherited / Default"
 
-#: src/components/sessions/timeline-tab.tsx:211
+#: src/components/sessions/timeline-tab.tsx:213
 msgid "INITIAL"
 msgstr "INITIAL"
 
@@ -4730,11 +4730,11 @@ msgstr "No templates found"
 msgid "No templates yet"
 msgstr "No templates yet"
 
-#: src/components/sessions/timeline-tab.tsx:373
+#: src/components/sessions/timeline-tab.tsx:375
 msgid "No Timeline Events"
 msgstr "No Timeline Events"
 
-#: src/components/sessions/timeline-tab.tsx:376
+#: src/components/sessions/timeline-tab.tsx:378
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "No title changes or lifecycle events were recorded for this session."
 
@@ -5258,7 +5258,7 @@ msgstr "Peak / min"
 msgid "Pending"
 msgstr "Pending"
 
-#: src/components/sessions/timeline-tab.tsx:240
+#: src/components/sessions/timeline-tab.tsx:242
 msgid "PENDING CONFIRMATION"
 msgstr "PENDING CONFIRMATION"
 
@@ -5467,7 +5467,7 @@ msgstr "Player"
 msgid "Playlist"
 msgstr "Playlist"
 
-#: src/components/sessions/timeline-tab.tsx:174
+#: src/components/sessions/timeline-tab.tsx:176
 msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "Playlist Gone"
@@ -5645,7 +5645,7 @@ msgstr "Preview Unavailable"
 msgid "Previous"
 msgstr "Previous"
 
-#: src/components/sessions/timeline-tab.tsx:284
+#: src/components/sessions/timeline-tab.tsx:286
 msgid "Previous Title"
 msgstr "Previous Title"
 
@@ -5905,7 +5905,7 @@ msgstr "Recording"
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
-#: src/components/sessions/timeline-tab.tsx:300
+#: src/components/sessions/timeline-tab.tsx:302
 msgid "Recording started"
 msgstr "Recording started"
 
@@ -6088,16 +6088,16 @@ msgstr "Restore password"
 msgid "Resume"
 msgstr "Resume"
 
-#: src/components/sessions/timeline-tab.tsx:249
+#: src/components/sessions/timeline-tab.tsx:251
 msgid "RESUMED"
 msgstr "RESUMED"
 
 #. placeholder {0}: entry.hysteresisDurationSecs
-#: src/components/sessions/timeline-tab.tsx:319
+#: src/components/sessions/timeline-tab.tsx:321
 msgid "Resumed after {0}s in pending state."
 msgstr "Resumed after {0}s in pending state."
 
-#: src/components/sessions/timeline-tab.tsx:228
+#: src/components/sessions/timeline-tab.tsx:230
 msgid "RESUMED START"
 msgstr "RESUMED START"
 
@@ -6596,7 +6596,7 @@ msgstr "Session Details"
 msgid "Session Duration"
 msgstr "Session Duration"
 
-#: src/components/sessions/timeline-tab.tsx:258
+#: src/components/sessions/timeline-tab.tsx:260
 msgid "SESSION ENDED"
 msgstr "SESSION ENDED"
 
@@ -6633,7 +6633,7 @@ msgstr "Session not found"
 msgid "Session Preview"
 msgstr "Session Preview"
 
-#: src/components/sessions/timeline-tab.tsx:230
+#: src/components/sessions/timeline-tab.tsx:232
 msgid "SESSION STARTED"
 msgstr "SESSION STARTED"
 
@@ -7713,7 +7713,7 @@ msgstr "Unknown error"
 msgid "Unknown File"
 msgstr "Unknown File"
 
-#: src/components/sessions/timeline-tab.tsx:343
+#: src/components/sessions/timeline-tab.tsx:345
 msgid "Unrecognised event kind."
 msgstr "Unrecognised event kind."
 
@@ -7725,7 +7725,7 @@ msgstr "Until"
 msgid "Untitled Stream"
 msgstr "Untitled Stream"
 
-#: src/components/sessions/timeline-tab.tsx:218
+#: src/components/sessions/timeline-tab.tsx:220
 msgid "UPDATE"
 msgstr "UPDATE"
 
@@ -7831,6 +7831,11 @@ msgstr "Used for Desktop login (fallback); points to Telegram Desktop folder con
 #: src/components/config/engines/forms/mesio-hls-form.tsx:736
 msgid "User Agent"
 msgstr "User Agent"
+
+#: src/components/sessions/timeline-tab.tsx:167
+msgctxt "terminal-cause"
+msgid "User Disabled"
+msgstr "User Disabled"
 
 #: src/components/config/shared/proxy-settings-card.tsx:179
 #: src/components/notifications/forms/email-form.tsx:86

@@ -109,6 +109,7 @@ impl SessionEventPayload {
 /// - `{ "type": "rejected", "reason": "..." }`
 /// - `{ "type": "streamer_offline" }`
 /// - `{ "type": "definitive_offline", "signal": { "type": "danmu_stream_closed" } }`
+/// - `{ "type": "user_disabled" }`
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TerminalCauseDto {
@@ -118,6 +119,7 @@ pub enum TerminalCauseDto {
     Rejected { reason: String },
     StreamerOffline,
     DefinitiveOffline { signal: OfflineSignal },
+    UserDisabled,
 }
 
 impl From<&TerminalCause> for TerminalCauseDto {
@@ -137,6 +139,7 @@ impl From<&TerminalCause> for TerminalCauseDto {
             TerminalCause::DefinitiveOffline { signal } => Self::DefinitiveOffline {
                 signal: signal.clone(),
             },
+            TerminalCause::UserDisabled => Self::UserDisabled,
         }
     }
 }
@@ -299,6 +302,25 @@ mod tests {
                 kind: "network".into()
             }
         );
+    }
+
+    #[test]
+    fn terminal_cause_dto_from_user_disabled_round_trip() {
+        let cause = TerminalCause::UserDisabled;
+        let dto = TerminalCauseDto::from(&cause);
+        assert_eq!(dto, TerminalCauseDto::UserDisabled);
+
+        let json = serde_json::to_value(&dto).unwrap();
+        assert_eq!(json["type"], "user_disabled");
+
+        // Round-trip through SessionEnded payload.
+        let payload = SessionEventPayload::SessionEnded {
+            cause: dto,
+            via_hysteresis: false,
+        };
+        let s = serde_json::to_string(&payload).unwrap();
+        let back: SessionEventPayload = serde_json::from_str(&s).unwrap();
+        assert_eq!(payload, back);
     }
 
     #[test]

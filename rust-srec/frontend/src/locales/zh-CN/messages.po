@@ -975,8 +975,8 @@ msgstr "分类"
 msgid "Category"
 msgstr "分类"
 
-#: src/components/sessions/timeline-tab.tsx:309
-#: src/components/sessions/timeline-tab.tsx:328
+#: src/components/sessions/timeline-tab.tsx:311
+#: src/components/sessions/timeline-tab.tsx:330
 msgid "Cause:"
 msgstr "原因："
 
@@ -1319,7 +1319,7 @@ msgstr "确认新密码"
 msgid "Confirm Password"
 msgstr "确认密码"
 
-#: src/components/sessions/timeline-tab.tsx:335
+#: src/components/sessions/timeline-tab.tsx:337
 msgid "Confirmed via backstop timer."
 msgstr "等待恢复超时后确认。"
 
@@ -1356,7 +1356,7 @@ msgstr "确认离线所需的连续失败检查次数。"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/sessions/timeline-tab.tsx:176
+#: src/components/sessions/timeline-tab.tsx:178
 msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "连续失败"
@@ -1745,7 +1745,7 @@ msgstr "弹幕统计"
 msgid "Danmu statistics are not available for this session."
 msgstr "此会话的弹幕统计暂不可用。"
 
-#: src/components/sessions/timeline-tab.tsx:172
+#: src/components/sessions/timeline-tab.tsx:174
 msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "弹幕流已关闭"
@@ -1845,7 +1845,7 @@ msgstr "根据标题、时间或语言定义自动录制或跳过的规则。"
 msgid "Define sequences of processing steps for your recordings"
 msgstr "为录制内容定义处理步骤序列"
 
-#: src/components/sessions/timeline-tab.tsx:178
+#: src/components/sessions/timeline-tab.tsx:180
 msgctxt "terminal-cause"
 msgid "Definitive Offline"
 msgstr "已确认离线"
@@ -2358,7 +2358,7 @@ msgstr "编码设置"
 msgid "End"
 msgstr "结束"
 
-#: src/components/sessions/timeline-tab.tsx:466
+#: src/components/sessions/timeline-tab.tsx:468
 msgid "End of History"
 msgstr "历史结束"
 
@@ -3652,7 +3652,7 @@ msgstr "继承自上层"
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
-#: src/components/sessions/timeline-tab.tsx:211
+#: src/components/sessions/timeline-tab.tsx:213
 msgid "INITIAL"
 msgstr "初始"
 
@@ -4730,11 +4730,11 @@ msgstr "未找到模板"
 msgid "No templates yet"
 msgstr "暂无模板"
 
-#: src/components/sessions/timeline-tab.tsx:373
+#: src/components/sessions/timeline-tab.tsx:375
 msgid "No Timeline Events"
 msgstr "暂无时间线事件"
 
-#: src/components/sessions/timeline-tab.tsx:376
+#: src/components/sessions/timeline-tab.tsx:378
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "此会话未记录任何标题变更或生命周期事件。"
 
@@ -5258,7 +5258,7 @@ msgstr "峰值/分钟"
 msgid "Pending"
 msgstr "待处理"
 
-#: src/components/sessions/timeline-tab.tsx:240
+#: src/components/sessions/timeline-tab.tsx:242
 msgid "PENDING CONFIRMATION"
 msgstr "待确认"
 
@@ -5467,7 +5467,7 @@ msgstr "播放器"
 msgid "Playlist"
 msgstr "播放列表"
 
-#: src/components/sessions/timeline-tab.tsx:174
+#: src/components/sessions/timeline-tab.tsx:176
 msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "播放列表已失效"
@@ -5645,7 +5645,7 @@ msgstr "预览不可用"
 msgid "Previous"
 msgstr "上一页"
 
-#: src/components/sessions/timeline-tab.tsx:284
+#: src/components/sessions/timeline-tab.tsx:286
 msgid "Previous Title"
 msgstr "上一个标题"
 
@@ -5905,7 +5905,7 @@ msgstr "录制"
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
-#: src/components/sessions/timeline-tab.tsx:300
+#: src/components/sessions/timeline-tab.tsx:302
 msgid "Recording started"
 msgstr "录制已开始"
 
@@ -6088,16 +6088,16 @@ msgstr "重置密码"
 msgid "Resume"
 msgstr "继续"
 
-#: src/components/sessions/timeline-tab.tsx:249
+#: src/components/sessions/timeline-tab.tsx:251
 msgid "RESUMED"
 msgstr "已恢复"
 
 #. placeholder {0}: entry.hysteresisDurationSecs
-#: src/components/sessions/timeline-tab.tsx:319
+#: src/components/sessions/timeline-tab.tsx:321
 msgid "Resumed after {0}s in pending state."
 msgstr "在待确认状态 {0} 秒后恢复。"
 
-#: src/components/sessions/timeline-tab.tsx:228
+#: src/components/sessions/timeline-tab.tsx:230
 msgid "RESUMED START"
 msgstr "恢复启动"
 
@@ -6596,7 +6596,7 @@ msgstr "录制会话详情"
 msgid "Session Duration"
 msgstr "录制时长"
 
-#: src/components/sessions/timeline-tab.tsx:258
+#: src/components/sessions/timeline-tab.tsx:260
 msgid "SESSION ENDED"
 msgstr "会话已结束"
 
@@ -6633,7 +6633,7 @@ msgstr "未找到录制会话"
 msgid "Session Preview"
 msgstr "录制预览"
 
-#: src/components/sessions/timeline-tab.tsx:230
+#: src/components/sessions/timeline-tab.tsx:232
 msgid "SESSION STARTED"
 msgstr "会话已启动"
 
@@ -7713,7 +7713,7 @@ msgstr "未知错误"
 msgid "Unknown File"
 msgstr "未知文件"
 
-#: src/components/sessions/timeline-tab.tsx:343
+#: src/components/sessions/timeline-tab.tsx:345
 msgid "Unrecognised event kind."
 msgstr "未识别的事件类型。"
 
@@ -7725,7 +7725,7 @@ msgstr "直到"
 msgid "Untitled Stream"
 msgstr "无标题直播"
 
-#: src/components/sessions/timeline-tab.tsx:218
+#: src/components/sessions/timeline-tab.tsx:220
 msgid "UPDATE"
 msgstr "更新"
 
@@ -7831,6 +7831,11 @@ msgstr "用于桌面登录（备选）；指向包含 `tdata` 的 Telegram Deskt
 #: src/components/config/engines/forms/mesio-hls-form.tsx:736
 msgid "User Agent"
 msgstr "User-Agent"
+
+#: src/components/sessions/timeline-tab.tsx:167
+msgctxt "terminal-cause"
+msgid "User Disabled"
+msgstr "已被用户停用"
 
 #: src/components/config/shared/proxy-settings-card.tsx:179
 #: src/components/notifications/forms/email-form.tsx:86
