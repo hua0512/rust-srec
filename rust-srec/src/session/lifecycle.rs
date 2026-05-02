@@ -359,8 +359,19 @@ impl SessionLifecycle {
     ///   The DB's `end_time` is the source of truth.
     pub async fn on_live_detected(&self, args: LiveDetectedArgs<'_>) -> Result<StartSessionOutcome> {
         // Step 1: Hysteresis resume.
-        if let Some(session_id) = self.hysteresis_session_for_streamer(args.streamer_id) {
-            return Ok(self.resume_from_hysteresis(&session_id, &args).await);
+        //
+        // `resume_from_hysteresis` returns `None` if the CAS-claim
+        // (atomic remove of the hysteresis handle) lost — i.e., the
+        // hysteresis timer fired or an authoritative end (`on_offline_detected`
+        // / `on_download_terminal` direct path) committed `Ended` between
+        // our `hysteresis_session_for_streamer` check and the resume
+        // attempt. In that case the session is already Ended; fall
+        // through to `start_or_resume` which produces a fresh `session_id`
+        // (the prior session has `end_time` set).
+        if let Some(session_id) = self.hysteresis_session_for_streamer(args.streamer_id)
+            && let Some(outcome) = self.resume_from_hysteresis(&session_id, &args).await
+        {
+            return Ok(outcome);
         }
 
         // Step 2: Repository call. The simplified `start_or_resume` only
@@ -784,20 +795,36 @@ impl SessionLifecycle {
     /// Cancel an active hysteresis timer and transition `Hysteresis →
     /// Recording`. The session row's `end_time` was never written (DB
     /// strategy B), so no DB undo is needed. Emits `SessionTransition::Resumed`.
+    ///
+    /// CAS contract: the `self.hysteresis.remove(session_id)` operation IS
+    /// the atomic claim for the `Hysteresis → Recording` transition. If the
+    /// handle is already gone, another path (timer fire / authoritative end
+    /// from `on_offline_detected` or `on_download_terminal`) has already
+    /// won the race; we return `None` and let the caller fall through to
+    /// the normal start_or_resume flow (which will create a fresh
+    /// `session_id` since the prior session is now Ended).
+    ///
+    /// Pairs with the equivalent CAS in [`Self::enter_ended_state`]:
+    /// whichever caller successfully removes the handle wins; the loser
+    /// detects `None` and bails. No `Started` after `Ended` (or vice
+    /// versa) for the same `session_id` is emitted.
     async fn resume_from_hysteresis(
         &self,
         session_id: &str,
         args: &LiveDetectedArgs<'_>,
-    ) -> StartSessionOutcome {
-        // Pull the handle out of the hysteresis map; cancel the timer.
-        let handle = self.hysteresis.remove(session_id).map(|(_, h)| h);
-        if let Some(h) = &handle {
-            h.cancel();
-        }
-        let hysteresis_duration = handle
-            .as_ref()
-            .map(|h| h.elapsed())
-            .map(|d| chrono::Duration::from_std(d).unwrap_or(chrono::Duration::zero()))
+    ) -> Option<StartSessionOutcome> {
+        // CAS: claim the hysteresis exit. None = another path won.
+        let Some((_, handle)) = self.hysteresis.remove(session_id) else {
+            debug!(
+                session_id,
+                streamer_id = args.streamer_id,
+                "resume_from_hysteresis: hysteresis handle already gone (CAS lost — \
+                 timer or authoritative end won); caller should fall through to start_or_resume"
+            );
+            return None;
+        };
+        handle.cancel();
+        let hysteresis_duration = chrono::Duration::from_std(handle.elapsed())
             .unwrap_or(chrono::Duration::zero());
 
         // Restore in-memory state to Recording. Preserve the original
@@ -882,15 +909,24 @@ impl SessionLifecycle {
         )
         .await;
 
-        StartSessionOutcome::ReusedActive {
+        Some(StartSessionOutcome::ReusedActive {
             session_id: session_id.to_string(),
-        }
+        })
     }
 
     /// Move `session_id` into the final `Ended` state. Source of truth for
     /// the DB `end_time` write (path-dependent — see [`DbWritePath`]).
     /// Tears down any active hysteresis handle. Idempotent: a session
     /// already in `Ended` short-circuits with a debug log.
+    ///
+    /// CAS contract: when the in-memory state shows `Hysteresis`,
+    /// `self.hysteresis.remove(session_id)` IS the atomic claim. If the
+    /// handle is already gone, [`Self::resume_from_hysteresis`] won the
+    /// race and we must NOT proceed to write `Ended` — doing so would
+    /// emit an `Ended` for a session that's already broadcasted `Resumed`
+    /// plus `Started{from_hysteresis: true}` and is now actively recording.
+    ///
+    /// Pairs with the equivalent CAS in `resume_from_hysteresis`.
     #[allow(clippy::too_many_arguments)]
     async fn enter_ended_state(
         &self,
@@ -912,12 +948,38 @@ impl SessionLifecycle {
             return Ok(());
         }
 
-        // Cancel any active hysteresis handle. Idempotent: if there's no
-        // handle (direct authoritative-end path) this is a no-op. If there
-        // IS a handle (override-during-hysteresis path), we trip the
-        // cancel token so the timer task exits without re-firing Ended.
-        if let Some((_, handle)) = self.hysteresis.remove(session_id) {
-            handle.cancel();
+        // Snapshot the in-memory state BEFORE attempting the hysteresis
+        // claim, so we can detect a lost CAS race.
+        //
+        //   was_in_hysteresis | claim         | meaning
+        //   ------------------+---------------+--------------------------------
+        //   true              | Some(handle)  | we won; cancel + proceed
+        //   true              | None          | resume won; bail (CAS lost)
+        //   false             | Some(handle)  | impossible in practice — defensive: cancel + proceed
+        //   false             | None          | direct Recording → Ended path; proceed
+        //
+        // Pairs with the CAS in `resume_from_hysteresis` (which returns
+        // `None` on the symmetric loss case). Together they guarantee at
+        // most one of {`Resumed` + `Started{from_hysteresis: true}`,
+        // `Ended`} broadcasts fires for a single Hysteresis exit, even
+        // under timer/resume/authoritative-end races.
+        let was_in_hysteresis = self
+            .sessions
+            .get(session_id)
+            .is_some_and(|e| matches!(e.value(), SessionState::Hysteresis { .. }));
+
+        let claim = self.hysteresis.remove(session_id).map(|(_, h)| h);
+        if let Some(h) = &claim {
+            h.cancel();
+        }
+
+        if was_in_hysteresis && claim.is_none() {
+            debug!(
+                session_id,
+                streamer_id,
+                "enter_ended_state: hysteresis already claimed by resume (CAS lost); skipping"
+            );
+            return Ok(());
         }
 
         // DB write — exactly the path the caller specified. The cause +
@@ -2733,6 +2795,184 @@ mod tests {
                 // guard at the production path.
             }
             other => panic!("expected Started{{from_hysteresis: true}}, got {other:?}"),
+        }
+    }
+
+    /// N2 — CAS atomicity for the `Hysteresis → (Recording | Ended)`
+    /// transition. We model the race by:
+    ///
+    /// 1. Driving the session into `Hysteresis`.
+    /// 2. Manually consuming the hysteresis handle out of the lifecycle's
+    ///    map (simulating a winning resume that already claimed the CAS).
+    /// 3. Calling `enter_ended_state` directly (simulating a losing
+    ///    timer-fire / authoritative end that arrived after the resume).
+    ///
+    /// Expected: `enter_ended_state` detects `was_in_hysteresis=true`
+    /// AND `claim=None` and bails — no `SessionTransition::Ended` is
+    /// broadcast, no DB end_time write, no in-memory state change to
+    /// `Ended`. The session stays `Hysteresis` (which the simulated
+    /// resume would then move to `Recording` if it completed).
+    ///
+    /// Symmetric loss case (`enter_ended_state` wins, `resume_from_hysteresis`
+    /// loses) is exercised by the existing I7 test plus the CAS in
+    /// `resume_from_hysteresis` returning `None` on missing handle.
+    #[tokio::test]
+    async fn n2_cas_blocks_enter_ended_when_resume_already_claimed_hysteresis() {
+        let pool = setup_pool().await;
+        let lifecycle =
+            make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started (fresh)
+
+        // Step 1: drive into Hysteresis.
+        lifecycle
+            .on_download_terminal(&make_terminal_completed_clean_disconnect(started.session_id()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Ending
+
+        // Step 2: simulate a winning resume by removing the hysteresis
+        // handle out from under the lifecycle. (In a real race, this
+        // would happen inside `resume_from_hysteresis`'s CAS line.)
+        // We don't proceed to the rest of resume — we just want to test
+        // the symmetric path: `enter_ended_state` finds the handle gone.
+        let claimed = lifecycle.hysteresis.remove(started.session_id());
+        assert!(
+            claimed.is_some(),
+            "test pre-condition: hysteresis handle should exist after Hysteresis entry"
+        );
+
+        // Step 3: call `enter_ended_state` directly (the path the
+        // hysteresis timer would take on fire, or `on_offline_detected`
+        // would take on authoritative end).
+        lifecycle
+            .enter_ended_state(
+                started.session_id(),
+                STREAMER_ID,
+                "Test",
+                TerminalCause::StreamerOffline,
+                Utc::now(),
+                /* via_hysteresis */ true,
+                DbWritePath::EndSessionOnly,
+            )
+            .await
+            .unwrap();
+
+        // Expected: enter_ended_state bailed via the CAS-lost path.
+        // No `Ended` broadcast.
+        let timeout =
+            tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await;
+        assert!(
+            timeout.is_err(),
+            "enter_ended_state must NOT emit Ended when hysteresis CAS was lost; \
+             got transition = {:?}",
+            timeout
+        );
+
+        // In-memory session state must still be Hysteresis (a real
+        // resume would then move it to Recording; we're testing the
+        // intermediate consistency).
+        assert!(
+            lifecycle.is_session_active(started.session_id()),
+            "session must remain active after CAS-lost enter_ended_state"
+        );
+        let state_kind = lifecycle
+            .sessions
+            .get(started.session_id())
+            .map(|e| e.value().kind_str())
+            .unwrap_or("(missing)");
+        assert_eq!(
+            state_kind, "hysteresis",
+            "in-memory state must remain Hysteresis after CAS-lost enter_ended_state"
+        );
+
+        // DB end_time must NOT be set.
+        use sqlx::Row;
+        let end_time: Option<i64> =
+            sqlx::query("SELECT end_time FROM live_sessions WHERE id = ?")
+                .bind(started.session_id())
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                .get(0);
+        assert!(
+            end_time.is_none(),
+            "DB end_time must NOT be written when CAS was lost"
+        );
+    }
+
+    /// N3 — symmetric CAS: `resume_from_hysteresis` returns `None` when
+    /// the handle was already claimed by an authoritative end.
+    /// `on_live_detected` then falls through to `start_or_resume`, which
+    /// produces a fresh `Created` session (since the prior session is
+    /// now `Ended` per the won path).
+    #[tokio::test]
+    async fn n3_cas_resume_falls_through_when_authoritative_end_already_claimed() {
+        let pool = setup_pool().await;
+        let lifecycle =
+            make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started (fresh)
+
+        // Drive into Hysteresis.
+        lifecycle
+            .on_download_terminal(&make_terminal_completed_clean_disconnect(started.session_id()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Ending
+
+        // Simulate the authoritative-end path winning the CAS:
+        // `enter_ended_state` runs and removes the handle. We invoke
+        // it via `on_offline_detected` so the DB end_time is also set.
+        lifecycle
+            .on_offline_detected(OfflineDetectedArgs {
+                streamer_id: STREAMER_ID,
+                streamer_name: "Test",
+                session_id: Some(started.session_id()),
+                state_was_live: true,
+                clear_errors: false,
+                signal: None,
+                now: Utc::now(),
+            })
+            .await
+            .unwrap();
+        // Drain Ended.
+        match rx.recv().await.unwrap() {
+            SessionTransition::Ended { .. } => {}
+            other => panic!("expected Ended after on_offline_detected, got {other:?}"),
+        }
+
+        // Now: a LIVE detection arrives "after" the end. The hysteresis
+        // map no longer has the handle (consumed by enter_ended_state).
+        // `resume_from_hysteresis` returns None; on_live_detected falls
+        // through to start_or_resume, which sees the prior session
+        // ended (end_time set) and creates a fresh one.
+        let outcome = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+
+        match outcome {
+            StartSessionOutcome::Created { session_id } => {
+                assert_ne!(
+                    session_id,
+                    started.session_id(),
+                    "post-CAS-loss must mint a NEW session_id, not reuse the ended one"
+                );
+            }
+            other => panic!(
+                "expected Created (fresh session after CAS-loss fall-through), got {other:?}"
+            ),
         }
     }
 
