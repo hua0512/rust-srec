@@ -2,69 +2,46 @@
 
 ## `unreleased`
 
-This update covers two independent themes: (1) **session-lifecycle Hysteresis FSM fixes** — closing a data-loss bug where a brief disconnect would silently stop recording for the rest of the broadcast, and adding atomicity guarantees to the FSM's critical concurrent paths; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart. It also ships the initial scaffolding for backend localization.
+This update covers two independent themes: (1) **recording session reliability** — fixing silent recording stops on brief disconnects, accumulated 0-byte session cards on the dashboard, and confusing labels on the session timeline; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart. It also ships the initial scaffolding for backend localization.
 
-## Session lifecycle / Hysteresis FSM fixes
+## Recording session reliability
 
-> Background: the `refactor/session-hysteresis` branch introduced a `Recording → Hysteresis → (Recording | Ended)` state machine for recording sessions, designed to absorb "ambiguous" disconnects (FLV TCP close, transient engine errors) so brief network jitter doesn't immediately end recording. Production logs surfaced multiple boundary conditions where the FSM was bypassed or raced against downstream — this update fixes them layer by layer.
+Several connected issues that ladder up to "brief disconnects shouldn't stop recording, and empty sessions shouldn't appear on the dashboard."
 
-- **Fixed silent recording stop after FLV clean disconnect**
+- **Recording no longer silently stops after a brief disconnect**
 
-  (kinetic / 2026-05-02: 1.5-hour gap from 02:28 to 03:51)
+  When the upstream CDN rotates, a network blip happens, or the streamer briefly reconnects, the active download ends cleanly. Previously the session would still appear "live" in the system, but the actual download had stopped — meaning the streamer kept broadcasting while rust-srec only captured the segment up to the disconnect. Observed gaps reached over an hour in a single broadcast.
 
-  When the engine reported `Completed` + `CleanDisconnect`, `SessionLifecycle` correctly parked the session in Hysteresis (80-second quiet-period). But `resume_from_hysteresis`, on observing LIVE within the window, short-circuited *before* `start_or_resume`, bypassing the atomic transaction that enqueues the `MonitorEvent::StreamerLive` outbox event. The container's `handle_monitor_event::StreamerLive` is the **only** production path that calls `download_manager.start_download(...)` — so the resumed session showed "Live" in memory but the download was never actually restarted.
+  Now the disconnect enters a short waiting window (default tracks the "offline detection" config, around one minute). If LIVE is detected again within the window, the download automatically restarts and reuses the same session — recording continues seamlessly. If no LIVE is observed by the window's end, the session ends.
 
-  Fix: `SessionTransition::Started` carries an optional `DownloadStartPayload` sidecar (streamer_url + streams + media_headers + media_extras). The container subscribes to `Started{from_hysteresis: true}`, synthesizes a `MonitorEvent::StreamerLive` from the payload, and dispatches through the existing handler — same code path as a fresh start. The `has_active_download` idempotency guard plus a new `is_session_active` defense make the subscriber safe against races.
+- **Transient HTTP 404s no longer count as "streamer offline"**
 
-- **Atomic CAS for `Hysteresis → (Recording | Ended)` transitions**
+  When a stream just resumed, platforms like Douyu hand out a freshly-signed URL whose token takes a few seconds to propagate to CDN edge nodes — requests during that gap return 404. HLS streams have similar transient 404 cases (sliding-window eviction, signed-URL expiry, edge desync).
 
-  `enter_ended_state` (called by hysteresis-timer fire, `on_offline_detected`, authoritative `on_download_terminal`) and `resume_from_hysteresis` (called by `on_live_detected`) could previously mutate `self.sessions` and `self.hysteresis` concurrently for the same session_id. Without atomicity, possible inconsistent outcomes:
-  - Memory says Recording but DB says Ended (Ended wins remove, Resumed overwrites in-memory state but DB end_time was already committed).
-  - Three transitions broadcast for one session_id within milliseconds (`Resumed + Started{from_hysteresis: true}` from resume, then `Ended` from a losing path that didn't realize it lost).
+  Previously rust-srec treated any 404 as authoritative "the streamer really went offline" and ended the session immediately. Even though the platform monitor still reported LIVE, the next detection would create another empty session — typically producing 3 zero-byte cards at the start of a single broadcast.
 
-  Fix: `self.hysteresis.remove(session_id)` is now the single CAS point (DashMap removes are per-key atomic). The path that successfully removes the handle wins; the loser detects a snapshot mismatch (`was_in_hysteresis=true && claim=None`) and bails — no DB write, no in-memory update, no broadcast. `resume_from_hysteresis` returns `None` on CAS loss; `on_live_detected` falls through to `start_or_resume`, naturally producing a fresh `Created` session_id (the prior session is now Ended).
+  404 alone no longer drives the offline decision. True offline now flows through two more precise signals: consecutive network failures (count and window come from the "offline detection" config, sharing the same parameters as hysteresis), or HLS's `#EXT-X-ENDLIST` tag (the platform itself signaling the stream has ended).
 
-- **Stop classifying transient HTTP 404s as DefinitiveOffline**
+- **HLS streams that end cleanly close their session immediately**
 
-  (Minana呀 / 2026-04-29: three consecutive 0-byte ghost sessions)
+  When an HLS playlist carries `#EXT-X-ENDLIST` (the platform explicitly marks the stream as ended), the session now ends **immediately**. Previously it had to wait through the full ~90-second hysteresis window — delaying the start of post-processing (remux, upload, etc.).
 
-  The `OfflineClassifier` previously promoted any mesio 404 to `DefinitiveOffline { PlaylistGone(404) }`, bypassing hysteresis and ending the session immediately. Production logs proved this overfires in two cases:
-  - **FLV initial-request 404**: Douyu and similar CDNs occasionally return 404 on a freshly-issued stream URL while the new token propagates to the edge — the platform monitor still reports LIVE, but the FSM ended the session.
-  - **HLS segment / playlist mid-stream 404**: sliding-window eviction races, signed-URL token expiry on platforms that 404 instead of 403, CDN edge desync — any of these mark a still-live stream as dead.
+- **Cleanup of zero-byte "ghost sessions"**
 
-  Drop the classification rule. True offline now flows through two more precise channels:
-  - Consecutive `Network` failures (count = `offline_check_count`, window = `count × interval_ms`, all sourced from scheduler config — single source of truth shared with `HysteresisConfig`).
-  - HLS `#EXT-X-ENDLIST` (mesio detected it internally; this PR plumbs the signal end-to-end as `EngineEndSignal::HlsEndlist`, so the session ends authoritatively without waiting ~90 seconds for hysteresis to expire).
+  Recording segments below the `min_segment_size_bytes` threshold are automatically discarded (avoiding meaningless few-second clips), but the corresponding session row used to stay in the database, showing as zero-byte cards on the dashboard. Two cleanup layers added:
 
-- **Fixed actor-side spurious `StreamerOffline` emit on clean engine disconnect**
-
-  (沈心 / 2026-05-01: multiple empty session cards within one broadcast)
-
-  `StreamerActor::handle_download_ended` called `process_status(LiveStatus::Offline)` on the `DownloadEndPolicy::StreamerOffline | Stopped(_)` path — making the monitor emit a `MonitorEvent::StreamerOffline` authoritative event even when the engine had only TCP-closed cleanly. That bypassed the hysteresis quiet-period the FSM had just entered.
-
-  New `DownloadEndPolicy::Completed` variant carries the "engine clean end, platform status ambiguous" semantic. `scheduler::service` routes `DownloadTerminalEvent::Completed` to it; the actor's new arm only updates local scheduling state (resume short polling, increment `offline_observed`) without pushing to the monitor. Mirrors the existing `DanmuStreamClosed` arm precedent — the FSM owns authority decisions.
-
-- **Three-layer defense against 0-byte ghost sessions**
-
-  Even after the fixes above, residual edge cases (initial-request errors before first byte, etc.) can still produce empty `live_sessions` rows. Three complementary defenses:
-
-  1. **API filter** (`SessionFilters::include_empty`, default `false`) — `GET /sessions` excludes `total_size_bytes=0` ended sessions by default; active sessions (`end_time IS NULL`) are always kept. Diagnostic access via `?include_empty=true` and `GET /sessions/:id`.
-  2. **Background janitor (`SessionJanitor`)** — periodic `DELETE FROM live_sessions WHERE total_size_bytes = 0 AND end_time IS NOT NULL AND end_time < ?`. Defaults: 5-minute retention, 30-minute interval. All four FK references (`media_outputs` / `danmu_statistics` / `session_segments` / `session_events`) have `ON DELETE CASCADE` configured, so child rows clean up automatically. Idempotent and crash-safe (the SELECT predicate is the source of truth).
-  3. **Small-segment guard (existing)** — `services::container`'s `min_segment_size_bytes` threshold deletes the on-disk file but previously left the row. The first two layers fill that gap.
-
-- **Classifier window/threshold derived from scheduler config**
-
-  Previously hardcoded constants `60s window / threshold 2`. Now `OfflineClassifier::from_scheduler(count, interval_ms)`: window = `count × interval_ms`, threshold = `max(count, 2)` (floor of 2 preserves Bilibili-style mid-stream RST safety). Same source as `HysteresisConfig::from_scheduler` — operators tune one place for "how long until I believe the stream is offline."
-
-- **HLS `#EXT-X-ENDLIST` plumbed end-to-end**
-
-  Mesio's HLS coordinator already detected ENDLIST internally, but the signal was discarded at two `// TODO(hysteresis)` sites in the rust-srec wrapper. This PR threads `HlsStreamEvent::EndlistEncountered` from the playlist engine through a new channel, translates it to `HlsData::EndMarker(Some(SplitReason::EndOfStream))` in the mesio HLS filter, and observes it via a new `inspect` closure on `consume_stream`, finally promoting to `EngineEndSignal::HlsEndlist`. All four `hls-fix` operators are verified to preserve `EndMarker` reasons.
+  - **API filtering by default** — the sessions list endpoint now hides zero-byte ended sessions by default. Active (still-recording) sessions are always returned. If you need to inspect them for diagnostics, pass `?include_empty=true`, or look up by session ID directly.
+  - **Periodic background cleanup** — empty session rows are automatically deleted from the database 5 minutes after end (default scan interval 30 minutes). Related danmu statistics, segments, and lifecycle events are removed alongside via `ON DELETE CASCADE`.
 
 ## Frontend
 
-- **Session-detail Timeline tab counter fixed** — the badge previously counted only `session.titles`, ignoring the new `session.events`. Now sums both, correctly reflecting the entries rendered in the tab body.
-- **`terminal-cause` translation disambiguation** — the timeline's `Completed/Failed/Cancelled/Rejected/...` labels previously shared lingui keys with the pipeline-jobs status list, so Simplified Chinese rendered `原因：已完成` ("Reason: Done") under a `Pending Confirmation` badge — semantically nonsensical. Wrapped in `<Trans context="terminal-cause">` for distinct keys with more accurate Chinese: `Completed → 下载断开`, `Failed → 下载失败`, `Streamer Offline → 主播离线`, `Consecutive Failures → 连续失败`, etc.
-- **`Confirmed via backstop timer` translation fixed** — Simplified Chinese changed from "通过备份计时器确认" (reads as "via backup/redundant timer") to "等待恢复超时后确认" (reflects the actual semantic: "confirmed after wait-for-resume timed out").
+- **Session detail "Timeline" tab counter fixed** — the badge previously counted only title changes, ignoring session lifecycle events. It now sums both, matching the number of entries actually rendered in the tab body.
+
+- **More accurate session timeline translations** in Simplified Chinese:
+
+  - `原因：已完成` → `原因：下载断开` ("download disconnected", more accurate than "completed" for an ambiguous-end case)
+  - `通过备份计时器确认。` → `等待恢复超时后确认。` ("confirmed after wait-for-resume timed out", clearer than "via backup timer")
+  - New translations for `主播离线` (Streamer Offline), `连续失败` (Consecutive Failures), `弹幕流已关闭` (Danmu Stream Closed), used in session-end cause displays.
 
 ## Highlights
 
@@ -120,24 +97,9 @@ The gate work included several supporting refactors that improve the downloader 
 ## Compatibility
 
 - No database migrations.
-- No breaking frontend API changes. `GET /sessions` default behavior changed: ended sessions with `total_size_bytes=0` are no longer returned; pass `?include_empty=true` to restore the previous "return all" behavior. `GET /sessions/:id` is unaffected.
+- `GET /sessions` default behavior changed: zero-byte ended sessions are no longer returned (the "ghost cards" on the dashboard disappear by default). Pass `?include_empty=true` to see all records. `GET /sessions/:id` is unaffected.
 - `set_circuit_breaker_blocked` was renamed to `set_infra_blocked(reason)` — external callers of the monitor service (none known) would need to update.
 - The `DownloadManagerEvent::DownloadRejected` event now carries a new `kind: DownloadRejectedKind` field. External subscribers of the event stream (via the WebSocket or broadcast API) should expect this field to appear in JSON payloads; ignoring it is safe.
-- `DownloadEndPolicy` gains a `Completed` variant (engine clean end, platform status ambiguous). The original `StreamerOffline | Stopped(_)` arm is preserved and continues handling authoritative offline. Non-exhaustive `match` against `handle_download_ended` callers is unaffected; exhaustive matches need a new arm.
-- `SessionTransition::Started` gains a `download_start: Option<Box<DownloadStartPayload>>` field. Existing matchers using the rest pattern (`Started { .. }`) need no change; exhaustive struct literals need `download_start: None`. `SessionTransition` no longer derives `PartialEq`/`Eq` — `StreamInfo` doesn't implement `Eq`, but in-tree usage is `matches!`-based.
-- `SessionFilters` gains an `include_empty: Option<bool>` field, defaulting to `None` (empty sessions hidden). All internal call sites updated.
-
-## Notable refactors (session lifecycle)
-
-- `SessionLifecycle::on_live_detected` / `resume_from_hysteresis` / `enter_ended_state` concurrent protocol uses `self.hysteresis.remove(session_id)` as a single atomic CAS point. `resume_from_hysteresis` now returns `Option<StartSessionOutcome>`; `None` indicates a lost CAS and the caller falls through to `start_or_resume`. `enter_ended_state` bails out on `was_in_hysteresis=true && claim=None` snapshot inconsistency — no DB write, no in-memory update, no broadcast. Together they guarantee at most one of {`Resumed + Started{from_hysteresis: true}`, `Ended`} broadcasts fires for any single Hysteresis exit.
-
-- `OfflineClassifier`'s window and threshold moved from module-private `const`s to a `from_scheduler(count, interval_ms)` constructor, sharing the source of truth with `HysteresisConfig::from_scheduler`. `OfflineClassifier::new()` survives (legacy `60s / threshold 2` defaults) for test fixtures only; production sites in `services::container` migrated to `from_scheduler`.
-
-- `OfflineSignal::PlaylistGone(u16)` variant deleted — the `session_events.payload` audit log had no historical rows using it (verified clean slate before merge). Frontend `OfflineSignalSchema` doc updated.
-
-- `crates/pipeline-common::SplitReason` gains an `EndOfStream` variant, emitted by the mesio HLS playlist engine on `#EXT-X-ENDLIST` observation, propagated transparently through the hls-fix pipeline (`segment_split` / `segment_limiter` / `defragment` / `analyzer` all verified to preserve the reason), and observed by rust-srec's `consume_stream` to drive `EngineEndSignal::HlsEndlist`.
-
-- New `services::session_janitor` — background periodic GC for `live_sessions` rows where `total_size_bytes=0 AND end_time<retention_cutoff`. Spawn site is `ServiceContainer::start()`, alongside the lifecycle subscribers. Defaults: `retention=5min`, `interval=30min`, `MIN_RETENTION=60s` (production floor).
 
 ## Notes
 
