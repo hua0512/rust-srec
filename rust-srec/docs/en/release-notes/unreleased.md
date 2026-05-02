@@ -2,36 +2,32 @@
 
 ## `unreleased`
 
-This update covers two independent themes: (1) **recording session reliability** — fixing silent recording stops on brief disconnects, accumulated 0-byte session cards on the dashboard, and confusing labels on the session timeline; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart. It also ships the initial scaffolding for backend localization.
+This update covers two independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart. It also ships the initial scaffolding for backend localization.
 
 ## Recording session reliability
 
-Several connected issues that ladder up to "brief disconnects shouldn't stop recording, and empty sessions shouldn't appear on the dashboard."
+- **Quiet period for brief disconnects: short blips no longer end the session**
 
-- **Recording no longer silently stops after a brief disconnect**
+  When the upstream CDN rotates, a network blip happens, or the streamer briefly reconnects, the active download ends cleanly. Previously every disconnect immediately ended the session — and the next LIVE detection would create a fresh session card, so a few back-to-back blips would stack multiple zero-byte cards on the dashboard.
 
-  When the upstream CDN rotates, a network blip happens, or the streamer briefly reconnects, the active download ends cleanly. Previously the session would still appear "live" in the system, but the actual download had stopped — meaning the streamer kept broadcasting while rust-srec only captured the segment up to the disconnect. Observed gaps reached over an hour in a single broadcast.
+  Now the disconnect enters a short waiting window (default tracks the "offline detection" config, around one minute). If LIVE is detected again within the window, **recording continues seamlessly** under the same session — no new card appears. If no LIVE is observed by the window's end, the session ends.
 
-  Now the disconnect enters a short waiting window (default tracks the "offline detection" config, around one minute). If LIVE is detected again within the window, the download automatically restarts and reuses the same session — recording continues seamlessly. If no LIVE is observed by the window's end, the session ends.
-
-- **Transient HTTP 404s no longer count as "streamer offline"**
+- **HTTP 404 is no longer treated as authoritative "streamer offline"**
 
   When a stream just resumed, platforms like Douyu hand out a freshly-signed URL whose token takes a few seconds to propagate to CDN edge nodes — requests during that gap return 404. HLS streams have similar transient 404 cases (sliding-window eviction, signed-URL expiry, edge desync).
 
-  Previously rust-srec treated any 404 as authoritative "the streamer really went offline" and ended the session immediately. Even though the platform monitor still reported LIVE, the next detection would create another empty session — typically producing 3 zero-byte cards at the start of a single broadcast.
-
-  404 alone no longer drives the offline decision. True offline now flows through two more precise signals: consecutive network failures (count and window come from the "offline detection" config, sharing the same parameters as hysteresis), or HLS's `#EXT-X-ENDLIST` tag (the platform itself signaling the stream has ended).
+  404 alone no longer drives the offline decision. True offline now flows through two more precise signals: consecutive network failures (count and window come from the "offline detection" config, sharing the same parameters as the quiet period), or HLS's `#EXT-X-ENDLIST` tag (the platform itself signaling the stream has ended).
 
 - **HLS streams that end cleanly close their session immediately**
 
-  When an HLS playlist carries `#EXT-X-ENDLIST` (the platform explicitly marks the stream as ended), the session now ends **immediately**. Previously it had to wait through the full ~90-second hysteresis window — delaying the start of post-processing (remux, upload, etc.).
+  When an HLS playlist carries `#EXT-X-ENDLIST` (the platform explicitly marks the stream as ended), the session now ends **immediately** — no quiet-period wait. Post-processing (remux, upload, etc.) starts sooner as a result.
 
 - **Cleanup of zero-byte "ghost sessions"**
 
-  Recording segments below the `min_segment_size_bytes` threshold are automatically discarded (avoiding meaningless few-second clips), but the corresponding session row used to stay in the database, showing as zero-byte cards on the dashboard. Two cleanup layers added:
+  Recording segments below the `min_segment_size_bytes` threshold are automatically discarded (avoiding meaningless few-second clips). Previously the corresponding session row stayed in the database, showing as zero-byte cards on the dashboard. Two cleanup layers added:
 
-  - **API filtering by default** — the sessions list endpoint now hides zero-byte ended sessions by default. Active (still-recording) sessions are always returned. If you need to inspect them for diagnostics, pass `?include_empty=true`, or look up by session ID directly.
-  - **Periodic background cleanup** — empty session rows are automatically deleted from the database 5 minutes after end (default scan interval 30 minutes). Related danmu statistics, segments, and lifecycle events are removed alongside via `ON DELETE CASCADE`.
+  - **API filtering by default** — the sessions list endpoint now hides zero-byte ended sessions by default. Active (still-recording) sessions are always returned. Pass `?include_empty=true` to inspect for diagnostics, or look up by session ID directly.
+  - **Periodic background cleanup** — empty session rows are automatically deleted from the database 5 minutes after end (default scan interval 30 minutes). Related danmu statistics, segments, and lifecycle events are removed alongside.
 
 ## Frontend
 
