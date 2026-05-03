@@ -496,8 +496,7 @@ mod session_repository_tests {
         let streamer_id = setup_streamer(&pool).await;
 
         let now_ms = chrono::Utc::now().timestamp_millis();
-        let _empty_id =
-            insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
+        let _empty_id = insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
         let real_id =
             insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
 
@@ -1406,6 +1405,7 @@ mod end_to_end_tests {
             media_headers: None,
             media_extras: None,
             next_check_hint: None,
+            candidates: vec![],
         };
 
         // Process the status
@@ -1772,7 +1772,10 @@ mod end_to_end_tests {
         let snap = lifecycle
             .session_snapshot(&first_id)
             .expect("session in memory after disable");
-        assert!(snap.is_ended(), "in-memory state must be Ended after disable");
+        assert!(
+            snap.is_ended(),
+            "in-memory state must be Ended after disable"
+        );
 
         // Step 3: re-enable triggers fresh LiveDetected. Because the
         // in-memory state is Ended (not Hysteresis), the lifecycle's
@@ -1809,13 +1812,12 @@ mod end_to_end_tests {
         );
 
         // Two rows in live_sessions: the first ended, the second active.
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ?",
-        )
-        .bind(&streamer_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ?")
+                .bind(&streamer_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_eq!(count, 2);
 
         let active_count: i64 = sqlx::query_scalar(

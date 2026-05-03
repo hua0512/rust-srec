@@ -771,6 +771,52 @@ pub struct SessionEventResponse {
     pub payload: Option<serde_json::Value>,
 }
 
+/// One row of the streamer's per-poll check history. Powers the bars on the
+/// streamer details page's check-history strip — each row becomes one bar.
+///
+/// `outcome` is the discriminator (`live` | `offline` | `filtered` |
+/// `transient_error` | `fatal_error`); `fatal_kind`, `filter_reason`, and
+/// `error_message` are mutually-exclusive outcome detail. `streams_extracted`
+/// + `stream_selected` carry the per-poll stream-selection telemetry the
+/// strip's tooltip surfaces (how many candidates the platform extractor
+/// returned, which one we picked).
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct StreamerCheckHistoryEntry {
+    pub checked_at: DateTime<Utc>,
+    pub duration_ms: i64,
+    /// `live` | `offline` | `filtered` | `transient_error` | `fatal_error`.
+    pub outcome: String,
+    pub fatal_kind: Option<String>,
+    pub filter_reason: Option<String>,
+    pub error_message: Option<String>,
+    pub streams_extracted: i64,
+    /// Parsed JSON `{ quality, stream_format, media_format, bitrate, codec,
+    /// fps }`. `None` on non-live outcomes; also `None` if the persisted
+    /// JSON failed to parse (treat as missing rather than dropping the row).
+    pub stream_selected: Option<serde_json::Value>,
+    /// Parsed JSON array of every candidate the platform extractor returned
+    /// for this poll, same per-element shape as `stream_selected`. `None`
+    /// on non-live outcomes, on rows persisted before the column was added,
+    /// or when the persisted JSON failed to parse. The selected element is
+    /// also referenced by `stream_selected`; clients render the array with
+    /// the matching element marked.
+    pub streams_extracted_detail: Option<serde_json::Value>,
+    pub title: Option<String>,
+    pub category: Option<String>,
+    pub viewer_count: Option<i64>,
+}
+
+/// Response payload for `GET /api/streamers/{id}/check-history`.
+///
+/// `items` is ordered oldest-first so the UI renders left → right = past →
+/// now without re-sorting. The `?limit=` query parameter caps the row count;
+/// the server enforces an upper bound matching the writer's per-streamer
+/// retention.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct StreamerCheckHistoryResponse {
+    pub items: Vec<StreamerCheckHistoryEntry>,
+}
+
 /// Full danmu statistics for a session.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct SessionDanmuStatisticsResponse {

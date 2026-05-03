@@ -9,8 +9,9 @@ use axum::{
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
     CreateStreamerRequest, ExtractMetadataRequest, ExtractMetadataResponse, PaginatedResponse,
-    PaginationParams, PlatformConfigResponse, StreamerFilterParams, StreamerResponse,
-    UpdatePriorityRequest, UpdateStreamerRequest,
+    PaginationParams, PlatformConfigResponse, StreamerCheckHistoryEntry,
+    StreamerCheckHistoryResponse, StreamerFilterParams, StreamerResponse, UpdatePriorityRequest,
+    UpdateStreamerRequest,
 };
 use crate::api::server::AppState;
 use crate::domain::streamer::StreamerState;
@@ -27,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/{id}", delete(delete_streamer))
         .route("/{id}/clear-error", post(clear_error))
         .route("/{id}/priority", patch(update_priority))
+        .route("/{id}/check-history", get(get_check_history))
         .route("/extract-metadata", post(extract_metadata))
 }
 
@@ -752,4 +754,103 @@ pub async fn extract_metadata(
         valid_platform_configs: valid_configs,
         channel_id,
     }))
+}
+
+/// Default `?limit=` for the check-history strip — matches the screenshot's
+/// "HISTORY (60PTS)" UI. The server caps requests at the writer's per-
+/// streamer retention so a request asking for everything sees exactly what's
+/// persisted.
+const CHECK_HISTORY_DEFAULT_LIMIT: i64 = 60;
+const CHECK_HISTORY_MAX_LIMIT: i64 = crate::database::repositories::KEEP_PER_STREAMER;
+
+/// Query parameters for `GET /api/streamers/{id}/check-history`.
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+pub struct CheckHistoryParams {
+    /// Maximum rows to return. Defaults to 60. Server-clamped to the writer's
+    /// per-streamer retention cap.
+    pub limit: Option<i64>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/streamers/{id}/check-history",
+    tag = "streamers",
+    params(
+        ("id" = String, Path, description = "Streamer ID"),
+        CheckHistoryParams,
+    ),
+    responses(
+        (status = 200, description = "Recent check-history rows, oldest first", body = StreamerCheckHistoryResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse),
+        (status = 503, description = "Check-history service not available", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_check_history(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(params): Query<CheckHistoryParams>,
+) -> ApiResult<Json<StreamerCheckHistoryResponse>> {
+    // Confirm the streamer exists so a 404 is unambiguous (vs. "no rows yet"
+    // for a brand-new streamer, which we want to render as an empty strip).
+    if let Some(streamer_manager) = state.streamer_manager.as_ref() {
+        if streamer_manager.get_streamer(&id).is_none() {
+            return Err(ApiError::not_found(format!("Streamer {} not found", id)));
+        }
+    }
+
+    // No repository wired (test harness path) → return an empty strip
+    // rather than 503. Matches the SessionEvent timeline route's contract.
+    let Some(repo) = state.streamer_check_history_repository.as_ref() else {
+        return Ok(Json(StreamerCheckHistoryResponse { items: Vec::new() }));
+    };
+
+    let limit = params
+        .limit
+        .unwrap_or(CHECK_HISTORY_DEFAULT_LIMIT)
+        .clamp(1, CHECK_HISTORY_MAX_LIMIT);
+
+    let rows = repo.list_recent(&id, limit).await.map_err(ApiError::from)?;
+
+    // Repository returns newest-first; reverse so the client renders
+    // left → right = past → now without re-sorting.
+    let mut items: Vec<StreamerCheckHistoryEntry> =
+        rows.into_iter().rev().map(map_check_history_row).collect();
+
+    // The reverse above costs nothing for typical 60-row payloads; an
+    // in-place reverse would be marginally cheaper but harder to read.
+    items.shrink_to_fit();
+
+    Ok(Json(StreamerCheckHistoryResponse { items }))
+}
+
+/// Map one DB row to the wire format. A row with malformed JSON in
+/// `stream_selected` or `streams_extracted_json` degrades to `None`
+/// rather than dropping the row — the bar should still render (with the
+/// outcome color), even if the tooltip's stream-list block is missing.
+fn map_check_history_row(
+    row: crate::database::models::StreamerCheckHistoryDbModel,
+) -> StreamerCheckHistoryEntry {
+    let stream_selected = row
+        .stream_selected
+        .as_deref()
+        .and_then(|raw| serde_json::from_str(raw).ok());
+    let streams_extracted_detail = row
+        .streams_extracted_json
+        .as_deref()
+        .and_then(|raw| serde_json::from_str(raw).ok());
+    StreamerCheckHistoryEntry {
+        checked_at: crate::database::time::ms_to_datetime(row.checked_at),
+        duration_ms: row.duration_ms,
+        outcome: row.outcome,
+        fatal_kind: row.fatal_kind,
+        filter_reason: row.filter_reason,
+        error_message: row.error_message,
+        streams_extracted: row.streams_extracted,
+        stream_selected,
+        streams_extracted_detail,
+        title: row.title,
+        category: row.category,
+        viewer_count: row.viewer_count,
+    }
 }

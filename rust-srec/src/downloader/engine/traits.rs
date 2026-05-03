@@ -807,7 +807,10 @@ mod tests {
         );
         // Path::display() on Windows uses backslashes; normalize before matching.
         assert!(
-            engine_err.message.replace('\\', "/").contains("/rec/huya/X/20260415"),
+            engine_err
+                .message
+                .replace('\\', "/")
+                .contains("/rec/huya/X/20260415"),
             "msg={}",
             engine_err.message
         );

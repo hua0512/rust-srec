@@ -1499,7 +1499,9 @@ mod tests {
         let config_service = Arc::new(ConfigService::new(config_repo, streamer_repo));
 
         let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
-            Arc::new(crate::session::SessionLifecycleRepository::new(pool.clone())),
+            Arc::new(crate::session::SessionLifecycleRepository::new(
+                pool.clone(),
+            )),
             Arc::new(crate::session::OfflineClassifier::new()),
         ));
 
@@ -1607,6 +1609,7 @@ mod tests {
             media_headers: None,
             media_extras: None,
             next_check_hint: None,
+            candidates: vec![],
         };
         assert_eq!(status_summary(&live_status), "Live");
 
@@ -1846,6 +1849,7 @@ mod tests {
                     media_headers: None,
                     media_extras: None,
                     next_check_hint: None,
+                    candidates: vec![],
                 },
             )
             .await
@@ -1918,6 +1922,7 @@ mod tests {
                     media_headers: None,
                     media_extras: None,
                     next_check_hint: None,
+                    candidates: vec![],
                 },
             )
             .await

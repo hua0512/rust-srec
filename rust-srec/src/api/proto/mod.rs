@@ -19,7 +19,7 @@ pub mod log_event {
 pub use download_progress::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadMeta,
     DownloadMetrics, DownloadRejected, DownloadSnapshot, DownloadState, ErrorPayload, EventType,
-    SegmentCompleted, SubscribeRequest, UnsubscribeRequest, WsMessage,
+    SegmentCompleted, StreamerCheckRecorded, SubscribeRequest, UnsubscribeRequest, WsMessage,
 };
 
 impl From<&DownloadInfo> for DownloadMeta {

@@ -149,10 +149,7 @@ impl SessionLifecycleRepository {
     /// that picks the right action against the most-recent session row,
     /// marks the streamer Live, optionally refreshes the avatar, and
     /// enqueues [`MonitorEvent::StreamerLive`].
-    pub async fn start_or_resume(
-        &self,
-        inputs: StartSessionInputs,
-    ) -> Result<StartSessionOutcome> {
+    pub async fn start_or_resume(&self, inputs: StartSessionInputs) -> Result<StartSessionOutcome> {
         let mut tx = begin_immediate(&self.write_pool).await?;
 
         let last = SessionTxOps::get_last_session(&mut tx, &inputs.streamer_id).await?;
@@ -208,12 +205,7 @@ impl SessionLifecycleRepository {
                 },
                 via_hysteresis: false,
             };
-            let row = Self::event_row(
-                stale_id,
-                &inputs.streamer_id,
-                &payload,
-                inputs.now,
-            );
+            let row = Self::event_row(stale_id, &inputs.streamer_id, &payload, inputs.now);
             SessionEventTxOps::insert(&mut tx, &row).await?;
         }
 
@@ -264,12 +256,7 @@ impl SessionLifecycleRepository {
                     from_hysteresis: false,
                     title: Some(inputs.title.clone()),
                 };
-                let row = Self::event_row(
-                    &new_id,
-                    &inputs.streamer_id,
-                    &payload,
-                    inputs.now,
-                );
+                let row = Self::event_row(&new_id, &inputs.streamer_id, &payload, inputs.now);
                 SessionEventTxOps::insert(&mut tx, &row).await?;
                 info!("Created new session {}", new_id);
                 StartSessionOutcome::Created { session_id: new_id }
@@ -381,22 +368,18 @@ impl SessionLifecycleRepository {
         // for repeated disable events. Without this, a second call would
         // insert a duplicate `session_ended` audit row for the same id.
         let resolved: Option<String> = if let Some(id) = session_id {
-            let still_active: Option<bool> = sqlx::query_scalar(
-                "SELECT end_time IS NULL FROM live_sessions WHERE id = ?",
-            )
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?;
+            let still_active: Option<bool> =
+                sqlx::query_scalar("SELECT end_time IS NULL FROM live_sessions WHERE id = ?")
+                    .bind(id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
             match still_active {
                 Some(true) => Some(id.to_string()),
                 _ => None,
             }
         } else {
-            crate::database::repositories::SessionTxOps::get_active_session_id(
-                &mut tx,
-                streamer_id,
-            )
-            .await?
+            crate::database::repositories::SessionTxOps::get_active_session_id(&mut tx, streamer_id)
+                .await?
         };
 
         let Some(sid) = resolved else {
@@ -762,15 +745,25 @@ mod tests {
         let repo = SessionLifecycleRepository::new(pool.clone());
         let started_at = Utc::now() - chrono::Duration::seconds(60);
 
-        let first = repo.start_or_resume(start_inputs(started_at)).await.unwrap();
-        let ended_at = started_at + chrono::Duration::seconds(30);
-        repo.end(end_inputs(Some(first.session_id().to_string()), true, ended_at))
+        let first = repo
+            .start_or_resume(start_inputs(started_at))
             .await
             .unwrap();
+        let ended_at = started_at + chrono::Duration::seconds(30);
+        repo.end(end_inputs(
+            Some(first.session_id().to_string()),
+            true,
+            ended_at,
+        ))
+        .await
+        .unwrap();
 
         // No matter how soon we restart — no gap rule.
         let restart_now = ended_at + chrono::Duration::seconds(5);
-        let outcome = repo.start_or_resume(start_inputs(restart_now)).await.unwrap();
+        let outcome = repo
+            .start_or_resume(start_inputs(restart_now))
+            .await
+            .unwrap();
 
         assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
         assert_ne!(outcome.session_id(), first.session_id());
@@ -786,7 +779,11 @@ mod tests {
         let id = started.session_id().to_string();
 
         let outcome = repo
-            .end(end_inputs(Some(id.clone()), true, now + chrono::Duration::seconds(10)))
+            .end(end_inputs(
+                Some(id.clone()),
+                true,
+                now + chrono::Duration::seconds(10),
+            ))
             .await
             .unwrap();
 
@@ -926,7 +923,10 @@ mod tests {
         // gets cleaned.
         match outcome {
             StartSessionOutcome::ReusedActive { ref session_id } => {
-                assert_eq!(session_id, "stale-B", "the most-recent active row is reused");
+                assert_eq!(
+                    session_id, "stale-B",
+                    "the most-recent active row is reused"
+                );
             }
             other => panic!("expected ReusedActive(stale-B), got {other:?}"),
         }
@@ -956,8 +956,7 @@ mod tests {
         assert_eq!(kinds, vec!["session_ended"]);
 
         let (_, payload) = &events[0];
-        let parsed: serde_json::Value =
-            serde_json::from_str(payload.as_deref().unwrap()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(payload.as_deref().unwrap()).unwrap();
         assert_eq!(parsed["cause"]["type"], "rejected");
         assert_eq!(parsed["cause"]["reason"], "stale_active_replaced");
         assert_eq!(parsed["via_hysteresis"], false);
@@ -1158,9 +1157,15 @@ mod tests {
 
         // End normally (cause=Completed, via_hysteresis=true) so the audit
         // row exists. Use the light path so streamer state stays LIVE.
-        repo.end_session_only(STREAMER_ID, Some(&sid), TerminalCauseDto::Completed, true, now)
-            .await
-            .unwrap();
+        repo.end_session_only(
+            STREAMER_ID,
+            Some(&sid),
+            TerminalCauseDto::Completed,
+            true,
+            now,
+        )
+        .await
+        .unwrap();
 
         let updated = repo
             .rewrite_session_ended_cause(&sid, TerminalCauseDto::UserDisabled)

@@ -149,6 +149,22 @@ pub enum FatalErrorType {
     UnsupportedPlatform,
 }
 
+impl FatalErrorType {
+    /// Stable string discriminator. Used as the on-the-wire / on-disk value
+    /// (notification payloads, `streamer_check_history.fatal_kind`) so the
+    /// frontend can switch on it without parsing Debug output.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FatalErrorType::NotFound => "NotFound",
+            FatalErrorType::Banned => "Banned",
+            FatalErrorType::AgeRestricted => "AgeRestricted",
+            FatalErrorType::RegionLocked => "RegionLocked",
+            FatalErrorType::Private => "Private",
+            FatalErrorType::UnsupportedPlatform => "UnsupportedPlatform",
+        }
+    }
+}
+
 impl MonitorEvent {
     /// Get a human-readable description of the event.
     pub fn description(&self) -> String {

@@ -88,9 +88,7 @@ fn validate_offline_check_overrides(
     if let Some(c) = count
         && c < 1
     {
-        return Err(ApiError::validation(
-            "offline_check_count must be >= 1",
-        ));
+        return Err(ApiError::validation("offline_check_count must be >= 1"));
     }
     if let Some(d) = delay_ms
         && d < 1_000
@@ -122,10 +120,7 @@ pub async fn create_template(
         return Err(ApiError::validation("Template name cannot be empty"));
     }
 
-    validate_offline_check_overrides(
-        request.offline_check_count,
-        request.offline_check_delay_ms,
-    )?;
+    validate_offline_check_overrides(request.offline_check_count, request.offline_check_delay_ms)?;
 
     // Get config service from state
     let config_service = state
@@ -290,10 +285,7 @@ pub async fn update_template(
     Path(id): Path<String>,
     Json(request): Json<UpdateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
-    validate_offline_check_overrides(
-        request.offline_check_count,
-        request.offline_check_delay_ms,
-    )?;
+    validate_offline_check_overrides(request.offline_check_count, request.offline_check_delay_ms)?;
 
     // Get config service from state
     let config_service = state

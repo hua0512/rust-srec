@@ -113,6 +113,7 @@ pub struct MessageResponse {
         crate::api::routes::streamers::clear_error,
         crate::api::routes::streamers::update_priority,
         crate::api::routes::streamers::extract_metadata,
+        crate::api::routes::streamers::get_check_history,
         // Config endpoints
         crate::api::routes::config::get_global_config,
         crate::api::routes::config::update_global_config,
@@ -243,6 +244,8 @@ pub struct MessageResponse {
             PaginatedResponse<StreamerResponse>,
             ExtractMetadataRequest,
             ExtractMetadataResponse,
+            crate::api::models::StreamerCheckHistoryEntry,
+            crate::api::models::StreamerCheckHistoryResponse,
             // Config schemas
             GlobalConfigResponse,
             UpdateGlobalConfigRequest,

@@ -262,11 +262,7 @@ mod tests {
     #[test]
     fn c2_single_network_failure_does_not_classify() {
         let c = classic_classifier();
-        let result = c.classify_failure(
-            "s1",
-            &EngineKind::MesioHls,
-            &DownloadFailureKind::Network,
-        );
+        let result = c.classify_failure("s1", &EngineKind::MesioHls, &DownloadFailureKind::Network);
         assert_eq!(result, None);
     }
 
@@ -276,18 +272,10 @@ mod tests {
     fn c3_two_consecutive_network_failures_classify_as_definitive_offline() {
         let c = classic_classifier();
 
-        let first = c.classify_failure(
-            "s1",
-            &EngineKind::MesioFlv,
-            &DownloadFailureKind::Network,
-        );
+        let first = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
         assert_eq!(first, None, "first Network alone must not classify");
 
-        let second = c.classify_failure(
-            "s1",
-            &EngineKind::MesioFlv,
-            &DownloadFailureKind::Network,
-        );
+        let second = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
         assert_eq!(
             second,
             Some(OfflineSignal::ConsecutiveFailures(2)),
@@ -308,11 +296,7 @@ mod tests {
             .expect("stale timestamp");
         c.failure_log.insert("s1".to_string(), vec![stale]);
 
-        let result = c.classify_failure(
-            "s1",
-            &EngineKind::MesioHls,
-            &DownloadFailureKind::Network,
-        );
+        let result = c.classify_failure("s1", &EngineKind::MesioHls, &DownloadFailureKind::Network);
         assert_eq!(
             result, None,
             "stale entries must be pruned before threshold check"
@@ -326,26 +310,15 @@ mod tests {
         let c = classic_classifier();
 
         // First failure primes the counter.
-        let first = c.classify_failure(
-            "s1",
-            &EngineKind::MesioFlv,
-            &DownloadFailureKind::Network,
-        );
+        let first = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
         assert_eq!(first, None);
 
         // Successful segment clears the log.
         c.note_successful_segment("s1");
 
         // Next failure must be treated as the first again (not the second).
-        let after = c.classify_failure(
-            "s1",
-            &EngineKind::MesioFlv,
-            &DownloadFailureKind::Network,
-        );
-        assert_eq!(
-            after, None,
-            "counter must reset after successful segment"
-        );
+        let after = c.classify_failure("s1", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
+        assert_eq!(after, None, "counter must reset after successful segment");
     }
 
     // ---- C6 / C7 — ffmpeg / streamlink subprocess errors → None -------
@@ -389,11 +362,8 @@ mod tests {
         // Accumulate many Network failures on a streamlink engine; counter
         // should never fire because streamlink failures are not classified.
         for _ in 0..5 {
-            let result = c.classify_failure(
-                "s1",
-                &EngineKind::Streamlink,
-                &DownloadFailureKind::Network,
-            );
+            let result =
+                c.classify_failure("s1", &EngineKind::Streamlink, &DownloadFailureKind::Network);
             assert_eq!(result, None);
         }
     }
@@ -463,32 +433,16 @@ mod tests {
     fn streamer_isolation_in_consecutive_counter() {
         let c = classic_classifier();
 
-        let a1 = c.classify_failure(
-            "a",
-            &EngineKind::MesioFlv,
-            &DownloadFailureKind::Network,
-        );
-        let b1 = c.classify_failure(
-            "b",
-            &EngineKind::MesioFlv,
-            &DownloadFailureKind::Network,
-        );
+        let a1 = c.classify_failure("a", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
+        let b1 = c.classify_failure("b", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
         assert_eq!(a1, None);
         assert_eq!(b1, None);
 
         // A second Network on A fires; B's log is still at 1.
-        let a2 = c.classify_failure(
-            "a",
-            &EngineKind::MesioFlv,
-            &DownloadFailureKind::Network,
-        );
+        let a2 = c.classify_failure("a", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
         assert_eq!(a2, Some(OfflineSignal::ConsecutiveFailures(2)));
 
-        let b_still = c.classify_failure(
-            "b",
-            &EngineKind::MesioFlv,
-            &DownloadFailureKind::Network,
-        );
+        let b_still = c.classify_failure("b", &EngineKind::MesioFlv, &DownloadFailureKind::Network);
         assert_eq!(
             b_still,
             Some(OfflineSignal::ConsecutiveFailures(2)),
@@ -524,20 +478,12 @@ mod tests {
 
         for _ in 0..4 {
             assert_eq!(
-                c.classify_failure(
-                    "s",
-                    &EngineKind::MesioFlv,
-                    &DownloadFailureKind::Network
-                ),
+                c.classify_failure("s", &EngineKind::MesioFlv, &DownloadFailureKind::Network),
                 None
             );
         }
         assert_eq!(
-            c.classify_failure(
-                "s",
-                &EngineKind::MesioFlv,
-                &DownloadFailureKind::Network
-            ),
+            c.classify_failure("s", &EngineKind::MesioFlv, &DownloadFailureKind::Network),
             Some(OfflineSignal::ConsecutiveFailures(5))
         );
     }

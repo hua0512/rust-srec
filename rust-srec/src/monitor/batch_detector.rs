@@ -315,6 +315,7 @@ mod tests {
                 media_headers: None,
                 media_extras: None,
                 next_check_hint: None,
+                candidates: vec![],
             },
         );
         result.add_failure("streamer-3".to_string(), "Network error".to_string());

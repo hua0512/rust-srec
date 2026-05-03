@@ -45,10 +45,7 @@ pub struct SessionEventTxOps;
 impl SessionEventTxOps {
     /// Insert one event row. The caller is responsible for committing the
     /// outer transaction.
-    pub async fn insert(
-        tx: &mut SqliteConnection,
-        row: &SessionEventDbModel,
-    ) -> Result<()> {
+    pub async fn insert(tx: &mut SqliteConnection, row: &SessionEventDbModel) -> Result<()> {
         sqlx::query(INSERT_SQL)
             .bind(&row.session_id)
             .bind(&row.streamer_id)
@@ -73,10 +70,7 @@ pub trait SessionEventRepository: Send + Sync {
 
     /// All events for a session, oldest first. Used by the
     /// `GET /api/sessions/{id}` handler to build the timeline payload.
-    async fn list_for_session(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<SessionEventDbModel>>;
+    async fn list_for_session(&self, session_id: &str) -> Result<Vec<SessionEventDbModel>>;
 }
 
 /// Sqlx implementation backed by separate read / write pools (matches the
@@ -109,10 +103,7 @@ impl SessionEventRepository for SqlxSessionEventRepository {
         .await
     }
 
-    async fn list_for_session(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<SessionEventDbModel>> {
+    async fn list_for_session(&self, session_id: &str) -> Result<Vec<SessionEventDbModel>> {
         let rows = sqlx::query_as::<_, SessionEventDbModel>(LIST_BY_SESSION_SQL)
             .bind(session_id)
             .fetch_all(&self.pool)
@@ -190,15 +181,27 @@ mod tests {
         let pool = setup_pool().await;
         let repo = SqlxSessionEventRepository::new(pool.clone(), pool.clone());
 
-        repo.insert(&row("session_started", 100, Some(r#"{"kind":"session_started","from_hysteresis":false,"title":"hi"}"#)))
-            .await
-            .unwrap();
-        repo.insert(&row("hysteresis_entered", 200, Some(r#"{"kind":"hysteresis_entered"}"#)))
-            .await
-            .unwrap();
-        repo.insert(&row("session_ended", 300, Some(r#"{"kind":"session_ended"}"#)))
-            .await
-            .unwrap();
+        repo.insert(&row(
+            "session_started",
+            100,
+            Some(r#"{"kind":"session_started","from_hysteresis":false,"title":"hi"}"#),
+        ))
+        .await
+        .unwrap();
+        repo.insert(&row(
+            "hysteresis_entered",
+            200,
+            Some(r#"{"kind":"hysteresis_entered"}"#),
+        ))
+        .await
+        .unwrap();
+        repo.insert(&row(
+            "session_ended",
+            300,
+            Some(r#"{"kind":"session_ended"}"#),
+        ))
+        .await
+        .unwrap();
 
         let events = repo.list_for_session("s1").await.unwrap();
         assert_eq!(events.len(), 3, "all rows returned");
@@ -262,6 +265,9 @@ mod tests {
             .unwrap();
 
         let events = repo.list_for_session("s1").await.unwrap();
-        assert!(events.is_empty(), "child rows must cascade on session delete");
+        assert!(
+            events.is_empty(),
+            "child rows must cascade on session delete"
+        );
     }
 }

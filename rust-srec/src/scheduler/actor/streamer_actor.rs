@@ -1837,6 +1837,7 @@ mod tests {
                 media_headers: None,
                 media_extras: None,
                 next_check_hint: None,
+                candidates: vec![],
             },
         };
         handle
@@ -2221,6 +2222,7 @@ mod tests {
                     media_headers: None,
                     media_extras: None,
                     next_check_hint: None,
+                    candidates: vec![],
                 },
             )],
             vec![ProcessStatusResult::Suppressed(
@@ -2269,6 +2271,7 @@ mod tests {
                         media_headers: None,
                         media_extras: None,
                         next_check_hint: None,
+                        candidates: vec![],
                     },
                 ),
                 (
@@ -2283,6 +2286,7 @@ mod tests {
                         media_headers: None,
                         media_extras: None,
                         next_check_hint: None,
+                        candidates: vec![],
                     },
                 ),
             ],
@@ -2333,6 +2337,7 @@ mod tests {
                     media_headers: None,
                     media_extras: None,
                     next_check_hint: None,
+                    candidates: vec![],
                 },
             )],
             vec![ProcessStatusResult::Suppressed(
@@ -2402,6 +2407,7 @@ mod tests {
                     media_headers: None,
                     media_extras: None,
                     next_check_hint: None,
+                    candidates: vec![],
                 },
             )],
             vec![ProcessStatusResult::Suppressed(
@@ -2513,7 +2519,10 @@ mod tests {
                 DownloadStopCause::DanmuStreamClosed,
             ))
             .await;
-        assert!(result.is_ok(), "actor must complete cleanly without process_status");
+        assert!(
+            result.is_ok(),
+            "actor must complete cleanly without process_status"
+        );
     }
 
     #[tokio::test]

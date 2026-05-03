@@ -298,8 +298,42 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         SSR: SessionRepository + Send + Sync + 'static,
         CR: ConfigRepository + Send + Sync + 'static,
     {
+        Self::with_monitor_history_and_config(
+            streamer_manager,
+            event_broadcaster,
+            monitor,
+            None,
+            config,
+            cancellation_token,
+        )
+    }
+
+    /// Like [`Self::with_monitor_and_config`] but additionally wires a
+    /// best-effort check-history writer into the per-streamer status checker
+    /// so each poll outcome lands in the `streamer_check_history` ring
+    /// buffer that powers the streamer details page's check-history strip.
+    ///
+    /// Pass `history_writer = None` to disable persistence (the polling path
+    /// is unaffected either way; the writer is purely diagnostic).
+    pub fn with_monitor_history_and_config<SR, FR, SSR, CR>(
+        streamer_manager: Arc<StreamerManager<R>>,
+        event_broadcaster: ConfigEventBroadcaster,
+        monitor: Arc<StreamMonitor<SR, FR, SSR, CR>>,
+        history_writer: Option<crate::monitor::CheckHistoryWriter>,
+        config: SchedulerConfig,
+        cancellation_token: CancellationToken,
+    ) -> Self
+    where
+        SR: StreamerRepository + Send + Sync + 'static,
+        FR: FilterRepository + Send + Sync + 'static,
+        SSR: SessionRepository + Send + Sync + 'static,
+        CR: ConfigRepository + Send + Sync + 'static,
+    {
         // Create status and batch checkers directly from the StreamMonitor
-        let status_checker = Arc::new(MonitorStatusChecker::new(monitor.clone()));
+        let status_checker = Arc::new(match history_writer {
+            Some(writer) => MonitorStatusChecker::with_history_writer(monitor.clone(), writer),
+            None => MonitorStatusChecker::new(monitor.clone()),
+        });
         let batch_checker = Arc::new(MonitorBatchChecker::new(monitor.clone()));
 
         // Pass the shared metadata store to the supervisor

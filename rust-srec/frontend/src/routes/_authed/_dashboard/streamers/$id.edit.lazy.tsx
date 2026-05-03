@@ -54,6 +54,7 @@ import {
 import { StreamerHeader } from '@/components/streamers/edit/streamer-header';
 import { ActiveDownloadCard } from '@/components/streamers/edit/active-download-card';
 import { RecentSessionsList } from '@/components/streamers/edit/recent-sessions-list';
+import { StatusCheckHistory } from '@/components/streamers/edit/status-check-history';
 import { EditStreamerSkeleton } from '@/components/streamers/edit/edit-streamer-skeleton';
 import { useDownloadProgress } from '@/hooks/use-download-progress';
 import { useEditStreamer } from '@/hooks/use-edit-streamer';
@@ -113,6 +114,11 @@ function EditStreamerPage() {
   const { data: templates, isLoading: isTemplatesLoading } = useQuery({
     queryKey: ['templates'],
     queryFn: () => listTemplates(),
+    // `initialData: []` silences React Query 5.x's "queryFn returned
+    // undefined" warning that fires during the brief hydration window
+    // before the server response lands. The fetched array replaces this
+    // immediately on first resolve.
+    initialData: [],
   });
 
   const { data: engines } = useQuery({
@@ -364,6 +370,10 @@ function EditStreamerForm({
                 downloads={downloads}
                 isRecording={isRecording}
               />
+            </motion.div>
+
+            <motion.div variants={itemVariants}>
+              <StatusCheckHistory streamerId={id} />
             </motion.div>
 
             <motion.div variants={itemVariants}>
