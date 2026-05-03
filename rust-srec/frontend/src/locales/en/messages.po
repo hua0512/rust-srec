@@ -107,6 +107,12 @@ msgstr "{0, plural, one {file} other {files}}"
 msgid "{0}"
 msgstr "{0}"
 
+#. placeholder {0}: outcomeAriaName(entry.outcome, i18n)
+#. placeholder {1}: i18n.date(new Date(entry.checked_at), { timeStyle: 'short' })
+#: src/components/streamers/edit/status-check-history.tsx:161
+msgid "{0} at {1}"
+msgstr "{0} at {1}"
+
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:101
 msgid "{0} Configuration"
@@ -122,6 +128,18 @@ msgstr "{0} stream(s) added successfully"
 #: src/components/sessions/jobs-tab.tsx:82
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} steps"
+
+#: src/components/streamers/edit/status-check-history.tsx:475
+msgid "{hours}h"
+msgstr "{hours}h"
+
+#: src/components/streamers/edit/status-check-history.tsx:473
+msgid "{minutes}m"
+msgstr "{minutes}m"
+
+#: src/components/streamers/edit/status-check-history.tsx:471
+msgid "{seconds}s"
+msgstr "{seconds}s"
 
 #: src/components/notifications/channel-form.tsx:339
 msgid "{val} channel support is coming soon!"
@@ -397,12 +415,12 @@ msgstr "Adjust the roundness of UI elements."
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:239
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:240
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:241
 msgid "Advanced"
 msgstr "Advanced"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:314
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:315
 msgid "Advanced Configuration"
 msgstr "Advanced Configuration"
 
@@ -698,6 +716,10 @@ msgstr "avg {averagePerMinute}"
 msgid "Avg. Duration"
 msgstr "Avg. Duration"
 
+#: src/components/streamers/edit/status-check-history.tsx:453
+msgid "Awaiting first check"
+msgstr "Awaiting first check"
+
 #: src/components/config/platforms/platform-editor.tsx:141
 #: src/components/config/templates/template-editor.tsx:189
 #: src/components/config/templates/template-editor.tsx:192
@@ -777,7 +799,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:281
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:282
 msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
@@ -1036,6 +1058,10 @@ msgstr "Channels"
 #: src/components/notifications/forms/telegram-form.tsx:57
 msgid "Chat ID"
 msgstr "Chat ID"
+
+#: src/components/streamers/edit/status-check-history.tsx:283
+msgid "Check duration"
+msgstr "Check duration"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:173
 msgid "Check if file exists after conversion"
@@ -2503,6 +2529,10 @@ msgstr "Error loading template"
 msgid "Error loading workflow"
 msgstr "Error loading workflow"
 
+#: src/components/streamers/edit/status-check-history.tsx:277
+msgid "Error:"
+msgstr "Error:"
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:355
 msgid "Error: Could not load preset details."
 msgstr "Error: Could not load preset details."
@@ -2978,9 +3008,18 @@ msgstr "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Sma
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 
+#: src/components/streamers/edit/status-check-history.tsx:373
+#: src/components/streamers/edit/status-check-history.tsx:394
+msgid "Fatal error"
+msgstr "Fatal error"
+
 #: src/components/streamers/card/use-streamer-status.tsx:41
 msgid "Fatal Error"
 msgstr "Fatal Error"
+
+#: src/components/streamers/edit/status-check-history.tsx:271
+msgid "Fatal:"
+msgstr "Fatal:"
 
 #: src/components/config/platforms/platform-card.tsx:100
 msgid "Fetch"
@@ -3085,6 +3124,15 @@ msgstr "Filter updated successfully"
 #: src/components/config/engines/forms/mesio-form.tsx:182
 msgid "Filter Window Size"
 msgstr "Filter Window Size"
+
+#: src/components/streamers/edit/status-check-history.tsx:369
+#: src/components/streamers/edit/status-check-history.tsx:390
+msgid "Filtered"
+msgstr "Filtered"
+
+#: src/components/streamers/edit/status-check-history.tsx:265
+msgid "Filtered:"
+msgstr "Filtered:"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:500
 msgid "Filtering & Behavior"
@@ -3223,12 +3271,12 @@ msgstr "Gap Eval Interval (ms)"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:233
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:234
 msgid "General"
 msgstr "General"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:278
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:279
 msgid "General Configuration"
 msgstr "General Configuration"
 
@@ -3450,6 +3498,10 @@ msgstr "High+"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:487
 msgid "Highest bitrate"
 msgstr "Highest bitrate"
+
+#: src/components/streamers/edit/status-check-history.tsx:87
+msgid "History ({slots} pts)"
+msgstr "History ({slots} pts)"
 
 #: src/components/config/global/network-system-card.tsx:197
 msgid "History Retention"
@@ -3856,6 +3908,11 @@ msgstr "Last Activity"
 msgid "Last Check"
 msgstr "Last Check"
 
+#. placeholder {0}: formatAgo(ago, i18n)
+#: src/components/streamers/edit/status-check-history.tsx:462
+msgid "Last check {0} ago"
+msgstr "Last check {0} ago"
+
 #: src/components/streamers/card/use-streamer-status.tsx:156
 msgid "Last Error"
 msgstr "Last Error"
@@ -3909,6 +3966,9 @@ msgstr "List of allowed file extensions (without dot)."
 #: src/components/streamers/card/use-streamer-status.tsx:37
 #: src/components/streamers/card/use-streamer-status.tsx:248
 #: src/components/streamers/edit/recent-sessions-list.tsx:75
+#: src/components/streamers/edit/status-check-history.tsx:365
+#: src/components/streamers/edit/status-check-history.tsx:386
+#: src/components/streamers/edit/status-check-history.tsx:443
 #: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:174
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:71
@@ -3979,6 +4039,10 @@ msgstr "Loading presets..."
 #: src/components/pipeline/workflows/step-library.tsx:461
 msgid "Loading workflows..."
 msgstr "Loading workflows..."
+
+#: src/components/streamers/edit/status-check-history.tsx:135
+msgid "Loading…"
+msgstr "Loading…"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:104
 msgid "Local Archive"
@@ -4822,6 +4886,10 @@ msgstr "Notifications"
 msgid "notifier@example.com"
 msgstr "notifier@example.com"
 
+#: src/components/streamers/edit/status-check-history.tsx:139
+msgid "Now"
+msgstr "Now"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:108
 msgid "Nth input: {input0}, {input1}..."
 msgstr "Nth input: {input0}, {input1}..."
@@ -4892,6 +4960,8 @@ msgstr "Off Canvas"
 #: src/components/streamers/card/use-streamer-status.tsx:318
 #: src/components/streamers/card/use-streamer-status.tsx:327
 #: src/components/streamers/edit/recent-sessions-list.tsx:73
+#: src/components/streamers/edit/status-check-history.tsx:367
+#: src/components/streamers/edit/status-check-history.tsx:388
 #: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:72
 msgid "Offline"
@@ -5105,7 +5175,7 @@ msgid "Override global default."
 msgstr "Override global default."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:317
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:318
 msgid "Override global defaults for this streamer."
 msgstr "Override global defaults for this streamer."
 
@@ -5227,6 +5297,10 @@ msgstr "Password change required"
 #: src/routes/_authed/change-password.lazy.tsx:67
 msgid "Password changed successfully. Please login with your new password."
 msgstr "Password changed successfully. Please login with your new password."
+
+#: src/components/streamers/edit/status-check-history.tsx:131
+msgid "Past"
+msgstr "Past"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:69
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
@@ -5901,7 +5975,7 @@ msgid "Recording"
 msgstr "Recording"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:247
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:248
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
@@ -6536,9 +6610,14 @@ msgstr "Select your preferred color scheme."
 msgid "selected"
 msgstr "selected"
 
+#: src/components/streamers/edit/status-check-history.tsx:253
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:447
 msgid "Selected"
 msgstr "Selected"
+
+#: src/components/streamers/edit/status-check-history.tsx:312
+msgid "Selected stream"
+msgstr "Selected stream"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:662
 msgid "Send"
@@ -6961,6 +7040,10 @@ msgstr "STREAMER"
 msgid "Streamer Check"
 msgstr "Streamer Check"
 
+#: src/components/streamers/edit/status-check-history.tsx:106
+msgid "Streamer check history"
+msgstr "Streamer check history"
+
 #: src/routes/_authed/_dashboard/streamers/new.lazy.tsx:22
 msgid "Streamer created successfully"
 msgstr "Streamer created successfully"
@@ -7038,6 +7121,11 @@ msgstr "streamlink"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:965
 msgid "Streams & Metadata"
 msgstr "Streams & Metadata"
+
+#: src/components/streamers/edit/status-check-history.tsx:227
+#: src/components/streamers/edit/status-check-history.tsx:246
+msgid "Streams extracted"
+msgstr "Streams extracted"
 
 #: src/components/notifications/channel-card.tsx:197
 msgid "Subscriptions"
@@ -7515,6 +7603,11 @@ msgstr "Tracked Words"
 #: src/components/pipeline/presets/preset-templates.ts:14
 msgid "Transcode H.264"
 msgstr "Transcode H.264"
+
+#: src/components/streamers/edit/status-check-history.tsx:371
+#: src/components/streamers/edit/status-check-history.tsx:392
+msgid "Transient error"
+msgstr "Transient error"
 
 #: src/components/streamers/card/use-streamer-status.tsx:89
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."

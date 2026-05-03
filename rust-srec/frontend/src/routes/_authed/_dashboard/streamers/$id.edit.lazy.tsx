@@ -54,6 +54,7 @@ import {
 import { StreamerHeader } from '@/components/streamers/edit/streamer-header';
 import { ActiveDownloadCard } from '@/components/streamers/edit/active-download-card';
 import { RecentSessionsList } from '@/components/streamers/edit/recent-sessions-list';
+import { StatusCheckHistory } from '@/components/streamers/edit/status-check-history';
 import { EditStreamerSkeleton } from '@/components/streamers/edit/edit-streamer-skeleton';
 import { useDownloadProgress } from '@/hooks/use-download-progress';
 import { useEditStreamer } from '@/hooks/use-edit-streamer';
@@ -364,6 +365,10 @@ function EditStreamerForm({
                 downloads={downloads}
                 isRecording={isRecording}
               />
+            </motion.div>
+
+            <motion.div variants={itemVariants}>
+              <StatusCheckHistory streamerId={id} />
             </motion.div>
 
             <motion.div variants={itemVariants}>

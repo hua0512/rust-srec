@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, ReactNode } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
 import { sessionQueryOptions } from '@/api/session';
 import { useDownloadStore } from '@/store/downloads';
@@ -13,6 +13,11 @@ import {
 } from '@/api/proto/gen/download_progress_pb.js';
 import { buildWebSocketUrl } from '@/lib/url';
 import { WebSocketContext } from './WebSocketContext';
+import {
+  StreamerCheckHistoryEntrySchema,
+  type StreamerCheckHistoryEntry,
+} from '@/server/functions/streamers';
+import type { QueryClient } from '@tanstack/react-query';
 
 // Reconnection constants
 const WS_RECONNECT_BASE_DELAY = 1000;
@@ -50,6 +55,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   );
   const connectionStatus = useDownloadStore((state) => state.connectionStatus);
   const clearAll = useDownloadStore((state) => state.clearAll);
+
+  // Query cache used for the check-history strip's React Query state.
+  // The component subscribes to ['streamer', streamerId, 'check-history', N];
+  // we mutate every matching entry on each WS event so multiple open
+  // strips for the same streamer (different slot counts) all stay live.
+  const queryClient = useQueryClient();
 
   const handleMessage = useCallback(
     (event: MessageEvent) => {
@@ -135,12 +146,66 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           case EventType.ERROR:
             // Not currently surfaced in the UI; decoding still works.
             break;
+
+          case EventType.STREAMER_CHECK_RECORDED:
+            if (message.payload.case === 'streamerCheckRecorded') {
+              const wire = message.payload.value;
+              // Translate the proto shape (empty strings for absent values)
+              // back into the REST shape (null for absent) so the cache
+              // entries stay homogeneous regardless of source. Defensive
+              // parse on the JSON fields for the same reason the REST
+              // handler does it: malformed JSON degrades to null rather
+              // than dropping the bar.
+              let parsedSelected: unknown = null;
+              if (wire.streamSelectedJson) {
+                try {
+                  parsedSelected = JSON.parse(wire.streamSelectedJson);
+                } catch {
+                  parsedSelected = null;
+                }
+              }
+              let parsedExtracted: unknown = null;
+              if (wire.streamsExtractedJson) {
+                try {
+                  parsedExtracted = JSON.parse(wire.streamsExtractedJson);
+                } catch {
+                  parsedExtracted = null;
+                }
+              }
+              const candidate = {
+                checked_at: new Date(Number(wire.checkedAtMs)).toISOString(),
+                duration_ms: wire.durationMs,
+                outcome: wire.outcome,
+                fatal_kind: wire.fatalKind || null,
+                filter_reason: wire.filterReason || null,
+                error_message: wire.errorMessage || null,
+                streams_extracted: wire.streamsExtracted,
+                stream_selected: parsedSelected,
+                streams_extracted_detail: parsedExtracted,
+                title: wire.title || null,
+                category: wire.category || null,
+                viewer_count:
+                  wire.viewerCount === 0n ? null : Number(wire.viewerCount),
+              };
+              const parsed =
+                StreamerCheckHistoryEntrySchema.safeParse(candidate);
+              if (!parsed.success) {
+                console.warn(
+                  '[WS] Discarded malformed StreamerCheckRecorded',
+                  parsed.error.message,
+                );
+                break;
+              }
+              const entry: StreamerCheckHistoryEntry = parsed.data;
+              appendCheckHistoryEntry(queryClient, wire.streamerId, entry);
+            }
+            break;
         }
       } catch (error) {
         console.error('Failed to decode WebSocket message:', error);
       }
     },
-    [setSnapshot, upsertMeta, upsertMetrics, removeDownload],
+    [setSnapshot, upsertMeta, upsertMetrics, removeDownload, queryClient],
   );
 
   const connect = useCallback(() => {
@@ -284,5 +349,57 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     >
       {children}
     </WebSocketContext.Provider>
+  );
+}
+
+/** Cap kept in sync with the backend's `KEEP_PER_STREAMER` repository
+ *  constant. Cache entries longer than this are useless to the strip and
+ *  just bloat memory; we trim the head on every WS-driven append. */
+const CHECK_HISTORY_CACHE_CAP = 200;
+
+/** Append a freshly-broadcast row to every cached `check-history` query for
+ *  this streamer. Multiple slot counts (e.g. a tab with the strip and a
+ *  popout with a longer view) end up as separate cache entries; mutating
+ *  every match means all open views stay live without each component
+ *  having to manage its own subscription. */
+function appendCheckHistoryEntry(
+  queryClient: QueryClient,
+  streamerId: string,
+  entry: StreamerCheckHistoryEntry,
+) {
+  type CacheShape = { items: StreamerCheckHistoryEntry[] };
+  queryClient.setQueriesData<CacheShape>(
+    {
+      // Match every limit variant for this streamer.
+      // queryKey: ['streamer', streamerId, 'check-history', limit]
+      predicate: (query) => {
+        const key = query.queryKey;
+        return (
+          Array.isArray(key) &&
+          key[0] === 'streamer' &&
+          key[1] === streamerId &&
+          key[2] === 'check-history'
+        );
+      },
+    },
+    (prev) => {
+      // No cache yet (the strip hasn't mounted) — let the initial fetch
+      // populate it; the same row will be in the REST response anyway.
+      if (!prev) return prev;
+      // De-dupe: a refetch may race with a WS event and land the same row
+      // twice. Key on (checked_at, outcome) — the writer guarantees one
+      // row per poll, so the timestamp is unique.
+      const dupeKey = `${entry.checked_at}|${entry.outcome}`;
+      const seen = prev.items.some(
+        (i) => `${i.checked_at}|${i.outcome}` === dupeKey,
+      );
+      if (seen) return prev;
+      const next = [...prev.items, entry];
+      // Server returns oldest-first; trim the oldest if we're over cap.
+      if (next.length > CHECK_HISTORY_CACHE_CAP) {
+        next.splice(0, next.length - CHECK_HISTORY_CACHE_CAP);
+      }
+      return { items: next };
+    },
   );
 }

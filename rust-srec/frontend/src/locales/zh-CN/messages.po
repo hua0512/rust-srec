@@ -107,6 +107,12 @@ msgstr "{0, plural, other {个文件}}"
 msgid "{0}"
 msgstr "{0}"
 
+#. placeholder {0}: outcomeAriaName(entry.outcome, i18n)
+#. placeholder {1}: i18n.date(new Date(entry.checked_at), { timeStyle: 'short' })
+#: src/components/streamers/edit/status-check-history.tsx:161
+msgid "{0} at {1}"
+msgstr "{1} 时为 {0}"
+
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:101
 msgid "{0} Configuration"
@@ -122,6 +128,18 @@ msgstr "成功添加 {0} 个流"
 #: src/components/sessions/jobs-tab.tsx:82
 msgid "{0}/{1} steps"
 msgstr "{0}/{1} 步"
+
+#: src/components/streamers/edit/status-check-history.tsx:475
+msgid "{hours}h"
+msgstr "{hours} 小时"
+
+#: src/components/streamers/edit/status-check-history.tsx:473
+msgid "{minutes}m"
+msgstr "{minutes} 分钟"
+
+#: src/components/streamers/edit/status-check-history.tsx:471
+msgid "{seconds}s"
+msgstr "{seconds} 秒"
 
 #: src/components/notifications/channel-form.tsx:339
 msgid "{val} channel support is coming soon!"
@@ -397,12 +415,12 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:239
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:240
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:241
 msgid "Advanced"
 msgstr "高级"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:314
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:315
 msgid "Advanced Configuration"
 msgstr "高级配置"
 
@@ -698,6 +716,10 @@ msgstr "均值 {averagePerMinute}"
 msgid "Avg. Duration"
 msgstr "平均时长"
 
+#: src/components/streamers/edit/status-check-history.tsx:453
+msgid "Awaiting first check"
+msgstr "等待首次检查"
+
 #: src/components/config/platforms/platform-editor.tsx:141
 #: src/components/config/templates/template-editor.tsx:189
 #: src/components/config/templates/template-editor.tsx:192
@@ -777,7 +799,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:281
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:282
 msgid "Basic settings for the streamer."
 msgstr "主播的基本设置。"
 
@@ -1036,6 +1058,10 @@ msgstr "声道"
 #: src/components/notifications/forms/telegram-form.tsx:57
 msgid "Chat ID"
 msgstr "聊天 ID"
+
+#: src/components/streamers/edit/status-check-history.tsx:283
+msgid "Check duration"
+msgstr "检查耗时"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:173
 msgid "Check if file exists after conversion"
@@ -2503,6 +2529,10 @@ msgstr "加载模板失败"
 msgid "Error loading workflow"
 msgstr "加载工作流失败"
 
+#: src/components/streamers/edit/status-check-history.tsx:277
+msgid "Error:"
+msgstr "错误："
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:355
 msgid "Error: Could not load preset details."
 msgstr "错误：无法加载预设详情。"
@@ -2978,9 +3008,18 @@ msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 HEVC/H.265 编码（CQ 24）。
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取得良好平衡。"
 
+#: src/components/streamers/edit/status-check-history.tsx:373
+#: src/components/streamers/edit/status-check-history.tsx:394
+msgid "Fatal error"
+msgstr "致命错误"
+
 #: src/components/streamers/card/use-streamer-status.tsx:41
 msgid "Fatal Error"
 msgstr "严重错误"
+
+#: src/components/streamers/edit/status-check-history.tsx:271
+msgid "Fatal:"
+msgstr "致命："
 
 #: src/components/config/platforms/platform-card.tsx:100
 msgid "Fetch"
@@ -3085,6 +3124,15 @@ msgstr "过滤器更新成功"
 #: src/components/config/engines/forms/mesio-form.tsx:182
 msgid "Filter Window Size"
 msgstr "过滤窗口大小"
+
+#: src/components/streamers/edit/status-check-history.tsx:369
+#: src/components/streamers/edit/status-check-history.tsx:390
+msgid "Filtered"
+msgstr "已过滤"
+
+#: src/components/streamers/edit/status-check-history.tsx:265
+msgid "Filtered:"
+msgstr "过滤原因："
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:500
 msgid "Filtering & Behavior"
@@ -3223,12 +3271,12 @@ msgstr "缺口评估间隔（毫秒）"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:233
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:234
 msgid "General"
 msgstr "常规"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:278
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:279
 msgid "General Configuration"
 msgstr "常规配置"
 
@@ -3450,6 +3498,10 @@ msgstr "高+"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:487
 msgid "Highest bitrate"
 msgstr "最高码率"
+
+#: src/components/streamers/edit/status-check-history.tsx:87
+msgid "History ({slots} pts)"
+msgstr "历史（{slots} 点）"
 
 #: src/components/config/global/network-system-card.tsx:197
 msgid "History Retention"
@@ -3856,6 +3908,11 @@ msgstr "最后活动"
 msgid "Last Check"
 msgstr "最后检查"
 
+#. placeholder {0}: formatAgo(ago, i18n)
+#: src/components/streamers/edit/status-check-history.tsx:462
+msgid "Last check {0} ago"
+msgstr "上次检查于 {0} 前"
+
 #: src/components/streamers/card/use-streamer-status.tsx:156
 msgid "Last Error"
 msgstr "最后错误"
@@ -3909,6 +3966,9 @@ msgstr "允许的文件扩展名列表（不含点号）。"
 #: src/components/streamers/card/use-streamer-status.tsx:37
 #: src/components/streamers/card/use-streamer-status.tsx:248
 #: src/components/streamers/edit/recent-sessions-list.tsx:75
+#: src/components/streamers/edit/status-check-history.tsx:365
+#: src/components/streamers/edit/status-check-history.tsx:386
+#: src/components/streamers/edit/status-check-history.tsx:443
 #: src/components/streamers/edit/streamer-header.tsx:63
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:174
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:71
@@ -3979,6 +4039,10 @@ msgstr "正在加载预设..."
 #: src/components/pipeline/workflows/step-library.tsx:461
 msgid "Loading workflows..."
 msgstr "正在加载工作流..."
+
+#: src/components/streamers/edit/status-check-history.tsx:135
+msgid "Loading…"
+msgstr "加载中…"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:104
 msgid "Local Archive"
@@ -4822,6 +4886,10 @@ msgstr "通知"
 msgid "notifier@example.com"
 msgstr "notifier@example.com"
 
+#: src/components/streamers/edit/status-check-history.tsx:139
+msgid "Now"
+msgstr "现在"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:108
 msgid "Nth input: {input0}, {input1}..."
 msgstr "第 N 个输入：{input0}, {input1}..."
@@ -4892,6 +4960,8 @@ msgstr "侧滑"
 #: src/components/streamers/card/use-streamer-status.tsx:318
 #: src/components/streamers/card/use-streamer-status.tsx:327
 #: src/components/streamers/edit/recent-sessions-list.tsx:73
+#: src/components/streamers/edit/status-check-history.tsx:367
+#: src/components/streamers/edit/status-check-history.tsx:388
 #: src/components/streamers/edit/streamer-header.tsx:65
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:72
 msgid "Offline"
@@ -5105,7 +5175,7 @@ msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:317
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:318
 msgid "Override global defaults for this streamer."
 msgstr "为此主播覆盖全局默认值。"
 
@@ -5227,6 +5297,10 @@ msgstr "请修改密码"
 #: src/routes/_authed/change-password.lazy.tsx:67
 msgid "Password changed successfully. Please login with your new password."
 msgstr "密码修改成功。请使用新密码登录。"
+
+#: src/components/streamers/edit/status-check-history.tsx:131
+msgid "Past"
+msgstr "过去"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:69
 msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
@@ -5901,7 +5975,7 @@ msgid "Recording"
 msgstr "录制"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:247
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:248
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
@@ -6536,9 +6610,14 @@ msgstr "选择你偏好的配色方案。"
 msgid "selected"
 msgstr "已选"
 
+#: src/components/streamers/edit/status-check-history.tsx:253
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:447
 msgid "Selected"
 msgstr "已选择"
+
+#: src/components/streamers/edit/status-check-history.tsx:312
+msgid "Selected stream"
+msgstr "已选择的流"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:662
 msgid "Send"
@@ -6961,6 +7040,10 @@ msgstr "主播"
 msgid "Streamer Check"
 msgstr "主播检查"
 
+#: src/components/streamers/edit/status-check-history.tsx:106
+msgid "Streamer check history"
+msgstr "主播检查历史"
+
 #: src/routes/_authed/_dashboard/streamers/new.lazy.tsx:22
 msgid "Streamer created successfully"
 msgstr "主播创建成功"
@@ -7038,6 +7121,11 @@ msgstr "streamlink"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:965
 msgid "Streams & Metadata"
 msgstr "流与元数据"
+
+#: src/components/streamers/edit/status-check-history.tsx:227
+#: src/components/streamers/edit/status-check-history.tsx:246
+msgid "Streams extracted"
+msgstr "已提取流"
 
 #: src/components/notifications/channel-card.tsx:197
 msgid "Subscriptions"
@@ -7515,6 +7603,11 @@ msgstr "统计词数"
 #: src/components/pipeline/presets/preset-templates.ts:14
 msgid "Transcode H.264"
 msgstr "转码 H.264"
+
+#: src/components/streamers/edit/status-check-history.tsx:371
+#: src/components/streamers/edit/status-check-history.tsx:392
+msgid "Transient error"
+msgstr "瞬时错误"
 
 #: src/components/streamers/card/use-streamer-status.tsx:89
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
