@@ -488,6 +488,23 @@ where
         Ok(())
     }
 
+    /// Refresh the cached `effective_offline_check_*` values on a streamer's
+    /// metadata from a freshly resolved [`crate::domain::config::MergedConfig`].
+    /// No-op if the streamer is not currently registered.
+    ///
+    /// Called from the scheduler's config-update fan-out so per-streamer
+    /// overrides flow into both the StreamerActor's `StreamerConfig` and the
+    /// SessionLifecycle's hysteresis backstop without an extra DB hit.
+    pub fn apply_resolved_config(
+        &self,
+        streamer_id: &str,
+        merged: &crate::domain::config::MergedConfig,
+    ) {
+        if let Some(mut entry) = self.metadata.get_mut(streamer_id) {
+            entry.apply_resolved_config(merged);
+        }
+    }
+
     // ========== Query Operations (From Memory) ==========
 
     /// Get streamer metadata by ID.
@@ -988,6 +1005,8 @@ mod tests {
             last_live_time: None,
             last_error: None,
             streamer_specific_config: None,
+            effective_offline_check_count: 3,
+            effective_offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1092,6 +1111,8 @@ mod tests {
             disabled_until: None,
             last_live_time: None,
             streamer_specific_config: None,
+            effective_offline_check_count: 3,
+            effective_offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
@@ -1290,6 +1311,8 @@ mod tests {
             last_error: None,
             last_live_time: None,
             streamer_specific_config: None,
+            effective_offline_check_count: 3,
+            effective_offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::danmu::{
     DanmuSampler, DanmuSamplingConfig as SamplerConfig, DanmuStatistics, ProviderRegistry,
@@ -254,6 +254,45 @@ impl DanmuService {
                     session_id
                 )),
             ));
+        }
+
+        // If this streamer already has a collector for a *different* session,
+        // abort it before claiming the streamer-level slot. Without this, each
+        // live cycle leaks one collector: the previous task keeps its
+        // websocket open with a stale session_id until the platform finally
+        // sends StreamClosed — at which point N stale collectors all fire
+        // end-of-stream events for N different sessions in sequence.
+        //
+        // Important: clone the value out of the DashMap guard before any
+        // .await — holding a parking_lot read across an await is a deadlock
+        // with `stop_collection` (which mutates the same shard).
+        let prior_session_id: Option<String> = self
+            .sessions_by_streamer
+            .get(streamer_id)
+            .map(|entry| entry.value().clone());
+
+        if let Some(old_sid) = prior_session_id
+            && old_sid != session_id
+            && self.collections.contains_key(&old_sid)
+        {
+            let started = std::time::Instant::now();
+            match self.stop_collection(&old_sid).await {
+                Ok(_) => info!(
+                    streamer_id,
+                    old_session_id = old_sid.as_str(),
+                    new_session_id = session_id,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "danmu: replaced previous collector for streamer"
+                ),
+                // Non-fatal: the new collector still spawns. Logged so a
+                // wedged prior runner is visible in operator dashboards.
+                Err(e) => warn!(
+                    streamer_id,
+                    old_session_id = old_sid.as_str(),
+                    error = %e,
+                    "danmu: failed to stop prior collector; new collector will spawn anyway"
+                ),
+            }
         }
 
         // Find provider for URL
@@ -702,6 +741,32 @@ async fn persist_statistics(
 mod tests {
     use super::*;
 
+    /// Seed the service's maps as if a prior collector had spawned for this
+    /// `(streamer_id, session_id)`, without actually running a connection
+    /// task. Returns a oneshot tx the test can use to drive the runner's
+    /// "done" signal — `stop_collection` awaits the rx with a 10s timeout,
+    /// so resolving the tx makes the abort path return promptly.
+    fn seed_active_collection(
+        service: &DanmuService,
+        streamer_id: &str,
+        session_id: &str,
+    ) -> oneshot::Sender<std::result::Result<DanmuStatistics, String>> {
+        let (command_tx, _command_rx) = mpsc::channel(8);
+        let (done_tx, done_rx) = oneshot::channel();
+        let cancel_token = service.cancel_token.child_token();
+        let state = CollectionState {
+            streamer_id: streamer_id.to_string(),
+            cancel_token,
+            command_tx,
+            done_rx: Some(done_rx),
+        };
+        service.collections.insert(session_id.to_string(), state);
+        service
+            .sessions_by_streamer
+            .insert(streamer_id.to_string(), session_id.to_string());
+        done_tx
+    }
+
     #[tokio::test]
     async fn test_danmu_service_creation() {
         let config = DanmuServiceConfig::default();
@@ -725,5 +790,94 @@ mod tests {
 
         // Should return None when no sessions exist
         assert!(service.get_session_by_streamer("streamer1").is_none());
+    }
+
+    /// `start_collection` for a different session of an already-tracked
+    /// streamer must abort the prior collector before claiming the
+    /// streamer-level slot. Verifies the fix for the orphaned-collectors
+    /// bug surfaced by the 柔柔 / 2026-04-28 logs.
+    #[tokio::test]
+    async fn start_collection_aborts_previous_for_same_streamer() {
+        let service = DanmuService::new(DanmuServiceConfig::default());
+        let streamer_id = "streamer-1";
+        let old_session = "session-old";
+        let new_session = "session-new";
+
+        // Seed a prior collection for the streamer. Resolve the done_tx so
+        // `stop_collection`'s await returns promptly instead of waiting on
+        // its 10s timeout.
+        let done_tx = seed_active_collection(&service, streamer_id, old_session);
+        done_tx.send(Ok(DanmuStatistics::default())).unwrap();
+
+        assert!(
+            service.is_collecting(old_session),
+            "fixture: prior collector seeded"
+        );
+        assert_eq!(
+            service.get_session_by_streamer(streamer_id).as_deref(),
+            Some(old_session)
+        );
+
+        // `start_collection` will fail at provider lookup for our fake URL
+        // (no provider is registered for `https://example.com/test`). The
+        // abort logic runs *before* the provider lookup, so by the time the
+        // call returns the error, the prior collector should already be gone.
+        let outcome = service
+            .start_collection(
+                new_session,
+                streamer_id,
+                "https://example.com/test",
+                None,
+                None,
+                None,
+            )
+            .await;
+        assert!(
+            outcome.is_err(),
+            "expected provider-lookup failure for fake URL"
+        );
+
+        // The old collection must have been removed by the abort path,
+        // even though the new spawn ultimately failed.
+        assert!(
+            !service.is_collecting(old_session),
+            "prior collector for {old_session} must have been aborted"
+        );
+        assert!(
+            !service.is_collecting(new_session),
+            "the new spawn failed at provider lookup so its slot must be empty too"
+        );
+    }
+
+    /// Calling `start_collection` twice with the same `session_id` keeps
+    /// the existing "already active" error path. The new abort logic must
+    /// not fire for self-replace because of the `old_sid != session_id`
+    /// guard.
+    #[tokio::test]
+    async fn start_collection_idempotent_for_same_session_id() {
+        let service = DanmuService::new(DanmuServiceConfig::default());
+        let streamer_id = "streamer-1";
+        let session_id = "session-1";
+
+        let _done_tx = seed_active_collection(&service, streamer_id, session_id);
+
+        let result = service
+            .start_collection(
+                session_id,
+                streamer_id,
+                "https://example.com/test",
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        assert!(
+            result.is_err(),
+            "second start_collection for same session must return the 'already active' error"
+        );
+        // The seeded collector must still be present — the early-return at
+        // line 250 short-circuits before the abort logic could touch it.
+        assert!(service.is_collecting(session_id));
     }
 }

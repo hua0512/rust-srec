@@ -250,7 +250,8 @@ function SessionDetailPage() {
                   variant="secondary"
                   className="rounded-full px-1.5 h-5 text-[10px] min-w-5 justify-center bg-muted/50 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
                 >
-                  {session.titles?.length || 0}
+                  {(session.titles?.length ?? 0) +
+                    (session.events?.length ?? 0)}
                 </Badge>
               </TabsTrigger>
               <TabsTrigger

@@ -2,7 +2,42 @@
 
 ## `unreleased`
 
-This update is centered on a single large feature — the **output-root write gate** — that fixes a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart. It also ships the initial scaffolding for backend localization.
+This update covers two independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart. It also ships the initial scaffolding for backend localization.
+
+## Recording session reliability
+
+- **Quiet period for brief disconnects: short blips no longer end the session**
+
+  When the upstream CDN rotates, a network blip happens, or the streamer briefly reconnects, the active download ends cleanly. Previously every disconnect immediately ended the session — and the next LIVE detection would create a fresh session card, so a few back-to-back blips would stack multiple zero-byte cards on the dashboard.
+
+  Now the disconnect enters a short waiting window (default tracks the "offline detection" config, around one minute). If LIVE is detected again within the window, **recording continues seamlessly** under the same session — no new card appears. If no LIVE is observed by the window's end, the session ends.
+
+- **HTTP 404 is no longer treated as authoritative "streamer offline"**
+
+  When a stream just resumed, platforms like Douyu hand out a freshly-signed URL whose token takes a few seconds to propagate to CDN edge nodes — requests during that gap return 404. HLS streams have similar transient 404 cases (sliding-window eviction, signed-URL expiry, edge desync).
+
+  404 alone no longer drives the offline decision. True offline now flows through two more precise signals: consecutive network failures (count and window come from the "offline detection" config, sharing the same parameters as the quiet period), or HLS's `#EXT-X-ENDLIST` tag (the platform itself signaling the stream has ended).
+
+- **HLS streams that end cleanly close their session immediately**
+
+  When an HLS playlist carries `#EXT-X-ENDLIST` (the platform explicitly marks the stream as ended), the session now ends **immediately** — no quiet-period wait. Post-processing (remux, upload, etc.) starts sooner as a result.
+
+- **Cleanup of zero-byte "ghost sessions"**
+
+  Recording segments below the `min_segment_size_bytes` threshold are automatically discarded (avoiding meaningless few-second clips). Previously the corresponding session row stayed in the database, showing as zero-byte cards on the dashboard. Two cleanup layers added:
+
+  - **API filtering by default** — the sessions list endpoint now hides zero-byte ended sessions by default. Active (still-recording) sessions are always returned. Pass `?include_empty=true` to inspect for diagnostics, or look up by session ID directly.
+  - **Periodic background cleanup** — empty session rows are automatically deleted from the database 5 minutes after end (default scan interval 30 minutes). Related danmu statistics, segments, and lifecycle events are removed alongside.
+
+## Frontend
+
+- **Session detail "Timeline" tab counter fixed** — the badge previously counted only title changes, ignoring session lifecycle events. It now sums both, matching the number of entries actually rendered in the tab body.
+
+- **More accurate session timeline translations** in Simplified Chinese:
+
+  - `原因：已完成` → `原因：下载断开` ("download disconnected", more accurate than "completed" for an ambiguous-end case)
+  - `通过备份计时器确认。` → `等待恢复超时后确认。` ("confirmed after wait-for-resume timed out", clearer than "via backup timer")
+  - New translations for `主播离线` (Streamer Offline), `连续失败` (Consecutive Failures), `弹幕流已关闭` (Danmu Stream Closed), used in session-end cause displays.
 
 ## Highlights
 
@@ -58,7 +93,7 @@ The gate work included several supporting refactors that improve the downloader 
 ## Compatibility
 
 - No database migrations.
-- No frontend API changes.
+- `GET /sessions` default behavior changed: zero-byte ended sessions are no longer returned (the "ghost cards" on the dashboard disappear by default). Pass `?include_empty=true` to see all records. `GET /sessions/:id` is unaffected.
 - `set_circuit_breaker_blocked` was renamed to `set_infra_blocked(reason)` — external callers of the monitor service (none known) would need to update.
 - The `DownloadManagerEvent::DownloadRejected` event now carries a new `kind: DownloadRejectedKind` field. External subscribers of the event stream (via the WebSocket or broadcast API) should expect this field to appear in JSON payloads; ignoring it is safe.
 

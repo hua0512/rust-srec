@@ -4,6 +4,7 @@ use crate::cache::{CacheKey, CacheManager, CacheMetadata, CacheResourceType};
 use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::{HlsConfig, HlsVariantSelectionPolicy};
+use crate::hls::events::HlsStreamEvent;
 use crate::hls::scheduler::ScheduledSegmentJob;
 use crate::hls::twitch_processor::TwitchPlaylistProcessor;
 use async_trait::async_trait;
@@ -34,6 +35,7 @@ pub trait PlaylistProvider: Send + Sync {
         initial_playlist: MediaPlaylist,
         base_url: String,
         segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
+        client_event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
         token: CancellationToken,
     ) -> Result<(), HlsDownloaderError>;
 }
@@ -414,6 +416,7 @@ impl PlaylistProvider for PlaylistEngine {
         mut current_playlist: MediaPlaylist,
         base_url: String,
         segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
+        client_event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
         token: CancellationToken,
     ) -> Result<(), HlsDownloaderError> {
         let playlist_url =
@@ -474,6 +477,18 @@ impl PlaylistProvider for PlaylistEngine {
 
                     if current_playlist.end_list {
                         info!("Playlist monitoring finished (ENDLIST): {playlist_url}.");
+                        // Notify the output side that this exit is authoritative
+                        // (the upstream playlist explicitly ended) so the
+                        // wrapper can promote the terminal event to
+                        // `EngineEndSignal::HlsEndlist`. Send-failure is
+                        // non-fatal: if the receiver is already gone the
+                        // stream is being torn down anyway.
+                        if let Err(e) = client_event_tx
+                            .send(Ok(HlsStreamEvent::EndlistEncountered))
+                            .await
+                        {
+                            debug!("Failed to send EndlistEncountered event: {e}");
+                        }
                         return Ok(());
                     }
                 }

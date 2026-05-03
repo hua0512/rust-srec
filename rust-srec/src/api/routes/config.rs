@@ -133,7 +133,33 @@ fn map_platform_config_to_response(config: PlatformConfigDbModel) -> PlatformCon
         pipeline: config.pipeline,
         session_complete_pipeline: config.session_complete_pipeline,
         paired_segment_pipeline: config.paired_segment_pipeline,
+        offline_check_count: config.offline_check_count.map(|v| v as u32),
+        offline_check_delay_ms: config.offline_check_delay_ms.map(|v| v as u64),
     }
+}
+
+/// Validate the optional offline-check overrides on a request payload.
+/// Mirrors the server-side floors enforced in
+/// [`crate::session::HysteresisConfig::from_scheduler`].
+fn validate_offline_check_overrides(
+    count: Option<i64>,
+    delay_ms: Option<i64>,
+) -> Result<(), ApiError> {
+    if let Some(c) = count
+        && c < 1
+    {
+        return Err(ApiError::bad_request(
+            "offline_check_count must be >= 1",
+        ));
+    }
+    if let Some(d) = delay_ms
+        && d < 1_000
+    {
+        return Err(ApiError::bad_request(
+            "offline_check_delay_ms must be >= 1000",
+        ));
+    }
+    Ok(())
 }
 
 #[utoipa::path(
@@ -348,6 +374,11 @@ pub async fn replace_platform_config(
         return Err(ApiError::bad_request("Path ID does not match body ID"));
     }
 
+    validate_offline_check_overrides(
+        request.offline_check_count.map(|v| v as i64),
+        request.offline_check_delay_ms.map(|v| v as i64),
+    )?;
+
     let config_service = state
         .config_service
         .as_ref()
@@ -376,6 +407,8 @@ pub async fn replace_platform_config(
         pipeline: request.pipeline,
         session_complete_pipeline: request.session_complete_pipeline,
         paired_segment_pipeline: request.paired_segment_pipeline,
+        offline_check_count: request.offline_check_count.map(|v| v as i32),
+        offline_check_delay_ms: request.offline_check_delay_ms.map(|v| v as i64),
     };
 
     // Replace config

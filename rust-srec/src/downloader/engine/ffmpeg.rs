@@ -524,12 +524,17 @@ impl DownloadEngine for FfmpegEngine {
 
             match exit_code {
                 Some(0) => {
-                    // Exit code 0 - success
+                    // Exit code 0 - success. Subprocess exit alone is
+                    // ambiguous: it could mean EOF or it could mean
+                    // ffmpeg was killed cleanly. SessionLifecycle treats
+                    // SubprocessExitZero as non-authoritative, so the
+                    // session enters hysteresis to absorb a possible reconnect.
                     let _ = event_tx
                         .send(SegmentEvent::DownloadCompleted {
                             total_bytes,
                             total_duration_secs: total_duration,
                             total_segments: segments_completed,
+                            engine_signal: crate::downloader::EngineEndSignal::SubprocessExitZero,
                         })
                         .await;
                 }

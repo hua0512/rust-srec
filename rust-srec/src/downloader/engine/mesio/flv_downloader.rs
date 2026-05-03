@@ -208,6 +208,7 @@ impl FlvDownloader {
             &streamer_id,
             "FLV",
             classify_flv_error,
+            |_| {},
         )
         .await;
 
@@ -226,6 +227,11 @@ impl FlvDownloader {
             &self.event_tx,
             &streamer_id,
             "FLV",
+            // FLV streams end on a TCP close. That's "we got disconnected"
+            // — could be EOF, could be the streamer's network blipping.
+            // SessionLifecycle treats this as ambiguous and enters
+            // hysteresis to absorb a possible reconnect.
+            crate::downloader::EngineEndSignal::CleanDisconnect,
         )
         .await
         .map_err(EngineStartError::from)
@@ -280,6 +286,7 @@ impl FlvDownloader {
             &streamer_id,
             "FLV",
             classify_flv_error,
+            |_| {},
         )
         .await;
 
@@ -298,6 +305,8 @@ impl FlvDownloader {
             &self.event_tx,
             &streamer_id,
             "FLV",
+            // FLV always ends on TCP close — see comment in the pipeline mode above.
+            crate::downloader::EngineEndSignal::CleanDisconnect,
         )
         .await
         .map_err(EngineStartError::from)

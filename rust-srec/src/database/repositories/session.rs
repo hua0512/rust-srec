@@ -551,6 +551,18 @@ impl SessionRepository for SqlxSessionRepository {
             conditions.push("s.end_time IS NULL".to_string());
         }
 
+        // Hide ended sessions that produced no retained segments by default.
+        // `total_size_bytes` is incremented in the `media_outputs` insert
+        // path (`session.rs::add_session_output_with_*`) which only runs
+        // for segments that passed the small-segment guard in
+        // `services::container`. So `total_size_bytes > 0` is a reliable
+        // signal that the session retained real bytes. Active sessions
+        // (`end_time IS NULL`) are always kept — their size is 0 in the
+        // window between LIVE detection and the first retained segment.
+        if filters.include_empty != Some(true) {
+            conditions.push("(s.total_size_bytes > 0 OR s.end_time IS NULL)".to_string());
+        }
+
         if filters.search.is_some() {
             conditions.push("(st.name LIKE ? OR s.titles LIKE ? OR s.id LIKE ?)".to_string());
         }

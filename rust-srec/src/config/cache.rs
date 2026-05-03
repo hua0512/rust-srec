@@ -331,6 +331,8 @@ mod tests {
                 None, // session_complete_pipeline
                 None, // paired_segment_pipeline
                 true,
+                3,      // offline_check_count
+                20_000, // offline_check_delay_ms
             )
             .with_platform(
                 Some(60000),
@@ -352,6 +354,8 @@ mod tests {
                 None, // pipeline
                 None, // session_complete_pipeline
                 None, // paired_segment_pipeline
+                None, // offline_check_count
+                None, // offline_check_delay_ms
             )
             .build();
 

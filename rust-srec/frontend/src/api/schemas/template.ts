@@ -126,6 +126,9 @@ export const TemplateSchema = z.object({
     .pipe(DagPipelineDefinitionSchema.nullable().optional())
     .nullable()
     .optional(),
+  // Per-template overrides for the offline-confirmation cadence.
+  offline_check_count: z.number().int().min(1).nullable().optional(),
+  offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),
   usage_count: z.number().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -156,6 +159,8 @@ export const CreateTemplateRequestSchema = z.object({
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  offline_check_count: z.number().int().min(1).nullable().optional(),
+  offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),
 });
 export const UpdateTemplateRequestSchema = CreateTemplateRequestSchema;
 export const TemplateFormSchema = CreateTemplateRequestSchema;

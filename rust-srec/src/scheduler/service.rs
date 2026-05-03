@@ -27,7 +27,9 @@ use crate::database::repositories::{
     ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
 };
 use crate::domain::Priority;
-use crate::downloader::{DownloadManagerEvent, DownloadStopCause};
+use crate::downloader::{
+    DownloadManagerEvent, DownloadProgressEvent, DownloadStopCause, DownloadTerminalEvent,
+};
 use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
@@ -362,11 +364,16 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Create a StreamerConfig from scheduler config and metadata.
+    ///
+    /// `offline_check_*` come from the metadata's resolved per-streamer
+    /// values (populated by the resolver at registration / config-update
+    /// time). Falls back to the global scheduler config when the metadata
+    /// hasn't been resolved yet (e.g. defensive default during early boot).
     fn create_streamer_config(&self, metadata: &StreamerMetadata) -> StreamerConfig {
         StreamerConfig {
             check_interval_ms: self.config.check_interval_ms,
-            offline_check_interval_ms: self.config.offline_check_interval_ms,
-            offline_check_count: self.config.offline_check_count,
+            offline_check_interval_ms: metadata.effective_offline_check_delay_ms,
+            offline_check_count: metadata.effective_offline_check_count,
             priority: metadata.priority,
             batch_capable: self.is_batch_capable_platform(&metadata.platform_config_id),
         }
@@ -756,11 +763,22 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             .as_ref()
             .map(|m| self.is_batch_capable_platform(&m.platform_config_id))
             .unwrap_or(false);
+        // Per-streamer offline-check cadence is cached on metadata (set by
+        // the resolver fan-out). Fall back to the scheduler-wide global
+        // when no metadata is registered yet.
+        let offline_check_interval_ms = metadata
+            .as_ref()
+            .map(|m| m.effective_offline_check_delay_ms)
+            .unwrap_or(self.config.offline_check_interval_ms);
+        let offline_check_count = metadata
+            .as_ref()
+            .map(|m| m.effective_offline_check_count)
+            .unwrap_or(self.config.offline_check_count);
 
         StreamerConfig {
             check_interval_ms: self.config.check_interval_ms,
-            offline_check_interval_ms: self.config.offline_check_interval_ms,
-            offline_check_count: self.config.offline_check_count,
+            offline_check_interval_ms,
+            offline_check_count,
             priority,
             batch_capable,
         }
@@ -885,12 +903,12 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         let now = Instant::now();
         match event {
-            DownloadManagerEvent::DownloadStarted {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
                 streamer_id,
                 download_id,
                 session_id,
                 ..
-            } => {
+            }) => {
                 send_to_actor(
                     streamer_id,
                     StreamerMessage::DownloadStarted {
@@ -900,11 +918,11 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 )
                 .await;
             }
-            DownloadManagerEvent::DownloadCompleted {
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
                 streamer_id,
                 download_id,
                 ..
-            } => {
+            }) => {
                 if self.stopped_downloads.remove(&download_id).is_some() {
                     debug!(
                         streamer_id = %streamer_id,
@@ -913,18 +931,25 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     );
                     return;
                 }
+                // Engine clean end is *ambiguous* about platform state; the
+                // session lifecycle decides authority from `engine_signal`
+                // (HlsEndlist → authoritative end; CleanDisconnect → enters
+                // hysteresis). Routing this through `StreamerOffline` would
+                // make the actor push `process_status(Offline)` and override
+                // the in-flight hysteresis. See `DownloadEndPolicy::Completed`
+                // doc-comment.
                 send_to_actor(
                     streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndPolicy::StreamerOffline),
+                    StreamerMessage::DownloadEnded(DownloadEndPolicy::Completed),
                 )
                 .await;
             }
-            DownloadManagerEvent::DownloadFailed {
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
                 streamer_id,
                 download_id,
                 error,
                 ..
-            } => {
+            }) => {
                 if self.stopped_downloads.remove(&download_id).is_some() {
                     debug!(
                         streamer_id = %streamer_id,
@@ -939,12 +964,12 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 )
                 .await;
             }
-            DownloadManagerEvent::DownloadCancelled {
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
                 streamer_id,
                 download_id,
                 cause,
                 ..
-            } => {
+            }) => {
                 let now_ms = crate::database::time::now_ms();
 
                 // Engines can still emit a terminal event after a stop request
@@ -990,14 +1015,14 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
                 send_to_actor(streamer_id, StreamerMessage::DownloadEnded(end_reason)).await;
             }
-            DownloadManagerEvent::DownloadRejected {
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
                 streamer_id,
                 reason,
                 retry_after_secs,
                 session_id,
                 kind,
                 ..
-            } => {
+            }) => {
                 let retry_secs = retry_after_secs.unwrap_or(60);
                 let policy = match kind {
                     crate::downloader::DownloadRejectedKind::CircuitBreaker => {
@@ -1019,13 +1044,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 };
                 send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
             }
-            DownloadManagerEvent::Progress {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
                 download_id,
                 streamer_id,
                 session_id,
                 progress,
                 ..
-            } => {
+            }) => {
                 let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
                     Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
                     None => true,
@@ -1044,18 +1069,18 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     .await;
                 }
             }
-            DownloadManagerEvent::SegmentStarted {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
                 download_id,
                 streamer_id,
                 session_id,
                 ..
-            }
-            | DownloadManagerEvent::SegmentCompleted {
+            })
+            | DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                 download_id,
                 streamer_id,
                 session_id,
                 ..
-            } => {
+            }) => {
                 let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
                     Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
                     None => true,

@@ -24,6 +24,11 @@ pub enum HlsStreamEvent {
         // For example, if associated with a specific m3u8_rs::MediaSegment.
         // media_segment_uri: String,
     },
+    /// `#EXT-X-ENDLIST` tag observed on the media playlist. Emitted by the
+    /// playlist engine before the monitor task exits, so downstream consumers
+    /// can distinguish an authoritative end-of-stream from a cancel or error
+    /// exit. Followed by [`Self::StreamEnded`] once the segment pipeline drains.
+    EndlistEncountered,
     StreamEnded,
     /// A segment timed out and was skipped (Requirements 2.4)
     SegmentTimeout {

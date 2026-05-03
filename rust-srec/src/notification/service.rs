@@ -41,7 +41,7 @@ use crate::database::models::{
     TelegramChannelSettings, WebhookChannelSettings,
 };
 use crate::database::repositories::NotificationRepository;
-use crate::downloader::DownloadManagerEvent;
+use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
 
@@ -1431,10 +1431,12 @@ impl NotificationService {
         monitor_rx: broadcast::Receiver<MonitorEvent>,
         download_rx: broadcast::Receiver<DownloadManagerEvent>,
         pipeline_rx: broadcast::Receiver<PipelineEvent>,
+        session_rx: broadcast::Receiver<crate::session::SessionTransition>,
     ) {
         self.listen_for_monitor_events(monitor_rx);
         self.listen_for_download_events(download_rx);
         self.listen_for_pipeline_events(pipeline_rx);
+        self.listen_for_session_transitions(session_rx);
     }
 
     /// Listen for monitor events.
@@ -1461,32 +1463,11 @@ impl NotificationService {
                                     continue;
                                 }
 
+                                // StreamOnline/StreamOffline now come from
+                                // `SessionTransition` via
+                                // `listen_for_session_transitions`; the monitor
+                                // subscription only produces FatalError alerts.
                                 let notification = match event {
-                                    MonitorEvent::StreamerLive {
-                                        streamer_id,
-                                        streamer_name,
-                                        title,
-                                        category,
-                                        timestamp,
-                                        ..
-                                    } => Some(NotificationEvent::StreamOnline {
-                                        streamer_id,
-                                        streamer_name,
-                                        title,
-                                        category,
-                                        timestamp,
-                                    }),
-                                    MonitorEvent::StreamerOffline {
-                                        streamer_id,
-                                        streamer_name,
-                                        timestamp,
-                                        ..
-                                    } => Some(NotificationEvent::StreamOffline {
-                                        streamer_id,
-                                        streamer_name,
-                                        duration_secs: None,
-                                        timestamp,
-                                    }),
                                     MonitorEvent::FatalError {
                                         streamer_id,
                                         streamer_name,
@@ -1527,6 +1508,104 @@ impl NotificationService {
         });
     }
 
+    /// Listen for session lifecycle transitions and fan them out as
+    /// `NotificationEvent::StreamOnline` / `StreamOffline` payloads.
+    ///
+    /// Payload shape is byte-identical to the pre-refactor
+    /// `MonitorEvent::StreamerLive` / `StreamerOffline` routing — the
+    /// `SessionTransition::Started` / `Ended` variants carry the same
+    /// streamer_name / title / category / timestamp fields so the
+    /// notification channels see no change.
+    fn listen_for_session_transitions(
+        self: &Arc<Self>,
+        mut rx: broadcast::Receiver<crate::session::SessionTransition>,
+    ) {
+        let service = Arc::clone(self);
+        let config = service.config.clone();
+        let cancellation_token = service.cancellation_token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        debug!("Session transition listener shutting down");
+                        break;
+                    }
+                    result = rx.recv() => {
+                        match result {
+                            Ok(transition) => {
+                                if !config.enabled {
+                                    continue;
+                                }
+
+                                let notification = match transition {
+                                    crate::session::SessionTransition::Started {
+                                        streamer_id,
+                                        streamer_name,
+                                        title,
+                                        category,
+                                        started_at,
+                                        ..
+                                    } => Some(NotificationEvent::StreamOnline {
+                                        streamer_id,
+                                        streamer_name,
+                                        title,
+                                        category,
+                                        timestamp: started_at,
+                                    }),
+                                    crate::session::SessionTransition::Ended {
+                                        cause: crate::session::TerminalCause::UserDisabled,
+                                        ..
+                                    } => {
+                                        // User explicitly disabled / deleted the streamer.
+                                        // They know — no need to ping their notification
+                                        // channels with a synthetic offline event.
+                                        None
+                                    }
+                                    crate::session::SessionTransition::Ended {
+                                        streamer_id,
+                                        streamer_name,
+                                        ended_at,
+                                        ..
+                                    } => Some(NotificationEvent::StreamOffline {
+                                        streamer_id,
+                                        streamer_name,
+                                        duration_secs: None,
+                                        timestamp: ended_at,
+                                    }),
+                                    // Hysteresis quiet-period transitions are
+                                    // intentionally ignored here. Only the final
+                                    // `Ended` produces a StreamOffline notification.
+                                    // `Resumed` similarly yields no user-facing
+                                    // notification — the original Started already
+                                    // fired and remains valid.
+                                    crate::session::SessionTransition::Ending { .. }
+                                    | crate::session::SessionTransition::Resumed { .. } => None,
+                                };
+
+                                if let Some(notification) = notification {
+                                    let service = service.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = service.notify(notification).await {
+                                            warn!("Failed to dispatch notification: {}", e);
+                                        }
+                                    });
+                                }
+                            }
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                warn!("Session transition listener lagged by {} events", n);
+                            }
+                            Err(broadcast::error::RecvError::Closed) => {
+                                debug!("Session transition channel closed");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     /// Listen for download events.
     fn listen_for_download_events(
         self: &Arc<Self>,
@@ -1551,25 +1630,25 @@ impl NotificationService {
                                 }
 
                                 let notification = match event {
-                                    DownloadManagerEvent::DownloadStarted {
+                                    DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         ..
-                                    } => Some(NotificationEvent::DownloadStarted {
+                                    }) => Some(NotificationEvent::DownloadStarted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::DownloadCompleted {
+                                    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         total_bytes,
                                         total_duration_secs,
                                         ..
-                                    } => Some(NotificationEvent::DownloadCompleted {
+                                    }) => Some(NotificationEvent::DownloadCompleted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1577,20 +1656,20 @@ impl NotificationService {
                                         duration_secs: total_duration_secs,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::DownloadFailed {
+                                    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
                                         streamer_id,
                                         streamer_name,
                                         error,
                                         recoverable,
                                         ..
-                                    } => Some(NotificationEvent::DownloadError {
+                                    }) => Some(NotificationEvent::DownloadError {
                                         streamer_id,
                                         streamer_name,
                                         error_message: error,
                                         recoverable,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::SegmentStarted {
+                                    DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1598,7 +1677,7 @@ impl NotificationService {
                                         segment_index,
                                         started_at,
                                         ..
-                                    } => Some(NotificationEvent::SegmentStarted {
+                                    }) => Some(NotificationEvent::SegmentStarted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1606,7 +1685,7 @@ impl NotificationService {
                                         segment_index,
                                         timestamp: started_at,
                                     }),
-                                    DownloadManagerEvent::SegmentCompleted {
+                                    DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1616,7 +1695,7 @@ impl NotificationService {
                                         duration_secs,
                                         size_bytes,
                                         ..
-                                    } => Some(NotificationEvent::SegmentCompleted {
+                                    }) => Some(NotificationEvent::SegmentCompleted {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
@@ -1626,36 +1705,36 @@ impl NotificationService {
                                         duration_secs,
                                         timestamp: completed_at,
                                     }),
-                                    DownloadManagerEvent::DownloadCancelled {
+                                    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         ..
-                                    } => Some(NotificationEvent::DownloadCancelled {
+                                    }) => Some(NotificationEvent::DownloadCancelled {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::DownloadRejected {
+                                    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         reason,
                                         ..
-                                    } => Some(NotificationEvent::DownloadRejected {
+                                    }) => Some(NotificationEvent::DownloadRejected {
                                         streamer_id,
                                         streamer_name,
                                         session_id,
                                         reason,
                                         timestamp: Utc::now(),
                                     }),
-                                    DownloadManagerEvent::ConfigUpdated {
+                                    DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdated {
                                         streamer_id,
                                         streamer_name,
                                         update_type,
                                         ..
-                                    } => Some(NotificationEvent::ConfigUpdated {
+                                    }) => Some(NotificationEvent::ConfigUpdated {
                                         streamer_id,
                                         streamer_name,
                                         update_type: format!("{:?}", update_type),
@@ -2067,7 +2146,7 @@ mod tests {
         let started_at = Utc::now();
         let completed_at = started_at + chrono::Duration::seconds(10);
 
-        let started_event = match (DownloadManagerEvent::SegmentStarted {
+        let started_event = match DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-1".to_string(),
             streamer_name: "Streamer".to_string(),
@@ -2076,7 +2155,7 @@ mod tests {
             segment_index: 1,
             started_at,
         }) {
-            DownloadManagerEvent::SegmentStarted {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
                 streamer_id,
                 streamer_name,
                 session_id,
@@ -2084,7 +2163,7 @@ mod tests {
                 segment_index,
                 started_at,
                 ..
-            } => NotificationEvent::SegmentStarted {
+            }) => NotificationEvent::SegmentStarted {
                 streamer_id,
                 streamer_name,
                 session_id,
@@ -2095,7 +2174,7 @@ mod tests {
             _ => unreachable!(),
         };
 
-        let completed_event = match (DownloadManagerEvent::SegmentCompleted {
+        let completed_event = match DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-1".to_string(),
             streamer_name: "Streamer".to_string(),
@@ -2109,7 +2188,7 @@ mod tests {
             split_reason_code: None,
             split_reason_details_json: None,
         }) {
-            DownloadManagerEvent::SegmentCompleted {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                 streamer_id,
                 streamer_name,
                 session_id,
@@ -2119,7 +2198,7 @@ mod tests {
                 duration_secs,
                 size_bytes,
                 ..
-            } => NotificationEvent::SegmentCompleted {
+            }) => NotificationEvent::SegmentCompleted {
                 streamer_id,
                 streamer_name,
                 session_id,

@@ -279,6 +279,56 @@ pub enum ConfigUpdateType {
     Multiple,
 }
 
+/// How the engine observed the end of a stream when emitting
+/// [`DownloadTerminalEvent::Completed`].
+///
+/// Different signals carry different confidence about whether the upstream
+/// stream is *actually* over vs. whether we just got disconnected and the
+/// streamer will reappear with a fresh URL.
+///
+/// Consumers (today: [`crate::session::SessionLifecycle`]) use this to choose
+/// between firing the session-complete pipeline immediately and entering a
+/// hysteresis quiet-period that absorbs reconnects.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EngineEndSignal {
+    /// HLS playlist contained `#EXT-X-ENDLIST`. The platform itself marked
+    /// the stream as complete — definitively over.
+    HlsEndlist,
+    /// Connection closed cleanly with no explicit end marker. Could be EOF,
+    /// could be a reconnect-friendly drop. Ambiguous; the lifecycle should
+    /// hold the session in hysteresis to absorb a possible resume.
+    ///
+    /// Used by mesio FLV (TCP close), mesio HLS without `#EXT-X-ENDLIST`,
+    /// and any other engine that observes a clean disconnect without a
+    /// platform-asserted end marker.
+    CleanDisconnect,
+    /// Subprocess (ffmpeg / streamlink) exited with status 0. Ambiguous —
+    /// could be EOF, could be the process being killed cleanly externally.
+    SubprocessExitZero,
+    /// Engine doesn't expose a finer signal. Treat as non-authoritative
+    /// (default for back-fill / unknown engines).
+    #[default]
+    Unknown,
+}
+
+impl EngineEndSignal {
+    /// Whether this signal alone is sufficient to mark the stream as done
+    /// without waiting for hysteresis. Today, only HLS `#EXT-X-ENDLIST` is.
+    pub fn is_authoritative(&self) -> bool {
+        matches!(self, Self::HlsEndlist)
+    }
+
+    /// Short, stable label for logging / metrics.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::HlsEndlist => "hls_endlist",
+            Self::CleanDisconnect => "clean_disconnect",
+            Self::SubprocessExitZero => "subprocess_exit_zero",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 /// Reason why a download was stopped.
 ///
 /// Used to disambiguate user cancellation from internal orchestration stops.
@@ -315,8 +365,32 @@ impl DownloadStopCause {
 }
 
 /// Events emitted by the Download Manager.
+///
+/// Events are grouped into two categories:
+///
+/// - [`DownloadProgressEvent`]: in-flight notifications about an ongoing
+///   download (start, progress, segment lifecycle, config changes). These do
+///   not mark a session as finished.
+/// - [`DownloadTerminalEvent`]: the download has stopped and no further events
+///   for the same `(download_id, session_id)` pair will be emitted. Consumers
+///   that need to react to "session ended" should match on this variant and
+///   use [`DownloadTerminalEvent::should_run_session_complete_pipeline`] to
+///   decide whether to fire the post-recording pipeline.
+///
+/// The split exists to make session-termination a first-class, non-droppable
+/// signal: Rust's exhaustive pattern matching forces every consumer to make
+/// an explicit decision for every terminal variant. A silent `_ => {}` on the
+/// previous flat enum is how #520 (pipeline not running on `DownloadFailed`)
+/// went unnoticed since the feature landed in PR #187.
 #[derive(Debug, Clone)]
 pub enum DownloadManagerEvent {
+    Progress(DownloadProgressEvent),
+    Terminal(DownloadTerminalEvent),
+}
+
+/// Non-terminal download notifications.
+#[derive(Debug, Clone)]
+pub enum DownloadProgressEvent {
     /// Download started.
     DownloadStarted {
         download_id: String,
@@ -361,35 +435,6 @@ pub enum DownloadManagerEvent {
         split_reason_code: Option<String>,
         split_reason_details_json: Option<String>,
     },
-    /// Download completed.
-    DownloadCompleted {
-        download_id: String,
-        streamer_id: String,
-        streamer_name: String,
-        session_id: String,
-        total_bytes: u64,
-        total_duration_secs: f64,
-        total_segments: u32,
-        file_path: Option<String>,
-    },
-    /// Download failed.
-    DownloadFailed {
-        download_id: String,
-        streamer_id: String,
-        streamer_name: String,
-        session_id: String,
-        kind: DownloadFailureKind,
-        error: String,
-        recoverable: bool,
-    },
-    /// Download cancelled.
-    DownloadCancelled {
-        download_id: String,
-        streamer_id: String,
-        streamer_name: String,
-        session_id: String,
-        cause: DownloadStopCause,
-    },
     /// Configuration was updated for a download.
     ConfigUpdated {
         download_id: String,
@@ -404,12 +449,68 @@ pub enum DownloadManagerEvent {
         streamer_name: String,
         error: String,
     },
+}
+
+/// Terminal download notifications: the download has stopped, no further
+/// events for the same `(download_id, session_id)` pair will be emitted.
+///
+/// Consumers that need to react to "session ended" (notifications, pipeline
+/// scheduling, DB status updates, …) should centralise on this enum and call
+/// [`Self::should_run_session_complete_pipeline`] rather than re-deriving
+/// the policy per site.
+#[derive(Debug, Clone)]
+pub enum DownloadTerminalEvent {
+    /// Download completed normally — all segments flushed, outputs finalised.
+    ///
+    /// Important: a `Completed` event is *not* by itself authoritative
+    /// proof that the upstream stream is over. A clean TCP close or a
+    /// subprocess exiting with status 0 can mean either "EOF" or "we
+    /// reconnected." Engines pass an [`EngineEndSignal`] hint with the
+    /// event so [`crate::session::SessionLifecycle`] can tell HLS
+    /// `#EXT-X-ENDLIST` (definitively over) apart from FLV clean
+    /// disconnect (might be a reconnect-friendly drop).
+    Completed {
+        download_id: String,
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        total_bytes: u64,
+        total_duration_secs: f64,
+        total_segments: u32,
+        file_path: Option<String>,
+        /// How the engine observed the end. Lifecycle reads this to decide
+        /// whether to enter hysteresis (clean disconnect / subprocess exit
+        /// → ambiguous) or commit Ended directly (HLS endlist → authoritative).
+        engine_signal: EngineEndSignal,
+    },
+    /// Download failed — the engine gave up. Whatever output is on disk is
+    /// final; no more segments will arrive.
+    Failed {
+        download_id: String,
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        kind: DownloadFailureKind,
+        error: String,
+        recoverable: bool,
+    },
+    /// Download cancelled — stop requested externally (e.g. user, streamer
+    /// disabled, shutdown). A final `Completed` may still arrive once the
+    /// engine flushes the in-flight segment, so this variant is not treated
+    /// as "session complete" by default.
+    Cancelled {
+        download_id: String,
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        cause: DownloadStopCause,
+    },
     /// Download was rejected before starting (e.g., circuit breaker open,
     /// output-root filesystem unwritable).
     ///
-    /// Unlike DownloadFailed, this indicates the download never started.
-    /// No download_id is available because the download was never created.
-    DownloadRejected {
+    /// Unlike [`Self::Failed`], this indicates the download never started.
+    /// No `download_id` is available because the download was never created.
+    Rejected {
         streamer_id: String,
         streamer_name: String,
         session_id: String,
@@ -422,6 +523,127 @@ pub enum DownloadManagerEvent {
         /// and, ultimately, the correct [`crate::monitor::InfraBlockReason`].
         kind: DownloadRejectedKind,
     },
+}
+
+impl DownloadManagerEvent {
+    /// Streamer id shared across both progress and terminal event shapes.
+    pub fn streamer_id(&self) -> &str {
+        match self {
+            Self::Progress(p) => p.streamer_id(),
+            Self::Terminal(t) => t.streamer_id(),
+        }
+    }
+
+    /// Streamer display name shared across both shapes.
+    pub fn streamer_name(&self) -> &str {
+        match self {
+            Self::Progress(p) => p.streamer_name(),
+            Self::Terminal(t) => t.streamer_name(),
+        }
+    }
+
+    /// Recording session id. Present on every variant.
+    pub fn session_id(&self) -> &str {
+        match self {
+            Self::Progress(p) => p.session_id(),
+            Self::Terminal(t) => t.session_id(),
+        }
+    }
+}
+
+impl DownloadProgressEvent {
+    pub fn streamer_id(&self) -> &str {
+        match self {
+            Self::DownloadStarted { streamer_id, .. }
+            | Self::Progress { streamer_id, .. }
+            | Self::SegmentStarted { streamer_id, .. }
+            | Self::SegmentCompleted { streamer_id, .. }
+            | Self::ConfigUpdated { streamer_id, .. }
+            | Self::ConfigUpdateFailed { streamer_id, .. } => streamer_id,
+        }
+    }
+
+    pub fn streamer_name(&self) -> &str {
+        match self {
+            Self::DownloadStarted { streamer_name, .. }
+            | Self::Progress { streamer_name, .. }
+            | Self::SegmentStarted { streamer_name, .. }
+            | Self::SegmentCompleted { streamer_name, .. }
+            | Self::ConfigUpdated { streamer_name, .. }
+            | Self::ConfigUpdateFailed { streamer_name, .. } => streamer_name,
+        }
+    }
+
+    /// `session_id` is always present on live download events, but `ConfigUpdated`
+    /// and `ConfigUpdateFailed` carry none today (they're scoped to a
+    /// `download_id`). Returns an empty string for those variants — callers
+    /// that need a real session id should only call this on variants that
+    /// have one.
+    pub fn session_id(&self) -> &str {
+        match self {
+            Self::DownloadStarted { session_id, .. }
+            | Self::Progress { session_id, .. }
+            | Self::SegmentStarted { session_id, .. }
+            | Self::SegmentCompleted { session_id, .. } => session_id,
+            Self::ConfigUpdated { .. } | Self::ConfigUpdateFailed { .. } => "",
+        }
+    }
+}
+
+impl DownloadTerminalEvent {
+    pub fn streamer_id(&self) -> &str {
+        match self {
+            Self::Completed { streamer_id, .. }
+            | Self::Failed { streamer_id, .. }
+            | Self::Cancelled { streamer_id, .. }
+            | Self::Rejected { streamer_id, .. } => streamer_id,
+        }
+    }
+
+    pub fn streamer_name(&self) -> &str {
+        match self {
+            Self::Completed { streamer_name, .. }
+            | Self::Failed { streamer_name, .. }
+            | Self::Cancelled { streamer_name, .. }
+            | Self::Rejected { streamer_name, .. } => streamer_name,
+        }
+    }
+
+    pub fn session_id(&self) -> &str {
+        match self {
+            Self::Completed { session_id, .. }
+            | Self::Failed { session_id, .. }
+            | Self::Cancelled { session_id, .. }
+            | Self::Rejected { session_id, .. } => session_id,
+        }
+    }
+
+    /// `download_id` is present for every terminal variant except
+    /// [`Self::Rejected`] (rejection happens before the download is created).
+    pub fn download_id(&self) -> Option<&str> {
+        match self {
+            Self::Completed { download_id, .. }
+            | Self::Failed { download_id, .. }
+            | Self::Cancelled { download_id, .. } => Some(download_id),
+            Self::Rejected { .. } => None,
+        }
+    }
+
+    /// Whether this termination represents the recording session reaching a
+    /// final state with outputs on disk that are ready for post-processing.
+    ///
+    /// - [`Self::Completed`]: `true` — normal end, outputs finalised.
+    /// - [`Self::Failed`]: `true` — the engine gave up; whatever's on disk
+    ///   is final. Prior to this method existing, sessions that ended this
+    ///   way silently skipped the session-complete pipeline.
+    /// - [`Self::Cancelled`]: `false` — cancellation is a stop *request*; a
+    ///   `Completed` may still arrive once the engine flushes the final
+    ///   segment. Firing the pipeline early would cause missing inputs.
+    /// - [`Self::Rejected`]: `false` — the download never started, no
+    ///   outputs exist.
+    pub fn should_run_session_complete_pipeline(&self) -> bool {
+        matches!(self, Self::Completed { .. } | Self::Failed { .. })
+    }
 }
 
 /// Reason a [`DownloadManagerEvent::DownloadRejected`] event was emitted.
@@ -573,14 +795,14 @@ impl DownloadManager {
             );
 
             // Emit rejection event for visibility
-            let _ = self.event_tx.send(DownloadManagerEvent::DownloadRejected {
+            let _ = self.event_tx.send(DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
                 streamer_id: config.streamer_id.clone(),
                 streamer_name: config.streamer_name.clone(),
                 session_id: config.session_id.clone(),
                 reason: format!("Circuit breaker open for engine {}", engine_key),
                 retry_after_secs: Some(self.config.read().circuit_breaker_cooldown_secs),
                 kind: DownloadRejectedKind::CircuitBreaker,
-            });
+            }));
 
             // Try to find an alternative engine
             // For now, fallback to default ffmpeg if validation fails
@@ -604,7 +826,7 @@ impl DownloadManager {
                 "Output root gate rejected download (Degraded); emitting DownloadRejected"
             );
             let cooldown = super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS;
-            let _ = self.event_tx.send(DownloadManagerEvent::DownloadRejected {
+            let _ = self.event_tx.send(DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
                 streamer_id: config.streamer_id.clone(),
                 streamer_name: config.streamer_name.clone(),
                 session_id: config.session_id.clone(),
@@ -614,7 +836,7 @@ impl DownloadManager {
                     path: blocked.root.clone(),
                     io_kind: blocked.kind,
                 },
-            });
+            }));
             return Err(crate::Error::Other(format!(
                 "Output root {} is unwritable ({}); gate has the filesystem in Degraded state",
                 blocked.root.display(),
@@ -951,14 +1173,14 @@ impl DownloadManager {
                     .unwrap_or_else(|| {
                         super::output_root_gate::resolve_root(&config.output_dir, &[])
                     });
-                let _ = self.event_tx.send(DownloadManagerEvent::DownloadRejected {
+                let _ = self.event_tx.send(DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
                     streamer_id: config.streamer_id.clone(),
                     streamer_name: config.streamer_name.clone(),
                     session_id: config.session_id.clone(),
                     reason: engine_err.message.clone(),
                     retry_after_secs: Some(super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS),
                     kind: DownloadRejectedKind::OutputRootUnavailable { path, io_kind },
-                });
+                }));
             }
             return Err(crate::Error::Other(engine_err.message));
         }
@@ -1020,7 +1242,7 @@ impl DownloadManager {
         );
 
         // Emit start event (broadcast send is synchronous, ignore if no receivers)
-        let _ = self.event_tx.send(DownloadManagerEvent::DownloadStarted {
+        let _ = self.event_tx.send(DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
             download_id: download_id.clone(),
             streamer_id: config.streamer_id.clone(),
             streamer_name: config.streamer_name.clone(),
@@ -1028,7 +1250,7 @@ impl DownloadManager {
             engine_type,
             cdn_host,
             download_url: config.url.clone(),
-        });
+        }));
 
         info!(
             "Starting download {} for streamer {} with engine {}",
@@ -1112,7 +1334,7 @@ impl DownloadManager {
                         });
 
                         // Broadcast send is synchronous, ignore if no receivers
-                        let _ = event_tx.send(DownloadManagerEvent::SegmentCompleted {
+                        let _ = event_tx.send(DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
                             streamer_name: streamer_name.clone(),
@@ -1125,7 +1347,7 @@ impl DownloadManager {
                             size_bytes,
                             split_reason_code,
                             split_reason_details_json,
-                        });
+                        }));
 
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
                             download.output_path = Some(segment_path);
@@ -1150,20 +1372,21 @@ impl DownloadManager {
                         // Broadcast progress event to WebSocket subscribers (throttled).
                         if last_progress_emit.elapsed() >= PROGRESS_MIN_INTERVAL {
                             last_progress_emit = Instant::now();
-                            let _ = event_tx.send(DownloadManagerEvent::Progress {
+                            let _ = event_tx.send(DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
                                 download_id: download_id_clone.clone(),
                                 streamer_id: streamer_id.clone(),
                                 streamer_name: streamer_name.clone(),
                                 session_id: session_id.clone(),
                                 status: DownloadStatus::Downloading,
                                 progress,
-                            });
+                            }));
                         }
                     }
                     SegmentEvent::DownloadCompleted {
                         total_bytes,
                         total_duration_secs,
                         total_segments,
+                        engine_signal,
                     } => {
                         circuit_breakers_ref.record_success();
 
@@ -1171,14 +1394,14 @@ impl DownloadManager {
                         // Emit one final progress update before sending the terminal event.
                         if let Some(download) = active_downloads.get(&download_id_clone) {
                             let final_progress = download.progress.clone();
-                            let _ = event_tx.send(DownloadManagerEvent::Progress {
+                            let _ = event_tx.send(DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
                                 download_id: download_id_clone.clone(),
                                 streamer_id: streamer_id.clone(),
                                 streamer_name: streamer_name.clone(),
                                 session_id: session_id.clone(),
                                 status: DownloadStatus::Downloading,
                                 progress: final_progress,
-                            });
+                            }));
                         }
 
                         // remove download from active_downloads
@@ -1198,7 +1421,7 @@ impl DownloadManager {
                         normal_limit.apply_best_effort();
                         high_priority_limit.apply_best_effort();
 
-                        let _ = event_tx.send(DownloadManagerEvent::DownloadCompleted {
+                        let _ = event_tx.send(DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
                             streamer_name: streamer_name.clone(),
@@ -1207,7 +1430,11 @@ impl DownloadManager {
                             total_duration_secs,
                             total_segments,
                             file_path: output_path,
-                        });
+                            // Forwarded from the engine's SegmentEvent::
+                            // DownloadCompleted unchanged. Lifecycle reads
+                            // this to decide hysteresis vs direct Ended.
+                            engine_signal,
+                        }));
 
                         debug!(
                             download_id = %download_id_clone,
@@ -1240,14 +1467,14 @@ impl DownloadManager {
                         // Emit one final progress update (best-effort) before the failure event.
                         if let Some(download) = active_downloads.get(&download_id_clone) {
                             let final_progress = download.progress.clone();
-                            let _ = event_tx.send(DownloadManagerEvent::Progress {
+                            let _ = event_tx.send(DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
                                 download_id: download_id_clone.clone(),
                                 streamer_id: streamer_id.clone(),
                                 streamer_name: streamer_name.clone(),
                                 session_id: session_id.clone(),
                                 status: DownloadStatus::Downloading,
                                 progress: final_progress,
-                            });
+                            }));
                         }
 
                         // remove download from active_downloads
@@ -1258,7 +1485,7 @@ impl DownloadManager {
                         normal_limit.apply_best_effort();
                         high_priority_limit.apply_best_effort();
 
-                        let _ = event_tx.send(DownloadManagerEvent::DownloadFailed {
+                        let _ = event_tx.send(DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
                             streamer_name: streamer_name.clone(),
@@ -1266,7 +1493,7 @@ impl DownloadManager {
                             kind,
                             error: message,
                             recoverable,
-                        });
+                        }));
 
                         break;
                     }
@@ -1284,7 +1511,7 @@ impl DownloadManager {
                         }
 
                         // Emit segment started event
-                        let _ = event_tx.send(DownloadManagerEvent::SegmentStarted {
+                        let _ = event_tx.send(DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
                             download_id: download_id_clone.clone(),
                             streamer_id: streamer_id.clone(),
                             streamer_name: streamer_name.clone(),
@@ -1292,7 +1519,7 @@ impl DownloadManager {
                             segment_path: segment_path.clone(),
                             segment_index: sequence,
                             started_at,
-                        });
+                        }));
 
                         if let Some((_, pending_update)) =
                             pending_updates.remove(&download_id_clone)
@@ -1343,14 +1570,14 @@ impl DownloadManager {
             let session_id = config_snap.session_id;
 
             // Emit one final progress update before cancellation.
-            let _ = self.event_tx.send(DownloadManagerEvent::Progress {
+            let _ = self.event_tx.send(DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
                 download_id: download_id.to_string(),
                 streamer_id: streamer_id.clone(),
                 streamer_name: streamer_name.clone(),
                 session_id: session_id.clone(),
                 status: DownloadStatus::Cancelled,
                 progress: download.progress.clone(),
-            });
+            }));
 
             if let Some(engine) = self.get_engine(engine_type) {
                 engine.stop(&download.handle).await?;
@@ -1359,13 +1586,13 @@ impl DownloadManager {
             self.pending_updates.remove(download_id);
 
             // Broadcast send is synchronous, ignore if no receivers
-            let _ = self.event_tx.send(DownloadManagerEvent::DownloadCancelled {
+            let _ = self.event_tx.send(DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
                 download_id: download_id.to_string(),
                 streamer_id,
                 streamer_name,
                 session_id,
                 cause,
-            });
+            }));
 
             info!("Stopped download {}", download_id);
 
@@ -1631,12 +1858,12 @@ impl DownloadManager {
             .map(|d| d.handle.config.read().streamer_name.clone())
             .unwrap_or_else(|| streamer_id.to_string());
 
-        let event = DownloadManagerEvent::ConfigUpdated {
+        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdated {
             download_id: download_id.to_string(),
             streamer_id: streamer_id.to_string(),
             streamer_name,
             update_type,
-        };
+        });
 
         // Broadcast send returns Ok if at least one receiver got the message
         // Returns Err if there are no receivers, which is fine
@@ -1681,12 +1908,12 @@ impl DownloadManager {
             .map(|d| d.handle.config.read().streamer_name.clone())
             .unwrap_or_else(|| streamer_id.to_string());
 
-        let event = DownloadManagerEvent::ConfigUpdateFailed {
+        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdateFailed {
             download_id: download_id.to_string(),
             streamer_id: streamer_id.to_string(),
             streamer_name,
             error: error.to_string(),
-        };
+        });
 
         match self.event_tx.send(event) {
             Ok(_) => {
@@ -1776,12 +2003,12 @@ impl DownloadManager {
         if applied {
             let update_type = Self::determine_config_update_type(&update_clone);
             let streamer_name = download.handle.config.read().streamer_name.clone();
-            let _ = event_tx.send(DownloadManagerEvent::ConfigUpdated {
+            let _ = event_tx.send(DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdated {
                 download_id: download_id.to_string(),
                 streamer_id: streamer_id.to_string(),
                 streamer_name,
                 update_type,
-            });
+            }));
         }
     }
 
@@ -1988,12 +2215,12 @@ mod tests {
         // Verify the event was received
         let event = receiver.try_recv().unwrap();
         match event {
-            DownloadManagerEvent::ConfigUpdated {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdated {
                 download_id,
                 streamer_id,
                 update_type,
                 ..
-            } => {
+            }) => {
                 assert_eq!(download_id, "download-123");
                 assert_eq!(streamer_id, "streamer-456");
                 assert_eq!(update_type, ConfigUpdateType::Cookies);
@@ -2026,12 +2253,12 @@ mod tests {
         // Verify the event was received
         let event = receiver.try_recv().unwrap();
         match event {
-            DownloadManagerEvent::ConfigUpdateFailed {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdateFailed {
                 download_id,
                 streamer_id,
                 error,
                 ..
-            } => {
+            }) => {
                 assert_eq!(download_id, "download-123");
                 assert_eq!(streamer_id, "streamer-456");
                 assert_eq!(error, "Connection timeout");

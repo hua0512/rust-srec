@@ -355,7 +355,24 @@ impl StreamDetector {
             "media info"
         );
 
-        // debug!("Media info: {:#?}", media_info);
+        if !media_info.streams.is_empty() {
+            for (idx, s) in media_info.streams.iter().enumerate() {
+                debug!(
+                    streamer_name = %streamer.name,
+                    idx,
+                    quality = %s.quality,
+                    stream_format = ?s.stream_format,
+                    media_format = ?s.media_format,
+                    bitrate = s.bitrate,
+                    priority = s.priority,
+                    codec = %s.codec,
+                    fps = s.fps,
+                    extras = ?s.extras,
+                    url = %s.url,
+                    "extracted stream candidate"
+                );
+            }
+        }
 
         if media_info.is_live {
             let category = media_info

@@ -455,6 +455,131 @@ mod session_repository_tests {
         // Most recent first
         assert!(sessions[0].1 > sessions[1].1);
     }
+
+    /// Helper: insert a session with explicit `total_size_bytes` and an
+    /// optional `end_time`. Mirrors the production INSERT path in
+    /// `SqlxSessionRepository::create_session` plus the increment-on-output
+    /// effect on `total_size_bytes`.
+    async fn insert_session_with_size(
+        pool: &DbPool,
+        streamer_id: &str,
+        total_size_bytes: i64,
+        end_time_ms: Option<i64>,
+    ) -> String {
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let start_ms = chrono::Utc::now().timestamp_millis();
+        sqlx::query(
+            "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, total_size_bytes)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(&session_id)
+        .bind(streamer_id)
+        .bind(start_ms)
+        .bind(end_time_ms)
+        .bind(total_size_bytes)
+        .execute(pool)
+        .await
+        .expect("Failed to insert session with size");
+        session_id
+    }
+
+    /// Default `list_sessions_filtered` (no `include_empty`) hides ended
+    /// sessions whose `total_size_bytes == 0`. These are the connection-blip
+    /// 0-byte rows the small-segment guard discarded — noise on the
+    /// dashboard.
+    #[tokio::test]
+    async fn test_list_sessions_filtered_excludes_empty_by_default() {
+        use rust_srec::database::models::{Pagination, SessionFilters};
+        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+
+        let pool = setup_test_db().await;
+        let streamer_id = setup_streamer(&pool).await;
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let _empty_id =
+            insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
+        let real_id =
+            insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
+
+        let repo = SqlxSessionRepository::new(pool.clone(), pool);
+        let (sessions, total) = repo
+            .list_sessions_filtered(
+                &SessionFilters {
+                    streamer_id: Some(streamer_id.clone()),
+                    ..Default::default()
+                },
+                &Pagination::new(50, 0),
+            )
+            .await
+            .expect("list_sessions_filtered failed");
+
+        assert_eq!(total, 1, "default filter must hide the empty ended session");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, real_id);
+    }
+
+    /// `include_empty: Some(true)` opts in to seeing the discarded rows —
+    /// useful for diagnostics ("why did this brief blip happen?").
+    #[tokio::test]
+    async fn test_list_sessions_filtered_includes_empty_when_opted_in() {
+        use rust_srec::database::models::{Pagination, SessionFilters};
+        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+
+        let pool = setup_test_db().await;
+        let streamer_id = setup_streamer(&pool).await;
+
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
+        insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
+
+        let repo = SqlxSessionRepository::new(pool.clone(), pool);
+        let (_sessions, total) = repo
+            .list_sessions_filtered(
+                &SessionFilters {
+                    streamer_id: Some(streamer_id.clone()),
+                    include_empty: Some(true),
+                    ..Default::default()
+                },
+                &Pagination::new(50, 0),
+            )
+            .await
+            .expect("list_sessions_filtered failed");
+
+        assert_eq!(total, 2, "include_empty=true must return both rows");
+    }
+
+    /// Active sessions (`end_time IS NULL`) are kept regardless of size.
+    /// Their `total_size_bytes == 0` in the brief window between LIVE
+    /// detection and the first retained segment; we must NOT hide them.
+    #[tokio::test]
+    async fn test_list_sessions_filtered_keeps_active_empty_sessions() {
+        use rust_srec::database::models::{Pagination, SessionFilters};
+        use rust_srec::database::repositories::{SessionRepository, SqlxSessionRepository};
+
+        let pool = setup_test_db().await;
+        let streamer_id = setup_streamer(&pool).await;
+
+        let active_id = insert_session_with_size(&pool, &streamer_id, 0, None).await;
+
+        let repo = SqlxSessionRepository::new(pool.clone(), pool);
+        let (sessions, total) = repo
+            .list_sessions_filtered(
+                &SessionFilters {
+                    streamer_id: Some(streamer_id.clone()),
+                    ..Default::default()
+                },
+                &Pagination::new(50, 0),
+            )
+            .await
+            .expect("list_sessions_filtered failed");
+
+        assert_eq!(
+            total, 1,
+            "default filter must keep active sessions even with size 0"
+        );
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, active_id);
+    }
 }
 
 mod job_repository_tests {
@@ -1158,8 +1283,16 @@ mod end_to_end_tests {
     use rust_srec::database::repositories::streamer::SqlxStreamerRepository;
     use rust_srec::domain::StreamerState;
     use rust_srec::monitor::{FilterReason, LiveStatus, MonitorEvent, StreamMonitor};
+    use rust_srec::session::{OfflineClassifier, SessionLifecycle, SessionLifecycleRepository};
     use rust_srec::streamer::{StreamerManager, StreamerMetadata};
     use std::sync::Arc;
+
+    fn make_session_lifecycle(pool: &DbPool) -> Arc<SessionLifecycle> {
+        Arc::new(SessionLifecycle::with_default_capacity(
+            Arc::new(SessionLifecycleRepository::new(pool.clone())),
+            Arc::new(OfflineClassifier::new()),
+        ))
+    }
 
     async fn setup_platform(pool: &DbPool) -> String {
         let id = uuid::Uuid::new_v4().to_string();
@@ -1197,6 +1330,8 @@ mod end_to_end_tests {
             avatar_url: None,
             streamer_specific_config: None,
             last_error: None,
+            effective_offline_check_count: 3,
+            effective_offline_check_delay_ms: 20_000,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -1245,6 +1380,7 @@ mod end_to_end_tests {
             session_repo,
             config_service,
             pool.clone(),
+            make_session_lifecycle(&pool),
         );
 
         // Subscribe to events
@@ -1345,6 +1481,7 @@ mod end_to_end_tests {
             session_repo,
             config_service,
             pool.clone(),
+            make_session_lifecycle(&pool),
         );
 
         // Subscribe to events
@@ -1434,6 +1571,7 @@ mod end_to_end_tests {
             session_repo,
             config_service,
             pool.clone(),
+            make_session_lifecycle(&pool),
         );
 
         // Create test metadata
@@ -1509,6 +1647,7 @@ mod end_to_end_tests {
             session_repo,
             config_service,
             pool.clone(),
+            make_session_lifecycle(&pool),
         );
 
         // Subscribe to events
@@ -1553,5 +1692,142 @@ mod end_to_end_tests {
             }
             _ => panic!("Expected TransientError event"),
         }
+    }
+
+    /// Regression: disable a Live streamer with an active session via the
+    /// lifecycle's `end_for_disable`, then re-trigger LiveDetected. The
+    /// pre-fix `force_end_active_session` wrote DB-only and left the
+    /// in-memory FSM stuck in Hysteresis, so re-enable took the
+    /// `resume_from_hysteresis` short-circuit and silently restarted a
+    /// download under an already-ended session_id. With the fix, a new
+    /// `Created` outcome with a fresh session_id must be produced and the
+    /// old row must be ended in DB.
+    #[tokio::test]
+    async fn test_disable_then_reenable_creates_fresh_session() {
+        use rust_srec::session::{LiveDetectedArgs, StartSessionOutcome};
+
+        let pool = setup_test_db().await;
+        let platform_id = setup_platform(&pool).await;
+
+        let streamer_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, consecutive_error_count)
+             VALUES (?, 'TestStreamer', 'https://twitch.tv/teststreamer', ?, 'NOT_LIVE', 'NORMAL', 0)"
+        )
+            .bind(&streamer_id)
+            .bind(&platform_id)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert streamer");
+
+        let lifecycle = make_session_lifecycle(&pool);
+
+        let now = Utc::now();
+        let streams = Vec::new();
+        let live_args = LiveDetectedArgs {
+            streamer_id: &streamer_id,
+            streamer_name: "TestStreamer",
+            streamer_url: "https://twitch.tv/teststreamer",
+            current_avatar: None,
+            new_avatar: None,
+            title: "first session",
+            category: None,
+            streams: &streams,
+            media_headers: None,
+            media_extras: None,
+            now,
+        };
+
+        // Step 1: streamer goes live → fresh session.
+        let first = lifecycle
+            .on_live_detected(live_args)
+            .await
+            .expect("first live");
+        let first_id = first.session_id().to_string();
+        assert!(matches!(first, StartSessionOutcome::Created { .. }));
+
+        // Step 2: user disables — lifecycle tears down. (In production the
+        // download's CleanDisconnect would have parked the session in
+        // Hysteresis first; we test the simpler path here. The hysteresis
+        // path is covered by the lifecycle suite O.)
+        let resolved = lifecycle
+            .end_for_disable(&streamer_id, "TestStreamer")
+            .await
+            .expect("end_for_disable");
+        assert_eq!(resolved.as_deref(), Some(first_id.as_str()));
+
+        // DB end_time set on the first session.
+        let end_time: Option<i64> =
+            sqlx::query_scalar("SELECT end_time FROM live_sessions WHERE id = ?")
+                .bind(&first_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(end_time.is_some(), "first session must be ended in DB");
+
+        // In-memory state must be Ended (the bug we're fixing was that
+        // force_end_active_session only wrote DB, leaving in-memory state
+        // stale — re-enable would then take the resume_from_hysteresis
+        // short-circuit instead of creating a new session).
+        let snap = lifecycle
+            .session_snapshot(&first_id)
+            .expect("session in memory after disable");
+        assert!(snap.is_ended(), "in-memory state must be Ended after disable");
+
+        // Step 3: re-enable triggers fresh LiveDetected. Because the
+        // in-memory state is Ended (not Hysteresis), the lifecycle's
+        // `on_live_detected` falls through to `start_or_resume` which
+        // creates a fresh session_id.
+        let later = now + chrono::Duration::seconds(5);
+        let streams2 = Vec::new();
+        let relive_args = LiveDetectedArgs {
+            streamer_id: &streamer_id,
+            streamer_name: "TestStreamer",
+            streamer_url: "https://twitch.tv/teststreamer",
+            current_avatar: None,
+            new_avatar: None,
+            title: "second session",
+            category: None,
+            streams: &streams2,
+            media_headers: None,
+            media_extras: None,
+            now: later,
+        };
+        let second = lifecycle
+            .on_live_detected(relive_args)
+            .await
+            .expect("re-live");
+        let second_id = second.session_id().to_string();
+
+        assert!(
+            matches!(second, StartSessionOutcome::Created { .. }),
+            "re-enable must create a fresh session, got {second:?}"
+        );
+        assert_ne!(
+            first_id, second_id,
+            "fresh session must have a different id than the disabled one"
+        );
+
+        // Two rows in live_sessions: the first ended, the second active.
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ?",
+        )
+        .bind(&streamer_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 2);
+
+        let active_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL",
+        )
+        .bind(&streamer_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            active_count, 1,
+            "exactly one active session after re-enable"
+        );
     }
 }

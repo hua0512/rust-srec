@@ -326,6 +326,10 @@ pub struct PlatformConfigResponse {
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
+    /// Override for the global `offline_check_count`. NULL inherits.
+    pub offline_check_count: Option<u32>,
+    /// Override for the global `offline_check_delay_ms`. NULL inherits.
+    pub offline_check_delay_ms: Option<u64>,
 }
 
 // ============================================================================
@@ -355,6 +359,8 @@ pub struct CreateTemplateRequest {
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
 }
 
 /// Request to update a template.
@@ -380,6 +386,8 @@ pub struct UpdateTemplateRequest {
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
 }
 
 /// Template response.
@@ -406,6 +414,8 @@ pub struct TemplateResponse {
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
     pub usage_count: u32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -721,13 +731,44 @@ pub struct SessionResponse {
     pub streamer_avatar: Option<String>,
     pub title: String,
     pub titles: Vec<TitleChange>,
+    /// Lifecycle audit log for this session, oldest first. One entry per
+    /// state-machine transition (`session_started`, `hysteresis_entered`,
+    /// `session_resumed`, `session_ended`). Empty for sessions that ended
+    /// before the `session_events` migration ran.
+    #[serde(default)]
+    pub events: Vec<SessionEventResponse>,
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
+    /// `true` when the recording is still in progress (`end_time` is null).
+    ///
+    /// Lets the frontend render "live" status without parsing `end_time`,
+    /// and keeps the home-page vs session-detail views on the same signal.
+    /// Since the `SessionLifecycleRepository` atomic bundle writes
+    /// `end_time` and the streamer-state flag in the same transaction,
+    /// this field and `streamer.state == LIVE` cannot diverge.
+    pub is_live: bool,
     pub duration_secs: Option<u64>,
     pub output_count: u32,
     pub total_size_bytes: u64,
     pub danmu_count: Option<u64>,
     pub thumbnail_url: Option<String>,
+}
+
+/// One row from the `session_events` audit log, exposed on the session
+/// detail Timeline tab. `payload` is the typed
+/// [`crate::session::SessionEventPayload`] discriminated union (with `kind`
+/// matching the top-level field) — the frontend zod schema parses it as a
+/// discriminated union for exhaustive rendering.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct SessionEventResponse {
+    /// Stable string discriminator: `session_started`, `hysteresis_entered`,
+    /// `session_resumed`, or `session_ended`.
+    pub kind: String,
+    pub occurred_at: DateTime<Utc>,
+    /// Parsed JSON payload. `None` when the underlying row had no payload
+    /// or when the payload failed to parse — the frontend treats both the
+    /// same (renders the row with kind only).
+    pub payload: Option<serde_json::Value>,
 }
 
 /// Full danmu statistics for a session.
@@ -806,6 +847,12 @@ pub struct SessionFilterParams {
     pub active_only: Option<bool>,
     /// Search query (matches title, streamer name, etc.)
     pub search: Option<String>,
+    /// Include sessions that retained zero bytes (transient connection
+    /// blips that produced only sub-threshold files, deleted by the
+    /// small-segment guard). Default `false` so they don't clutter the
+    /// dashboard. Set `true` for diagnostic access — the rows are still
+    /// in the DB and reachable via `GET /sessions/:id`.
+    pub include_empty: Option<bool>,
 }
 
 // ============================================================================

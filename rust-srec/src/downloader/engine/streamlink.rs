@@ -659,12 +659,16 @@ impl DownloadEngine for StreamlinkEngine {
 
             match exit_code {
                 Some(0) => {
-                    // Exit code 0 - success
+                    // Exit code 0 — same caveat as ffmpeg: the subprocess
+                    // exited cleanly but that doesn't prove the upstream
+                    // stream is over. SessionLifecycle treats
+                    // SubprocessExitZero as ambiguous → hysteresis.
                     let _ = event_tx_clone
                         .send(SegmentEvent::DownloadCompleted {
                             total_bytes,
                             total_duration_secs: total_duration,
                             total_segments: segments_completed,
+                            engine_signal: crate::downloader::EngineEndSignal::SubprocessExitZero,
                         })
                         .await;
                 }

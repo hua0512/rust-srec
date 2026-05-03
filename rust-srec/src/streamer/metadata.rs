@@ -40,14 +40,36 @@ pub struct StreamerMetadata {
     pub last_error: Option<String>,
     /// Streamer specific configuration override (JSON string).
     pub streamer_specific_config: Option<String>,
+    /// Effective offline-check count after merging the 4-layer config
+    /// hierarchy (Global → Platform → Template → Streamer). Refreshed at
+    /// registration and on each `ConfigUpdateEvent`. Both the StreamerActor
+    /// and the SessionLifecycle hysteresis backstop read from here so they
+    /// stay in lockstep.
+    #[serde(default = "default_offline_check_count")]
+    pub effective_offline_check_count: u32,
+    /// Effective offline-check delay (ms) after merging — see
+    /// [`Self::effective_offline_check_count`].
+    #[serde(default = "default_offline_check_delay_ms")]
+    pub effective_offline_check_delay_ms: u64,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
 }
 
+fn default_offline_check_count() -> u32 {
+    3
+}
+
+fn default_offline_check_delay_ms() -> u64 {
+    20_000
+}
+
 impl StreamerMetadata {
     /// Create new metadata from database model.
+    ///
+    /// `effective_offline_check_*` are populated from defaults; resolve them
+    /// via [`Self::apply_resolved_config`] once the merged config is known.
     pub fn from_db_model(model: &crate::database::models::StreamerDbModel) -> Self {
         Self {
             id: model.id.clone(),
@@ -63,6 +85,8 @@ impl StreamerMetadata {
             last_error: model.last_error.clone(),
             // Map config overrides
             streamer_specific_config: model.streamer_specific_config.clone(),
+            effective_offline_check_count: default_offline_check_count(),
+            effective_offline_check_delay_ms: default_offline_check_delay_ms(),
             disabled_until: model
                 .disabled_until
                 .map(crate::database::time::ms_to_datetime),
@@ -72,6 +96,14 @@ impl StreamerMetadata {
             created_at: crate::database::time::ms_to_datetime(model.created_at),
             updated_at: crate::database::time::ms_to_datetime(model.updated_at),
         }
+    }
+
+    /// Refresh the cached effective values from a freshly resolved
+    /// [`crate::domain::config::MergedConfig`]. Called at registration
+    /// and from the scheduler's `ConfigUpdate` fan-out path.
+    pub fn apply_resolved_config(&mut self, merged: &crate::domain::config::MergedConfig) {
+        self.effective_offline_check_count = merged.offline_check_count;
+        self.effective_offline_check_delay_ms = merged.offline_check_delay_ms;
     }
 
     /// Check if the streamer is currently disabled (in backoff).
@@ -138,6 +170,8 @@ mod tests {
             disabled_until: None,
             last_live_time: None,
             streamer_specific_config: None,
+            effective_offline_check_count: default_offline_check_count(),
+            effective_offline_check_delay_ms: default_offline_check_delay_ms(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

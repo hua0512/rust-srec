@@ -72,10 +72,34 @@ fn db_model_to_response(model: &TemplateConfigDbModel, usage_count: u32) -> Temp
         pipeline: model.pipeline.clone(),
         session_complete_pipeline: model.session_complete_pipeline.clone(),
         paired_segment_pipeline: model.paired_segment_pipeline.clone(),
+        offline_check_count: model.offline_check_count,
+        offline_check_delay_ms: model.offline_check_delay_ms,
         usage_count,
         created_at: model.created_at,
         updated_at: model.updated_at,
     }
+}
+
+/// Validate the optional offline-check overrides on a template request.
+fn validate_offline_check_overrides(
+    count: Option<i32>,
+    delay_ms: Option<i64>,
+) -> Result<(), ApiError> {
+    if let Some(c) = count
+        && c < 1
+    {
+        return Err(ApiError::validation(
+            "offline_check_count must be >= 1",
+        ));
+    }
+    if let Some(d) = delay_ms
+        && d < 1_000
+    {
+        return Err(ApiError::validation(
+            "offline_check_delay_ms must be >= 1000",
+        ));
+    }
+    Ok(())
 }
 
 #[utoipa::path(
@@ -97,6 +121,11 @@ pub async fn create_template(
     if request.name.is_empty() {
         return Err(ApiError::validation("Template name cannot be empty"));
     }
+
+    validate_offline_check_overrides(
+        request.offline_check_count,
+        request.offline_check_delay_ms,
+    )?;
 
     // Get config service from state
     let config_service = state
@@ -138,6 +167,8 @@ pub async fn create_template(
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
     template.paired_segment_pipeline = request.paired_segment_pipeline;
+    template.offline_check_count = request.offline_check_count;
+    template.offline_check_delay_ms = request.offline_check_delay_ms;
 
     // Create the template
     config_service
@@ -259,6 +290,11 @@ pub async fn update_template(
     Path(id): Path<String>,
     Json(request): Json<UpdateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
+    validate_offline_check_overrides(
+        request.offline_check_count,
+        request.offline_check_delay_ms,
+    )?;
+
     // Get config service from state
     let config_service = state
         .config_service
@@ -317,6 +353,8 @@ pub async fn update_template(
     template.pipeline = request.pipeline;
     template.session_complete_pipeline = request.session_complete_pipeline;
     template.paired_segment_pipeline = request.paired_segment_pipeline;
+    template.offline_check_count = request.offline_check_count;
+    template.offline_check_delay_ms = request.offline_check_delay_ms;
 
     // Update the template
     config_service
@@ -463,6 +501,8 @@ pub async fn clone_template(
     cloned.pipeline = existing.pipeline;
     cloned.session_complete_pipeline = existing.session_complete_pipeline;
     cloned.paired_segment_pipeline = existing.paired_segment_pipeline;
+    cloned.offline_check_count = existing.offline_check_count;
+    cloned.offline_check_delay_ms = existing.offline_check_delay_ms;
 
     // Create the cloned template
     config_service
@@ -506,6 +546,8 @@ mod tests {
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,
+            offline_check_count: None,
+            offline_check_delay_ms: None,
             usage_count: 5,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),

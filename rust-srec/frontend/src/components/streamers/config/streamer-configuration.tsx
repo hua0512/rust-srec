@@ -36,6 +36,7 @@ export function StreamerConfiguration({
         pipeline: `${basePath}.pipeline`,
         sessionCompletePipeline: `${basePath}.session_complete_pipeline`,
         pairedSegmentPipeline: `${basePath}.paired_segment_pipeline`,
+        offlineCheck: basePath,
       }}
       configMode="object"
       proxyMode="object"

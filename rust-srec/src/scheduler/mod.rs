@@ -28,8 +28,8 @@ pub use actor::{
     PersistedActorState, PersistedConfig, PlatformActorState, PlatformConfig, PlatformMapping,
     PlatformMessage, RegistryError, RestartTracker, RestartTrackerConfig, RestartTrackerStats,
     RoutingResult, SendError, ShutdownReport, SpawnError, StreamerActor, StreamerActorState,
-    StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig, SupervisorMessage,
-    SupervisorStats, TaskCompletionAction,
+    StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig, SupervisorStats,
+    TaskCompletionAction,
 };
 
 // Batch coordination

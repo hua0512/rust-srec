@@ -132,6 +132,63 @@ impl SessionTxOps {
         Ok(session_id)
     }
 
+    /// End every `live_sessions` row for `streamer_id` whose `end_time IS NULL`,
+    /// optionally skipping one id (the "keep" row). Returns the session_ids
+    /// of rows that were ended, in `start_time ASC` order. Tx-scoped — the
+    /// caller owns commit.
+    ///
+    /// In normal operation the partial unique index
+    /// `live_sessions_one_active_per_streamer` (initial schema, line 159–161)
+    /// caps the candidate set at 0 or 1 row. The helper exists for the
+    /// self-heal path inside
+    /// [`crate::session::SessionLifecycleRepository::start_or_resume`]: if a
+    /// previous build ever produced multiple stale active rows (e.g. a
+    /// crash mid-tx, or a build without the index), the lifecycle calls
+    /// this with `keep = Some(most_recent_id)` to retain the row that's
+    /// about to be reused, ending the others — or `keep = None` to clear
+    /// the slot entirely before an `INSERT`.
+    ///
+    /// Returns the cleaned IDs (oldest first) so the caller can fan out
+    /// audit-log rows without re-querying.
+    pub async fn end_all_active_for_streamer(
+        tx: &mut SqliteConnection,
+        streamer_id: &str,
+        keep: Option<&str>,
+        end_time: DateTime<Utc>,
+    ) -> Result<Vec<String>> {
+        // Two query shapes — keeping them separate is easier to read than
+        // splicing a placeholder for the optional `keep` clause.
+        let ids: Vec<String> = match keep {
+            Some(keep_id) => {
+                sqlx::query_scalar(
+                    "SELECT id FROM live_sessions
+                     WHERE streamer_id = ? AND end_time IS NULL AND id != ?
+                     ORDER BY start_time ASC",
+                )
+                .bind(streamer_id)
+                .bind(keep_id)
+                .fetch_all(&mut *tx)
+                .await?
+            }
+            None => {
+                sqlx::query_scalar(
+                    "SELECT id FROM live_sessions
+                     WHERE streamer_id = ? AND end_time IS NULL
+                     ORDER BY start_time ASC",
+                )
+                .bind(streamer_id)
+                .fetch_all(&mut *tx)
+                .await?
+            }
+        };
+
+        for id in &ids {
+            Self::end_session(tx, id, end_time).await?;
+        }
+
+        Ok(ids)
+    }
+
     /// Update session titles by adding a new title entry.
     ///
     /// Only adds if the new title differs from the last one.

@@ -36,7 +36,7 @@ use crate::api::proto::{
     download_progress::client_message::Action, download_progress::ws_message::Payload,
 };
 use crate::api::server::AppState;
-use crate::downloader::DownloadManagerEvent;
+use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
 
 /// Query parameters for WebSocket connection (JWT token).
 #[derive(Debug, Deserialize)]
@@ -260,27 +260,14 @@ fn map_event_to_protobuf(
     event: &DownloadManagerEvent,
     filter: &Option<String>,
 ) -> Option<WsMessage> {
-    let event_streamer_id = match event {
-        DownloadManagerEvent::DownloadStarted { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::Progress { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::SegmentCompleted { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::SegmentStarted { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::DownloadCompleted { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::DownloadFailed { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::DownloadCancelled { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::ConfigUpdated { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::ConfigUpdateFailed { streamer_id, .. } => streamer_id,
-        DownloadManagerEvent::DownloadRejected { streamer_id, .. } => streamer_id,
-    };
-
     if let Some(filter_id) = filter
-        && event_streamer_id != filter_id
+        && event.streamer_id() != filter_id.as_str()
     {
         return None;
     }
 
     match event {
-        DownloadManagerEvent::DownloadStarted {
+        DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
             download_id,
             streamer_id,
             session_id,
@@ -288,7 +275,7 @@ fn map_event_to_protobuf(
             cdn_host,
             download_url,
             ..
-        } => {
+        }) => {
             let now_ms = chrono::Utc::now().timestamp_millis();
             let meta = crate::api::proto::DownloadMeta {
                 download_id: download_id.clone(),
@@ -306,12 +293,12 @@ fn map_event_to_protobuf(
                 payload: Some(Payload::DownloadMeta(meta)),
             })
         }
-        DownloadManagerEvent::Progress {
+        DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
             download_id,
             progress,
             status,
             ..
-        } => {
+        }) => {
             let metrics = crate::api::proto::DownloadMetrics {
                 download_id: download_id.clone(),
                 status: status.as_str().to_string(),
@@ -327,7 +314,7 @@ fn map_event_to_protobuf(
                 payload: Some(Payload::DownloadMetrics(metrics)),
             })
         }
-        DownloadManagerEvent::SegmentCompleted {
+        DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
             download_id,
             streamer_id,
             session_id,
@@ -340,7 +327,7 @@ fn map_event_to_protobuf(
             split_reason_code: _,
             split_reason_details_json: _,
             ..
-        } => {
+        }) => {
             let payload = SegmentCompleted {
                 download_id: download_id.clone(),
                 streamer_id: streamer_id.clone(),
@@ -361,7 +348,7 @@ fn map_event_to_protobuf(
                 payload: Some(Payload::SegmentCompleted(payload)),
             })
         }
-        DownloadManagerEvent::DownloadCompleted {
+        DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
             download_id,
             streamer_id,
             session_id,
@@ -370,7 +357,7 @@ fn map_event_to_protobuf(
             total_segments,
             file_path: _file_path,
             ..
-        } => {
+        }) => {
             let payload = DownloadCompleted {
                 download_id: download_id.clone(),
                 streamer_id: streamer_id.clone(),
@@ -384,14 +371,14 @@ fn map_event_to_protobuf(
                 payload: Some(Payload::DownloadCompleted(payload)),
             })
         }
-        DownloadManagerEvent::DownloadFailed {
+        DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
             download_id,
             streamer_id,
             session_id,
             error,
             recoverable,
             ..
-        } => {
+        }) => {
             let payload = DownloadFailed {
                 download_id: download_id.clone(),
                 streamer_id: streamer_id.clone(),
@@ -404,13 +391,13 @@ fn map_event_to_protobuf(
                 payload: Some(Payload::DownloadFailed(payload)),
             })
         }
-        DownloadManagerEvent::DownloadCancelled {
+        DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
             download_id,
             streamer_id,
             session_id,
             cause,
             ..
-        } => {
+        }) => {
             let payload = DownloadCancelled {
                 download_id: download_id.clone(),
                 streamer_id: streamer_id.clone(),
@@ -422,13 +409,13 @@ fn map_event_to_protobuf(
                 payload: Some(Payload::DownloadCancelled(payload)),
             })
         }
-        DownloadManagerEvent::DownloadRejected {
+        DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
             streamer_id,
             session_id,
             reason,
             retry_after_secs,
             ..
-        } => {
+        }) => {
             let payload = DownloadRejected {
                 streamer_id: streamer_id.clone(),
                 session_id: session_id.clone(),
@@ -460,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_filter_matches_streamer() {
-        let event = DownloadManagerEvent::DownloadStarted {
+        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
@@ -468,7 +455,7 @@ mod tests {
             engine_type: EngineType::Ffmpeg,
             cdn_host: "cdn.example.com".to_string(),
             download_url: "https://cdn.example.com/stream".to_string(),
-        };
+        });
 
         // No filter - should pass
         let result = map_event_to_protobuf(&event, &None);
@@ -485,12 +472,12 @@ mod tests {
 
     #[test]
     fn test_config_events_not_broadcast() {
-        let event = DownloadManagerEvent::ConfigUpdated {
+        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdated {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
             update_type: ConfigUpdateType::Cookies,
-        };
+        });
 
         let result = map_event_to_protobuf(&event, &None);
         assert!(result.is_none());
@@ -498,7 +485,7 @@ mod tests {
 
     #[test]
     fn test_download_meta_event_mapping() {
-        let event = DownloadManagerEvent::DownloadStarted {
+        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
@@ -506,7 +493,7 @@ mod tests {
             engine_type: EngineType::Ffmpeg,
             cdn_host: "cdn.example.com".to_string(),
             download_url: "https://cdn.example.com/stream".to_string(),
-        };
+        });
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadMeta as i32);
@@ -523,7 +510,7 @@ mod tests {
 
     #[test]
     fn test_segment_completed_event_mapping() {
-        let event = DownloadManagerEvent::SegmentCompleted {
+        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
@@ -536,7 +523,7 @@ mod tests {
             size_bytes: 1024000,
             split_reason_code: None,
             split_reason_details_json: None,
-        };
+        });
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
         assert_eq!(msg.event_type, EventType::SegmentCompleted as i32);
@@ -556,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_download_completed_event_mapping() {
-        let event = DownloadManagerEvent::DownloadCompleted {
+        let event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
@@ -565,7 +552,8 @@ mod tests {
             total_duration_secs: 3600.0,
             total_segments: 360,
             file_path: Some("/path/to/video.mp4".to_string()),
-        };
+            engine_signal: crate::downloader::EngineEndSignal::Unknown,
+        });
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadCompleted as i32);
@@ -583,7 +571,7 @@ mod tests {
     fn test_download_failed_event_mapping() {
         use crate::downloader::DownloadFailureKind;
 
-        let event = DownloadManagerEvent::DownloadFailed {
+        let event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
@@ -591,7 +579,7 @@ mod tests {
             kind: DownloadFailureKind::Network,
             error: "Connection timeout".to_string(),
             recoverable: true,
-        };
+        });
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadFailed as i32);
@@ -607,13 +595,13 @@ mod tests {
 
     #[test]
     fn test_download_cancelled_event_mapping() {
-        let event = DownloadManagerEvent::DownloadCancelled {
+        let event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
             session_id: "session-1".to_string(),
             cause: crate::downloader::DownloadStopCause::User,
-        };
+        });
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadCancelled as i32);
@@ -629,14 +617,14 @@ mod tests {
 
     #[test]
     fn test_download_rejected_event_mapping() {
-        let event = DownloadManagerEvent::DownloadRejected {
+        let event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
             session_id: "session-1".to_string(),
             reason: "Circuit breaker open".to_string(),
             retry_after_secs: Some(60),
             kind: crate::downloader::DownloadRejectedKind::CircuitBreaker,
-        };
+        });
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
         assert_eq!(msg.event_type, EventType::DownloadRejected as i32);
@@ -654,7 +642,7 @@ mod tests {
 
     #[test]
     fn test_protobuf_round_trip_encoding() {
-        let event = DownloadManagerEvent::DownloadStarted {
+        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
             download_id: "dl-1".to_string(),
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
@@ -662,7 +650,7 @@ mod tests {
             engine_type: EngineType::Ffmpeg,
             cdn_host: "cdn.example.com".to_string(),
             download_url: "https://cdn.example.com/stream".to_string(),
-        };
+        });
 
         let msg = map_event_to_protobuf(&event, &None).unwrap();
 

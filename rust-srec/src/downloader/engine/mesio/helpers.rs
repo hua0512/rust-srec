@@ -195,6 +195,7 @@ fn split_reason_code(reason: &SplitReason) -> &'static str {
         SplitReason::ResolutionChange { .. } => "resolution_change",
         SplitReason::StreamStructureChange { .. } => "stream_structure_change",
         SplitReason::Discontinuity => "discontinuity",
+        SplitReason::EndOfStream => "end_of_stream",
     }
 }
 
@@ -242,7 +243,8 @@ fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
         SplitReason::SizeLimit
         | SplitReason::DurationLimit
         | SplitReason::HeaderReceived
-        | SplitReason::Discontinuity => return None,
+        | SplitReason::Discontinuity
+        | SplitReason::EndOfStream => return None,
     };
 
     serde_json::to_string(&details).ok()
@@ -257,6 +259,11 @@ fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
 /// Returns `Some((kind, message))` if the stream yielded an error, or `None`
 /// if it completed cleanly (or was cancelled).
 ///
+/// `inspect` is invoked on every successful item before forwarding so callers
+/// can tap protocol-specific signals (e.g. HLS observing
+/// `HlsData::EndMarker(Some(SplitReason::EndOfStream))` to surface
+/// `EngineEndSignal::HlsEndlist`). FLV callers pass a no-op closure.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn consume_stream<T, E: Display>(
     stream: impl futures::Stream<Item = std::result::Result<T, E>> + Unpin,
     tx: &mpsc::Sender<std::result::Result<T, PipelineError>>,
@@ -265,6 +272,7 @@ pub(super) async fn consume_stream<T, E: Display>(
     streamer_id: &str,
     protocol: &str,
     classify: impl Fn(&E) -> DownloadFailureKind,
+    mut inspect: impl FnMut(&T),
 ) -> Option<(DownloadFailureKind, String)> {
     let mut stream = std::pin::pin!(stream);
     let mut stream_error: Option<(DownloadFailureKind, String)> = None;
@@ -277,6 +285,7 @@ pub(super) async fn consume_stream<T, E: Display>(
 
         match result {
             Ok(item) => {
+                inspect(&item);
                 if tx.send(Ok(item)).await.is_err() {
                     warn!("Channel closed, stopping {} download", protocol);
                     break;
@@ -307,7 +316,11 @@ pub(super) async fn consume_stream<T, E: Display>(
 /// Handle the writer result, await pipeline tasks, emit events, and return
 /// `DownloadStats`.
 ///
-/// `processing_tasks` should be empty for raw-mode calls.
+/// `processing_tasks` should be empty for raw-mode calls. `engine_signal`
+/// describes how this download ended from the engine's POV — see
+/// [`crate::downloader::EngineEndSignal`]. Caller passes `CleanDisconnect`
+/// for mesio FLV's TCP-close path and `HlsEndlist` for HLS when the
+/// playlist contained `#EXT-X-ENDLIST`.
 ///
 /// Replaces 4 identical ~40-line match blocks (plus 2 pipeline-await blocks).
 pub(super) async fn handle_writer_result(
@@ -317,6 +330,7 @@ pub(super) async fn handle_writer_result(
     event_tx: &mpsc::Sender<SegmentEvent>,
     streamer_id: &str,
     protocol: &str,
+    engine_signal: crate::downloader::EngineEndSignal,
 ) -> crate::Result<DownloadStats> {
     match settle_run(writer_result, processing_tasks).await {
         Ok(stats) => {
@@ -345,6 +359,7 @@ pub(super) async fn handle_writer_result(
                     total_bytes: download_stats.total_bytes,
                     total_duration_secs: download_stats.total_duration_secs,
                     total_segments: download_stats.files_created,
+                    engine_signal,
                 })
                 .await;
 

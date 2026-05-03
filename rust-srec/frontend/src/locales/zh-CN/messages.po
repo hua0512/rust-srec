@@ -936,6 +936,11 @@ msgstr "取消处理管道？"
 msgid "Cancelled"
 msgstr "已取消"
 
+#: src/components/sessions/timeline-tab.tsx:159
+msgctxt "terminal-cause"
+msgid "Cancelled"
+msgstr "已取消"
+
 #. placeholder {0}: result.cancelled_steps
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:94
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:248
@@ -969,6 +974,11 @@ msgstr "分类"
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:239
 msgid "Category"
 msgstr "分类"
+
+#: src/components/sessions/timeline-tab.tsx:311
+#: src/components/sessions/timeline-tab.tsx:330
+msgid "Cause:"
+msgstr "原因："
 
 #: src/components/streamers/edit/active-download-card.tsx:99
 #: src/components/streamers/progress-indicator.tsx:142
@@ -1167,6 +1177,11 @@ msgstr "完整流程：重封装、生成缩略图、添加元数据并上传。
 msgid "Completed"
 msgstr "已完成"
 
+#: src/components/sessions/timeline-tab.tsx:155
+msgctxt "terminal-cause"
+msgid "Completed"
+msgstr "下载断开"
+
 #: src/components/filters/forms/FilterTypeSelector.tsx:57
 msgid "Complex patterns"
 msgstr "复杂模式"
@@ -1304,6 +1319,10 @@ msgstr "确认新密码"
 msgid "Confirm Password"
 msgstr "确认密码"
 
+#: src/components/sessions/timeline-tab.tsx:337
+msgid "Confirmed via backstop timer."
+msgstr "等待恢复超时后确认。"
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:663
 msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
@@ -1329,7 +1348,16 @@ msgstr "连接不稳定"
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
+#: src/components/config/shared/offline-check-card.tsx:111
+msgid "Consecutive failed checks needed to confirm offline."
+msgstr "确认离线所需的连续失败检查次数。"
+
 #: src/components/streamers/card/stream-avatar-info.tsx:133
+msgid "Consecutive Failures"
+msgstr "连续失败"
+
+#: src/components/sessions/timeline-tab.tsx:178
+msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
@@ -1697,7 +1725,7 @@ msgstr "弹幕转 ASS 字幕"
 msgid "DanmakuFactory"
 msgstr "DanmakuFactory"
 
-#: src/components/config/shared-config-editor.tsx:208
+#: src/components/config/shared-config-editor.tsx:212
 msgid "Danmu"
 msgstr "弹幕"
 
@@ -1716,6 +1744,11 @@ msgstr "弹幕统计"
 #: src/components/sessions/danmu-stats-panel.tsx:159
 msgid "Danmu statistics are not available for this session."
 msgstr "此会话的弹幕统计暂不可用。"
+
+#: src/components/sessions/timeline-tab.tsx:174
+msgctxt "terminal-cause"
+msgid "Danmu Stream Closed"
+msgstr "弹幕流已关闭"
 
 #: src/components/sessions/danmu-stats-panel.tsx:246
 msgid "Danmu/min"
@@ -1811,6 +1844,11 @@ msgstr "根据标题、时间或语言定义自动录制或跳过的规则。"
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:162
 msgid "Define sequences of processing steps for your recordings"
 msgstr "为录制内容定义处理步骤序列"
+
+#: src/components/sessions/timeline-tab.tsx:180
+msgctxt "terminal-cause"
+msgid "Definitive Offline"
+msgstr "已确认离线"
 
 #: src/components/health/health-status-badge.tsx:48
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:629
@@ -2320,7 +2358,7 @@ msgstr "编码设置"
 msgid "End"
 msgstr "结束"
 
-#: src/components/sessions/timeline-tab.tsx:147
+#: src/components/sessions/timeline-tab.tsx:468
 msgid "End of History"
 msgstr "历史结束"
 
@@ -2372,7 +2410,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:373
 #: src/components/config/global/backup-restore-card.tsx:378
 #: src/components/config/global/backup-restore-card.tsx:383
-#: src/components/config/templates/template-editor.tsx:257
+#: src/components/config/templates/template-editor.tsx:258
 #: src/components/layout/site-header.tsx:42
 #: src/components/sidebar/navbar.tsx:36
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:60
@@ -2629,6 +2667,11 @@ msgstr "ey..."
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:416
 msgid "Failed"
 msgstr "失败"
+
+#: src/components/sessions/timeline-tab.tsx:157
+msgctxt "terminal-cause"
+msgid "Failed"
+msgstr "下载失败"
 
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:82
 msgid "Failed steps retry initiated"
@@ -3047,7 +3090,7 @@ msgstr "过滤窗口大小"
 msgid "Filtering & Behavior"
 msgstr "过滤与行为"
 
-#: src/components/config/shared-config-editor.tsx:153
+#: src/components/config/shared-config-editor.tsx:157
 msgid "Filters"
 msgstr "过滤器"
 
@@ -3173,9 +3216,9 @@ msgid "Gap Eval Interval (ms)"
 msgstr "缺口评估间隔（毫秒）"
 
 #: src/components/config/engines/forms/mesio-form.tsx:268
-#: src/components/config/platforms/platform-editor.tsx:189
+#: src/components/config/platforms/platform-editor.tsx:190
 #: src/components/config/templates/tabs/platform-override-card.tsx:64
-#: src/components/config/templates/template-editor.tsx:247
+#: src/components/config/templates/template-editor.tsx:248
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
@@ -3430,7 +3473,7 @@ msgstr "HLS 调优"
 msgid "Home"
 msgstr "主页"
 
-#: src/components/config/shared-config-editor.tsx:197
+#: src/components/config/shared-config-editor.tsx:201
 msgid "Hooks"
 msgstr "钩子"
 
@@ -3600,11 +3643,16 @@ msgstr "包含关键字"
 msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
+#: src/components/config/shared/offline-check-card.tsx:74
+#: src/components/config/shared/offline-check-card.tsx:106
+msgid "Inherited"
+msgstr "继承自上层"
+
 #: src/components/config/shared/output-settings-card.tsx:178
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
-#: src/components/sessions/timeline-tab.tsx:112
+#: src/components/sessions/timeline-tab.tsx:213
 msgid "INITIAL"
 msgstr "初始"
 
@@ -3686,6 +3734,10 @@ msgstr "主播直播时检测流结束的检查间隔。"
 msgid "Interval between checks."
 msgstr "检查间隔。"
 
+#: src/components/config/shared/offline-check-card.tsx:79
+msgid "Interval between offline checks."
+msgstr "离线检查之间的间隔。"
+
 #: src/components/config/global/concurrency-card.tsx:246
 msgid "IO Job"
 msgstr "IO 任务"
@@ -3745,7 +3797,7 @@ msgstr "任务超时"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:272
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:273
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -4408,7 +4460,7 @@ msgstr "原生"
 msgid "Native Resolution Thumbnail"
 msgstr "原始分辨率缩略图"
 
-#: src/components/config/shared-config-editor.tsx:175
+#: src/components/config/shared-config-editor.tsx:179
 msgid "Network"
 msgstr "网络"
 
@@ -4678,9 +4730,13 @@ msgstr "未找到模板"
 msgid "No templates yet"
 msgstr "暂无模板"
 
-#: src/components/sessions/timeline-tab.tsx:31
-msgid "No Title Changes"
-msgstr "标题无变化"
+#: src/components/sessions/timeline-tab.tsx:375
+msgid "No Timeline Events"
+msgstr "暂无时间线事件"
+
+#: src/components/sessions/timeline-tab.tsx:378
+msgid "No title changes or lifecycle events were recorded for this session."
+msgstr "此会话未记录任何标题变更或生命周期事件。"
 
 #: src/components/sessions/danmu-stats-panel.tsx:424
 msgid "No word data"
@@ -4847,14 +4903,20 @@ msgstr "离线"
 
 #: src/components/config/global/network-system-card.tsx:101
 #: src/components/config/global/network-system-card.tsx:109
+#: src/components/config/shared/offline-check-card.tsx:39
 msgid "Offline Check"
 msgstr "离线检查"
+
+#: src/components/config/shared/offline-check-card.tsx:61
+msgid "Offline Check Interval"
+msgstr "离线检查间隔"
 
 #: src/components/config/global/network-system-card.tsx:151
 msgid "Offline Detection"
 msgstr "离线检测"
 
 #: src/components/config/global/network-system-card.tsx:143
+#: src/components/config/shared/offline-check-card.tsx:95
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
 
@@ -4958,7 +5020,7 @@ msgstr "空间不足"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1982
 #: src/components/config/platforms/platform-card.tsx:130
-#: src/components/config/shared-config-editor.tsx:164
+#: src/components/config/shared-config-editor.tsx:168
 #: src/components/config/templates/template-card.tsx:161
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:134
 msgid "Output"
@@ -5047,6 +5109,10 @@ msgstr "覆盖全局默认值。"
 msgid "Override global defaults for this streamer."
 msgstr "为此主播覆盖全局默认值。"
 
+#: src/components/config/shared/offline-check-card.tsx:42
+msgid "Override how aggressively the scheduler confirms a stream has ended."
+msgstr "覆盖调度器确认直播结束的激进程度。"
+
 #: src/components/config/shared/output-settings-card.tsx:72
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
@@ -5086,23 +5152,23 @@ msgid "Page"
 msgstr "页码"
 
 #: src/components/config/global/pipeline-config-card.tsx:216
-#: src/components/config/shared-config-editor.tsx:441
+#: src/components/config/shared-config-editor.tsx:454
 msgid "Paired"
 msgstr "已配对"
 
-#: src/components/config/shared-config-editor.tsx:582
+#: src/components/config/shared-config-editor.tsx:595
 msgid "Paired pipeline is not supported for this entity."
 msgstr "该实体不支持配对分段处理管道。"
 
 #: src/components/config/global/pipeline-config-card.tsx:213
-#: src/components/config/shared-config-editor.tsx:438
+#: src/components/config/shared-config-editor.tsx:451
 msgid "Paired Segment"
 msgstr "配对分段"
 
 #: src/components/config/global/pipeline-config-card.tsx:224
 #: src/components/config/global/pipeline-config-card.tsx:309
-#: src/components/config/shared-config-editor.tsx:449
-#: src/components/config/shared-config-editor.tsx:552
+#: src/components/config/shared-config-editor.tsx:462
+#: src/components/config/shared-config-editor.tsx:565
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
@@ -5192,6 +5258,10 @@ msgstr "峰值/分钟"
 msgid "Pending"
 msgstr "待处理"
 
+#: src/components/sessions/timeline-tab.tsx:242
+msgid "PENDING CONFIRMATION"
+msgstr "待确认"
+
 #: src/components/streamers/card/use-streamer-status.tsx:97
 msgid "Pending Error Clears"
 msgstr "待清除错误"
@@ -5208,14 +5278,14 @@ msgid "Per page:"
 msgstr "每页："
 
 #: src/components/config/global/pipeline-config-card.tsx:176
-#: src/components/config/shared-config-editor.tsx:399
+#: src/components/config/shared-config-editor.tsx:412
 msgid "Per-segment"
 msgstr "逐段"
 
 #: src/components/config/global/pipeline-config-card.tsx:187
 #: src/components/config/global/pipeline-config-card.tsx:292
-#: src/components/config/shared-config-editor.tsx:410
-#: src/components/config/shared-config-editor.tsx:521
+#: src/components/config/shared-config-editor.tsx:423
+#: src/components/config/shared-config-editor.tsx:534
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
@@ -5245,7 +5315,7 @@ msgstr "手机号和验证码（可选两步验证）"
 msgid "Pick a preset theme or import a custom one."
 msgstr "选择预设主题或导入自定义主题。"
 
-#: src/components/config/shared-config-editor.tsx:219
+#: src/components/config/shared-config-editor.tsx:223
 #: src/components/layout/site-header.tsx:36
 #: src/components/sidebar/navbar.tsx:30
 #: src/lib/menu-list.ts:70
@@ -5376,7 +5446,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:390
-#: src/components/config/templates/template-editor.tsx:267
+#: src/components/config/templates/template-editor.tsx:268
 #: src/components/layout/site-header.tsx:43
 #: src/components/sidebar/navbar.tsx:37
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:48
@@ -5396,6 +5466,11 @@ msgstr "播放器"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1915
 msgid "Playlist"
 msgstr "播放列表"
+
+#: src/components/sessions/timeline-tab.tsx:176
+msgctxt "terminal-cause"
+msgid "Playlist Gone"
+msgstr "播放列表已失效"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1453
 msgid "Playlist TTL (ms)"
@@ -5570,7 +5645,7 @@ msgstr "预览不可用"
 msgid "Previous"
 msgstr "上一页"
 
-#: src/components/sessions/timeline-tab.tsx:127
+#: src/components/sessions/timeline-tab.tsx:286
 msgid "Previous Title"
 msgstr "上一个标题"
 
@@ -5664,7 +5739,7 @@ msgstr "保护设置"
 msgid "Protocol Settings"
 msgstr "协议设置"
 
-#: src/components/config/shared-config-editor.tsx:186
+#: src/components/config/shared-config-editor.tsx:190
 msgid "Proxy"
 msgstr "代理"
 
@@ -5830,11 +5905,15 @@ msgstr "录制"
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
+#: src/components/sessions/timeline-tab.tsx:302
+msgid "Recording started"
+msgstr "录制已开始"
+
 #: src/components/streamers/card/use-streamer-status.tsx:301
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:260
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -5865,6 +5944,11 @@ msgstr "正则模式"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:221
 msgid "Regex patterns to exclude files. Matched against full path and filename."
 msgstr "用于排除文件的正则模式。将针对完整路径和文件名进行匹配。"
+
+#: src/components/sessions/timeline-tab.tsx:161
+msgctxt "terminal-cause"
+msgid "Rejected"
+msgstr "已拒绝"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:118
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:162
@@ -5957,8 +6041,8 @@ msgid "Required if the stream is password-protected by the broadcaster."
 msgstr "如果直播间被主播设置了密码保护，则为必填。"
 
 #: src/components/config/global/pipeline-config-card.tsx:239
-#: src/components/config/shared-config-editor.tsx:464
-#: src/components/config/shared-config-editor.tsx:562
+#: src/components/config/shared-config-editor.tsx:477
+#: src/components/config/shared-config-editor.tsx:575
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
@@ -6003,6 +6087,19 @@ msgstr "重置密码"
 #: src/components/logging/log-viewer.tsx:396
 msgid "Resume"
 msgstr "继续"
+
+#: src/components/sessions/timeline-tab.tsx:251
+msgid "RESUMED"
+msgstr "已恢复"
+
+#. placeholder {0}: entry.hysteresisDurationSecs
+#: src/components/sessions/timeline-tab.tsx:321
+msgid "Resumed after {0}s in pending state."
+msgstr "在待确认状态 {0} 秒后恢复。"
+
+#: src/components/sessions/timeline-tab.tsx:230
+msgid "RESUMED START"
+msgstr "恢复启动"
 
 #: src/components/streamers/card/use-streamer-status.tsx:130
 msgid "Resuming in"
@@ -6088,17 +6185,17 @@ msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
 msgstr "在阻塞线程池中执行解密，避免卡住异步任务。"
 
 #: src/components/config/global/pipeline-config-card.tsx:294
-#: src/components/config/shared-config-editor.tsx:524
+#: src/components/config/shared-config-editor.tsx:537
 msgid "Runs for each recorded segment immediately after it's finished."
 msgstr "在每个录制分段完成后立即运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:328
-#: src/components/config/shared-config-editor.tsx:601
+#: src/components/config/shared-config-editor.tsx:614
 msgid "Runs once after the entire session ends and all segment pipelines have completed."
 msgstr "在整个会话结束且所有分段管道均已完成后运行一次。"
 
 #: src/components/config/global/pipeline-config-card.tsx:273
-#: src/components/config/shared-config-editor.tsx:500
+#: src/components/config/shared-config-editor.tsx:513
 msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
 msgstr "在录制会话结束且所有单个分段管道均已完成后运行一次。适用于合并所有分段、最终通知或清理等全局操作。"
 
@@ -6115,11 +6212,11 @@ msgid "Runs when a download encounters an error."
 msgstr "录制发生错误时运行。"
 
 #: src/components/config/global/pipeline-config-card.tsx:233
-#: src/components/config/shared-config-editor.tsx:458
+#: src/components/config/shared-config-editor.tsx:471
 msgid "Runs when both the video segment and its corresponding danmu segment are available."
 msgstr "当视频分段及其对应的弹幕分段都可用时运行。"
 
-#: src/components/config/shared-config-editor.tsx:556
+#: src/components/config/shared-config-editor.tsx:569
 msgid "Runs when both video and danmu segments are available."
 msgstr "当视频和弹幕分段都可用时运行。"
 
@@ -6308,7 +6405,7 @@ msgid "Security & Identity"
 msgstr "安全与身份"
 
 #: src/components/config/global/pipeline-config-card.tsx:179
-#: src/components/config/shared-config-editor.tsx:402
+#: src/components/config/shared-config-editor.tsx:415
 msgid "Segment"
 msgstr "分段"
 
@@ -6465,25 +6562,25 @@ msgid "Server URL"
 msgstr "服务器地址"
 
 #: src/components/config/global/pipeline-config-card.tsx:259
-#: src/components/config/shared-config-editor.tsx:484
+#: src/components/config/shared-config-editor.tsx:497
 #: src/components/pipeline/outputs/output-card.tsx:201
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:262
 msgid "Session"
 msgstr "会话"
 
 #: src/components/config/global/pipeline-config-card.tsx:256
-#: src/components/config/shared-config-editor.tsx:481
+#: src/components/config/shared-config-editor.tsx:494
 msgid "Session Complete"
 msgstr "会话完成"
 
 #: src/components/config/global/pipeline-config-card.tsx:267
 #: src/components/config/global/pipeline-config-card.tsx:326
-#: src/components/config/shared-config-editor.tsx:492
-#: src/components/config/shared-config-editor.tsx:598
+#: src/components/config/shared-config-editor.tsx:505
+#: src/components/config/shared-config-editor.tsx:611
 msgid "Session Complete Pipeline"
 msgstr "会话完成处理管道"
 
-#: src/components/config/shared-config-editor.tsx:621
+#: src/components/config/shared-config-editor.tsx:634
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
@@ -6498,6 +6595,10 @@ msgstr "录制会话详情"
 #: src/components/sessions/overview-tab.tsx:196
 msgid "Session Duration"
 msgstr "录制时长"
+
+#: src/components/sessions/timeline-tab.tsx:260
+msgid "SESSION ENDED"
+msgstr "会话已结束"
 
 #: src/components/config/global/network-system-card.tsx:285
 msgid "Session Gap"
@@ -6531,6 +6632,10 @@ msgstr "未找到录制会话"
 #: src/components/sessions/overview-tab.tsx:137
 msgid "Session Preview"
 msgstr "录制预览"
+
+#: src/components/sessions/timeline-tab.tsx:232
+msgid "SESSION STARTED"
+msgstr "会话已启动"
 
 #: src/components/sessions/overview-tab.tsx:146
 msgid "Session thumbnail"
@@ -6673,7 +6778,7 @@ msgstr "来源"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:199
+#: src/components/config/platforms/platform-editor.tsx:200
 #: src/components/config/templates/tabs/platform-override-card.tsx:70
 msgid "Specific"
 msgstr "特定"
@@ -6884,7 +6989,12 @@ msgstr "主播处于冷却期"
 
 #: src/components/streamers/card/use-streamer-status.tsx:180
 msgid "Streamer no longer exists on the platform"
-msgstr "该主播已不在平台上"
+msgstr "主播在平台上已不存在"
+
+#: src/components/sessions/timeline-tab.tsx:163
+msgctxt "terminal-cause"
+msgid "Streamer Offline"
+msgstr "主播离线"
 
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:408
 msgid "Streamer pagination"
@@ -7163,11 +7273,7 @@ msgstr "你要访问的页面不存在。"
 
 #: src/components/streamers/card/use-streamer-status.tsx:183
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
-msgstr "平台返回该账号不存在。可能已被删除、被封禁，或链接/ID 有误。请考虑移除或更新此主播。"
-
-#: src/components/sessions/timeline-tab.tsx:34
-msgid "The stream title remained constant throughout the session."
-msgstr "本次会话期间直播标题始终未变化。"
+msgstr "平台报告该账号已不存在。可能已被删除、封禁，或者 URL/ID 有误。建议删除或更新该主播。"
 
 #: src/components/config/engines/engine-editor.tsx:265
 msgid "The underlying tool used for downloading."
@@ -7209,7 +7315,7 @@ msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and res
 msgstr "该登录需要 Telegram 两步验证密码。请启用“允许两步验证”并重启。"
 
 #: src/components/config/global/pipeline-config-card.tsx:193
-#: src/components/config/shared-config-editor.tsx:418
+#: src/components/config/shared-config-editor.tsx:431
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
 msgstr "此处理管道在录制分段完成后立即运行。适用于仅需要单个视频分段的任务，例如重封装、缩略图生成或逐段上传。"
 
@@ -7423,12 +7529,12 @@ msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
 #: src/components/config/global/pipeline-config-card.tsx:189
-#: src/components/config/shared-config-editor.tsx:412
+#: src/components/config/shared-config-editor.tsx:425
 msgid "Triggered after each segment recording"
 msgstr "每个分段录制后触发"
 
 #: src/components/config/global/pipeline-config-card.tsx:269
-#: src/components/config/shared-config-editor.tsx:494
+#: src/components/config/shared-config-editor.tsx:507
 msgid "Triggered after the entire session ends"
 msgstr "整个会话结束后触发"
 
@@ -7489,7 +7595,7 @@ msgid "Triggered when the application starts up."
 msgstr "应用启动时触发。"
 
 #: src/components/config/global/pipeline-config-card.tsx:226
-#: src/components/config/shared-config-editor.tsx:451
+#: src/components/config/shared-config-editor.tsx:464
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
@@ -7607,6 +7713,10 @@ msgstr "未知错误"
 msgid "Unknown File"
 msgstr "未知文件"
 
+#: src/components/sessions/timeline-tab.tsx:345
+msgid "Unrecognised event kind."
+msgstr "未识别的事件类型。"
+
 #: src/components/streamers/card/use-streamer-status.tsx:145
 msgid "Until"
 msgstr "直到"
@@ -7615,7 +7725,7 @@ msgstr "直到"
 msgid "Untitled Stream"
 msgstr "无标题直播"
 
-#: src/components/sessions/timeline-tab.tsx:114
+#: src/components/sessions/timeline-tab.tsx:220
 msgid "UPDATE"
 msgstr "更新"
 
@@ -7721,6 +7831,11 @@ msgstr "用于桌面登录（备选）；指向包含 `tdata` 的 Telegram Deskt
 #: src/components/config/engines/forms/mesio-hls-form.tsx:736
 msgid "User Agent"
 msgstr "User-Agent"
+
+#: src/components/sessions/timeline-tab.tsx:167
+msgctxt "terminal-cause"
+msgid "User Disabled"
+msgstr "已被用户停用"
 
 #: src/components/config/shared/proxy-settings-card.tsx:179
 #: src/components/notifications/forms/email-form.tsx:86

@@ -177,6 +177,7 @@ export function PlatformEditor({
               pipeline: 'pipeline',
               sessionCompletePipeline: 'session_complete_pipeline',
               pairedSegmentPipeline: 'paired_segment_pipeline',
+              offlineCheck: '',
             }}
             credentialScope={{ type: 'platform', id: platform.id }}
             credentialPlatformNameHint={platform.name}
