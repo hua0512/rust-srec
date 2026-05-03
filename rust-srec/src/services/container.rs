@@ -42,8 +42,7 @@ use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
     DEFAULT_GATE_COOLDOWN_SECS, DownloadConfig, DownloadManager, DownloadManagerConfig,
     DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent, LAST_ERROR_GATE_PREFIX,
-    OutputRootGate, RecoveryHook,
-    engine::DownloadProgress,
+    OutputRootGate, RecoveryHook, engine::DownloadProgress,
 };
 use crate::logging::LoggingConfig;
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
@@ -329,6 +328,11 @@ pub struct ServiceContainer {
     >,
     /// Credential refresh service (shared between monitor + API).
     pub credential_service: Arc<crate::credentials::CredentialRefreshService<SqlxConfigRepository>>,
+    /// Live broadcaster for committed check-history rows. Cloned into the
+    /// downloads WS route so per-streamer subscribers see new bars appear
+    /// without polling. Same fan-out pattern as
+    /// [`crate::downloader::DownloadManager::subscribe`].
+    pub check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
@@ -340,6 +344,54 @@ pub struct ServiceContainer {
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
     /// Handle to the scheduler background task for graceful shutdown.
     scheduler_task_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+}
+
+/// Wire the streamer-check-history pipeline:
+/// - One repository on top of the shared SQLite pools.
+/// - One bounded MPSC; senders are cloned into every monitor poll.
+/// - One broadcaster cloned into the downloads WS route loop, so live bars
+///   stream to subscribed clients without polling.
+/// - One drain task that survives until shutdown cancels it.
+///
+/// The polling hot path uses `try_send` so DB latency never blocks the
+/// lifecycle FSM; the drain task absorbs bursts and fans out committed
+/// rows after they've durably landed in SQLite.
+fn wire_check_history_pipeline(
+    pool: &SqlitePool,
+    write_pool: &SqlitePool,
+    cancellation_token: &CancellationToken,
+) -> (
+    crate::monitor::CheckHistoryWriter,
+    crate::monitor::CheckHistoryBroadcaster,
+) {
+    use prost::Message;
+
+    let repo: Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository> = Arc::new(
+        crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
+            pool.clone(),
+            write_pool.clone(),
+        ),
+    );
+    let (writer, rx) = crate::monitor::CheckHistoryWriter::new();
+
+    // WS encoder: builds the protobuf payload + serializes it to bytes.
+    // Stored on the broadcaster so encoding runs once per record (in the
+    // drain task) instead of once per subscriber (in the WS route's
+    // select loop). With N connected clients, this saves N − 1 protobuf
+    // encodes per record.
+    let encoder: crate::monitor::check_history_writer::WsEncoder = Arc::new(|record| {
+        let msg = crate::api::routes::downloads::map_check_record_to_protobuf(record);
+        bytes::Bytes::from(msg.encode_to_vec())
+    });
+    let broadcaster = crate::monitor::CheckHistoryBroadcaster::new(encoder);
+
+    tokio::spawn(crate::monitor::check_history_writer::run(
+        repo,
+        rx,
+        Some(broadcaster.clone()),
+        cancellation_token.child_token(),
+    ));
+    (writer, broadcaster)
 }
 
 impl ServiceContainer {
@@ -423,19 +475,19 @@ impl ServiceContainer {
         // writes for `session_started` / `session_ended` go through the
         // `SessionLifecycleRepository` directly.
         let session_event_repo: Arc<dyn crate::database::repositories::SessionEventRepository> =
-            Arc::new(crate::database::repositories::SqlxSessionEventRepository::new(
-                pool.clone(),
-                write_pool.clone(),
-            ));
+            Arc::new(
+                crate::database::repositories::SqlxSessionEventRepository::new(
+                    pool.clone(),
+                    write_pool.clone(),
+                ),
+            );
         // Classifier window/threshold derived from the same scheduler
         // tunables — single source of truth alongside the hysteresis
         // backstop (no parallel knob, no hardcoded 60 s).
-        let offline_classifier = Arc::new(
-            crate::session::OfflineClassifier::from_scheduler(
-                global_config.offline_check_count as u32,
-                global_config.offline_check_delay_ms as u64,
-            ),
-        );
+        let offline_classifier = Arc::new(crate::session::OfflineClassifier::from_scheduler(
+            global_config.offline_check_count as u32,
+            global_config.offline_check_delay_ms as u64,
+        ));
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
                 Arc::new(crate::session::SessionLifecycleRepository::new(
@@ -605,12 +657,18 @@ impl ServiceContainer {
             supervisor_config: crate::scheduler::actor::SupervisorConfig::default(),
         };
 
+        // Wire the streamer-check-history pipeline (writer feeds the
+        // monitor-side polling path; broadcaster feeds the WS route loop).
+        let (check_history_writer, check_history_broadcaster) =
+            wire_check_history_pipeline(&pool, &write_pool, &cancellation_token);
+
         // Create scheduler with StreamMonitor for real status checking
         let scheduler = Arc::new(tokio::sync::RwLock::new(
-            Scheduler::with_monitor_and_config(
+            Scheduler::with_monitor_history_and_config(
                 streamer_manager.clone(),
                 event_broadcaster.clone(),
                 stream_monitor.clone(),
+                Some(check_history_writer),
                 scheduler_config,
                 cancellation_token.child_token(),
             )
@@ -640,6 +698,7 @@ impl ServiceContainer {
             scheduler,
             stream_monitor,
             credential_service,
+            check_history_broadcaster,
             api_server_config: ApiServerConfig::from_env_or_default(),
             cancellation_token,
             logging_config: std::sync::OnceLock::new(),
@@ -729,18 +788,18 @@ impl ServiceContainer {
                 })
             });
         let session_event_repo: Arc<dyn crate::database::repositories::SessionEventRepository> =
-            Arc::new(crate::database::repositories::SqlxSessionEventRepository::new(
-                pool.clone(),
-                write_pool.clone(),
-            ));
+            Arc::new(
+                crate::database::repositories::SqlxSessionEventRepository::new(
+                    pool.clone(),
+                    write_pool.clone(),
+                ),
+            );
         // Classifier window/threshold derived from the same scheduler
         // tunables — see the primary container site for rationale.
-        let offline_classifier = Arc::new(
-            crate::session::OfflineClassifier::from_scheduler(
-                global_config.offline_check_count as u32,
-                global_config.offline_check_delay_ms as u64,
-            ),
-        );
+        let offline_classifier = Arc::new(crate::session::OfflineClassifier::from_scheduler(
+            global_config.offline_check_count as u32,
+            global_config.offline_check_delay_ms as u64,
+        ));
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
                 Arc::new(crate::session::SessionLifecycleRepository::new(
@@ -929,13 +988,19 @@ impl ServiceContainer {
             supervisor_config: crate::scheduler::actor::SupervisorConfig::default(),
         };
 
+        // Wire the streamer-check-history pipeline (writer feeds the
+        // monitor-side polling path; broadcaster feeds the WS route loop).
+        let (check_history_writer, check_history_broadcaster) =
+            wire_check_history_pipeline(&pool, &write_pool, &cancellation_token);
+
         // Create scheduler with StreamMonitor for real status checking
         let scheduler_start = Instant::now();
         let scheduler = Arc::new(tokio::sync::RwLock::new(
-            Scheduler::with_monitor_and_config(
+            Scheduler::with_monitor_history_and_config(
                 streamer_manager.clone(),
                 event_broadcaster.clone(),
                 stream_monitor.clone(),
+                Some(check_history_writer),
                 scheduler_config,
                 cancellation_token.child_token(),
             )
@@ -992,6 +1057,7 @@ impl ServiceContainer {
             scheduler,
             stream_monitor,
             credential_service,
+            check_history_broadcaster,
             api_server_config: api_config,
             cancellation_token,
             logging_config: std::sync::OnceLock::new(),
@@ -1241,6 +1307,13 @@ impl ServiceContainer {
                     self.write_pool.clone(),
                 ),
             ))
+            .with_streamer_check_history_repository(Arc::new(
+                crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
+                    self.pool.clone(),
+                    self.write_pool.clone(),
+                ),
+            ))
+            .with_check_history_broadcaster(self.check_history_broadcaster.clone())
             .with_filter_repository(Arc::new(SqlxFilterRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
@@ -1356,6 +1429,13 @@ impl ServiceContainer {
                     self.write_pool.clone(),
                 ),
             ))
+            .with_streamer_check_history_repository(Arc::new(
+                crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
+                    self.pool.clone(),
+                    self.write_pool.clone(),
+                ),
+            ))
+            .with_check_history_broadcaster(self.check_history_broadcaster.clone())
             .with_filter_repository(Arc::new(SqlxFilterRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
@@ -3081,10 +3161,7 @@ impl ServiceContainer {
     ) {
         match config_service.get_config_for_streamer(streamer_id).await {
             Ok(merged) => streamer_manager.apply_resolved_config(streamer_id, &merged),
-            Err(e) => debug!(
-                "Skipping offline_check refresh for {}: {}",
-                streamer_id, e
-            ),
+            Err(e) => debug!("Skipping offline_check refresh for {}: {}", streamer_id, e),
         }
     }
 

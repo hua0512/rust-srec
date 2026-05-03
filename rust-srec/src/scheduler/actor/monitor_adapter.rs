@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::monitor::{FilterReason, LiveStatus, ProcessStatusResult};
+use crate::domain::streamer::CheckRecord;
+use crate::monitor::{CheckHistoryWriter, FilterReason, LiveStatus, ProcessStatusResult};
 use crate::streamer::StreamerMetadata;
 
 use super::messages::{BatchDetectionResult, CheckResult};
@@ -130,6 +131,10 @@ where
     CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
     monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
+    /// Optional sink for per-poll diagnostic rows that power the streamer
+    /// details page's check-history strip. `None` in tests and in callers
+    /// that don't want the strip; the polling path is unaffected either way.
+    history_writer: Option<CheckHistoryWriter>,
 }
 
 impl<SR, FR, SSR, CR> MonitorStatusChecker<SR, FR, SSR, CR>
@@ -139,9 +144,25 @@ where
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
     CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
-    /// Create a new MonitorStatusChecker.
+    /// Create a new MonitorStatusChecker without check-history persistence.
     pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>) -> Self {
-        Self { monitor }
+        Self {
+            monitor,
+            history_writer: None,
+        }
+    }
+
+    /// Create a checker that records every poll outcome via `writer`. The
+    /// writer is best-effort — failed sends drop silently — so wiring it up
+    /// has no effect on polling cadence.
+    pub fn with_history_writer(
+        monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
+        writer: CheckHistoryWriter,
+    ) -> Self {
+        Self {
+            monitor,
+            history_writer: Some(writer),
+        }
     }
 }
 
@@ -157,7 +178,32 @@ where
         &self,
         streamer: &StreamerMetadata,
     ) -> Result<(CheckResult, LiveStatus), CheckError> {
-        let status = self.monitor.check_streamer(streamer).await?;
+        // Time the check so the strip's tooltip can surface slow extractor
+        // responses. `Instant::now()` rather than `Utc::now()` for the
+        // duration measurement so we don't get hit by wall-clock jumps.
+        let started = std::time::Instant::now();
+        let checked_at = chrono::Utc::now();
+        let outcome = self.monitor.check_streamer(streamer).await;
+        let duration =
+            chrono::Duration::from_std(started.elapsed()).unwrap_or_else(|_| chrono::Duration::MAX);
+
+        // Record the per-poll diagnostic record (best-effort — drops on full
+        // channel, never blocks the polling loop). Both the success and
+        // failure paths emit a record so the strip's bars line up 1:1 with
+        // actual polls.
+        if let Some(writer) = &self.history_writer {
+            let record = match &outcome {
+                Ok(status) => {
+                    CheckRecord::from_live_status(&streamer.id, checked_at, duration, status)
+                }
+                Err(err) => {
+                    CheckRecord::from_error(&streamer.id, checked_at, duration, &err.to_string())
+                }
+            };
+            writer.record(record);
+        }
+
+        let status = outcome?;
 
         // Convert LiveStatus to CheckResult
         let result = convert_live_status_to_check_result(&status);
