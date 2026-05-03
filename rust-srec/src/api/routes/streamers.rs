@@ -793,10 +793,10 @@ pub async fn get_check_history(
 ) -> ApiResult<Json<StreamerCheckHistoryResponse>> {
     // Confirm the streamer exists so a 404 is unambiguous (vs. "no rows yet"
     // for a brand-new streamer, which we want to render as an empty strip).
-    if let Some(streamer_manager) = state.streamer_manager.as_ref() {
-        if streamer_manager.get_streamer(&id).is_none() {
-            return Err(ApiError::not_found(format!("Streamer {} not found", id)));
-        }
+    if let Some(streamer_manager) = state.streamer_manager.as_ref()
+        && streamer_manager.get_streamer(&id).is_none()
+    {
+        return Err(ApiError::not_found(format!("Streamer {} not found", id)));
     }
 
     // No repository wired (test harness path) → return an empty strip

@@ -777,7 +777,7 @@ pub struct SessionEventResponse {
 /// `outcome` is the discriminator (`live` | `offline` | `filtered` |
 /// `transient_error` | `fatal_error`); `fatal_kind`, `filter_reason`, and
 /// `error_message` are mutually-exclusive outcome detail. `streams_extracted`
-/// + `stream_selected` carry the per-poll stream-selection telemetry the
+/// and `stream_selected` carry the per-poll stream-selection telemetry the
 /// strip's tooltip surfaces (how many candidates the platform extractor
 /// returned, which one we picked).
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
