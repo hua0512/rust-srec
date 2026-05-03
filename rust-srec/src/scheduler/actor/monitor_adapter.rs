@@ -185,7 +185,7 @@ where
         let checked_at = chrono::Utc::now();
         let outcome = self.monitor.check_streamer(streamer).await;
         let duration =
-            chrono::Duration::from_std(started.elapsed()).unwrap_or_else(|_| chrono::Duration::MAX);
+            chrono::Duration::from_std(started.elapsed()).unwrap_or(chrono::Duration::MAX);
 
         // Record the per-poll diagnostic record (best-effort — drops on full
         // channel, never blocks the polling loop). Both the success and

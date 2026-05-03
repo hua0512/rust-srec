@@ -39,7 +39,7 @@ msgstr "-c copy"
 msgid "-reconnect 1"
 msgstr "-reconnect 1"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:115
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:192
 msgid "(Delete source)"
 msgstr "（删除源文件）"
 
@@ -47,11 +47,11 @@ msgstr "（删除源文件）"
 msgid "(empty)"
 msgstr "（空）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:126
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:203
 msgid "(Mirror source)"
 msgstr "（镜像源端）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:104
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:181
 msgid "(Preserve source)"
 msgstr "（保留源文件）"
 
@@ -149,7 +149,7 @@ msgstr "即将支持 {val} 渠道！"
 msgid "* * * * * *"
 msgstr "* * * * * *"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:189
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:266
 msgid "/path/to/rclone.conf"
 msgstr "/path/to/rclone.conf"
 
@@ -165,9 +165,17 @@ msgstr "/usr/share/fonts"
 msgid "^Started.*"
 msgstr "^Started.*"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:574
+msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
+msgstr ""
+
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:105
 msgid "0 (None) - 9 (Best)"
 msgstr "0（无）- 9（最佳）"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:587
+msgid "0 = unlimited"
+msgstr ""
 
 #: src/components/config/global/resource-limits-card.tsx:70
 msgid "0 = Unlimited"
@@ -370,7 +378,7 @@ msgstr "添加处理管道步骤"
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "为重试延迟添加随机性，避免“惊群”。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:279
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:770
 msgid "Add rclone argument"
 msgstr "添加 rclone 参数"
 
@@ -412,15 +420,15 @@ msgid "Adjust the roundness of UI elements."
 msgstr "调整 UI 元素的圆角程度。"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:66
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:59
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:136
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:239
 #: src/components/streamers/edit/streamer-config-form.tsx:74
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:241
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:246
 msgid "Advanced"
 msgstr "高级"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:121
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:315
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:320
 msgid "Advanced Configuration"
 msgstr "高级配置"
 
@@ -770,6 +778,18 @@ msgstr "备份"
 msgid "Backup & Restore"
 msgstr "备份与恢复"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:350
+msgid "Bandwidth"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:359
+msgid "Bandwidth Limit"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:361
+msgid "Bandwidth Limit help"
+msgstr ""
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1906
 msgid "Base"
 msgstr "基础"
@@ -778,7 +798,7 @@ msgstr "基础"
 msgid "Base delay between retries"
 msgstr "重试之间的基础延迟"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:171
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:248
 msgid "Base path for remote storage."
 msgstr "远程存储的基础路径。"
 
@@ -799,7 +819,7 @@ msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:282
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:287
 msgid "Basic settings for the streamer."
 msgstr "主播的基本设置。"
 
@@ -871,6 +891,10 @@ msgstr "机器人名称"
 msgid "Bot Token"
 msgstr "机器人令牌"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:374
+msgid "both directions at 10 MiB/s"
+msgstr ""
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:237
 msgid "Brand Colors"
 msgstr "品牌颜色"
@@ -903,6 +927,10 @@ msgstr "缓冲区限制"
 #: src/components/pipeline/presets/default-presets-i18n.ts:86
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。支持清单感知和批量处理。"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:639
+msgid "Burst capacity for TPS Limit (--tpslimit-burst)."
+msgstr ""
 
 #: src/components/config/engines/forms/mesio-form.tsx:326
 msgid "bytes"
@@ -968,6 +996,10 @@ msgstr "已取消"
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:248
 msgid "Cancelled {0} steps in pipeline"
 msgstr "已取消处理管道中的 {0} 个步骤"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:401
+msgid "Caps overall transfer bandwidth (rclone --bwlimit)."
+msgstr ""
 
 #: src/components/config/shared/record-danmu-card.tsx:58
 msgid "Capture Mode"
@@ -1059,6 +1091,10 @@ msgstr "声道"
 msgid "Chat ID"
 msgstr "聊天 ID"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:521
+msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
+msgstr ""
+
 #: src/components/streamers/edit/status-check-history.tsx:283
 msgid "Check duration"
 msgstr "检查耗时"
@@ -1080,6 +1116,14 @@ msgstr "复制后检查大小"
 msgid "Check triggered"
 msgstr "已触发检查"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:511
+msgid "Checkers"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:513
+msgid "Checkers help"
+msgstr ""
+
 #: src/components/config/engines/engine-card.tsx:144
 msgid "Checking"
 msgstr "检查中"
@@ -1092,7 +1136,7 @@ msgstr "正在检查流状态..."
 msgid "Checking..."
 msgstr "检查中..."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:133
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:210
 msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
 
@@ -1220,6 +1264,10 @@ msgstr "组件"
 msgid "Component Status"
 msgstr "组件状态"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:428
+msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
+msgstr ""
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:115
 msgid "Compress video for storage, upload to cloud, then delete local file to save space."
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
@@ -1243,16 +1291,28 @@ msgstr "压缩/归档"
 msgid "Compression Level"
 msgstr "压缩级别"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:459
+msgid "Concurrency"
+msgstr ""
+
 #: src/components/config/global/concurrency-card.tsx:67
 msgid "Concurrency & Performance"
 msgstr "并发与性能"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:541
+msgid "Concurrent checkers (--checkers)."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:498
+msgid "Concurrent file transfers (--transfers)."
+msgstr ""
 
 #: src/components/layout/site-header.tsx:32
 #: src/components/sidebar/navbar.tsx:26
 msgid "Config"
 msgstr "配置"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:185
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:262
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
@@ -1428,7 +1488,7 @@ msgid "copy"
 msgstr "复制"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:62
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:101
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:178
 msgid "Copy"
 msgstr "复制"
 
@@ -1723,6 +1783,10 @@ msgstr "为此模板自定义特定的引擎设置。"
 msgid "Customize the application theme and sidebar layout."
 msgstr "自定义应用主题和侧边栏布局。"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:709
+msgid "Cutoff"
+msgstr ""
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:405
 msgid "DAG Configuration"
 msgstr "DAG 配置"
@@ -1846,6 +1910,10 @@ msgstr "默认"
 #: src/components/config/global/concurrency-card.tsx:329
 msgid "Default Engine"
 msgstr "默认引擎"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:620
+msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
+msgstr ""
 
 #: src/components/config/global/pipeline-config-card.tsx:155
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
@@ -2019,7 +2087,7 @@ msgstr "即使应用已最小化，操作系统仍会显示桌面通知。"
 msgid "Destination Directory"
 msgstr "目标文件夹"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:160
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
 msgid "Destination Root"
 msgstr "目标根目录"
 
@@ -2081,7 +2149,7 @@ msgstr "磁盘空间"
 msgid "Done"
 msgstr "已完成"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:283
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:774
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
@@ -2209,9 +2277,21 @@ msgstr "列如: 0:v:0, 0:a:0"
 msgid "e.g. 1080p, source, 原画"
 msgstr "例如 1080p, source, 原画"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:394
+msgid "e.g. 10M"
+msgstr ""
+
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:135
 msgid "e.g. 128k, 320k"
 msgstr "例如 128k、320k"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:438
+msgid "e.g. 1M"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:731
+msgid "e.g. 250M"
+msgstr ""
 
 #: src/components/streamers/config/stream-selection-input.tsx:114
 msgid "e.g. aliyun, akamaized"
@@ -2233,7 +2313,7 @@ msgstr "例如 echo {input} > {output}"
 msgid "e.g. flv, hls"
 msgstr "例如 flv, hls"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:164
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:241
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
 
@@ -2559,6 +2639,10 @@ msgstr "事件类型"
 msgid "Events"
 msgstr "事件"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:369
+msgid "Examples:"
+msgstr ""
+
 #: src/components/filters/FilterCard.tsx:121
 #: src/components/filters/FilterCard.tsx:235
 #: src/components/filters/forms/CategoryFilterForm.tsx:52
@@ -2648,7 +2732,7 @@ msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎
 
 #: src/components/config/engines/forms/streamlink-form.tsx:172
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:111
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:264
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:755
 msgid "Extra Arguments"
 msgstr "额外参数"
 
@@ -3071,6 +3155,10 @@ msgstr "文件操作"
 msgid "File path copied to clipboard"
 msgstr "文件路径已复制到剪贴板"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:738
+msgid "File size threshold (--multi-thread-cutoff)."
+msgstr ""
+
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:155
 msgid "Filename pattern (e.g., thumb.jpg)"
 msgstr "文件名模式（例如 thumb.jpg）"
@@ -3088,6 +3176,10 @@ msgstr "文件"
 #: src/components/sessions/recordings-tab.tsx:450
 msgid "Files"
 msgstr "文件"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:715
+msgid "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
+msgstr ""
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:19
 msgid "Filter by title keywords"
@@ -3268,15 +3360,15 @@ msgstr "缺口评估间隔（毫秒）"
 #: src/components/config/templates/tabs/platform-override-card.tsx:64
 #: src/components/config/templates/template-editor.tsx:248
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:57
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:53
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:130
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:203
 #: src/components/streamers/edit/streamer-config-form.tsx:67
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:234
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:239
 msgid "General"
 msgstr "常规"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:91
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:279
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:284
 msgid "General Configuration"
 msgstr "常规配置"
 
@@ -3495,6 +3587,10 @@ msgstr "高质量 MP3"
 msgid "High+"
 msgstr "高+"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:478
+msgid "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
+msgstr ""
+
 #: src/components/config/engines/forms/mesio-hls-form.tsx:487
 msgid "Highest bitrate"
 msgstr "最高码率"
@@ -3536,6 +3632,14 @@ msgstr "小时 (00-23)"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1390
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "解密/处理后的分段在缓存中保留的时间。"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:473
+msgid "How many files rclone uploads in parallel."
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:614
+msgid "How many requests can briefly burst above TPS Limit before throttling kicks in."
+msgstr ""
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:197
 msgid "How to pair video files with .ass subtitles"
@@ -3953,6 +4057,10 @@ msgstr "限制"
 msgid "Limits & Validation"
 msgstr "限制与校验"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:422
+msgid "Limits each individual file's transfer rate rather than the overall total."
+msgstr ""
+
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:77
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:80
 #: src/components/pipeline/workflows/workflow-editor.tsx:376
@@ -4272,7 +4380,7 @@ msgstr "最大刷新重试次数"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1284
 #: src/components/config/shared/retry-policy-form.tsx:56
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:240
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:317
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:614
 msgid "Max Retries"
 msgstr "最大重试次数"
@@ -4293,6 +4401,10 @@ msgstr "最大分段数"
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1756
 msgid "Max Stall Duration (ms)"
 msgstr "最大停顿时间（毫秒）"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:594
+msgid "Max transactions/second to the remote API (--tpslimit)."
+msgstr ""
 
 #: src/components/config/global/concurrency-card.tsx:100
 msgid "Max Uploads"
@@ -4451,7 +4563,7 @@ msgstr "本月"
 msgid "Month (01-12)"
 msgstr "月 (01-12)"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:112
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:189
 msgid "Move"
 msgstr "移动"
 
@@ -4474,6 +4586,22 @@ msgstr "Mozilla/5.0..."
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:81
 msgid "MP"
 msgstr "MP"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:653
+msgid "Multi-Thread Copy"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:712
+msgid "Multi-Thread Cutoff help"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:666
+msgid "Multi-Thread Streams help"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:721
+msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
+msgstr ""
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Multimedia Archive"
@@ -4898,7 +5026,7 @@ msgstr "第 N 个输入：{input0}, {input1}..."
 msgid "Nth output: {output0}, {output1}..."
 msgstr "第 N 个输出：{output0}, {output1}..."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:251
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:328
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:629
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
@@ -5034,6 +5162,10 @@ msgstr "进行中"
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:675
+msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
+msgstr ""
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:844
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "仅支持 MP4/MOV/M4V"
@@ -5049,11 +5181,11 @@ msgid "Open menu"
 msgstr "打开菜单"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:54
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:80
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:157
 msgid "Operation"
 msgstr "操作"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:68
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:145
 msgid "Operation Mode"
 msgstr "操作模式"
 
@@ -5175,7 +5307,7 @@ msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
 #: src/components/streamers/edit/streamer-config-form.tsx:124
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:318
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:323
 msgid "Override global defaults for this streamer."
 msgstr "为此主播覆盖全局默认值。"
 
@@ -5241,6 +5373,10 @@ msgstr "配对分段"
 #: src/components/config/shared-config-editor.tsx:565
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:515
+msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
+msgstr ""
 
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:307
 msgid "Parse and play live streams"
@@ -5350,6 +5486,18 @@ msgstr "待处理任务"
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:280
 msgid "Per page:"
 msgstr "每页："
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:416
+msgid "Per-File Bandwidth Limit"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:419
+msgid "Per-File Bandwidth Limit help"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:445
+msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
+msgstr ""
 
 #: src/components/config/global/pipeline-config-card.tsx:176
 #: src/components/config/shared-config-editor.tsx:412
@@ -5884,6 +6032,14 @@ msgstr "内存使用率"
 msgid "Random"
 msgstr "随机"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:553
+msgid "Rate Limiting"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:567
+msgid "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
+msgstr ""
+
 #: src/components/streamers/edit/active-download-card.tsx:175
 #: src/components/streamers/progress-indicator.tsx:132
 msgid "Ratio"
@@ -5902,7 +6058,20 @@ msgstr "原始分段 TTL（毫秒）"
 msgid "Rclone"
 msgstr "Rclone"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:205
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:632
+msgid "rclone default: 1"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:491
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:687
+msgid "rclone default: 4"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:534
+msgid "rclone default: 8"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:282
 msgid "Rclone Executable"
 msgstr "Rclone 可执行文件"
 
@@ -5975,7 +6144,7 @@ msgid "Recording"
 msgstr "录制"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:30
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:248
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:253
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
@@ -6214,7 +6383,7 @@ msgid "Retry Pipeline"
 msgstr "重试处理管道"
 
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:42
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:228
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:305
 msgid "Retry Policy"
 msgstr "重试策略"
 
@@ -6558,7 +6727,7 @@ msgstr "选择格式"
 msgid "Select login type"
 msgstr "选择登录类型"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:91
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:168
 msgid "Select operation"
 msgstr "选择操作"
 
@@ -6899,6 +7068,10 @@ msgstr "仅在编解码器配置变更时分割。减少误分割。"
 msgid "Split Reason"
 msgstr "分割原因"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:669
+msgid "Splits a single large file into N parallel chunks for faster upload."
+msgstr ""
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:97
 msgid "Standard"
 msgstr "标准"
@@ -7118,6 +7291,10 @@ msgstr "流式传输阈值（字节）"
 msgid "streamlink"
 msgstr "streamlink"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:663
+msgid "Streams"
+msgstr ""
+
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:965
 msgid "Streams & Metadata"
 msgstr "流与元数据"
@@ -7126,6 +7303,10 @@ msgstr "流与元数据"
 #: src/components/streamers/edit/status-check-history.tsx:246
 msgid "Streams extracted"
 msgstr "已提取流"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:694
+msgid "Streams per file (--multi-thread-streams)."
+msgstr ""
 
 #: src/components/notifications/channel-card.tsx:197
 msgid "Subscriptions"
@@ -7176,7 +7357,7 @@ msgstr "切换语言"
 msgid "Switch Theme"
 msgstr "切换主题"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:123
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:200
 msgid "Sync"
 msgstr "同步"
 
@@ -7212,7 +7393,7 @@ msgstr "目标码率"
 msgid "Target Bitrate"
 msgstr "目标比特率"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:148
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:225
 msgid "Target Configuration"
 msgstr "目标配置"
 
@@ -7451,6 +7632,10 @@ msgstr "这将永久删除工作流“{0}”。使用该工作流的主播需要
 msgid "This will permanently remove the \"{0}\" configuration. This action cannot be undone."
 msgstr "这将永久移除“{0}”配置。此操作无法撤销。"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:341
+msgid "Throughput"
+msgstr ""
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
 #: src/components/pipeline/presets/default-presets-i18n.ts:45
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:61
@@ -7488,6 +7673,10 @@ msgstr "时间范围"
 #: src/components/config/engines/forms/streamlink-form.tsx:98
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:382
+msgid "time-of-day timetable"
+msgstr ""
 
 #: src/components/sessions/danmu-stats-panel.tsx:331
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
@@ -7533,6 +7722,10 @@ msgstr "时区"
 #: src/components/config/platforms/tabs/general-tab.tsx:35
 msgid "Timing & Delays"
 msgstr "时间与延迟"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:386
+msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
+msgstr ""
 
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:169
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:174
@@ -7592,6 +7785,22 @@ msgstr "总步骤数"
 msgid "Total system load"
 msgstr "系统总负载"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:610
+msgid "TPS Burst"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:612
+msgid "TPS Burst help"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:563
+msgid "TPS Limit"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:565
+msgid "TPS Limit help"
+msgstr ""
+
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:139
 msgid "Track Information"
 msgstr "轨道信息"
@@ -7603,6 +7812,14 @@ msgstr "统计词数"
 #: src/components/pipeline/presets/preset-templates.ts:14
 msgid "Transcode H.264"
 msgstr "转码 H.264"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:469
+msgid "Transfers"
+msgstr ""
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:471
+msgid "Transfers help"
+msgstr ""
 
 #: src/components/streamers/edit/status-check-history.tsx:371
 #: src/components/streamers/edit/status-check-history.tsx:392
@@ -7784,6 +8001,10 @@ msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 msgid "Unhealthy"
 msgstr "不健康"
 
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:363
+msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
+msgstr ""
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:218
 msgid "Unix timestamp"
 msgstr "Unix 时间戳"
@@ -7840,6 +8061,10 @@ msgstr "更新现有项目并创建新项目，不会删除任何内容。"
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:71
 msgid "Upload"
 msgstr "上传"
+
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:378
+msgid "upload : download (asymmetric)"
+msgstr ""
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:19
 msgid "Upload (Rclone)"

@@ -24,6 +24,111 @@ pub enum RcloneOperation {
     Sync,
 }
 
+/// Configuration for the rclone processor.
+///
+/// Deserialized from the JSON string in `ProcessorInput::config`. Every
+/// field is optional and defaults are applied when keys are missing, so
+/// older saved configs that pre-date newer fields continue to load.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RcloneConfig {
+    /// Base remote path (e.g. `gdrive:/videos`). Supports placeholder
+    /// expansion for `{streamer}`, `{title}`, `{streamer_id}`,
+    /// `{session_id}`, and chrono-style time tokens (`%Y`, `%m`, `%d`, ...).
+    pub destination_root: Option<String>,
+
+    /// Path to a custom `rclone.conf`. If unset, rclone uses its default.
+    pub config_path: Option<String>,
+
+    /// Transfer operation. Defaults to [`RcloneOperation::Copy`].
+    pub operation: RcloneOperation,
+
+    /// Free-form extra CLI arguments appended verbatim after the
+    /// throughput flags. Provided as a power-user escape hatch; prefer
+    /// the dedicated fields below when possible.
+    pub args: Vec<String>,
+
+    // -------- Throughput / bandwidth controls --------
+    /// `--bwlimit` value, e.g. `"10M"`, `"10M:100k"`, or a timetable like
+    /// `"08:00,512k 23:00,off"`. Units are bytes (default base KiB/s).
+    /// See <https://rclone.org/docs/#bwlimit-bandwidth-spec>.
+    pub bwlimit: Option<String>,
+
+    /// `--bwlimit-file` per-file bandwidth cap. Same syntax as `bwlimit`.
+    pub bwlimit_file: Option<String>,
+
+    /// `--transfers`: number of concurrent file transfers.
+    pub transfers: Option<u32>,
+
+    /// `--checkers`: number of concurrent checkers.
+    pub checkers: Option<u32>,
+
+    /// `--tpslimit`: max transactions per second against the remote.
+    /// `0` means unlimited; `None` falls back to rclone's default.
+    pub tpslimit: Option<f64>,
+
+    /// `--tpslimit-burst`: burst capacity for `tpslimit`.
+    pub tpslimit_burst: Option<u32>,
+
+    /// `--multi-thread-streams`: streams per file for multi-thread copy.
+    pub multi_thread_streams: Option<u32>,
+
+    /// `--multi-thread-cutoff`: size threshold (e.g. `"250M"`) above
+    /// which multi-thread copy kicks in.
+    pub multi_thread_cutoff: Option<String>,
+}
+
+impl RcloneConfig {
+    /// Build the list of CLI arguments contributed by the throughput
+    /// fields, as flag-then-value pairs. Empty when no throughput field
+    /// is set.
+    ///
+    /// Returned as `Vec<String>` so unit tests can assert on the exact
+    /// argv without constructing a [`Command`].
+    fn throughput_args(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+
+        if let Some(v) = self.bwlimit.as_deref().filter(|s| !s.is_empty()) {
+            out.push("--bwlimit".into());
+            out.push(v.into());
+        }
+        if let Some(v) = self.bwlimit_file.as_deref().filter(|s| !s.is_empty()) {
+            out.push("--bwlimit-file".into());
+            out.push(v.into());
+        }
+        if let Some(n) = self.transfers {
+            out.push("--transfers".into());
+            out.push(n.to_string());
+        }
+        if let Some(n) = self.checkers {
+            out.push("--checkers".into());
+            out.push(n.to_string());
+        }
+        if let Some(n) = self.tpslimit {
+            out.push("--tpslimit".into());
+            out.push(n.to_string());
+        }
+        if let Some(n) = self.tpslimit_burst {
+            out.push("--tpslimit-burst".into());
+            out.push(n.to_string());
+        }
+        if let Some(n) = self.multi_thread_streams {
+            out.push("--multi-thread-streams".into());
+            out.push(n.to_string());
+        }
+        if let Some(v) = self
+            .multi_thread_cutoff
+            .as_deref()
+            .filter(|s| !s.is_empty())
+        {
+            out.push("--multi-thread-cutoff".into());
+            out.push(v.into());
+        }
+
+        out
+    }
+}
+
 /// Processor for interacting with Rclone.
 pub struct RcloneProcessor {
     /// Path to rclone binary.
@@ -129,13 +234,15 @@ impl RcloneProcessor {
     }
 
     /// Execute a single-file rclone operation.
+    #[allow(clippy::too_many_arguments)]
     async fn process_single(
         &self,
         input_path: &str,
         remote_destination: &str,
         operation: RcloneOperation,
         config_path: Option<&str>,
-        extra_args: Option<&[String]>,
+        throughput: &[String],
+        extra_args: &[String],
         ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
@@ -180,10 +287,10 @@ impl RcloneProcessor {
                 remote_destination,
             ]);
 
-            if let Some(args) = extra_args {
-                for arg in args {
-                    cmd.arg(arg);
-                }
+            // Throughput flags first, so any duplicates in `extra_args` win.
+            cmd.args(throughput);
+            for arg in extra_args {
+                cmd.arg(arg);
             }
 
             let command_output = match crate::pipeline::processors::utils::run_rclone_with_progress(
@@ -250,13 +357,15 @@ impl RcloneProcessor {
     }
 
     /// Execute a batch rclone operation using --files-from.
+    #[allow(clippy::too_many_arguments)]
     async fn process_batch(
         &self,
         inputs: &[String],
         remote_destination: &str,
         operation: RcloneOperation,
         config_path: Option<&str>,
-        extra_args: Option<&[String]>,
+        throughput: &[String],
+        extra_args: &[String],
         ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
@@ -318,10 +427,10 @@ impl RcloneProcessor {
                 remote_destination,
             ]);
 
-            if let Some(args) = extra_args {
-                for arg in args {
-                    cmd.arg(arg);
-                }
+            // Throughput flags first, so any duplicates in `extra_args` win.
+            cmd.args(throughput);
+            for arg in extra_args {
+                cmd.arg(arg);
             }
 
             let command_output = match crate::pipeline::processors::utils::run_rclone_with_progress(
@@ -415,19 +524,11 @@ impl RcloneProcessor {
     /// Supports: {streamer}, {title}, {streamer_id}, {session_id}, and time placeholders (%Y, %m, %d, etc.)
     ///
     /// Time placeholders use `input.created_at` to ensure consistency across retries.
-    fn determine_remote_destination(
-        input: &ProcessorInput,
-        config_json: Option<&serde_json::Value>,
-    ) -> String {
-        // Determine destination root
-        let destination_root = config_json
-            .and_then(|v| v.get("destination_root"))
-            .and_then(|s| s.as_str());
-
+    fn determine_remote_destination(input: &ProcessorInput, config: &RcloneConfig) -> String {
         // For batch mode, we need a destination root (directory), not a specific file path
         let remote_destination_raw = if let Some(out) = input.outputs.first() {
             out.clone()
-        } else if let Some(root) = destination_root {
+        } else if let Some(root) = config.destination_root.as_deref() {
             root.trim_end_matches('/').to_string()
         } else {
             String::new()
@@ -517,29 +618,18 @@ impl Processor for RcloneProcessor {
             }
         }
 
-        // Parse config
-        let config_json = input
-            .config
-            .as_ref()
-            .and_then(|c| serde_json::from_str::<serde_json::Value>(c).ok());
+        // Parse config into the typed struct.
+        let config: RcloneConfig = match input.config.as_deref() {
+            Some(s) => serde_json::from_str(s).map_err(|e| {
+                crate::Error::Validation(format!("Invalid rclone config JSON: {e}"))
+            })?,
+            None => RcloneConfig::default(),
+        };
 
-        // Determine destination root (needed for logic later)
-        let destination_root = config_json
-            .as_ref()
-            .and_then(|v| v.get("destination_root"))
-            .and_then(|s| s.as_str());
-
-        let remote_destination = Self::determine_remote_destination(input, config_json.as_ref());
-
-        // Determine operation
-        let operation: RcloneOperation = config_json
-            .as_ref()
-            .and_then(|v| v.get("operation"))
-            .and_then(|s| serde_json::from_value(s.clone()).ok())
-            .unwrap_or_default();
+        let remote_destination = Self::determine_remote_destination(input, &config);
 
         // Sync operation is only allowed in batch mode (directory sync semantics)
-        if matches!(operation, RcloneOperation::Sync) && input.inputs.len() == 1 {
+        if matches!(config.operation, RcloneOperation::Sync) && input.inputs.len() == 1 {
             return Err(crate::Error::Validation(
                 "Sync operation is not supported for single file uploads. \
                  Use 'copy' or 'move' instead. Sync is designed for directory synchronization \
@@ -548,24 +638,10 @@ impl Processor for RcloneProcessor {
             ));
         }
 
-        // Determine config path
-        let config_path = config_json
-            .as_ref()
-            .and_then(|v| v.get("config_path"))
-            .and_then(|s| s.as_str());
-
-        // Extract extra args
-        let extra_args: Option<Vec<String>> = config_json
-            .as_ref()
-            .and_then(|v| v.get("args"))
-            .and_then(|a| a.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            });
-
-        let extra_args_ref = extra_args.as_deref();
+        // Throughput flags are computed once and shared across both code paths.
+        // They go on the command line *before* `config.args`, so user-supplied
+        // extra args win on duplicate flags (rclone applies last-wins).
+        let throughput = config.throughput_args();
 
         // Choose single or batch mode based on input count
         if input.inputs.len() == 1 {
@@ -576,7 +652,7 @@ impl Processor for RcloneProcessor {
 
             // If destination doesn't look like it includes the filename, append it
             let full_destination =
-                if remote_destination.ends_with('/') || destination_root.is_some() {
+                if remote_destination.ends_with('/') || config.destination_root.is_some() {
                     format!("{}/{}", remote_destination.trim_end_matches('/'), file_name)
                 } else {
                     remote_destination.clone()
@@ -585,9 +661,10 @@ impl Processor for RcloneProcessor {
             self.process_single(
                 input_path,
                 &full_destination,
-                operation,
-                config_path,
-                extra_args_ref,
+                config.operation,
+                config.config_path.as_deref(),
+                &throughput,
+                &config.args,
                 ctx,
             )
             .await
@@ -598,9 +675,10 @@ impl Processor for RcloneProcessor {
             self.process_batch(
                 &input.inputs,
                 &remote_destination,
-                operation,
-                config_path,
-                extra_args_ref,
+                config.operation,
+                config.config_path.as_deref(),
+                &throughput,
+                &config.args,
                 ctx,
             )
             .await
@@ -679,10 +757,8 @@ mod tests {
             created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
         };
 
-        let config_json =
-            serde_json::from_str::<serde_json::Value>(input.config.as_ref().unwrap()).ok();
-        let destination =
-            RcloneProcessor::determine_remote_destination(&input, config_json.as_ref());
+        let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
+        let destination = RcloneProcessor::determine_remote_destination(&input, &config);
 
         assert_eq!(destination, "remote:/StreamerName/Live Title");
     }
@@ -704,12 +780,111 @@ mod tests {
             created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
         };
 
-        let config_json =
-            serde_json::from_str::<serde_json::Value>(input.config.as_ref().unwrap()).ok();
-        let destination =
-            RcloneProcessor::determine_remote_destination(&input, config_json.as_ref());
+        let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
+        let destination = RcloneProcessor::determine_remote_destination(&input, &config);
 
         // Should use created_at (2024-01-01) for time placeholders
         assert_eq!(destination, "remote:/2024/01/01/StreamerName");
+    }
+
+    #[test]
+    fn throughput_args_empty_when_no_fields() {
+        let cfg = RcloneConfig::default();
+        assert!(cfg.throughput_args().is_empty());
+    }
+
+    #[test]
+    fn throughput_args_emits_bwlimit_and_transfers() {
+        let cfg = RcloneConfig {
+            bwlimit: Some("10M".into()),
+            transfers: Some(8),
+            ..Default::default()
+        };
+        let expected: Vec<String> = ["--bwlimit", "10M", "--transfers", "8"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(cfg.throughput_args(), expected);
+    }
+
+    #[test]
+    fn throughput_args_supports_asymmetric_and_timetable() {
+        let cfg = RcloneConfig {
+            bwlimit: Some("10M:100k".into()),
+            bwlimit_file: Some("08:00,512k 23:00,off".into()),
+            ..Default::default()
+        };
+        let args = cfg.throughput_args();
+        assert_eq!(&args[..2], &["--bwlimit", "10M:100k"]);
+        assert_eq!(&args[2..], &["--bwlimit-file", "08:00,512k 23:00,off"]);
+    }
+
+    #[test]
+    fn throughput_args_skips_empty_strings() {
+        // Form submissions can produce `Some("")` for cleared text inputs;
+        // those should not turn into empty CLI values.
+        let cfg = RcloneConfig {
+            bwlimit: Some(String::new()),
+            multi_thread_cutoff: Some(String::new()),
+            ..Default::default()
+        };
+        assert!(cfg.throughput_args().is_empty());
+    }
+
+    #[test]
+    fn rclone_config_deserializes_from_partial_json() {
+        let json = r#"{ "destination_root": "remote:/x", "bwlimit": "5M" }"#;
+        let cfg: RcloneConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.destination_root.as_deref(), Some("remote:/x"));
+        assert_eq!(cfg.bwlimit.as_deref(), Some("5M"));
+        assert!(cfg.args.is_empty());
+        assert_eq!(cfg.operation, RcloneOperation::Copy);
+    }
+
+    #[test]
+    fn rclone_config_distinguishes_zero_tpslimit_from_unset() {
+        let zero: RcloneConfig = serde_json::from_str(r#"{"tpslimit": 0}"#).unwrap();
+        let unset: RcloneConfig = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(zero.tpslimit, Some(0.0));
+        assert_eq!(unset.tpslimit, None);
+        assert_eq!(zero.throughput_args(), vec!["--tpslimit", "0"]);
+        assert!(unset.throughput_args().is_empty());
+    }
+
+    #[test]
+    fn rclone_config_round_trips_all_throughput_fields() {
+        let json = r#"{
+            "bwlimit": "10M:100k",
+            "bwlimit_file": "1M",
+            "transfers": 4,
+            "checkers": 8,
+            "tpslimit": 2.5,
+            "tpslimit_burst": 5,
+            "multi_thread_streams": 2,
+            "multi_thread_cutoff": "250M"
+        }"#;
+        let cfg: RcloneConfig = serde_json::from_str(json).unwrap();
+        let expected: Vec<String> = [
+            "--bwlimit",
+            "10M:100k",
+            "--bwlimit-file",
+            "1M",
+            "--transfers",
+            "4",
+            "--checkers",
+            "8",
+            "--tpslimit",
+            "2.5",
+            "--tpslimit-burst",
+            "5",
+            "--multi-thread-streams",
+            "2",
+            "--multi-thread-cutoff",
+            "250M",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(cfg.throughput_args(), expected);
     }
 }

@@ -2,7 +2,7 @@
 
 ## `unreleased`
 
-This update covers three independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart; (3) a **new check-history strip on the streamer details page** that gives you an at-a-glance view of every recent monitor poll, with a tooltip showing exactly which stream quality was picked. It also ships the initial scaffolding for backend localization.
+This update covers three independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart; (3) a **new check-history strip on the streamer details page** that gives you an at-a-glance view of every recent monitor poll, with a tooltip showing exactly which stream quality was picked. It also ships the initial scaffolding for backend localization, and adds first-class **bandwidth & throughput controls** to the rclone pipeline step so you can throttle uploads from the UI.
 
 ## Streamer check-history strip
 
@@ -42,6 +42,22 @@ This update covers three independent themes: (1) **recording session reliability
 
   - **API filtering by default** — the sessions list endpoint now hides zero-byte ended sessions by default. Active (still-recording) sessions are always returned. Pass `?include_empty=true` to inspect for diagnostics, or look up by session ID directly.
   - **Periodic background cleanup** — empty session rows are automatically deleted from the database 5 minutes after end (default scan interval 30 minutes). Related danmu statistics, segments, and lifecycle events are removed alongside.
+
+## Rclone bandwidth & throughput controls
+
+The rclone pipeline step now exposes rclone's bandwidth and concurrency knobs as dedicated form fields, so you no longer need to know rclone's CLI flag syntax to throttle an upload.
+
+- **Cap upload bandwidth without leaving the UI**
+
+  In the rclone step's **Advanced → Throughput** card, the new **Bandwidth Limit** field accepts simple values like `10M` (cap both directions at 10 MiB/s), asymmetric values like `10M:100k` (10 MiB/s up, 100 KiB/s down), or even a full timetable like `08:00,512k 23:00,off` for time-of-day shaping. Examples sit right under the input — no need to look up rclone's docs.
+
+- **Tune concurrency and remote API rate limits**
+
+  The same card adds dedicated inputs for **Transfers** (concurrent files), **Checkers** (concurrent integrity checks), **TPS Limit** / **TPS Burst** (transactions per second to the remote API — useful when a provider rate-limits you), **Multi-Thread Streams**, and **Multi-Thread Cutoff** (file size at which multi-thread copy kicks in). Empty means "use rclone's default", so you only set what you actually want to change.
+
+- **Existing presets still work; "Extra Arguments" still wins**
+
+  Older saved presets load unchanged. If you'd already added something like `--bwlimit 5M` to the **Extra Arguments** list, that keeps working — and continues to take precedence over the dedicated Throughput fields, so nothing you've configured silently changes behavior.
 
 ## Frontend
 
@@ -103,6 +119,8 @@ The gate work included several supporting refactors that improve the downloader 
 - **Extended `reset_errors`** (doc clarification only — the actual reset path was already correct via `StreamerManager::clear_error_state`).
 
 - **`DownloadManager.output_root_gate` field uses `OnceLock`** for lock-free reads after a one-shot late-bind write at container init time. Necessary because the services container constructs `NotificationService` after `DownloadManager` in one of its two builders.
+
+- **Rclone processor switched to a typed `RcloneConfig` struct.** The processor previously parsed its config by poking at a generic `serde_json::Value`; it now uses a `#[derive(Deserialize)]` struct like every other processor in the crate. No behavior change — just removes a soup of `.get(…).and_then(…)` calls and gives the new throughput fields a self-documenting home.
 
 ## Compatibility
 

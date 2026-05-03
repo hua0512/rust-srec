@@ -84,6 +84,18 @@ export const RcloneConfigSchema = z.object({
   remote_path: z.string().optional(), // Legacy support or direct override
   operation: RcloneOperationSchema.default('copy'),
   args: z.array(z.string()).default([]),
+
+  // Throughput / bandwidth controls (rclone CLI flags). Empty/undefined
+  // means "use rclone's default" -- we don't want the form to start
+  // shadowing rclone's own defaults if those ever change.
+  bwlimit: z.string().optional(),
+  bwlimit_file: z.string().optional(),
+  transfers: z.number().int().positive().optional(),
+  checkers: z.number().int().positive().optional(),
+  tpslimit: z.number().nonnegative().optional(),
+  tpslimit_burst: z.number().int().nonnegative().optional(),
+  multi_thread_streams: z.number().int().nonnegative().optional(),
+  multi_thread_cutoff: z.string().optional(),
 });
 
 // --- Thumbnail Processor ---
