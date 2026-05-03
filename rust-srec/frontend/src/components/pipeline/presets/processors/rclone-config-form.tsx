@@ -28,6 +28,7 @@ import {
   Copy,
   Move,
   RefreshCw,
+  Gauge,
 } from 'lucide-react';
 import { ProcessorConfigFormProps } from './common-props';
 import { Trans } from '@lingui/react/macro';
@@ -42,6 +43,16 @@ export function RcloneConfigForm({
 }: ProcessorConfigFormProps<RcloneConfig>) {
   const { i18n } = useLingui();
   const prefix = pathPrefix ? `${pathPrefix}.` : '';
+
+  // Coerce a numeric `<Input type="number">` change event to `number | undefined`.
+  // `valueAsNumber` returns `NaN` for empty input; we map that back to `undefined`
+  // so the form value matches the optional schema (Option<u32> on the backend).
+  const onNumberChange =
+    (cb: (v: number | undefined) => void) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const v = e.target.valueAsNumber;
+      cb(Number.isNaN(v) ? undefined : v);
+    };
 
   return (
     <Tabs defaultValue="general" className="w-full">
@@ -254,6 +265,247 @@ export function RcloneConfigForm({
                 </FormItem>
               )}
             />
+          </CardContent>
+        </Card>
+
+        {/* Throughput */}
+        <Card className="border-border/50 bg-muted/10 shadow-sm">
+          <CardHeaderWithIcon
+            icon={Gauge}
+            title={<Trans>Throughput</Trans>}
+            className="border-b border-border/10 bg-muted/5"
+            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
+            iconClassName="h-4 w-4"
+          />
+          <CardContent className="grid gap-4 pt-4">
+            <FormField
+              control={control}
+              name={`${prefix}bwlimit` as any}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <Trans>Bandwidth Limit</Trans>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={i18n._(msg`e.g. 10M`)}
+                      {...field}
+                      value={field.value ?? ''}
+                      className="h-11 bg-background/50 font-mono text-sm"
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    <Trans>
+                      Caps overall transfer bandwidth (rclone --bwlimit). Units
+                      are bytes (default base KiB/s). Examples: <code>10M</code>{' '}
+                      (both directions), <code>10M:100k</code>{' '}
+                      (upload:download), or a timetable such as{' '}
+                      <code>08:00,512k 23:00,off</code>.
+                    </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={control}
+              name={`${prefix}bwlimit_file` as any}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <Trans>Per-File Bandwidth Limit</Trans>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={i18n._(msg`e.g. 1M`)}
+                      {...field}
+                      value={field.value ?? ''}
+                      className="h-11 bg-background/50 font-mono text-sm"
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    <Trans>
+                      Per-file cap (rclone --bwlimit-file). Same syntax as
+                      Bandwidth Limit; composes with it.
+                    </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={control}
+                name={`${prefix}transfers` as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      <Trans>Transfers</Trans>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        step={1}
+                        placeholder={i18n._(msg`rclone default: 4`)}
+                        value={field.value ?? ''}
+                        onChange={onNumberChange(field.onChange)}
+                        className="bg-background/50"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      <Trans>Concurrent file transfers (--transfers).</Trans>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={control}
+                name={`${prefix}checkers` as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      <Trans>Checkers</Trans>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={1}
+                        step={1}
+                        placeholder={i18n._(msg`rclone default: 8`)}
+                        value={field.value ?? ''}
+                        onChange={onNumberChange(field.onChange)}
+                        className="bg-background/50"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      <Trans>Concurrent checkers (--checkers).</Trans>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={control}
+                name={`${prefix}tpslimit` as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      <Trans>TPS Limit</Trans>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        placeholder={i18n._(msg`0 = unlimited`)}
+                        value={field.value ?? ''}
+                        onChange={onNumberChange(field.onChange)}
+                        className="bg-background/50"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      <Trans>
+                        Max transactions/second to the remote API (--tpslimit).
+                      </Trans>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={control}
+                name={`${prefix}tpslimit_burst` as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      <Trans>TPS Burst</Trans>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder={i18n._(msg`rclone default: 1`)}
+                        value={field.value ?? ''}
+                        onChange={onNumberChange(field.onChange)}
+                        className="bg-background/50"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      <Trans>
+                        Burst capacity for TPS Limit (--tpslimit-burst).
+                      </Trans>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={control}
+                name={`${prefix}multi_thread_streams` as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      <Trans>Multi-Thread Streams</Trans>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder={i18n._(msg`rclone default: 4`)}
+                        value={field.value ?? ''}
+                        onChange={onNumberChange(field.onChange)}
+                        className="bg-background/50"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      <Trans>
+                        Streams per file for multi-thread copy
+                        (--multi-thread-streams).
+                      </Trans>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={control}
+                name={`${prefix}multi_thread_cutoff` as any}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      <Trans>Multi-Thread Cutoff</Trans>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={i18n._(msg`e.g. 250M`)}
+                        {...field}
+                        value={field.value ?? ''}
+                        className="bg-background/50 font-mono text-sm"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      <Trans>
+                        File size at which multi-thread copy kicks in
+                        (--multi-thread-cutoff).
+                      </Trans>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
           </CardContent>
         </Card>
 
