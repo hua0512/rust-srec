@@ -181,7 +181,10 @@ impl SessionJanitor {
                 debug!("SessionJanitor sweep: no empty sessions to delete");
             }
             Ok(count) => {
-                info!(deleted = count, "SessionJanitor sweep: deleted empty sessions");
+                info!(
+                    deleted = count,
+                    "SessionJanitor sweep: deleted empty sessions"
+                );
             }
             Err(e) => {
                 warn!(error = %e, "SessionJanitor sweep failed; will retry on next tick");
@@ -269,9 +272,13 @@ mod tests {
         // Empty + ended just now — within retention.
         let fresh_empty = insert_session(&pool, &streamer_id, 0, Some(now_ms)).await;
         // Real recording, ended 1 hour ago — past retention but has bytes.
-        let real_recording =
-            insert_session(&pool, &streamer_id, 1_500_000_000, Some(now_ms - 60 * 60 * 1000))
-                .await;
+        let real_recording = insert_session(
+            &pool,
+            &streamer_id,
+            1_500_000_000,
+            Some(now_ms - 60 * 60 * 1000),
+        )
+        .await;
 
         let janitor = SessionJanitor::for_test(
             pool.clone(),

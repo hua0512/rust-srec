@@ -380,7 +380,10 @@ mod tests {
         assert!(!s.is_recording());
         assert!(s.is_hysteresis());
         assert!(!s.is_ended());
-        assert!(s.is_active(), "Hysteresis is still considered active for is_live queries");
+        assert!(
+            s.is_active(),
+            "Hysteresis is still considered active for is_live queries"
+        );
         assert_eq!(s.kind_str(), "hysteresis");
     }
 
@@ -487,9 +490,8 @@ mod tests {
     #[test]
     fn authority_completed_with_clean_disconnect_is_not_authoritative() {
         assert!(
-            !TerminalCause::Completed.is_authoritative_end_with_signal(Some(
-                EngineEndSignal::CleanDisconnect
-            ))
+            !TerminalCause::Completed
+                .is_authoritative_end_with_signal(Some(EngineEndSignal::CleanDisconnect))
         );
     }
 
@@ -519,10 +521,7 @@ mod tests {
             "cancelled"
         );
         assert_eq!(
-            TerminalCause::Rejected {
-                reason: "x".into()
-            }
-            .as_str(),
+            TerminalCause::Rejected { reason: "x".into() }.as_str(),
             "rejected"
         );
         assert_eq!(TerminalCause::StreamerOffline.as_str(), "streamer_offline");

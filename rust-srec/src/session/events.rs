@@ -173,8 +173,7 @@ mod tests {
 
     fn round_trip(payload: &SessionEventPayload) {
         let json = serde_json::to_string(payload).expect("serialise");
-        let back: SessionEventPayload =
-            serde_json::from_str(&json).expect("deserialise");
+        let back: SessionEventPayload = serde_json::from_str(&json).expect("deserialise");
         assert_eq!(payload, &back, "round trip for {json}");
     }
 

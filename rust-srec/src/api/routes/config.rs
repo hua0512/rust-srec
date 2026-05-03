@@ -148,9 +148,7 @@ fn validate_offline_check_overrides(
     if let Some(c) = count
         && c < 1
     {
-        return Err(ApiError::bad_request(
-            "offline_check_count must be >= 1",
-        ));
+        return Err(ApiError::bad_request("offline_check_count must be >= 1"));
     }
     if let Some(d) = delay_ms
         && d < 1_000

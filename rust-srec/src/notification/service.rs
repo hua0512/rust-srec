@@ -2146,70 +2146,72 @@ mod tests {
         let started_at = Utc::now();
         let completed_at = started_at + chrono::Duration::seconds(10);
 
-        let started_event = match DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-1".to_string(),
-            streamer_name: "Streamer".to_string(),
-            session_id: "session-1".to_string(),
-            segment_path: "/tmp/seg.ts".to_string(),
-            segment_index: 1,
-            started_at,
-        }) {
-            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
-                streamer_id,
-                streamer_name,
-                session_id,
-                segment_path,
-                segment_index,
+        let started_event =
+            match DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
+                download_id: "dl-1".to_string(),
+                streamer_id: "streamer-1".to_string(),
+                streamer_name: "Streamer".to_string(),
+                session_id: "session-1".to_string(),
+                segment_path: "/tmp/seg.ts".to_string(),
+                segment_index: 1,
                 started_at,
-                ..
-            }) => NotificationEvent::SegmentStarted {
-                streamer_id,
-                streamer_name,
-                session_id,
-                segment_path,
-                segment_index,
-                timestamp: started_at,
-            },
-            _ => unreachable!(),
-        };
+            }) {
+                DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
+                    streamer_id,
+                    streamer_name,
+                    session_id,
+                    segment_path,
+                    segment_index,
+                    started_at,
+                    ..
+                }) => NotificationEvent::SegmentStarted {
+                    streamer_id,
+                    streamer_name,
+                    session_id,
+                    segment_path,
+                    segment_index,
+                    timestamp: started_at,
+                },
+                _ => unreachable!(),
+            };
 
-        let completed_event = match DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-1".to_string(),
-            streamer_name: "Streamer".to_string(),
-            session_id: "session-1".to_string(),
-            segment_path: "/tmp/seg.ts".to_string(),
-            segment_index: 1,
-            started_at: Some(started_at),
-            completed_at,
-            duration_secs: 10.0,
-            size_bytes: 1024,
-            split_reason_code: None,
-            split_reason_details_json: None,
-        }) {
-            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
-                streamer_id,
-                streamer_name,
-                session_id,
-                segment_path,
-                segment_index,
+        let completed_event =
+            match DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
+                download_id: "dl-1".to_string(),
+                streamer_id: "streamer-1".to_string(),
+                streamer_name: "Streamer".to_string(),
+                session_id: "session-1".to_string(),
+                segment_path: "/tmp/seg.ts".to_string(),
+                segment_index: 1,
+                started_at: Some(started_at),
                 completed_at,
-                duration_secs,
-                size_bytes,
-                ..
-            }) => NotificationEvent::SegmentCompleted {
-                streamer_id,
-                streamer_name,
-                session_id,
-                segment_path,
-                segment_index,
-                size_bytes,
-                duration_secs,
-                timestamp: completed_at,
-            },
-            _ => unreachable!(),
-        };
+                duration_secs: 10.0,
+                size_bytes: 1024,
+                split_reason_code: None,
+                split_reason_details_json: None,
+            }) {
+                DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
+                    streamer_id,
+                    streamer_name,
+                    session_id,
+                    segment_path,
+                    segment_index,
+                    completed_at,
+                    duration_secs,
+                    size_bytes,
+                    ..
+                }) => NotificationEvent::SegmentCompleted {
+                    streamer_id,
+                    streamer_name,
+                    session_id,
+                    segment_path,
+                    segment_index,
+                    size_bytes,
+                    duration_secs,
+                    timestamp: completed_at,
+                },
+                _ => unreachable!(),
+            };
 
         match started_event {
             NotificationEvent::SegmentStarted { timestamp, .. } => {
