@@ -9,12 +9,14 @@
 //! - Emitting events for the notification system
 
 mod batch_detector;
+pub mod check_history_writer;
 mod detector;
 mod events;
 mod rate_limiter;
 mod service;
 
 pub use batch_detector::{BatchDetector, BatchFailure, BatchResult};
+pub use check_history_writer::{CheckHistoryBroadcaster, CheckHistoryWriter};
 pub use detector::{FilterReason, LiveStatus, StreamDetector, StreamInfo};
 pub use events::{FatalErrorType, MonitorEvent, MonitorEventBroadcaster};
 pub use rate_limiter::{RateLimiter, RateLimiterConfig, RateLimiterManager};

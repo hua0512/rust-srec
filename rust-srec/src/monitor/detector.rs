@@ -50,6 +50,25 @@ pub enum LiveStatus {
         /// schedule window while a download is active.
         #[serde(default)]
         next_check_hint: Option<DateTime<Utc>>,
+
+        /// Total number of stream candidates the platform extractor returned
+        /// for this poll, before selection narrowed the list to one. The
+        /// `streams` field above carries only the chosen stream; this
+        /// carries every candidate descriptor the extractor returned, used
+        /// by the check-history strip's tooltip to show all available
+        /// qualities/formats with the selected one marked.
+        ///
+        /// URLs in this list are unresolved (some platforms require a
+        /// per-candidate `get_url()` call). The check-history writer
+        /// projects each candidate to a `SelectedStreamSummary` that
+        /// strips the URL before persistence — operator-facing diagnostic
+        /// surfaces never see signed query params or CDN tokens.
+        ///
+        /// `#[serde(default)]` so events serialized by older builds (e.g.
+        /// in the monitor outbox during an in-place upgrade) deserialize
+        /// cleanly with an empty vec.
+        #[serde(default)]
+        candidates: Vec<StreamInfo>,
     },
     /// Streamer is offline.
     Offline,
@@ -146,6 +165,35 @@ impl LiveStatus {
             LiveStatus::Private => Some("Content is private"),
             LiveStatus::UnsupportedPlatform => Some("Platform is not supported"),
             _ => None,
+        }
+    }
+
+    /// Map a fatal-error variant to its [`crate::monitor::FatalErrorType`].
+    /// Returns `None` for non-fatal variants (Live, Offline, Filtered).
+    /// Used by the check-history writer to populate `fatal_kind` without
+    /// hand-spelling the variant strings.
+    pub fn fatal_kind(&self) -> Option<crate::monitor::FatalErrorType> {
+        use crate::monitor::FatalErrorType;
+        match self {
+            LiveStatus::NotFound => Some(FatalErrorType::NotFound),
+            LiveStatus::Banned => Some(FatalErrorType::Banned),
+            LiveStatus::AgeRestricted => Some(FatalErrorType::AgeRestricted),
+            LiveStatus::RegionLocked => Some(FatalErrorType::RegionLocked),
+            LiveStatus::Private => Some(FatalErrorType::Private),
+            LiveStatus::UnsupportedPlatform => Some(FatalErrorType::UnsupportedPlatform),
+            _ => None,
+        }
+    }
+}
+
+impl FilterReason {
+    /// Stable string discriminator for `streamer_check_history.filter_reason`.
+    /// Returned as `&'static str` so callers don't pay an allocation per row.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FilterReason::OutOfSchedule { .. } => "OutOfSchedule",
+            FilterReason::TitleMismatch => "TitleMismatch",
+            FilterReason::CategoryMismatch => "CategoryMismatch",
         }
     }
 }
@@ -293,7 +341,7 @@ impl StreamDetector {
             };
 
         // Extract media information
-        let media_info = match extractor.extract().await {
+        let mut media_info = match extractor.extract().await {
             Ok(info) => info,
             // Fatal errors - these should stop monitoring
             Err(ExtractorError::StreamerNotFound) => {
@@ -489,6 +537,13 @@ impl StreamDetector {
 
             let streams = vec![selected_stream];
 
+            // Take ownership of the full candidate list before `media_info`
+            // is consumed by the constructor below. The check-history strip
+            // shows all candidates with the selected one marked, so we
+            // forward the full Vec rather than just a count. URLs here are
+            // unresolved — that's fine, the writer strips them anyway.
+            let candidates = std::mem::take(&mut media_info.streams);
+
             debug!(
                 streamer_name = %streamer.name,
                 streamer_url = %streamer.url,
@@ -496,6 +551,7 @@ impl StreamDetector {
                 category = ?category,
                 viewers = ?viewer_count,
                 streams = streams.len(),
+                candidates = candidates.len(),
                 media_headers = media_headers.as_ref().map(|h| h.len()).unwrap_or(0),
                 extras = media_extras.as_ref().map(|e| e.len()).unwrap_or(0),
                 "status=LIVE"
@@ -511,6 +567,7 @@ impl StreamDetector {
                 media_headers,
                 media_extras,
                 next_check_hint: None,
+                candidates,
             })
         } else {
             trace!(
@@ -606,6 +663,7 @@ impl StreamDetector {
                 streams,
                 media_headers,
                 media_extras,
+                candidates,
                 ..
             } = status
             {
@@ -619,6 +677,7 @@ impl StreamDetector {
                     media_headers,
                     media_extras,
                     next_check_hint,
+                    candidates,
                 });
             }
         }
@@ -688,6 +747,7 @@ mod tests {
             media_headers: None,
             media_extras: None,
             next_check_hint: None,
+            candidates: vec![],
         };
         assert!(status.is_live());
         assert!(!status.is_offline());
@@ -728,6 +788,7 @@ mod tests {
             media_headers: None,
             media_extras: None,
             next_check_hint: None,
+            candidates: vec![],
         };
         assert_eq!(live.title(), Some("Live Title"));
 
@@ -766,6 +827,7 @@ mod tests {
                 media_headers: None,
                 media_extras: None,
                 next_check_hint: None,
+                candidates: vec![],
             }
             .is_fatal_error()
         );
