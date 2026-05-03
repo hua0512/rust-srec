@@ -81,7 +81,7 @@ export const StepLibrary = memo(function StepLibrary({
     isLoading: isLoadingPresets,
   } = useInfiniteQuery({
     queryKey: ['job', 'presets', debouncedSearch, selectedCategory],
-    queryFn: ({ pageParam = 0 }) =>
+    queryFn: ({ pageParam }) =>
       listJobPresets({
         data: {
           search: debouncedSearch || undefined,
@@ -107,7 +107,7 @@ export const StepLibrary = memo(function StepLibrary({
     isLoading: isLoadingWorkflows,
   } = useInfiniteQuery({
     queryKey: ['pipeline', 'presets', debouncedSearch],
-    queryFn: ({ pageParam = 0 }) =>
+    queryFn: ({ pageParam }) =>
       listPipelinePresets({
         data: {
           search: debouncedSearch || undefined,

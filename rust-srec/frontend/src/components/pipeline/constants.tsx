@@ -11,18 +11,21 @@ import {
   Tag,
   Workflow,
   Globe,
-  Twitch,
-  Youtube,
   Video,
-  Tv,
   Radio,
-  MessageCircle,
-  Music,
   Film,
   Camera,
   Flame,
   Type,
 } from 'lucide-react';
+import {
+  SiBilibili,
+  SiSinaweibo,
+  SiTiktok,
+  SiTwitch,
+  SiXiaohongshu,
+  SiYoutube,
+} from '@icons-pack/react-simple-icons';
 import React from 'react';
 
 export const STEP_ICONS: Record<string, React.ElementType> = {
@@ -85,19 +88,19 @@ export function getStepIcon(processor: string): React.ElementType {
 
 // Platform Constants
 export const PLATFORM_ICONS: Record<string, React.ElementType> = {
-  bilibili: Tv,
-  douyin: Music, // TikTok/Douyin note
-  tiktok: Music,
+  bilibili: SiBilibili,
+  douyin: SiTiktok, // Douyin is the Chinese TikTok; Simple Icons has no separate douyin slug
+  tiktok: SiTiktok,
   douyu: Radio,
   huya: Video,
-  twitch: Twitch,
-  youtube: Youtube,
+  twitch: SiTwitch,
+  youtube: SiYoutube,
   acfun: Film,
   pandatv: Camera,
   picarto: ImageIcon,
-  redbook: MessageCircle, // Xiaohongshu
+  redbook: SiXiaohongshu, // Xiaohongshu
   twitcasting: Radio,
-  weibo: Globe,
+  weibo: SiSinaweibo,
 };
 
 export const PLATFORM_COLORS: Record<string, string> = {
