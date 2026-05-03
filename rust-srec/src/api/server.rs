@@ -81,6 +81,7 @@ use crate::database::repositories::{
     session::SessionRepository,
     session_event::SessionEventRepository,
     streamer::{SqlxStreamerRepository, StreamerRepository},
+    streamer_check_history::StreamerCheckHistoryRepository,
 };
 use crate::downloader::DownloadManager;
 use crate::metrics::HealthChecker;
@@ -115,6 +116,16 @@ pub struct AppState {
     /// `GET /api/sessions/{id}`. Optional — when `None`, the route returns
     /// `events: []` (e.g. test harnesses that don't seed the table).
     pub session_event_repository: Option<Arc<dyn SessionEventRepository>>,
+    /// Per-poll check-history repository powering the
+    /// `GET /api/streamers/{id}/check-history` read path. Optional — when
+    /// `None`, the route returns an empty array (matches test harnesses
+    /// that don't run the writer task).
+    pub streamer_check_history_repository: Option<Arc<dyn StreamerCheckHistoryRepository>>,
+    /// Live broadcaster for committed check-history rows. Cloned into the
+    /// downloads WS route so per-streamer subscribers see new bars appear
+    /// without polling. `None` when the writer pipeline isn't wired (test
+    /// harnesses); the WS route falls back to download-only events.
+    pub check_history_broadcaster: Option<crate::monitor::CheckHistoryBroadcaster>,
     /// Filter repository for streamer filters
     pub filter_repository: Option<Arc<dyn FilterRepository>>,
     /// Health checker for real health status
@@ -168,6 +179,8 @@ impl AppState {
             download_manager: None,
             session_repository: None,
             session_event_repository: None,
+            streamer_check_history_repository: None,
+            check_history_broadcaster: None,
             filter_repository: None,
             health_checker: None,
             streamer_repository: None,
@@ -199,6 +212,8 @@ impl AppState {
             download_manager: None,
             session_repository: None,
             session_event_repository: None,
+            streamer_check_history_repository: None,
+            check_history_broadcaster: None,
             filter_repository: None,
             health_checker: None,
             streamer_repository: None,
@@ -234,6 +249,8 @@ impl AppState {
             download_manager: Some(download_manager),
             session_repository: None,
             session_event_repository: None,
+            streamer_check_history_repository: None,
+            check_history_broadcaster: None,
             filter_repository: None,
             health_checker: None,
             streamer_repository: None,
@@ -266,6 +283,28 @@ impl AppState {
         session_event_repository: Arc<dyn SessionEventRepository>,
     ) -> Self {
         self.session_event_repository = Some(session_event_repository);
+        self
+    }
+
+    /// Set the streamer check-history repository (powers the check-history
+    /// strip on the streamer details page). Optional — when unset, the
+    /// route returns an empty `items` array.
+    pub fn with_streamer_check_history_repository(
+        mut self,
+        streamer_check_history_repository: Arc<dyn StreamerCheckHistoryRepository>,
+    ) -> Self {
+        self.streamer_check_history_repository = Some(streamer_check_history_repository);
+        self
+    }
+
+    /// Set the live check-history broadcaster (powers WebSocket push for
+    /// new bars). Optional — when unset, clients fall back to the REST
+    /// endpoint's polling cadence.
+    pub fn with_check_history_broadcaster(
+        mut self,
+        broadcaster: crate::monitor::CheckHistoryBroadcaster,
+    ) -> Self {
+        self.check_history_broadcaster = Some(broadcaster);
         self
     }
 

@@ -32,11 +32,14 @@ const SNAPSHOT_ON_SUBSCRIBE: bool = true;
 use crate::api::error::ApiError;
 use crate::api::proto::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadRejected,
-    EventType, SegmentCompleted, WsMessage, create_error_message, create_snapshot_message,
-    download_progress::client_message::Action, download_progress::ws_message::Payload,
+    EventType, SegmentCompleted, StreamerCheckRecorded, WsMessage, create_error_message,
+    create_snapshot_message, download_progress::client_message::Action,
+    download_progress::ws_message::Payload,
 };
 use crate::api::server::AppState;
+use crate::domain::streamer::{CheckOutcome, CheckRecord};
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
+use crate::monitor::check_history_writer::BroadcastEnvelope;
 
 /// Query parameters for WebSocket connection (JWT token).
 #[derive(Debug, Deserialize)]
@@ -125,6 +128,19 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     // 2. Subscribe to broadcast
     let mut event_rx = download_manager.subscribe();
+    // Per-poll check-history events. When the broadcaster isn't wired
+    // (test harnesses), we hold both sides of a tiny no-op channel — the
+    // sender keeps the receiver open without ever firing, so the select!
+    // arm below never returns Closed and falls back to download-only
+    // streaming naturally.
+    let (_check_history_keepalive, mut check_history_rx) =
+        match state.check_history_broadcaster.as_ref() {
+            Some(b) => (None, b.subscribe()),
+            None => {
+                let (tx, rx) = broadcast::channel::<BroadcastEnvelope>(1);
+                (Some(tx), rx)
+            }
+        };
 
     // 3. Track filter state and heartbeat
     let mut filter: Option<String> = None;
@@ -227,6 +243,40 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     Err(broadcast::error::RecvError::Closed) => {
                         debug!("Broadcast channel closed");
                         break;
+                    }
+                }
+            }
+
+            // Per-poll check-history events. Filtered against the same
+            // `streamer_id` subscription state as download events so a
+            // client watching streamer A doesn't see streamer B's bars.
+            envelope = check_history_rx.recv() => {
+                match envelope {
+                    Ok(envelope) => {
+                        if filter.as_ref().is_none_or(|f| f == &envelope.record.streamer_id) {
+                            // `ws_bytes` was encoded once in the drain task and
+                            // refcounts cheaply across subscribers — no
+                            // re-encode in this hot path.
+                            if let Err(e) = sender
+                                .send(Message::Binary(envelope.ws_bytes.clone()))
+                                .await
+                            {
+                                debug!("Failed to send check-history message: {}", e);
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        // Lag here is fine — the client's REST refetch
+                        // (or page-open snapshot) reconciles missed bars.
+                        warn!("check-history broadcast lagged by {} messages", n);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        // The keepalive sender prevents this in test
+                        // harnesses; production loses bars only if the
+                        // writer task itself exits, which only happens on
+                        // shutdown — fall through to heartbeat / client
+                        // close.
+                        debug!("check-history broadcast closed");
                     }
                 }
             }
@@ -429,6 +479,82 @@ fn map_event_to_protobuf(
             })
         }
         _ => None,
+    }
+}
+
+/// Map a domain [`CheckRecord`] to the WebSocket envelope.
+///
+/// `pub` so the [`crate::services::container::ServiceContainer`] can wrap
+/// it as the [`crate::monitor::check_history_writer::WsEncoder`] handed to
+/// the broadcaster. Keeping the encoding here (next to the proto
+/// definitions and other download-WS mappers) avoids adding a
+/// monitor-layer dependency on `api::proto`.
+///
+/// proto3 scalars have no nullability — the convention here is "empty
+/// string means absent" for fatal_kind / filter_reason / error_message /
+/// title / category, and `viewer_count = 0` for absent. The frontend
+/// translates those back to nulls; the REST shape continues to use real
+/// nullability.
+pub fn map_check_record_to_protobuf(record: &CheckRecord) -> WsMessage {
+    let mut payload = StreamerCheckRecorded {
+        streamer_id: record.streamer_id.clone(),
+        checked_at_ms: record.checked_at.timestamp_millis(),
+        // proto3 int32 is plenty for millisecond durations (max 2.1B ms ≈
+        // 24 days). Saturate rather than wrap.
+        duration_ms: i32::try_from(record.duration.num_milliseconds()).unwrap_or(i32::MAX),
+        outcome: record.outcome.as_str().to_string(),
+        fatal_kind: String::new(),
+        filter_reason: String::new(),
+        error_message: String::new(),
+        streams_extracted: 0,
+        stream_selected_json: String::new(),
+        title: String::new(),
+        category: String::new(),
+        viewer_count: 0,
+        streams_extracted_json: String::new(),
+    };
+
+    match &record.outcome {
+        CheckOutcome::Live {
+            title,
+            category,
+            viewer_count,
+            candidates,
+            selected_stream,
+        } => {
+            payload.title = title.clone();
+            payload.category = category.clone().unwrap_or_default();
+            payload.streams_extracted = u32::try_from(candidates.len()).unwrap_or(u32::MAX);
+            payload.viewer_count = viewer_count.unwrap_or(0);
+            if let Some(s) = selected_stream {
+                payload.stream_selected_json = serde_json::to_string(s).unwrap_or_default();
+            }
+            if !candidates.is_empty() {
+                payload.streams_extracted_json =
+                    serde_json::to_string(candidates).unwrap_or_default();
+            }
+        }
+        CheckOutcome::Offline => {}
+        CheckOutcome::Filtered {
+            reason,
+            title,
+            category,
+        } => {
+            payload.filter_reason = reason.as_str().to_string();
+            payload.title = title.clone();
+            payload.category = category.clone().unwrap_or_default();
+        }
+        CheckOutcome::FatalError { kind } => {
+            payload.fatal_kind = kind.as_str().to_string();
+        }
+        CheckOutcome::TransientError { message } => {
+            payload.error_message = message.clone();
+        }
+    }
+
+    WsMessage {
+        event_type: EventType::StreamerCheckRecorded as i32,
+        payload: Some(Payload::StreamerCheckRecorded(payload)),
     }
 }
 

@@ -14,6 +14,11 @@ enum EventType {
   EVENT_TYPE_DOWNLOAD_CANCELLED = 7;
   EVENT_TYPE_ERROR = 8;
   EVENT_TYPE_DOWNLOAD_REJECTED = 9;
+  // Emitted once per monitor poll, after the check-history writer task has
+  // committed the row to SQLite. Powers the streamer details page's
+  // check-history strip without polling — same per-streamer subscription
+  // model as the download events above.
+  EVENT_TYPE_STREAMER_CHECK_RECORDED = 10;
 }
 
 // Server-to-client message envelope
@@ -29,6 +34,7 @@ message WsMessage {
     DownloadCancelled download_cancelled = 8;
     ErrorPayload error = 9;
     DownloadRejected download_rejected = 10;
+    StreamerCheckRecorded streamer_check_recorded = 11;
   }
 }
 
@@ -142,4 +148,41 @@ message DownloadRejected {
 message ErrorPayload {
   string code = 1;
   string message = 2;
+}
+
+// One row of streamer check-history, broadcast immediately after the writer
+// task commits it to SQLite. Mirrors the wire shape of the
+// `StreamerCheckHistoryEntry` REST response — clients use this for live
+// updates and fall back to GET /api/streamers/:id/check-history for the
+// initial backlog.
+//
+// `outcome` is the discriminator (`live`|`offline`|`filtered`|`transient_error`
+// |`fatal_error`). `fatal_kind`, `filter_reason`, and `error_message` are
+// outcome-specific detail; client code should treat empty strings the same as
+// missing (proto3 has no scalar nullability).
+message StreamerCheckRecorded {
+  string streamer_id = 1;
+  // Unix epoch milliseconds (UTC). Matches `live_sessions.start_time` units.
+  int64 checked_at_ms = 2;
+  int32 duration_ms = 3;
+  string outcome = 4;
+  string fatal_kind = 5;
+  string filter_reason = 6;
+  // Truncated transient-error message (≤ 512 chars at write time).
+  string error_message = 7;
+  uint32 streams_extracted = 8;
+  // JSON-encoded selected-stream descriptor:
+  //   { quality, stream_format, media_format, bitrate, codec, fps }
+  // Empty string when `outcome != 'live'`. URL is intentionally omitted.
+  string stream_selected_json = 9;
+  string title = 10;
+  string category = 11;
+  // 0 when the platform doesn't report viewer count (proto3 scalar default).
+  uint64 viewer_count = 12;
+  // JSON-encoded array of every candidate the platform extractor returned
+  // (same per-element shape as `stream_selected_json`). Empty string when
+  // `outcome != 'live'` or when no candidates were captured. The selected
+  // candidate is also referenced by `stream_selected_json`; clients render
+  // the array with the matching candidate marked.
+  string streams_extracted_json = 13;
 }
