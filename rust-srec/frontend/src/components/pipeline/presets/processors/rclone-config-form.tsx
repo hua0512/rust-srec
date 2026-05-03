@@ -29,13 +29,54 @@ import {
   Move,
   RefreshCw,
   Gauge,
+  HelpCircle,
 } from 'lucide-react';
 import { ProcessorConfigFormProps } from './common-props';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 type RcloneConfig = z.infer<typeof RcloneConfigSchema>;
+
+/**
+ * A small "?" icon next to a form label that reveals richer guidance
+ * (examples, recommended values, gotchas) on hover/focus. Use alongside
+ * a brief always-visible `<FormDescription>` so the inline text stays
+ * scannable.
+ */
+function FieldHint({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={label}
+          className="inline-flex items-center justify-center rounded text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        className="max-w-xs space-y-1.5 text-xs leading-relaxed"
+      >
+        {children}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function RcloneConfigForm({
   control,
@@ -283,9 +324,41 @@ export function RcloneConfigForm({
               name={`${prefix}bwlimit` as any}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    <Trans>Bandwidth Limit</Trans>
-                  </FormLabel>
+                  <div className="flex items-center gap-1.5">
+                    <FormLabel>
+                      <Trans>Bandwidth Limit</Trans>
+                    </FormLabel>
+                    <FieldHint label={i18n._(msg`Bandwidth Limit help`)}>
+                      <p>
+                        <Trans>
+                          Units are bytes (default base KiB/s). Use suffixes B,
+                          K, M, G, T, P for larger sizes.
+                        </Trans>
+                      </p>
+                      <p>
+                        <Trans>Examples:</Trans>
+                      </p>
+                      <ul className="list-disc space-y-0.5 pl-4">
+                        <li>
+                          <code>10M</code> —{' '}
+                          <Trans>both directions at 10 MiB/s</Trans>
+                        </li>
+                        <li>
+                          <code>10M:100k</code> —{' '}
+                          <Trans>upload : download (asymmetric)</Trans>
+                        </li>
+                        <li>
+                          <code>08:00,512k 23:00,off</code> —{' '}
+                          <Trans>time-of-day timetable</Trans>
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground/70">
+                        <Trans>
+                          Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8).
+                        </Trans>
+                      </p>
+                    </FieldHint>
+                  </div>
                   <FormControl>
                     <Input
                       placeholder={i18n._(msg`e.g. 10M`)}
@@ -296,11 +369,7 @@ export function RcloneConfigForm({
                   </FormControl>
                   <FormDescription>
                     <Trans>
-                      Caps overall transfer bandwidth (rclone --bwlimit). Units
-                      are bytes (default base KiB/s). Examples: <code>10M</code>{' '}
-                      (both directions), <code>10M:100k</code>{' '}
-                      (upload:download), or a timetable such as{' '}
-                      <code>08:00,512k 23:00,off</code>.
+                      Caps overall transfer bandwidth (rclone --bwlimit).
                     </Trans>
                   </FormDescription>
                   <FormMessage />
@@ -313,9 +382,28 @@ export function RcloneConfigForm({
               name={`${prefix}bwlimit_file` as any}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    <Trans>Per-File Bandwidth Limit</Trans>
-                  </FormLabel>
+                  <div className="flex items-center gap-1.5">
+                    <FormLabel>
+                      <Trans>Per-File Bandwidth Limit</Trans>
+                    </FormLabel>
+                    <FieldHint
+                      label={i18n._(msg`Per-File Bandwidth Limit help`)}
+                    >
+                      <p>
+                        <Trans>
+                          Limits each individual file's transfer rate rather
+                          than the overall total.
+                        </Trans>
+                      </p>
+                      <p>
+                        <Trans>
+                          Composes with Bandwidth Limit — useful to keep one big
+                          file from saturating the whole link while still
+                          allowing many small ones to run in parallel.
+                        </Trans>
+                      </p>
+                    </FieldHint>
+                  </div>
                   <FormControl>
                     <Input
                       placeholder={i18n._(msg`e.g. 1M`)}
@@ -341,9 +429,25 @@ export function RcloneConfigForm({
                 name={`${prefix}transfers` as any}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      <Trans>Transfers</Trans>
-                    </FormLabel>
+                    <div className="flex items-center gap-1.5">
+                      <FormLabel>
+                        <Trans>Transfers</Trans>
+                      </FormLabel>
+                      <FieldHint label={i18n._(msg`Transfers help`)}>
+                        <p>
+                          <Trans>
+                            How many files rclone uploads in parallel.
+                          </Trans>
+                        </p>
+                        <p>
+                          <Trans>
+                            Higher = faster on fast connections, but more
+                            aggressive on the remote and your CPU. Increase only
+                            if your network and provider can handle it.
+                          </Trans>
+                        </p>
+                      </FieldHint>
+                    </div>
                     <FormControl>
                       <Input
                         type="number"
@@ -367,9 +471,26 @@ export function RcloneConfigForm({
                 name={`${prefix}checkers` as any}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      <Trans>Checkers</Trans>
-                    </FormLabel>
+                    <div className="flex items-center gap-1.5">
+                      <FormLabel>
+                        <Trans>Checkers</Trans>
+                      </FormLabel>
+                      <FieldHint label={i18n._(msg`Checkers help`)}>
+                        <p>
+                          <Trans>
+                            Parallel integrity checks (e.g. comparing source /
+                            destination hashes).
+                          </Trans>
+                        </p>
+                        <p>
+                          <Trans>
+                            Cheap operations, so the default of 8 is usually
+                            fine. Increase if you have many small files against
+                            a slow remote.
+                          </Trans>
+                        </p>
+                      </FieldHint>
+                    </div>
                     <FormControl>
                       <Input
                         type="number"
@@ -396,9 +517,27 @@ export function RcloneConfigForm({
                 name={`${prefix}tpslimit` as any}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      <Trans>TPS Limit</Trans>
-                    </FormLabel>
+                    <div className="flex items-center gap-1.5">
+                      <FormLabel>
+                        <Trans>TPS Limit</Trans>
+                      </FormLabel>
+                      <FieldHint label={i18n._(msg`TPS Limit help`)}>
+                        <p>
+                          <Trans>
+                            Rate-limits API calls to the remote. Useful when a
+                            provider returns 429 "too many requests" under heavy
+                            load.
+                          </Trans>
+                        </p>
+                        <p>
+                          <Trans>
+                            <code>0</code> means unlimited (rclone default).
+                            Example: set to <code>10</code> if the provider caps
+                            you at 10 requests/second.
+                          </Trans>
+                        </p>
+                      </FieldHint>
+                    </div>
                     <FormControl>
                       <Input
                         type="number"
@@ -424,9 +563,25 @@ export function RcloneConfigForm({
                 name={`${prefix}tpslimit_burst` as any}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      <Trans>TPS Burst</Trans>
-                    </FormLabel>
+                    <div className="flex items-center gap-1.5">
+                      <FormLabel>
+                        <Trans>TPS Burst</Trans>
+                      </FormLabel>
+                      <FieldHint label={i18n._(msg`TPS Burst help`)}>
+                        <p>
+                          <Trans>
+                            How many requests can briefly burst above TPS Limit
+                            before throttling kicks in.
+                          </Trans>
+                        </p>
+                        <p>
+                          <Trans>
+                            Default is 1 (no burst). Increase if the provider
+                            tolerates short bursts of activity.
+                          </Trans>
+                        </p>
+                      </FieldHint>
+                    </div>
                     <FormControl>
                       <Input
                         type="number"
@@ -455,9 +610,25 @@ export function RcloneConfigForm({
                 name={`${prefix}multi_thread_streams` as any}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      <Trans>Multi-Thread Streams</Trans>
-                    </FormLabel>
+                    <div className="flex items-center gap-1.5">
+                      <FormLabel>
+                        <Trans>Multi-Thread Streams</Trans>
+                      </FormLabel>
+                      <FieldHint label={i18n._(msg`Multi-Thread Streams help`)}>
+                        <p>
+                          <Trans>
+                            Splits a single large file into N parallel chunks
+                            for faster upload.
+                          </Trans>
+                        </p>
+                        <p>
+                          <Trans>
+                            Only kicks in for files above the Multi-Thread
+                            Cutoff size. Default is 4. Set to 0 to disable.
+                          </Trans>
+                        </p>
+                      </FieldHint>
+                    </div>
                     <FormControl>
                       <Input
                         type="number"
@@ -484,9 +655,26 @@ export function RcloneConfigForm({
                 name={`${prefix}multi_thread_cutoff` as any}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      <Trans>Multi-Thread Cutoff</Trans>
-                    </FormLabel>
+                    <div className="flex items-center gap-1.5">
+                      <FormLabel>
+                        <Trans>Multi-Thread Cutoff</Trans>
+                      </FormLabel>
+                      <FieldHint label={i18n._(msg`Multi-Thread Cutoff help`)}>
+                        <p>
+                          <Trans>
+                            Files smaller than this stay single-threaded.
+                            Examples: <code>250M</code>, <code>1G</code>.
+                          </Trans>
+                        </p>
+                        <p>
+                          <Trans>
+                            Multi-thread upload only helps on large files; on
+                            small ones the splitting overhead outweighs the
+                            benefit.
+                          </Trans>
+                        </p>
+                      </FieldHint>
+                    </div>
                     <FormControl>
                       <Input
                         placeholder={i18n._(msg`e.g. 250M`)}
