@@ -2,7 +2,21 @@
 
 ## `unreleased`
 
-This update covers two independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart. It also ships the initial scaffolding for backend localization.
+This update covers three independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart; (3) a **new check-history strip on the streamer details page** that gives you an at-a-glance view of every recent monitor poll, with a tooltip showing exactly which stream quality was picked. It also ships the initial scaffolding for backend localization.
+
+## Streamer check-history strip
+
+- **At-a-glance view of recent monitor checks**
+
+  The streamer details page now shows the last 60 monitor polls as a row of small colored bars — green when the streamer was live, gray for offline, amber when a filter (like a schedule rule) skipped the streamer, and red when something went wrong. You can tell at a glance whether the monitor has been running normally and where any recent hiccups happened.
+
+- **Hover any bar to see exactly what happened**
+
+  The tooltip shows the time of the check, how long it took, and the full **list of stream qualities** the platform offered, with the one rust-srec actually picked for recording highlighted with a check mark. Useful when troubleshooting "why didn't it pick the higher quality?" or confirming a particular bitrate / codec was selected. For polls that didn't go live (filtered, errored), the tooltip explains why.
+
+- **Updates live as new checks happen**
+
+  When the dashboard is open, new bars stream in as each poll completes — no need to refresh. The header shows a green pulsing **LIVE** indicator while the connection is active, and falls back to "Last check ⟨X⟩ seconds ago" when offline so you can tell whether the data on screen is fresh.
 
 ## Recording session reliability
 
@@ -92,7 +106,7 @@ The gate work included several supporting refactors that improve the downloader 
 
 ## Compatibility
 
-- No database migrations.
+- One new database migration is added by the check-history strip. It runs automatically on startup; nothing for you to do.
 - `GET /sessions` default behavior changed: zero-byte ended sessions are no longer returned (the "ghost cards" on the dashboard disappear by default). Pass `?include_empty=true` to see all records. `GET /sessions/:id` is unaffected.
 - `set_circuit_breaker_blocked` was renamed to `set_infra_blocked(reason)` — external callers of the monitor service (none known) would need to update.
 - The `DownloadManagerEvent::DownloadRejected` event now carries a new `kind: DownloadRejectedKind` field. External subscribers of the event stream (via the WebSocket or broadcast API) should expect this field to appear in JSON payloads; ignoring it is safe.

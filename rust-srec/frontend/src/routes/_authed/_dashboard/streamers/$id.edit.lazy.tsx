@@ -114,6 +114,11 @@ function EditStreamerPage() {
   const { data: templates, isLoading: isTemplatesLoading } = useQuery({
     queryKey: ['templates'],
     queryFn: () => listTemplates(),
+    // `initialData: []` silences React Query 5.x's "queryFn returned
+    // undefined" warning that fires during the brief hydration window
+    // before the server response lands. The fetched array replaces this
+    // immediately on first resolve.
+    initialData: [],
   });
 
   const { data: engines } = useQuery({
