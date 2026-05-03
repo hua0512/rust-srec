@@ -266,7 +266,7 @@ mod tests {
         let streamer_id = setup_streamer(&pool).await;
 
         let now_ms = chrono::Utc::now().timestamp_millis();
-        // Empty + ended 1 hour ago — past retention (10 ms).
+        // Empty + ended 1 hour ago — past retention.
         let stale_empty =
             insert_session(&pool, &streamer_id, 0, Some(now_ms - 60 * 60 * 1000)).await;
         // Empty + ended just now — within retention.
@@ -280,9 +280,13 @@ mod tests {
         )
         .await;
 
+        // Retention is large enough to absorb test-execution slop (slow CI
+        // can put tens of milliseconds between `now_ms` capture and the
+        // sweep's `cutoff_ms` computation) while still being far below the
+        // 1-hour gap used for the stale rows.
         let janitor = SessionJanitor::for_test(
             pool.clone(),
-            Duration::from_millis(10),
+            Duration::from_secs(30),
             Duration::from_secs(60),
             CancellationToken::new(),
         );
