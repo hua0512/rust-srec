@@ -58,7 +58,7 @@
     "date-fns": "^4.1.0",
     "hls.js": "^1.6.16",
     "ky": "^1.14.3",
-    "lucide-react": "^0.577.0",
+    "lucide-react": "^1.14.0",
     "motion": "^12.38.0",
     "mpegts.js": "^1.8.0",
     "nitro": "latest",
