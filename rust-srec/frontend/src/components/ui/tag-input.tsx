@@ -14,7 +14,7 @@ interface TagInputProps extends Omit<
 }
 
 export function TagInput({
-  value = [],
+  value,
   onChange,
   placeholder,
   className,
