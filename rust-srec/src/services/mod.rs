@@ -4,7 +4,9 @@
 //! for all application services.
 
 pub mod container;
+pub mod session_cancels;
 pub mod session_janitor;
 
 pub use container::{ServiceContainer, ServiceStats};
+pub use session_cancels::SessionCancelTokens;
 pub use session_janitor::SessionJanitor;

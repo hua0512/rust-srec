@@ -19,6 +19,20 @@ enum EventType {
   // check-history strip without polling — same per-streamer subscription
   // model as the download events above.
   EVENT_TYPE_STREAMER_CHECK_RECORDED = 10;
+  // A streamer is live and a download has been requested but is
+  // parked waiting for a concurrency slot to free up. Cleared by a
+  // subsequent EVENT_TYPE_DOWNLOAD_META + Started for the same
+  // session, or by EVENT_TYPE_DOWNLOAD_DEQUEUED if the pipeline aborts
+  // before the download starts. Fast-path acquires (slot immediately available)
+  // do NOT emit this — there's no wait worth showing.
+  EVENT_TYPE_DOWNLOAD_QUEUED = 12;
+  // Cleanup signal for a previously-queued pipeline that aborted
+  // before the download starts (cancellation, shutdown, schedule close,
+  // freshness/state re-check).
+  // Frontend clears the streamer's queued badge on receipt.
+  // Fast-path acquires never emit this — they didn't emit
+  // DownloadQueued either.
+  EVENT_TYPE_DOWNLOAD_DEQUEUED = 13;
 }
 
 // Server-to-client message envelope
@@ -35,6 +49,8 @@ message WsMessage {
     ErrorPayload error = 9;
     DownloadRejected download_rejected = 10;
     StreamerCheckRecorded streamer_check_recorded = 11;
+    DownloadQueued download_queued = 12;
+    DownloadDequeued download_dequeued = 13;
   }
 }
 
@@ -55,6 +71,10 @@ message UnsubscribeRequest {}
 // Initial snapshot of all active downloads
 message DownloadSnapshot {
   repeated DownloadState downloads = 1;
+  // Streamers that are live and have a download request parked on
+  // the concurrency queue. Lets a freshly-connecting WS client
+  // restore the "queued" badge without waiting for the next event.
+  repeated DownloadQueued queued = 2;
 }
 
 // A complete download state, split into metadata and metrics.
@@ -185,4 +205,34 @@ message StreamerCheckRecorded {
   // candidate is also referenced by `stream_selected_json`; clients render
   // the array with the matching candidate marked.
   string streams_extracted_json = 13;
+}
+
+// A streamer's download is parked on the concurrency queue.
+//
+// Emitted by the download manager when an `acquire_slot` call has to
+// wait for a slot to free up. Cleared by a subsequent
+// `DownloadStarted` for the same `session_id` (engine running) or by
+// `DownloadDequeued` if the pipeline aborts before starting.
+message DownloadQueued {
+  string streamer_id = 1;
+  string session_id = 2;
+  string streamer_name = 3;
+  // Engine type as a stable lowercase string (`ffmpeg`, `streamlink`,
+  // `mesio`). Matches `DownloadMeta.engine_type`.
+  string engine_type = 4;
+  // Wall-clock millis since the unix epoch when the request entered
+  // the queue. Frontend uses this for "waiting since X" display.
+  int64 queued_at_ms = 5;
+  // High-priority requests are surfaced with a different badge tone
+  // and may take precedence on slot turnover.
+  bool is_high_priority = 6;
+}
+
+// Cleanup signal for a queued pipeline that aborted before starting a
+// download. Carries no payload beyond identification — the frontend just
+// removes the streamer's queued badge entry. No retry semantics.
+message DownloadDequeued {
+  string streamer_id = 1;
+  string session_id = 2;
+  string streamer_name = 3;
 }

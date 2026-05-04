@@ -241,8 +241,8 @@ msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 msgid "Accept Invalid Certs (Default: Off)"
 msgstr "接受无效证书（默认：关闭）"
 
-#: src/components/streamers/card/use-streamer-status.tsx:170
-#: src/components/streamers/card/use-streamer-status.tsx:179
+#: src/components/streamers/card/use-streamer-status.tsx:172
+#: src/components/streamers/card/use-streamer-status.tsx:181
 msgid "Account Not Found"
 msgstr "账号不存在"
 
@@ -981,7 +981,7 @@ msgid "Cancel Pipeline?"
 msgstr "取消处理管道？"
 
 #: src/components/pipeline/status-config.ts:110
-#: src/components/streamers/card/use-streamer-status.tsx:42
+#: src/components/streamers/card/use-streamer-status.tsx:44
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:117
 msgid "Cancelled"
 msgstr "已取消"
@@ -1128,7 +1128,7 @@ msgstr "校验数帮助"
 msgid "Checking"
 msgstr "检查中"
 
-#: src/components/streamers/card/use-streamer-status.tsx:273
+#: src/components/streamers/card/use-streamer-status.tsx:338
 msgid "Checking stream status..."
 msgstr "正在检查流状态..."
 
@@ -1298,6 +1298,10 @@ msgstr "并发"
 #: src/components/config/global/concurrency-card.tsx:67
 msgid "Concurrency & Performance"
 msgstr "并发与性能"
+
+#: src/components/streamers/card/use-streamer-status.tsx:274
+msgid "Concurrency limit reached"
+msgstr "已达到并发限制"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:541
 msgid "Concurrent checkers (--checkers)."
@@ -2120,7 +2124,7 @@ msgid "Disable"
 msgstr "禁用"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:202
-#: src/components/streamers/card/use-streamer-status.tsx:47
+#: src/components/streamers/card/use-streamer-status.tsx:49
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:502
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:534
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:544
@@ -2171,7 +2175,7 @@ msgstr "下载"
 msgid "Download {0}"
 msgstr "下载 {0}"
 
-#: src/components/streamers/card/use-streamer-status.tsx:86
+#: src/components/streamers/card/use-streamer-status.tsx:88
 msgid "Download activity looks healthy"
 msgstr "下载活动看起来正常"
 
@@ -2557,7 +2561,7 @@ msgid "Environment Variables"
 msgstr "环境变量"
 
 #: src/components/config/engines/engine-card.tsx:150
-#: src/components/streamers/card/use-streamer-status.tsx:46
+#: src/components/streamers/card/use-streamer-status.tsx:48
 #: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
 #: src/routes/_authed/_dashboard/config/engines/index.lazy.tsx:38
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:66
@@ -2570,8 +2574,8 @@ msgstr "环境变量"
 msgid "Error"
 msgstr "错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:193
-#: src/components/streamers/card/use-streamer-status.tsx:233
+#: src/components/streamers/card/use-streamer-status.tsx:195
+#: src/components/streamers/card/use-streamer-status.tsx:235
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:607
 msgid "Error Details"
 msgstr "错误详情"
@@ -3097,7 +3101,7 @@ msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取�
 msgid "Fatal error"
 msgstr "致命错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:41
+#: src/components/streamers/card/use-streamer-status.tsx:43
 msgid "Fatal Error"
 msgstr "严重错误"
 
@@ -3580,6 +3584,10 @@ msgstr "高质量 H.265/HEVC 压缩（CRF 22）。文件更小，但编码更慢
 msgid "High Quality MP3"
 msgstr "高质量 MP3"
 
+#: src/components/streamers/card/use-streamer-status.tsx:270
+msgid "High-priority slot waiting (concurrency limit reached)"
+msgstr "高优先级槽位等待中（已达到并发限制）"
+
 #: src/components/notifications/browser-channel-dialog.tsx:153
 #: src/components/notifications/desktop-channel-dialog.tsx:51
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:168
@@ -3852,9 +3860,9 @@ msgstr "输入路径（逗号分隔）"
 msgid "Inset"
 msgstr "嵌入"
 
-#: src/components/streamers/card/use-streamer-status.tsx:38
-#: src/components/streamers/card/use-streamer-status.tsx:261
-#: src/components/streamers/card/use-streamer-status.tsx:270
+#: src/components/streamers/card/use-streamer-status.tsx:40
+#: src/components/streamers/card/use-streamer-status.tsx:326
+#: src/components/streamers/card/use-streamer-status.tsx:335
 msgid "Inspecting"
 msgstr "检查中"
 
@@ -4004,7 +4012,7 @@ msgstr "关键字"
 msgid "Language"
 msgstr "语言"
 
-#: src/components/streamers/card/use-streamer-status.tsx:332
+#: src/components/streamers/card/use-streamer-status.tsx:397
 msgid "Last Activity"
 msgstr "最后活动"
 
@@ -4017,7 +4025,7 @@ msgstr "最后检查"
 msgid "Last check {0} ago"
 msgstr "上次检查于 {0} 前"
 
-#: src/components/streamers/card/use-streamer-status.tsx:156
+#: src/components/streamers/card/use-streamer-status.tsx:158
 msgid "Last Error"
 msgstr "最后错误"
 
@@ -4071,8 +4079,8 @@ msgstr "列表"
 msgid "List of allowed file extensions (without dot)."
 msgstr "允许的文件扩展名列表（不含点号）。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:37
-#: src/components/streamers/card/use-streamer-status.tsx:248
+#: src/components/streamers/card/use-streamer-status.tsx:39
+#: src/components/streamers/card/use-streamer-status.tsx:313
 #: src/components/streamers/edit/recent-sessions-list.tsx:75
 #: src/components/streamers/edit/status-check-history.tsx:365
 #: src/components/streamers/edit/status-check-history.tsx:386
@@ -4550,8 +4558,8 @@ msgstr "监控并管理处理任务"
 msgid "Monitor this streamer"
 msgstr "监控此主播"
 
-#: src/components/streamers/card/use-streamer-status.tsx:207
-#: src/components/streamers/card/use-streamer-status.tsx:216
+#: src/components/streamers/card/use-streamer-status.tsx:209
+#: src/components/streamers/card/use-streamer-status.tsx:218
 msgid "Monitoring Stopped"
 msgstr "已停止监控"
 
@@ -4974,7 +4982,7 @@ msgstr "普通+"
 msgid "Not available"
 msgstr "不可用"
 
-#: src/components/streamers/card/use-streamer-status.tsx:43
+#: src/components/streamers/card/use-streamer-status.tsx:45
 msgid "Not Found"
 msgstr "未找到主播"
 
@@ -5084,9 +5092,9 @@ msgstr "OAuth 令牌"
 msgid "Off Canvas"
 msgstr "侧滑"
 
-#: src/components/streamers/card/use-streamer-status.tsx:36
-#: src/components/streamers/card/use-streamer-status.tsx:318
-#: src/components/streamers/card/use-streamer-status.tsx:327
+#: src/components/streamers/card/use-streamer-status.tsx:38
+#: src/components/streamers/card/use-streamer-status.tsx:383
+#: src/components/streamers/card/use-streamer-status.tsx:392
 #: src/components/streamers/edit/recent-sessions-list.tsx:73
 #: src/components/streamers/edit/status-check-history.tsx:367
 #: src/components/streamers/edit/status-check-history.tsx:388
@@ -5216,7 +5224,7 @@ msgstr "附加到 `tdl login` 的可选额外参数。"
 msgid "Options"
 msgstr "选项"
 
-#: src/components/streamers/card/use-streamer-status.tsx:40
+#: src/components/streamers/card/use-streamer-status.tsx:42
 msgid "Out of Space"
 msgstr "空间不足"
 
@@ -5278,7 +5286,7 @@ msgstr "输出设置"
 msgid "Outputs"
 msgstr "输出"
 
-#: src/components/streamers/card/use-streamer-status.tsx:291
+#: src/components/streamers/card/use-streamer-status.tsx:356
 msgid "Outside Schedule"
 msgstr "不在计划时间内"
 
@@ -5472,7 +5480,7 @@ msgstr "待处理"
 msgid "PENDING CONFIRMATION"
 msgstr "待确认"
 
-#: src/components/streamers/card/use-streamer-status.tsx:97
+#: src/components/streamers/card/use-streamer-status.tsx:99
 msgid "Pending Error Clears"
 msgstr "待清除错误"
 
@@ -6020,6 +6028,14 @@ msgstr "查询参数"
 msgid "Queue"
 msgstr "队列"
 
+#: src/components/streamers/card/use-streamer-status.tsx:257
+msgid "Queued"
+msgstr "排队中"
+
+#: src/components/streamers/card/use-streamer-status.tsx:267
+msgid "Queued for download"
+msgstr "等待下载"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:101
 msgid "Quick Share"
 msgstr "快速分享"
@@ -6105,7 +6121,7 @@ msgstr "实时日志"
 msgid "Real-time status of all system components and resources."
 msgstr "所有系统组件与资源的实时状态。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:220
+#: src/components/streamers/card/use-streamer-status.tsx:222
 msgid "Reason"
 msgstr "原因"
 
@@ -6152,7 +6168,7 @@ msgstr "录制过滤器"
 msgid "Recording started"
 msgstr "录制已开始"
 
-#: src/components/streamers/card/use-streamer-status.tsx:301
+#: src/components/streamers/card/use-streamer-status.tsx:366
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
@@ -6160,8 +6176,8 @@ msgstr "录制将在计划允许时开始"
 msgid "Recordings"
 msgstr "录制内容"
 
-#: src/components/streamers/card/use-streamer-status.tsx:76
-#: src/components/streamers/card/use-streamer-status.tsx:85
+#: src/components/streamers/card/use-streamer-status.tsx:78
+#: src/components/streamers/card/use-streamer-status.tsx:87
 msgid "Recovering"
 msgstr "恢复中"
 
@@ -6344,7 +6360,7 @@ msgstr "在待确认状态 {0} 秒后恢复。"
 msgid "RESUMED START"
 msgstr "恢复启动"
 
-#: src/components/streamers/card/use-streamer-status.tsx:130
+#: src/components/streamers/card/use-streamer-status.tsx:132
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
@@ -6564,8 +6580,8 @@ msgstr "已扫描！请在手机上确认"
 msgid "Schedule recording times"
 msgstr "安排录制时间"
 
-#: src/components/streamers/card/use-streamer-status.tsx:39
-#: src/components/streamers/card/use-streamer-status.tsx:282
+#: src/components/streamers/card/use-streamer-status.tsx:41
+#: src/components/streamers/card/use-streamer-status.tsx:347
 msgid "Scheduled"
 msgstr "已计划"
 
@@ -7239,11 +7255,11 @@ msgstr "主播 ID"
 msgid "Streamer ID is required"
 msgstr "主播 ID 是必需的"
 
-#: src/components/streamers/card/use-streamer-status.tsx:124
+#: src/components/streamers/card/use-streamer-status.tsx:126
 msgid "Streamer is on cooldown"
 msgstr "主播处于冷却期"
 
-#: src/components/streamers/card/use-streamer-status.tsx:180
+#: src/components/streamers/card/use-streamer-status.tsx:182
 msgid "Streamer no longer exists on the platform"
 msgstr "主播在平台上已不存在"
 
@@ -7506,9 +7522,9 @@ msgstr "模板"
 msgid "Templates"
 msgstr "模板"
 
-#: src/components/streamers/card/use-streamer-status.tsx:45
-#: src/components/streamers/card/use-streamer-status.tsx:114
-#: src/components/streamers/card/use-streamer-status.tsx:123
+#: src/components/streamers/card/use-streamer-status.tsx:47
+#: src/components/streamers/card/use-streamer-status.tsx:116
+#: src/components/streamers/card/use-streamer-status.tsx:125
 msgid "Temporarily Paused"
 msgstr "暂时暂停"
 
@@ -7540,7 +7556,7 @@ msgstr "频道或直播流的直接链接。"
 msgid "The page you are looking for does not exist."
 msgstr "你要访问的页面不存在。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:183
+#: src/components/streamers/card/use-streamer-status.tsx:185
 msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
 msgstr "平台报告该账号已不存在。可能已被删除、封禁，或者 URL/ID 有误。建议删除或更新该主播。"
 
@@ -7600,7 +7616,11 @@ msgstr "此步骤已关联到预设 <0>{presetName}</0>。"
 msgid "This stream is already active"
 msgstr "该流已处于活动状态"
 
-#: src/components/streamers/card/use-streamer-status.tsx:294
+#: src/components/streamers/card/use-streamer-status.tsx:279
+msgid "This stream is live but the global download limit is fully in use. Recording and danmu collection will start automatically when a slot frees."
+msgstr "该主播正在直播，但全局下载并发已用满。一旦有空闲槽位，录制和弹幕采集将自动开始。"
+
+#: src/components/streamers/card/use-streamer-status.tsx:359
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "该主播当前正在直播，但不在你配置的录制时间表内。"
 
@@ -7826,7 +7846,7 @@ msgstr "传输数帮助"
 msgid "Transient error"
 msgstr "瞬时错误"
 
-#: src/components/streamers/card/use-streamer-status.tsx:89
+#: src/components/streamers/card/use-streamer-status.tsx:91
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
@@ -8031,7 +8051,7 @@ msgstr "未知文件"
 msgid "Unrecognised event kind."
 msgstr "未识别的事件类型。"
 
-#: src/components/streamers/card/use-streamer-status.tsx:145
+#: src/components/streamers/card/use-streamer-status.tsx:147
 msgid "Until"
 msgstr "直到"
 
@@ -8303,6 +8323,10 @@ msgstr "开始前等待时间。"
 #: src/components/logging/log-viewer.tsx:470
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
+
+#: src/components/streamers/card/use-streamer-status.tsx:290
+msgid "Waiting since"
+msgstr "等待时长"
 
 #: src/components/notifications/subscription-manager.tsx:182
 msgid "Warning when the processing queue gets too long."

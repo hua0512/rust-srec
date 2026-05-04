@@ -2174,7 +2174,9 @@ where
             // The session-scoped pipeline only reacts to SegmentCompleted and
             // the Terminal variants handled above.
             DownloadManagerEvent::Progress(
-                DownloadProgressEvent::DownloadStarted { .. }
+                DownloadProgressEvent::DownloadQueued { .. }
+                | DownloadProgressEvent::DownloadDequeued { .. }
+                | DownloadProgressEvent::DownloadStarted { .. }
                 | DownloadProgressEvent::Progress { .. }
                 | DownloadProgressEvent::SegmentStarted { .. }
                 | DownloadProgressEvent::ConfigUpdated { .. }
