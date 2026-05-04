@@ -10,18 +10,20 @@ import {
   XCircle,
   Loader2,
   UserX,
+  Hourglass,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { StreamerSchema } from '@/api/schemas';
 import { z } from 'zod';
 import { useMemo, useState, useEffect } from 'react';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
-import type { Download } from '@/store/downloads';
+import type { Download, QueuedEntry } from '@/store/downloads';
 import { isStreamerRecovering } from './recovery-state';
 
 export function useStreamerStatus(
   streamer: z.infer<typeof StreamerSchema>,
   activeDownload?: Download,
+  queuedEntry?: QueuedEntry,
 ) {
   const { i18n } = useLingui();
 
@@ -242,6 +244,69 @@ export function useStreamerStatus(
       };
     }
 
+    // Queued: live but parked on the concurrency queue, waiting for a
+    // download slot to free up. Renders BEFORE the standard LIVE
+    // branch so the user sees "why nothing is recording" rather than
+    // a bare red Live dot with no progress indicator.
+    if (streamer.state === 'LIVE' && queuedEntry && !activeDownload) {
+      const queuedDate = new Date(Number(queuedEntry.queuedAtMs));
+      const queuedDateValid =
+        !isNaN(queuedDate.getTime()) && queuedDate.getFullYear() > 1970;
+      const isHigh = queuedEntry.isHighPriority;
+      return {
+        label: <Trans>Queued</Trans>,
+        color: isHigh
+          ? 'bg-rose-500/10 text-rose-600 border-rose-500/20 hover:bg-rose-500/20 dark:text-rose-400 dark:border-rose-400/30'
+          : 'bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20 dark:text-amber-400 dark:border-amber-400/30',
+        iconColor: isHigh ? 'bg-rose-500' : 'bg-amber-500',
+        pulsing: true,
+        tooltip: (
+          <StatusInfoTooltip
+            theme={isHigh ? 'red' : 'amber'}
+            icon={<Hourglass className="h-3.5 w-3.5" />}
+            title={<Trans>Queued for download</Trans>}
+            subtitle={
+              isHigh ? (
+                <Trans>
+                  High-priority slot waiting (concurrency limit reached)
+                </Trans>
+              ) : (
+                <Trans>Concurrency limit reached</Trans>
+              )
+            }
+          >
+            <div className="text-xs text-muted-foreground leading-relaxed">
+              <Trans>
+                This stream is live but the global download limit is fully in
+                use. Recording and danmu collection will start automatically
+                when a slot frees.
+              </Trans>
+            </div>
+            {queuedDateValid && now && (
+              <div className="flex items-center justify-between text-xs p-2 rounded-md bg-muted/30 border border-border/40">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Clock className="h-3.5 w-3.5 text-[var(--tooltip-theme-color)]" />
+                  <span className="font-medium">
+                    <Trans>Waiting since</Trans>
+                  </span>
+                </div>
+                <Badge
+                  variant="secondary"
+                  className={`font-mono font-bold text-[10px] ${
+                    isHigh
+                      ? 'bg-rose-500/10 text-rose-700 border-rose-500/20 dark:text-rose-400'
+                      : 'bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-400'
+                  }`}
+                >
+                  {formatDistanceToNow(queuedDate, { addSuffix: true })}
+                </Badge>
+              </div>
+            )}
+          </StatusInfoTooltip>
+        ),
+      };
+    }
+
     // Standard states
     if (streamer.state === 'LIVE') {
       return {
@@ -351,5 +416,5 @@ export function useStreamerStatus(
       pulsing: false,
       tooltip: null,
     };
-  }, [activeDownload, streamer, i18n, now]);
+  }, [activeDownload, queuedEntry, streamer, i18n, now]);
 }

@@ -3,16 +3,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use parking_lot::Mutex;
 use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use super::engine::{
@@ -21,6 +20,10 @@ use super::engine::{
     MesioEngine, SegmentEvent, StreamlinkEngine,
 };
 use super::output_root_gate::OutputRootGate;
+use super::queue::{
+    AcquireError as QueueAcquireError, AcquireRequest, ActiveSlot, DownloadQueue,
+    PendingEntry as QueuePendingEntry, Priority, SlotGuard,
+};
 use super::resilience::{CircuitBreakerManager, EngineKey, RetryConfig};
 use crate::Result;
 use crate::database::models::engine::{
@@ -49,83 +52,12 @@ fn io_error_in_chain<'a>(err: &'a (dyn std::error::Error + 'static)) -> Option<&
     None
 }
 
-#[derive(Debug)]
-struct ConcurrencyLimit {
-    semaphore: Arc<Semaphore>,
-    /// "Physical" semaphore capacity (we only ever increase this, never decrease).
-    capacity: AtomicUsize,
-    /// Desired effective concurrency.
-    desired: AtomicUsize,
-    /// Minimum allowed desired value (0 for optional lanes like high-priority extra slots).
-    min_desired: usize,
-    /// Held permits to reduce effective concurrency (capacity - desired).
-    reserved_permits: Mutex<Vec<OwnedSemaphorePermit>>,
-}
-
-impl ConcurrencyLimit {
-    fn new(initial_desired: usize, min_desired: usize) -> Self {
-        let initial_desired = initial_desired.max(min_desired);
-        Self {
-            semaphore: Arc::new(Semaphore::new(initial_desired)),
-            capacity: AtomicUsize::new(initial_desired),
-            desired: AtomicUsize::new(initial_desired),
-            min_desired,
-            reserved_permits: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn semaphore(&self) -> Arc<Semaphore> {
-        self.semaphore.clone()
-    }
-
-    fn apply_best_effort(&self) {
-        let desired = self.desired.load(Ordering::SeqCst);
-        let desired = desired.max(self.min_desired);
-        let capacity = self.capacity.load(Ordering::SeqCst);
-        let target_reserved = capacity.saturating_sub(desired);
-
-        let mut reserved = self.reserved_permits.lock();
-
-        while reserved.len() > target_reserved {
-            reserved.pop();
-        }
-
-        // Best-effort: reserve as many currently-available permits as needed.
-        // If downloads are currently holding permits, we may not reach target immediately.
-        while reserved.len() < target_reserved {
-            match self.semaphore.clone().try_acquire_owned() {
-                Ok(p) => reserved.push(p),
-                Err(_) => break,
-            }
-        }
-    }
-
-    /// Set desired effective concurrency (clamped to >= 1).
-    ///
-    /// Notes:
-    /// - Increasing beyond current capacity uses `Semaphore::add_permits`.
-    /// - Decreasing is implemented by reserving permits (best-effort).
-    fn set_desired(&self, desired: usize) -> usize {
-        let desired = desired.max(self.min_desired);
-
-        // Ensure physical capacity is at least `desired`.
-        let capacity = self.capacity.load(Ordering::SeqCst);
-        if desired > capacity {
-            let delta = desired - capacity;
-            self.semaphore.add_permits(delta);
-            self.capacity.store(desired, Ordering::SeqCst);
-        }
-
-        self.desired.store(desired, Ordering::SeqCst);
-        self.apply_best_effort();
-        desired
-    }
-
-    #[cfg(test)]
-    fn reserved_len(&self) -> usize {
-        self.reserved_permits.lock().len()
-    }
-}
+// The per-tier concurrency primitives previously implemented here have
+// been replaced by [`DownloadQueue`] (`super::queue`), which subsumes
+// both the normal and high-priority pools, supports priority-aware
+// wakeup, and exposes the pending-set used by the WebSocket snapshot.
+// The struct used to be `ConcurrencyLimit`; callers now interact with
+// `self.queue` directly.
 
 /// Pending configuration update for an active download.
 ///
@@ -226,9 +158,11 @@ struct ActiveDownload {
     current_segment_index: Option<u32>,
     current_segment_path: Option<String>,
     current_segment_started_at: Option<DateTime<Utc>>,
-    /// Semaphore permit guarding concurrency slot (dropped on removal)
+    /// Queue slot held by the download. Released (and the next waiter
+    /// woken) when this `ActiveDownload` entry is removed from the
+    /// active map.
     #[allow(dead_code)]
-    permit: Option<OwnedSemaphorePermit>,
+    slot: Option<ActiveSlot>,
     /// Retry configuration override applied via config update.
     retry_config_override: Option<RetryConfig>,
 }
@@ -237,10 +171,9 @@ struct ActiveDownload {
 pub struct DownloadManager {
     /// Configuration.
     config: RwLock<DownloadManagerConfig>,
-    /// Effective concurrency for normal priority downloads.
-    normal_limit: Arc<ConcurrencyLimit>,
-    /// Effective concurrency for high priority extra slots.
-    high_priority_limit: Arc<ConcurrencyLimit>,
+    /// Priority-aware queue managing concurrency across both
+    /// normal-priority and high-priority extra slots.
+    queue: Arc<DownloadQueue>,
     /// Active downloads.
     active_downloads: Arc<DashMap<String, ActiveDownload>>,
     /// Pending configuration updates keyed by download_id.
@@ -391,6 +324,32 @@ pub enum DownloadManagerEvent {
 /// Non-terminal download notifications.
 #[derive(Debug, Clone)]
 pub enum DownloadProgressEvent {
+    /// Download is parked waiting for a concurrency slot. Emitted only
+    /// when the request had to wait (fast-path acquires emit
+    /// [`Self::DownloadStarted`] directly with no preceding `DownloadQueued`).
+    /// Cleared by a subsequent `DownloadStarted` for the same session
+    /// when the engine starts, or by [`Self::DownloadDequeued`] if
+    /// the pipeline aborts before then.
+    DownloadQueued {
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        engine_type: EngineType,
+        is_high_priority: bool,
+        queued_at_ms: i64,
+    },
+    /// Cleanup signal emitted when a previously-queued pipeline
+    /// aborts before starting a download (cancellation, shutdown,
+    /// freshness/state re-check, etc.).
+    /// Not emitted for the fast-path acquire (which never emitted
+    /// `DownloadQueued`). Frontend clears the streamer's "queued"
+    /// badge on receipt; no scheduler action is taken — the
+    /// streamer's actual state machine is driven elsewhere.
+    DownloadDequeued {
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+    },
     /// Download started.
     DownloadStarted {
         download_id: String,
@@ -554,7 +513,9 @@ impl DownloadManagerEvent {
 impl DownloadProgressEvent {
     pub fn streamer_id(&self) -> &str {
         match self {
-            Self::DownloadStarted { streamer_id, .. }
+            Self::DownloadQueued { streamer_id, .. }
+            | Self::DownloadDequeued { streamer_id, .. }
+            | Self::DownloadStarted { streamer_id, .. }
             | Self::Progress { streamer_id, .. }
             | Self::SegmentStarted { streamer_id, .. }
             | Self::SegmentCompleted { streamer_id, .. }
@@ -565,7 +526,9 @@ impl DownloadProgressEvent {
 
     pub fn streamer_name(&self) -> &str {
         match self {
-            Self::DownloadStarted { streamer_name, .. }
+            Self::DownloadQueued { streamer_name, .. }
+            | Self::DownloadDequeued { streamer_name, .. }
+            | Self::DownloadStarted { streamer_name, .. }
             | Self::Progress { streamer_name, .. }
             | Self::SegmentStarted { streamer_name, .. }
             | Self::SegmentCompleted { streamer_name, .. }
@@ -581,7 +544,9 @@ impl DownloadProgressEvent {
     /// have one.
     pub fn session_id(&self) -> &str {
         match self {
-            Self::DownloadStarted { session_id, .. }
+            Self::DownloadQueued { session_id, .. }
+            | Self::DownloadDequeued { session_id, .. }
+            | Self::DownloadStarted { session_id, .. }
             | Self::Progress { session_id, .. }
             | Self::SegmentStarted { session_id, .. }
             | Self::SegmentCompleted { session_id, .. } => session_id,
@@ -665,6 +630,44 @@ pub enum DownloadRejectedKind {
     },
 }
 
+/// Input to [`DownloadManager::preflight`].
+///
+/// Carries just enough metadata to validate the engine, circuit
+/// breaker, and output root before the slot is acquired. A full
+/// [`DownloadConfig`] isn't required here — that gets passed to
+/// [`DownloadManager::start_with_slot`] only after a slot is granted
+/// (and after any post-acquire URL-freshness step the caller wants).
+#[derive(Debug, Clone)]
+pub struct PreflightRequest {
+    pub streamer_id: String,
+    pub streamer_name: String,
+    pub session_id: String,
+    pub output_dir: std::path::PathBuf,
+    /// Engine id override; `None` means use the global default.
+    pub engine_id: Option<String>,
+    /// Per-engine config overrides forwarded from
+    /// [`DownloadConfig::engines_override`].
+    pub engines_override: Option<serde_json::Value>,
+}
+
+/// Resolved engine handle returned by [`DownloadManager::preflight`]
+/// and consumed by [`DownloadManager::start_with_slot`].
+#[derive(Clone)]
+pub struct EngineHandle {
+    pub(crate) engine: Arc<dyn DownloadEngine>,
+    pub engine_type: EngineType,
+    pub(crate) engine_key: EngineKey,
+}
+
+impl std::fmt::Debug for EngineHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineHandle")
+            .field("engine_type", &self.engine_type)
+            .field("engine_key", &self.engine_key)
+            .finish_non_exhaustive()
+    }
+}
+
 impl DownloadManager {
     /// Create a new Download Manager.
     pub fn new() -> Self {
@@ -676,9 +679,10 @@ impl DownloadManager {
         // Use broadcast channel to support multiple subscribers
         let (event_tx, _) = broadcast::channel(256);
 
-        let normal_limit = Arc::new(ConcurrencyLimit::new(config.max_concurrent_downloads, 1));
-        let high_priority_limit =
-            Arc::new(ConcurrencyLimit::new(config.high_priority_extra_slots, 0));
+        let queue = DownloadQueue::new(
+            config.max_concurrent_downloads,
+            config.high_priority_extra_slots,
+        );
 
         let circuit_breakers = CircuitBreakerManager::with_half_open(
             config.circuit_breaker_threshold,
@@ -689,8 +693,7 @@ impl DownloadManager {
 
         let manager = Self {
             config: RwLock::new(config),
-            normal_limit,
-            high_priority_limit,
+            queue,
             active_downloads: Arc::new(DashMap::new()),
             pending_updates: Arc::new(DashMap::new()),
             engines: RwLock::new(HashMap::new()),
@@ -773,54 +776,102 @@ impl DownloadManager {
     }
 
     /// Start a download.
+    ///
+    /// Convenience wrapper that runs the three-phase split pipeline
+    /// (`preflight` → `acquire_slot` → `start_with_slot`) sequentially
+    /// with no cancellation hook and no per-phase visibility. Used by
+    /// tests, the scheduler, and anything that does not need to react
+    /// to "queued waiting for slot" or post-acquire freshness checks.
+    /// New per-streamer pipelines should call the three methods
+    /// directly so they can interleave freshness, cancellation, and
+    /// danmu wiring between acquire and start.
     pub async fn start_download(
         &self,
         config: DownloadConfig,
         engine_id: Option<String>,
         is_high_priority: bool,
     ) -> Result<String> {
-        let overrides = config.engines_override.as_ref();
-        let (engine, engine_type, engine_key) =
-            self.resolve_engine(engine_id.as_deref(), overrides).await?;
+        let priority = if is_high_priority {
+            Priority::High
+        } else {
+            Priority::Normal
+        };
+        let preflight_req = PreflightRequest {
+            streamer_id: config.streamer_id.clone(),
+            streamer_name: config.streamer_name.clone(),
+            session_id: config.session_id.clone(),
+            output_dir: config.output_dir.clone(),
+            engine_id: engine_id.clone(),
+            engines_override: config.engines_override.clone(),
+        };
+        let engine = self.preflight(preflight_req).await?;
 
-        // Scope the circuit breaker to this streamer so one streamer's CDN issues
-        // don't block unrelated streamers on the same engine.
-        let engine_key = engine_key.for_streamer(&config.streamer_id);
+        let acquire_req = AcquireRequest {
+            session_id: config.session_id.clone(),
+            streamer_id: config.streamer_id.clone(),
+            streamer_name: config.streamer_name.clone(),
+            engine_type: engine.engine_type,
+            priority,
+        };
+        let slot = self
+            .acquire_slot(acquire_req, CancellationToken::new())
+            .await?;
+        self.start_with_slot(slot, config, engine).await
+    }
+
+    /// Phase 1: pre-acquire validation.
+    ///
+    /// Resolves the requested engine, checks the streamer-scoped
+    /// circuit breaker, checks the output-root write gate, and runs
+    /// `prepare_output_dir`. Any failure emits the corresponding
+    /// `DownloadRejected` event before returning the error, and never
+    /// consumes a queue slot.
+    ///
+    /// On success, returns an [`EngineHandle`] that
+    /// [`Self::start_with_slot`] consumes — this avoids re-resolving
+    /// the engine after the slot is acquired.
+    pub async fn preflight(&self, req: PreflightRequest) -> Result<EngineHandle> {
+        let overrides = req.engines_override.as_ref();
+        let (engine, engine_type, engine_key) = self
+            .resolve_engine(req.engine_id.as_deref(), overrides)
+            .await?;
+
+        // Scope the circuit breaker to this streamer so one streamer's
+        // CDN issues don't block unrelated streamers on the same engine.
+        let engine_key = engine_key.for_streamer(&req.streamer_id);
+
+        if !engine.is_available() {
+            return Err(crate::Error::Other(format!(
+                "Engine {} is not available",
+                engine_type
+            )));
+        }
 
         // Check circuit breaker using the streamer-scoped key
         if !self.circuit_breakers.is_allowed(&engine_key) {
-            warn!(
-                "Engine {} is disabled by circuit breaker, trying fallback",
-                engine_key
-            );
+            warn!("Engine {} is disabled by circuit breaker", engine_key);
 
-            // Emit rejection event for visibility
             let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
                 DownloadTerminalEvent::Rejected {
-                    streamer_id: config.streamer_id.clone(),
-                    streamer_name: config.streamer_name.clone(),
-                    session_id: config.session_id.clone(),
+                    streamer_id: req.streamer_id.clone(),
+                    streamer_name: req.streamer_name.clone(),
+                    session_id: req.session_id.clone(),
                     reason: format!("Circuit breaker open for engine {}", engine_key),
                     retry_after_secs: Some(self.config.read().circuit_breaker_cooldown_secs),
                     kind: DownloadRejectedKind::CircuitBreaker,
                 },
             ));
 
-            // Try to find an alternative engine
-            // For now, fallback to default ffmpeg if validation fails
-            // TODO: Implement smarter fallback
             return Err(crate::Error::Other(format!(
                 "Engine {} is disabled by circuit breaker",
                 engine_key
             )));
         }
 
-        // Check the output-root write gate BEFORE acquiring any resources.
-        // Hot path is ~O(1) when the gate map is empty (no previous failures),
-        // so this has negligible cost on healthy systems. See
-        // `crate::downloader::output_root_gate` for the design.
+        // Check the output-root write gate BEFORE acquiring any
+        // resources. Hot path is ~O(1) when the gate map is empty.
         if let Some(gate) = self.output_root_gate.get()
-            && let Err(blocked) = gate.check(&config.output_dir)
+            && let Err(blocked) = gate.check(&req.output_dir)
         {
             warn!(
                 root = %blocked.root.display(),
@@ -830,9 +881,9 @@ impl DownloadManager {
             let cooldown = super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS;
             let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
                 DownloadTerminalEvent::Rejected {
-                    streamer_id: config.streamer_id.clone(),
-                    streamer_name: config.streamer_name.clone(),
-                    session_id: config.session_id.clone(),
+                    streamer_id: req.streamer_id.clone(),
+                    streamer_name: req.streamer_name.clone(),
+                    session_id: req.session_id.clone(),
                     reason: blocked.to_string(),
                     retry_after_secs: Some(cooldown),
                     kind: DownloadRejectedKind::OutputRootUnavailable {
@@ -848,8 +899,157 @@ impl DownloadManager {
             )));
         }
 
-        self.start_download_with_engine(config, engine, engine_type, engine_key, is_high_priority)
-            .await
+        // Prepare the output directory BEFORE acquiring a queue slot —
+        // a ENOENT/ENOSPC failure here would otherwise hold a slot
+        // until the error path released it, starving healthy streamers.
+        if let Err(engine_err) = self.prepare_output_dir_for_path(&req.output_dir).await {
+            warn!(
+                "Failed to prepare output directory for streamer {}: {}",
+                req.streamer_id, engine_err
+            );
+            // For OutputRootUnavailable also emit DownloadRejected so
+            // the scheduler can route to OutputRootBlocked.
+            if let DownloadFailureKind::OutputRootUnavailable { io_kind } = engine_err.kind {
+                let path = self
+                    .output_root_gate
+                    .get()
+                    .map(|g| g.resolve_path(&req.output_dir))
+                    .unwrap_or_else(|| super::output_root_gate::resolve_root(&req.output_dir, &[]));
+                let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
+                    DownloadTerminalEvent::Rejected {
+                        streamer_id: req.streamer_id.clone(),
+                        streamer_name: req.streamer_name.clone(),
+                        session_id: req.session_id.clone(),
+                        reason: engine_err.message.clone(),
+                        retry_after_secs: Some(super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS),
+                        kind: DownloadRejectedKind::OutputRootUnavailable { path, io_kind },
+                    },
+                ));
+            }
+            return Err(crate::Error::Other(engine_err.message));
+        }
+
+        Ok(EngineHandle {
+            engine,
+            engine_type,
+            engine_key,
+        })
+    }
+
+    /// Phase 2: park on the priority-aware queue until a slot is
+    /// available.
+    ///
+    /// Emits [`DownloadProgressEvent::DownloadQueued`] only when the
+    /// request had to wait. The fast path (slot immediately available)
+    /// returns without any event so a download that never queues
+    /// produces only `DownloadStarted`.
+    ///
+    /// Honours the supplied `cancel` token: if it fires before a slot
+    /// is granted, the future returns
+    /// [`crate::Error::Other("download acquire cancelled")`] without
+    /// holding any queue capacity.
+    pub async fn acquire_slot(
+        &self,
+        req: AcquireRequest,
+        cancel: CancellationToken,
+    ) -> Result<SlotGuard> {
+        let event_tx_for_queue = self.event_tx.clone();
+        // Captured by the on_queued closure so the abort-emit branch
+        // below can tell whether `DownloadQueued` actually fired
+        // (slow path) or not (fast path — no event was emitted, so
+        // no clearance is needed either).
+        let queued_emitted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let queued_emitted_cb = queued_emitted.clone();
+        let result = self
+            .queue
+            .acquire(req.clone(), cancel, move |entry| {
+                queued_emitted_cb.store(true, std::sync::atomic::Ordering::SeqCst);
+                let _ = event_tx_for_queue.send(DownloadManagerEvent::Progress(
+                    DownloadProgressEvent::DownloadQueued {
+                        streamer_id: entry.streamer_id.clone(),
+                        streamer_name: entry.streamer_name.clone(),
+                        session_id: entry.session_id.clone(),
+                        engine_type: entry.engine_type,
+                        is_high_priority: entry.priority.is_high(),
+                        queued_at_ms: entry.queued_at_ms,
+                    },
+                ));
+            })
+            .await;
+
+        match result {
+            Ok(slot) => Ok(slot),
+            Err(qerr) => {
+                // If the request emitted a `DownloadQueued` and is
+                // now aborting without acquiring a slot, fire a
+                // `DownloadDequeued` so subscribers can clear the
+                // badge.
+                // `DuplicateSession` does not get a clearance —
+                // there's no badge for the duplicate; the original
+                // pipeline still owns it.
+                if queued_emitted.load(std::sync::atomic::Ordering::SeqCst)
+                    && !matches!(qerr, QueueAcquireError::DuplicateSession(_))
+                {
+                    let _ = self.event_tx.send(DownloadManagerEvent::Progress(
+                        DownloadProgressEvent::DownloadDequeued {
+                            streamer_id: req.streamer_id.clone(),
+                            streamer_name: req.streamer_name.clone(),
+                            session_id: req.session_id.clone(),
+                        },
+                    ));
+                }
+                match qerr {
+                    QueueAcquireError::Cancelled => Err(crate::Error::Other(
+                        "download acquire cancelled".to_string(),
+                    )),
+                    QueueAcquireError::DuplicateSession(s) => Err(crate::Error::Other(format!(
+                        "duplicate download for session {}",
+                        s
+                    ))),
+                    QueueAcquireError::ShuttingDown => Err(crate::Error::Other(
+                        "download manager shutting down".to_string(),
+                    )),
+                }
+            }
+        }
+    }
+
+    /// Phase 3: spin up the engine on the slot acquired in phase 2.
+    ///
+    /// Generates the download id, registers the active download (which
+    /// takes ownership of the slot), emits
+    /// [`DownloadProgressEvent::DownloadStarted`], and spawns the
+    /// engine + segment-event handler. Returns the new download id.
+    pub async fn start_with_slot(
+        &self,
+        slot: SlotGuard,
+        config: DownloadConfig,
+        engine: EngineHandle,
+    ) -> Result<String> {
+        self.start_download_with_engine_and_slot(
+            config,
+            engine.engine,
+            engine.engine_type,
+            engine.engine_key,
+            slot,
+        )
+        .await
+    }
+
+    /// Emit the cleanup event for a queued slot that was granted but
+    /// then abandoned before [`Self::start_with_slot`].
+    pub fn emit_dequeued_for_slot(&self, slot: &SlotGuard, streamer_id: &str, streamer_name: &str) {
+        if !slot.queued_event_emitted() {
+            return;
+        }
+
+        let _ = self.event_tx.send(DownloadManagerEvent::Progress(
+            DownloadProgressEvent::DownloadDequeued {
+                streamer_id: streamer_id.to_string(),
+                streamer_name: streamer_name.to_string(),
+                session_id: slot.session_id().to_string(),
+            },
+        ));
     }
 
     /// Prepare the output directory before starting an engine.
@@ -878,14 +1078,25 @@ impl DownloadManager {
     ///    `OutputPathInaccessible` notification per `Healthy → Degraded`
     ///    transition; idempotent for subsequent failures on an already
     ///    Degraded root.
+    #[cfg(test)]
     async fn prepare_output_dir(
         &self,
         config: &DownloadConfig,
     ) -> std::result::Result<(), EngineStartError> {
-        match super::engine::utils::ensure_output_dir(&config.output_dir).await {
+        self.prepare_output_dir_for_path(&config.output_dir).await
+    }
+
+    /// Path-only variant of [`Self::prepare_output_dir`] used by
+    /// [`Self::preflight`]. Same behaviour, just doesn't require a
+    /// fully-built `DownloadConfig`.
+    async fn prepare_output_dir_for_path(
+        &self,
+        output_dir: &std::path::Path,
+    ) -> std::result::Result<(), EngineStartError> {
+        match super::engine::utils::ensure_output_dir(output_dir).await {
             Ok(()) => {
                 if let Some(gate) = self.output_root_gate.get() {
-                    gate.mark_healthy(&config.output_dir);
+                    gate.mark_healthy(output_dir);
                 }
                 Ok(())
             }
@@ -893,7 +1104,7 @@ impl DownloadManager {
                 if let Some(gate) = self.output_root_gate.get()
                     && let Some(io_err) = io_error_in_chain(&crate_err)
                 {
-                    gate.record_failure(&config.output_dir, io_err);
+                    gate.record_failure(output_dir, io_err);
                 }
                 Err(EngineStartError::from(crate_err))
             }
@@ -1133,87 +1344,24 @@ impl DownloadManager {
         }
     }
 
-    /// Start a download with a specific engine.
-    async fn start_download_with_engine(
+    /// Internal: spin up the engine on a slot already granted by the
+    /// queue, generate a download id, register the active download,
+    /// emit `DownloadStarted`, and spawn the segment-event handler.
+    ///
+    /// Preflight (engine availability, circuit breaker, output gate,
+    /// `prepare_output_dir`) is the caller's responsibility — see
+    /// [`Self::preflight`]. The slot is moved into the active-downloads
+    /// entry; capacity is released when the entry is removed.
+    async fn start_download_with_engine_and_slot(
         &self,
         config: DownloadConfig,
         engine: Arc<dyn DownloadEngine>,
         engine_type: EngineType,
         engine_key: EngineKey,
-        is_high_priority: bool,
+        slot: SlotGuard,
     ) -> Result<String> {
-        if !engine.is_available() {
-            return Err(crate::Error::Other(format!(
-                "Engine {} is not available",
-                engine_type
-            )));
-        }
-
-        // Prepare the output directory BEFORE acquiring a semaphore permit —
-        // otherwise a ENOENT/ENOSPC failure would hold a download slot until
-        // we release on the error path, starving healthy streamers. Engines
-        // used to do this themselves in their own start() methods; centralizing
-        // it here eliminates the duplication between ffmpeg.rs and streamlink.rs
-        // and gives the output-root write gate a single failure site to hook
-        // into. See `prepare_output_dir` for the details.
-        if let Err(engine_err) = self.prepare_output_dir(&config).await {
-            warn!(
-                "Failed to prepare output directory for streamer {}: {}",
-                config.streamer_id, engine_err
-            );
-            // For OutputRootUnavailable we also emit a DownloadRejected event
-            // so the scheduler can translate to OutputRootBlocked and push
-            // the streamer into OutOfSpace state via set_infra_blocked. The
-            // gate has already recorded the failure; this event carries the
-            // structured routing payload to the scheduler.
-            if let DownloadFailureKind::OutputRootUnavailable { io_kind } = engine_err.kind {
-                // Resolve the root through the gate itself so the event
-                // payload, the gate's DashMap key, and the /health
-                // snapshot all agree on the same path representation.
-                let path = self
-                    .output_root_gate
-                    .get()
-                    .map(|g| g.resolve_path(&config.output_dir))
-                    .unwrap_or_else(|| {
-                        super::output_root_gate::resolve_root(&config.output_dir, &[])
-                    });
-                let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
-                    DownloadTerminalEvent::Rejected {
-                        streamer_id: config.streamer_id.clone(),
-                        streamer_name: config.streamer_name.clone(),
-                        session_id: config.session_id.clone(),
-                        reason: engine_err.message.clone(),
-                        retry_after_secs: Some(super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS),
-                        kind: DownloadRejectedKind::OutputRootUnavailable { path, io_kind },
-                    },
-                ));
-            }
-            return Err(crate::Error::Other(engine_err.message));
-        }
-
-        // Apply any pending concurrency reconfiguration before trying to acquire permits.
-        self.normal_limit.apply_best_effort();
-        self.high_priority_limit.apply_best_effort();
-
-        // Acquire semaphore permit and hold it until the download finishes
-        let permit = if is_high_priority {
-            // Try high priority semaphore first, then fall back to normal
-            match self.high_priority_limit.semaphore().try_acquire_owned() {
-                Ok(permit) => permit,
-                Err(_) => self
-                    .normal_limit
-                    .semaphore()
-                    .acquire_owned()
-                    .await
-                    .map_err(|e| crate::Error::Other(format!("Semaphore error: {}", e)))?,
-            }
-        } else {
-            self.normal_limit
-                .semaphore()
-                .acquire_owned()
-                .await
-                .map_err(|e| crate::Error::Other(format!("Semaphore error: {}", e)))?
-        };
+        let is_high_priority = matches!(slot.priority(), Priority::High);
+        let active_slot = slot.into_active();
 
         // Generate download ID
         let download_id = uuid::Uuid::new_v4().to_string();
@@ -1242,7 +1390,7 @@ impl DownloadManager {
                 current_segment_index: None,
                 current_segment_path: None,
                 current_segment_started_at: None,
-                permit: Some(permit),
+                slot: Some(active_slot),
                 retry_config_override: None,
             },
         );
@@ -1292,8 +1440,6 @@ impl DownloadManager {
         let active_downloads = self.active_downloads.clone();
         let pending_updates = self.pending_updates.clone();
         let circuit_breakers_ref = self.circuit_breakers.get(&engine_key);
-        let normal_limit = self.normal_limit.clone();
-        let high_priority_limit = self.high_priority_limit.clone();
         // Handle into the segment event loop so runtime ENOSPC from the
         // engine stderr readers can reach `gate.record_failure` — the
         // mid-stream case where today's date dir already exists and
@@ -1430,10 +1576,9 @@ impl DownloadManager {
 
                         pending_updates.remove(&download_id_clone);
 
-                        // Dropping the download releases its concurrency permit; apply limits immediately
-                        // so newly-available permits get reserved if the desired limit was decreased.
-                        normal_limit.apply_best_effort();
-                        high_priority_limit.apply_best_effort();
+                        // Dropping the active download removes its
+                        // ActiveSlot, which releases the queue capacity
+                        // and wakes the next waiter automatically.
 
                         let _ = event_tx.send(DownloadManagerEvent::Terminal(
                             DownloadTerminalEvent::Completed {
@@ -1500,8 +1645,9 @@ impl DownloadManager {
                         active_downloads.remove(&download_id_clone);
                         pending_updates.remove(&download_id_clone);
 
-                        normal_limit.apply_best_effort();
-                        high_priority_limit.apply_best_effort();
+                        // Dropping the active download removes its
+                        // ActiveSlot, which releases the queue capacity
+                        // and wakes the next waiter automatically.
 
                         let _ = event_tx.send(DownloadManagerEvent::Terminal(
                             DownloadTerminalEvent::Failed {
@@ -1622,9 +1768,9 @@ impl DownloadManager {
 
             info!("Stopped download {}", download_id);
 
-            // Dropping `download` releases its concurrency permit; apply limits immediately.
-            self.normal_limit.apply_best_effort();
-            self.high_priority_limit.apply_best_effort();
+            // Dropping the ActiveSlot inside the removed download
+            // releases the queue capacity and wakes the next waiter
+            // automatically.
 
             Ok(())
         } else {
@@ -1661,6 +1807,26 @@ impl DownloadManager {
         self.active_downloads.len()
     }
 
+    /// Snapshot of currently-pending acquires (downloads that emitted
+    /// [`DownloadProgressEvent::DownloadQueued`] but have not yet
+    /// transitioned to [`DownloadProgressEvent::DownloadStarted`]).
+    pub fn snapshot_pending(&self) -> Vec<QueuePendingEntry> {
+        self.queue.snapshot_pending()
+    }
+
+    /// Mark the queue as shutting down. Subsequent acquires fail with
+    /// `AcquireError::ShuttingDown`; pending acquires are notified and
+    /// return the same error rather than waiting for a slot.
+    ///
+    /// Call this BEFORE [`Self::stop_all`] during graceful shutdown so
+    /// queued pipelines released by `stop_all`'s slot drops don't try
+    /// to spin up new engines as the rest of the system tears down.
+    /// Active downloads aren't affected — they continue until
+    /// `stop_all` drops them.
+    pub fn shutdown_queue(&self) {
+        self.queue.shutdown();
+    }
+
     /// Maximum normal-priority concurrent downloads.
     pub fn max_concurrent_downloads(&self) -> usize {
         self.config.read().max_concurrent_downloads
@@ -1681,8 +1847,9 @@ impl DownloadManager {
 
     /// Adjust the normal-priority concurrency limit at runtime.
     ///
-    /// This is best-effort: decreasing the limit reserves currently-available permits and the
-    /// reduced effective limit is re-applied when downloads stop and before starting new downloads.
+    /// Increasing capacity wakes any waiters that fit. Decreasing keeps
+    /// in-flight downloads running until they release naturally; new
+    /// acquires beyond the new limit queue.
     pub fn set_max_concurrent_downloads(&self, limit: usize) -> usize {
         let limit = limit.max(1);
 
@@ -1691,7 +1858,7 @@ impl DownloadManager {
             config.max_concurrent_downloads = limit;
         }
 
-        self.normal_limit.set_desired(limit)
+        self.queue.set_normal_capacity(limit)
     }
 
     /// Adjust the number of high-priority extra slots at runtime (0 disables high-priority slots).
@@ -1701,7 +1868,7 @@ impl DownloadManager {
             config.high_priority_extra_slots = slots;
         }
 
-        self.high_priority_limit.set_desired(slots)
+        self.queue.set_high_extra_capacity(slots)
     }
 
     /// Subscribe to download events.
@@ -2095,6 +2262,7 @@ impl Default for DownloadManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
 
     #[test]
     fn test_download_manager_config_default() {
@@ -2112,7 +2280,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_runtime_reconfigure_max_concurrent_downloads_reserves_permits() {
+    async fn test_runtime_reconfigure_max_concurrent_downloads() {
+        // Validates the public contract: increasing capacity is
+        // immediately observable, decreasing capacity is observable
+        // even though existing in-flight downloads aren't preempted.
         let config = DownloadManagerConfig {
             max_concurrent_downloads: 2,
             high_priority_extra_slots: 0,
@@ -2122,36 +2293,131 @@ mod tests {
 
         // Increase beyond initial capacity.
         assert_eq!(manager.set_max_concurrent_downloads(4), 4);
-        assert_eq!(manager.normal_limit.semaphore.available_permits(), 4);
+        assert_eq!(manager.max_concurrent_downloads(), 4);
 
-        // Decrease: should reserve permits immediately when available.
+        // Decrease — getter reflects the new value immediately.
         assert_eq!(manager.set_max_concurrent_downloads(1), 1);
-        assert_eq!(manager.normal_limit.reserved_len(), 3);
-        assert_eq!(manager.normal_limit.semaphore.available_permits(), 1);
+        assert_eq!(manager.max_concurrent_downloads(), 1);
 
-        // If permits are in use, reservations are best-effort until permits are released.
-        assert_eq!(manager.set_max_concurrent_downloads(3), 3);
-        let p1 = manager
-            .normal_limit
-            .semaphore()
-            .acquire_owned()
+        // After saturating, a third acquire queues. We verify by
+        // calling acquire on the queue directly — this mirrors the
+        // semaphore-probe assertions the previous version made, but
+        // through the public abstraction.
+        let q = manager.queue.clone();
+        let req = AcquireRequest {
+            session_id: "s1".to_string(),
+            streamer_id: "x".to_string(),
+            streamer_name: "x".to_string(),
+            engine_type: EngineType::Ffmpeg,
+            priority: Priority::Normal,
+        };
+        let _slot1 = q
+            .acquire(req, CancellationToken::new(), |_| {})
             .await
             .unwrap();
-        let p2 = manager
-            .normal_limit
-            .semaphore()
-            .acquire_owned()
+        assert_eq!(q.in_flight(), 1);
+
+        // Second acquire must queue (capacity = 1).
+        let q2 = q.clone();
+        let h = tokio::spawn(async move {
+            q2.acquire(
+                AcquireRequest {
+                    session_id: "s2".to_string(),
+                    streamer_id: "x".to_string(),
+                    streamer_name: "x".to_string(),
+                    engine_type: EngineType::Ffmpeg,
+                    priority: Priority::Normal,
+                },
+                CancellationToken::new(),
+                |_| {},
+            )
+            .await
+        });
+        // Wait for it to register as pending.
+        for _ in 0..50 {
+            if q.pending_count() == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert_eq!(q.pending_count(), 1);
+
+        // Bump the limit; the waiter should fire.
+        manager.set_max_concurrent_downloads(2);
+        let _slot2 = h.await.unwrap().unwrap();
+        assert_eq!(q.in_flight(), 2);
+    }
+
+    #[tokio::test]
+    async fn queued_slot_abandoned_after_acquire_emits_dequeued() {
+        let config = DownloadManagerConfig {
+            max_concurrent_downloads: 1,
+            high_priority_extra_slots: 0,
+            ..Default::default()
+        };
+        let manager = Arc::new(DownloadManager::with_config(config));
+        let mut events = manager.subscribe();
+
+        let first = manager
+            .acquire_slot(
+                AcquireRequest {
+                    session_id: "active-session".to_string(),
+                    streamer_id: "streamer-active".to_string(),
+                    streamer_name: "Active".to_string(),
+                    engine_type: EngineType::Ffmpeg,
+                    priority: Priority::Normal,
+                },
+                CancellationToken::new(),
+            )
             .await
             .unwrap();
-        assert_eq!(manager.set_max_concurrent_downloads(1), 1);
 
-        drop(p1);
-        manager.normal_limit.apply_best_effort();
-        drop(p2);
-        manager.normal_limit.apply_best_effort();
+        let waiter_manager = manager.clone();
+        let waiter = tokio::spawn(async move {
+            waiter_manager
+                .acquire_slot(
+                    AcquireRequest {
+                        session_id: "queued-session".to_string(),
+                        streamer_id: "streamer-queued".to_string(),
+                        streamer_name: "Queued".to_string(),
+                        engine_type: EngineType::Ffmpeg,
+                        priority: Priority::Normal,
+                    },
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap()
+        });
 
-        // After releases and best-effort application, the desired limit is enforceable.
-        assert_eq!(manager.normal_limit.semaphore.available_permits(), 1);
+        let queued_event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            queued_event,
+            DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadQueued {
+                ref session_id,
+                ..
+            }) if session_id == "queued-session"
+        ));
+
+        drop(first);
+        let slot = waiter.await.unwrap();
+        assert!(slot.queued_event_emitted());
+
+        manager.emit_dequeued_for_slot(&slot, "streamer-queued", "Queued");
+
+        let dequeued_event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            dequeued_event,
+            DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadDequeued {
+                ref session_id,
+                ..
+            }) if session_id == "queued-session"
+        ));
     }
 
     #[test]
