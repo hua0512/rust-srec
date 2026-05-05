@@ -5068,7 +5068,7 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -7248,7 +7248,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -8048,9 +8048,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utoipa"
-version = "5.4.0"
+version = "5.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fcc29c80c21c31608227e0912b2d7fddba57ad76b606890627ba8ee7964e993"
+checksum = "8bde15df68e80b16c7d16b9616e80770ad158988daa56a27dccd1e55558b0160"
 dependencies = [
  "indexmap 2.14.0",
  "serde",
@@ -8060,8 +8060,9 @@ dependencies = [
 
 [[package]]
 name = "utoipa-gen"
-version = "5.4.0"
-source = "git+https://github.com/hua0512/utoipa?rev=fc51b40fd1c54846d9e3de99cdf68c23672f19cd#fc51b40fd1c54846d9e3de99cdf68c23672f19cd"
+version = "5.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ba0b99ee52df3028635d93840c797102da61f8a7bb3cf751032455895b52ef8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9522,3 +9523,8 @@ dependencies = [
  "syn 2.0.117",
  "winnow 0.7.15",
 ]
+
+[[patch.unused]]
+name = "utoipa-gen"
+version = "5.4.0"
+source = "git+https://github.com/hua0512/utoipa?rev=fc51b40fd1c54846d9e3de99cdf68c23672f19cd#fc51b40fd1c54846d9e3de99cdf68c23672f19cd"
