@@ -9,7 +9,7 @@ use crate::hls::fetcher::SegmentFetcher;
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::output::OutputManager;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine};
-use crate::hls::processor::{SegmentProcessor, SegmentTransformer};
+use crate::hls::processor::SegmentProcessor;
 use crate::hls::scheduler::{ScheduledSegmentJob, SegmentScheduler};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -72,7 +72,7 @@ impl HlsStreamCoordinator {
             Arc::clone(&performance_metrics),
             token.clone(),
         ));
-        let segment_processor: Arc<dyn SegmentTransformer> =
+        let segment_processor: Arc<SegmentProcessor> =
             Arc::new(SegmentProcessor::with_metrics(
                 Arc::clone(&config),
                 Arc::clone(&decryption_service),
