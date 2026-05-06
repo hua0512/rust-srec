@@ -2,7 +2,7 @@
 
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::{BatchSchedulerConfig, HlsConfig};
-use crate::hls::fetcher::SegmentDownloader;
+use crate::hls::fetcher::SegmentFetcher;
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::prefetch::PrefetchManager;
 use crate::hls::processor::SegmentTransformer;
@@ -170,7 +170,7 @@ pub struct ProcessedSegmentOutput {
 
 pub struct SegmentScheduler {
     config: Arc<HlsConfig>,
-    segment_fetcher: Arc<dyn SegmentDownloader>,
+    segment_fetcher: Arc<SegmentFetcher>,
     segment_processor: Arc<dyn SegmentTransformer>,
     segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
     output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
@@ -198,7 +198,7 @@ pub struct SegmentScheduler {
 impl SegmentScheduler {
     pub fn new(
         config: Arc<HlsConfig>,
-        segment_fetcher: Arc<dyn SegmentDownloader>,
+        segment_fetcher: Arc<SegmentFetcher>,
         segment_processor: Arc<dyn SegmentTransformer>,
         segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
         output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
@@ -228,7 +228,7 @@ impl SegmentScheduler {
     /// Create a new SegmentScheduler with performance metrics
     pub fn with_metrics(
         config: Arc<HlsConfig>,
-        segment_fetcher: Arc<dyn SegmentDownloader>,
+        segment_fetcher: Arc<SegmentFetcher>,
         segment_processor: Arc<dyn SegmentTransformer>,
         segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
         output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
@@ -249,7 +249,7 @@ impl SegmentScheduler {
 
     /// Result of segment processing, including metadata for prefetch tracking
     async fn perform_segment_processing(
-        segment_fetcher: Arc<dyn SegmentDownloader>,
+        segment_fetcher: Arc<SegmentFetcher>,
         segment_processor: Arc<dyn SegmentTransformer>,
         job: ScheduledSegmentJob,
     ) -> (
@@ -372,7 +372,7 @@ impl SegmentScheduler {
         futures: &mut FuturesUnordered<F>,
         buffer_size: &mut usize,
         in_flight_segments: &mut HashSet<u64>,
-        segment_fetcher: &Arc<dyn SegmentDownloader>,
+        segment_fetcher: &Arc<SegmentFetcher>,
         segment_processor: &Arc<dyn SegmentTransformer>,
         max_concurrency: usize,
     ) where
@@ -415,7 +415,7 @@ impl SegmentScheduler {
         futures: &mut FuturesUnordered<F>,
         buffer_size: &mut usize,
         in_flight_segments: &mut HashSet<u64>,
-        segment_fetcher: &Arc<dyn SegmentDownloader>,
+        segment_fetcher: &Arc<SegmentFetcher>,
         segment_processor: &Arc<dyn SegmentTransformer>,
     ) where
         F: From<

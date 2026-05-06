@@ -5,7 +5,7 @@ use crate::downloader::ClientPool;
 use crate::hls::config::HlsConfig;
 use crate::hls::decryption::{DecryptionService, KeyFetcher};
 use crate::hls::events::HlsStreamEvent;
-use crate::hls::fetcher::{SegmentDownloader, SegmentFetcher};
+use crate::hls::fetcher::SegmentFetcher;
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::output::OutputManager;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine};
@@ -65,7 +65,7 @@ impl HlsStreamCoordinator {
             Arc::clone(&key_fetcher),
             cache_manager.clone(),
         ));
-        let segment_fetcher: Arc<dyn SegmentDownloader> = Arc::new(SegmentFetcher::with_metrics(
+        let segment_fetcher: Arc<SegmentFetcher> = Arc::new(SegmentFetcher::with_metrics(
             Arc::clone(&clients),
             Arc::clone(&config),
             cache_manager.clone(),
