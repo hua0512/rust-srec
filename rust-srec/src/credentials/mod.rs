@@ -15,7 +15,6 @@ mod error;
 mod manager;
 mod resolver;
 mod service;
-mod store;
 mod tracker;
 mod types;
 
@@ -26,6 +25,5 @@ pub use error::CredentialError;
 pub use manager::{CredentialManager, CredentialStatus, RefreshState, RefreshedCredentials};
 pub use resolver::CredentialResolver;
 pub use service::CredentialRefreshService;
-pub use store::CredentialStore;
 pub use tracker::{DailyCheckTracker, RefreshFailureTracker};
 pub use types::{CredentialEvent, CredentialScope, CredentialSource};
