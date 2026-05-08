@@ -12,6 +12,7 @@ pub mod engine;
 
 mod manager;
 pub mod output_root_gate;
+pub mod queue;
 mod resilience;
 mod stream_selector;
 
@@ -28,7 +29,10 @@ pub use output_root_gate::{
 pub use manager::{
     ConfigUpdateType, DownloadManager, DownloadManagerConfig, DownloadManagerEvent,
     DownloadProgressEvent, DownloadRejectedKind, DownloadStopCause, DownloadTerminalEvent,
-    EngineEndSignal,
+    EngineEndSignal, EngineHandle, PreflightRequest,
+};
+pub use queue::{
+    AcquireError, AcquireRequest, ActiveSlot, DownloadQueue, PendingEntry, Priority, SlotGuard,
 };
 pub use resilience::{CircuitBreaker, EngineKey, RetryConfig};
 pub use stream_selector::{StreamSelectionConfig, StreamSelector};

@@ -27,7 +27,14 @@ export const StreamerCard = memo(
     );
     const activeDownload = downloads?.[0]; // Show first active download
 
-    const status = useStreamerStatus(streamer, activeDownload);
+    // Surface "queued waiting for slot" state when the streamer is
+    // live but no active download has started yet. Cleared by the
+    // store on DownloadStarted/terminal events.
+    const queuedEntry = useDownloadStore(
+      useShallow((state) => state.getQueuedForStreamer(streamer.id)),
+    );
+
+    const status = useStreamerStatus(streamer, activeDownload, queuedEntry);
 
     return (
       <DashboardCard

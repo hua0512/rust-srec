@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file download_progress.proto.
  */
 export const file_download_progress: GenFile = /*@__PURE__*/
-  fileDesc("Chdkb3dubG9hZF9wcm9ncmVzcy5wcm90bxIRZG93bmxvYWRfcHJvZ3Jlc3MixAUKCVdzTWVzc2FnZRIwCgpldmVudF90eXBlGAEgASgOMhwuZG93bmxvYWRfcHJvZ3Jlc3MuRXZlbnRUeXBlEjcKCHNuYXBzaG90GAIgASgLMiMuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRTbmFwc2hvdEgAEjgKDWRvd25sb2FkX21ldGEYAyABKAsyHy5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZE1ldGFIABI+ChBkb3dubG9hZF9tZXRyaWNzGAQgASgLMiIuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRNZXRyaWNzSAASQAoRc2VnbWVudF9jb21wbGV0ZWQYBSABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5TZWdtZW50Q29tcGxldGVkSAASQgoSZG93bmxvYWRfY29tcGxldGVkGAYgASgLMiQuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRDb21wbGV0ZWRIABI8Cg9kb3dubG9hZF9mYWlsZWQYByABKAsyIS5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZEZhaWxlZEgAEkIKEmRvd25sb2FkX2NhbmNlbGxlZBgIIAEoCzIkLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkQ2FuY2VsbGVkSAASMAoFZXJyb3IYCSABKAsyHy5kb3dubG9hZF9wcm9ncmVzcy5FcnJvclBheWxvYWRIABJAChFkb3dubG9hZF9yZWplY3RlZBgKIAEoCzIjLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkUmVqZWN0ZWRIABJLChdzdHJlYW1lcl9jaGVja19yZWNvcmRlZBgLIAEoCzIoLmRvd25sb2FkX3Byb2dyZXNzLlN0cmVhbWVyQ2hlY2tSZWNvcmRlZEgAQgkKB3BheWxvYWQikQEKDUNsaWVudE1lc3NhZ2USOAoJc3Vic2NyaWJlGAEgASgLMiMuZG93bmxvYWRfcHJvZ3Jlc3MuU3Vic2NyaWJlUmVxdWVzdEgAEjwKC3Vuc3Vic2NyaWJlGAIgASgLMiUuZG93bmxvYWRfcHJvZ3Jlc3MuVW5zdWJzY3JpYmVSZXF1ZXN0SABCCAoGYWN0aW9uIicKEFN1YnNjcmliZVJlcXVlc3QSEwoLc3RyZWFtZXJfaWQYASABKAkiFAoSVW5zdWJzY3JpYmVSZXF1ZXN0IkcKEERvd25sb2FkU25hcHNob3QSMwoJZG93bmxvYWRzGAEgAygLMiAuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRTdGF0ZSJzCg1Eb3dubG9hZFN0YXRlEi0KBG1ldGEYASABKAsyHy5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZE1ldGESMwoHbWV0cmljcxgCIAEoCzIiLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkTWV0cmljcyK3AQoMRG93bmxvYWRNZXRhEhMKC2Rvd25sb2FkX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSEwoLZW5naW5lX3R5cGUYBCABKAkSFQoNc3RhcnRlZF9hdF9tcxgFIAEoAxIVCg11cGRhdGVkX2F0X21zGAggASgDEhAKCGNkbl9ob3N0GAYgASgJEhQKDGRvd25sb2FkX3VybBgHIAEoCSLVAQoPRG93bmxvYWRNZXRyaWNzEhMKC2Rvd25sb2FkX2lkGAEgASgJEg4KBnN0YXR1cxgCIAEoCRIYChBieXRlc19kb3dubG9hZGVkGAMgASgEEhUKDWR1cmF0aW9uX3NlY3MYBCABKAESGwoTc3BlZWRfYnl0ZXNfcGVyX3NlYxgFIAEoBBIaChJzZWdtZW50c19jb21wbGV0ZWQYBiABKA0SGwoTbWVkaWFfZHVyYXRpb25fc2VjcxgHIAEoARIWCg5wbGF5YmFja19yYXRpbxgIIAEoASLuAQoQU2VnbWVudENvbXBsZXRlZBITCgtkb3dubG9hZF9pZBgBIAEoCRITCgtzdHJlYW1lcl9pZBgCIAEoCRIUCgxzZWdtZW50X3BhdGgYAyABKAkSFQoNc2VnbWVudF9pbmRleBgEIAEoDRIVCg1kdXJhdGlvbl9zZWNzGAUgASgBEhIKCnNpemVfYnl0ZXMYBiABKAQSEgoKc2Vzc2lvbl9pZBgHIAEoCRIUCgxzcGxpdF9yZWFzb24YCCABKAkSFQoNc3RhcnRlZF9hdF9tcxgJIAEoAxIXCg9jb21wbGV0ZWRfYXRfbXMYCiABKAMimwEKEURvd25sb2FkQ29tcGxldGVkEhMKC2Rvd25sb2FkX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSEwoLdG90YWxfYnl0ZXMYBCABKAQSGwoTdG90YWxfZHVyYXRpb25fc2VjcxgFIAEoARIWCg50b3RhbF9zZWdtZW50cxgGIAEoDSJyCg5Eb3dubG9hZEZhaWxlZBITCgtkb3dubG9hZF9pZBgBIAEoCRITCgtzdHJlYW1lcl9pZBgCIAEoCRISCgpzZXNzaW9uX2lkGAMgASgJEg0KBWVycm9yGAQgASgJEhMKC3JlY292ZXJhYmxlGAUgASgIImAKEURvd25sb2FkQ2FuY2VsbGVkEhMKC2Rvd25sb2FkX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSDQoFY2F1c2UYBCABKAkiegoQRG93bmxvYWRSZWplY3RlZBITCgtzdHJlYW1lcl9pZBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCRIYChByZXRyeV9hZnRlcl9zZWNzGAQgASgEEhMKC3JlY292ZXJhYmxlGAUgASgIIi0KDEVycm9yUGF5bG9hZBIMCgRjb2RlGAEgASgJEg8KB21lc3NhZ2UYAiABKAkiuwIKFVN0cmVhbWVyQ2hlY2tSZWNvcmRlZBITCgtzdHJlYW1lcl9pZBgBIAEoCRIVCg1jaGVja2VkX2F0X21zGAIgASgDEhMKC2R1cmF0aW9uX21zGAMgASgFEg8KB291dGNvbWUYBCABKAkSEgoKZmF0YWxfa2luZBgFIAEoCRIVCg1maWx0ZXJfcmVhc29uGAYgASgJEhUKDWVycm9yX21lc3NhZ2UYByABKAkSGQoRc3RyZWFtc19leHRyYWN0ZWQYCCABKA0SHAoUc3RyZWFtX3NlbGVjdGVkX2pzb24YCSABKAkSDQoFdGl0bGUYCiABKAkSEAoIY2F0ZWdvcnkYCyABKAkSFAoMdmlld2VyX2NvdW50GAwgASgEEh4KFnN0cmVhbXNfZXh0cmFjdGVkX2pzb24YDSABKAkq5wIKCUV2ZW50VHlwZRIaChZFVkVOVF9UWVBFX1VOU1BFQ0lGSUVEEAASFwoTRVZFTlRfVFlQRV9TTkFQU0hPVBABEhwKGEVWRU5UX1RZUEVfRE9XTkxPQURfTUVUQRACEh8KG0VWRU5UX1RZUEVfRE9XTkxPQURfTUVUUklDUxADEiAKHEVWRU5UX1RZUEVfU0VHTUVOVF9DT01QTEVURUQQBBIhCh1FVkVOVF9UWVBFX0RPV05MT0FEX0NPTVBMRVRFRBAFEh4KGkVWRU5UX1RZUEVfRE9XTkxPQURfRkFJTEVEEAYSIQodRVZFTlRfVFlQRV9ET1dOTE9BRF9DQU5DRUxMRUQQBxIUChBFVkVOVF9UWVBFX0VSUk9SEAgSIAocRVZFTlRfVFlQRV9ET1dOTE9BRF9SRUpFQ1RFRBAJEiYKIkVWRU5UX1RZUEVfU1RSRUFNRVJfQ0hFQ0tfUkVDT1JERUQQCmIGcHJvdG8z");
+  fileDesc("Chdkb3dubG9hZF9wcm9ncmVzcy5wcm90bxIRZG93bmxvYWRfcHJvZ3Jlc3MixAYKCVdzTWVzc2FnZRIwCgpldmVudF90eXBlGAEgASgOMhwuZG93bmxvYWRfcHJvZ3Jlc3MuRXZlbnRUeXBlEjcKCHNuYXBzaG90GAIgASgLMiMuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRTbmFwc2hvdEgAEjgKDWRvd25sb2FkX21ldGEYAyABKAsyHy5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZE1ldGFIABI+ChBkb3dubG9hZF9tZXRyaWNzGAQgASgLMiIuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRNZXRyaWNzSAASQAoRc2VnbWVudF9jb21wbGV0ZWQYBSABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5TZWdtZW50Q29tcGxldGVkSAASQgoSZG93bmxvYWRfY29tcGxldGVkGAYgASgLMiQuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRDb21wbGV0ZWRIABI8Cg9kb3dubG9hZF9mYWlsZWQYByABKAsyIS5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZEZhaWxlZEgAEkIKEmRvd25sb2FkX2NhbmNlbGxlZBgIIAEoCzIkLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkQ2FuY2VsbGVkSAASMAoFZXJyb3IYCSABKAsyHy5kb3dubG9hZF9wcm9ncmVzcy5FcnJvclBheWxvYWRIABJAChFkb3dubG9hZF9yZWplY3RlZBgKIAEoCzIjLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkUmVqZWN0ZWRIABJLChdzdHJlYW1lcl9jaGVja19yZWNvcmRlZBgLIAEoCzIoLmRvd25sb2FkX3Byb2dyZXNzLlN0cmVhbWVyQ2hlY2tSZWNvcmRlZEgAEjwKD2Rvd25sb2FkX3F1ZXVlZBgMIAEoCzIhLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkUXVldWVkSAASQAoRZG93bmxvYWRfZGVxdWV1ZWQYDSABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZERlcXVldWVkSABCCQoHcGF5bG9hZCKRAQoNQ2xpZW50TWVzc2FnZRI4CglzdWJzY3JpYmUYASABKAsyIy5kb3dubG9hZF9wcm9ncmVzcy5TdWJzY3JpYmVSZXF1ZXN0SAASPAoLdW5zdWJzY3JpYmUYAiABKAsyJS5kb3dubG9hZF9wcm9ncmVzcy5VbnN1YnNjcmliZVJlcXVlc3RIAEIICgZhY3Rpb24iJwoQU3Vic2NyaWJlUmVxdWVzdBITCgtzdHJlYW1lcl9pZBgBIAEoCSIUChJVbnN1YnNjcmliZVJlcXVlc3QiegoQRG93bmxvYWRTbmFwc2hvdBIzCglkb3dubG9hZHMYASADKAsyIC5kb3dubG9hZF9wcm9ncmVzcy5Eb3dubG9hZFN0YXRlEjEKBnF1ZXVlZBgCIAMoCzIhLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkUXVldWVkInMKDURvd25sb2FkU3RhdGUSLQoEbWV0YRgBIAEoCzIfLmRvd25sb2FkX3Byb2dyZXNzLkRvd25sb2FkTWV0YRIzCgdtZXRyaWNzGAIgASgLMiIuZG93bmxvYWRfcHJvZ3Jlc3MuRG93bmxvYWRNZXRyaWNzIrcBCgxEb3dubG9hZE1ldGESEwoLZG93bmxvYWRfaWQYASABKAkSEwoLc3RyZWFtZXJfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRITCgtlbmdpbmVfdHlwZRgEIAEoCRIVCg1zdGFydGVkX2F0X21zGAUgASgDEhUKDXVwZGF0ZWRfYXRfbXMYCCABKAMSEAoIY2RuX2hvc3QYBiABKAkSFAoMZG93bmxvYWRfdXJsGAcgASgJItUBCg9Eb3dubG9hZE1ldHJpY3MSEwoLZG93bmxvYWRfaWQYASABKAkSDgoGc3RhdHVzGAIgASgJEhgKEGJ5dGVzX2Rvd25sb2FkZWQYAyABKAQSFQoNZHVyYXRpb25fc2VjcxgEIAEoARIbChNzcGVlZF9ieXRlc19wZXJfc2VjGAUgASgEEhoKEnNlZ21lbnRzX2NvbXBsZXRlZBgGIAEoDRIbChNtZWRpYV9kdXJhdGlvbl9zZWNzGAcgASgBEhYKDnBsYXliYWNrX3JhdGlvGAggASgBIu4BChBTZWdtZW50Q29tcGxldGVkEhMKC2Rvd25sb2FkX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhQKDHNlZ21lbnRfcGF0aBgDIAEoCRIVCg1zZWdtZW50X2luZGV4GAQgASgNEhUKDWR1cmF0aW9uX3NlY3MYBSABKAESEgoKc2l6ZV9ieXRlcxgGIAEoBBISCgpzZXNzaW9uX2lkGAcgASgJEhQKDHNwbGl0X3JlYXNvbhgIIAEoCRIVCg1zdGFydGVkX2F0X21zGAkgASgDEhcKD2NvbXBsZXRlZF9hdF9tcxgKIAEoAyKbAQoRRG93bmxvYWRDb21wbGV0ZWQSEwoLZG93bmxvYWRfaWQYASABKAkSEwoLc3RyZWFtZXJfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRITCgt0b3RhbF9ieXRlcxgEIAEoBBIbChN0b3RhbF9kdXJhdGlvbl9zZWNzGAUgASgBEhYKDnRvdGFsX3NlZ21lbnRzGAYgASgNInIKDkRvd25sb2FkRmFpbGVkEhMKC2Rvd25sb2FkX2lkGAEgASgJEhMKC3N0cmVhbWVyX2lkGAIgASgJEhIKCnNlc3Npb25faWQYAyABKAkSDQoFZXJyb3IYBCABKAkSEwoLcmVjb3ZlcmFibGUYBSABKAgiYAoRRG93bmxvYWRDYW5jZWxsZWQSEwoLZG93bmxvYWRfaWQYASABKAkSEwoLc3RyZWFtZXJfaWQYAiABKAkSEgoKc2Vzc2lvbl9pZBgDIAEoCRINCgVjYXVzZRgEIAEoCSJ6ChBEb3dubG9hZFJlamVjdGVkEhMKC3N0cmVhbWVyX2lkGAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSDgoGcmVhc29uGAMgASgJEhgKEHJldHJ5X2FmdGVyX3NlY3MYBCABKAQSEwoLcmVjb3ZlcmFibGUYBSABKAgiLQoMRXJyb3JQYXlsb2FkEgwKBGNvZGUYASABKAkSDwoHbWVzc2FnZRgCIAEoCSK7AgoVU3RyZWFtZXJDaGVja1JlY29yZGVkEhMKC3N0cmVhbWVyX2lkGAEgASgJEhUKDWNoZWNrZWRfYXRfbXMYAiABKAMSEwoLZHVyYXRpb25fbXMYAyABKAUSDwoHb3V0Y29tZRgEIAEoCRISCgpmYXRhbF9raW5kGAUgASgJEhUKDWZpbHRlcl9yZWFzb24YBiABKAkSFQoNZXJyb3JfbWVzc2FnZRgHIAEoCRIZChFzdHJlYW1zX2V4dHJhY3RlZBgIIAEoDRIcChRzdHJlYW1fc2VsZWN0ZWRfanNvbhgJIAEoCRINCgV0aXRsZRgKIAEoCRIQCghjYXRlZ29yeRgLIAEoCRIUCgx2aWV3ZXJfY291bnQYDCABKAQSHgoWc3RyZWFtc19leHRyYWN0ZWRfanNvbhgNIAEoCSKVAQoORG93bmxvYWRRdWV1ZWQSEwoLc3RyZWFtZXJfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIVCg1zdHJlYW1lcl9uYW1lGAMgASgJEhMKC2VuZ2luZV90eXBlGAQgASgJEhQKDHF1ZXVlZF9hdF9tcxgFIAEoAxIYChBpc19oaWdoX3ByaW9yaXR5GAYgASgIIlIKEERvd25sb2FkRGVxdWV1ZWQSEwoLc3RyZWFtZXJfaWQYASABKAkSEgoKc2Vzc2lvbl9pZBgCIAEoCRIVCg1zdHJlYW1lcl9uYW1lGAMgASgJKqkDCglFdmVudFR5cGUSGgoWRVZFTlRfVFlQRV9VTlNQRUNJRklFRBAAEhcKE0VWRU5UX1RZUEVfU05BUFNIT1QQARIcChhFVkVOVF9UWVBFX0RPV05MT0FEX01FVEEQAhIfChtFVkVOVF9UWVBFX0RPV05MT0FEX01FVFJJQ1MQAxIgChxFVkVOVF9UWVBFX1NFR01FTlRfQ09NUExFVEVEEAQSIQodRVZFTlRfVFlQRV9ET1dOTE9BRF9DT01QTEVURUQQBRIeChpFVkVOVF9UWVBFX0RPV05MT0FEX0ZBSUxFRBAGEiEKHUVWRU5UX1RZUEVfRE9XTkxPQURfQ0FOQ0VMTEVEEAcSFAoQRVZFTlRfVFlQRV9FUlJPUhAIEiAKHEVWRU5UX1RZUEVfRE9XTkxPQURfUkVKRUNURUQQCRImCiJFVkVOVF9UWVBFX1NUUkVBTUVSX0NIRUNLX1JFQ09SREVEEAoSHgoaRVZFTlRfVFlQRV9ET1dOTE9BRF9RVUVVRUQQDBIgChxFVkVOVF9UWVBFX0RPV05MT0FEX0RFUVVFVUVEEA1iBnByb3RvMw");
 
 /**
  * Server-to-client message envelope
@@ -86,6 +86,18 @@ export type WsMessage = Message<"download_progress.WsMessage"> & {
      */
     value: StreamerCheckRecorded;
     case: "streamerCheckRecorded";
+  } | {
+    /**
+     * @generated from field: download_progress.DownloadQueued download_queued = 12;
+     */
+    value: DownloadQueued;
+    case: "downloadQueued";
+  } | {
+    /**
+     * @generated from field: download_progress.DownloadDequeued download_dequeued = 13;
+     */
+    value: DownloadDequeued;
+    case: "downloadDequeued";
   } | { case: undefined; value?: undefined };
 };
 
@@ -167,6 +179,15 @@ export type DownloadSnapshot = Message<"download_progress.DownloadSnapshot"> & {
    * @generated from field: repeated download_progress.DownloadState downloads = 1;
    */
   downloads: DownloadState[];
+
+  /**
+   * Streamers that are live and have a download request parked on
+   * the concurrency queue. Lets a freshly-connecting WS client
+   * restore the "queued" badge without waiting for the next event.
+   *
+   * @generated from field: repeated download_progress.DownloadQueued queued = 2;
+   */
+  queued: DownloadQueued[];
 };
 
 /**
@@ -669,6 +690,95 @@ export const StreamerCheckRecordedSchema: GenMessage<StreamerCheckRecorded> = /*
   messageDesc(file_download_progress, 14);
 
 /**
+ * A streamer's download is parked on the concurrency queue.
+ *
+ * Emitted by the download manager when an `acquire_slot` call has to
+ * wait for a slot to free up. Cleared by a subsequent
+ * `DownloadStarted` for the same `session_id` (engine running) or by
+ * `DownloadDequeued` if the pipeline aborts before starting.
+ *
+ * @generated from message download_progress.DownloadQueued
+ */
+export type DownloadQueued = Message<"download_progress.DownloadQueued"> & {
+  /**
+   * @generated from field: string streamer_id = 1;
+   */
+  streamerId: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string streamer_name = 3;
+   */
+  streamerName: string;
+
+  /**
+   * Engine type as a stable lowercase string (`ffmpeg`, `streamlink`,
+   * `mesio`). Matches `DownloadMeta.engine_type`.
+   *
+   * @generated from field: string engine_type = 4;
+   */
+  engineType: string;
+
+  /**
+   * Wall-clock millis since the unix epoch when the request entered
+   * the queue. Frontend uses this for "waiting since X" display.
+   *
+   * @generated from field: int64 queued_at_ms = 5;
+   */
+  queuedAtMs: bigint;
+
+  /**
+   * High-priority requests are surfaced with a different badge tone
+   * and may take precedence on slot turnover.
+   *
+   * @generated from field: bool is_high_priority = 6;
+   */
+  isHighPriority: boolean;
+};
+
+/**
+ * Describes the message download_progress.DownloadQueued.
+ * Use `create(DownloadQueuedSchema)` to create a new message.
+ */
+export const DownloadQueuedSchema: GenMessage<DownloadQueued> = /*@__PURE__*/
+  messageDesc(file_download_progress, 15);
+
+/**
+ * Cleanup signal for a queued pipeline that aborted before starting a
+ * download. Carries no payload beyond identification — the frontend just
+ * removes the streamer's queued badge entry. No retry semantics.
+ *
+ * @generated from message download_progress.DownloadDequeued
+ */
+export type DownloadDequeued = Message<"download_progress.DownloadDequeued"> & {
+  /**
+   * @generated from field: string streamer_id = 1;
+   */
+  streamerId: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: string streamer_name = 3;
+   */
+  streamerName: string;
+};
+
+/**
+ * Describes the message download_progress.DownloadDequeued.
+ * Use `create(DownloadDequeuedSchema)` to create a new message.
+ */
+export const DownloadDequeuedSchema: GenMessage<DownloadDequeued> = /*@__PURE__*/
+  messageDesc(file_download_progress, 16);
+
+/**
  * Event types for WebSocket messages
  *
  * @generated from enum download_progress.EventType
@@ -733,6 +843,30 @@ export enum EventType {
    * @generated from enum value: EVENT_TYPE_STREAMER_CHECK_RECORDED = 10;
    */
   STREAMER_CHECK_RECORDED = 10,
+
+  /**
+   * A streamer is live and a download has been requested but is
+   * parked waiting for a concurrency slot to free up. Cleared by a
+   * subsequent EVENT_TYPE_DOWNLOAD_META + Started for the same
+   * session, or by EVENT_TYPE_DOWNLOAD_DEQUEUED if the pipeline aborts
+   * before the download starts. Fast-path acquires (slot immediately available)
+   * do NOT emit this — there's no wait worth showing.
+   *
+   * @generated from enum value: EVENT_TYPE_DOWNLOAD_QUEUED = 12;
+   */
+  DOWNLOAD_QUEUED = 12,
+
+  /**
+   * Cleanup signal for a previously-queued pipeline that aborted
+   * before the download starts (cancellation, shutdown, schedule close,
+   * freshness/state re-check).
+   * Frontend clears the streamer's queued badge on receipt.
+   * Fast-path acquires never emit this — they didn't emit
+   * DownloadQueued either.
+   *
+   * @generated from enum value: EVENT_TYPE_DOWNLOAD_DEQUEUED = 13;
+   */
+  DOWNLOAD_DEQUEUED = 13,
 }
 
 /**

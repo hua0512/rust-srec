@@ -51,6 +51,13 @@ pub struct GlobalConfigDbModel {
     /// Maximum execution time (seconds) for the `execute` processor command.
     /// This is enforced inside the processor in addition to the worker pool timeout.
     pub pipeline_execute_timeout_secs: i64,
+    /// How long (in milliseconds) a download attempt may wait on the
+    /// concurrency queue before the pipeline re-checks the streamer
+    /// with the monitor service to refresh URLs/headers. Below this
+    /// threshold the cached URLs from the original live event are
+    /// reused. Runtime-mutable; updates apply on the next queued
+    /// download without a restart.
+    pub queue_freshness_threshold_ms: i64,
 }
 
 impl Default for GlobalConfigDbModel {
@@ -87,6 +94,7 @@ impl Default for GlobalConfigDbModel {
             pipeline_cpu_job_timeout_secs: 3600,
             pipeline_io_job_timeout_secs: 3600,
             pipeline_execute_timeout_secs: 3600,
+            queue_freshness_threshold_ms: 60_000, // 1 minute
         }
     }
 }

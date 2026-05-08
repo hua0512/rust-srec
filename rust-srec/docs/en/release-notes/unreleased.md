@@ -2,7 +2,7 @@
 
 ## `unreleased`
 
-This update covers three independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart; (3) a **new check-history strip on the streamer details page** that gives you an at-a-glance view of every recent monitor poll, with a tooltip showing exactly which stream quality was picked. It also ships the initial scaffolding for backend localization, and adds first-class **bandwidth & throughput controls** to the rclone pipeline step so you can throttle uploads from the UI.
+This update covers four independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart; (3) a **new check-history strip on the streamer details page** that gives you an at-a-glance view of every recent monitor poll, with a tooltip showing exactly which stream quality was picked; (4) **clearer behavior when the concurrent-download limit is hit** — a Queued badge on streamer cards, smarter ordering for high-priority streamers, and no more "everything froze" stalls when the limit saturates. It also ships the initial scaffolding for backend localization, and adds first-class **bandwidth & throughput controls** to the rclone pipeline step so you can throttle uploads from the UI.
 
 ## Streamer check-history strip
 
@@ -42,6 +42,48 @@ This update covers three independent themes: (1) **recording session reliability
 
   - **API filtering by default** — the sessions list endpoint now hides zero-byte ended sessions by default. Active (still-recording) sessions are always returned. Pass `?include_empty=true` to inspect for diagnostics, or look up by session ID directly.
   - **Periodic background cleanup** — empty session rows are automatically deleted from the database 5 minutes after end (default scan interval 30 minutes). Related danmu statistics, segments, and lifecycle events are removed alongside.
+
+## Concurrent downloads: visibility and smarter scheduling
+
+When more streamers go live than your `max_concurrent_downloads` setting allows, rust-srec now tells you exactly which ones are waiting for a slot — and uses smarter rules to decide who gets the next free slot.
+
+- **New "Queued" badge on the streamer card**
+
+  When a streamer is live but parked waiting for a free download slot, the card now shows an amber **Queued** badge (or a deeper rose tone for high-priority streamers) instead of staying on the red "Live" badge with no progress. Hover for a tooltip with "Concurrency limit reached" and a "waiting since X" timer, so you can tell at a glance which streamers are actually recording vs. queued.
+
+  Refreshing the dashboard while streamers are queued keeps the badges visible — the queue state is part of the snapshot the dashboard receives on connect.
+
+- **High-priority streamers actually take priority**
+
+  Previously, when both the dedicated high-priority pool and the normal pool were full, a high-priority streamer would line up in plain first-come-first-served order behind whoever called earlier. Now when a slot frees, it goes to the highest-priority waiter — regardless of which pool freed it.
+
+- **No more "everything froze" when the limit saturates**
+
+  Before, hitting the concurrency limit could block the monitor loop until a slot freed. That meant a streamer going **offline** during a saturated period would stay stuck on "Live" until the limit cleared. Live, offline, and resume events for every streamer now keep flowing in real time, even when downloads are queued.
+
+- **Danmu won't connect for streams that aren't recording yet**
+
+  When a recording is parked in the queue, danmu (chat) collection waits too — it no longer opens a platform connection prematurely. This avoids burning through platform connection limits on streams that aren't actually being recorded.
+
+- **Stale URLs after long waits are refreshed automatically**
+
+  Stream URLs on some platforms (Douyin, Huya, etc.) include signed tokens that can expire within minutes. When a queued recording waits longer than the **Queued Refresh Threshold** (default 60 seconds, tunable from **Concurrency & Performance** in the global config — no restart needed), rust-srec automatically re-checks the streamer to get fresh URLs and headers before starting the engine. Set the threshold to 0 to refresh on every queue wait; set it higher to reduce platform requests when streams are typically stable.
+
+- **Schedule windows are honored even after a wait**
+
+  If a streamer's recording schedule closes while it was queued, the queued recording is cancelled cleanly instead of starting out-of-schedule the moment a slot opens.
+
+- **Graceful shutdown won't start new recordings mid-shutdown**
+
+  Previously, queued recordings could grab a slot the instant a finishing recording released one — meaning a fresh recording could spin up while the rest of the system was tearing down. Queued recordings are now rejected during shutdown so the system winds down cleanly.
+
+- **Duplicate live events no longer spawn duplicate recordings**
+
+  If the same streamer's live event is delivered twice in quick succession (e.g., a real live event racing with a hysteresis-resume re-emit), only one recording pipeline runs — the duplicate is recognized and skipped.
+
+- **Health check tells you when the concurrency limit is the bottleneck**
+
+  The `/health` endpoint's `download_manager` component now reports **Degraded** specifically when all slots are full *and* one or more streamers are queued waiting — i.e. your `max_concurrent_downloads` setting is actively holding things back. Saturated-but-no-waiters stays Healthy (full utilisation is normal operation, not a failure), so this signal won't fire on every prime-time peak. Useful for monitoring dashboards and alerting on under-provisioning.
 
 ## Rclone bandwidth & throughput controls
 
@@ -124,10 +166,11 @@ The gate work included several supporting refactors that improve the downloader 
 
 ## Compatibility
 
-- One new database migration is added by the check-history strip. It runs automatically on startup; nothing for you to do.
+- Two new database migrations run automatically on startup (the check-history strip and the new queue-refresh threshold field on `global_config`). Nothing for you to do.
 - `GET /sessions` default behavior changed: zero-byte ended sessions are no longer returned (the "ghost cards" on the dashboard disappear by default). Pass `?include_empty=true` to see all records. `GET /sessions/:id` is unaffected.
 - `set_circuit_breaker_blocked` was renamed to `set_infra_blocked(reason)` — external callers of the monitor service (none known) would need to update.
 - The `DownloadManagerEvent::DownloadRejected` event now carries a new `kind: DownloadRejectedKind` field. External subscribers of the event stream (via the WebSocket or broadcast API) should expect this field to appear in JSON payloads; ignoring it is safe.
+- The download WebSocket stream emits two new event types: `DOWNLOAD_QUEUED` (a streamer is parked waiting for a slot) and `DOWNLOAD_DEQUEUED` (a queued attempt was cancelled before starting). The initial snapshot also includes a new `queued` array. External subscribers should expect these new variants; ignoring them is safe.
 
 ## Notes
 

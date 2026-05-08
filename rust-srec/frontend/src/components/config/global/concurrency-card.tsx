@@ -320,6 +320,55 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
         </div>
 
         <Separator />
+
+        <FormField
+          control={control}
+          name="queue_freshness_threshold_ms"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="flex items-center gap-1.5">
+                <Timer className="h-3.5 w-3.5 text-amber-500/80" />
+                <Trans>Queued Refresh Threshold</Trans>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <CircleHelp className="h-3.5 w-3.5 text-muted-foreground/40 cursor-help hover:text-muted-foreground transition-colors" />
+                  </TooltipTrigger>
+                  <TooltipContent className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden">
+                    <StatusInfoTooltip
+                      icon={<Timer className="w-4 h-4" />}
+                      title={<Trans>Queued Refresh Threshold</Trans>}
+                      theme="amber"
+                    >
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        <Trans>
+                          When a recording has been waiting in the concurrency
+                          queue longer than this, rust-srec re-checks the
+                          streamer to refresh stream URLs and headers before
+                          starting. Below this threshold the URLs captured at
+                          the original live event are reused. Default 60
+                          seconds. Set to 0 to refresh on every queue wait.
+                        </Trans>
+                      </p>
+                    </StatusInfoTooltip>
+                  </TooltipContent>
+                </Tooltip>
+              </FormLabel>
+              <FormControl>
+                <InputWithUnit
+                  unitType="duration"
+                  value={(field.value ?? 0) / 1000}
+                  onChange={(val) =>
+                    field.onChange(val !== null ? val * 1000 : 0)
+                  }
+                  placeholder="60"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <Separator />
         <FormField
           control={control}
           name="default_download_engine"
