@@ -3,7 +3,6 @@
 //! Implements danmu collection for the Douyin streaming platform using the generic
 //! WebSocket provider with Protobuf protocol for message encoding/decoding.
 
-
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use prost::Message as ProstMessage;

@@ -942,7 +942,10 @@ pub fn run() {
                         } => {
                             toggle_main_window(tray.app_handle());
                         }
-                        TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => {
+                        TrayIconEvent::DoubleClick {
+                            button: MouseButton::Left,
+                            ..
+                        } => {
                             toggle_main_window(tray.app_handle());
                         }
                         _ => {}
