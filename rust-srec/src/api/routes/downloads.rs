@@ -113,7 +113,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     // 1. Send initial snapshot as protobuf binary
     let downloads = download_manager.get_active_downloads();
-    let snapshot_msg = create_snapshot_message(downloads);
+    let queued = download_manager.snapshot_pending();
+    let snapshot_msg = create_snapshot_message(downloads, queued);
     let bytes = snapshot_msg.encode_to_vec();
 
     if sender
@@ -166,10 +167,12 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                          // current state even if it missed previous delta events.
                                         if SNAPSHOT_ON_SUBSCRIBE {
                                             let mut downloads = download_manager.get_active_downloads();
+                                            let mut queued = download_manager.snapshot_pending();
                                             if let Some(ref streamer_id) = filter {
                                                 downloads.retain(|d| &d.streamer_id == streamer_id);
+                                                queued.retain(|q| &q.streamer_id == streamer_id);
                                             }
-                                            let snapshot_msg = create_snapshot_message(downloads);
+                                            let snapshot_msg = create_snapshot_message(downloads, queued);
                                             let bytes = snapshot_msg.encode_to_vec();
                                             if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
                                                 break;
@@ -182,7 +185,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
                                         if SNAPSHOT_ON_SUBSCRIBE {
                                             let downloads = download_manager.get_active_downloads();
-                                            let snapshot_msg = create_snapshot_message(downloads);
+                                            let queued = download_manager.snapshot_pending();
+                                            let snapshot_msg = create_snapshot_message(downloads, queued);
                                             let bytes = snapshot_msg.encode_to_vec();
                                             if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
                                                 break;
@@ -317,6 +321,42 @@ fn map_event_to_protobuf(
     }
 
     match event {
+        DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadQueued {
+            streamer_id,
+            streamer_name,
+            session_id,
+            engine_type,
+            is_high_priority,
+            queued_at_ms,
+        }) => {
+            let payload = crate::api::proto::DownloadQueued {
+                streamer_id: streamer_id.clone(),
+                session_id: session_id.clone(),
+                streamer_name: streamer_name.clone(),
+                engine_type: engine_type.as_str().to_string(),
+                queued_at_ms: *queued_at_ms,
+                is_high_priority: *is_high_priority,
+            };
+            Some(WsMessage {
+                event_type: EventType::DownloadQueued as i32,
+                payload: Some(Payload::DownloadQueued(payload)),
+            })
+        }
+        DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadDequeued {
+            streamer_id,
+            streamer_name,
+            session_id,
+        }) => {
+            let payload = crate::api::proto::DownloadDequeued {
+                streamer_id: streamer_id.clone(),
+                session_id: session_id.clone(),
+                streamer_name: streamer_name.clone(),
+            };
+            Some(WsMessage {
+                event_type: EventType::DownloadDequeued as i32,
+                payload: Some(Payload::DownloadDequeued(payload)),
+            })
+        }
         DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
             download_id,
             streamer_id,

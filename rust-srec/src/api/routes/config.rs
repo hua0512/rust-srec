@@ -106,6 +106,7 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         pipeline_cpu_job_timeout_secs: config.pipeline_cpu_job_timeout_secs.max(0) as u64,
         pipeline_io_job_timeout_secs: config.pipeline_io_job_timeout_secs.max(0) as u64,
         pipeline_execute_timeout_secs: config.pipeline_execute_timeout_secs.max(0) as u64,
+        queue_freshness_threshold_ms: config.queue_freshness_threshold_ms.max(0) as u64,
     }
 }
 
@@ -249,6 +250,10 @@ pub async fn update_global_config(
         pipeline_cpu_job_timeout_secs: |v: serde_json::Value| v.as_i64().map(|n| n.max(1)),
         pipeline_io_job_timeout_secs: |v: serde_json::Value| v.as_i64().map(|n| n.max(1)),
         pipeline_execute_timeout_secs: |v: serde_json::Value| v.as_i64().map(|n| n.max(1)),
+        // Queue-wait freshness threshold. Floor at 0 (treats `<= 0`
+        // as "always refetch on a wait"); upper bound is left to
+        // sanity rather than a hard cap.
+        queue_freshness_threshold_ms: |v: serde_json::Value| v.as_i64().map(|n| n.max(0)),
     ]);
 
     debug!(
@@ -466,6 +471,7 @@ mod tests {
             pipeline_cpu_job_timeout_secs: 3600,
             pipeline_io_job_timeout_secs: 3600,
             pipeline_execute_timeout_secs: 3600,
+            queue_freshness_threshold_ms: 60_000,
         };
 
         let json = serde_json::to_string(&response).unwrap();

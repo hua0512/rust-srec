@@ -260,6 +260,10 @@ pub struct GlobalConfigResponse {
     pub pipeline_io_job_timeout_secs: u64,
     /// Maximum execution time (seconds) for the `execute` processor command.
     pub pipeline_execute_timeout_secs: u64,
+
+    /// Milliseconds a queued download may wait before the pipeline
+    /// re-checks the streamer to refresh URLs/headers.
+    pub queue_freshness_threshold_ms: u64,
 }
 
 /// Request to update global configuration.
@@ -299,6 +303,9 @@ pub struct UpdateGlobalConfigRequest {
     pub pipeline_cpu_job_timeout_secs: Option<serde_json::Value>,
     pub pipeline_io_job_timeout_secs: Option<serde_json::Value>,
     pub pipeline_execute_timeout_secs: Option<serde_json::Value>,
+    /// Milliseconds a queued download may wait before the pipeline
+    /// re-checks the streamer to refresh URLs/headers.
+    pub queue_freshness_threshold_ms: Option<serde_json::Value>,
 }
 
 /// Platform configuration response.

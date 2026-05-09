@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use futures::{SinkExt, StreamExt};
-use std::future::Future;
 use rustls::{ClientConfig, crypto::aws_lc_rs};
 use rustls_platform_verifier::BuilderVerifierExt;
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};

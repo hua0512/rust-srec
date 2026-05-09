@@ -50,6 +50,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const upsertMeta = useDownloadStore((state) => state.upsertMeta);
   const upsertMetrics = useDownloadStore((state) => state.upsertMetrics);
   const removeDownload = useDownloadStore((state) => state.removeDownload);
+  const setQueued = useDownloadStore((state) => state.setQueued);
+  const clearQueuedByStreamer = useDownloadStore(
+    (state) => state.clearQueuedByStreamer,
+  );
   const setConnectionStatus = useDownloadStore(
     (state) => state.setConnectionStatus,
   );
@@ -105,7 +109,41 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
                   })
                   .filter((d): d is SnapshotItem => d !== null);
 
-              setSnapshot(downloads);
+              const queued: Parameters<typeof setSnapshot>[1] =
+                message.payload.value.queued.map((q) => ({
+                  streamerId: q.streamerId,
+                  sessionId: q.sessionId,
+                  streamerName: q.streamerName,
+                  engineType: q.engineType,
+                  queuedAtMs: q.queuedAtMs,
+                  isHighPriority: q.isHighPriority,
+                }));
+
+              setSnapshot(downloads, queued);
+            }
+            break;
+
+          case EventType.DOWNLOAD_QUEUED:
+            if (message.payload.case === 'downloadQueued') {
+              const v = message.payload.value;
+              setQueued({
+                streamerId: v.streamerId,
+                sessionId: v.sessionId,
+                streamerName: v.streamerName,
+                engineType: v.engineType,
+                queuedAtMs: v.queuedAtMs,
+                isHighPriority: v.isHighPriority,
+              });
+            }
+            break;
+
+          case EventType.DOWNLOAD_DEQUEUED:
+            // Pipeline aborted before starting a download (cancelled,
+            // shutdown, OutOfSchedule/freshness re-check, etc.). Clear the
+            // queued badge so the card returns to its underlying
+            // streamer state.
+            if (message.payload.case === 'downloadDequeued') {
+              clearQueuedByStreamer(message.payload.value.streamerId);
             }
             break;
 
@@ -124,6 +162,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           case EventType.DOWNLOAD_COMPLETED:
             if (message.payload.case === 'downloadCompleted') {
               // Terminal event - remove from active list.
+              clearQueuedByStreamer(message.payload.value.streamerId);
               removeDownload(message.payload.value.downloadId);
             }
             break;
@@ -131,6 +170,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           case EventType.DOWNLOAD_FAILED:
             if (message.payload.case === 'downloadFailed') {
               // Terminal event - remove from active list.
+              clearQueuedByStreamer(message.payload.value.streamerId);
               removeDownload(message.payload.value.downloadId);
             }
             break;
@@ -138,11 +178,19 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           case EventType.DOWNLOAD_CANCELLED:
             if (message.payload.case === 'downloadCancelled') {
               // Terminal event - remove from active list.
+              clearQueuedByStreamer(message.payload.value.streamerId);
               removeDownload(message.payload.value.downloadId);
             }
             break;
 
           case EventType.DOWNLOAD_REJECTED:
+            // Pipeline aborted before acquiring a slot (CB open or
+            // output-root blocked). Clear any "queued" badge that may
+            // still be present so the streamer card doesn't wedge.
+            if (message.payload.case === 'downloadRejected') {
+              clearQueuedByStreamer(message.payload.value.streamerId);
+            }
+            break;
           case EventType.ERROR:
             // Not currently surfaced in the UI; decoding still works.
             break;
@@ -205,7 +253,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         console.error('Failed to decode WebSocket message:', error);
       }
     },
-    [setSnapshot, upsertMeta, upsertMetrics, removeDownload, queryClient],
+    [
+      setSnapshot,
+      upsertMeta,
+      upsertMetrics,
+      removeDownload,
+      setQueued,
+      clearQueuedByStreamer,
+      queryClient,
+    ],
   );
 
   const connect = useCallback(() => {

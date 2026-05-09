@@ -49,6 +49,7 @@ rust-srec 使用 **4 层配置层级** 实现灵活控制。详见 [配置层级
 | `max_cpu_jobs` | 最大并发 CPU 密集型任务数 | `0` (Auto / 自动) |
 | `max_io_jobs` | 最大并发 I/O 密集型任务数 | `8` (0 = Auto / 自动) |
 | `download_engine` | 录制引擎 (`ffmpeg`, `mesio` 等) | `mesio` |
+| `queue_freshness_threshold` | 当某项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以刷新流地址和请求头。对签名 URL 会在几分钟内过期的平台尤其有用。设为 `0` 表示每次排队等待都刷新。 | `60 秒` |
 
 #### 网络与系统 (Network & System)
 | 设置 | 说明 | 默认值 |

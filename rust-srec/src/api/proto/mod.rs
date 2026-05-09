@@ -4,6 +4,7 @@
 //! for the download progress WebSocket API.
 
 use crate::downloader::engine::DownloadInfo;
+use crate::downloader::queue::PendingEntry as QueuePendingEntry;
 
 // Include the generated protobuf code
 pub mod download_progress {
@@ -17,9 +18,10 @@ pub mod log_event {
 
 // Re-export commonly used types
 pub use download_progress::{
-    ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadMeta,
-    DownloadMetrics, DownloadRejected, DownloadSnapshot, DownloadState, ErrorPayload, EventType,
-    SegmentCompleted, StreamerCheckRecorded, SubscribeRequest, UnsubscribeRequest, WsMessage,
+    ClientMessage, DownloadCancelled, DownloadCompleted, DownloadDequeued, DownloadFailed,
+    DownloadMeta, DownloadMetrics, DownloadQueued, DownloadRejected, DownloadSnapshot,
+    DownloadState, ErrorPayload, EventType, SegmentCompleted, StreamerCheckRecorded,
+    SubscribeRequest, UnsubscribeRequest, WsMessage,
 };
 
 impl From<&DownloadInfo> for DownloadMeta {
@@ -77,8 +79,13 @@ fn safe_playback_ratio(media_duration_secs: f64, elapsed_secs: f64) -> f64 {
     }
 }
 
-/// Create a snapshot message from a list of download infos.
-pub fn create_snapshot_message(downloads: Vec<DownloadInfo>) -> WsMessage {
+/// Create a snapshot message from a list of download infos plus the
+/// list of currently-queued pending acquires (downloads that have
+/// emitted `DownloadQueued` but not yet received their slot).
+pub fn create_snapshot_message(
+    downloads: Vec<DownloadInfo>,
+    queued: Vec<QueuePendingEntry>,
+) -> WsMessage {
     let states: Vec<DownloadState> = downloads
         .iter()
         .map(|d| DownloadState {
@@ -87,10 +94,25 @@ pub fn create_snapshot_message(downloads: Vec<DownloadInfo>) -> WsMessage {
         })
         .collect();
 
+    let queued_msgs: Vec<DownloadQueued> = queued
+        .into_iter()
+        .map(|q| DownloadQueued {
+            streamer_id: q.streamer_id,
+            session_id: q.session_id,
+            streamer_name: q.streamer_name,
+            engine_type: q.engine_type.as_str().to_string(),
+            queued_at_ms: q.queued_at_ms,
+            is_high_priority: q.priority.is_high(),
+        })
+        .collect();
+
     WsMessage {
         event_type: EventType::Snapshot as i32,
         payload: Some(download_progress::ws_message::Payload::Snapshot(
-            DownloadSnapshot { downloads: states },
+            DownloadSnapshot {
+                downloads: states,
+                queued: queued_msgs,
+            },
         )),
     }
 }
@@ -170,10 +192,38 @@ mod tests {
     #[test]
     fn test_create_snapshot_message() {
         let downloads = vec![create_test_download_info()];
-        let msg = create_snapshot_message(downloads);
+        let msg = create_snapshot_message(downloads, Vec::new());
 
         assert_eq!(msg.event_type, EventType::Snapshot as i32);
         assert!(msg.payload.is_some());
+    }
+
+    #[test]
+    fn test_create_snapshot_message_with_queued() {
+        use crate::downloader::engine::EngineType;
+        use crate::downloader::{Priority, queue::PendingEntry};
+        let downloads = vec![create_test_download_info()];
+        let queued = vec![PendingEntry {
+            session_id: "queued-session".to_string(),
+            streamer_id: "streamer-q".to_string(),
+            streamer_name: "Queued Streamer".to_string(),
+            engine_type: EngineType::Ffmpeg,
+            priority: Priority::High,
+            queued_at_ms: 1234567890,
+        }];
+        let msg = create_snapshot_message(downloads, queued);
+
+        assert_eq!(msg.event_type, EventType::Snapshot as i32);
+        if let Some(download_progress::ws_message::Payload::Snapshot(s)) = msg.payload {
+            assert_eq!(s.downloads.len(), 1);
+            assert_eq!(s.queued.len(), 1);
+            assert_eq!(s.queued[0].streamer_id, "streamer-q");
+            assert_eq!(s.queued[0].session_id, "queued-session");
+            assert!(s.queued[0].is_high_priority);
+            assert_eq!(s.queued[0].engine_type, "ffmpeg");
+        } else {
+            panic!("expected snapshot payload");
+        }
     }
 
     #[test]

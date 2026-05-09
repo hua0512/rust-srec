@@ -59,6 +59,17 @@ export interface DownloadView {
 
 export type Download = DownloadView;
 
+// Streamers parked on the concurrency queue: live but waiting for a
+// download slot. Surfaced on the streamer card as a "Queued" badge.
+export interface QueuedEntry {
+  streamerId: string;
+  sessionId: string;
+  streamerName: string;
+  engineType: string;
+  queuedAtMs: bigint;
+  isHighPriority: boolean;
+}
+
 function emptyMeta(downloadId: string): DownloadMeta {
   return {
     downloadId,
@@ -114,21 +125,29 @@ interface DownloadStoreState {
   // Download IDs that have received a terminal event.
   // Used to ignore out-of-order metrics/meta that arrive after termination.
   terminatedIds: Set<string>;
+  // Streamers waiting for a download slot. Keyed by streamerId so the
+  // card lookup is O(1). At most one entry per streamer (the queue
+  // itself dedupes by session_id, and the streamer card only renders
+  // one badge).
+  queuedByStreamer: Map<string, QueuedEntry>;
   // Bumps on any mutation; can be selected to force rerenders.
   version: number;
   connectionStatus: ConnectionStatus;
 
   // Actions
-  setSnapshot: (downloads: DownloadState[]) => void;
+  setSnapshot: (downloads: DownloadState[], queued: QueuedEntry[]) => void;
   upsertMeta: (meta: DownloadMeta) => void;
   upsertMetrics: (metrics: DownloadMetrics) => void;
   removeDownload: (downloadId: string) => void;
+  setQueued: (entry: QueuedEntry) => void;
+  clearQueuedByStreamer: (streamerId: string) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
   clearAll: () => void;
 
   // Selectors
   getDownloadsByStreamer: (streamerId: string) => DownloadView[];
   hasActiveDownload: (streamerId: string) => boolean;
+  getQueuedForStreamer: (streamerId: string) => QueuedEntry | undefined;
 }
 
 export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
@@ -136,26 +155,32 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
   metricsById: new Map(),
   viewsById: new Map(),
   terminatedIds: new Set(),
+  queuedByStreamer: new Map(),
   version: 0,
   connectionStatus: 'disconnected',
 
-  setSnapshot: (downloads) =>
+  setSnapshot: (downloads, queued) =>
     set((state) => {
       state.metaById.clear();
       state.metricsById.clear();
       state.viewsById.clear();
       state.terminatedIds.clear();
+      state.queuedByStreamer.clear();
       for (const d of downloads) {
         const id = d.meta.downloadId || d.metrics.downloadId;
         state.metaById.set(id, d.meta);
         state.metricsById.set(id, d.metrics);
         state.viewsById.set(id, toView(d.meta, d.metrics));
       }
+      for (const q of queued) {
+        state.queuedByStreamer.set(q.streamerId, q);
+      }
       return {
         metaById: state.metaById,
         metricsById: state.metricsById,
         viewsById: state.viewsById,
         terminatedIds: state.terminatedIds,
+        queuedByStreamer: state.queuedByStreamer,
         version: state.version + 1,
       };
     }),
@@ -195,11 +220,17 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
       const metrics = state.metricsById.get(id)!;
       state.viewsById.set(id, toView(newMeta, metrics));
 
+      // Receiving meta means the download has a real id and is no
+      // longer queued; defensively clear the queued badge for this
+      // streamer so a stale entry from a missed event doesn't linger.
+      state.queuedByStreamer.delete(newMeta.streamerId);
+
       return {
         metaById: state.metaById,
         metricsById: state.metricsById,
         viewsById: state.viewsById,
         terminatedIds: state.terminatedIds,
+        queuedByStreamer: state.queuedByStreamer,
         version: state.version + 1,
       };
     }),
@@ -227,6 +258,7 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
         metricsById: state.metricsById,
         viewsById: state.viewsById,
         terminatedIds: state.terminatedIds,
+        queuedByStreamer: state.queuedByStreamer,
         version: state.version + 1,
       };
     }),
@@ -245,6 +277,33 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
         metricsById: state.metricsById,
         viewsById: state.viewsById,
         terminatedIds: state.terminatedIds,
+        queuedByStreamer: state.queuedByStreamer,
+        version: state.version + 1,
+      };
+    }),
+
+  setQueued: (entry) =>
+    set((state) => {
+      state.queuedByStreamer.set(entry.streamerId, entry);
+      return {
+        metaById: state.metaById,
+        metricsById: state.metricsById,
+        viewsById: state.viewsById,
+        terminatedIds: state.terminatedIds,
+        queuedByStreamer: state.queuedByStreamer,
+        version: state.version + 1,
+      };
+    }),
+
+  clearQueuedByStreamer: (streamerId) =>
+    set((state) => {
+      if (!state.queuedByStreamer.delete(streamerId)) return state;
+      return {
+        metaById: state.metaById,
+        metricsById: state.metricsById,
+        viewsById: state.viewsById,
+        terminatedIds: state.terminatedIds,
+        queuedByStreamer: state.queuedByStreamer,
         version: state.version + 1,
       };
     }),
@@ -257,11 +316,13 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
       state.metricsById.clear();
       state.viewsById.clear();
       state.terminatedIds.clear();
+      state.queuedByStreamer.clear();
       return {
         metaById: state.metaById,
         metricsById: state.metricsById,
         viewsById: state.viewsById,
         terminatedIds: state.terminatedIds,
+        queuedByStreamer: state.queuedByStreamer,
         version: state.version + 1,
         connectionStatus: 'disconnected',
       };
@@ -280,4 +341,6 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
 
   hasActiveDownload: (streamerId) =>
     get().getDownloadsByStreamer(streamerId).length > 0,
+
+  getQueuedForStreamer: (streamerId) => get().queuedByStreamer.get(streamerId),
 }));
