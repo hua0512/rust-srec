@@ -149,6 +149,7 @@ HTTP/2 is enabled by default (`--http-version auto`). Use `--http-version http1`
 ```text
   -P, --progress         Show progress bars for download and processing operations
   -v, --verbose          Enable detailed debug logging
+      --disable-log-file Disable writing logs to mesio.log
   -h, --help             Print help
   -V, --version          Print version
 ```
