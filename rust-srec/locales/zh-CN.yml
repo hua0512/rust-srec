@@ -102,6 +102,37 @@ notification:
         对 %{path} 的可写性探测超时。文件系统可能已挂起(NFS stale handle、损坏的绑定挂载、挂起的块设备等)。
       other: "输出路径 %{path} 无法写入:%{kind}。"
 
+  # ============ GPU 健康监测(#555) ============
+  gpu_unavailable:
+    title: "🎮 GPU 不可用(kind=%{error_kind})"
+    description:
+      nvml_unknown_error: |-
+        GPU 已无法被容器访问。NVML 报告 `Unknown Error`,但 `/dev/nvidia*` 设备节点仍然存在。
+
+        这是已知的 NVIDIA Container Toolkit + cgroup v2 重协调问题:宿主机的 systemd 在某次操作(常见于 Docker 守护进程重载、软件包升级或 `nvidia-ctk` 重新配置)后重新加载了 device cgroup,导致容器的 GPU 访问权限被悄悄剥离。
+
+        解决方案:在 `/etc/nvidia-container-runtime/config.toml` 中设置 `no-cgroups = true` 并重启 Docker,或将 Docker 的 cgroup 驱动改为 `cgroupfs`。在容器重启或 cgroup 恢复之前,使用 NVENC/NVDEC 的录制会持续失败。
+
+        探测详情:%{message}
+      driver_mismatch: |-
+        宿主机 NVIDIA 驱动在未重启 `nvidia-uvm` 或容器的情况下升级了。请重启容器(或重启宿主机)以加载匹配的库。
+
+        探测详情:%{message}
+      no_device: |-
+        `nvidia-smi` 报告没有 CUDA 兼容的设备。请检查 `docker-compose.yml` 中的 GPU 透传配置(`nvidia` 设备 reservation),并确认容器上设置了 `NVIDIA_VISIBLE_DEVICES`。
+
+        探测详情:%{message}
+      timed_out: |-
+        GPU 健康探测超时,驱动可能已挂起 —— 请检查宿主机 `dmesg` 中的 NVRM/Xid 错误。
+
+        探测详情:%{message}
+      not_installed: |-
+        启动时 `nvidia-smi` 在 PATH 中,但当前已不可执行,可能是驱动升级不完整或挂载卷被修改。
+
+        探测详情:%{message}
+      other: |-
+        GPU 探测失败(kind=%{kind})。探测详情:%{message}
+
   # ============ 凭据事件 ============
   credential:
     refreshed:

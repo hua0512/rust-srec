@@ -146,6 +146,12 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
         ],
     },
     NotificationEventTypeInfo {
+        event_type: "gpu_unavailable",
+        label: "GPU Unavailable",
+        priority: NotificationPriority::Critical,
+        aliases: &["gpu_unavailable", "gpu.unavailable", "GpuUnavailable"],
+    },
+    NotificationEventTypeInfo {
         event_type: "pipeline_queue_warning",
         label: "Pipeline Queue Warning",
         priority: NotificationPriority::High,
@@ -526,6 +532,23 @@ pub enum NotificationEvent {
         error_kind: String,
         timestamp: DateTime<Utc>,
     },
+    /// GPU became unavailable to the container (caught by the GPU health
+    /// monitor probing nvidia-smi). Most often the NVIDIA Container Toolkit
+    /// and cgroup v2 reconciliation pattern from issue #555: the host's
+    /// systemd reloads the device cgroup and silently drops the
+    /// container's GPU access while `/dev/nvidia*` nodes remain visible.
+    ///
+    /// Emitted exactly once per `Healthy → Unhealthy` transition.
+    GpuUnavailable {
+        /// Stable string identifying the failure kind. Maps to the
+        /// `notification.gpu_unavailable.description.<error_kind>` i18n
+        /// key via [`crate::metrics::gpu_health::GpuErrorKind::as_str`].
+        error_kind: String,
+        /// Truncated stderr / diagnostic line from the failed probe (≤ 256
+        /// chars). Useful for ops; not used for routing.
+        message: String,
+        timestamp: DateTime<Utc>,
+    },
     /// Pipeline queue depth warning.
     PipelineQueueWarning {
         queue_depth: usize,
@@ -588,6 +611,7 @@ impl NotificationEvent {
             Self::FatalError { .. } => NotificationPriority::Critical,
             Self::OutOfSpace { .. } => NotificationPriority::Critical,
             Self::OutputPathInaccessible { .. } => NotificationPriority::Critical,
+            Self::GpuUnavailable { .. } => NotificationPriority::Critical,
             Self::PipelineQueueWarning { .. } => NotificationPriority::High,
             Self::PipelineQueueCritical { .. } => NotificationPriority::Critical,
             Self::SystemStartup { .. } => NotificationPriority::Normal,
@@ -618,6 +642,7 @@ impl NotificationEvent {
             Self::FatalError { .. } => "fatal_error",
             Self::OutOfSpace { .. } => "out_of_space",
             Self::OutputPathInaccessible { .. } => "output_path_inaccessible",
+            Self::GpuUnavailable { .. } => "gpu_unavailable",
             Self::PipelineQueueWarning { .. } => "pipeline_queue_warning",
             Self::PipelineQueueCritical { .. } => "pipeline_queue_critical",
             Self::SystemStartup { .. } => "system_startup",
@@ -719,6 +744,10 @@ impl NotificationEvent {
             Self::OutputPathInaccessible { path, .. } => crate::t_str!(
                 "notification.output_path_inaccessible.title",
                 path = path.as_str(),
+            ),
+            Self::GpuUnavailable { error_kind, .. } => crate::t_str!(
+                "notification.gpu_unavailable.title",
+                error_kind = error_kind.as_str(),
             ),
             Self::PipelineQueueWarning { queue_depth, .. } => crate::t_str!(
                 "notification.pipeline_queue_warning.title",
@@ -891,6 +920,26 @@ impl NotificationEvent {
                 };
                 crate::t_str!(key, path = path.as_str(), kind = error_kind.as_str())
             }
+            Self::GpuUnavailable {
+                error_kind,
+                message,
+                ..
+            } => {
+                // Per-kind i18n description; the kind strings here MUST stay
+                // in sync with `crate::metrics::gpu_health::GpuErrorKind::as_str`
+                // (covered by a unit test in gpu_health.rs).
+                let key = match error_kind.as_str() {
+                    "nvml_unknown_error" => {
+                        "notification.gpu_unavailable.description.nvml_unknown_error"
+                    }
+                    "driver_mismatch" => "notification.gpu_unavailable.description.driver_mismatch",
+                    "no_device" => "notification.gpu_unavailable.description.no_device",
+                    "timed_out" => "notification.gpu_unavailable.description.timed_out",
+                    "not_installed" => "notification.gpu_unavailable.description.not_installed",
+                    _ => "notification.gpu_unavailable.description.other",
+                };
+                crate::t_str!(key, kind = error_kind.as_str(), message = message.as_str(),)
+            }
             Self::PipelineQueueWarning {
                 queue_depth,
                 threshold,
@@ -941,6 +990,7 @@ impl NotificationEvent {
             | Self::FatalError { timestamp, .. }
             | Self::OutOfSpace { timestamp, .. }
             | Self::OutputPathInaccessible { timestamp, .. }
+            | Self::GpuUnavailable { timestamp, .. }
             | Self::PipelineQueueWarning { timestamp, .. }
             | Self::PipelineQueueCritical { timestamp, .. }
             | Self::SystemStartup { timestamp, .. }

@@ -33,6 +33,7 @@ export const GlobalConfigSchema = z.object({
   pipeline_io_job_timeout_secs: z.number(),
   pipeline_execute_timeout_secs: z.number(),
   queue_freshness_threshold_ms: z.number(),
+  gpu_health_probe_interval_secs: z.number(),
   // Handle pipeline - backend sends JSON string, need to parse it
   pipeline: z
     .string()
@@ -108,6 +109,7 @@ export const GlobalConfigFormSchema = z.object({
   pipeline_io_job_timeout_secs: z.number(),
   pipeline_execute_timeout_secs: z.number(),
   queue_freshness_threshold_ms: z.number().int().min(0),
+  gpu_health_probe_interval_secs: z.number().int().min(1),
   // Form works with object directly (already parsed from API response)
   pipeline: DagPipelineDefinitionSchema.nullable().optional(),
   session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
@@ -144,6 +146,7 @@ export const GlobalConfigWriteSchema = z.object({
   pipeline_io_job_timeout_secs: z.number().int().min(1),
   pipeline_execute_timeout_secs: z.number().int().min(1),
   queue_freshness_threshold_ms: z.number().int().min(0),
+  gpu_health_probe_interval_secs: z.number().int().min(1),
 
   // Accept any object - will be stringified by config.ts when sending to backend
   pipeline: z.any().nullable().optional(),

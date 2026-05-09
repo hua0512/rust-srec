@@ -369,6 +369,55 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
         />
 
         <Separator />
+
+        <FormField
+          control={control}
+          name="gpu_health_probe_interval_secs"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="flex items-center gap-1.5">
+                <Cpu className="h-3.5 w-3.5 text-purple-500/80" />
+                <Trans>GPU Health Probe Interval</Trans>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <CircleHelp className="h-3.5 w-3.5 text-muted-foreground/40 cursor-help hover:text-muted-foreground transition-colors" />
+                  </TooltipTrigger>
+                  <TooltipContent className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden">
+                    <StatusInfoTooltip
+                      icon={<Cpu className="w-4 h-4" />}
+                      title={<Trans>GPU Health Probe Interval</Trans>}
+                      theme="violet"
+                    >
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        <Trans>
+                          How often rust-srec runs nvidia-smi to detect when the
+                          container loses GPU access (a known NVIDIA Container
+                          Toolkit issue on cgroup v2 hosts). Only active when
+                          nvidia-smi is available; otherwise the GPU row is not
+                          registered. Default 30 seconds. Changes apply on the
+                          next probe — no restart required. Values below 30
+                          seconds are discouraged.
+                        </Trans>
+                      </p>
+                    </StatusInfoTooltip>
+                  </TooltipContent>
+                </Tooltip>
+              </FormLabel>
+              <FormControl>
+                <InputWithUnit
+                  unitType="duration"
+                  min={1}
+                  {...field}
+                  onChange={(val) => field.onChange(val ?? 30)}
+                  placeholder="30"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <Separator />
         <FormField
           control={control}
           name="default_download_engine"

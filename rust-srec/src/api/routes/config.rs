@@ -107,6 +107,7 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         pipeline_io_job_timeout_secs: config.pipeline_io_job_timeout_secs.max(0) as u64,
         pipeline_execute_timeout_secs: config.pipeline_execute_timeout_secs.max(0) as u64,
         queue_freshness_threshold_ms: config.queue_freshness_threshold_ms.max(0) as u64,
+        gpu_health_probe_interval_secs: config.gpu_health_probe_interval_secs.max(0) as u64,
     }
 }
 
@@ -254,6 +255,10 @@ pub async fn update_global_config(
         // as "always refetch on a wait"); upper bound is left to
         // sanity rather than a hard cap.
         queue_freshness_threshold_ms: |v: serde_json::Value| v.as_i64().map(|n| n.max(0)),
+        // GPU health probe cadence (seconds). Clamped to >= 1 because each
+        // probe is a `nvidia-smi` fork+exec (~50–200 ms); sub-second polling
+        // would waste CPU. The UI hint discourages going below 30 s.
+        gpu_health_probe_interval_secs: |v: serde_json::Value| v.as_i64().map(|n| n.max(1)),
     ]);
 
     debug!(
@@ -472,6 +477,7 @@ mod tests {
             pipeline_io_job_timeout_secs: 3600,
             pipeline_execute_timeout_secs: 3600,
             queue_freshness_threshold_ms: 60_000,
+            gpu_health_probe_interval_secs: 30,
         };
 
         let json = serde_json::to_string(&response).unwrap();

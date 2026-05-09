@@ -26,9 +26,13 @@
 //! ```
 
 mod collector;
+pub mod gpu_health;
 mod health;
 mod prometheus;
 
 pub use collector::{MetricsCollector, MetricsSnapshot};
+pub use gpu_health::{
+    DEFAULT_PROBE_INTERVAL_SECS as DEFAULT_GPU_PROBE_INTERVAL_SECS, GpuHealthMonitor,
+};
 pub use health::{ComponentHealth, HealthChecker, HealthStatus, SystemHealth};
 pub use prometheus::PrometheusExporter;
