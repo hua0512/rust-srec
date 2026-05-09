@@ -179,10 +179,21 @@ impl GpuHealthMonitor {
     /// Probe `nvidia-smi --version` with a short timeout. Returns
     /// `Some(monitor)` only when the binary is on `$PATH` and exits 0.
     /// Callers should skip registration when this returns `None`.
+    ///
+    /// Two-stage gate: a pure-`stat()` `$PATH` walk first short-circuits
+    /// the no-GPU majority (~10 µs of syscalls vs. a ~1–5 ms
+    /// `posix_spawn` of a binary that doesn't exist), and only when the
+    /// binary is present do we actually spawn `--version` to confirm it
+    /// runs (catches "binary on PATH but driver missing" cases too).
     pub async fn detect(
         notification_service: Weak<NotificationService>,
         initial_interval_secs: u64,
     ) -> Option<Arc<Self>> {
+        if !binary_on_path("nvidia-smi") {
+            debug!("GpuHealthMonitor: nvidia-smi not on PATH, skipping registration");
+            return None;
+        }
+
         let probe = tokio::time::timeout(
             Duration::from_secs(STARTUP_GATE_TIMEOUT_SECS),
             Command::new("nvidia-smi")
@@ -212,7 +223,7 @@ impl GpuHealthMonitor {
             Ok(Err(e)) => {
                 debug!(
                     error = %e,
-                    "GpuHealthMonitor: nvidia-smi not found on PATH, skipping registration"
+                    "GpuHealthMonitor: nvidia-smi disappeared between PATH check and exec, skipping registration"
                 );
                 None
             }
@@ -440,6 +451,21 @@ impl GpuHealthMonitor {
     }
 }
 
+/// Walk `$PATH` looking for `name` as an existing file. Pure
+/// `stat()` calls — no fork/exec — so cheap enough to short-circuit
+/// `detect()` on hosts without `nvidia-smi` (the no-GPU majority) and
+/// avoid paying ~1–5 ms for a `posix_spawn` of a missing binary on
+/// every container start.
+///
+/// Generic over the binary name so unit tests can exercise it against
+/// something always-present (e.g. `cargo` in CI).
+fn binary_on_path(name: &str) -> bool {
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|dir| dir.join(name).is_file())
+}
+
 /// Build a `tokio::time::interval` configured to skip missed ticks (so a
 /// slow probe never queues up a backlog) and to skip its always-immediate
 /// first tick.
@@ -551,6 +577,27 @@ mod tests {
         assert_eq!(
             DEFAULT_PROBE_INTERVAL_SECS,
             crate::downloader::DEFAULT_GATE_COOLDOWN_SECS
+        );
+    }
+
+    #[test]
+    fn binary_on_path_rejects_clearly_missing_names() {
+        // A name with embedded NUL-style nonsense or absurd length is
+        // guaranteed to not resolve. Any false positive here would
+        // indicate a bug in the PATH-walk logic.
+        assert!(!binary_on_path(
+            "this-binary-definitely-does-not-exist-anywhere-on-path-9f3c2d1e"
+        ));
+    }
+
+    #[test]
+    fn binary_on_path_finds_existing_binary() {
+        // `cargo` is always on PATH inside `cargo test`. If this ever
+        // breaks on a sandboxed CI runner, swap in an env-supplied
+        // binary name instead of removing the test.
+        assert!(
+            binary_on_path("cargo"),
+            "expected `cargo` to be discoverable on $PATH inside cargo test"
         );
     }
 }
