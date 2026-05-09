@@ -2,7 +2,7 @@
 
 ## `unreleased`
 
-This update covers four independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart; (3) a **new check-history strip on the streamer details page** that gives you an at-a-glance view of every recent monitor poll, with a tooltip showing exactly which stream quality was picked; (4) **clearer behavior when the concurrent-download limit is hit** — a Queued badge on streamer cards, smarter ordering for high-priority streamers, and no more "everything froze" stalls when the limit saturates. It also ships the initial scaffolding for backend localization, and adds first-class **bandwidth & throughput controls** to the rclone pipeline step so you can throttle uploads from the UI.
+This update covers four independent themes: (1) **recording session reliability** — adding a quiet-period for brief network blips, cleaning up empty session cards, and improving the timeline display; (2) the **output-root write gate** — fixing a class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart; (3) a **new check-history strip on the streamer details page** that gives you an at-a-glance view of every recent monitor poll, with a tooltip showing exactly which stream quality was picked; (4) **clearer behavior when the concurrent-download limit is hit** — a Queued badge on streamer cards, smarter ordering for high-priority streamers, and no more "everything froze" stalls when the limit saturates. It also ships the initial scaffolding for backend localization, adds first-class **bandwidth & throughput controls** to the rclone pipeline step so you can throttle uploads from the UI, and gives the Mesio CLI a cleaner way to run without creating a log file.
 
 ## Streamer check-history strip
 
@@ -100,6 +100,16 @@ The rclone pipeline step now exposes rclone's bandwidth and concurrency knobs as
 - **Existing presets still work; "Extra Arguments" still wins**
 
   Older saved presets load unchanged. If you'd already added something like `--bwlimit 5M` to the **Extra Arguments** list, that keeps working — and continues to take precedence over the dedicated Throughput fields, so nothing you've configured silently changes behavior.
+
+## Mesio CLI
+
+- **Run Mesio without creating a log file**
+
+  Mesio now supports `--disable-log-file` for one-off runs, scripts, and temporary folders where you only want messages on the console. When the option is used, Mesio does not create `mesio.log`.
+
+- **Cleaner log output when redirecting commands**
+
+  Mesio now avoids adding console colors when the output is being redirected, so saved logs stay easy to read in plain text.
 
 ## Frontend
 
