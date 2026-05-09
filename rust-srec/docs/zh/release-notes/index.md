@@ -4,12 +4,14 @@
 
 ## 未发布
 
-- [`unreleased`](./unreleased.md) — 输出根写入门提升录制文件系统故障弹性（#508）、ffmpeg/streamlink 的运行时 ENOSPC 检测、通过 `rust-i18n` 引入的后端通知本地化（英文 + 简体中文，覆盖所有通知事件）、新增 `output_path_inaccessible` 通知事件、新增 `RUST_SREC_OUTPUT_ROOTS` 与 `RUST_SREC_LOCALE` 环境变量
+- [`unreleased`](./unreleased.md) — 下一个版本的更新尚未开始
 
 ## 最新版本
 
-- [`v0.2.1`](./v0.2.1.md) — 录制正确性修复、会话生命周期改进、Douyu 更新、弹幕统计增强与前端稳定性提升
+- [`v0.3.0`](./v0.3.0.md) — 输出根写入门（#508）、录制会话生命周期重构、带"排队中"徽章的优先级感知队列、主播检查历史条、rclone 带宽与吞吐量控制、后端通知本地化、Mesio `--disable-log-file`，以及一批 Huya 与小红书平台修复
 
 ## 历史版本
+
+- [`v0.2.1`](./v0.2.1.md) — 录制正确性修复、会话生命周期改进、Douyu 更新、弹幕统计增强与前端稳定性提升
 
 后续发布新版本后，会在这里继续归档更早的更新日志。

@@ -1,32 +1,27 @@
-## rust-srec v0.2.1
+## rust-srec v0.3.0
 
-This release focuses on recording correctness, session lifecycle cleanup, better observability, platform compatibility updates (Douyu / Huya), Docker GPU support, and frontend stability improvements.
+This release covers four independent themes: (1) **recording session reliability** — quiet periods for short network blips, automatic cleanup of empty session cards, and a per-streamer override for offline detection; (2) the **output-root write gate** — a fix for the class of failures where rust-srec could not recover from a filesystem issue (disk full, stale Docker bind mount) without a container restart; (3) a **new check-history strip** on the streamer details page; (4) **better behavior under concurrency saturation** — Queued badges, smarter ordering for high-priority streamers, and no more "everything froze" stalls. Also ships **rclone bandwidth & throughput controls**, the foundation of **backend notification localization** (en + zh-CN), a Mesio CLI flag to skip log-file creation, and platform fixes for Huya and RedBook.
 
 ### Highlights
-- Added split reason tracking across FLV/HLS pipelines, backend events, API responses, database session data, and the frontend session details UI
-- Improved session lifecycle behavior: disabled streamers now close active sessions once offline is confirmed, and temporary-disabled backoff is now authoritative
-- Cancellation is now treated as successful completion instead of a failure state
-- Added NVIDIA GPU support for Docker hardware-accelerated transcoding
-- Added NVIDIA NVENC encoder support (H.264, HEVC, AV1) with CUDA-aware scale filter, CQ quality control, and built-in presets
-- Improved HLS stream resilience and circuit breaker isolation (per-streamer scope, configurable half-open thresholds)
-- Made graceful stop timeout configurable for the downloader
-- Improved download resilience: recovers from transient errors when strong progress has been made
-- Updated Douyu API handling for newer request/version requirements and error-code behavior
-- Updated Huya platform extractor for latest API changes
-- Added danmu statistics collection and session UI visibility
-- Improved frontend stability with FOUC/theme fixes, standardized loading states, and session playback UX improvements
-- Improved notification quality with streamer display names, Telegram HTML fixes, and cleaned-up web push handling
+- Added **output-root write gate** for recording filesystem failure resilience (#508) — pauses recordings at the filesystem boundary, exposes status in `/health`, sends one critical notification, and auto-recovers on disk-full once the user frees space
+- Added a **check-history strip** on the streamer details page — last 60 monitor polls visualised as colored bars, with tooltips that show the chosen stream quality (#546)
+- Reworked **session lifecycle**: quiet period for brief disconnects, HLS `#EXT-X-ENDLIST` closes the session immediately, ghost zero-byte sessions are cleaned up by API filter and background janitor (#534)
+- Added **Queued** badge plus priority-aware queue scheduling and runtime-tunable URL freshness threshold for queued streamers (#548)
+- Added **rclone bandwidth & throughput controls** — bandwidth limit, transfers, checkers, TPS limit / burst, multi-thread streams, and cutoff exposed as form fields (#547)
+- Added **backend notification localization** via `rust-i18n` and a new `output_path_inaccessible` notification event
+- Added Mesio `--disable-log-file` for one-off runs and ANSI color detection for redirected log output
+
+### Platform fixes
+- Huya: rectification notice no longer marks streamers as banned (#557)
+- Huya: corrected CDN priority mapping; preferred / blacklisted CDN settings now apply as expected (#513 / #514)
+- RedBook: ended streams now transition to offline cleanly (#510)
+- Frontend: dedicated **Account Not Found** badge for `NOT_FOUND` streamers (#519)
 
 ### Review before upgrading
-- Douyu HS CDN support was removed
-- Split reason data model changed and includes a related database migration
-- Session segment timestamp semantics changed (`created_at`, `completed_at`, `persisted_at`)
-- HLS configuration was cleaned up across backend and frontend schema/forms
-- Cancellation and temporary-disabled streamer semantics changed
+- Two new database migrations run automatically on startup (check-history strip + queue refresh threshold)
+- `GET /sessions` no longer returns zero-byte ended sessions by default — pass `?include_empty=true` to get the previous behavior
+- New env vars: `RUST_SREC_OUTPUT_ROOTS` (output-root boundaries for the write gate) and `RUST_SREC_LOCALE` (notification language: `en` or `zh-CN`)
+- Internal monitor service rename: `set_circuit_breaker_blocked` → `set_infra_blocked(reason)`
+- WebSocket event stream gains `DOWNLOAD_QUEUED` / `DOWNLOAD_DEQUEUED` events and a `queued` array in the initial snapshot; `DownloadRejected` now carries a `kind` discriminator
 
-### Maintenance
-- Migrated frontend tooling to Vite 8 and SWC
-- Updated Node.js from 22 to 24 LTS
-- Reduced wasted CI time by skipping Rust CI jobs on frontend-only PRs
-- Refreshed Rust, frontend, docs, and GitHub Actions dependencies
-- Standardized repository text-file line endings with `.gitattributes`
+See the [v0.3.0 release notes](https://github.com/hua0512/rust-srec/blob/main/rust-srec/docs/en/release-notes/v0.3.0.md) for the full list and the Chinese version at [/zh/release-notes/v0.3.0](https://github.com/hua0512/rust-srec/blob/main/rust-srec/docs/zh/release-notes/v0.3.0.md).
