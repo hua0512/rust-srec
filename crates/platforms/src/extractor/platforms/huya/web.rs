@@ -6,6 +6,7 @@ use crate::extractor::platforms::huya::models::{RoomData, WebProfileInfo, WebStr
 use crate::media::media_info::MediaInfo;
 use regex::Regex;
 use rustc_hash::FxHashMap;
+use tracing::warn;
 
 pub(super) static ROOM_DATA_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"var TT_ROOM_DATA = (.*?);"#).unwrap());
@@ -117,7 +118,11 @@ impl Huya {
         }
 
         if response_text.contains("该主播涉嫌违规，正在整改中") {
-            return Err(ExtractorError::StreamerBanned);
+            warn!(
+                url = %self.extractor.url,
+                "huya rectification notice detected, treating as offline"
+            );
+            return Err(ExtractorError::NoStreamsFound);
         }
 
         if response_text.is_empty() {
