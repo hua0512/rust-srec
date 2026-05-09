@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, IsTerminal};
 use std::{path::PathBuf, time::Duration};
 
 use clap::Parser;
@@ -82,6 +82,7 @@ async fn bootstrap() -> Result<(), AppError> {
     };
 
     let filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
+    let enable_ansi = io::stdout().is_terminal();
 
     // Check if we're in pipe mode (stdout output)
     // In pipe mode, we must:
@@ -99,7 +100,7 @@ async fn bootstrap() -> Result<(), AppError> {
         // Use compact format to reduce verbosity
         let console_layer = tracing_subscriber::fmt::layer()
             .with_writer(indicatif_layer.get_stderr_writer())
-            .with_ansi(true)
+            .with_ansi(enable_ansi)
             .without_time()
             .with_target(true)
             .compact(); // Use compact format without full span paths
@@ -115,7 +116,7 @@ async fn bootstrap() -> Result<(), AppError> {
         // This ensures stdout is reserved exclusively for binary data output
         let console_layer = tracing_subscriber::fmt::layer()
             .with_writer(io::stderr)
-            .with_ansi(true)
+            .with_ansi(enable_ansi)
             .without_time()
             .with_target(true)
             .compact();
@@ -129,7 +130,7 @@ async fn bootstrap() -> Result<(), AppError> {
         // Simple console output without progress bars
         // Use compact format to reduce verbosity
         let console_layer = tracing_subscriber::fmt::layer()
-            .with_ansi(true)
+            .with_ansi(enable_ansi)
             .without_time()
             .with_target(true)
             .compact(); // Use compact format without full span paths
