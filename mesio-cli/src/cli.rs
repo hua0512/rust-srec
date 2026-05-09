@@ -68,6 +68,14 @@ pub struct CliArgs {
     #[arg(short, long, help = "Enable detailed debug logging")]
     pub verbose: bool,
 
+    /// Disable writing logs to mesio.log
+    #[arg(
+        long = "disable-log-file",
+        alias = "disable_log_file",
+        help = "Disable writing logs to mesio.log"
+    )]
+    pub disable_log_file: bool,
+
     /// Enable keyframe index injection
     #[arg(
         short = 'k',

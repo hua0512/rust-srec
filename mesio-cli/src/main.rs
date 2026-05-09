@@ -68,14 +68,18 @@ async fn bootstrap() -> Result<(), AppError> {
         Level::INFO
     };
 
-    // Create file appender for mesio.log
-    let file_appender = tracing_appender::rolling::daily(".", "mesio.log");
-    let (non_blocking_file, _guard) = tracing_appender::non_blocking(file_appender);
+    let (file_layer, _file_guard) = if args.disable_log_file {
+        (None, None)
+    } else {
+        let file_appender = tracing_appender::rolling::daily(".", "mesio.log");
+        let (non_blocking_file, guard) = tracing_appender::non_blocking(file_appender);
 
-    // Create file logging layer
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(non_blocking_file)
-        .with_ansi(false);
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(non_blocking_file)
+            .with_ansi(false);
+
+        (Some(file_layer), Some(guard))
+    };
 
     let filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
 
