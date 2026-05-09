@@ -296,12 +296,11 @@ pub struct ServiceContainer {
     pub output_root_gate: Arc<OutputRootGate>,
     /// GPU health monitor (#555). Empty when `nvidia-smi` is not available
     /// at startup; otherwise the background probe loop is owned by the
-    /// container's cancellation token. Installed lazily by
-    /// [`Self::register_health_checks`] (which can only run after
-    /// construction); use `get()` on the inner [`OnceLock`] to read.
-    /// Wrapped in [`Arc`] so the config-event handler can capture a
-    /// clone and resolve the monitor lazily after registration.
-    pub gpu_health_monitor: Arc<std::sync::OnceLock<Arc<crate::metrics::GpuHealthMonitor>>>,
+    /// container's cancellation token. Installed by
+    /// [`Self::init_gpu_health_monitor`] during [`Self::initialize`],
+    /// before `setup_config_event_subscriptions` runs so the config
+    /// handler can capture a plain `Option<Arc<…>>` clone.
+    pub gpu_health_monitor: std::sync::OnceLock<Arc<crate::metrics::GpuHealthMonitor>>,
     /// Pipeline manager.
     pub pipeline_manager: Arc<PipelineManager>,
     /// Monitor event broadcaster.
@@ -715,7 +714,7 @@ impl ServiceContainer {
             event_broadcaster,
             download_manager,
             output_root_gate,
-            gpu_health_monitor: Arc::new(std::sync::OnceLock::new()),
+            gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
             monitor_event_broadcaster,
             session_lifecycle,
@@ -1079,7 +1078,7 @@ impl ServiceContainer {
             event_broadcaster,
             download_manager,
             output_root_gate,
-            gpu_health_monitor: Arc::new(std::sync::OnceLock::new()),
+            gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
             monitor_event_broadcaster,
             session_lifecycle,
@@ -1154,6 +1153,11 @@ impl ServiceContainer {
             elapsed_ms = pipeline_start_ms,
             "Startup: pipeline manager started"
         );
+
+        // Detect and install the GPU health monitor (#555) BEFORE wiring
+        // the config-event subscription, so the latter can capture a
+        // plain `Option<Arc<GpuHealthMonitor>>` clone for hot-reload.
+        self.init_gpu_health_monitor().await;
 
         // Subscribe streamer manager to config events
         self.setup_config_event_subscriptions();
@@ -1532,7 +1536,7 @@ impl ServiceContainer {
         let pipeline_manager = self.pipeline_manager.clone();
         let danmu_service = self.danmu_service.clone();
         let session_lifecycle = self.session_lifecycle.clone();
-        let gpu_health_monitor = self.gpu_health_monitor.clone();
+        let gpu_health_monitor = self.gpu_health_monitor.get().cloned();
         let mut receiver = self.event_broadcaster.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -1714,7 +1718,7 @@ impl ServiceContainer {
                                                 // GPU). The setter clamps internally and the
                                                 // probe loop picks up the new value on its next
                                                 // tick — no restart required.
-                                                if let Some(monitor) = gpu_health_monitor.get() {
+                                                if let Some(monitor) = gpu_health_monitor.as_ref() {
                                                     monitor.set_interval(
                                                         global
                                                             .gpu_health_probe_interval_secs
@@ -2798,6 +2802,58 @@ impl ServiceContainer {
         info!("Output-root startup probe complete");
     }
 
+    /// Detect the host GPU and install the [`GpuHealthMonitor`] on the
+    /// container if `nvidia-smi` is available (#555). Called from
+    /// [`Self::initialize`] **before** subscription wiring so the
+    /// config-event handler can capture a plain `Option<Arc<…>>` clone
+    /// of `gpu_health_monitor` for hot-reloading the probe interval.
+    ///
+    /// Idempotent: if the field is already populated (e.g. a future
+    /// caller invokes this twice), the second call is a no-op and logs
+    /// at warn.
+    async fn init_gpu_health_monitor(&self) {
+        if self.gpu_health_monitor.get().is_some() {
+            return;
+        }
+
+        let initial_interval = match self.config_service.get_global_config().await {
+            Ok(cfg) => {
+                let raw = cfg.gpu_health_probe_interval_secs;
+                if raw > 0 {
+                    raw as u64
+                } else {
+                    crate::metrics::DEFAULT_GPU_PROBE_INTERVAL_SECS
+                }
+            }
+            Err(_) => crate::metrics::DEFAULT_GPU_PROBE_INTERVAL_SECS,
+        };
+
+        let Some(monitor) = crate::metrics::GpuHealthMonitor::detect(
+            Arc::downgrade(&self.notification_service),
+            initial_interval,
+        )
+        .await
+        else {
+            debug!("GPU health monitor not registered: nvidia-smi unavailable at startup");
+            return;
+        };
+
+        // The JoinHandle is intentionally dropped: the spawned task
+        // outlives this scope and is supervised by the cancellation
+        // token, so we don't need to await its completion.
+        drop(monitor.start(self.cancellation_token.child_token()));
+
+        if self.gpu_health_monitor.set(monitor).is_err() {
+            warn!("GpuHealthMonitor was already installed; ignoring duplicate registration");
+            return;
+        }
+
+        info!(
+            interval_secs = initial_interval,
+            "GPU health monitor started (issue #555)"
+        );
+    }
+
     /// Register health checks for all components.
     async fn register_health_checks(&self) {
         use crate::metrics::ComponentHealth;
@@ -2948,55 +3004,15 @@ impl ServiceContainer {
             )
             .await;
 
-        // GPU health monitor (#555). Detect once at startup; if nvidia-smi
-        // is not on PATH or the probe times out, skip registration entirely
-        // so non-GPU users never see a confusing `gpu` row. When detection
-        // succeeds, install the Arc on the container, spawn the probe loop
-        // on the container's child cancellation token, and register the
-        // `gpu` health check whose closure clones the pre-built
-        // ComponentHealth from the latest snapshot (zero-allocation read
-        // path on the /api/health hot path).
-        let initial_gpu_interval = match self.config_service.get_global_config().await {
-            Ok(cfg) => {
-                let raw = cfg.gpu_health_probe_interval_secs;
-                if raw > 0 {
-                    raw as u64
-                } else {
-                    crate::metrics::DEFAULT_GPU_PROBE_INTERVAL_SECS
-                }
-            }
-            Err(_) => crate::metrics::DEFAULT_GPU_PROBE_INTERVAL_SECS,
-        };
-        if let Some(monitor) = crate::metrics::GpuHealthMonitor::detect(
-            Arc::downgrade(&self.notification_service),
-            initial_gpu_interval,
-        )
-        .await
-        {
-            // The JoinHandle is intentionally dropped: the spawned task
-            // outlives this scope and is supervised by the cancellation
-            // token, so we don't need to await its completion.
-            drop(monitor.start(self.cancellation_token.child_token()));
-            let monitor_for_health = monitor.clone();
+        // GPU health monitor (#555). Detection + probe-loop spawn happen
+        // earlier in `initialize()` (see [`Self::init_gpu_health_monitor`])
+        // so the config-event subscription handler can capture a plain
+        // `Option<Arc<…>>` clone for hot-reload. Here we only register
+        // the health-check closure if the monitor is installed.
+        if let Some(monitor) = self.gpu_health_monitor.get().cloned() {
             self.health_checker
-                .register(
-                    "gpu",
-                    Arc::new(move || monitor_for_health.snapshot().health.clone()),
-                )
+                .register("gpu", Arc::new(move || monitor.snapshot().health.clone()))
                 .await;
-            // Install last so any concurrent observer sees a fully-wired
-            // monitor (probe loop running, health check registered).
-            if self.gpu_health_monitor.set(monitor).is_err() {
-                tracing::warn!(
-                    "GpuHealthMonitor was already installed; ignoring duplicate registration"
-                );
-            }
-            info!(
-                interval_secs = initial_gpu_interval,
-                "GPU health monitor started (issue #555)"
-            );
-        } else {
-            debug!("GPU health monitor not registered: nvidia-smi unavailable at startup");
         }
 
         // Download manager health check
