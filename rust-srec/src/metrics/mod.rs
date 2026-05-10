@@ -22,13 +22,20 @@
 //! collector.record_download_bytes(1024 * 1024);
 //!
 //! let health = HealthChecker::new();
-//! let status = health.check_all().await;
+//! let status = health.current();
 //! ```
 
 mod collector;
+pub mod gpu_health;
 mod health;
 mod prometheus;
 
 pub use collector::{MetricsCollector, MetricsSnapshot};
-pub use health::{ComponentHealth, HealthChecker, HealthStatus, SystemHealth};
+pub use gpu_health::{
+    DEFAULT_PROBE_INTERVAL_SECS as DEFAULT_GPU_PROBE_INTERVAL_SECS, GpuHealthMonitor,
+};
+pub use health::{
+    ComponentHealth, DiskSnapshot, HealthChecker, HealthProbe, HealthStatus, SystemHealth,
+    SystemMetricsSnapshot,
+};
 pub use prometheus::PrometheusExporter;

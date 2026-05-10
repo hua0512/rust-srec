@@ -331,6 +331,7 @@ function formatComponentName(name: string, i18n: I18n): string {
   if (name === 'scheduler') return i18n._(msg`Scheduler`);
   if (name === 'notification_service') return i18n._(msg`Notification Service`);
   if (name === 'maintenance_scheduler') return i18n._(msg`Maintenance`);
+  if (name === 'gpu') return i18n._(msg`GPU`);
   return name
     .split('_')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))

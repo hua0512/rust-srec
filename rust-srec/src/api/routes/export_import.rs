@@ -304,6 +304,9 @@ pub struct GlobalConfigExport {
     /// Milliseconds a queued download may wait before refetching live state.
     #[serde(default = "default_queue_freshness_threshold_ms")]
     pub queue_freshness_threshold_ms: i64,
+    /// Seconds between GPU health probes (issue #555).
+    #[serde(default = "default_gpu_health_probe_interval_secs")]
+    pub gpu_health_probe_interval_secs: i64,
 }
 
 fn default_pipeline_job_timeout_secs() -> i64 {
@@ -312,6 +315,10 @@ fn default_pipeline_job_timeout_secs() -> i64 {
 
 fn default_queue_freshness_threshold_ms() -> i64 {
     60_000
+}
+
+fn default_gpu_health_probe_interval_secs() -> i64 {
+    30
 }
 
 /// Template for export (uses name as identifier).
@@ -718,6 +725,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             pipeline_io_job_timeout_secs: global_config.pipeline_io_job_timeout_secs,
             pipeline_execute_timeout_secs: global_config.pipeline_execute_timeout_secs,
             queue_freshness_threshold_ms: global_config.queue_freshness_threshold_ms,
+            gpu_health_probe_interval_secs: global_config.gpu_health_probe_interval_secs,
         },
         templates: templates
             .iter()
@@ -916,6 +924,7 @@ pub async fn import_config(
     global.pipeline_io_job_timeout_secs = config.global_config.pipeline_io_job_timeout_secs;
     global.pipeline_execute_timeout_secs = config.global_config.pipeline_execute_timeout_secs;
     global.queue_freshness_threshold_ms = config.global_config.queue_freshness_threshold_ms;
+    global.gpu_health_probe_interval_secs = config.global_config.gpu_health_probe_interval_secs;
     global.job_history_retention_days = config.global_config.job_history_retention_days;
     global.notification_event_log_retention_days =
         config.global_config.notification_event_log_retention_days;
@@ -2041,6 +2050,7 @@ mod tests {
             pipeline_io_job_timeout_secs: 3600,
             pipeline_execute_timeout_secs: 3600,
             queue_freshness_threshold_ms: 60_000,
+            gpu_health_probe_interval_secs: 30,
         };
         let json = serde_json::to_string(&export).unwrap();
         assert!(json.contains("rust_srec=debug"));

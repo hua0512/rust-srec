@@ -47,3 +47,20 @@ happening.
 
   Changes to the queue freshness threshold are now stored reliably, so rust-srec
   keeps your chosen re-check timing after settings updates.
+
+## System health
+
+- **GPU health is now tracked on the System Health page**
+
+  If your container loses GPU access (a known issue with the NVIDIA Container
+  Toolkit on cgroup v2 hosts), you'll get a notification right away instead of
+  finding out from the next failed remux job. The probe interval is
+  configurable from the global settings page.
+
+- **`/api/health` is faster and lighter on resources**
+
+  The dashboard's health endpoint now reads a cached snapshot instead of
+  re-running every check on each poll. Health components refresh in the
+  background on per-component cadences (cheap atomic checks every 5 s, disk
+  capacity every 30 s), so opening the System Health page is instant and
+  background CPU stays low even on busy systems.

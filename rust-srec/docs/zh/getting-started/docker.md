@@ -248,7 +248,8 @@ docker exec rust-srec nvidia-smi
 |------|------|----------|
 | ffmpeg 日志显示 `Cannot load libnvcuvid.so.1` | 容器无法访问 GPU 驱动 | 安装 NVIDIA Container Toolkit 并重启 Docker |
 | 容器内找不到 `nvidia-smi` | Container Toolkit 未配置 | 运行 `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
-| 已启用 GPU 但 CPU 占用仍然很高 | 编码器选择错误 | 确保预设使用 `h264_nvenc` 或 `hevc_nvenc`，而非软件编码器 |
+| 已启用 GPU 但 CPU 占用仍然很高 | 编码器选择错误 | 确保预设使用 `h264_nvenc` 或 `hevc_nvenc`,而非软件编码器 |
+| 容器运行一段时间后出现 `Failed to initialize NVML: Unknown Error`(且流水线日志出现 `cu->cuInit(0) failed -> CUDA_ERROR_NO_DEVICE`) | 宿主机 `systemd` 重新加载了 device cgroup,导致容器的 GPU 访问权限被悄悄剥离 —— NVIDIA Container Toolkit 在 cgroup v2 主机上的已知问题。常由 Docker 守护进程重载、影响 systemd 单元的软件包升级或 `nvidia-ctk` 重新配置触发。 | 在 `/etc/nvidia-container-runtime/config.toml` 中设置 `no-cgroups = true` 并重启 Docker,**或者**将 Docker 的 cgroup 驱动改为 `cgroupfs`。临时恢复方法是 `docker restart rust-srec`。GPU 不可用时,**系统健康**页面的 `gpu` 行会立即变红并发送通知,无需等到下一次 remux 任务失败才发现问题。 |
 
 ## 使用绑定挂载时如何释放磁盘空间
 

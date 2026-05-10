@@ -214,7 +214,7 @@ impl CheckRecord {
             checked_at,
             duration,
             outcome: CheckOutcome::TransientError {
-                message: truncate_utf8(error, MAX_ERROR_MESSAGE_LEN),
+                message: crate::utils::text::truncate_bytes(error, MAX_ERROR_MESSAGE_LEN),
             },
         }
     }
@@ -231,22 +231,6 @@ impl From<&platforms_parser::media::StreamInfo> for SelectedStreamSummary {
             fps: s.fps,
         }
     }
-}
-
-/// UTF-8-safe truncation with trailing ellipsis on clipping. Naive byte
-/// slicing would panic mid-codepoint on multibyte characters.
-fn truncate_utf8(s: &str, max_bytes: usize) -> String {
-    if s.len() <= max_bytes {
-        return s.to_string();
-    }
-    let mut end = max_bytes;
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    let mut out = String::with_capacity(end + 1);
-    out.push_str(&s[..end]);
-    out.push('…');
-    out
 }
 
 #[cfg(test)]

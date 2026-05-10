@@ -45,6 +45,7 @@ import {
   MinusCircle,
   ZapOff,
   HardDrive,
+  Cpu,
   AlertTriangle,
   Settings,
 } from 'lucide-react';
@@ -122,6 +123,10 @@ const getEventIcon = (eventType: string) => {
       // `output_path_inaccessible` means the filesystem is actually
       // unwritable (recordings are blocked).
       return { icon: HardDrive, color: 'text-red-700', bg: 'bg-red-700/10' };
+    case 'gpu_unavailable':
+      // GPU-themed icon distinct from disk red so the System Health page
+      // and notification center are visually distinguishable.
+      return { icon: Cpu, color: 'text-purple-500', bg: 'bg-purple-500/10' };
     case 'pipeline_queue_warning':
       return {
         icon: AlertTriangle,
@@ -177,6 +182,10 @@ const getEventDescription = (eventType: string, i18n: any) => {
     case 'output_path_inaccessible':
       return i18n._(
         msg`Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue.`,
+      );
+    case 'gpu_unavailable':
+      return i18n._(
+        msg`Critical alert when the GPU becomes unavailable to the container (most often the NVIDIA Container Toolkit cgroup-v2 issue), so NVENC remux/transcode jobs would fail.`,
       );
     case 'pipeline_queue_warning':
       return i18n._(msg`Warning when the processing queue gets too long.`);

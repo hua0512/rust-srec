@@ -203,7 +203,8 @@ mod database_tests {
                 pipeline_cpu_job_timeout_secs INTEGER NOT NULL DEFAULT 3600,
                 pipeline_io_job_timeout_secs INTEGER NOT NULL DEFAULT 3600,
                 pipeline_execute_timeout_secs INTEGER NOT NULL DEFAULT 3600,
-                queue_freshness_threshold_ms INTEGER NOT NULL DEFAULT 60000
+                queue_freshness_threshold_ms INTEGER NOT NULL DEFAULT 60000,
+                gpu_health_probe_interval_secs INTEGER NOT NULL DEFAULT 30
             );
 
             INSERT INTO global_config (
@@ -235,7 +236,8 @@ mod database_tests {
                 pipeline_cpu_job_timeout_secs,
                 pipeline_io_job_timeout_secs,
                 pipeline_execute_timeout_secs,
-                queue_freshness_threshold_ms
+                queue_freshness_threshold_ms,
+                gpu_health_probe_interval_secs
             ) VALUES (
                 'global-1',
                 '/custom/output',
@@ -265,7 +267,8 @@ mod database_tests {
                 111,
                 222,
                 333,
-                444
+                444,
+                30
             );
             "#,
         )
