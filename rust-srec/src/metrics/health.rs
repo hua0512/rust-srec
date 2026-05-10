@@ -489,21 +489,61 @@ impl HealthChecker {
             // No probe is due; just bump CPU/mem and the timestamp.
             self.snapshot.read().components.clone()
         } else {
-            let results = futures::future::join_all(due.iter().map(|rp| {
-                let rp = Arc::clone(rp);
-                async move {
-                    let started = Instant::now();
-                    let mut health = rp.probe.probe().await;
-                    health.check_duration_ms = Some(started.elapsed().as_millis() as u64);
-                    *rp.last_run.lock() = Some(now);
-                    health
-                }
-            }))
-            .await;
+            // Each probe runs in its own `tokio::spawn` task so a panic in
+            // one probe is isolated by the runtime — without this, a single
+            // bad probe would tear down the refresh task and freeze the
+            // snapshot until process restart, which is strictly worse than
+            // the old per-request shape (where a panic crashed one request
+            // and the next request kept working).
+            let handles: Vec<_> = due
+                .iter()
+                .map(|rp| {
+                    let rp = Arc::clone(rp);
+                    tokio::spawn(async move {
+                        let started = Instant::now();
+                        let mut health = rp.probe.probe().await;
+                        health.check_duration_ms = Some(started.elapsed().as_millis() as u64);
+                        *rp.last_run.lock() = Some(now);
+                        health
+                    })
+                })
+                .collect();
+            let join_results = futures::future::join_all(handles).await;
 
             let mut components = self.snapshot.read().components.clone();
-            for (rp, health) in due.iter().zip(results.into_iter()) {
-                components.insert(rp.probe.name().into_owned(), health);
+            for (rp, join_result) in due.iter().zip(join_results.into_iter()) {
+                let name = rp.probe.name().into_owned();
+                let health = match join_result {
+                    Ok(h) => h,
+                    Err(join_err) if join_err.is_panic() => {
+                        // Update last_run so the panicking probe doesn't
+                        // re-spawn on every tick — it'll respect its
+                        // cadence like any other probe.
+                        *rp.last_run.lock() = Some(now);
+                        let payload = join_err.into_panic();
+                        let panic_msg = payload
+                            .downcast_ref::<&'static str>()
+                            .map(|s| (*s).to_string())
+                            .or_else(|| payload.downcast_ref::<String>().cloned())
+                            .unwrap_or_else(|| "<non-string panic payload>".to_string());
+                        warn!(probe = %name, panic = %panic_msg, "Health probe panicked");
+                        ComponentHealth::unhealthy(
+                            name.clone(),
+                            format!("probe panicked: {panic_msg}"),
+                        )
+                    }
+                    Err(join_err) => {
+                        // Cancellation: rare during normal operation.
+                        // Leave the previous component value untouched.
+                        warn!(
+                            probe = %name,
+                            error = %join_err,
+                            "Health probe task ended without producing a value"
+                        );
+                        continue;
+                    }
+                };
+                components.insert(name, health);
             }
             components
         };
@@ -892,6 +932,87 @@ mod tests {
         assert!(checker.current().components.contains_key("doomed"));
         assert!(checker.unregister("doomed").await);
         assert!(!checker.current().components.contains_key("doomed"));
+
+        cancel.cancel();
+        let _ = handle.await;
+    }
+
+    /// A probe that panics on every call. Used to verify that a single
+    /// bad probe doesn't tear down the refresh task or freeze the
+    /// snapshot — it should be reported as Unhealthy and other probes
+    /// should keep refreshing on their own cadences.
+    struct PanickingProbe {
+        name: String,
+    }
+
+    #[async_trait]
+    impl HealthProbe for PanickingProbe {
+        fn name(&self) -> Cow<'_, str> {
+            Cow::Borrowed(&self.name)
+        }
+        fn cadence(&self) -> Duration {
+            Duration::from_secs(60)
+        }
+        async fn probe(&self) -> ComponentHealth {
+            panic!("synthetic probe panic");
+        }
+    }
+
+    #[tokio::test]
+    async fn panicking_probe_is_isolated_from_refresh_task() {
+        let checker = Arc::new(HealthChecker::new());
+        // Register one panicking probe and one well-behaved probe so we
+        // can verify the latter still produces fresh values after the
+        // former blows up.
+        checker
+            .register_probe(Arc::new(PanickingProbe {
+                name: "bomb".to_string(),
+            }))
+            .await;
+        checker
+            .register_fn(
+                "good",
+                Duration::from_secs(60),
+                Arc::new(|| ComponentHealth::healthy("good")),
+            )
+            .await;
+
+        let cancel = CancellationToken::new();
+        let handle = checker.start(cancel.child_token());
+        // The first-fill triggers both probes; the panic happens inside
+        // its spawned task, the good probe completes normally.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        let snap = checker.current();
+        let bomb = snap
+            .components
+            .get("bomb")
+            .expect("panicking probe should still produce a component entry");
+        assert_eq!(
+            bomb.status,
+            HealthStatus::Unhealthy,
+            "expected panic-translated Unhealthy, got {:?}: msg={:?}",
+            bomb.status,
+            bomb.message
+        );
+        let msg = bomb
+            .message
+            .as_ref()
+            .expect("panic message should be populated");
+        assert!(
+            msg.contains("synthetic probe panic"),
+            "expected panic payload in message, got {msg}"
+        );
+
+        let good = snap
+            .components
+            .get("good")
+            .expect("well-behaved probe should have refreshed");
+        assert_eq!(good.status, HealthStatus::Healthy);
+
+        // The refresh task must still be alive — overall snapshot status
+        // reflects the unhealthy probe, not a frozen pre-refresh state.
+        assert_eq!(snap.status, HealthStatus::Unhealthy);
 
         cancel.cancel();
         let _ = handle.await;
