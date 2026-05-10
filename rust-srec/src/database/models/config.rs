@@ -57,6 +57,14 @@ pub struct GlobalConfigDbModel {
     /// reused. Runtime-mutable; updates apply on the next queued
     /// download without a restart.
     pub queue_freshness_threshold_ms: i64,
+
+    /// Seconds between probes by the GPU health monitor (issue #555).
+    /// The monitor shells out to `nvidia-smi` on this cadence and emits
+    /// a single `GpuUnavailable` notification on Healthy → Unhealthy
+    /// transitions. Runtime-mutable; the monitor re-reads the value
+    /// before each tick, so changes apply within at most one previous
+    /// interval and never require a restart.
+    pub gpu_health_probe_interval_secs: i64,
 }
 
 impl Default for GlobalConfigDbModel {
@@ -93,6 +101,7 @@ impl Default for GlobalConfigDbModel {
             pipeline_io_job_timeout_secs: 3600,
             pipeline_execute_timeout_secs: 3600,
             queue_freshness_threshold_ms: 60_000, // 1 minute
+            gpu_health_probe_interval_secs: 30,   // matches DEFAULT_GATE_COOLDOWN_SECS
         }
     }
 }

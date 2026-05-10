@@ -3,9 +3,11 @@
 //! The ServiceContainer holds references to all application services
 //! and manages their lifecycle.
 
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
 use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
@@ -45,7 +47,10 @@ use crate::downloader::{
     LAST_ERROR_GATE_PREFIX, OutputRootGate, RecoveryHook, engine::DownloadProgress,
 };
 use crate::logging::LoggingConfig;
-use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
+use crate::metrics::{
+    ComponentHealth, HealthChecker, HealthProbe, MetricsCollector, PrometheusExporter,
+    SystemMetricsSnapshot,
+};
 use crate::monitor::{MonitorEvent, MonitorEventBroadcaster, StreamMonitor};
 use crate::notification::web_push::WebPushService;
 use crate::notification::{NotificationService, NotificationServiceConfig};
@@ -197,6 +202,303 @@ fn parse_output_roots_env() -> Vec<std::path::PathBuf> {
         .collect()
 }
 
+fn sqlite_file_path_from_url(url: &str) -> Option<std::path::PathBuf> {
+    let url = url.strip_prefix("sqlite:")?;
+    let path_part = url.split('?').next().unwrap_or(url);
+
+    if path_part.is_empty() || path_part == ":memory:" || path_part.starts_with(":memory:") {
+        return None;
+    }
+
+    let normalized = path_part.strip_prefix("///").unwrap_or(path_part);
+    Some(std::path::PathBuf::from(normalized))
+}
+
+struct DatabaseProbe {
+    pool: SqlitePool,
+}
+
+#[async_trait]
+impl HealthProbe for DatabaseProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("database")
+    }
+
+    fn cadence(&self) -> Duration {
+        Duration::from_secs(5)
+    }
+
+    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        if self.pool.is_closed() {
+            ComponentHealth::unhealthy("database", "Connection pool is closed")
+        } else {
+            ComponentHealth::healthy("database")
+        }
+    }
+}
+
+struct DiskSpaceProbe {
+    /// Component identifier rendered as `disk:{display_path}`. Pre-built
+    /// once so [`HealthProbe::name`] doesn't allocate per call (the
+    /// refresh loop reads it twice per tick).
+    component_name: String,
+    display_path: String,
+    lookup_path: std::path::PathBuf,
+    warning_threshold: f64,
+    critical_threshold: f64,
+}
+
+impl DiskSpaceProbe {
+    fn new(
+        display_path: String,
+        lookup_path: std::path::PathBuf,
+        warning_threshold: f64,
+        critical_threshold: f64,
+    ) -> Self {
+        Self {
+            component_name: format!("disk:{}", display_path),
+            display_path,
+            lookup_path,
+            warning_threshold,
+            critical_threshold,
+        }
+    }
+}
+
+#[async_trait]
+impl HealthProbe for DiskSpaceProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.component_name)
+    }
+
+    fn cadence(&self) -> Duration {
+        Duration::from_secs(30)
+    }
+
+    fn needs_disk_snapshot(&self) -> bool {
+        true
+    }
+
+    async fn probe(&self, metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        match metrics.best_disk_for_path(&self.lookup_path) {
+            Some(disk) => HealthChecker::check_disk_space_with_thresholds(
+                &self.display_path,
+                disk.available_space,
+                disk.total_space,
+                self.warning_threshold,
+                self.critical_threshold,
+            ),
+            None => ComponentHealth {
+                name: self.component_name.clone(),
+                status: crate::metrics::HealthStatus::Unknown,
+                message: Some("Unable to resolve disk for path".to_string()),
+                last_check: Some(chrono::Utc::now().to_rfc3339()),
+                check_duration_ms: None,
+            },
+        }
+    }
+}
+
+struct OutputRootProbe {
+    gate: Arc<OutputRootGate>,
+}
+
+#[async_trait]
+impl HealthProbe for OutputRootProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("output-root")
+    }
+
+    fn cadence(&self) -> Duration {
+        Duration::from_secs(5)
+    }
+
+    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        HealthChecker::check_output_root_gate(&self.gate)
+    }
+}
+
+struct GpuProbe {
+    monitor: Arc<crate::metrics::GpuHealthMonitor>,
+}
+
+#[async_trait]
+impl HealthProbe for GpuProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("gpu")
+    }
+
+    fn cadence(&self) -> Duration {
+        Duration::from_secs(5)
+    }
+
+    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        self.monitor.snapshot().health.clone()
+    }
+}
+
+struct DownloadManagerProbe {
+    download_manager: Arc<DownloadManager>,
+}
+
+#[async_trait]
+impl HealthProbe for DownloadManagerProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("download_manager")
+    }
+
+    fn cadence(&self) -> Duration {
+        Duration::from_secs(5)
+    }
+
+    async fn probe(&self, metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        let active = self.download_manager.active_count();
+        let total_slots = self.download_manager.total_concurrent_slots();
+        let pending = self.download_manager.pending_count();
+
+        if total_slots == 0 {
+            return ComponentHealth::degraded(
+                "download_manager",
+                "No download slots configured (total_concurrent_slots=0)",
+            );
+        }
+
+        if active > total_slots {
+            return ComponentHealth::unhealthy(
+                "download_manager",
+                format!(
+                    "Active downloads exceed capacity: {}/{}",
+                    active, total_slots
+                ),
+            );
+        }
+
+        if active >= total_slots && pending > 0 {
+            return ComponentHealth::degraded(
+                "download_manager",
+                format!(
+                    "Concurrency limit reached: {}/{} active, {} streamer(s) queued",
+                    active, total_slots, pending
+                ),
+            );
+        }
+
+        let cpu_threshold = 85.0_f32;
+        let mem_threshold = 90.0_f32;
+        let utilization = active as f32 / total_slots as f32;
+
+        if utilization >= 0.95
+            && (metrics.cpu_usage >= cpu_threshold || metrics.memory_usage >= mem_threshold)
+        {
+            ComponentHealth::degraded(
+                "download_manager",
+                format!(
+                    "Near capacity under resource pressure: active {}/{}, cpu {:.1}%, mem {:.1}%",
+                    active, total_slots, metrics.cpu_usage, metrics.memory_usage
+                ),
+            )
+        } else {
+            ComponentHealth::healthy("download_manager")
+        }
+    }
+}
+
+struct PipelineManagerProbe {
+    pipeline_manager: Arc<PipelineManager>,
+}
+
+#[async_trait]
+impl HealthProbe for PipelineManagerProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("pipeline_manager")
+    }
+
+    fn cadence(&self) -> Duration {
+        Duration::from_secs(5)
+    }
+
+    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        let depth = self.pipeline_manager.queue_depth();
+        let status = self.pipeline_manager.queue_status();
+        match status {
+            crate::pipeline::QueueDepthStatus::Critical => ComponentHealth::unhealthy(
+                "pipeline_manager",
+                format!("Queue depth critical: {}", depth),
+            ),
+            crate::pipeline::QueueDepthStatus::Warning => ComponentHealth::degraded(
+                "pipeline_manager",
+                format!("Queue depth warning: {}", depth),
+            ),
+            crate::pipeline::QueueDepthStatus::Normal => {
+                ComponentHealth::healthy("pipeline_manager")
+            }
+        }
+    }
+}
+
+struct DanmuServiceProbe {
+    danmu_service: Arc<DanmuService>,
+}
+
+#[async_trait]
+impl HealthProbe for DanmuServiceProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("danmu_service")
+    }
+
+    fn cadence(&self) -> Duration {
+        Duration::from_secs(5)
+    }
+
+    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        let _active = self.danmu_service.active_sessions().len();
+        ComponentHealth::healthy("danmu_service")
+    }
+}
+
+struct SchedulerProbe {
+    cancellation_token: CancellationToken,
+}
+
+#[async_trait]
+impl HealthProbe for SchedulerProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed("scheduler")
+    }
+
+    fn cadence(&self) -> Duration {
+        Duration::from_secs(5)
+    }
+
+    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        if self.cancellation_token.is_cancelled() {
+            ComponentHealth::unhealthy("scheduler", "Scheduler has been cancelled")
+        } else {
+            ComponentHealth::healthy("scheduler")
+        }
+    }
+}
+
+struct StaticHealthyProbe {
+    name: &'static str,
+    cadence: Duration,
+}
+
+#[async_trait]
+impl HealthProbe for StaticHealthyProbe {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Borrowed(self.name)
+    }
+
+    fn cadence(&self) -> Duration {
+        self.cadence
+    }
+
+    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
+        ComponentHealth::healthy(self.name)
+    }
+}
+
 /// Synchronous writability probe used by `run_output_root_startup_probe`.
 ///
 /// Creates a temp file inside `root` with restrictive permissions, writes
@@ -294,6 +596,11 @@ pub struct ServiceContainer {
     /// pre-start checks + runtime ENOSPC routing and by the health checker
     /// for aggregated `/health` reporting.
     pub output_root_gate: Arc<OutputRootGate>,
+    /// GPU health monitor (#555). Empty when `nvidia-smi` is not available
+    /// at startup; otherwise the background probe loop is owned by the
+    /// container's cancellation token. Use [`std::sync::OnceLock::get`]
+    /// to read; install only via [`Self::init_gpu_health_monitor`].
+    pub gpu_health_monitor: std::sync::OnceLock<Arc<crate::metrics::GpuHealthMonitor>>,
     /// Pipeline manager.
     pub pipeline_manager: Arc<PipelineManager>,
     /// Monitor event broadcaster.
@@ -709,6 +1016,7 @@ impl ServiceContainer {
             event_broadcaster,
             download_manager,
             output_root_gate,
+            gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
             monitor_event_broadcaster,
             session_lifecycle,
@@ -1074,6 +1382,7 @@ impl ServiceContainer {
             event_broadcaster,
             download_manager,
             output_root_gate,
+            gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
             monitor_event_broadcaster,
             session_lifecycle,
@@ -1148,6 +1457,11 @@ impl ServiceContainer {
             elapsed_ms = pipeline_start_ms,
             "Startup: pipeline manager started"
         );
+
+        // Detect and install the GPU health monitor (#555) BEFORE wiring
+        // the config-event subscription, so the latter can capture a
+        // plain `Option<Arc<GpuHealthMonitor>>` clone for hot-reload.
+        self.init_gpu_health_monitor().await;
 
         // Subscribe streamer manager to config events
         self.setup_config_event_subscriptions();
@@ -1526,6 +1840,7 @@ impl ServiceContainer {
         let pipeline_manager = self.pipeline_manager.clone();
         let danmu_service = self.danmu_service.clone();
         let session_lifecycle = self.session_lifecycle.clone();
+        let gpu_health_monitor = self.gpu_health_monitor.get().cloned();
         let mut receiver = self.event_broadcaster.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -1699,6 +2014,20 @@ impl ServiceContainer {
                                                     info!(
                                                         "Updated queue-wait freshness threshold: {} ms -> {} ms",
                                                         old_freshness, new_freshness
+                                                    );
+                                                }
+
+                                                // Hot-reload the GPU health probe cadence (#555).
+                                                // No-op when the monitor wasn't registered (no
+                                                // GPU). `.max(0)` guards against a negative i64
+                                                // wrapping during the u64 cast (the API
+                                                // validator already rejects sub-second values,
+                                                // but the DB could be edited out-of-band);
+                                                // `set_interval` then clamps to its own minimum.
+                                                if let Some(monitor) = gpu_health_monitor.as_ref() {
+                                                    monitor.set_interval(
+                                                        global.gpu_health_probe_interval_secs.max(0)
+                                                            as u64,
                                                     );
                                                 }
 
@@ -2776,52 +3105,63 @@ impl ServiceContainer {
         info!("Output-root startup probe complete");
     }
 
+    /// Detect the host GPU and install the [`GpuHealthMonitor`] on the
+    /// container if `nvidia-smi` is available (#555). Called from
+    /// [`Self::initialize`] **before** subscription wiring so the
+    /// config-event handler can capture a plain `Option<Arc<…>>` clone
+    /// of `gpu_health_monitor` for hot-reloading the probe interval.
+    ///
+    /// Idempotent: if the field is already populated (e.g. a future
+    /// caller invokes this twice), the second call is a no-op and logs
+    /// at warn.
+    async fn init_gpu_health_monitor(&self) {
+        if self.gpu_health_monitor.get().is_some() {
+            return;
+        }
+
+        let default = crate::metrics::DEFAULT_GPU_PROBE_INTERVAL_SECS;
+        let initial_interval = match self.config_service.get_global_config().await {
+            Ok(cfg) => match cfg.gpu_health_probe_interval_secs {
+                n if n > 0 => n as u64,
+                _ => default,
+            },
+            Err(_) => default,
+        };
+
+        let Some(monitor) = crate::metrics::GpuHealthMonitor::detect(
+            Arc::downgrade(&self.notification_service),
+            initial_interval,
+        )
+        .await
+        else {
+            debug!("GPU health monitor not registered: nvidia-smi unavailable at startup");
+            return;
+        };
+
+        // The JoinHandle is intentionally dropped: the spawned task
+        // outlives this scope and is supervised by the cancellation
+        // token, so we don't need to await its completion.
+        drop(monitor.start(self.cancellation_token.child_token()));
+
+        if self.gpu_health_monitor.set(monitor).is_err() {
+            warn!("GpuHealthMonitor was already installed; ignoring duplicate registration");
+            return;
+        }
+
+        info!(
+            interval_secs = initial_interval,
+            "GPU health monitor started (issue #555)"
+        );
+    }
+
     /// Register health checks for all components.
     async fn register_health_checks(&self) {
-        use crate::metrics::ComponentHealth;
-        use std::path::{Path, PathBuf};
+        use std::path::PathBuf;
 
-        let pool = self.pool.clone();
-        let download_manager = self.download_manager.clone();
-        let pipeline_manager = self.pipeline_manager.clone();
-        let danmu_service = self.danmu_service.clone();
-
-        // Database health check
-        self.health_checker
-            .register(
-                "database",
-                Arc::new(move || {
-                    if pool.is_closed() {
-                        ComponentHealth::unhealthy("database", "Connection pool is closed")
-                    } else {
-                        ComponentHealth::healthy("database")
-                    }
-                }),
-            )
-            .await;
-
-        fn best_disk_for_path<'a>(
-            disks: &'a sysinfo::Disks,
-            path: &Path,
-        ) -> Option<&'a sysinfo::Disk> {
-            disks
-                .iter()
-                .filter(|d| path.starts_with(d.mount_point()))
-                .max_by_key(|d| d.mount_point().as_os_str().to_string_lossy().len())
-        }
-
-        fn sqlite_file_path_from_url(url: &str) -> Option<PathBuf> {
-            let url = url.strip_prefix("sqlite:")?;
-            let path_part = url.split('?').next().unwrap_or(url);
-
-            if path_part.is_empty() || path_part == ":memory:" || path_part.starts_with(":memory:")
-            {
-                return None;
-            }
-
-            let normalized = path_part.strip_prefix("///").unwrap_or(path_part);
-            Some(PathBuf::from(normalized))
-        }
+        // Database health check — atomic pool-closed check; cheap.
+        self.health_checker.register_probe(Arc::new(DatabaseProbe {
+            pool: self.pool.clone(),
+        }));
 
         // Disk space health checks (output dir and DB directory).
         // Priority: explicit OUTPUT_DIR env, then the static prefix of the
@@ -2849,37 +3189,21 @@ impl ServiceContainer {
             PathBuf::from(output_dir.clone())
         };
 
-        let disk_checker = self.health_checker.clone();
+        let disk_warning_threshold = self.health_checker.disk_warning_threshold();
+        let disk_critical_threshold = self.health_checker.disk_critical_threshold();
         self.health_checker
-            .register(
-                format!("disk:{}", output_dir),
-                Arc::new(move || {
-                    let disks = sysinfo::Disks::new_with_refreshed_list();
-                    let disk = best_disk_for_path(&disks, &output_dir_path);
-                    match disk {
-                        Some(d) => disk_checker.check_disk_space(
-                            &output_dir,
-                            d.available_space(),
-                            d.total_space(),
-                        ),
-                        None => ComponentHealth {
-                            name: format!("disk:{}", output_dir),
-                            status: crate::metrics::HealthStatus::Unknown,
-                            message: Some("Unable to resolve disk for path".to_string()),
-                            last_check: Some(chrono::Utc::now().to_rfc3339()),
-                            check_duration_ms: None,
-                        },
-                    }
-                }),
-            )
-            .await;
+            .register_probe(Arc::new(DiskSpaceProbe::new(
+                output_dir,
+                output_dir_path,
+                disk_warning_threshold,
+                disk_critical_threshold,
+            )));
 
         if let Ok(database_url) = std::env::var("DATABASE_URL")
             && let Some(db_file) = sqlite_file_path_from_url(&database_url)
         {
             let db_dir = db_file.parent().unwrap_or(db_file.as_path()).to_path_buf();
             let db_dir_str = db_dir.to_string_lossy().to_string();
-            // Ensure path is absolute for disk lookup
             let db_dir_path = if db_dir.is_absolute() {
                 db_dir.clone()
             } else if let Ok(cwd) = std::env::current_dir() {
@@ -2887,30 +3211,13 @@ impl ServiceContainer {
             } else {
                 db_dir.clone()
             };
-            let disk_checker = self.health_checker.clone();
             self.health_checker
-                .register(
-                    format!("disk:{}", db_dir_str),
-                    Arc::new(move || {
-                        let disks = sysinfo::Disks::new_with_refreshed_list();
-                        let disk = best_disk_for_path(&disks, &db_dir_path);
-                        match disk {
-                            Some(d) => disk_checker.check_disk_space(
-                                &db_dir_str,
-                                d.available_space(),
-                                d.total_space(),
-                            ),
-                            None => ComponentHealth {
-                                name: format!("disk:{}", db_dir_str),
-                                status: crate::metrics::HealthStatus::Unknown,
-                                message: Some("Unable to resolve disk for path".to_string()),
-                                last_check: Some(chrono::Utc::now().to_rfc3339()),
-                                check_duration_ms: None,
-                            },
-                        }
-                    }),
-                )
-                .await;
+                .register_probe(Arc::new(DiskSpaceProbe::new(
+                    db_dir_str,
+                    db_dir_path,
+                    disk_warning_threshold,
+                    disk_critical_threshold,
+                )));
         }
 
         // Output-root write gate health check (#508). Aggregated: one
@@ -2918,166 +3225,60 @@ impl ServiceContainer {
         // across all tracked roots, with a detailed message listing each
         // Degraded root by kind and age. See
         // `HealthChecker::check_output_root_gate` for the shape.
-        let gate_for_health = self.output_root_gate.clone();
         self.health_checker
-            .register(
-                "output-root",
-                Arc::new(move || HealthChecker::check_output_root_gate(&gate_for_health)),
-            )
-            .await;
+            .register_probe(Arc::new(OutputRootProbe {
+                gate: self.output_root_gate.clone(),
+            }));
 
-        // Download manager health check
-        let dm = download_manager.clone();
+        // GPU health monitor (#555). Detection + probe-loop spawn happen
+        // earlier in `initialize()` (see [`Self::init_gpu_health_monitor`])
+        // so the config-event subscription handler can capture a clone
+        // for hot-reload. Here we only register the probe if the monitor
+        // is installed.
+        if let Some(monitor) = self.gpu_health_monitor.get().cloned() {
+            self.health_checker
+                .register_probe(Arc::new(GpuProbe { monitor }));
+        }
+
         self.health_checker
-            .register(
-                "download_manager",
-                Arc::new(move || {
-                    let active = dm.active_count();
-                    let total_slots = dm.total_concurrent_slots();
-                    let pending = dm.pending_count();
+            .register_probe(Arc::new(DownloadManagerProbe {
+                download_manager: self.download_manager.clone(),
+            }));
 
-                    if total_slots == 0 {
-                        return ComponentHealth::degraded(
-                            "download_manager",
-                            "No download slots configured (total_concurrent_slots=0)",
-                        );
-                    }
-
-                    if active > total_slots {
-                        return ComponentHealth::unhealthy(
-                            "download_manager",
-                            format!(
-                                "Active downloads exceed capacity: {}/{}",
-                                active, total_slots
-                            ),
-                        );
-                    }
-
-                    // Saturated AND streamers are actually waiting →
-                    // degraded. The configured concurrency cap is the
-                    // current bottleneck. Note that "saturated with no
-                    // waiters" is healthy — the limit matches load and
-                    // is not holding anything back.
-                    if active >= total_slots && pending > 0 {
-                        return ComponentHealth::degraded(
-                            "download_manager",
-                            format!(
-                                "Concurrency limit reached: {}/{} active, {} streamer(s) queued",
-                                active, total_slots, pending
-                            ),
-                        );
-                    }
-
-                    let cpu_threshold = 85.0_f32;
-                    let mem_threshold = 90.0_f32;
-
-                    let (cpu_usage, mem_usage) = {
-                        let mut system = sysinfo::System::new_with_specifics(
-                            sysinfo::RefreshKind::nothing()
-                                .with_cpu(sysinfo::CpuRefreshKind::everything())
-                                .with_memory(sysinfo::MemoryRefreshKind::everything()),
-                        );
-                        system.refresh_cpu_all();
-                        system.refresh_memory();
-
-                        let cpu = system.global_cpu_usage();
-                        let total_mem = system.total_memory();
-                        let used_mem = system.used_memory();
-                        let mem = if total_mem > 0 {
-                            (used_mem as f64 / total_mem as f64 * 100.0) as f32
-                        } else {
-                            0.0
-                        };
-                        (cpu, mem)
-                    };
-
-                    let utilization = active as f32 / total_slots as f32;
-
-                    if utilization >= 0.95 && (cpu_usage >= cpu_threshold || mem_usage >= mem_threshold) {
-                        ComponentHealth::degraded(
-                            "download_manager",
-                            format!(
-                                "Near capacity under resource pressure: active {}/{}, cpu {:.1}%, mem {:.1}%",
-                                active, total_slots, cpu_usage, mem_usage
-                            ),
-                        )
-                    } else {
-                        ComponentHealth::healthy("download_manager")
-                    }
-                }),
-            )
-            .await;
-
-        // Pipeline manager health check
-        let pm = pipeline_manager.clone();
         self.health_checker
-            .register(
-                "pipeline_manager",
-                Arc::new(move || {
-                    let depth = pm.queue_depth();
-                    let status = pm.queue_status();
-                    match status {
-                        crate::pipeline::QueueDepthStatus::Critical => ComponentHealth::unhealthy(
-                            "pipeline_manager",
-                            format!("Queue depth critical: {}", depth),
-                        ),
-                        crate::pipeline::QueueDepthStatus::Warning => ComponentHealth::degraded(
-                            "pipeline_manager",
-                            format!("Queue depth warning: {}", depth),
-                        ),
-                        crate::pipeline::QueueDepthStatus::Normal => {
-                            ComponentHealth::healthy("pipeline_manager")
-                        }
-                    }
-                }),
-            )
-            .await;
+            .register_probe(Arc::new(PipelineManagerProbe {
+                pipeline_manager: self.pipeline_manager.clone(),
+            }));
 
-        // Danmu service health check
-        let ds = danmu_service.clone();
         self.health_checker
-            .register(
-                "danmu_service",
-                Arc::new(move || {
-                    let _active = ds.active_sessions().len();
-                    ComponentHealth::healthy("danmu_service")
-                }),
-            )
-            .await;
+            .register_probe(Arc::new(DanmuServiceProbe {
+                danmu_service: self.danmu_service.clone(),
+            }));
 
-        // Scheduler health check
-        // Check if scheduler is running (not cancelled)
-        let cancellation_token = self.cancellation_token.clone();
-        self.health_checker
-            .register(
-                "scheduler",
-                Arc::new(move || {
-                    if cancellation_token.is_cancelled() {
-                        ComponentHealth::unhealthy("scheduler", "Scheduler has been cancelled")
-                    } else {
-                        ComponentHealth::healthy("scheduler")
-                    }
-                }),
-            )
-            .await;
+        self.health_checker.register_probe(Arc::new(SchedulerProbe {
+            cancellation_token: self.cancellation_token.clone(),
+        }));
 
-        // Notification service health check
-        // Notification service is healthy if it exists
         self.health_checker
-            .register(
-                "notification_service",
-                Arc::new(|| ComponentHealth::healthy("notification_service")),
-            )
-            .await;
+            .register_probe(Arc::new(StaticHealthyProbe {
+                name: "notification_service",
+                cadence: Duration::from_secs(10),
+            }));
 
-        // Maintenance scheduler health check
-        // Maintenance scheduler is healthy if it exists
         self.health_checker
-            .register(
-                "maintenance_scheduler",
-                Arc::new(|| ComponentHealth::healthy("maintenance_scheduler")),
-            )
-            .await;
+            .register_probe(Arc::new(StaticHealthyProbe {
+                name: "maintenance_scheduler",
+                cadence: Duration::from_secs(10),
+            }));
+
+        // Spawn the snapshot-refresh task so `/api/health` reads see
+        // populated data within seconds. Cancellation chains off the
+        // container token; the JoinHandle is intentionally dropped (the
+        // task is supervised by the cancellation token).
+        drop(
+            self.health_checker
+                .start(self.cancellation_token.child_token()),
+        );
 
         info!("Health checks registered");
     }

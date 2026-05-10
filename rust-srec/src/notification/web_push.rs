@@ -422,7 +422,7 @@ impl WebPushService {
             .text()
             .await
             .unwrap_or_else(|_| "<failed to read response body>".to_string());
-        let body_text = truncate_string(&body_text, 500);
+        let body_text = crate::utils::text::truncate_chars(&body_text, 500);
 
         Err(Error::Other(format!(
             "Web push failed: status {} body {}",
@@ -516,8 +516,8 @@ impl WebPushPayload {
     }
 
     fn into_bytes_capped(mut self, max_bytes: usize) -> Result<Vec<u8>> {
-        self.title = truncate_string(&self.title, 120);
-        self.body = truncate_string(&self.body, 600);
+        self.title = crate::utils::text::truncate_chars(&self.title, 120);
+        self.body = crate::utils::text::truncate_chars(&self.body, 600);
 
         let bytes = serde_json::to_vec(&self)
             .map_err(|e| Error::Other(format!("Failed to serialize web push payload: {}", e)))?;
@@ -526,7 +526,7 @@ impl WebPushPayload {
         }
 
         let minimal = WebPushPayload {
-            title: truncate_string(&self.title, 80),
+            title: crate::utils::text::truncate_chars(&self.title, 80),
             body: "Open rust-srec to view details.".to_string(),
             url: self.url,
             event_type: self.event_type,
@@ -571,24 +571,6 @@ fn retry_after_delay(response: &reqwest::Response) -> Option<Duration> {
         return Some(Duration::from_secs(secs));
     }
     None
-}
-
-fn truncate_string(input: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
-    let mut iter = input.chars();
-    let mut out = String::new();
-    for _ in 0..max_chars {
-        match iter.next() {
-            Some(c) => out.push(c),
-            None => return out,
-        }
-    }
-    if iter.next().is_some() {
-        out.push('…');
-    }
-    out
 }
 
 fn decode_b64url(input: &str) -> std::result::Result<Vec<u8>, base64::DecodeError> {

@@ -5360,6 +5360,7 @@ version = "0.3.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
+ "arc-swap",
  "argon2",
  "async-trait",
  "axum",

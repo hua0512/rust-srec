@@ -249,6 +249,7 @@ Once the GPU is accessible to the container, go to your recording preset setting
 | `Cannot load libnvcuvid.so.1` in ffmpeg logs | Container cannot access GPU drivers | Install NVIDIA Container Toolkit and restart Docker |
 | `nvidia-smi` not found inside container | Container Toolkit not configured | Run `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
 | High CPU usage despite GPU enabled | Wrong encoder selected | Ensure the preset uses `h264_nvenc` or `hevc_nvenc`, not software encoders |
+| `Failed to initialize NVML: Unknown Error` after the container has been running for a while (and `cu->cuInit(0) failed -> CUDA_ERROR_NO_DEVICE` in pipeline logs) | Host `systemd` reloaded the device cgroup and silently dropped the container's GPU access — a known NVIDIA Container Toolkit issue on cgroup-v2 hosts. Often triggered by a Docker daemon reload, a package upgrade that touches systemd units, or `nvidia-ctk` reconfiguration. | Set `no-cgroups = true` in `/etc/nvidia-container-runtime/config.toml` and restart Docker, **or** switch Docker's cgroup driver to `cgroupfs`. As a quick recovery, `docker restart rust-srec` restores access. The `gpu` row on **System Health** turns red and you'll get a notification the moment the GPU becomes unavailable, so you don't need to find out from a failed remux job. |
 
 ## Freeing up disk space when using bind mounts
 

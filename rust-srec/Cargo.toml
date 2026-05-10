@@ -7,6 +7,7 @@ license.workspace = true
 repository = "https://github.com/hua0512/rust-srec"
 
 [dependencies]
+arc-swap = { workspace = true }
 axum = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }

@@ -102,6 +102,37 @@ notification:
         Writability probe for %{path} timed out. The filesystem may be hung (NFS stale handle, broken bind mount, hung block device).
       other: "The output path %{path} is not writable: %{kind}."
 
+  # ============ GPU health monitor (#555) ============
+  gpu_unavailable:
+    title: "🎮 GPU unavailable (kind=%{error_kind})"
+    description:
+      nvml_unknown_error: |-
+        The GPU is no longer accessible to the container. NVML reports `Unknown Error` even though `/dev/nvidia*` device nodes are still present.
+
+        This is the well-known NVIDIA Container Toolkit + cgroup-v2 reconciliation issue: the host's systemd reloaded the device cgroup (often during a Docker daemon reload, package upgrade, or `nvidia-ctk` reconfigure) and silently stripped the container's GPU access.
+
+        Workaround: set `no-cgroups = true` in `/etc/nvidia-container-runtime/config.toml` and restart Docker, or switch Docker's cgroup driver to `cgroupfs`. Recordings using NVENC/NVDEC will fail until the container is restarted or the cgroup is restored.
+
+        Probe details: %{message}
+      driver_mismatch: |-
+        The host NVIDIA driver was upgraded without restarting `nvidia-uvm` or the container. Restart the container (or reboot the host) to load matching libraries.
+
+        Probe details: %{message}
+      no_device: |-
+        `nvidia-smi` reports no CUDA-capable device. Verify GPU passthrough in your `docker-compose.yml` (the `nvidia` device reservation) and that `NVIDIA_VISIBLE_DEVICES` is set on the container.
+
+        Probe details: %{message}
+      timed_out: |-
+        The GPU health probe timed out. The driver may be hung — check `dmesg` on the host for NVRM/Xid errors.
+
+        Probe details: %{message}
+      not_installed: |-
+        `nvidia-smi` was on PATH at startup but is no longer executable. Likely a partial driver upgrade or volume change.
+
+        Probe details: %{message}
+      other: |-
+        GPU probe failed (kind=%{kind}). Probe details: %{message}
+
   # ============ Credential events ============
   credential:
     refreshed:

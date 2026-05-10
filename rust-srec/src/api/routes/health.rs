@@ -62,16 +62,16 @@ pub async fn health_check(
 
     // Use HealthChecker if available, otherwise return fallback response
     if let Some(health_checker) = &state.health_checker {
-        let system_health = health_checker.check_all().await;
+        let system_health = health_checker.current();
 
         let components: Vec<ComponentHealth> = system_health
             .components
-            .into_iter()
+            .iter()
             .map(|(name, health)| ComponentHealth {
-                name,
+                name: name.clone(),
                 status: health.status.to_string(),
-                message: health.message,
-                last_check: health.last_check,
+                message: health.message.clone(),
+                last_check: health.last_check.clone(),
                 check_duration_ms: health.check_duration_ms,
             })
             .collect();
@@ -119,7 +119,7 @@ pub async fn readiness_check(
     }
 
     if let Some(health_checker) = &state.health_checker {
-        let is_ready = health_checker.check_ready().await;
+        let is_ready = health_checker.check_ready();
         if is_ready {
             (StatusCode::OK, "ready").into_response()
         } else {
