@@ -1563,6 +1563,14 @@ impl NotificationService {
                                         None
                                     }
                                     crate::session::SessionTransition::Ended {
+                                        cause: crate::session::TerminalCause::OutOfSchedule,
+                                        ..
+                                    } => {
+                                        // The recording schedule closed while the stream may
+                                        // still be live; don't report this as platform offline.
+                                        None
+                                    }
+                                    crate::session::SessionTransition::Ended {
                                         streamer_id,
                                         streamer_name,
                                         ended_at,

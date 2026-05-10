@@ -1029,8 +1029,8 @@ msgstr "分类"
 msgid "Category"
 msgstr "分类"
 
-#: src/components/sessions/timeline-tab.tsx:311
-#: src/components/sessions/timeline-tab.tsx:330
+#: src/components/sessions/timeline-tab.tsx:313
+#: src/components/sessions/timeline-tab.tsx:332
 msgid "Cause:"
 msgstr "原因："
 
@@ -1409,7 +1409,7 @@ msgstr "确认新密码"
 msgid "Confirm Password"
 msgstr "确认密码"
 
-#: src/components/sessions/timeline-tab.tsx:337
+#: src/components/sessions/timeline-tab.tsx:339
 msgid "Confirmed via backstop timer."
 msgstr "等待恢复超时后确认。"
 
@@ -1446,7 +1446,7 @@ msgstr "确认离线所需的连续失败检查次数。"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/sessions/timeline-tab.tsx:178
+#: src/components/sessions/timeline-tab.tsx:180
 msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "连续失败"
@@ -1839,7 +1839,7 @@ msgstr "弹幕统计"
 msgid "Danmu statistics are not available for this session."
 msgstr "此会话的弹幕统计暂不可用。"
 
-#: src/components/sessions/timeline-tab.tsx:174
+#: src/components/sessions/timeline-tab.tsx:176
 msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "弹幕流已关闭"
@@ -1943,7 +1943,7 @@ msgstr "根据标题、时间或语言定义自动录制或跳过的规则。"
 msgid "Define sequences of processing steps for your recordings"
 msgstr "为录制内容定义处理步骤序列"
 
-#: src/components/sessions/timeline-tab.tsx:180
+#: src/components/sessions/timeline-tab.tsx:182
 msgctxt "terminal-cause"
 msgid "Definitive Offline"
 msgstr "已确认离线"
@@ -1953,7 +1953,7 @@ msgstr "已确认离线"
 msgid "Degraded"
 msgstr "降级"
 
-#: src/components/config/global/network-system-card.tsx:43
+#: src/components/config/global/network-system-card.tsx:42
 msgid "Delays, proxy, and retention policies."
 msgstr "延迟、代理与保留策略。"
 
@@ -2468,7 +2468,7 @@ msgstr "编码设置"
 msgid "End"
 msgstr "结束"
 
-#: src/components/sessions/timeline-tab.tsx:468
+#: src/components/sessions/timeline-tab.tsx:470
 msgid "End of History"
 msgstr "历史结束"
 
@@ -3607,7 +3607,7 @@ msgstr "最高码率"
 msgid "History ({slots} pts)"
 msgstr "历史（{slots} 点）"
 
-#: src/components/config/global/network-system-card.tsx:197
+#: src/components/config/global/network-system-card.tsx:196
 msgid "History Retention"
 msgstr "历史保留"
 
@@ -3816,7 +3816,7 @@ msgstr "继承自上层"
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
-#: src/components/sessions/timeline-tab.tsx:213
+#: src/components/sessions/timeline-tab.tsx:215
 msgid "INITIAL"
 msgstr "初始"
 
@@ -3886,11 +3886,11 @@ msgstr "内部"
 msgid "Interval (seconds)"
 msgstr "间隔（秒）"
 
-#: src/components/config/global/network-system-card.tsx:70
+#: src/components/config/global/network-system-card.tsx:69
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "检查主播是否在线的间隔。较慢的间隔可以减少 API 使用，但可能会延迟录制开始。"
 
-#: src/components/config/global/network-system-card.tsx:113
+#: src/components/config/global/network-system-card.tsx:112
 msgid "Interval between checks when a streamer is live to detect when the stream ends."
 msgstr "主播直播时检测流结束的检查间隔。"
 
@@ -4426,10 +4426,6 @@ msgstr "最大程度压缩以尽量降低存储占用，然后删除原始文件
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "最大 HEVC/H.265 压缩（CRF 28），以获得最小文件体积。"
 
-#: src/components/config/global/network-system-card.tsx:289
-msgid "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
-msgstr "片段之间的最大空闲时间，超过此时间系统将开始新的录制会话，而不是继续当前会话。"
-
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1110
 msgid "Maximum number of concurrent segment downloads."
 msgstr "分段下载的最大并发数。"
@@ -4668,7 +4664,7 @@ msgstr "网络"
 msgid "Network & Content"
 msgstr "网络与内容"
 
-#: src/components/config/global/network-system-card.tsx:42
+#: src/components/config/global/network-system-card.tsx:41
 msgid "Network & System"
 msgstr "网络与系统"
 
@@ -4930,11 +4926,11 @@ msgstr "未找到模板"
 msgid "No templates yet"
 msgstr "暂无模板"
 
-#: src/components/sessions/timeline-tab.tsx:375
+#: src/components/sessions/timeline-tab.tsx:377
 msgid "No Timeline Events"
 msgstr "暂无时间线事件"
 
-#: src/components/sessions/timeline-tab.tsx:378
+#: src/components/sessions/timeline-tab.tsx:380
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "此会话未记录任何标题变更或生命周期事件。"
 
@@ -4995,7 +4991,7 @@ msgstr "此浏览器不支持"
 msgid "Notification Events"
 msgstr "通知事件"
 
-#: src/components/config/global/network-system-card.tsx:231
+#: src/components/config/global/network-system-card.tsx:230
 msgid "Notification Log Retention"
 msgstr "通知日志保留"
 
@@ -5003,7 +4999,7 @@ msgstr "通知日志保留"
 msgid "Notification permission not granted"
 msgstr "未授予通知权限"
 
-#: src/components/config/global/network-system-card.tsx:239
+#: src/components/config/global/network-system-card.tsx:238
 msgid "Notification Retention"
 msgstr "通知保留"
 
@@ -5039,15 +5035,15 @@ msgstr "第 N 个输出：{output0}, {output1}..."
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
 
-#: src/components/config/global/network-system-card.tsx:155
+#: src/components/config/global/network-system-card.tsx:154
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 msgstr "确认主播离线所需的连续失败检查次数。较高的值可以防止\"假\"离线检测。"
 
-#: src/components/config/global/network-system-card.tsx:201
+#: src/components/config/global/network-system-card.tsx:200
 msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
 msgstr "在数据库中保留已完成、失败或中断任务历史记录的天数。"
 
-#: src/components/config/global/network-system-card.tsx:243
+#: src/components/config/global/network-system-card.tsx:242
 msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 msgstr "在数据库中保留通知事件日志的天数。这会影响“通知 → 事件”页面。"
 
@@ -5107,8 +5103,8 @@ msgstr "离线"
 msgid "OFFLINE"
 msgstr "离线"
 
-#: src/components/config/global/network-system-card.tsx:101
-#: src/components/config/global/network-system-card.tsx:109
+#: src/components/config/global/network-system-card.tsx:100
+#: src/components/config/global/network-system-card.tsx:108
 #: src/components/config/shared/offline-check-card.tsx:39
 msgid "Offline Check"
 msgstr "离线检查"
@@ -5117,11 +5113,11 @@ msgstr "离线检查"
 msgid "Offline Check Interval"
 msgstr "离线检查间隔"
 
-#: src/components/config/global/network-system-card.tsx:151
+#: src/components/config/global/network-system-card.tsx:150
 msgid "Offline Detection"
 msgstr "离线检测"
 
-#: src/components/config/global/network-system-card.tsx:143
+#: src/components/config/global/network-system-card.tsx:142
 #: src/components/config/shared/offline-check-card.tsx:95
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
@@ -5223,6 +5219,11 @@ msgstr "附加到 `tdl login` 的可选额外参数。"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:124
 msgid "Options"
 msgstr "选项"
+
+#: src/components/sessions/timeline-tab.tsx:169
+msgctxt "terminal-cause"
+msgid "Out of Schedule"
+msgstr "不在计划时间内"
 
 #: src/components/streamers/card/use-streamer-status.tsx:42
 msgid "Out of Space"
@@ -5476,7 +5477,7 @@ msgstr "峰值/分钟"
 msgid "Pending"
 msgstr "待处理"
 
-#: src/components/sessions/timeline-tab.tsx:242
+#: src/components/sessions/timeline-tab.tsx:244
 msgid "PENDING CONFIRMATION"
 msgstr "待确认"
 
@@ -5697,7 +5698,7 @@ msgstr "播放器"
 msgid "Playlist"
 msgstr "播放列表"
 
-#: src/components/sessions/timeline-tab.tsx:176
+#: src/components/sessions/timeline-tab.tsx:178
 msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "播放列表已失效"
@@ -5875,7 +5876,7 @@ msgstr "预览不可用"
 msgid "Previous"
 msgstr "上一页"
 
-#: src/components/sessions/timeline-tab.tsx:286
+#: src/components/sessions/timeline-tab.tsx:288
 msgid "Previous Title"
 msgstr "上一个标题"
 
@@ -5973,7 +5974,7 @@ msgstr "协议设置"
 msgid "Proxy"
 msgstr "代理"
 
-#: src/components/config/global/network-system-card.tsx:321
+#: src/components/config/global/network-system-card.tsx:274
 #: src/components/config/shared/proxy-settings-card.tsx:242
 msgid "Proxy Configuration"
 msgstr "代理配置"
@@ -6169,7 +6170,7 @@ msgstr "录制"
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
-#: src/components/sessions/timeline-tab.tsx:302
+#: src/components/sessions/timeline-tab.tsx:304
 msgid "Recording started"
 msgstr "录制已开始"
 
@@ -6352,16 +6353,16 @@ msgstr "重置密码"
 msgid "Resume"
 msgstr "继续"
 
-#: src/components/sessions/timeline-tab.tsx:251
+#: src/components/sessions/timeline-tab.tsx:253
 msgid "RESUMED"
 msgstr "已恢复"
 
 #. placeholder {0}: entry.hysteresisDurationSecs
-#: src/components/sessions/timeline-tab.tsx:321
+#: src/components/sessions/timeline-tab.tsx:323
 msgid "Resumed after {0}s in pending state."
 msgstr "在待确认状态 {0} 秒后恢复。"
 
-#: src/components/sessions/timeline-tab.tsx:230
+#: src/components/sessions/timeline-tab.tsx:232
 msgid "RESUMED START"
 msgstr "恢复启动"
 
@@ -6369,7 +6370,7 @@ msgstr "恢复启动"
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
-#: src/components/config/global/network-system-card.tsx:189
+#: src/components/config/global/network-system-card.tsx:188
 msgid "Retention Period"
 msgstr "保留期限"
 
@@ -6865,13 +6866,9 @@ msgstr "录制会话详情"
 msgid "Session Duration"
 msgstr "录制时长"
 
-#: src/components/sessions/timeline-tab.tsx:260
+#: src/components/sessions/timeline-tab.tsx:262
 msgid "SESSION ENDED"
 msgstr "会话已结束"
-
-#: src/components/config/global/network-system-card.tsx:285
-msgid "Session Gap"
-msgstr "会话间隔"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:140
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:367
@@ -6890,10 +6887,6 @@ msgstr "会话未运行"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/components/config/global/network-system-card.tsx:277
-msgid "Session Merging Gap"
-msgstr "会话合并间隔"
-
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:190
 msgid "Session not found"
 msgstr "未找到录制会话"
@@ -6902,7 +6895,7 @@ msgstr "未找到录制会话"
 msgid "Session Preview"
 msgstr "录制预览"
 
-#: src/components/sessions/timeline-tab.tsx:232
+#: src/components/sessions/timeline-tab.tsx:234
 msgid "SESSION STARTED"
 msgstr "会话已启动"
 
@@ -7229,8 +7222,8 @@ msgstr "主播"
 msgid "STREAMER"
 msgstr "主播"
 
-#: src/components/config/global/network-system-card.tsx:58
-#: src/components/config/global/network-system-card.tsx:66
+#: src/components/config/global/network-system-card.tsx:57
+#: src/components/config/global/network-system-card.tsx:65
 msgid "Streamer Check"
 msgstr "主播检查"
 
@@ -8052,7 +8045,7 @@ msgstr "未知错误"
 msgid "Unknown File"
 msgstr "未知文件"
 
-#: src/components/sessions/timeline-tab.tsx:345
+#: src/components/sessions/timeline-tab.tsx:347
 msgid "Unrecognised event kind."
 msgstr "未识别的事件类型。"
 
@@ -8064,7 +8057,7 @@ msgstr "直到"
 msgid "Untitled Stream"
 msgstr "无标题直播"
 
-#: src/components/sessions/timeline-tab.tsx:220
+#: src/components/sessions/timeline-tab.tsx:222
 msgid "UPDATE"
 msgstr "更新"
 

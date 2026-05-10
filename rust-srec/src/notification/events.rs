@@ -1404,7 +1404,7 @@ mod tests {
         assert!(from_dotted.is_some());
     }
 
-    // ========== Full-notification i18n round-trip (Phase 2) ==========
+    // ========== Full-notification i18n round-trip ==========
 
     /// One plausible instance of every `NotificationEvent` variant.
     /// Field values are picked so the variant-specific placeholders are

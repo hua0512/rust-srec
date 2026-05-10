@@ -4,15 +4,17 @@
 //!
 //! - [`SessionEventTxOps::insert`] — transaction-scoped helper, called from
 //!   inside [`crate::database::repositories::SessionTxOps`] /
-//!   [`crate::session::repository::SessionLifecycleRepository`] so the event
+//!   [`crate::database::repositories::SessionLifecycleRepository`] so the event
 //!   row is written in the same `BEGIN IMMEDIATE` boundary as the
 //!   `live_sessions` row it describes.
 //! - [`SessionEventRepository`] — standalone trait for non-tx writes
 //!   (best-effort persistence of in-memory transitions like
 //!   `hysteresis_entered`) and for the read path used by the API.
 //!
-//! The two paths share [`SessionEventDbModel`] and the same single SQL
-//! statement template, so divergence is impossible by construction.
+//! The two write paths share [`SessionEventDbModel`] and the same single
+//! SQL statement template, so divergence is impossible by construction.
+//! Read paths map storage rows into [`SessionEvent`] before returning to
+//! callers.
 //!
 //! The `kind` column is constrained at the table level
 //! (`CHECK (kind IN (...))`) — typos crash at insert time rather than
@@ -25,6 +27,7 @@ use crate::Result;
 use crate::database::WritePool;
 use crate::database::models::SessionEventDbModel;
 use crate::database::retry::retry_on_sqlite_busy;
+use crate::domain::session::SessionEvent;
 
 const INSERT_SQL: &str = r#"
     INSERT INTO session_events (session_id, streamer_id, kind, occurred_at, payload)
@@ -35,6 +38,13 @@ const LIST_BY_SESSION_SQL: &str = r#"
     SELECT id, session_id, streamer_id, kind, occurred_at, payload
     FROM session_events
     WHERE session_id = ?
+    ORDER BY occurred_at ASC, id ASC
+"#;
+
+const LIST_BY_STREAMER_SQL: &str = r#"
+    SELECT id, session_id, streamer_id, kind, occurred_at, payload
+    FROM session_events
+    WHERE streamer_id = ?
     ORDER BY occurred_at ASC, id ASC
 "#;
 
@@ -70,7 +80,10 @@ pub trait SessionEventRepository: Send + Sync {
 
     /// All events for a session, oldest first. Used by the
     /// `GET /api/sessions/{id}` handler to build the timeline payload.
-    async fn list_for_session(&self, session_id: &str) -> Result<Vec<SessionEventDbModel>>;
+    async fn list_for_session(&self, session_id: &str) -> Result<Vec<SessionEvent>>;
+
+    /// All events for a streamer, oldest first.
+    async fn list_for_streamer(&self, streamer_id: &str) -> Result<Vec<SessionEvent>>;
 }
 
 /// Sqlx implementation backed by separate read / write pools (matches the
@@ -103,12 +116,20 @@ impl SessionEventRepository for SqlxSessionEventRepository {
         .await
     }
 
-    async fn list_for_session(&self, session_id: &str) -> Result<Vec<SessionEventDbModel>> {
+    async fn list_for_session(&self, session_id: &str) -> Result<Vec<SessionEvent>> {
         let rows = sqlx::query_as::<_, SessionEventDbModel>(LIST_BY_SESSION_SQL)
             .bind(session_id)
             .fetch_all(&self.pool)
             .await?;
-        Ok(rows)
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn list_for_streamer(&self, streamer_id: &str) -> Result<Vec<SessionEvent>> {
+        let rows = sqlx::query_as::<_, SessionEventDbModel>(LIST_BY_STREAMER_SQL)
+            .bind(streamer_id)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 }
 
@@ -117,51 +138,36 @@ mod tests {
     use super::*;
     use sqlx::SqlitePool;
 
+    use crate::database::models::{LiveSessionDbModel, StreamerDbModel};
+    use crate::database::repositories::{
+        SessionRepository as _, SqlxSessionRepository, SqlxStreamerRepository,
+        StreamerRepository as _,
+    };
+    use crate::database::{init_pool_with_size, run_migrations};
+    use crate::session::SessionEventPayload;
+
     async fn setup_pool() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        // Minimal schema: just `live_sessions` (so the FK target exists) and
-        // `session_events`. Mirrors the columns defined in
-        // `migrations/20260428001500_add_session_events.sql`.
-        sqlx::query(
-            r#"CREATE TABLE live_sessions (
-                id TEXT PRIMARY KEY,
-                streamer_id TEXT NOT NULL,
-                start_time INTEGER NOT NULL,
-                end_time INTEGER,
-                titles TEXT,
-                danmu_statistics_id TEXT,
-                total_size_bytes INTEGER DEFAULT 0
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            r#"CREATE TABLE session_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                streamer_id TEXT NOT NULL,
-                kind TEXT NOT NULL CHECK (kind IN (
-                    'session_started',
-                    'hysteresis_entered',
-                    'session_resumed',
-                    'session_ended'
-                )),
-                occurred_at INTEGER NOT NULL,
-                payload TEXT,
-                FOREIGN KEY (session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            r#"INSERT INTO live_sessions (id, streamer_id, start_time)
-               VALUES ('s1', 'streamer-1', 0)"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+
+        let mut streamer = StreamerDbModel::new(
+            "Streamer One",
+            "https://example.com/streamer-1",
+            "platform-twitch",
+        );
+        streamer.id = "streamer-1".to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&streamer)
+            .await
+            .unwrap();
+
+        let mut session = LiveSessionDbModel::new("streamer-1");
+        session.id = "s1".to_string();
+        session.start_time = 0;
+        SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .create_session(&session)
+            .await
+            .unwrap();
         pool
     }
 
@@ -207,7 +213,76 @@ mod tests {
         assert_eq!(events.len(), 3, "all rows returned");
         assert_eq!(events[0].kind, "session_started", "ordered ASC");
         assert_eq!(events[2].kind, "session_ended");
-        assert_eq!(events[1].occurred_at, 200);
+        assert_eq!(events[1].occurred_at.timestamp_millis(), 200);
+        assert!(matches!(
+            events[0].payload.as_ref(),
+            Some(SessionEventPayload::SessionStarted { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn list_maps_malformed_payload_to_none() {
+        let pool = setup_pool().await;
+        let repo = SqlxSessionEventRepository::new(pool.clone(), pool.clone());
+
+        repo.insert(&row("session_started", 100, Some("{bad json")))
+            .await
+            .unwrap();
+
+        let events = repo.list_for_session("s1").await.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, "session_started");
+        assert_eq!(events[0].occurred_at.timestamp_millis(), 100);
+        assert!(
+            events[0].payload.is_none(),
+            "malformed JSON should degrade to a kind-only domain event"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_for_streamer_filters_and_orders_rows() {
+        let pool = setup_pool().await;
+        let repo = SqlxSessionEventRepository::new(pool.clone(), pool.clone());
+
+        let mut other_streamer = StreamerDbModel::new(
+            "Streamer Two",
+            "https://example.com/streamer-2",
+            "platform-twitch",
+        );
+        other_streamer.id = "streamer-2".to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&other_streamer)
+            .await
+            .unwrap();
+
+        let mut other_session = LiveSessionDbModel::new("streamer-2");
+        other_session.id = "s2".to_string();
+        other_session.start_time = 0;
+        SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .create_session(&other_session)
+            .await
+            .unwrap();
+
+        repo.insert(&row("session_ended", 300, None)).await.unwrap();
+        repo.insert(&row("session_started", 100, None))
+            .await
+            .unwrap();
+        repo.insert(&SessionEventDbModel {
+            id: 0,
+            session_id: "s2".to_string(),
+            streamer_id: "streamer-2".to_string(),
+            kind: "session_started".to_string(),
+            occurred_at: 50,
+            payload: None,
+        })
+        .await
+        .unwrap();
+
+        let events = repo.list_for_streamer("streamer-1").await.unwrap();
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|row| row.streamer_id == "streamer-1"));
+        assert_eq!(events[0].kind, "session_started");
+        assert_eq!(events[1].kind, "session_ended");
     }
 
     #[tokio::test]
@@ -252,13 +327,6 @@ mod tests {
             .await
             .unwrap();
 
-        // SQLite requires `PRAGMA foreign_keys = ON` per connection for the
-        // cascade to be enforced. The production pool sets this at connect
-        // time; the test pool needs it explicitly here.
-        sqlx::query("PRAGMA foreign_keys = ON")
-            .execute(&pool)
-            .await
-            .unwrap();
         sqlx::query("DELETE FROM live_sessions WHERE id = 's1'")
             .execute(&pool)
             .await

@@ -94,11 +94,6 @@ pub enum MonitorEvent {
         streams: Vec<StreamInfo>,
         media_headers: Option<HashMap<String, String>>,
         media_extras: Option<HashMap<String, String>>,
-        /// Stream-side `started_at` used by the continuation rule.
-        started_at: Option<DateTime<Utc>>,
-        /// Gap window (seconds) for the resume-by-gap rule — sourced from
-        /// the streamer's effective configuration.
-        gap_threshold_secs: i64,
         timestamp: DateTime<Utc>,
     },
     /// Internal trigger emitted by the monitor to ask [`crate::session::
@@ -388,5 +383,36 @@ mod tests {
             timestamp: Utc::now(),
         };
         assert!(event.should_notify());
+    }
+
+    #[test]
+    fn test_live_detected_ignores_legacy_gap_fields() {
+        let payload = serde_json::json!({
+            "LiveDetected": {
+                "streamer_id": "123",
+                "streamer_name": "Test",
+                "streamer_url": "https://example.com/test",
+                "current_avatar": null,
+                "new_avatar": null,
+                "title": "Test stream",
+                "category": null,
+                "streams": [],
+                "media_headers": null,
+                "media_extras": null,
+                "started_at": null,
+                "gap_threshold_secs": 3600,
+                "timestamp": Utc::now()
+            }
+        });
+
+        let event: MonitorEvent = serde_json::from_value(payload).unwrap();
+        assert!(matches!(
+            event,
+            MonitorEvent::LiveDetected {
+                streamer_id,
+                title,
+                ..
+            } if streamer_id == "123" && title == "Test stream"
+        ));
     }
 }

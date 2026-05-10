@@ -56,7 +56,7 @@ impl SessionEventKind {
 ///
 /// The `kind` discriminator is chosen so it lines up with the top-level
 /// `kind` column on the row (no separate JSON key for type tagging).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionEventPayload {
     /// A new session began. Emitted from
@@ -110,7 +110,8 @@ impl SessionEventPayload {
 /// - `{ "type": "streamer_offline" }`
 /// - `{ "type": "definitive_offline", "signal": { "type": "danmu_stream_closed" } }`
 /// - `{ "type": "user_disabled" }`
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// - `{ "type": "out_of_schedule" }`
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TerminalCauseDto {
     Completed,
@@ -120,6 +121,7 @@ pub enum TerminalCauseDto {
     StreamerOffline,
     DefinitiveOffline { signal: OfflineSignal },
     UserDisabled,
+    OutOfSchedule,
 }
 
 impl From<&TerminalCause> for TerminalCauseDto {
@@ -140,6 +142,7 @@ impl From<&TerminalCause> for TerminalCauseDto {
                 signal: signal.clone(),
             },
             TerminalCause::UserDisabled => Self::UserDisabled,
+            TerminalCause::OutOfSchedule => Self::OutOfSchedule,
         }
     }
 }
@@ -313,6 +316,24 @@ mod tests {
         assert_eq!(json["type"], "user_disabled");
 
         // Round-trip through SessionEnded payload.
+        let payload = SessionEventPayload::SessionEnded {
+            cause: dto,
+            via_hysteresis: false,
+        };
+        let s = serde_json::to_string(&payload).unwrap();
+        let back: SessionEventPayload = serde_json::from_str(&s).unwrap();
+        assert_eq!(payload, back);
+    }
+
+    #[test]
+    fn terminal_cause_dto_from_out_of_schedule_round_trip() {
+        let cause = TerminalCause::OutOfSchedule;
+        let dto = TerminalCauseDto::from(&cause);
+        assert_eq!(dto, TerminalCauseDto::OutOfSchedule);
+
+        let json = serde_json::to_value(&dto).unwrap();
+        assert_eq!(json["type"], "out_of_schedule");
+
         let payload = SessionEventPayload::SessionEnded {
             cause: dto,
             via_hysteresis: false,

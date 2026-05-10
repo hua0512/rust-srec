@@ -17,8 +17,8 @@ use tracing::{debug, error, info, warn};
 
 use super::engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
-    DownloadProgress, DownloadStatus, EngineStartError, EngineType, FfmpegEngine, IoErrorKindSer,
-    MesioEngine, SegmentEvent, StreamlinkEngine,
+    DownloadProgress, DownloadProtocol, DownloadStatus, EngineStartError, EngineType, FfmpegEngine,
+    IoErrorKindSer, MesioEngine, SegmentEvent, StreamlinkEngine,
 };
 use super::output_root_gate::OutputRootGate;
 use super::queue::{
@@ -454,6 +454,11 @@ pub enum DownloadTerminalEvent {
         streamer_id: String,
         streamer_name: String,
         session_id: String,
+        engine_type: EngineType,
+        /// Selected stream protocol. Mesio uses one engine type for both
+        /// HLS and FLV, so lifecycle needs this to classify failures without
+        /// guessing.
+        protocol: DownloadProtocol,
         kind: DownloadFailureKind,
         error: String,
         recoverable: bool,
@@ -784,9 +789,9 @@ impl DownloadManager {
 
     /// Start a download.
     ///
-    /// Convenience wrapper that runs the three-phase split pipeline
+    /// Convenience wrapper that runs the split download startup pipeline
     /// (`preflight` → `acquire_slot` → `start_with_slot`) sequentially
-    /// with no cancellation hook and no per-phase visibility. Used by
+    /// with no cancellation hook and no step-level visibility. Used by
     /// tests, the scheduler, and anything that does not need to react
     /// to "queued waiting for slot" or post-acquire freshness checks.
     /// New per-streamer pipelines should call the three methods
@@ -826,7 +831,7 @@ impl DownloadManager {
         self.start_with_slot(slot, config, engine).await
     }
 
-    /// Phase 1: pre-acquire validation.
+    /// Validate before acquiring a download slot.
     ///
     /// Resolves the requested engine, checks the streamer-scoped
     /// circuit breaker, checks the output-root write gate, and runs
@@ -943,8 +948,7 @@ impl DownloadManager {
         })
     }
 
-    /// Phase 2: park on the priority-aware queue until a slot is
-    /// available.
+    /// Park on the priority-aware queue until a slot is available.
     ///
     /// Emits [`DownloadProgressEvent::DownloadQueued`] only when the
     /// request had to wait. The fast path (slot immediately available)
@@ -1021,7 +1025,7 @@ impl DownloadManager {
         }
     }
 
-    /// Phase 3: spin up the engine on the slot acquired in phase 2.
+    /// Spin up the engine on the acquired slot.
     ///
     /// Generates the download id, registers the active download (which
     /// takes ownership of the slot), emits
@@ -1442,6 +1446,7 @@ impl DownloadManager {
         let streamer_id = config.streamer_id.clone();
         let streamer_name = config.streamer_name.clone();
         let session_id = config.session_id.clone();
+        let protocol = config.protocol;
 
         // Clone references for the spawned task
         let active_downloads = self.active_downloads.clone();
@@ -1662,6 +1667,8 @@ impl DownloadManager {
                                 streamer_id: streamer_id.clone(),
                                 streamer_name: streamer_name.clone(),
                                 session_id: session_id.clone(),
+                                engine_type,
+                                protocol,
                                 kind,
                                 error: message,
                                 recoverable,

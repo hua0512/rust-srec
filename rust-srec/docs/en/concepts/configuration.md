@@ -52,7 +52,8 @@ Key fields (grouped by concern):
 - Stream selection: `stream_selection`
 - Pipelines: `pipeline`, `session_complete_pipeline`, `paired_segment_pipeline`
 - Platform extractor options: `platform_extras`
-- Timing: `fetch_delay_ms`, `download_delay_ms`, `session_gap_time_secs`
+- Timing: `fetch_delay_ms`, `download_delay_ms`, `offline_check_count`,
+  `offline_check_delay_ms`
 - Session UX: `auto_thumbnail`
 
 Some knobs are global-only runtime settings (not part of `MergedConfig`), such as concurrency
@@ -63,8 +64,8 @@ limits and log filter directives.
 Not every field is available at every layer. The list below reflects what the resolver and
 builder actually read.
 
-- Global-only (base defaults + runtime knobs): `session_gap_time_secs`, `auto_thumbnail`,
-  concurrency/job limits, scheduler delays, log filter directives
+- Global-only (base defaults + runtime knobs): `auto_thumbnail`, concurrency/job limits,
+  scheduler delays, log filter directives
 - Platform-only: `fetch_delay_ms`, `download_delay_ms`, `platform_specific_config`
 - Template-only: `platform_overrides`, `engines_override`, `danmu_sampling_config`
 - Streamer-only: `streamer_specific_config` (JSON object; see below)

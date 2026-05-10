@@ -115,7 +115,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 "Invalid JSON config; using defaults",
             ),
             global_config.default_download_engine.clone(),
-            global_config.session_gap_time_secs,
             global_pipeline,
             global_session_complete_pipeline,
             global_paired_segment_pipeline,

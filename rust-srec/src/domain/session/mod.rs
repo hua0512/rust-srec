@@ -2,4 +2,4 @@
 
 mod entity;
 
-pub use entity::{LiveSession, MediaFileType, MediaOutput, TitleEntry};
+pub use entity::{LiveSession, MediaFileType, MediaOutput, SessionEvent, TitleEntry};

@@ -58,7 +58,6 @@ rust-srec 使用 **4 层配置层级** 实现灵活控制。详见 [配置层级
 | `offline_check_interval` | 检查离线状态的间隔 | `20 Secs` |
 | `offline_detection_count` | 判定主播离线前的重试次数 | `3` |
 | `retention_period` | 历史记录保留天数 | `30 Days` |
-| `session_gap_time_secs` | 判定会话结束的等待时间 | `1 Hour` |
 | `enable_proxy` | 通过代理服务器路由流量 | `false` |
 
 #### 流水线配置 (Pipeline Configuration)

@@ -93,7 +93,6 @@ impl ConfigRepository for SqlxConfigRepository {
                 max_concurrent_io_jobs = ?,
                 job_history_retention_days = ?,
                 notification_event_log_retention_days = ?,
-                session_gap_time_secs = ?,
                 pipeline = ?,
                 session_complete_pipeline = ?,
                 paired_segment_pipeline = ?,
@@ -101,7 +100,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 auto_thumbnail = ?,
                 pipeline_cpu_job_timeout_secs = ?,
                 pipeline_io_job_timeout_secs = ?,
-                pipeline_execute_timeout_secs = ?
+                pipeline_execute_timeout_secs = ?,
+                queue_freshness_threshold_ms = ?
             WHERE id = ?
             "#,
         )
@@ -123,7 +123,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_concurrent_io_jobs)
         .bind(config.job_history_retention_days)
         .bind(config.notification_event_log_retention_days)
-        .bind(config.session_gap_time_secs)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
@@ -132,6 +131,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.pipeline_cpu_job_timeout_secs)
         .bind(config.pipeline_io_job_timeout_secs)
         .bind(config.pipeline_execute_timeout_secs)
+        .bind(config.queue_freshness_threshold_ms)
         .bind(&config.id)
         .execute(&self.write_pool)
         .await?;
@@ -148,12 +148,12 @@ impl ConfigRepository for SqlxConfigRepository {
                 streamer_check_delay_ms, proxy_config, offline_check_delay_ms,
                 offline_check_count, default_download_engine, max_concurrent_cpu_jobs,
                 max_concurrent_io_jobs, job_history_retention_days, notification_event_log_retention_days,
-                session_gap_time_secs,
                 pipeline, session_complete_pipeline, paired_segment_pipeline, log_filter_directive,
                 auto_thumbnail,
                 pipeline_cpu_job_timeout_secs,
                 pipeline_io_job_timeout_secs,
-                pipeline_execute_timeout_secs
+                pipeline_execute_timeout_secs,
+                queue_freshness_threshold_ms
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
@@ -176,7 +176,6 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.max_concurrent_io_jobs)
         .bind(config.job_history_retention_days)
         .bind(config.notification_event_log_retention_days)
-        .bind(config.session_gap_time_secs)
         .bind(&config.pipeline)
         .bind(&config.session_complete_pipeline)
         .bind(&config.paired_segment_pipeline)
@@ -185,6 +184,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.pipeline_cpu_job_timeout_secs)
         .bind(config.pipeline_io_job_timeout_secs)
         .bind(config.pipeline_execute_timeout_secs)
+        .bind(config.queue_freshness_threshold_ms)
         .execute(&self.write_pool)
         .await?;
         Ok(())

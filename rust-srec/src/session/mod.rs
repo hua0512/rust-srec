@@ -3,11 +3,10 @@
 //! This module hosts the [`SessionLifecycle`] component — the single owner
 //! of recording-session state. Two responsibilities live here:
 //!
-//! 1. **DB session row writes** (create / resume / end) wrapped in atomic
-//!    transactions alongside streamer-state updates and the monitor outbox.
-//!    The atomic-tx bundle is what `monitor::service::handle_live` and
-//!    `handle_offline_with_session` did historically; their bodies have moved
-//!    into [`repository`].
+//! 1. **Session state coordination** around DB session row writes
+//!    (create / resume / end). The atomic-tx bundle itself lives in
+//!    [`crate::database::repositories::session_lifecycle`] because it is a
+//!    concrete SQL repository.
 //! 2. **Emission of [`SessionTransition`] events** — a narrow broadcast
 //!    stream consumed by `pipeline::manager`, `services::container`,
 //!    `notification::service`, and `api::routes::sessions`. Replaces the
@@ -38,8 +37,6 @@
 //!   per-session timer handle. The driver lives in [`lifecycle`].
 //! - [`events`]: typed wire-format for the `session_events` audit log
 //!   (`SessionEventKind`, `SessionEventPayload`, `TerminalCauseDto`).
-//! - [`repository`]: atomic-tx wrappers around `SessionTxOps` /
-//!   `StreamerTxOps` / `MonitorOutboxTxOps`.
 //! - [`lifecycle`]: the `SessionLifecycle` service itself.
 
 pub mod classifier;
@@ -47,7 +44,6 @@ pub mod download_start;
 pub mod events;
 pub mod hysteresis;
 pub mod lifecycle;
-pub mod repository;
 pub mod state;
 pub mod transition;
 
@@ -60,10 +56,6 @@ pub use hysteresis::{
 pub use lifecycle::{
     DEFAULT_TRANSITION_CHANNEL_CAPACITY, HysteresisWindowFn, LiveDetectedArgs, OfflineDetectedArgs,
     SessionLifecycle,
-};
-pub use repository::{
-    EndSessionInputs, EndSessionOutcome, SessionLifecycleRepository, StartSessionInputs,
-    StartSessionOutcome,
 };
 pub use state::{OfflineSignal, SessionState, TerminalCause};
 pub use transition::SessionTransition;

@@ -742,6 +742,8 @@ mod tests {
             streamer_id: "streamer-123".to_string(),
             streamer_name: "streamer-123".to_string(),
             session_id: "session-1".to_string(),
+            engine_type: EngineType::Ffmpeg,
+            protocol: crate::downloader::DownloadProtocol::Unknown,
             kind: DownloadFailureKind::Network,
             error: "Connection timeout".to_string(),
             recoverable: true,

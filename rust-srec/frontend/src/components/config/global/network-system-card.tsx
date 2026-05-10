@@ -20,7 +20,6 @@ import {
   Activity,
   Bell,
   CircleHelp,
-  Clock,
   Database,
   History,
   Info,
@@ -265,52 +264,6 @@ export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
             )}
           />
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <FormField
-            control={control}
-            name="session_gap_time_secs"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-amber-500/80" />
-                  <Trans>Session Merging Gap</Trans>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <CircleHelp className="h-3.5 w-3.5 text-muted-foreground/40 cursor-help hover:text-muted-foreground transition-colors" />
-                    </TooltipTrigger>
-                    <TooltipContent className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden">
-                      <StatusInfoTooltip
-                        icon={<Clock className="w-4 h-4" />}
-                        title={<Trans>Session Gap</Trans>}
-                        theme="amber"
-                      >
-                        <p className="text-xs leading-relaxed text-muted-foreground">
-                          <Trans>
-                            Maximum idle time between segments before the system
-                            starts a new recording session instead of continuing
-                            the current one.
-                          </Trans>
-                        </p>
-                      </StatusInfoTooltip>
-                    </TooltipContent>
-                  </Tooltip>
-                </FormLabel>
-                <FormControl>
-                  <InputWithUnit
-                    unitType="duration"
-                    value={field.value}
-                    onChange={field.onChange}
-                    placeholder="0"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-
-        <Separator className="bg-white/5" />
 
         <FormField
           control={control}

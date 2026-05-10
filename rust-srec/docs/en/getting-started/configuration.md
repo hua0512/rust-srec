@@ -58,7 +58,6 @@ Access via **Settings** → **Global Config**. The settings are organized into s
 | `offline_check_interval` | Interval between checking offline status | `20 Secs` |
 | `offline_detection_count` | Retries before marking streamer as offline | `3` |
 | `retention_period` | Number of days to keep recordings in history | `30 Days` |
-| `session_gap_time_secs` | Time to wait before considering a session complete | `1 Hour` |
 | `enable_proxy` | Route traffic through an intermediate server | `false` |
 
 #### Pipeline Configuration

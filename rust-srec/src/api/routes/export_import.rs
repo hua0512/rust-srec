@@ -24,7 +24,7 @@ use crate::database::models::{
 use crate::database::models::{JobPreset, PipelinePreset};
 
 /// Current schema version for exports.
-const EXPORT_SCHEMA_VERSION: &str = "0.1.5";
+const EXPORT_SCHEMA_VERSION: &str = "0.1.6";
 
 fn schema_version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
     fn parse_segment(segment: &str) -> Option<u32> {
@@ -286,7 +286,6 @@ pub struct GlobalConfigExport {
     pub job_history_retention_days: i32,
     #[serde(default = "default_notification_event_log_retention_days")]
     pub notification_event_log_retention_days: i32,
-    pub session_gap_time_secs: i64,
     pub pipeline: Option<serde_json::Value>,
     pub session_complete_pipeline: Option<serde_json::Value>,
     pub paired_segment_pipeline: Option<serde_json::Value>,
@@ -709,7 +708,6 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             job_history_retention_days: global_config.job_history_retention_days,
             notification_event_log_retention_days: global_config
                 .notification_event_log_retention_days,
-            session_gap_time_secs: global_config.session_gap_time_secs,
             pipeline: global_config.pipeline.map(parse_db_config),
             session_complete_pipeline: global_config.session_complete_pipeline.map(parse_db_config),
             paired_segment_pipeline: global_config.paired_segment_pipeline.map(parse_db_config),
@@ -921,7 +919,6 @@ pub async fn import_config(
     global.job_history_retention_days = config.global_config.job_history_retention_days;
     global.notification_event_log_retention_days =
         config.global_config.notification_event_log_retention_days;
-    global.session_gap_time_secs = config.global_config.session_gap_time_secs;
     global.pipeline = config.global_config.pipeline.map(json_value_to_db_string);
     global.session_complete_pipeline = config
         .global_config
@@ -2034,7 +2031,6 @@ mod tests {
             max_concurrent_io_jobs: 0,
             job_history_retention_days: 0,
             notification_event_log_retention_days: 0,
-            session_gap_time_secs: 0,
             pipeline: None,
             session_complete_pipeline: None,
             paired_segment_pipeline: None,
@@ -2049,6 +2045,46 @@ mod tests {
         let json = serde_json::to_string(&export).unwrap();
         assert!(json.contains("rust_srec=debug"));
         assert!(json.contains("log_filter_directive"));
+    }
+
+    #[test]
+    fn test_global_config_export_accepts_legacy_session_gap_time() {
+        let json = serde_json::json!({
+            "output_folder": "test",
+            "output_filename_template": "test",
+            "output_file_format": "test",
+            "min_segment_size_bytes": 0,
+            "max_download_duration_secs": 0,
+            "max_part_size_bytes": 0,
+            "record_danmu": false,
+            "max_concurrent_downloads": 0,
+            "max_concurrent_uploads": 0,
+            "streamer_check_delay_ms": 0,
+            "proxy_config": "test",
+            "offline_check_delay_ms": 0,
+            "offline_check_count": 0,
+            "default_download_engine": "test",
+            "max_concurrent_cpu_jobs": 0,
+            "max_concurrent_io_jobs": 0,
+            "job_history_retention_days": 0,
+            "notification_event_log_retention_days": 0,
+            "session_gap_time_secs": 3600,
+            "pipeline": null,
+            "session_complete_pipeline": null,
+            "paired_segment_pipeline": null,
+            "log_filter_directive": "rust_srec=debug",
+            "auto_thumbnail": false,
+            "pipeline_cpu_job_timeout_secs": 3600,
+            "pipeline_io_job_timeout_secs": 3600,
+            "pipeline_execute_timeout_secs": 3600,
+            "queue_freshness_threshold_ms": 60_000
+        });
+
+        let export: GlobalConfigExport = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            export.log_filter_directive.as_deref(),
+            Some("rust_srec=debug")
+        );
     }
 
     #[test]

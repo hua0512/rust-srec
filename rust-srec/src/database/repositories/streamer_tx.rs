@@ -200,44 +200,25 @@ impl StreamerTxOps {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::models::StreamerDbModel;
+    use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository as _};
+    use crate::database::{init_pool_with_size, run_migrations};
     use sqlx::SqlitePool;
 
     async fn setup_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
 
-        sqlx::query(
-            r#"
-            CREATE TABLE streamers (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                url TEXT NOT NULL,
-                platform_config_id TEXT NOT NULL,
-                template_config_id TEXT,
-                state TEXT NOT NULL DEFAULT 'NOT_LIVE',
-                priority TEXT NOT NULL DEFAULT 'NORMAL',
-                avatar TEXT,
-                consecutive_error_count INTEGER DEFAULT 0,
-                last_error TEXT,
-                disabled_until INTEGER,
-                last_live_time INTEGER
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        // Insert test streamer
-        sqlx::query(
-            r#"
-            INSERT INTO streamers (id, name, url, platform_config_id, state)
-            VALUES ('test-1', 'Test Streamer', 'https://example.com/test', 'twitch', 'NOT_LIVE')
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
+        let mut streamer = StreamerDbModel::new(
+            "Test Streamer",
+            "https://example.com/test",
+            "platform-twitch",
+        );
+        streamer.id = "test-1".to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&streamer)
+            .await
+            .unwrap();
         pool
     }
 

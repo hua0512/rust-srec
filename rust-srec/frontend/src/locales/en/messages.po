@@ -1029,8 +1029,8 @@ msgstr "Categories"
 msgid "Category"
 msgstr "Category"
 
-#: src/components/sessions/timeline-tab.tsx:311
-#: src/components/sessions/timeline-tab.tsx:330
+#: src/components/sessions/timeline-tab.tsx:313
+#: src/components/sessions/timeline-tab.tsx:332
 msgid "Cause:"
 msgstr "Cause:"
 
@@ -1409,7 +1409,7 @@ msgstr "Confirm new password"
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
-#: src/components/sessions/timeline-tab.tsx:337
+#: src/components/sessions/timeline-tab.tsx:339
 msgid "Confirmed via backstop timer."
 msgstr "Confirmed via backstop timer."
 
@@ -1446,7 +1446,7 @@ msgstr "Consecutive failed checks needed to confirm offline."
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
 
-#: src/components/sessions/timeline-tab.tsx:178
+#: src/components/sessions/timeline-tab.tsx:180
 msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
@@ -1839,7 +1839,7 @@ msgstr "Danmu Statistics"
 msgid "Danmu statistics are not available for this session."
 msgstr "Danmu statistics are not available for this session."
 
-#: src/components/sessions/timeline-tab.tsx:174
+#: src/components/sessions/timeline-tab.tsx:176
 msgctxt "terminal-cause"
 msgid "Danmu Stream Closed"
 msgstr "Danmu Stream Closed"
@@ -1943,7 +1943,7 @@ msgstr "Define rules to automatically record or skip streams based on title, tim
 msgid "Define sequences of processing steps for your recordings"
 msgstr "Define sequences of processing steps for your recordings"
 
-#: src/components/sessions/timeline-tab.tsx:180
+#: src/components/sessions/timeline-tab.tsx:182
 msgctxt "terminal-cause"
 msgid "Definitive Offline"
 msgstr "Definitive Offline"
@@ -1953,7 +1953,7 @@ msgstr "Definitive Offline"
 msgid "Degraded"
 msgstr "Degraded"
 
-#: src/components/config/global/network-system-card.tsx:43
+#: src/components/config/global/network-system-card.tsx:42
 msgid "Delays, proxy, and retention policies."
 msgstr "Delays, proxy, and retention policies."
 
@@ -2468,7 +2468,7 @@ msgstr "Encoding Settings"
 msgid "End"
 msgstr "End"
 
-#: src/components/sessions/timeline-tab.tsx:468
+#: src/components/sessions/timeline-tab.tsx:470
 msgid "End of History"
 msgstr "End of History"
 
@@ -3607,7 +3607,7 @@ msgstr "Highest bitrate"
 msgid "History ({slots} pts)"
 msgstr "History ({slots} pts)"
 
-#: src/components/config/global/network-system-card.tsx:197
+#: src/components/config/global/network-system-card.tsx:196
 msgid "History Retention"
 msgstr "History Retention"
 
@@ -3816,7 +3816,7 @@ msgstr "Inherited"
 msgid "Inherited / Default"
 msgstr "Inherited / Default"
 
-#: src/components/sessions/timeline-tab.tsx:213
+#: src/components/sessions/timeline-tab.tsx:215
 msgid "INITIAL"
 msgstr "INITIAL"
 
@@ -3886,11 +3886,11 @@ msgstr "Internal"
 msgid "Interval (seconds)"
 msgstr "Interval (seconds)"
 
-#: src/components/config/global/network-system-card.tsx:70
+#: src/components/config/global/network-system-card.tsx:69
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 
-#: src/components/config/global/network-system-card.tsx:113
+#: src/components/config/global/network-system-card.tsx:112
 msgid "Interval between checks when a streamer is live to detect when the stream ends."
 msgstr "Interval between checks when a streamer is live to detect when the stream ends."
 
@@ -4426,10 +4426,6 @@ msgstr "Maximum compression to minimize storage usage, then delete original."
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 
-#: src/components/config/global/network-system-card.tsx:289
-msgid "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
-msgstr "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
-
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1110
 msgid "Maximum number of concurrent segment downloads."
 msgstr "Maximum number of concurrent segment downloads."
@@ -4668,7 +4664,7 @@ msgstr "Network"
 msgid "Network & Content"
 msgstr "Network & Content"
 
-#: src/components/config/global/network-system-card.tsx:42
+#: src/components/config/global/network-system-card.tsx:41
 msgid "Network & System"
 msgstr "Network & System"
 
@@ -4930,11 +4926,11 @@ msgstr "No templates found"
 msgid "No templates yet"
 msgstr "No templates yet"
 
-#: src/components/sessions/timeline-tab.tsx:375
+#: src/components/sessions/timeline-tab.tsx:377
 msgid "No Timeline Events"
 msgstr "No Timeline Events"
 
-#: src/components/sessions/timeline-tab.tsx:378
+#: src/components/sessions/timeline-tab.tsx:380
 msgid "No title changes or lifecycle events were recorded for this session."
 msgstr "No title changes or lifecycle events were recorded for this session."
 
@@ -4995,7 +4991,7 @@ msgstr "Not supported in this browser"
 msgid "Notification Events"
 msgstr "Notification Events"
 
-#: src/components/config/global/network-system-card.tsx:231
+#: src/components/config/global/network-system-card.tsx:230
 msgid "Notification Log Retention"
 msgstr "Notification Log Retention"
 
@@ -5003,7 +4999,7 @@ msgstr "Notification Log Retention"
 msgid "Notification permission not granted"
 msgstr "Notification permission not granted"
 
-#: src/components/config/global/network-system-card.tsx:239
+#: src/components/config/global/network-system-card.tsx:238
 msgid "Notification Retention"
 msgstr "Notification Retention"
 
@@ -5039,15 +5035,15 @@ msgstr "Nth output: {output0}, {output1}..."
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
-#: src/components/config/global/network-system-card.tsx:155
+#: src/components/config/global/network-system-card.tsx:154
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 msgstr "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 
-#: src/components/config/global/network-system-card.tsx:201
+#: src/components/config/global/network-system-card.tsx:200
 msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
 msgstr "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
 
-#: src/components/config/global/network-system-card.tsx:243
+#: src/components/config/global/network-system-card.tsx:242
 msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 msgstr "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 
@@ -5107,8 +5103,8 @@ msgstr "Offline"
 msgid "OFFLINE"
 msgstr "OFFLINE"
 
-#: src/components/config/global/network-system-card.tsx:101
-#: src/components/config/global/network-system-card.tsx:109
+#: src/components/config/global/network-system-card.tsx:100
+#: src/components/config/global/network-system-card.tsx:108
 #: src/components/config/shared/offline-check-card.tsx:39
 msgid "Offline Check"
 msgstr "Offline Check"
@@ -5117,11 +5113,11 @@ msgstr "Offline Check"
 msgid "Offline Check Interval"
 msgstr "Offline Check Interval"
 
-#: src/components/config/global/network-system-card.tsx:151
+#: src/components/config/global/network-system-card.tsx:150
 msgid "Offline Detection"
 msgstr "Offline Detection"
 
-#: src/components/config/global/network-system-card.tsx:143
+#: src/components/config/global/network-system-card.tsx:142
 #: src/components/config/shared/offline-check-card.tsx:95
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
@@ -5223,6 +5219,11 @@ msgstr "Optional extra arguments appended to `tdl login`."
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:124
 msgid "Options"
 msgstr "Options"
+
+#: src/components/sessions/timeline-tab.tsx:169
+msgctxt "terminal-cause"
+msgid "Out of Schedule"
+msgstr "Out of Schedule"
 
 #: src/components/streamers/card/use-streamer-status.tsx:42
 msgid "Out of Space"
@@ -5476,7 +5477,7 @@ msgstr "Peak / min"
 msgid "Pending"
 msgstr "Pending"
 
-#: src/components/sessions/timeline-tab.tsx:242
+#: src/components/sessions/timeline-tab.tsx:244
 msgid "PENDING CONFIRMATION"
 msgstr "PENDING CONFIRMATION"
 
@@ -5697,7 +5698,7 @@ msgstr "Player"
 msgid "Playlist"
 msgstr "Playlist"
 
-#: src/components/sessions/timeline-tab.tsx:176
+#: src/components/sessions/timeline-tab.tsx:178
 msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "Playlist Gone"
@@ -5875,7 +5876,7 @@ msgstr "Preview Unavailable"
 msgid "Previous"
 msgstr "Previous"
 
-#: src/components/sessions/timeline-tab.tsx:286
+#: src/components/sessions/timeline-tab.tsx:288
 msgid "Previous Title"
 msgstr "Previous Title"
 
@@ -5973,7 +5974,7 @@ msgstr "Protocol Settings"
 msgid "Proxy"
 msgstr "Proxy"
 
-#: src/components/config/global/network-system-card.tsx:321
+#: src/components/config/global/network-system-card.tsx:274
 #: src/components/config/shared/proxy-settings-card.tsx:242
 msgid "Proxy Configuration"
 msgstr "Proxy Configuration"
@@ -6169,7 +6170,7 @@ msgstr "Recording"
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
-#: src/components/sessions/timeline-tab.tsx:302
+#: src/components/sessions/timeline-tab.tsx:304
 msgid "Recording started"
 msgstr "Recording started"
 
@@ -6352,16 +6353,16 @@ msgstr "Restore password"
 msgid "Resume"
 msgstr "Resume"
 
-#: src/components/sessions/timeline-tab.tsx:251
+#: src/components/sessions/timeline-tab.tsx:253
 msgid "RESUMED"
 msgstr "RESUMED"
 
 #. placeholder {0}: entry.hysteresisDurationSecs
-#: src/components/sessions/timeline-tab.tsx:321
+#: src/components/sessions/timeline-tab.tsx:323
 msgid "Resumed after {0}s in pending state."
 msgstr "Resumed after {0}s in pending state."
 
-#: src/components/sessions/timeline-tab.tsx:230
+#: src/components/sessions/timeline-tab.tsx:232
 msgid "RESUMED START"
 msgstr "RESUMED START"
 
@@ -6369,7 +6370,7 @@ msgstr "RESUMED START"
 msgid "Resuming in"
 msgstr "Resuming in"
 
-#: src/components/config/global/network-system-card.tsx:189
+#: src/components/config/global/network-system-card.tsx:188
 msgid "Retention Period"
 msgstr "Retention Period"
 
@@ -6865,13 +6866,9 @@ msgstr "Session Details"
 msgid "Session Duration"
 msgstr "Session Duration"
 
-#: src/components/sessions/timeline-tab.tsx:260
+#: src/components/sessions/timeline-tab.tsx:262
 msgid "SESSION ENDED"
 msgstr "SESSION ENDED"
-
-#: src/components/config/global/network-system-card.tsx:285
-msgid "Session Gap"
-msgstr "Session Gap"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:140
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:367
@@ -6890,10 +6887,6 @@ msgstr "Session is not running"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/components/config/global/network-system-card.tsx:277
-msgid "Session Merging Gap"
-msgstr "Session Merging Gap"
-
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:190
 msgid "Session not found"
 msgstr "Session not found"
@@ -6902,7 +6895,7 @@ msgstr "Session not found"
 msgid "Session Preview"
 msgstr "Session Preview"
 
-#: src/components/sessions/timeline-tab.tsx:232
+#: src/components/sessions/timeline-tab.tsx:234
 msgid "SESSION STARTED"
 msgstr "SESSION STARTED"
 
@@ -7229,8 +7222,8 @@ msgstr "Streamer"
 msgid "STREAMER"
 msgstr "STREAMER"
 
-#: src/components/config/global/network-system-card.tsx:58
-#: src/components/config/global/network-system-card.tsx:66
+#: src/components/config/global/network-system-card.tsx:57
+#: src/components/config/global/network-system-card.tsx:65
 msgid "Streamer Check"
 msgstr "Streamer Check"
 
@@ -8052,7 +8045,7 @@ msgstr "Unknown error"
 msgid "Unknown File"
 msgstr "Unknown File"
 
-#: src/components/sessions/timeline-tab.tsx:345
+#: src/components/sessions/timeline-tab.tsx:347
 msgid "Unrecognised event kind."
 msgstr "Unrecognised event kind."
 
@@ -8064,7 +8057,7 @@ msgstr "Until"
 msgid "Untitled Stream"
 msgstr "Untitled Stream"
 
-#: src/components/sessions/timeline-tab.tsx:220
+#: src/components/sessions/timeline-tab.tsx:222
 msgid "UPDATE"
 msgstr "UPDATE"
 

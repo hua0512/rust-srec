@@ -41,7 +41,6 @@ pub struct MergedConfig {
     // Platform-specific
     pub fetch_delay_ms: i64,
     pub download_delay_ms: i64,
-    pub session_gap_time_secs: i64,
 
     // Stream selection settings
     pub stream_selection: StreamSelectionConfig,
@@ -91,7 +90,6 @@ pub struct MergedConfigBuilder {
     event_hooks: Option<EventHooks>,
     fetch_delay_ms: Option<i64>,
     download_delay_ms: Option<i64>,
-    session_gap_time_secs: Option<i64>,
     stream_selection: Option<StreamSelectionConfig>,
     engines_override: Option<serde_json::Value>,
     pipeline: Option<DagPipelineDefinition>,
@@ -117,7 +115,6 @@ impl MergedConfigBuilder {
         record_danmu: bool,
         proxy_config: ProxyConfig,
         download_engine: String,
-        session_gap_time_secs: i64,
         pipeline: Option<DagPipelineDefinition>,
         session_complete_pipeline: Option<DagPipelineDefinition>,
         paired_segment_pipeline: Option<DagPipelineDefinition>,
@@ -126,12 +123,11 @@ impl MergedConfigBuilder {
         offline_check_delay_ms: u64,
     ) -> Self {
         debug!(
-            "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, session_gap={}s, pipeline_steps={}",
+            "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, pipeline_steps={}",
             output_folder,
             output_file_format,
             download_engine,
             record_danmu,
-            session_gap_time_secs,
             pipeline.as_ref().map(|p| p.steps.len()).unwrap_or(0)
         );
         self.output_folder = Some(output_folder);
@@ -146,7 +142,6 @@ impl MergedConfigBuilder {
         self.danmu_sampling_config = Some(DanmuSamplingConfig::default());
         self.download_retry_policy = Some(RetryPolicy::default());
         self.event_hooks = Some(EventHooks::default());
-        self.session_gap_time_secs = Some(session_gap_time_secs);
         self.pipeline = pipeline;
         self.session_complete_pipeline = session_complete_pipeline;
         self.paired_segment_pipeline = paired_segment_pipeline;
@@ -651,7 +646,6 @@ impl MergedConfigBuilder {
             event_hooks: self.event_hooks.unwrap_or_default(),
             fetch_delay_ms: self.fetch_delay_ms.unwrap_or(60000),
             download_delay_ms: self.download_delay_ms.unwrap_or(1000),
-            session_gap_time_secs: self.session_gap_time_secs.unwrap_or(3600),
             stream_selection,
             engines_override: self.engines_override,
             pipeline,
@@ -684,7 +678,6 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
-                600,
                 None, // pipeline
                 None, // session_complete_pipeline
                 None, // paired_segment_pipeline
@@ -735,7 +728,6 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "ffmpeg".to_string(),
-                600,
                 None,
                 None,
                 None,
@@ -822,7 +814,6 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
-                600,
                 Some(DagPipelineDefinition::new(
                     "global",
                     vec![
@@ -905,7 +896,6 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
-                600,
                 None,
                 None,
                 None,
@@ -976,7 +966,6 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
-                600,
                 None,
                 None,
                 None,
@@ -1050,7 +1039,6 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
-                600,
                 None,
                 None,
                 None,
@@ -1128,7 +1116,6 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "mesio".to_string(),
-                600,
                 None,
                 None,
                 None,

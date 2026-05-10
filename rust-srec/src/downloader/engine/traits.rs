@@ -58,6 +58,39 @@ impl std::fmt::Display for EngineType {
     }
 }
 
+/// Stream protocol selected for a download.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadProtocol {
+    /// HLS playlist/segment stream.
+    Hls,
+    /// FLV stream.
+    Flv,
+    /// Protocol was not known at the call site.
+    #[default]
+    Unknown,
+}
+
+impl DownloadProtocol {
+    /// Build a protocol from the platform stream-format label.
+    pub fn from_format_label(label: &str) -> Self {
+        match label.to_ascii_lowercase().as_str() {
+            "hls" | "m3u8" => Self::Hls,
+            "flv" => Self::Flv,
+            _ => Self::Unknown,
+        }
+    }
+
+    /// Stable lowercase label for logs and metrics.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Hls => "hls",
+            Self::Flv => "flv",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 /// Configuration for a download.
 #[derive(Debug, Clone)]
 pub struct DownloadConfig {
@@ -87,6 +120,8 @@ pub struct DownloadConfig {
     pub streamer_name: String,
     /// Session ID for tracking.
     pub session_id: String,
+    /// Stream protocol selected for this download.
+    pub protocol: DownloadProtocol,
 
     // --- Pipeline Configuration Fields ---
     /// Whether to enable stream processing through fix pipelines (HlsPipeline/FlvPipeline).
@@ -134,6 +169,7 @@ impl DownloadConfig {
             streamer_id: streamer_id.into(),
             streamer_name: streamer_name.into(),
             session_id: session_id.into(),
+            protocol: DownloadProtocol::Unknown,
             enable_processing: true,
             pipeline_config: None,
             hls_pipeline_config: None,
@@ -151,6 +187,12 @@ impl DownloadConfig {
     /// Set the output format.
     pub fn with_output_format(mut self, format: impl Into<String>) -> Self {
         self.output_format = format.into();
+        self
+    }
+
+    /// Set the stream protocol selected for the download.
+    pub fn with_protocol(mut self, protocol: DownloadProtocol) -> Self {
+        self.protocol = protocol;
         self
     }
 
@@ -734,10 +776,31 @@ mod tests {
 
         assert_eq!(config.url, "https://example.com/stream");
         assert_eq!(config.output_format, "mp4");
+        assert_eq!(config.protocol, DownloadProtocol::Unknown);
         assert_eq!(config.max_segment_duration_secs, 3600);
         assert_eq!(config.max_segment_size_bytes, 1024 * 1024);
         assert_eq!(config.proxy_url, Some("http://proxy:8080".to_string()));
         assert!(!config.use_system_proxy); // Explicit proxy disables system proxy
+    }
+
+    #[test]
+    fn test_download_protocol_from_format_label() {
+        assert_eq!(
+            DownloadProtocol::from_format_label("hls"),
+            DownloadProtocol::Hls
+        );
+        assert_eq!(
+            DownloadProtocol::from_format_label("m3u8"),
+            DownloadProtocol::Hls
+        );
+        assert_eq!(
+            DownloadProtocol::from_format_label("FLV"),
+            DownloadProtocol::Flv
+        );
+        assert_eq!(
+            DownloadProtocol::from_format_label("dash"),
+            DownloadProtocol::Unknown
+        );
     }
 
     #[test]

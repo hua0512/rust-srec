@@ -141,7 +141,7 @@ impl SessionTxOps {
     /// `live_sessions_one_active_per_streamer` (initial schema, line 159–161)
     /// caps the candidate set at 0 or 1 row. The helper exists for the
     /// self-heal path inside
-    /// [`crate::session::SessionLifecycleRepository::start_or_resume`]: if a
+    /// [`crate::database::repositories::SessionLifecycleRepository::start_or_resume`]: if a
     /// previous build ever produced multiple stale active rows (e.g. a
     /// crash mid-tx, or a build without the index), the lifecycle calls
     /// this with `keep = Some(most_recent_id)` to retain the row that's
@@ -233,31 +233,6 @@ impl SessionTxOps {
 
         Ok(needs_update)
     }
-
-    /// Helper: Determine if a session should be resumed based on gap time.
-    ///
-    /// Returns true if the session ended recently enough to resume.
-    pub fn should_resume_by_gap(
-        session_end_time: DateTime<Utc>,
-        now: DateTime<Utc>,
-        gap_threshold_secs: i64,
-    ) -> bool {
-        let offline_duration_secs = (now - session_end_time).num_seconds();
-        offline_duration_secs < gap_threshold_secs
-    }
-
-    /// Helper: Determine if a session should be resumed because stream is a continuation.
-    ///
-    /// Returns true if the stream started before or when the session ended,
-    /// indicating the stream was actually continuous (monitoring gap).
-    pub fn should_resume_by_continuation(
-        session_end_time: DateTime<Utc>,
-        stream_started_at: Option<DateTime<Utc>>,
-    ) -> bool {
-        stream_started_at
-            .map(|start| start <= session_end_time)
-            .unwrap_or(false)
-    }
 }
 
 #[cfg(test)]
@@ -265,60 +240,27 @@ mod tests {
     use super::*;
     use sqlx::SqlitePool;
 
+    use crate::database::models::StreamerDbModel;
+    use crate::database::repositories::{
+        SessionRepository as _, SqlxSessionRepository, SqlxStreamerRepository,
+        StreamerRepository as _,
+    };
+    use crate::database::{init_pool_with_size, run_migrations};
+
     async fn setup_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
 
-        sqlx::query(
-            r#"
-            CREATE TABLE live_sessions (
-                id TEXT PRIMARY KEY,
-                streamer_id TEXT NOT NULL,
-                start_time INTEGER NOT NULL,
-                end_time INTEGER,
-                titles TEXT,
-                danmu_statistics_id TEXT,
-                total_size_bytes INTEGER DEFAULT 0
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"
-            CREATE TABLE media_outputs (
-                id TEXT PRIMARY KEY,
-                session_id TEXT,
-                size_bytes INTEGER DEFAULT 0
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"
-            CREATE TABLE session_segments (
-                id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                segment_index INTEGER NOT NULL,
-                file_path TEXT NOT NULL,
-                duration_secs REAL NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                split_reason_code TEXT,
-                split_reason_details_json TEXT,
-                created_at INTEGER,
-                completed_at INTEGER,
-                persisted_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
+        let mut streamer = StreamerDbModel::new(
+            "Streamer One",
+            "https://example.com/streamer-1",
+            "platform-twitch",
+        );
+        streamer.id = "streamer-1".to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&streamer)
+            .await
+            .unwrap();
         pool
     }
 
@@ -334,12 +276,10 @@ mod tests {
 
         tx.commit().await.unwrap();
 
-        // Verify
-        let session: LiveSessionDbModel =
-            sqlx::query_as("SELECT * FROM live_sessions WHERE id = 'sess-1'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let session = SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .get_session("sess-1")
+            .await
+            .unwrap();
 
         assert_eq!(session.streamer_id, "streamer-1");
         assert!(session.end_time.is_none());
@@ -350,18 +290,15 @@ mod tests {
     async fn test_resume_and_end_session() {
         let pool = setup_test_db().await;
 
-        // Create a session with end_time
         let now = Utc::now();
-        sqlx::query(
-            "INSERT INTO live_sessions (id, streamer_id, start_time, end_time) VALUES (?, ?, ?, ?)",
-        )
-        .bind("sess-1")
-        .bind("streamer-1")
-        .bind(now.timestamp_millis())
-        .bind(now.timestamp_millis())
-        .execute(&pool)
-        .await
-        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        SessionTxOps::create_session(&mut tx, "sess-1", "streamer-1", now, "Test Stream")
+            .await
+            .unwrap();
+        SessionTxOps::end_session(&mut tx, "sess-1", now)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
 
         // Resume
         let mut tx = pool.begin().await.unwrap();
@@ -371,11 +308,10 @@ mod tests {
         tx.commit().await.unwrap();
 
         // Verify resumed
-        let session: LiveSessionDbModel =
-            sqlx::query_as("SELECT * FROM live_sessions WHERE id = 'sess-1'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let session = SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .get_session("sess-1")
+            .await
+            .unwrap();
         assert!(session.end_time.is_none());
 
         // End again
@@ -386,11 +322,10 @@ mod tests {
         tx.commit().await.unwrap();
 
         // Verify ended
-        let session: LiveSessionDbModel =
-            sqlx::query_as("SELECT * FROM live_sessions WHERE id = 'sess-1'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let session = SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .get_session("sess-1")
+            .await
+            .unwrap();
         assert!(session.end_time.is_some());
     }
 
@@ -407,11 +342,10 @@ mod tests {
         tx.commit().await.unwrap();
 
         // Update with same title - should not update
-        let session: LiveSessionDbModel =
-            sqlx::query_as("SELECT * FROM live_sessions WHERE id = 'sess-1'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let session = SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .get_session("sess-1")
+            .await
+            .unwrap();
 
         let mut tx = pool.begin().await.unwrap();
         let updated = SessionTxOps::update_titles(
@@ -427,11 +361,10 @@ mod tests {
         assert!(!updated);
 
         // Update with different title - should update
-        let session: LiveSessionDbModel =
-            sqlx::query_as("SELECT * FROM live_sessions WHERE id = 'sess-1'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let session = SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .get_session("sess-1")
+            .await
+            .unwrap();
 
         let mut tx = pool.begin().await.unwrap();
         let updated = SessionTxOps::update_titles(
@@ -445,39 +378,5 @@ mod tests {
         .unwrap();
         tx.commit().await.unwrap();
         assert!(updated);
-    }
-
-    #[test]
-    fn test_should_resume_by_gap() {
-        let now = Utc::now();
-        let end_time = now - chrono::Duration::seconds(30);
-
-        // 30 seconds offline, 60 second threshold -> should resume
-        assert!(SessionTxOps::should_resume_by_gap(end_time, now, 60));
-
-        // 30 seconds offline, 20 second threshold -> should not resume
-        assert!(!SessionTxOps::should_resume_by_gap(end_time, now, 20));
-    }
-
-    #[test]
-    fn test_should_resume_by_continuation() {
-        let end_time = Utc::now();
-        let before_end = end_time - chrono::Duration::minutes(5);
-        let after_end = end_time + chrono::Duration::minutes(5);
-
-        // Stream started before session ended -> continuation
-        assert!(SessionTxOps::should_resume_by_continuation(
-            end_time,
-            Some(before_end)
-        ));
-
-        // Stream started after session ended -> not continuation
-        assert!(!SessionTxOps::should_resume_by_continuation(
-            end_time,
-            Some(after_end)
-        ));
-
-        // No started_at -> not continuation
-        assert!(!SessionTxOps::should_resume_by_continuation(end_time, None));
     }
 }

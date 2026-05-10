@@ -4,7 +4,7 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — no changes have landed for the next release yet
+- [`unreleased`](./unreleased.md) — recording-session reliability fixes, cleaner schedule endings, quieter out-of-schedule checks, and more consistent session timeline data
 
 ## Latest release
 
