@@ -296,10 +296,8 @@ pub struct ServiceContainer {
     pub output_root_gate: Arc<OutputRootGate>,
     /// GPU health monitor (#555). Empty when `nvidia-smi` is not available
     /// at startup; otherwise the background probe loop is owned by the
-    /// container's cancellation token. Installed by
-    /// [`Self::init_gpu_health_monitor`] during [`Self::initialize`],
-    /// before `setup_config_event_subscriptions` runs so the config
-    /// handler can capture a plain `Option<Arc<…>>` clone.
+    /// container's cancellation token. Use [`std::sync::OnceLock::get`]
+    /// to read; install only via [`Self::init_gpu_health_monitor`].
     pub gpu_health_monitor: std::sync::OnceLock<Arc<crate::metrics::GpuHealthMonitor>>,
     /// Pipeline manager.
     pub pipeline_manager: Arc<PipelineManager>,
@@ -1715,14 +1713,14 @@ impl ServiceContainer {
 
                                                 // Hot-reload the GPU health probe cadence (#555).
                                                 // No-op when the monitor wasn't registered (no
-                                                // GPU). The setter clamps internally and the
-                                                // probe loop picks up the new value on its next
-                                                // tick — no restart required.
+                                                // GPU). `.max(0)` guards against a negative i64
+                                                // wrapping during the u64 cast (the API
+                                                // validator already rejects sub-second values,
+                                                // but the DB could be edited out-of-band);
+                                                // `set_interval` then clamps to its own minimum.
                                                 if let Some(monitor) = gpu_health_monitor.as_ref() {
                                                     monitor.set_interval(
-                                                        global
-                                                            .gpu_health_probe_interval_secs
-                                                            .max(1)
+                                                        global.gpu_health_probe_interval_secs.max(0)
                                                             as u64,
                                                     );
                                                 }
@@ -2816,16 +2814,13 @@ impl ServiceContainer {
             return;
         }
 
+        let default = crate::metrics::DEFAULT_GPU_PROBE_INTERVAL_SECS;
         let initial_interval = match self.config_service.get_global_config().await {
-            Ok(cfg) => {
-                let raw = cfg.gpu_health_probe_interval_secs;
-                if raw > 0 {
-                    raw as u64
-                } else {
-                    crate::metrics::DEFAULT_GPU_PROBE_INTERVAL_SECS
-                }
-            }
-            Err(_) => crate::metrics::DEFAULT_GPU_PROBE_INTERVAL_SECS,
+            Ok(cfg) => match cfg.gpu_health_probe_interval_secs {
+                n if n > 0 => n as u64,
+                _ => default,
+            },
+            Err(_) => default,
         };
 
         let Some(monitor) = crate::metrics::GpuHealthMonitor::detect(

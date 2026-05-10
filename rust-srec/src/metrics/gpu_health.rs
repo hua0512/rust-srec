@@ -321,21 +321,29 @@ impl GpuHealthMonitor {
         let now = Some(Utc::now().to_rfc3339());
         let dur_ms = Some(started.elapsed().as_millis() as u64);
 
+        let build_health = |status, message: String| ComponentHealth {
+            name: COMPONENT_NAME.to_string(),
+            status,
+            message: Some(message),
+            last_check: now.clone(),
+            check_duration_ms: dur_ms,
+        };
+
         match exec {
             Err(_) => {
                 let kind = GpuErrorKind::TimedOut;
-                let msg = format!("GPU probe timed out after {PROBE_TIMEOUT_SECS}s");
+                let detail = format!("GPU probe timed out after {PROBE_TIMEOUT_SECS}s");
                 (
                     STATE_UNHEALTHY,
                     GpuSnapshot {
-                        health: ComponentHealth {
-                            name: COMPONENT_NAME.to_string(),
-                            status: HealthStatus::Unhealthy,
-                            message: Some(format!("{msg} (kind={})", kind.as_str())),
-                            last_check: now,
-                            check_duration_ms: dur_ms,
-                        },
-                        failure: Some(GpuFailure { kind, message: msg }),
+                        health: build_health(
+                            HealthStatus::Unhealthy,
+                            format!("{detail} (kind={})", kind.as_str()),
+                        ),
+                        failure: Some(GpuFailure {
+                            kind,
+                            message: detail,
+                        }),
                     },
                 )
             }
@@ -345,23 +353,21 @@ impl GpuHealthMonitor {
                 } else {
                     GpuErrorKind::Other
                 };
-                let raw = e.to_string();
-                let msg = truncate(&raw, MAX_DIAG_CHARS);
+                let detail = truncate(&e.to_string(), MAX_DIAG_CHARS);
                 (
                     STATE_UNHEALTHY,
                     GpuSnapshot {
-                        health: ComponentHealth {
-                            name: COMPONENT_NAME.to_string(),
-                            status: HealthStatus::Unhealthy,
-                            message: Some(format!(
-                                "GPU probe failed to spawn (kind={}): {}",
-                                kind.as_str(),
-                                msg
-                            )),
-                            last_check: now,
-                            check_duration_ms: dur_ms,
-                        },
-                        failure: Some(GpuFailure { kind, message: msg }),
+                        health: build_health(
+                            HealthStatus::Unhealthy,
+                            format!(
+                                "GPU probe failed to spawn (kind={}): {detail}",
+                                kind.as_str()
+                            ),
+                        ),
+                        failure: Some(GpuFailure {
+                            kind,
+                            message: detail,
+                        }),
                     },
                 )
             }
@@ -376,13 +382,10 @@ impl GpuHealthMonitor {
                 (
                     STATE_HEALTHY,
                     GpuSnapshot {
-                        health: ComponentHealth {
-                            name: COMPONENT_NAME.to_string(),
-                            status: HealthStatus::Healthy,
-                            message: Some(truncate(&summary, MAX_DIAG_CHARS)),
-                            last_check: now,
-                            check_duration_ms: dur_ms,
-                        },
+                        health: build_health(
+                            HealthStatus::Healthy,
+                            truncate(&summary, MAX_DIAG_CHARS),
+                        ),
                         failure: None,
                     },
                 )
@@ -390,24 +393,17 @@ impl GpuHealthMonitor {
             Ok(Ok(out)) => {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 let kind = GpuErrorKind::classify(&stderr);
-                let trimmed = truncate(&stderr, MAX_DIAG_CHARS);
+                let detail = truncate(&stderr, MAX_DIAG_CHARS);
                 (
                     STATE_UNHEALTHY,
                     GpuSnapshot {
-                        health: ComponentHealth {
-                            name: COMPONENT_NAME.to_string(),
-                            status: HealthStatus::Unhealthy,
-                            message: Some(format!(
-                                "GPU probe failed (kind={}): {}",
-                                kind.as_str(),
-                                trimmed
-                            )),
-                            last_check: now,
-                            check_duration_ms: dur_ms,
-                        },
+                        health: build_health(
+                            HealthStatus::Unhealthy,
+                            format!("GPU probe failed (kind={}): {detail}", kind.as_str()),
+                        ),
                         failure: Some(GpuFailure {
                             kind,
-                            message: trimmed,
+                            message: detail,
                         }),
                     },
                 )
