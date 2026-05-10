@@ -130,12 +130,14 @@ const STATE_UNHEALTHY: u8 = 2;
 /// [`HealthStatus::Unhealthy`]. Kept separate from the human-readable
 /// `ComponentHealth::message` so the notification dispatcher can read
 /// the kind directly without parsing the message string.
+///
+/// Module-private: the only consumer is [`GpuHealthMonitor::spawn_notification`].
 #[derive(Debug, Clone)]
-pub struct GpuFailure {
-    pub kind: GpuErrorKind,
+struct GpuFailure {
+    kind: GpuErrorKind,
     /// Truncated diagnostic line for the operator. Bounded by
     /// [`MAX_DIAG_CHARS`].
-    pub message: String,
+    message: String,
 }
 
 /// Pre-built snapshot returned to the `/api/health` hot path. Cheap to
@@ -148,7 +150,8 @@ pub struct GpuSnapshot {
     /// happens in the read path.
     pub health: ComponentHealth,
     /// Present iff the snapshot represents an unhealthy state.
-    pub failure: Option<GpuFailure>,
+    /// Module-private: read only by `spawn_notification`.
+    failure: Option<GpuFailure>,
 }
 
 impl GpuSnapshot {
