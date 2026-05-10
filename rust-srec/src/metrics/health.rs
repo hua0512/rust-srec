@@ -518,7 +518,7 @@ impl HealthChecker {
             let join_results = futures::future::join_all(handles).await;
 
             let mut components = self.current().components.clone();
-            for (probe, join_result) in due.iter().zip(join_results.into_iter()) {
+            for (probe, join_result) in due.iter().zip(join_results) {
                 let name = probe.name().into_owned();
                 last_run.insert(name.clone(), now);
                 let health = match join_result {
