@@ -2852,17 +2852,18 @@ impl ServiceContainer {
     /// Register health checks for all components.
     async fn register_health_checks(&self) {
         use crate::metrics::ComponentHealth;
-        use std::path::{Path, PathBuf};
+        use std::path::PathBuf;
 
         let pool = self.pool.clone();
         let download_manager = self.download_manager.clone();
         let pipeline_manager = self.pipeline_manager.clone();
         let danmu_service = self.danmu_service.clone();
 
-        // Database health check
+        // Database health check — atomic pool-closed check; cheap.
         self.health_checker
-            .register(
+            .register_fn(
                 "database",
+                Duration::from_secs(5),
                 Arc::new(move || {
                     if pool.is_closed() {
                         ComponentHealth::unhealthy("database", "Connection pool is closed")
@@ -2872,16 +2873,6 @@ impl ServiceContainer {
                 }),
             )
             .await;
-
-        fn best_disk_for_path<'a>(
-            disks: &'a sysinfo::Disks,
-            path: &Path,
-        ) -> Option<&'a sysinfo::Disk> {
-            disks
-                .iter()
-                .filter(|d| path.starts_with(d.mount_point()))
-                .max_by_key(|d| d.mount_point().as_os_str().to_string_lossy().len())
-        }
 
         fn sqlite_file_path_from_url(url: &str) -> Option<PathBuf> {
             let url = url.strip_prefix("sqlite:")?;
@@ -2922,21 +2913,26 @@ impl ServiceContainer {
             PathBuf::from(output_dir.clone())
         };
 
+        // Disk inventory is rescan-heavy (~5–10 ms per `Disks::refresh`),
+        // so probe every 30 s and read from the shared `SysinfoCache`
+        // rather than rebuilding `sysinfo::Disks` on every poll.
         let disk_checker = self.health_checker.clone();
+        let output_dir_for_probe = output_dir.clone();
         self.health_checker
-            .register(
+            .register_fn(
                 format!("disk:{}", output_dir),
+                Duration::from_secs(30),
                 Arc::new(move || {
-                    let disks = sysinfo::Disks::new_with_refreshed_list();
-                    let disk = best_disk_for_path(&disks, &output_dir_path);
-                    match disk {
+                    let mut cache = disk_checker.sysinfo().lock();
+                    cache.refresh_disks();
+                    match cache.best_disk_for_path(&output_dir_path) {
                         Some(d) => disk_checker.check_disk_space(
-                            &output_dir,
+                            &output_dir_for_probe,
                             d.available_space(),
                             d.total_space(),
                         ),
                         None => ComponentHealth {
-                            name: format!("disk:{}", output_dir),
+                            name: format!("disk:{}", output_dir_for_probe),
                             status: crate::metrics::HealthStatus::Unknown,
                             message: Some("Unable to resolve disk for path".to_string()),
                             last_check: Some(chrono::Utc::now().to_rfc3339()),
@@ -2952,7 +2948,6 @@ impl ServiceContainer {
         {
             let db_dir = db_file.parent().unwrap_or(db_file.as_path()).to_path_buf();
             let db_dir_str = db_dir.to_string_lossy().to_string();
-            // Ensure path is absolute for disk lookup
             let db_dir_path = if db_dir.is_absolute() {
                 db_dir.clone()
             } else if let Ok(cwd) = std::env::current_dir() {
@@ -2961,20 +2956,25 @@ impl ServiceContainer {
                 db_dir.clone()
             };
             let disk_checker = self.health_checker.clone();
+            let db_dir_for_probe = db_dir_str.clone();
             self.health_checker
-                .register(
+                .register_fn(
                     format!("disk:{}", db_dir_str),
+                    Duration::from_secs(30),
                     Arc::new(move || {
-                        let disks = sysinfo::Disks::new_with_refreshed_list();
-                        let disk = best_disk_for_path(&disks, &db_dir_path);
-                        match disk {
+                        let mut cache = disk_checker.sysinfo().lock();
+                        // Cheap when called within ~30 s of the previous
+                        // disk refresh — sysinfo amortizes if nothing
+                        // changed; this just refreshes capacity figures.
+                        cache.refresh_disks();
+                        match cache.best_disk_for_path(&db_dir_path) {
                             Some(d) => disk_checker.check_disk_space(
-                                &db_dir_str,
+                                &db_dir_for_probe,
                                 d.available_space(),
                                 d.total_space(),
                             ),
                             None => ComponentHealth {
-                                name: format!("disk:{}", db_dir_str),
+                                name: format!("disk:{}", db_dir_for_probe),
                                 status: crate::metrics::HealthStatus::Unknown,
                                 message: Some("Unable to resolve disk for path".to_string()),
                                 last_check: Some(chrono::Utc::now().to_rfc3339()),
@@ -2993,8 +2993,9 @@ impl ServiceContainer {
         // `HealthChecker::check_output_root_gate` for the shape.
         let gate_for_health = self.output_root_gate.clone();
         self.health_checker
-            .register(
+            .register_fn(
                 "output-root",
+                Duration::from_secs(5),
                 Arc::new(move || HealthChecker::check_output_root_gate(&gate_for_health)),
             )
             .await;
@@ -3006,15 +3007,23 @@ impl ServiceContainer {
         // the health-check closure if the monitor is installed.
         if let Some(monitor) = self.gpu_health_monitor.get().cloned() {
             self.health_checker
-                .register("gpu", Arc::new(move || monitor.snapshot().health.clone()))
+                .register_fn(
+                    "gpu",
+                    Duration::from_secs(5),
+                    Arc::new(move || monitor.snapshot().health.clone()),
+                )
                 .await;
         }
 
-        // Download manager health check
+        // Download manager health check — atomics + a CPU/mem read from
+        // the shared `SysinfoCache`. CPU/mem are refreshed every tick by
+        // the refresh loop, so this just reads cached fields.
         let dm = download_manager.clone();
+        let dm_checker = self.health_checker.clone();
         self.health_checker
-            .register(
+            .register_fn(
                 "download_manager",
+                Duration::from_secs(5),
                 Arc::new(move || {
                     let active = dm.active_count();
                     let total_slots = dm.total_concurrent_slots();
@@ -3054,25 +3063,9 @@ impl ServiceContainer {
 
                     let cpu_threshold = 85.0_f32;
                     let mem_threshold = 90.0_f32;
-
                     let (cpu_usage, mem_usage) = {
-                        let mut system = sysinfo::System::new_with_specifics(
-                            sysinfo::RefreshKind::nothing()
-                                .with_cpu(sysinfo::CpuRefreshKind::everything())
-                                .with_memory(sysinfo::MemoryRefreshKind::everything()),
-                        );
-                        system.refresh_cpu_all();
-                        system.refresh_memory();
-
-                        let cpu = system.global_cpu_usage();
-                        let total_mem = system.total_memory();
-                        let used_mem = system.used_memory();
-                        let mem = if total_mem > 0 {
-                            (used_mem as f64 / total_mem as f64 * 100.0) as f32
-                        } else {
-                            0.0
-                        };
-                        (cpu, mem)
+                        let cache = dm_checker.sysinfo().lock();
+                        (cache.cpu_usage(), cache.memory_usage_pct())
                     };
 
                     let utilization = active as f32 / total_slots as f32;
@@ -3095,8 +3088,9 @@ impl ServiceContainer {
         // Pipeline manager health check
         let pm = pipeline_manager.clone();
         self.health_checker
-            .register(
+            .register_fn(
                 "pipeline_manager",
+                Duration::from_secs(5),
                 Arc::new(move || {
                     let depth = pm.queue_depth();
                     let status = pm.queue_status();
@@ -3120,8 +3114,9 @@ impl ServiceContainer {
         // Danmu service health check
         let ds = danmu_service.clone();
         self.health_checker
-            .register(
+            .register_fn(
                 "danmu_service",
+                Duration::from_secs(5),
                 Arc::new(move || {
                     let _active = ds.active_sessions().len();
                     ComponentHealth::healthy("danmu_service")
@@ -3130,11 +3125,11 @@ impl ServiceContainer {
             .await;
 
         // Scheduler health check
-        // Check if scheduler is running (not cancelled)
         let cancellation_token = self.cancellation_token.clone();
         self.health_checker
-            .register(
+            .register_fn(
                 "scheduler",
+                Duration::from_secs(5),
                 Arc::new(move || {
                     if cancellation_token.is_cancelled() {
                         ComponentHealth::unhealthy("scheduler", "Scheduler has been cancelled")
@@ -3146,22 +3141,31 @@ impl ServiceContainer {
             .await;
 
         // Notification service health check
-        // Notification service is healthy if it exists
         self.health_checker
-            .register(
+            .register_fn(
                 "notification_service",
+                Duration::from_secs(10),
                 Arc::new(|| ComponentHealth::healthy("notification_service")),
             )
             .await;
 
         // Maintenance scheduler health check
-        // Maintenance scheduler is healthy if it exists
         self.health_checker
-            .register(
+            .register_fn(
                 "maintenance_scheduler",
+                Duration::from_secs(10),
                 Arc::new(|| ComponentHealth::healthy("maintenance_scheduler")),
             )
             .await;
+
+        // Spawn the snapshot-refresh task so `/api/health` reads see
+        // populated data within seconds. Cancellation chains off the
+        // container token; the JoinHandle is intentionally dropped (the
+        // task is supervised by the cancellation token).
+        drop(
+            self.health_checker
+                .start(self.cancellation_token.child_token()),
+        );
 
         info!("Health checks registered");
     }
