@@ -69,7 +69,7 @@
     "react-hook-form": "^7.75.0",
     "recharts": "^3.8.1",
     "sonner": "^2.0.7",
-    "tailwind-merge": "^3.5.0",
+    "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.13"
