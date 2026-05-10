@@ -2484,13 +2484,12 @@ impl ServiceContainer {
                                                 );
                                             }
 
-                                            // Phase 3 hysteresis plan: the danmu observer no longer
-                                            // pre-emptively flags the session as hard-ended. The
-                                            // subsequent `handle_offline_with_session` call routes
-                                            // to `lifecycle.on_offline_detected` which writes
-                                            // `end_time` atomically. With gap-resume removed, that
-                                            // DB write alone is sufficient to ensure the next
-                                            // `LiveDetected` creates a fresh session.
+                                            // The danmu observer lets the lifecycle perform the
+                                            // terminal write. `handle_offline_with_session` routes
+                                            // to `lifecycle.on_offline_detected`, which writes
+                                            // `end_time` atomically. That DB write is the fence
+                                            // that makes the next `LiveDetected` create a fresh
+                                            // session.
                                             //
                                             // Pass `Some(DanmuStreamClosed)` so the lifecycle
                                             // promotes the cause to
@@ -3632,7 +3631,7 @@ struct StreamerLivePayload {
 /// Per-streamer download pipeline.
 ///
 /// Runs in a `tokio::spawn`'d task per `StreamerLive` event. Walks the
-/// six-phase split:
+/// split startup flow:
 ///
 /// 1. **Dedup / pre-checks** — bail if the streamer is already
 ///    downloading, no longer active, disabled, or has no streams.
@@ -3723,7 +3722,7 @@ async fn run_live_download_pipeline(
     let cancel_handle = session_cancels.register(&session_id);
     let cancel = cancel_handle.token();
 
-    // ── Phase 1: dedup & pre-checks ──────────────────────────────
+    // Dedup and pre-checks.
     if download_manager.has_active_download(&streamer_id) {
         debug!("Download already active for {}", streamer_id);
         let active = download_manager.get_active_downloads();
@@ -3802,7 +3801,7 @@ async fn run_live_download_pipeline(
         .replace("{platform}", platform);
     let output_dir = expand_path_template(&dir);
 
-    // ── Phase 2: preflight ──────────────────────────────────────
+    // Preflight.
     let preflight_req = PreflightRequest {
         streamer_id: streamer_id.clone(),
         streamer_name: streamer_name.clone(),
@@ -3820,13 +3819,13 @@ async fn run_live_download_pipeline(
     };
     let engine_type = engine.engine_type;
 
-    // Honour cancellation that fired between phases.
+    // Honour cancellation that fired between preflight and slot acquire.
     if cancel.is_cancelled() {
         debug!("Streamer {} cancelled before slot acquire", streamer_id);
         return;
     }
 
-    // ── Phase 3: acquire slot ───────────────────────────────────
+    // Acquire slot.
     let acquire_req = AcquireRequest {
         session_id: session_id.clone(),
         streamer_id: streamer_id.clone(),
@@ -3857,7 +3856,7 @@ async fn run_live_download_pipeline(
 
     let waited_ms = slot.waited_ms();
 
-    // ── Phase 4: freshness re-check ─────────────────────────────
+    // Freshness re-check.
     if waited_ms > download_manager.queue_freshness_threshold_ms() {
         debug!(
             streamer_id = %streamer_id,
@@ -4040,7 +4039,7 @@ async fn run_live_download_pipeline(
 
     let cookies = merged_config.cookies.clone();
 
-    // ── Phase 5: start engine on the slot ───────────────────────
+    // Start engine on the slot.
     let started = match download_manager.start_with_slot(slot, config, engine).await {
         Ok(download_id) => {
             info!(
@@ -4060,7 +4059,7 @@ async fn run_live_download_pipeline(
         }
     };
 
-    // ── Phase 6: danmu ──────────────────────────────────────────
+    // Danmu.
     // Gated on the download having a real id. If `start_with_slot`
     // failed, the slot is already released by SlotGuard's drop and
     // there's no engine to interleave danmu with — opening a danmu

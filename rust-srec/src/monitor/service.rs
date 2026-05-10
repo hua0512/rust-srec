@@ -164,7 +164,6 @@ pub(crate) struct LiveStatusDetails {
     pub title: String,
     pub category: Option<String>,
     pub avatar: Option<String>,
-    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
     pub streams: Vec<platforms_parser::media::StreamInfo>,
     pub media_headers: Option<std::collections::HashMap<String, String>>,
     pub media_extras: Option<std::collections::HashMap<String, String>>,
@@ -651,7 +650,7 @@ impl<
                 title,
                 category,
                 avatar,
-                started_at,
+                started_at: _,
                 streams,
                 media_headers,
                 media_extras,
@@ -663,7 +662,6 @@ impl<
                         title,
                         category,
                         avatar,
-                        started_at,
                         streams,
                         media_headers,
                         media_extras,
@@ -742,7 +740,6 @@ impl<
             title,
             category,
             avatar,
-            started_at,
             streams,
             media_headers,
             media_extras,
@@ -758,14 +755,6 @@ impl<
         );
 
         let now = chrono::Utc::now();
-
-        // Load config before handing off to the lifecycle — the gap window
-        // feeds into the session resume-vs-new decision inside the atomic tx.
-        let merged_config = self
-            .config_service
-            .get_config_for_streamer(&streamer.id)
-            .await?;
-        let gap_secs = merged_config.session_gap_time_secs;
 
         // Delegate the atomic session+streamer+outbox bundle to
         // `SessionLifecycle`. It owns the in-memory session map and the
@@ -786,10 +775,6 @@ impl<
                 now,
             })
             .await?;
-        // Phase 3 hysteresis plan: `started_at` and `gap_threshold_secs`
-        // (formerly fed gap-resume) are no longer plumbed; lifecycle owns
-        // intermittent-stream handling via Hysteresis state.
-        let _ = (started_at, gap_secs);
 
         self.reload_streamer_cache(&streamer.id, "state update")
             .await;

@@ -1953,7 +1953,7 @@ msgstr "Definitive Offline"
 msgid "Degraded"
 msgstr "Degraded"
 
-#: src/components/config/global/network-system-card.tsx:43
+#: src/components/config/global/network-system-card.tsx:42
 msgid "Delays, proxy, and retention policies."
 msgstr "Delays, proxy, and retention policies."
 
@@ -3607,7 +3607,7 @@ msgstr "Highest bitrate"
 msgid "History ({slots} pts)"
 msgstr "History ({slots} pts)"
 
-#: src/components/config/global/network-system-card.tsx:197
+#: src/components/config/global/network-system-card.tsx:196
 msgid "History Retention"
 msgstr "History Retention"
 
@@ -3886,11 +3886,11 @@ msgstr "Internal"
 msgid "Interval (seconds)"
 msgstr "Interval (seconds)"
 
-#: src/components/config/global/network-system-card.tsx:70
+#: src/components/config/global/network-system-card.tsx:69
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 
-#: src/components/config/global/network-system-card.tsx:113
+#: src/components/config/global/network-system-card.tsx:112
 msgid "Interval between checks when a streamer is live to detect when the stream ends."
 msgstr "Interval between checks when a streamer is live to detect when the stream ends."
 
@@ -4426,10 +4426,6 @@ msgstr "Maximum compression to minimize storage usage, then delete original."
 msgid "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 msgstr "Maximum HEVC/H.265 compression (CRF 28) for minimal file size."
 
-#: src/components/config/global/network-system-card.tsx:289
-msgid "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
-msgstr "Maximum idle time between segments before the system starts a new recording session instead of continuing the current one."
-
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1110
 msgid "Maximum number of concurrent segment downloads."
 msgstr "Maximum number of concurrent segment downloads."
@@ -4668,7 +4664,7 @@ msgstr "Network"
 msgid "Network & Content"
 msgstr "Network & Content"
 
-#: src/components/config/global/network-system-card.tsx:42
+#: src/components/config/global/network-system-card.tsx:41
 msgid "Network & System"
 msgstr "Network & System"
 
@@ -4995,7 +4991,7 @@ msgstr "Not supported in this browser"
 msgid "Notification Events"
 msgstr "Notification Events"
 
-#: src/components/config/global/network-system-card.tsx:231
+#: src/components/config/global/network-system-card.tsx:230
 msgid "Notification Log Retention"
 msgstr "Notification Log Retention"
 
@@ -5003,7 +4999,7 @@ msgstr "Notification Log Retention"
 msgid "Notification permission not granted"
 msgstr "Notification permission not granted"
 
-#: src/components/config/global/network-system-card.tsx:239
+#: src/components/config/global/network-system-card.tsx:238
 msgid "Notification Retention"
 msgstr "Notification Retention"
 
@@ -5039,15 +5035,15 @@ msgstr "Nth output: {output0}, {output1}..."
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
-#: src/components/config/global/network-system-card.tsx:155
+#: src/components/config/global/network-system-card.tsx:154
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 msgstr "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 
-#: src/components/config/global/network-system-card.tsx:201
+#: src/components/config/global/network-system-card.tsx:200
 msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
 msgstr "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
 
-#: src/components/config/global/network-system-card.tsx:243
+#: src/components/config/global/network-system-card.tsx:242
 msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 msgstr "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
 
@@ -5107,8 +5103,8 @@ msgstr "Offline"
 msgid "OFFLINE"
 msgstr "OFFLINE"
 
-#: src/components/config/global/network-system-card.tsx:101
-#: src/components/config/global/network-system-card.tsx:109
+#: src/components/config/global/network-system-card.tsx:100
+#: src/components/config/global/network-system-card.tsx:108
 #: src/components/config/shared/offline-check-card.tsx:39
 msgid "Offline Check"
 msgstr "Offline Check"
@@ -5117,11 +5113,11 @@ msgstr "Offline Check"
 msgid "Offline Check Interval"
 msgstr "Offline Check Interval"
 
-#: src/components/config/global/network-system-card.tsx:151
+#: src/components/config/global/network-system-card.tsx:150
 msgid "Offline Detection"
 msgstr "Offline Detection"
 
-#: src/components/config/global/network-system-card.tsx:143
+#: src/components/config/global/network-system-card.tsx:142
 #: src/components/config/shared/offline-check-card.tsx:95
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
@@ -5978,7 +5974,7 @@ msgstr "Protocol Settings"
 msgid "Proxy"
 msgstr "Proxy"
 
-#: src/components/config/global/network-system-card.tsx:321
+#: src/components/config/global/network-system-card.tsx:274
 #: src/components/config/shared/proxy-settings-card.tsx:242
 msgid "Proxy Configuration"
 msgstr "Proxy Configuration"
@@ -6374,7 +6370,7 @@ msgstr "RESUMED START"
 msgid "Resuming in"
 msgstr "Resuming in"
 
-#: src/components/config/global/network-system-card.tsx:189
+#: src/components/config/global/network-system-card.tsx:188
 msgid "Retention Period"
 msgstr "Retention Period"
 
@@ -6874,10 +6870,6 @@ msgstr "Session Duration"
 msgid "SESSION ENDED"
 msgstr "SESSION ENDED"
 
-#: src/components/config/global/network-system-card.tsx:285
-msgid "Session Gap"
-msgstr "Session Gap"
-
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:140
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:367
 msgid "Session ID"
@@ -6894,10 +6886,6 @@ msgstr "Session is not running"
 #: src/components/sessions/session-card.tsx:254
 msgid "Session Menu"
 msgstr "Session Menu"
-
-#: src/components/config/global/network-system-card.tsx:277
-msgid "Session Merging Gap"
-msgstr "Session Merging Gap"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:190
 msgid "Session not found"
@@ -7234,8 +7222,8 @@ msgstr "Streamer"
 msgid "STREAMER"
 msgstr "STREAMER"
 
-#: src/components/config/global/network-system-card.tsx:58
-#: src/components/config/global/network-system-card.tsx:66
+#: src/components/config/global/network-system-card.tsx:57
+#: src/components/config/global/network-system-card.tsx:65
 msgid "Streamer Check"
 msgstr "Streamer Check"
 

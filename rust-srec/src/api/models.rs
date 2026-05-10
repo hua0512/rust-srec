@@ -246,7 +246,6 @@ pub struct GlobalConfigResponse {
     pub max_concurrent_io_jobs: u32,
     pub job_history_retention_days: u32,
     pub notification_event_log_retention_days: u32,
-    pub session_gap_time_secs: u64,
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,
@@ -288,8 +287,6 @@ pub struct UpdateGlobalConfigRequest {
     pub default_download_engine: Option<serde_json::Value>,
     pub record_danmu: Option<serde_json::Value>,
     pub proxy_config: Option<serde_json::Value>,
-    /// Session gap time in seconds
-    pub session_gap_time_secs: Option<serde_json::Value>,
     /// Global pipeline configuration (JSON serialized Vec<PipelineStep>)
     pub pipeline: Option<serde_json::Value>,
     /// Session-complete pipeline configuration (JSON serialized DagPipelineDefinition)

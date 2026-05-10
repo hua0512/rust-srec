@@ -35,3 +35,15 @@ happening.
   session detail data. This does not change how the timeline looks, but it
   makes the page more reliable when older or malformed event details are
   present.
+
+- **Removed an inactive session timing setting**
+
+  The old session gap time setting has been removed because it no longer
+  affected recordings. Stream ending is controlled by Offline Check Delay and
+  Offline Detection Count. Backups that still contain the old value continue to
+  import successfully, and the value is ignored.
+
+- **Queue freshness settings now save correctly**
+
+  Changes to the queue freshness threshold are now stored reliably, so rust-srec
+  keeps your chosen re-check timing after settings updates.

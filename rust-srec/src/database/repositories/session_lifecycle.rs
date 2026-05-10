@@ -38,15 +38,9 @@ use crate::session::events::{SessionEventPayload, TerminalCauseDto};
 
 /// Inputs required by [`SessionLifecycleRepository::start_or_resume`].
 ///
-/// Phase 3 of the hysteresis plan removed three fields that were vestigial
-/// once the lifecycle owns intermittent-stream handling:
-///
-/// - `gap_threshold_secs` — gap-resume retired; lifecycle handles
-///   intermittence via `Hysteresis` state instead.
-/// - `started_at` — fed only the continuation rule, also retired.
-/// - `hard_ended_session_id` — `SessionLifecycle::hard_ended` cache
-///   deleted; with no gap-resume, the DB's `end_time` is the source of
-///   truth and an explicit fence is unnecessary.
+/// Intermittent streams are handled by the lifecycle's `Hysteresis` state.
+/// This repository only reuses rows whose `end_time` is still `NULL`; ended
+/// DB rows are final, so a later live observation creates a fresh row.
 #[derive(Debug, Clone)]
 pub struct StartSessionInputs {
     pub streamer_id: String,
@@ -225,16 +219,15 @@ impl SessionLifecycleRepository {
             SessionEventTxOps::insert(&mut tx, &row).await?;
         }
 
-        // Two-branch decision (down from five pre-Phase-3):
+        // `end_time` decides the branch:
         //
-        //   - last session has `end_time IS NULL` → reuse it (ReusedActive)
-        //   - any other case (no prior session, or prior session is Ended)
-        //     → create a fresh session
+        //   - last session has `end_time IS NULL` -> reuse it (ReusedActive)
+        //   - no prior session or last session is ended -> create a fresh
+        //     session
         //
-        // No gap-resume rule, no continuation rule, no hard-ended fence.
-        // Intermittent-stream handling moved out of here entirely; it lives
-        // in `SessionLifecycle`'s Hysteresis state machine. The DB's
-        // `end_time` is the source of truth for "this recording is over."
+        // Intermittent-stream handling lives in `SessionLifecycle`'s
+        // Hysteresis state machine. The DB's `end_time` is the source of
+        // truth for "this recording is over."
         let outcome = match last {
             Some(session) if session.end_time.is_none() => {
                 debug!("Reusing active session {}", session.id);
@@ -713,8 +706,8 @@ mod tests {
 
     #[tokio::test]
     async fn start_or_resume_after_ended_creates_new_session() {
-        // Phase 3 simplification: with gap-resume retired, ANY ended session
-        // followed by a new LiveDetected creates a fresh session row.
+        // Ended sessions are terminal: any later LiveDetected creates a
+        // fresh session row.
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
         let started_at = Utc::now() - chrono::Duration::seconds(60);
@@ -1114,11 +1107,10 @@ mod tests {
     }
 
     // -------------------------------------------------------------------
-    // Suite Or — `end_for_disable` repository helper.
+    // `end_for_disable` repository helper.
     //
-    // Mirrors the lifecycle suite O but anchored at the repository tx
-    // boundary so we can spot-check atomicity, idempotency, and the
-    // audit-row payload shape independently of the FSM.
+    // Repository-level coverage for atomicity, idempotency, and the
+    // audit-row payload shape independently of the lifecycle FSM.
     // -------------------------------------------------------------------
 
     /// Or1 — `end_for_disable` writes `end_time`, inserts a

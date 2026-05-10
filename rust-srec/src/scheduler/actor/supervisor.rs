@@ -470,11 +470,10 @@ impl Supervisor {
         let mut forced_terminations = 0;
         let mut stop_message_failures = 0;
 
-        // Phase 1: Send Stop messages to all actors via priority channel
         // Using priority channel ensures Stop messages are processed promptly
         // even when actors are under backpressure
         info!(
-            "Phase 1: Sending Stop messages to {} actors via priority channel",
+            "Sending Stop messages to {} actors via priority channel",
             total_actors
         );
 
@@ -516,9 +515,8 @@ impl Supervisor {
             stop_message_failures
         );
 
-        // Phase 2: Wait for actors to complete with timeout
         info!(
-            "Phase 2: Waiting for actors to stop gracefully (timeout: {:?})",
+            "Waiting for actors to stop gracefully (timeout: {:?})",
             self.config.shutdown_timeout
         );
         let deadline = tokio::time::Instant::now() + self.config.shutdown_timeout;
@@ -532,8 +530,7 @@ impl Supervisor {
                         remaining
                     );
 
-                    // Phase 3: Forcefully terminate non-responsive actors
-                    info!("Phase 3: Forcefully terminating {} non-responsive actors", remaining);
+                    info!("Forcefully terminating {} non-responsive actors", remaining);
 
                     // First try cancellation tokens
                     self.registry.cancel_all();

@@ -215,7 +215,7 @@ impl RateLimiterManager {
         let platform_id = platform_id.to_string();
 
         loop {
-            // Phase 1: Check availability and try to acquire (with lock)
+            // Check availability and try to acquire with the lock held.
             let wait_duration = {
                 let mut limiters = self.limiters.lock().await;
                 let limiter = self.get_or_create_limiter(&mut limiters, &platform_id);
@@ -229,7 +229,7 @@ impl RateLimiterManager {
                 limiter.time_until_available()
             }; // Lock released here - CANCEL SAFE POINT
 
-            // Phase 2: Wait without holding the lock
+            // Wait without holding the lock.
             // If cancelled here, no state is corrupted
             trace!(
                 platform_id = %platform_id,
@@ -239,7 +239,6 @@ impl RateLimiterManager {
             tokio::time::sleep(wait_duration).await;
             total_wait += wait_duration;
 
-            // Phase 3: Loop back to try again
             // Another caller may have acquired the token, so we retry
         }
     }

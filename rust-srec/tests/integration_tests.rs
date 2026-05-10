@@ -146,6 +146,175 @@ mod database_tests {
     }
 
     #[tokio::test]
+    async fn test_global_config_schema_drops_session_gap_time() {
+        let pool = setup_test_db().await;
+
+        let column_names: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info('global_config')")
+                .fetch_all(&pool)
+                .await
+                .expect("Failed to inspect global_config columns");
+        let column_names: Vec<&str> = column_names.iter().map(String::as_str).collect();
+
+        assert!(
+            !column_names.contains(&"session_gap_time_secs"),
+            "session_gap_time_secs should not exist after migrations"
+        );
+        assert!(
+            column_names.contains(&"queue_freshness_threshold_ms"),
+            "latest global_config columns must be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remove_session_gap_time_migration_preserves_existing_row() {
+        let pool = init_pool("sqlite::memory:")
+            .await
+            .expect("Failed to create test pool");
+
+        sqlx::raw_sql(
+            r#"
+            CREATE TABLE global_config (
+                id TEXT PRIMARY KEY NOT NULL,
+                output_folder TEXT NOT NULL,
+                output_filename_template TEXT NOT NULL DEFAULT "{streamer}-%Y%m%d-%H%M%S-{title}",
+                output_file_format TEXT NOT NULL DEFAULT "flv",
+                min_segment_size_bytes INTEGER NOT NULL DEFAULT 1048576,
+                max_download_duration_secs INTEGER NOT NULL DEFAULT 0,
+                max_part_size_bytes BIGINT NOT NULL DEFAULT 8589934592,
+                record_danmu BOOLEAN NOT NULL DEFAULT FALSE,
+                max_concurrent_downloads INTEGER NOT NULL DEFAULT 6,
+                max_concurrent_uploads INTEGER NOT NULL DEFAULT 3,
+                streamer_check_delay_ms INTEGER NOT NULL DEFAULT 60000,
+                proxy_config TEXT NOT NULL,
+                offline_check_delay_ms INTEGER NOT NULL DEFAULT 20000,
+                offline_check_count INTEGER NOT NULL DEFAULT 3,
+                default_download_engine TEXT NOT NULL,
+                max_concurrent_cpu_jobs INTEGER NOT NULL DEFAULT 0,
+                max_concurrent_io_jobs INTEGER NOT NULL DEFAULT 8,
+                job_history_retention_days INTEGER NOT NULL DEFAULT 30,
+                notification_event_log_retention_days INTEGER NOT NULL DEFAULT 30,
+                session_gap_time_secs INTEGER NOT NULL DEFAULT 3600,
+                pipeline TEXT,
+                log_filter_directive TEXT NOT NULL DEFAULT 'rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info',
+                session_complete_pipeline TEXT,
+                paired_segment_pipeline TEXT,
+                auto_thumbnail BOOLEAN NOT NULL DEFAULT TRUE,
+                pipeline_cpu_job_timeout_secs INTEGER NOT NULL DEFAULT 3600,
+                pipeline_io_job_timeout_secs INTEGER NOT NULL DEFAULT 3600,
+                pipeline_execute_timeout_secs INTEGER NOT NULL DEFAULT 3600,
+                queue_freshness_threshold_ms INTEGER NOT NULL DEFAULT 60000
+            );
+
+            INSERT INTO global_config (
+                id,
+                output_folder,
+                output_filename_template,
+                output_file_format,
+                min_segment_size_bytes,
+                max_download_duration_secs,
+                max_part_size_bytes,
+                record_danmu,
+                max_concurrent_downloads,
+                max_concurrent_uploads,
+                streamer_check_delay_ms,
+                proxy_config,
+                offline_check_delay_ms,
+                offline_check_count,
+                default_download_engine,
+                max_concurrent_cpu_jobs,
+                max_concurrent_io_jobs,
+                job_history_retention_days,
+                notification_event_log_retention_days,
+                session_gap_time_secs,
+                pipeline,
+                log_filter_directive,
+                session_complete_pipeline,
+                paired_segment_pipeline,
+                auto_thumbnail,
+                pipeline_cpu_job_timeout_secs,
+                pipeline_io_job_timeout_secs,
+                pipeline_execute_timeout_secs,
+                queue_freshness_threshold_ms
+            ) VALUES (
+                'global-1',
+                '/custom/output',
+                '{streamer}',
+                'mp4',
+                2048,
+                3600,
+                4096,
+                TRUE,
+                9,
+                4,
+                45000,
+                '{"enabled":false,"url":null}',
+                15000,
+                5,
+                'ffmpeg',
+                2,
+                6,
+                14,
+                21,
+                1234,
+                '{"name":"global","steps":[]}',
+                'rust_srec=debug',
+                NULL,
+                NULL,
+                FALSE,
+                111,
+                222,
+                333,
+                444
+            );
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to seed previous global_config schema");
+
+        sqlx::raw_sql(include_str!(
+            "../migrations/20260510000000_remove_session_gap_time_secs.sql"
+        ))
+        .execute(&pool)
+        .await
+        .expect("Failed to run session_gap_time_secs removal migration");
+
+        let column_names: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_table_info('global_config')")
+                .fetch_all(&pool)
+                .await
+                .expect("Failed to inspect migrated global_config");
+        let column_names: Vec<&str> = column_names.iter().map(String::as_str).collect();
+        assert!(!column_names.contains(&"session_gap_time_secs"));
+
+        let row: (String, String, String, i64, i64, i64, bool) = sqlx::query_as(
+            r#"
+            SELECT
+                id,
+                output_folder,
+                default_download_engine,
+                offline_check_count,
+                pipeline_cpu_job_timeout_secs,
+                queue_freshness_threshold_ms,
+                auto_thumbnail
+            FROM global_config
+            "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("Failed to read migrated global_config row");
+
+        assert_eq!(row.0, "global-1");
+        assert_eq!(row.1, "/custom/output");
+        assert_eq!(row.2, "ffmpeg");
+        assert_eq!(row.3, 5);
+        assert_eq!(row.4, 111);
+        assert_eq!(row.5, 444);
+        assert!(!row.6);
+    }
+
+    #[tokio::test]
     async fn test_wal_mode_enabled() {
         let pool = setup_test_db().await;
 
@@ -1573,7 +1742,7 @@ mod end_to_end_tests {
         // Step 2: user disables — lifecycle tears down. (In production the
         // download's CleanDisconnect would have parked the session in
         // Hysteresis first; we test the simpler path here. The hysteresis
-        // path is covered by the lifecycle suite O.)
+        // path is covered by lifecycle unit tests for user-disabled teardown.)
         let resolved = lifecycle
             .end_for_disable(&streamer_id, "TestStreamer")
             .await

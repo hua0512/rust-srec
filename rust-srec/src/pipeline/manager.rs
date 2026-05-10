@@ -4954,19 +4954,19 @@ mod tests {
     }
 
     // =========================================================================
-    // Scenario suite F — pipeline ordering invariant.
+    // Pipeline ordering invariant.
     //
-    // Plan §F mandates: the session-complete DAG must run AFTER all per-segment
-    // and paired DAGs for that session finish. `SessionLifecycle::Ended` means
+    // The session-complete DAG must run AFTER all per-segment and paired DAGs
+    // for that session finish. `SessionLifecycle::Ended` means
     // "no more bytes will arrive"; it does NOT mean "all post-processing is
     // done". The drain-before-fire check lives in the `SessionCompleteCoordinator`
     // (see pipeline/coordination.rs), but the entry point through
     // `handle_session_transition` must honour it.
     //
-    // Most of suite F is already covered by the existing handler tests above
-    // (Cancelled/Rejected non-fire, Failed fires, DAG completion triggers,
-    // paired-segment flow). The scenarios below cover the specific integration
-    // of `SessionTransition::Ended` with in-flight per-segment DAGs.
+    // Existing handler tests above cover Cancelled/Rejected non-fire, Failed
+    // fires, DAG completion triggers, and paired-segment flow. The scenarios
+    // below cover the specific integration of `SessionTransition::Ended` with
+    // in-flight per-segment DAGs.
     // =========================================================================
 
     /// F1 — Session-complete DAG waits for in-flight per-segment video DAGs.

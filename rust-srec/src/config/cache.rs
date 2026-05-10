@@ -326,7 +326,6 @@ mod tests {
                 false,
                 ProxyConfig::disabled(),
                 "ffmpeg".to_string(),
-                300,  // session_gap_time_secs
                 None, // pipeline
                 None, // session_complete_pipeline
                 None, // paired_segment_pipeline

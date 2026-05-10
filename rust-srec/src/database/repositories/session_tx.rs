@@ -233,31 +233,6 @@ impl SessionTxOps {
 
         Ok(needs_update)
     }
-
-    /// Helper: Determine if a session should be resumed based on gap time.
-    ///
-    /// Returns true if the session ended recently enough to resume.
-    pub fn should_resume_by_gap(
-        session_end_time: DateTime<Utc>,
-        now: DateTime<Utc>,
-        gap_threshold_secs: i64,
-    ) -> bool {
-        let offline_duration_secs = (now - session_end_time).num_seconds();
-        offline_duration_secs < gap_threshold_secs
-    }
-
-    /// Helper: Determine if a session should be resumed because stream is a continuation.
-    ///
-    /// Returns true if the stream started before or when the session ended,
-    /// indicating the stream was actually continuous (monitoring gap).
-    pub fn should_resume_by_continuation(
-        session_end_time: DateTime<Utc>,
-        stream_started_at: Option<DateTime<Utc>>,
-    ) -> bool {
-        stream_started_at
-            .map(|start| start <= session_end_time)
-            .unwrap_or(false)
-    }
 }
 
 #[cfg(test)]
@@ -403,39 +378,5 @@ mod tests {
         .unwrap();
         tx.commit().await.unwrap();
         assert!(updated);
-    }
-
-    #[test]
-    fn test_should_resume_by_gap() {
-        let now = Utc::now();
-        let end_time = now - chrono::Duration::seconds(30);
-
-        // 30 seconds offline, 60 second threshold -> should resume
-        assert!(SessionTxOps::should_resume_by_gap(end_time, now, 60));
-
-        // 30 seconds offline, 20 second threshold -> should not resume
-        assert!(!SessionTxOps::should_resume_by_gap(end_time, now, 20));
-    }
-
-    #[test]
-    fn test_should_resume_by_continuation() {
-        let end_time = Utc::now();
-        let before_end = end_time - chrono::Duration::minutes(5);
-        let after_end = end_time + chrono::Duration::minutes(5);
-
-        // Stream started before session ended -> continuation
-        assert!(SessionTxOps::should_resume_by_continuation(
-            end_time,
-            Some(before_end)
-        ));
-
-        // Stream started after session ended -> not continuation
-        assert!(!SessionTxOps::should_resume_by_continuation(
-            end_time,
-            Some(after_end)
-        ));
-
-        // No started_at -> not continuation
-        assert!(!SessionTxOps::should_resume_by_continuation(end_time, None));
     }
 }

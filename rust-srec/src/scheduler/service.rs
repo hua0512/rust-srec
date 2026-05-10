@@ -701,7 +701,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     async fn handle_config_event(&mut self, event: ConfigUpdateEvent) {
         debug!("Handling config event: {}", event.description());
 
-        // Phase 1: event-specific handling + early returns.
+        // Handle event-specific side effects and early returns first.
         match &event {
             ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => {
                 // Filters can affect OutOfSchedule smart-wake hints. Force a fresh check soon so
@@ -739,14 +739,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         let scope = ConfigScope::from_event(&event);
 
-        // Phase 2: ensure actor state/platform mapping for streamer-scoped updates.
+        // Ensure actor state/platform mapping for streamer-scoped updates.
         if let ConfigScope::Streamer(streamer_id) = &scope
             && !self.ensure_streamer_actor_state(streamer_id)
         {
             return;
         }
 
-        // Phase 3: route config + sync restart caches.
         // Snapshot semantics: compute once, update restart caches, then deliver.
         //
         // Note: we intentionally keep the router borrows scoped to avoid holding an immutable
