@@ -471,17 +471,11 @@ fn build_interval(secs: u64) -> tokio::time::Interval {
     ticker
 }
 
-/// Truncate a string to at most `max` characters, appending `…` when
-/// truncation occurs. Bounds the snapshot footprint regardless of
-/// upstream output size.
+/// Trim trailing whitespace (nvidia-smi output ends in `\n`) and clamp
+/// to at most `MAX_DIAG_CHARS` so an unbounded driver error can never
+/// blow up the snapshot footprint.
 fn truncate(s: &str, max: usize) -> String {
-    let trimmed = s.trim();
-    if trimmed.chars().count() <= max {
-        trimmed.to_string()
-    } else {
-        let head: String = trimmed.chars().take(max).collect();
-        format!("{head}…")
-    }
+    crate::utils::text::truncate_chars(s.trim(), max)
 }
 
 #[cfg(test)]
