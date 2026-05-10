@@ -202,31 +202,32 @@ pub struct OutboxEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::models::StreamerDbModel;
+    use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository as _};
+    use crate::database::{init_pool_with_size, run_migrations};
     use crate::domain::StreamerState;
     use sqlx::SqlitePool;
 
     async fn setup_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-
-        sqlx::query(
-            r#"
-            CREATE TABLE monitor_event_outbox (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                streamer_id TEXT NOT NULL,
-                event_type TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                delivered_at INTEGER,
-                attempts INTEGER DEFAULT 0,
-                last_error TEXT
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        for id in ["test-1", "s1", "s2", "s3", "s0"] {
+            insert_streamer(&pool, id).await;
+        }
         pool
+    }
+
+    async fn insert_streamer(pool: &SqlitePool, id: &str) {
+        let mut streamer = StreamerDbModel::new(
+            format!("Streamer {id}"),
+            format!("https://example.com/{id}"),
+            "platform-twitch",
+        );
+        streamer.id = id.to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&streamer)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

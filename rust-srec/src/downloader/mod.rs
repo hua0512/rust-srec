@@ -18,7 +18,7 @@ mod stream_selector;
 
 pub use engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
-    IoErrorKindSer, SegmentEvent, SegmentInfo,
+    DownloadProtocol, IoErrorKindSer, SegmentEvent, SegmentInfo,
 };
 
 pub use output_root_gate::{

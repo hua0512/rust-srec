@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::streamer::StreamerState;
 use crate::domain::value_objects::Priority;
+use crate::session::SessionEventPayload;
 use crate::utils::json::deserialize_field_present_nullable;
 
 // ============================================================================
@@ -772,10 +773,10 @@ pub struct SessionEventResponse {
     /// `session_resumed`, or `session_ended`.
     pub kind: String,
     pub occurred_at: DateTime<Utc>,
-    /// Parsed JSON payload. `None` when the underlying row had no payload
-    /// or when the payload failed to parse — the frontend treats both the
-    /// same (renders the row with kind only).
-    pub payload: Option<serde_json::Value>,
+    /// Typed payload. `None` when the underlying row had no payload or when
+    /// the payload failed to parse — the frontend treats both the same
+    /// (renders the row with kind only).
+    pub payload: Option<SessionEventPayload>,
 }
 
 /// One row of the streamer's per-poll check history. Powers the bars on the

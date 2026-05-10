@@ -41,8 +41,8 @@ use crate::database::repositories::{
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
     DEFAULT_GATE_COOLDOWN_SECS, DownloadConfig, DownloadManager, DownloadManagerConfig,
-    DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent, LAST_ERROR_GATE_PREFIX,
-    OutputRootGate, RecoveryHook, engine::DownloadProgress,
+    DownloadManagerEvent, DownloadProgressEvent, DownloadProtocol, DownloadTerminalEvent,
+    LAST_ERROR_GATE_PREFIX, OutputRootGate, RecoveryHook, engine::DownloadProgress,
 };
 use crate::logging::LoggingConfig;
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
@@ -510,9 +510,11 @@ impl ServiceContainer {
         ));
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
-                Arc::new(crate::session::SessionLifecycleRepository::new(
-                    write_pool.clone(),
-                )),
+                Arc::new(
+                    crate::database::repositories::SessionLifecycleRepository::new(
+                        write_pool.clone(),
+                    ),
+                ),
                 offline_classifier,
                 crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
                 hysteresis_config,
@@ -826,9 +828,11 @@ impl ServiceContainer {
         ));
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
-                Arc::new(crate::session::SessionLifecycleRepository::new(
-                    write_pool.clone(),
-                )),
+                Arc::new(
+                    crate::database::repositories::SessionLifecycleRepository::new(
+                        write_pool.clone(),
+                    ),
+                ),
                 offline_classifier,
                 crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
                 hysteresis_config,
@@ -3992,6 +3996,7 @@ async fn run_live_download_pipeline(
             .replace("{platform}", platform),
     )
     .with_output_format(&merged_config.output_file_format)
+    .with_protocol(DownloadProtocol::from_format_label(stream_format))
     .with_max_segment_duration(merged_config.max_download_duration_secs as u64)
     .with_max_segment_size(merged_config.max_part_size_bytes as u64)
     .with_engines_override(merged_config.engines_override.clone());

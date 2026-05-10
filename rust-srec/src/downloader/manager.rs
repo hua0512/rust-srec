@@ -17,8 +17,8 @@ use tracing::{debug, error, info, warn};
 
 use super::engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
-    DownloadProgress, DownloadStatus, EngineStartError, EngineType, FfmpegEngine, IoErrorKindSer,
-    MesioEngine, SegmentEvent, StreamlinkEngine,
+    DownloadProgress, DownloadProtocol, DownloadStatus, EngineStartError, EngineType, FfmpegEngine,
+    IoErrorKindSer, MesioEngine, SegmentEvent, StreamlinkEngine,
 };
 use super::output_root_gate::OutputRootGate;
 use super::queue::{
@@ -454,6 +454,11 @@ pub enum DownloadTerminalEvent {
         streamer_id: String,
         streamer_name: String,
         session_id: String,
+        engine_type: EngineType,
+        /// Selected stream protocol. Mesio uses one engine type for both
+        /// HLS and FLV, so lifecycle needs this to classify failures without
+        /// guessing.
+        protocol: DownloadProtocol,
         kind: DownloadFailureKind,
         error: String,
         recoverable: bool,
@@ -1442,6 +1447,7 @@ impl DownloadManager {
         let streamer_id = config.streamer_id.clone();
         let streamer_name = config.streamer_name.clone();
         let session_id = config.session_id.clone();
+        let protocol = config.protocol;
 
         // Clone references for the spawned task
         let active_downloads = self.active_downloads.clone();
@@ -1662,6 +1668,8 @@ impl DownloadManager {
                                 streamer_id: streamer_id.clone(),
                                 streamer_name: streamer_name.clone(),
                                 session_id: session_id.clone(),
+                                engine_type,
+                                protocol,
                                 kind,
                                 error: message,
                                 recoverable,

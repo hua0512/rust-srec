@@ -4721,8 +4721,10 @@ mod tests {
     // Cancelled and Rejected should not).
     // -----------------------------------------------------------------------
 
+    use crate::downloader::engine::EngineType;
     use crate::downloader::{
-        DownloadFailureKind, DownloadRejectedKind, DownloadStopCause, EngineEndSignal,
+        DownloadFailureKind, DownloadProtocol, DownloadRejectedKind, DownloadStopCause,
+        EngineEndSignal,
     };
 
     fn completed_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
@@ -4745,6 +4747,8 @@ mod tests {
             streamer_id: streamer_id.to_string(),
             streamer_name: "tester".to_string(),
             session_id: session_id.to_string(),
+            engine_type: EngineType::Ffmpeg,
+            protocol: DownloadProtocol::Unknown,
             kind: DownloadFailureKind::Network,
             error: "stalled".to_string(),
             recoverable: false,

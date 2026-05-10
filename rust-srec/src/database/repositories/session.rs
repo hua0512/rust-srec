@@ -752,31 +752,31 @@ impl SessionRepository for SqlxSessionRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::models::Pagination;
+    use crate::database::models::{LiveSessionDbModel, Pagination, StreamerDbModel};
+    use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository as _};
+    use crate::database::{init_pool_with_size, run_migrations};
 
     async fn setup_test_repo() -> SqlxSessionRepository {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
 
-        sqlx::query(
-            r#"
-            CREATE TABLE session_segments (
-                id TEXT PRIMARY KEY NOT NULL,
-                session_id TEXT NOT NULL,
-                segment_index INTEGER NOT NULL,
-                file_path TEXT NOT NULL,
-                duration_secs REAL NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                split_reason_code TEXT,
-                split_reason_details_json TEXT,
-                created_at INTEGER,
-                completed_at INTEGER,
-                persisted_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+        let mut streamer = StreamerDbModel::new(
+            "Streamer One",
+            "https://example.com/streamer-1",
+            "platform-twitch",
+        );
+        streamer.id = "streamer-1".to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&streamer)
+            .await
+            .unwrap();
+
+        let mut session = LiveSessionDbModel::new("streamer-1");
+        session.id = "session-1".to_string();
+        SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .create_session(&session)
+            .await
+            .unwrap();
 
         SqlxSessionRepository::new(pool.clone(), pool)
     }

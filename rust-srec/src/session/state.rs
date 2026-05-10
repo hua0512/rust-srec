@@ -10,8 +10,8 @@
 //!   same streamer inside the window cancels the hysteresis timer and
 //!   transitions back to `Recording`. The window expiring without a resume
 //!   transitions to `Ended`. An authoritative end signal (danmu close,
-//!   playlist 404) arriving during hysteresis cancels the timer and
-//!   transitions directly to `Ended`.
+//!   consecutive Mesio network failures) arriving during hysteresis cancels
+//!   the timer and transitions directly to `Ended`.
 //! - **`Ended`** — the recording is finished. DB `end_time` is set; the
 //!   session-complete pipeline DAG fires (gated on the cause's
 //!   [`TerminalCause::should_run_session_complete_pipeline`] policy).
@@ -211,7 +211,7 @@ pub enum TerminalCause {
     /// Monitor authoritatively determined the streamer went offline.
     StreamerOffline,
     /// A definitive offline signal observed at the engine boundary
-    /// (e.g. HLS playlist 404, danmu stream closed, repeated stalls).
+    /// (e.g. danmu stream closed, repeated Mesio network failures).
     /// Bypasses backoff for the session-end write.
     DefinitiveOffline { signal: OfflineSignal },
     /// User explicitly disabled (or deleted) the streamer.
@@ -221,6 +221,14 @@ pub enum TerminalCause {
     /// processing), and suppresses the user-facing `StreamOffline`
     /// notification (the user knows they disabled it).
     UserDisabled,
+    /// Recording stopped because the stream is still live but outside the
+    /// configured recording schedule.
+    ///
+    /// Authoritative tear-down: bypasses hysteresis, runs the
+    /// session-complete pipeline for captured bytes, and suppresses the
+    /// user-facing `StreamOffline` notification because the platform did
+    /// not report the stream offline.
+    OutOfSchedule,
 }
 
 impl TerminalCause {
@@ -236,7 +244,9 @@ impl TerminalCause {
     /// - [`Self::Rejected`]: no — never started, no outputs to process.
     /// - [`Self::StreamerOffline`]: yes — monitor said the streamer went offline.
     /// - [`Self::DefinitiveOffline`]: yes — engine boundary saw a definitive
-    ///   offline signal (e.g. playlist 404).
+    ///   offline signal.
+    /// - [`Self::UserDisabled`]: yes — user-initiated tear-down, outputs final.
+    /// - [`Self::OutOfSchedule`]: yes — policy tear-down, outputs final.
     pub fn should_run_session_complete_pipeline(&self) -> bool {
         matches!(
             self,
@@ -245,6 +255,7 @@ impl TerminalCause {
                 | Self::StreamerOffline
                 | Self::DefinitiveOffline { .. }
                 | Self::UserDisabled
+                | Self::OutOfSchedule
         )
     }
 
@@ -275,6 +286,9 @@ impl TerminalCause {
             // User-initiated tear-down. Always authoritative — the user said
             // stop, so we don't wait for hysteresis.
             Self::UserDisabled => true,
+            // Policy-initiated tear-down. The schedule window closed, so the
+            // recording must stop even if the upstream stream is still live.
+            Self::OutOfSchedule => true,
             // Default: not authoritative without an engine signal.
             Self::Completed => false,
             Self::Failed { .. } => false,
@@ -312,6 +326,7 @@ impl TerminalCause {
             Self::StreamerOffline => "streamer_offline",
             Self::DefinitiveOffline { .. } => "definitive_offline",
             Self::UserDisabled => "user_disabled",
+            Self::OutOfSchedule => "out_of_schedule",
         }
     }
 }
@@ -322,7 +337,7 @@ impl TerminalCause {
 /// Today the variants cover only signals strong enough to skip the
 /// monitor-side re-check loop. Lower-confidence signals stay in the existing
 /// hysteresis machinery on `StreamerActor`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OfflineSignal {
     /// Danmu websocket sent an explicit stream-closed control frame.
@@ -437,11 +452,25 @@ mod tests {
     }
 
     #[test]
+    fn terminal_cause_out_of_schedule_runs_session_complete_pipeline() {
+        // Schedule-initiated tear-down: captured bytes deserve processing.
+        assert!(TerminalCause::OutOfSchedule.should_run_session_complete_pipeline());
+    }
+
+    #[test]
     fn terminal_cause_user_disabled_is_authoritative() {
         // The user said stop. Don't wait for hysteresis.
         assert!(TerminalCause::UserDisabled.is_authoritative_end());
         assert!(TerminalCause::UserDisabled.is_authoritative_end_with_signal(None));
         assert_eq!(TerminalCause::UserDisabled.as_str(), "user_disabled");
+    }
+
+    #[test]
+    fn terminal_cause_out_of_schedule_is_authoritative() {
+        // The schedule said stop. Don't wait for hysteresis.
+        assert!(TerminalCause::OutOfSchedule.is_authoritative_end());
+        assert!(TerminalCause::OutOfSchedule.is_authoritative_end_with_signal(None));
+        assert_eq!(TerminalCause::OutOfSchedule.as_str(), "out_of_schedule");
     }
 
     #[test]
@@ -532,6 +561,8 @@ mod tests {
             .as_str(),
             "definitive_offline"
         );
+        assert_eq!(TerminalCause::UserDisabled.as_str(), "user_disabled");
+        assert_eq!(TerminalCause::OutOfSchedule.as_str(), "out_of_schedule");
     }
 
     #[test]

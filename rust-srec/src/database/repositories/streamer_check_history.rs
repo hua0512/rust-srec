@@ -166,52 +166,27 @@ impl StreamerCheckHistoryRepository for SqlxStreamerCheckHistoryRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::models::StreamerDbModel;
     use crate::database::models::streamer_check_history::outcome;
+    use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository as _};
+    use crate::database::{init_pool_with_size, run_migrations};
     use sqlx::SqlitePool;
 
     async fn setup_pool() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        // Minimal schema: just `streamers` (so the FK target exists) and
-        // `streamer_check_history`. Mirrors the columns defined in
-        // `migrations/20260503120000_add_streamer_check_history.sql`.
-        sqlx::query(
-            r#"CREATE TABLE streamers (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            r#"CREATE TABLE streamer_check_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                streamer_id TEXT NOT NULL,
-                checked_at INTEGER NOT NULL,
-                duration_ms INTEGER NOT NULL,
-                outcome TEXT NOT NULL CHECK (outcome IN (
-                    'live','offline','filtered','transient_error','fatal_error'
-                )),
-                fatal_kind TEXT,
-                filter_reason TEXT,
-                error_message TEXT,
-                streams_extracted INTEGER NOT NULL DEFAULT 0,
-                stream_selected TEXT,
-                streams_extracted_json TEXT,
-                title TEXT,
-                category TEXT,
-                viewer_count INTEGER,
-                FOREIGN KEY (streamer_id) REFERENCES streamers(id) ON DELETE CASCADE
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query("INSERT INTO streamers (id, name) VALUES ('s1','Alice')")
-            .execute(&pool)
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        create_streamer(&pool, "s1", "Alice").await;
+        pool
+    }
+
+    async fn create_streamer(pool: &SqlitePool, id: &str, name: &str) {
+        let mut streamer =
+            StreamerDbModel::new(name, format!("https://example.com/{id}"), "platform-twitch");
+        streamer.id = id.to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&streamer)
             .await
             .unwrap();
-        pool
     }
 
     fn row(outcome_str: &str, checked_at: i64) -> StreamerCheckHistoryDbModel {
@@ -322,10 +297,7 @@ mod tests {
     #[tokio::test]
     async fn isolated_per_streamer() {
         let pool = setup_pool().await;
-        sqlx::query("INSERT INTO streamers (id, name) VALUES ('s2','Bob')")
-            .execute(&pool)
-            .await
-            .unwrap();
+        create_streamer(&pool, "s2", "Bob").await;
         let repo = SqlxStreamerCheckHistoryRepository::new(pool.clone(), pool.clone());
 
         repo.insert(&row(outcome::LIVE, 100)).await.unwrap();
@@ -349,15 +321,8 @@ mod tests {
 
         repo.insert(&row(outcome::LIVE, 100)).await.unwrap();
 
-        // SQLite needs `PRAGMA foreign_keys = ON` per connection for the
-        // cascade to fire. Production sets it at connect time; the in-memory
-        // test pool needs it explicitly.
-        sqlx::query("PRAGMA foreign_keys = ON")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("DELETE FROM streamers WHERE id = 's1'")
-            .execute(&pool)
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .delete_streamer("s1")
             .await
             .unwrap();
 

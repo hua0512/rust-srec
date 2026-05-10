@@ -26,6 +26,7 @@ export const TerminalCauseDtoSchema = z.discriminatedUnion('type', [
     signal: OfflineSignalSchema,
   }),
   z.object({ type: z.literal('user_disabled') }),
+  z.object({ type: z.literal('out_of_schedule') }),
 ]);
 export type TerminalCauseDto = z.infer<typeof TerminalCauseDtoSchema>;
 

@@ -1041,64 +1041,29 @@ impl DagRepository for SqlxDagRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::models::{DagPipelineDefinition, DagStep, PipelineStep};
+    use crate::database::models::{DagPipelineDefinition, DagStep, JobDbModel, PipelineStep};
+    use crate::database::repositories::{JobRepository as _, SqlxJobRepository};
+    use crate::database::{init_pool_with_size, run_migrations};
 
     async fn setup_test_pool() -> SqlitePool {
-        let pool = SqlitePool::connect(":memory:").await.unwrap();
-
-        // Create DAG tables
-        sqlx::query(
-            r#"
-            CREATE TABLE dag_execution (
-                id TEXT PRIMARY KEY,
-                dag_definition TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'PENDING',
-                streamer_id TEXT,
-                session_id TEXT,
-                segment_index INTEGER,
-                segment_source TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                completed_at INTEGER,
-                error TEXT,
-                total_steps INTEGER NOT NULL,
-                completed_steps INTEGER NOT NULL DEFAULT 0,
-                failed_steps INTEGER NOT NULL DEFAULT 0
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"
-            CREATE TABLE dag_step_execution (
-                id TEXT PRIMARY KEY,
-                dag_id TEXT NOT NULL,
-                step_id TEXT NOT NULL,
-                job_id TEXT,
-                status TEXT NOT NULL DEFAULT 'BLOCKED',
-                depends_on_step_ids TEXT NOT NULL DEFAULT '[]',
-                outputs TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                FOREIGN KEY (dag_id) REFERENCES dag_execution(id) ON DELETE CASCADE,
-                UNIQUE (dag_id, step_id)
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
         pool
+    }
+
+    async fn create_job(pool: &SqlitePool, id: &str) {
+        let mut job = JobDbModel::new("test-job", "{}");
+        job.id = id.to_string();
+        SqlxJobRepository::new(pool.clone(), pool.clone())
+            .create_job(&job)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
     async fn test_create_and_get_dag() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool.clone(), pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
 
         let dag_def = DagPipelineDefinition::new(
             "test-dag",
@@ -1118,7 +1083,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_get_steps() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool.clone(), pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
 
         let dag_def = DagPipelineDefinition::new(
             "test-dag",
@@ -1162,7 +1127,7 @@ mod tests {
     #[tokio::test]
     async fn test_complete_step_and_check_dependents() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool.clone(), pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
 
         // Create DAG: A -> B
         let dag_def = DagPipelineDefinition::new(
@@ -1202,7 +1167,7 @@ mod tests {
     #[tokio::test]
     async fn test_fan_in_complete() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool.clone(), pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
 
         // Create DAG: [A, B] -> C (fan-in)
         let dag_def = DagPipelineDefinition::new(
@@ -1254,7 +1219,7 @@ mod tests {
     #[tokio::test]
     async fn test_complete_step_is_idempotent() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool.clone(), pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
 
         // Create DAG: A -> B
         let dag_def = DagPipelineDefinition::new(
@@ -1306,7 +1271,7 @@ mod tests {
     #[tokio::test]
     async fn test_fail_dag_and_cancel_steps() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool.clone(), pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
 
         // Create DAG: A -> B -> C
         let dag_def = DagPipelineDefinition::new(
@@ -1363,7 +1328,7 @@ mod tests {
     #[tokio::test]
     async fn test_fail_dag_cancels_processing_steps() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool.clone(), pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
 
         // Create DAG: A -> B
         let dag_def = DagPipelineDefinition::new(
@@ -1389,6 +1354,7 @@ mod tests {
         repo.create_steps(&[step_a, step_b]).await.unwrap();
 
         // Simulate an in-flight job for step B.
+        create_job(&pool, "job-b").await;
         repo.update_step_status_with_job(&step_b_id, "PROCESSING", "job-b")
             .await
             .unwrap();
@@ -1412,7 +1378,7 @@ mod tests {
     #[tokio::test]
     async fn test_cancel_dag_and_cancel_steps_marks_parent_cancelled() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool.clone(), pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
 
         let dag_def = DagPipelineDefinition::new(
             "test-dag",
@@ -1435,6 +1401,7 @@ mod tests {
         let step_b_id = step_b.id.clone();
 
         repo.create_steps(&[step_a, step_b]).await.unwrap();
+        create_job(&pool, "job-b").await;
         repo.update_step_status_with_job(&step_b_id, "PROCESSING", "job-b")
             .await
             .unwrap();
@@ -1456,7 +1423,7 @@ mod tests {
     #[tokio::test]
     async fn test_reset_dag_for_retry_unblocks_downstream() {
         let pool = setup_test_pool().await;
-        let repo = SqlxDagRepository::new(pool.clone(), pool);
+        let repo = SqlxDagRepository::new(pool.clone(), pool.clone());
 
         // Create DAG: A -> B
         let dag_def = DagPipelineDefinition::new(
@@ -1483,6 +1450,7 @@ mod tests {
         repo.create_steps(&[step_a, step_b]).await.unwrap();
 
         // Mimic a failed DAG: A failed, B cancelled by fail-fast.
+        create_job(&pool, "job-a").await;
         repo.update_step_status_with_job(&step_a_id, "PROCESSING", "job-a")
             .await
             .unwrap();

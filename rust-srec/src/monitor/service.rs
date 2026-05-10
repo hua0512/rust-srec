@@ -906,7 +906,8 @@ impl<
         _title: String,
         _category: Option<String>,
     ) -> Result<()> {
-        let (new_state, state_change_reason) = match reason {
+        let is_out_of_schedule = matches!(&reason, FilterReason::OutOfSchedule { .. });
+        let (new_state, state_change_reason) = match &reason {
             FilterReason::OutOfSchedule { .. } => (
                 StreamerState::OutOfSchedule,
                 Some("out_of_schedule".to_string()),
@@ -927,7 +928,26 @@ impl<
             }
         };
 
-        if streamer.state == new_state {
+        if streamer.state == new_state && !is_out_of_schedule {
+            return Ok(());
+        }
+
+        if is_out_of_schedule
+            && streamer.state == StreamerState::OutOfSchedule
+            && !self
+                .session_lifecycle
+                .has_active_session_for_streamer(&streamer.id)
+            && self
+                .session_repo
+                .get_active_session_for_streamer(&streamer.id)
+                .await?
+                .is_none()
+        {
+            debug!(
+                streamer_id = %streamer.id,
+                streamer_name = %streamer.name,
+                "out-of-schedule recheck already settled; skipping lifecycle write"
+            );
             return Ok(());
         }
 
@@ -939,22 +959,21 @@ impl<
             "filtered; updating state"
         );
 
+        if is_out_of_schedule {
+            self.session_lifecycle
+                .end_for_out_of_schedule(&streamer.id, &streamer.name, streamer.state)
+                .await?;
+
+            self.reload_streamer_cache(&streamer.id, "state update")
+                .await;
+            self.notify_outbox();
+
+            return Ok(());
+        }
+
         let now = chrono::Utc::now();
 
         let mut tx = self.begin_immediate().await?;
-
-        // If the streamer is filtered due to schedule, end any active session.
-        //
-        // This supports time-based filters: when the schedule window ends while we are
-        // actively recording, we intentionally end the session (without pretending the
-        // stream went offline) and suppress session resumption by gap when the schedule
-        // opens again.
-        let ended_session_id = match reason {
-            FilterReason::OutOfSchedule { .. } => {
-                SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?
-            }
-            _ => None,
-        };
 
         StreamerTxOps::update_state(&mut tx, &streamer.id, &new_state.to_string()).await?;
 
@@ -971,13 +990,6 @@ impl<
         MonitorOutboxTxOps::enqueue_event(&mut tx, &streamer.id, &event).await?;
 
         tx.commit().await?;
-
-        // Phase 3 hysteresis plan removed `mark_hard_ended` — once gap-resume
-        // is gone, the DB's `end_time` is the source of truth and an
-        // explicit fence is unnecessary. The `ended_session_id` here is
-        // already in `Ended` state in the DB; the next `LiveDetected`
-        // will create a fresh session as expected.
-        let _ = ended_session_id;
 
         self.reload_streamer_cache(&streamer.id, "state update")
             .await;
@@ -1357,130 +1369,43 @@ mod tests {
 
     use std::sync::Arc;
 
-    use sqlx::{Row, SqlitePool};
+    use sqlx::SqlitePool;
 
     use crate::config::{ConfigEventBroadcaster, ConfigService};
-    use crate::database::models::StreamerDbModel;
+    use crate::database::models::{LiveSessionDbModel, StreamerDbModel};
     use crate::database::repositories::{
-        MonitorOutboxOps, SqlxConfigRepository, SqlxFilterRepository, SqlxSessionRepository,
-        SqlxStreamerRepository,
+        MonitorOutboxOps, SessionEventRepository as _, SqlxConfigRepository, SqlxFilterRepository,
+        SqlxSessionEventRepository, SqlxSessionRepository, SqlxStreamerRepository,
     };
+    use crate::database::{init_pool_with_size, run_migrations};
+    use crate::session::{SessionEventPayload, TerminalCauseDto};
     use crate::streamer::StreamerManager;
 
     async fn setup_monitor_test_db() -> SqlitePool {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-
-        sqlx::query(
-            r#"
-            CREATE TABLE streamers (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                url TEXT NOT NULL,
-                platform_config_id TEXT NOT NULL,
-                template_config_id TEXT,
-                state TEXT NOT NULL DEFAULT 'NOT_LIVE',
-                priority TEXT NOT NULL DEFAULT 'NORMAL',
-                avatar TEXT,
-                last_live_time INTEGER,
-                streamer_specific_config TEXT,
-                consecutive_error_count INTEGER DEFAULT 0,
-                disabled_until INTEGER,
-                last_error TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"
-            CREATE TABLE live_sessions (
-                id TEXT PRIMARY KEY,
-                streamer_id TEXT NOT NULL,
-                start_time INTEGER NOT NULL,
-                end_time INTEGER,
-                titles TEXT,
-                danmu_statistics_id TEXT,
-                total_size_bytes INTEGER DEFAULT 0
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        // Mirror the production partial unique index so multi-active-row
-        // states have to be deliberately seeded by tests that need them.
-        sqlx::query(
-            r#"CREATE UNIQUE INDEX live_sessions_one_active_per_streamer
-                ON live_sessions (streamer_id) WHERE end_time IS NULL"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"
-            CREATE TABLE media_outputs (
-                id TEXT PRIMARY KEY,
-                session_id TEXT,
-                size_bytes INTEGER DEFAULT 0
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"
-            CREATE TABLE monitor_event_outbox (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                streamer_id TEXT NOT NULL,
-                event_type TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                created_at INTEGER NOT NULL,
-                delivered_at INTEGER,
-                attempts INTEGER DEFAULT 0,
-                last_error TEXT
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        // Mirror the production migration so atomic-tx audit-row writes
-        // inside `SessionLifecycleRepository::end` succeed.
-        sqlx::query(
-            r#"
-            CREATE TABLE session_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                streamer_id TEXT NOT NULL,
-                kind TEXT NOT NULL CHECK (kind IN (
-                    'session_started',
-                    'hysteresis_entered',
-                    'session_resumed',
-                    'session_ended'
-                )),
-                occurred_at INTEGER NOT NULL,
-                payload TEXT,
-                FOREIGN KEY (session_id) REFERENCES live_sessions(id) ON DELETE CASCADE
-            )
-            "#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
         pool
     }
 
     async fn build_test_monitor(
         pool: &SqlitePool,
+    ) -> StreamMonitor<
+        SqlxStreamerRepository,
+        SqlxFilterRepository,
+        SqlxSessionRepository,
+        SqlxConfigRepository,
+    > {
+        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
+            Arc::new(crate::database::repositories::SessionLifecycleRepository::new(pool.clone())),
+            Arc::new(crate::session::OfflineClassifier::new()),
+        ));
+
+        build_test_monitor_with_lifecycle(pool, session_lifecycle).await
+    }
+
+    async fn build_test_monitor_with_lifecycle(
+        pool: &SqlitePool,
+        session_lifecycle: Arc<crate::session::SessionLifecycle>,
     ) -> StreamMonitor<
         SqlxStreamerRepository,
         SqlxFilterRepository,
@@ -1497,13 +1422,6 @@ mod tests {
         ));
         streamer_manager.hydrate().await.unwrap();
         let config_service = Arc::new(ConfigService::new(config_repo, streamer_repo));
-
-        let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
-            Arc::new(crate::session::SessionLifecycleRepository::new(
-                pool.clone(),
-            )),
-            Arc::new(crate::session::OfflineClassifier::new()),
-        ));
 
         StreamMonitor::new(
             streamer_manager,
@@ -1522,58 +1440,105 @@ mod tests {
         consecutive_errors: i32,
         disabled_until: Option<i64>,
     ) {
-        let mut streamer =
-            StreamerDbModel::new("Test Streamer", format!("https://example.com/{id}"), "test");
+        let mut streamer = StreamerDbModel::new(
+            "Test Streamer",
+            format!("https://example.com/{id}"),
+            "platform-twitch",
+        );
         streamer.id = id.to_string();
         streamer.state = state.to_string();
         streamer.consecutive_error_count = Some(consecutive_errors);
         streamer.disabled_until = disabled_until;
         streamer.last_error = Some("boom".to_string());
 
-        sqlx::query(
-            r#"
-            INSERT INTO streamers (
-                id, name, url, platform_config_id, template_config_id,
-                state, priority, avatar, last_live_time, streamer_specific_config,
-                consecutive_error_count, disabled_until, last_error,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&streamer.id)
-        .bind(&streamer.name)
-        .bind(&streamer.url)
-        .bind(&streamer.platform_config_id)
-        .bind(&streamer.template_config_id)
-        .bind(&streamer.state)
-        .bind(&streamer.priority)
-        .bind(&streamer.avatar)
-        .bind(streamer.last_live_time)
-        .bind(&streamer.streamer_specific_config)
-        .bind(streamer.consecutive_error_count)
-        .bind(streamer.disabled_until)
-        .bind(&streamer.last_error)
-        .bind(streamer.created_at)
-        .bind(streamer.updated_at)
-        .execute(pool)
-        .await
-        .unwrap();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&streamer)
+            .await
+            .unwrap();
     }
 
     async fn insert_active_session(pool: &SqlitePool, session_id: &str, streamer_id: &str) {
-        sqlx::query(
-            r#"
-            INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, danmu_statistics_id, total_size_bytes)
-            VALUES (?, ?, ?, NULL, ?, NULL, 0)
-            "#,
-        )
-        .bind(session_id)
-        .bind(streamer_id)
-        .bind(chrono::Utc::now().timestamp_millis())
-        .bind(Some("[]".to_string()))
-        .execute(pool)
-        .await
-        .unwrap();
+        let mut session = LiveSessionDbModel::new(streamer_id);
+        session.id = session_id.to_string();
+
+        SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .create_session(&session)
+            .await
+            .unwrap();
+    }
+
+    async fn get_session(pool: &SqlitePool, session_id: &str) -> LiveSessionDbModel {
+        SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .get_session(session_id)
+            .await
+            .unwrap()
+    }
+
+    async fn get_streamer(pool: &SqlitePool, streamer_id: &str) -> StreamerDbModel {
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .get_streamer(streamer_id)
+            .await
+            .unwrap()
+    }
+
+    async fn get_active_session_for_streamer(
+        pool: &SqlitePool,
+        streamer_id: &str,
+    ) -> Option<LiveSessionDbModel> {
+        SqlxSessionRepository::new(pool.clone(), pool.clone())
+            .get_active_session_for_streamer(streamer_id)
+            .await
+            .unwrap()
+    }
+
+    async fn latest_session_ended_payload(
+        pool: &SqlitePool,
+        session_id: &str,
+    ) -> Option<SessionEventPayload> {
+        SqlxSessionEventRepository::new(pool.clone(), pool.clone())
+            .list_for_session(session_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .rev()
+            .find(|row| row.kind == "session_ended")
+            .and_then(|row| row.payload)
+    }
+
+    fn session_ended_cause(payload: &SessionEventPayload) -> &TerminalCauseDto {
+        let SessionEventPayload::SessionEnded { cause, .. } = payload else {
+            panic!("expected session_ended payload, got {payload:?}");
+        };
+        cause
+    }
+
+    async fn session_event_count_for_streamer(pool: &SqlitePool, streamer_id: &str) -> usize {
+        SqlxSessionEventRepository::new(pool.clone(), pool.clone())
+            .list_for_streamer(streamer_id)
+            .await
+            .unwrap()
+            .len()
+    }
+
+    async fn outbox_events(pool: &SqlitePool) -> Vec<MonitorEvent> {
+        MonitorOutboxOps::fetch_undelivered(pool, 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|entry| serde_json::from_str(&entry.payload).expect("outbox event deserialises"))
+            .collect()
+    }
+
+    fn outbox_event_type(event: &MonitorEvent) -> &'static str {
+        match event {
+            MonitorEvent::StreamerLive { .. } => "StreamerLive",
+            MonitorEvent::StreamerOffline { .. } => "StreamerOffline",
+            MonitorEvent::FatalError { .. } => "FatalError",
+            MonitorEvent::TransientError { .. } => "TransientError",
+            MonitorEvent::StateChanged { .. } => "StateChanged",
+            MonitorEvent::LiveDetected { .. } => "LiveDetected",
+            MonitorEvent::OfflineDetected { .. } => "OfflineDetected",
+        }
     }
 
     #[test]
@@ -1653,39 +1618,22 @@ mod tests {
             .await
             .unwrap();
 
-        let session_row = sqlx::query("SELECT end_time FROM live_sessions WHERE id = ?")
-            .bind("session-1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert!(session_row.get::<Option<i64>, _>("end_time").is_some());
+        assert!(get_session(&pool, "session-1").await.end_time.is_some());
 
-        let streamer_row = sqlx::query(
-            "SELECT state, consecutive_error_count, disabled_until, last_error FROM streamers WHERE id = ?",
-        )
-        .bind("streamer-1")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(streamer_row.get::<String, _>("state"), "NOT_LIVE");
-        assert_eq!(streamer_row.get::<i64, _>("consecutive_error_count"), 0);
-        assert!(
-            streamer_row
-                .get::<Option<i64>, _>("disabled_until")
-                .is_none()
-        );
-        assert!(
-            streamer_row
-                .get::<Option<String>, _>("last_error")
-                .is_none()
-        );
+        let streamer = get_streamer(&pool, "streamer-1").await;
+        assert_eq!(streamer.state, "NOT_LIVE");
+        assert_eq!(streamer.consecutive_error_count, Some(0));
+        assert!(streamer.disabled_until.is_none());
+        assert!(streamer.last_error.is_none());
 
-        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
-            .await
-            .unwrap();
-        assert_eq!(entries.len(), 1);
-        assert!(entries[0].payload.contains("StreamerOffline"));
-        assert!(entries[0].payload.contains("session-1"));
+        let events = outbox_events(&pool).await;
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            MonitorEvent::StreamerOffline { session_id, .. } => {
+                assert_eq!(session_id.as_deref(), Some("session-1"));
+            }
+            other => panic!("expected StreamerOffline, got {other:?}"),
+        }
 
         monitor.stop();
     }
@@ -1710,39 +1658,19 @@ mod tests {
             .await
             .unwrap();
 
-        let streamer_row = sqlx::query(
-            "SELECT state, consecutive_error_count, disabled_until, last_error FROM streamers WHERE id = ?",
-        )
-        .bind("streamer-2")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(streamer_row.get::<String, _>("state"), "NOT_LIVE");
-        assert_eq!(streamer_row.get::<i64, _>("consecutive_error_count"), 0);
+        let streamer = get_streamer(&pool, "streamer-2").await;
+        assert_eq!(streamer.state, "NOT_LIVE");
+        assert_eq!(streamer.consecutive_error_count, Some(0));
+        assert!(streamer.disabled_until.is_none());
+        assert!(streamer.last_error.is_none());
+
         assert!(
-            streamer_row
-                .get::<Option<i64>, _>("disabled_until")
-                .is_none()
-        );
-        assert!(
-            streamer_row
-                .get::<Option<String>, _>("last_error")
+            get_active_session_for_streamer(&pool, "streamer-2")
+                .await
                 .is_none()
         );
 
-        let active_session_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL",
-        )
-        .bind("streamer-2")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(active_session_count, 0);
-
-        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
-            .await
-            .unwrap();
-        assert!(entries.is_empty());
+        assert!(outbox_events(&pool).await.is_empty());
 
         monitor.stop();
     }
@@ -1769,39 +1697,307 @@ mod tests {
             .unwrap();
         assert_eq!(outcome, ProcessStatusResult::Applied);
 
-        let session_row = sqlx::query("SELECT end_time FROM live_sessions WHERE id = ?")
-            .bind("session-3")
-            .fetch_one(&pool)
+        assert!(get_session(&pool, "session-3").await.end_time.is_some());
+
+        let streamer = get_streamer(&pool, "streamer-3").await;
+        assert_eq!(streamer.state, "NOT_LIVE");
+        assert_eq!(streamer.consecutive_error_count, Some(0));
+        assert!(streamer.disabled_until.is_none());
+        assert!(streamer.last_error.is_none());
+
+        let events = outbox_events(&pool).await;
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            MonitorEvent::StreamerOffline { session_id, .. } => {
+                assert_eq!(session_id.as_deref(), Some("session-3"));
+            }
+            other => panic!("expected StreamerOffline, got {other:?}"),
+        }
+
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn test_process_status_out_of_schedule_ends_session_via_lifecycle() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(&pool, "streamer-4", StreamerState::NotLive, 0, None).await;
+
+        let monitor = build_test_monitor(&pool).await;
+        let mut rx = monitor.session_lifecycle.subscribe();
+        let streams = Vec::new();
+
+        monitor
+            .session_lifecycle
+            .on_live_detected(crate::session::LiveDetectedArgs {
+                streamer_id: "streamer-4",
+                streamer_name: "Test Streamer",
+                streamer_url: "https://example.com/streamer-4",
+                current_avatar: None,
+                new_avatar: None,
+                title: "Schedule Live",
+                category: None,
+                streams: &streams,
+                media_headers: None,
+                media_extras: None,
+                now: chrono::Utc::now(),
+            })
             .await
             .unwrap();
-        assert!(session_row.get::<Option<i64>, _>("end_time").is_some());
 
-        let streamer_row = sqlx::query(
-            "SELECT state, consecutive_error_count, disabled_until, last_error FROM streamers WHERE id = ?",
+        let started = rx.recv().await.unwrap();
+        let session_id = match started {
+            crate::session::SessionTransition::Started { session_id, .. } => session_id,
+            other => panic!("expected Started, got {other:?}"),
+        };
+
+        monitor
+            .streamer_manager
+            .reload_from_repo("streamer-4")
+            .await
+            .unwrap();
+        let live_streamer = monitor.streamer_manager.get_streamer("streamer-4").unwrap();
+        monitor
+            .process_status(
+                &live_streamer,
+                LiveStatus::Filtered {
+                    reason: FilterReason::OutOfSchedule {
+                        next_available: None,
+                    },
+                    title: "Schedule Live".to_string(),
+                    category: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(get_session(&pool, &session_id).await.end_time.is_some());
+
+        assert_eq!(
+            get_streamer(&pool, "streamer-4").await.state,
+            "OUT_OF_SCHEDULE"
+        );
+
+        match rx.recv().await.unwrap() {
+            crate::session::SessionTransition::Ended {
+                session_id: ended_id,
+                cause,
+                ..
+            } => {
+                assert_eq!(ended_id, session_id);
+                assert_eq!(cause, crate::session::TerminalCause::OutOfSchedule);
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
+
+        let payload = latest_session_ended_payload(&pool, &session_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            session_ended_cause(&payload),
+            &TerminalCauseDto::OutOfSchedule
+        );
+
+        let events = outbox_events(&pool).await;
+        let event_types: Vec<&str> = events.iter().map(outbox_event_type).collect();
+        assert_eq!(event_types, vec!["StreamerLive", "StateChanged"]);
+
+        match &events[1] {
+            MonitorEvent::StateChanged { reason, .. } => {
+                assert_eq!(reason.as_deref(), Some("out_of_schedule"));
+            }
+            other => panic!("expected StateChanged, got {other:?}"),
+        }
+
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn test_out_of_schedule_recheck_closes_active_session_even_when_state_matches() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(&pool, "streamer-5", StreamerState::OutOfSchedule, 0, None).await;
+
+        let monitor = build_test_monitor(&pool).await;
+        let mut rx = monitor.session_lifecycle.subscribe();
+        let streams = Vec::new();
+
+        monitor
+            .session_lifecycle
+            .on_live_detected(crate::session::LiveDetectedArgs {
+                streamer_id: "streamer-5",
+                streamer_name: "Test Streamer",
+                streamer_url: "https://example.com/streamer-5",
+                current_avatar: None,
+                new_avatar: None,
+                title: "Schedule Live",
+                category: None,
+                streams: &streams,
+                media_headers: None,
+                media_extras: None,
+                now: chrono::Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        let started = rx.recv().await.unwrap();
+        let session_id = match started {
+            crate::session::SessionTransition::Started { session_id, .. } => session_id,
+            other => panic!("expected Started, got {other:?}"),
+        };
+
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .update_streamer_state("streamer-5", StreamerState::OutOfSchedule.as_str())
+            .await
+            .unwrap();
+        monitor
+            .streamer_manager
+            .reload_from_repo("streamer-5")
+            .await
+            .unwrap();
+
+        let already_out = monitor.streamer_manager.get_streamer("streamer-5").unwrap();
+        assert_eq!(already_out.state, StreamerState::OutOfSchedule);
+
+        monitor
+            .process_status(
+                &already_out,
+                LiveStatus::Filtered {
+                    reason: FilterReason::OutOfSchedule {
+                        next_available: None,
+                    },
+                    title: "Schedule Live".to_string(),
+                    category: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(get_session(&pool, &session_id).await.end_time.is_some());
+
+        match rx.recv().await.unwrap() {
+            crate::session::SessionTransition::Ended { cause, .. } => {
+                assert_eq!(cause, crate::session::TerminalCause::OutOfSchedule);
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
+
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn test_out_of_schedule_recheck_without_active_session_skips_lifecycle_write() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(
+            &pool,
+            "streamer-oos-settled",
+            StreamerState::OutOfSchedule,
+            0,
+            None,
         )
-        .bind("streamer-3")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(streamer_row.get::<String, _>("state"), "NOT_LIVE");
-        assert_eq!(streamer_row.get::<i64, _>("consecutive_error_count"), 0);
-        assert!(
-            streamer_row
-                .get::<Option<i64>, _>("disabled_until")
-                .is_none()
-        );
-        assert!(
-            streamer_row
-                .get::<Option<String>, _>("last_error")
-                .is_none()
-        );
+        .await;
 
-        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
+        let monitor = build_test_monitor(&pool).await;
+        let mut rx = monitor.session_lifecycle.subscribe();
+        let already_out = monitor
+            .streamer_manager
+            .get_streamer("streamer-oos-settled")
+            .unwrap();
+        let before_session_events =
+            session_event_count_for_streamer(&pool, "streamer-oos-settled").await;
+        let before_outbox_events = outbox_events(&pool).await.len();
+
+        let outcome = monitor
+            .process_status(
+                &already_out,
+                LiveStatus::Filtered {
+                    reason: FilterReason::OutOfSchedule {
+                        next_available: None,
+                    },
+                    title: "Still Out".to_string(),
+                    category: None,
+                },
+            )
             .await
             .unwrap();
-        assert_eq!(entries.len(), 1);
-        assert!(entries[0].payload.contains("StreamerOffline"));
-        assert!(entries[0].payload.contains("session-3"));
+
+        assert_eq!(outcome, ProcessStatusResult::Applied);
+        assert!(
+            rx.try_recv().is_err(),
+            "settled recheck must not emit a lifecycle transition"
+        );
+        assert!(
+            get_active_session_for_streamer(&pool, "streamer-oos-settled")
+                .await
+                .is_none()
+        );
+        assert_eq!(
+            session_event_count_for_streamer(&pool, "streamer-oos-settled").await,
+            before_session_events,
+            "settled recheck must not write duplicate session_events rows"
+        );
+        assert_eq!(
+            outbox_events(&pool).await.len(),
+            before_outbox_events,
+            "settled recheck must not enqueue duplicate outbox events"
+        );
+
+        monitor.stop();
+    }
+
+    #[tokio::test]
+    async fn test_out_of_schedule_recheck_closes_cold_start_active_session_when_state_matches() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(
+            &pool,
+            "streamer-oos-cold-start",
+            StreamerState::OutOfSchedule,
+            0,
+            None,
+        )
+        .await;
+        insert_active_session(&pool, "session-oos-cold-start", "streamer-oos-cold-start").await;
+
+        let monitor = build_test_monitor(&pool).await;
+        let mut rx = monitor.session_lifecycle.subscribe();
+        let already_out = monitor
+            .streamer_manager
+            .get_streamer("streamer-oos-cold-start")
+            .unwrap();
+
+        let outcome = monitor
+            .process_status(
+                &already_out,
+                LiveStatus::Filtered {
+                    reason: FilterReason::OutOfSchedule {
+                        next_available: None,
+                    },
+                    title: "Still Out".to_string(),
+                    category: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, ProcessStatusResult::Applied);
+        assert!(
+            get_session(&pool, "session-oos-cold-start")
+                .await
+                .end_time
+                .is_some()
+        );
+
+        match rx.recv().await.unwrap() {
+            crate::session::SessionTransition::Ended {
+                session_id, cause, ..
+            } => {
+                assert_eq!(session_id, "session-oos-cold-start");
+                assert_eq!(cause, crate::session::TerminalCause::OutOfSchedule);
+            }
+            other => panic!("expected Ended, got {other:?}"),
+        }
+
+        let events = outbox_events(&pool).await;
+        let event_types: Vec<&str> = events.iter().map(outbox_event_type).collect();
+        assert_eq!(event_types, vec!["StateChanged"]);
 
         monitor.stop();
     }
@@ -1862,19 +2058,13 @@ mod tests {
             })
         ));
 
-        let active_session_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL",
-        )
-        .bind("streamer-live-suppressed")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(active_session_count, 0);
+        assert!(
+            get_active_session_for_streamer(&pool, "streamer-live-suppressed")
+                .await
+                .is_none()
+        );
 
-        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
-            .await
-            .unwrap();
-        assert!(entries.is_empty());
+        assert!(outbox_events(&pool).await.is_empty());
 
         monitor.stop();
     }
@@ -1933,10 +2123,7 @@ mod tests {
             ProcessStatusResult::Suppressed(ProcessStatusSuppression::Disabled)
         );
 
-        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
-            .await
-            .unwrap();
-        assert!(entries.is_empty());
+        assert!(outbox_events(&pool).await.is_empty());
 
         monitor.stop();
     }

@@ -169,6 +169,23 @@ pub struct SessionEventDbModel {
     pub payload: Option<String>,
 }
 
+impl From<SessionEventDbModel> for crate::domain::session::SessionEvent {
+    fn from(row: SessionEventDbModel) -> Self {
+        let payload = row
+            .payload
+            .as_deref()
+            .and_then(|raw| serde_json::from_str(raw).ok());
+        Self {
+            id: row.id,
+            session_id: row.session_id,
+            streamer_id: row.streamer_id,
+            kind: row.kind,
+            occurred_at: crate::database::time::ms_to_datetime(row.occurred_at),
+            payload,
+        }
+    }
+}
+
 /// Media output database model.
 /// Represents a single file generated during a live session.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

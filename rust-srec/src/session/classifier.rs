@@ -55,7 +55,8 @@ use std::time::{Duration, Instant};
 use dashmap::DashMap;
 use tracing::{debug, info};
 
-use crate::downloader::DownloadFailureKind;
+use crate::downloader::engine::EngineType;
+use crate::downloader::{DownloadFailureKind, DownloadProtocol};
 use crate::session::state::OfflineSignal;
 
 /// Floor for the classifier threshold. Operators who set
@@ -229,19 +230,31 @@ impl Default for OfflineClassifier {
 /// subprocess errors cannot.
 ///
 /// Mirrors the variants of `crate::downloader::engine::EngineType` with the
-/// mesio flavour split out (`HLS` vs `FLV`) because the rules are the same
-/// for both.
+/// mesio flavour split out because future rules may differ by protocol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineKind {
     MesioHls,
     MesioFlv,
+    MesioUnknown,
     Ffmpeg,
     Streamlink,
 }
 
 impl EngineKind {
     pub fn is_mesio(&self) -> bool {
-        matches!(self, Self::MesioHls | Self::MesioFlv)
+        matches!(self, Self::MesioHls | Self::MesioFlv | Self::MesioUnknown)
+    }
+
+    pub fn from_engine_and_protocol(engine_type: EngineType, protocol: DownloadProtocol) -> Self {
+        match engine_type {
+            EngineType::Ffmpeg => Self::Ffmpeg,
+            EngineType::Streamlink => Self::Streamlink,
+            EngineType::Mesio => match protocol {
+                DownloadProtocol::Hls => Self::MesioHls,
+                DownloadProtocol::Flv => Self::MesioFlv,
+                DownloadProtocol::Unknown => Self::MesioUnknown,
+            },
+        }
     }
 }
 
@@ -264,6 +277,26 @@ mod tests {
         let c = classic_classifier();
         let result = c.classify_failure("s1", &EngineKind::MesioHls, &DownloadFailureKind::Network);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn engine_kind_preserves_mesio_protocol() {
+        assert_eq!(
+            EngineKind::from_engine_and_protocol(EngineType::Mesio, DownloadProtocol::Hls),
+            EngineKind::MesioHls
+        );
+        assert_eq!(
+            EngineKind::from_engine_and_protocol(EngineType::Mesio, DownloadProtocol::Flv),
+            EngineKind::MesioFlv
+        );
+        assert_eq!(
+            EngineKind::from_engine_and_protocol(EngineType::Mesio, DownloadProtocol::Unknown),
+            EngineKind::MesioUnknown
+        );
+        assert_eq!(
+            EngineKind::from_engine_and_protocol(EngineType::Ffmpeg, DownloadProtocol::Flv),
+            EngineKind::Ffmpeg
+        );
     }
 
     // ---- C3 — two consecutive Network failures within window → Some ----

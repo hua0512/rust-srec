@@ -165,6 +165,8 @@ function TerminalCauseLabel({ cause }: { cause: TerminalCauseDto }) {
       return <DefinitiveOfflineLabel signalType={cause.signal.type} />;
     case 'user_disabled':
       return <Trans context="terminal-cause">User Disabled</Trans>;
+    case 'out_of_schedule':
+      return <Trans context="terminal-cause">Out of Schedule</Trans>;
   }
 }
 

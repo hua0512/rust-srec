@@ -26,6 +26,7 @@ use crate::api::server::AppState;
 use crate::database::models::{
     DanmuRateEntry, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
 };
+use crate::domain::session::SessionEvent;
 
 /// Create the sessions router.
 ///
@@ -418,25 +419,17 @@ pub async fn get_session(
     Ok(Json(response))
 }
 
-/// Map persisted session-event rows to the wire-format `SessionEventResponse`.
-/// A row with malformed `payload` JSON degrades to `payload: None` rather
-/// than dropping the row outright — operators still see "something happened
-/// here" with the kind discriminator, which matches the frontend's
-/// fallback rendering.
-fn map_session_events(
-    rows: Vec<crate::database::models::SessionEventDbModel>,
-) -> Vec<SessionEventResponse> {
-    rows.into_iter()
-        .map(|row| {
-            let payload = row
-                .payload
-                .as_deref()
-                .and_then(|raw| serde_json::from_str(raw).ok());
-            SessionEventResponse {
-                kind: row.kind,
-                occurred_at: crate::database::time::ms_to_datetime(row.occurred_at),
-                payload,
-            }
+/// Map persisted session events to the wire-format `SessionEventResponse`.
+/// Malformed stored payloads are already represented as `payload: None` by
+/// the repository's domain mapping, so operators still see "something
+/// happened here" with the kind discriminator.
+fn map_session_events(events: Vec<SessionEvent>) -> Vec<SessionEventResponse> {
+    events
+        .into_iter()
+        .map(|event| SessionEventResponse {
+            kind: event.kind,
+            occurred_at: event.occurred_at,
+            payload: event.payload,
         })
         .collect()
 }

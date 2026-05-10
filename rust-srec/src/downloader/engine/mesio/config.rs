@@ -507,6 +507,8 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    use crate::downloader::DownloadProtocol;
+
     fn create_test_download_config() -> DownloadConfig {
         DownloadConfig {
             url: "https://example.com/stream.m3u8".to_string(),
@@ -522,6 +524,7 @@ mod tests {
             streamer_id: "test-streamer".to_string(),
             streamer_name: "test-streamer".to_string(),
             session_id: "test-session".to_string(),
+            protocol: DownloadProtocol::Hls,
             enable_processing: false,
             pipeline_config: None,
             hls_pipeline_config: None,
