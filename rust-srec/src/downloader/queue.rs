@@ -1204,21 +1204,21 @@ mod tests {
 
         drop(holder);
 
-        let mut acquired = 0;
+        let mut acquired_slots = Vec::new();
         let mut duplicates = 0;
         for handle in handles {
             match handle.await.unwrap() {
                 Ok(slot) => {
-                    acquired += 1;
-                    drop(slot);
+                    acquired_slots.push(slot);
                 }
                 Err(AcquireError::DuplicateSession(_)) => duplicates += 1,
                 Err(err) => panic!("unexpected acquire error: {err}"),
             }
         }
 
-        assert_eq!(acquired, 1);
+        assert_eq!(acquired_slots.len(), 1);
         assert_eq!(duplicates, ATTEMPTS - 1);
+        drop(acquired_slots);
         assert_eq!(q.pending_count(), 0);
         assert_eq!(q.in_flight(), 0);
         assert_eq!(q.session_reservations.len(), 0);
