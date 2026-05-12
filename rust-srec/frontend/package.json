@@ -92,7 +92,7 @@
     "@vitejs/plugin-react-swc": "^4.3.0",
     "cross-env": "^10.1.0",
     "jsdom": "^29.1.1",
-    "oxfmt": "^0.41.0",
+    "oxfmt": "^0.48.0",
     "oxlint": "^1.63.0",
     "oxlint-tsgolint": "^0.22.1",
     "shadcn": "^4.7.0",
