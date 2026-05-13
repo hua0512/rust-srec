@@ -4,13 +4,16 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — recording-session reliability fixes, cleaner schedule endings, quieter out-of-schedule checks, and more consistent session timeline data
+- [`unreleased`](./unreleased.md) — no staged changes yet for the next release
 
 ## Latest release
 
-- [`v0.3.0`](./v0.3.0.md) — output-root write gate (#508), session lifecycle overhaul, priority-aware queue with new Queued badge, streamer check-history strip, rclone bandwidth & throughput controls, backend notification localization, Mesio `--disable-log-file`, and platform fixes for Huya and RedBook
+- [`v0.3.1`](./v0.3.1.md) — recording-session reliability follow-ups (fewer false endings on transient failures, cleaner schedule-end transitions, quieter out-of-schedule checks) plus GPU health monitoring on the System Health page and a faster, lighter `/api/health`
 
 ## Archive
+
+
+- [`v0.3.0`](./v0.3.0.md) — output-root write gate (#508), session lifecycle overhaul, priority-aware queue with new Queued badge, streamer check-history strip, rclone bandwidth & throughput controls, backend notification localization, Mesio `--disable-log-file`, and platform fixes for Huya and RedBook
 
 - [`v0.2.1`](./v0.2.1.md) — recording correctness, session lifecycle fixes, Douyu updates, danmu statistics, and frontend stability improvements
 
