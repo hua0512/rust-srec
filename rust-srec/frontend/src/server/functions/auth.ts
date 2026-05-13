@@ -15,7 +15,7 @@ import ky from 'ky';
 // Dedicated ky instance for auth calls that might not need the bearer token from session (like login)
 // or need to handle session updates manually.
 const authClient = ky.create({
-  prefixUrl: BASE_URL,
+  prefix: BASE_URL,
   timeout: 10000,
 });
 
