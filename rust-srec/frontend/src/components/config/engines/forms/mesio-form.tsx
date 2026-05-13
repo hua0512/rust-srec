@@ -1,5 +1,5 @@
 import React from 'react';
-import { Control, useWatch } from 'react-hook-form';
+import { useWatch } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -32,13 +32,11 @@ import { MesioHlsForm } from './mesio-hls-form';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface SubFormProps {
-  control: Control<any>;
   basePath: string;
 }
 
-const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
+const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
   const duplicateTagFiltering = useWatch({
-    control,
     name: `${basePath}.flv_fix.duplicate_tag_filtering`,
   });
 
@@ -49,7 +47,6 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
           {/* Header/Mode Section */}
           <div className="space-y-4">
             <FormField
-              control={control}
               name={`${basePath}.flv_fix.sequence_header_change_mode`}
               render={({ field }) => (
                 <FormItem>
@@ -111,7 +108,6 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
 
           <div className="space-y-3">
             <FormField
-              control={control}
               name={`${basePath}.flv_fix.drop_duplicate_sequence_headers`}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-muted/5 p-4 py-3 shadow-none transition-all hover:bg-muted/10">
@@ -138,7 +134,6 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
             />
 
             <FormField
-              control={control}
               name={`${basePath}.flv_fix.duplicate_tag_filtering`}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-muted/5 p-4 py-3 shadow-none transition-all hover:bg-muted/10">
@@ -174,7 +169,6 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
               <div className="grid gap-3 pt-1 animate-in fade-in slide-in-from-left-2 duration-300">
                 <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4 grid gap-4 sm:grid-cols-2">
                   <FormField
-                    control={control}
                     name={`${basePath}.flv_fix.duplicate_tag_filter_config.window_capacity_tags`}
                     render={({ field }) => (
                       <FormItem>
@@ -194,7 +188,6 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
                     )}
                   />
                   <FormField
-                    control={control}
                     name={`${basePath}.flv_fix.duplicate_tag_filter_config.replay_backjump_threshold_ms`}
                     render={({ field }) => (
                       <FormItem>
@@ -215,7 +208,6 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
                   />
                   <div className="sm:col-span-2 pt-1 border-t border-blue-500/10">
                     <FormField
-                      control={control}
                       name={`${basePath}.flv_fix.duplicate_tag_filter_config.enable_replay_offset_matching`}
                       render={({ field }) => (
                         <FormItem className="flex flex-row items-center justify-between space-y-0">
@@ -245,18 +237,15 @@ const MesioFlvForm = React.memo(({ control, basePath }: SubFormProps) => {
 MesioFlvForm.displayName = 'MesioFlvForm';
 
 interface MesioFormProps {
-  control: Control<any>;
   basePath?: string;
 }
 
-export function MesioForm({ control, basePath = 'config' }: MesioFormProps) {
+export function MesioForm({ basePath = 'config' }: MesioFormProps) {
   const fixFlv = useWatch({
-    control,
     name: `${basePath}.fix_flv`,
   });
 
   const fixHls = useWatch({
-    control,
     name: `${basePath}.fix_hls`,
   });
 
@@ -308,7 +297,6 @@ export function MesioForm({ control, basePath = 'config' }: MesioFormProps) {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <FormField
-              control={control}
               name={`${basePath}.buffer_size`}
               render={({ field }) => (
                 <FormItem>
@@ -339,7 +327,6 @@ export function MesioForm({ control, basePath = 'config' }: MesioFormProps) {
 
         <div className="grid gap-4 md:grid-cols-2">
           <FormField
-            control={control}
             name={`${basePath}.fix_flv`}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-orange-500/5 p-4 shadow-sm transition-all hover:border-orange-500/20">
@@ -362,7 +349,6 @@ export function MesioForm({ control, basePath = 'config' }: MesioFormProps) {
             )}
           />
           <FormField
-            control={control}
             name={`${basePath}.fix_hls`}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-blue-500/5 p-4 shadow-sm transition-all hover:border-blue-500/20">
@@ -388,11 +374,11 @@ export function MesioForm({ control, basePath = 'config' }: MesioFormProps) {
       </TabsContent>
 
       <TabsContent value="flv" className="mt-0 focus-visible:outline-none">
-        <MesioFlvForm control={control} basePath={basePath} />
+        <MesioFlvForm basePath={basePath} />
       </TabsContent>
 
       <TabsContent value="hls" className="mt-0 focus-visible:outline-none">
-        <MesioHlsForm control={control} basePath={basePath} />
+        <MesioHlsForm basePath={basePath} />
       </TabsContent>
     </Tabs>
   );

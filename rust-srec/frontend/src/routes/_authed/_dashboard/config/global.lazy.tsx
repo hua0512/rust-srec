@@ -158,7 +158,7 @@ function GlobalConfigForm({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0 }}
             >
-              <FileConfigCard control={form.control} />
+              <FileConfigCard />
             </motion.div>
           </Suspense>
 
@@ -168,7 +168,7 @@ function GlobalConfigForm({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.05 }}
             >
-              <ResourceLimitsCard control={form.control} />
+              <ResourceLimitsCard />
             </motion.div>
           </Suspense>
 
@@ -178,7 +178,7 @@ function GlobalConfigForm({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.1 }}
             >
-              <ConcurrencyCard control={form.control} />
+              <ConcurrencyCard />
             </motion.div>
           </Suspense>
 
@@ -188,7 +188,7 @@ function GlobalConfigForm({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.15 }}
             >
-              <NetworkSystemCard control={form.control} />
+              <NetworkSystemCard />
             </motion.div>
           </Suspense>
 
@@ -203,7 +203,7 @@ function GlobalConfigForm({
               transition={{ duration: 0.3, delay: 0.25 }}
               className="lg:col-span-2 min-w-0"
             >
-              <PipelineConfigCard control={form.control} />
+              <PipelineConfigCard />
             </motion.div>
           </Suspense>
         </motion.div>

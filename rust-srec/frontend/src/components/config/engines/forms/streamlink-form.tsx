@@ -1,4 +1,3 @@
-import { Control } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -19,20 +18,15 @@ import { useLingui } from '@lingui/react';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 
 interface StreamlinkFormProps {
-  control: Control<any>;
   basePath?: string;
 }
 
-export function StreamlinkForm({
-  control,
-  basePath = 'config',
-}: StreamlinkFormProps) {
+export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
   const { i18n } = useLingui();
   return (
     <div className="space-y-6">
       <div className="grid gap-6 md:grid-cols-2">
         <FormField
-          control={control}
           name={`${basePath}.binary_path`}
           render={({ field }) => (
             <FormItem>
@@ -55,7 +49,6 @@ export function StreamlinkForm({
           )}
         />
         <FormField
-          control={control}
           name={`${basePath}.quality`}
           render={({ field }) => (
             <FormItem>
@@ -78,7 +71,6 @@ export function StreamlinkForm({
           )}
         />
         <FormField
-          control={control}
           name={`${basePath}.graceful_stop_timeout_secs`}
           render={({ field }) => (
             <FormItem>
@@ -117,7 +109,6 @@ export function StreamlinkForm({
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-4">
           <FormField
-            control={control}
             name={`${basePath}.twitch_proxy_playlist`}
             render={({ field }) => (
               <FormItem>
@@ -139,7 +130,6 @@ export function StreamlinkForm({
             )}
           />
           <FormField
-            control={control}
             name={`${basePath}.twitch_proxy_playlist_exclude`}
             render={({ field }) => (
               <FormItem>
@@ -174,7 +164,6 @@ export function StreamlinkForm({
         </CardHeader>
         <CardContent className="px-4 pb-4">
           <FormField
-            control={control}
             name={`${basePath}.extra_args`}
             render={({ field }) => (
               <FormItem>

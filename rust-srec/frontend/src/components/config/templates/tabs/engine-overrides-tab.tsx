@@ -179,7 +179,6 @@ export function EngineOverridesTab({ form }: EngineOverridesTabProps) {
                       engineId={engineId}
                       engineName={engine.name}
                       engineType={engine.engine_type}
-                      form={form}
                       onRemove={() => handleRemoveOverride(engineId)}
                     />
                   </motion.div>

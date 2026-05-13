@@ -1,5 +1,4 @@
 import { memo } from 'react';
-import { Control } from 'react-hook-form';
 import { SettingsCard } from '../settings-card';
 import {
   FormControl,
@@ -31,11 +30,7 @@ import { Trans } from '@lingui/react/macro';
 import { ProxyConfigSettings } from '../shared/proxy-settings-card';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
 
-interface NetworkSystemCardProps {
-  control: Control<any>;
-}
-
-export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
+export const NetworkSystemCard = memo(() => {
   return (
     <SettingsCard
       title={<Trans>Network & System</Trans>}
@@ -48,7 +43,6 @@ export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
         {/* Monitoring Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <FormField
-            control={control}
             name="streamer_check_delay_ms"
             render={({ field }) => (
               <FormItem>
@@ -91,7 +85,6 @@ export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
             )}
           />
           <FormField
-            control={control}
             name="offline_check_delay_ms"
             render={({ field }) => (
               <FormItem>
@@ -133,7 +126,6 @@ export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
             )}
           />
           <FormField
-            control={control}
             name="offline_check_count"
             render={({ field }) => (
               <FormItem>
@@ -179,7 +171,6 @@ export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
         {/* Persistence Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <FormField
-            control={control}
             name="job_history_retention_days"
             render={({ field }) => (
               <FormItem>
@@ -221,7 +212,6 @@ export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
             )}
           />
           <FormField
-            control={control}
             name="notification_event_log_retention_days"
             render={({ field }) => (
               <FormItem>
@@ -266,7 +256,6 @@ export const NetworkSystemCard = memo(({ control }: NetworkSystemCardProps) => {
         </div>
 
         <FormField
-          control={control}
           name="proxy_config"
           render={({ field }) => (
             <FormItem>

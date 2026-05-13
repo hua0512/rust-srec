@@ -570,7 +570,7 @@ function SessionsPage() {
               </div>
             ))}
           </div>
-        ) : (query.data?.items?.length ?? 0) > 0 ? (
+        ) : query.data?.items && query.data.items.length > 0 ? (
           <SessionList
             sessions={query.data.items}
             token={user?.token?.access_token}

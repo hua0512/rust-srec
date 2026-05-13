@@ -1,4 +1,3 @@
-import { UseFormReturn } from 'react-hook-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,7 +10,6 @@ interface EngineOverrideCardProps {
   engineId: string;
   engineName: string;
   engineType?: string;
-  form: UseFormReturn<any>;
   onRemove: () => void;
 }
 
@@ -19,7 +17,6 @@ export function EngineOverrideCard({
   engineId,
   engineName,
   engineType,
-  form,
   onRemove,
 }: EngineOverrideCardProps) {
   // Determine which form to render based on engine type
@@ -27,11 +24,11 @@ export function EngineOverrideCard({
     const basePath = `engines_override.${engineId}`;
     switch (engineType) {
       case 'FFMPEG':
-        return <FfmpegForm control={form.control} basePath={basePath} />;
+        return <FfmpegForm basePath={basePath} />;
       case 'STREAMLINK':
-        return <StreamlinkForm control={form.control} basePath={basePath} />;
+        return <StreamlinkForm basePath={basePath} />;
       case 'MESIO':
-        return <MesioForm control={form.control} basePath={basePath} />;
+        return <MesioForm basePath={basePath} />;
       default:
         return (
           <div className="text-muted-foreground p-4">

@@ -1,5 +1,4 @@
 import { memo } from 'react';
-import { Control } from 'react-hook-form';
 import { SettingsCard } from '../settings-card';
 import {
   FormControl,
@@ -14,11 +13,7 @@ import { FlagFormField } from '@/components/ui/flag-form-field';
 import { FolderOutput } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
-interface FileConfigCardProps {
-  control: Control<any>;
-}
-
-export const FileConfigCard = memo(({ control }: FileConfigCardProps) => {
+export const FileConfigCard = memo(() => {
   return (
     <SettingsCard
       title={<Trans>File Configuration</Trans>}
@@ -29,7 +24,6 @@ export const FileConfigCard = memo(({ control }: FileConfigCardProps) => {
     >
       <div className="space-y-6">
         <FlagFormField
-          control={control}
           fieldName="record_danmu"
           title={<Trans>Record Danmu</Trans>}
           description={
@@ -40,7 +34,6 @@ export const FileConfigCard = memo(({ control }: FileConfigCardProps) => {
         />
 
         <FlagFormField
-          control={control}
           fieldName="auto_thumbnail"
           title={<Trans>Auto Thumbnail</Trans>}
           description={
@@ -53,7 +46,6 @@ export const FileConfigCard = memo(({ control }: FileConfigCardProps) => {
 
         <div className="space-y-6">
           <FormField
-            control={control}
             name="output_folder"
             render={({ field }) => (
               <FormItem>
@@ -69,7 +61,6 @@ export const FileConfigCard = memo(({ control }: FileConfigCardProps) => {
           />
 
           <FormField
-            control={control}
             name="output_filename_template"
             render={({ field }) => (
               <FormItem>
@@ -95,7 +86,6 @@ export const FileConfigCard = memo(({ control }: FileConfigCardProps) => {
           />
 
           <FormField
-            control={control}
             name="output_file_format"
             render={({ field }) => (
               <FormItem>

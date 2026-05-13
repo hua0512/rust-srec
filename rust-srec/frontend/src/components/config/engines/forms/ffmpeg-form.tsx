@@ -1,5 +1,4 @@
 // ... imports
-import { Control } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -27,17 +26,15 @@ import { useLingui } from '@lingui/react';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 
 interface FfmpegFormProps {
-  control: Control<any>;
   basePath?: string;
 }
 
-export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
+export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
   const { i18n } = useLingui();
   return (
     <div className="space-y-6">
       <div className="grid gap-6 md:grid-cols-2">
         <FormField
-          control={control}
           name={`${basePath}.binary_path`}
           render={({ field }) => (
             <FormItem>
@@ -60,7 +57,6 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
           )}
         />
         <FormField
-          control={control}
           name={`${basePath}.timeout_secs`}
           render={({ field }) => (
             <FormItem>
@@ -84,7 +80,6 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
           )}
         />
         <FormField
-          control={control}
           name={`${basePath}.graceful_stop_timeout_secs`}
           render={({ field }) => (
             <FormItem>
@@ -113,7 +108,6 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
       </div>
 
       <FormField
-        control={control}
         name={`${basePath}.user_agent`}
         render={({ field }) => (
           <FormItem>
@@ -148,7 +142,6 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <FormField
-              control={control}
               name={`${basePath}.input_args`}
               render={({ field }) => (
                 <FormItem>
@@ -179,7 +172,6 @@ export function FfmpegForm({ control, basePath = 'config' }: FfmpegFormProps) {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <FormField
-              control={control}
               name={`${basePath}.output_args`}
               render={({ field }) => (
                 <FormItem>

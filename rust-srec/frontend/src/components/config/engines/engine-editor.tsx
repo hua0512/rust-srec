@@ -1,4 +1,4 @@
-import { useForm, useWatch, type Control } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -68,13 +68,8 @@ interface EngineFormProps {
   onSuccess: () => void;
 }
 
-function EngineConfigCard({
-  control,
-}: {
-  control: Control<z.infer<typeof CreateEngineRequestSchema>>;
-}) {
+function EngineConfigCard() {
   const engineType = useWatch({
-    control,
     name: 'engine_type',
   });
 
@@ -103,9 +98,9 @@ function EngineConfigCard({
         </div>
       </CardHeader>
       <CardContent className="pt-6">
-        {engineType === 'FFMPEG' && <FfmpegForm control={control} />}
-        {engineType === 'STREAMLINK' && <StreamlinkForm control={control} />}
-        {engineType === 'MESIO' && <MesioForm control={control} />}
+        {engineType === 'FFMPEG' && <FfmpegForm />}
+        {engineType === 'STREAMLINK' && <StreamlinkForm />}
+        {engineType === 'MESIO' && <MesioForm />}
       </CardContent>
     </Card>
   );
@@ -271,7 +266,7 @@ function EngineForm({
           </CardContent>
         </Card>
 
-        <EngineConfigCard control={form.control} />
+        <EngineConfigCard />
 
         <AnimatePresence>
           {form.formState.isDirty && (

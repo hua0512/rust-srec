@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Control, useFormState } from 'react-hook-form';
+import { useFormState } from 'react-hook-form';
 import { SettingsCard } from '../settings-card';
 import {
   FormControl,
@@ -39,11 +39,7 @@ import { listEngines } from '@/server/functions';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
 
-export interface ConcurrencyCardProps {
-  control: Control<any>;
-}
-
-export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
+export const ConcurrencyCard = memo(() => {
   const { i18n } = useLingui();
   const { data: enginesData, isLoading: enginesLoading } = useQuery({
     queryKey: ['engines'],
@@ -53,7 +49,7 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
   // These particular settings only take effect when the backend process
   // recreates the worker pools (currently startup-only), so surface a
   // restart-required warning only when the user changes them.
-  const { dirtyFields } = useFormState({ control });
+  const { dirtyFields } = useFormState();
   const restartRequired = Boolean(
     dirtyFields?.pipeline_cpu_job_timeout_secs ||
     dirtyFields?.pipeline_io_job_timeout_secs ||
@@ -73,7 +69,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-6">
           <FormField
-            control={control}
             name="max_concurrent_downloads"
             render={({ field }) => (
               <FormItem>
@@ -92,7 +87,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
             )}
           />
           <FormField
-            control={control}
             name="max_concurrent_uploads"
             render={({ field }) => (
               <FormItem>
@@ -111,7 +105,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
             )}
           />
           <FormField
-            control={control}
             name="max_concurrent_cpu_jobs"
             render={({ field }) => (
               <FormItem>
@@ -130,7 +123,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
             )}
           />
           <FormField
-            control={control}
             name="max_concurrent_io_jobs"
             render={({ field }) => (
               <FormItem>
@@ -197,7 +189,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
 
           <div className="grid grid-cols-1 @md:grid-cols-3 gap-6">
             <FormField
-              control={control}
               name="pipeline_cpu_job_timeout_secs"
               render={({ field }) => (
                 <FormItem>
@@ -237,7 +228,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
             />
 
             <FormField
-              control={control}
               name="pipeline_io_job_timeout_secs"
               render={({ field }) => (
                 <FormItem>
@@ -277,7 +267,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
             />
 
             <FormField
-              control={control}
               name="pipeline_execute_timeout_secs"
               render={({ field }) => (
                 <FormItem>
@@ -322,7 +311,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
         <Separator />
 
         <FormField
-          control={control}
           name="queue_freshness_threshold_ms"
           render={({ field }) => (
             <FormItem>
@@ -371,7 +359,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
         <Separator />
 
         <FormField
-          control={control}
           name="gpu_health_probe_interval_secs"
           render={({ field }) => (
             <FormItem>
@@ -419,7 +406,6 @@ export const ConcurrencyCard = memo(({ control }: ConcurrencyCardProps) => {
 
         <Separator />
         <FormField
-          control={control}
           name="default_download_engine"
           render={({ field }) => (
             <FormItem>
