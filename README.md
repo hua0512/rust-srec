@@ -1,74 +1,94 @@
-# rust-srec
-
 <p align="center">
-  <img src="rust-srec/docs/public/stream-rec.svg" width="88" alt="rust-srec logo" />
+  <img src="rust-srec/docs/public/stream-rec-orange.svg" width="120" alt="rust-srec logo" />
 </p>
 
-A production-ready, automated stream recording solution built with Rust.
+<h1 align="center">rust-srec</h1>
 
-- Documentation: https://hua0512.github.io/rust-srec/
-- GitHub: https://github.com/hua0512/rust-srec
+<p align="center">
+  <b>Automated live-stream recorder for the platforms you actually watch.</b><br/>
+  Set it up once, and it captures your favorite streamers the moment they go live.
+</p>
 
-## Quick links
+<p align="center">
+  <a href="./README.zh-CN.md">简体中文</a> ·
+  <a href="https://docs.srec.rs">Documentation</a> ·
+  <a href="https://docs.srec.rs/en/getting-started/">Get Started</a> ·
+  <a href="https://docs.srec.rs/en/getting-started/docker">Docker</a> ·
+  <a href="https://docs.srec.rs/en/release-notes/">Release Notes</a>
+</p>
 
-- Get started: https://hua0512.github.io/rust-srec/en/getting-started/
-- Docker deployment: https://hua0512.github.io/rust-srec/en/getting-started/docker
-- Installation (binaries / from source): https://hua0512.github.io/rust-srec/en/getting-started/installation
-- Configuration: https://hua0512.github.io/rust-srec/en/getting-started/configuration
-- Architecture overview: https://hua0512.github.io/rust-srec/en/concepts/architecture
-- Engines: https://hua0512.github.io/rust-srec/en/concepts/engines
-- FAQ: https://hua0512.github.io/rust-srec/en/getting-started/faq
+---
 
-## What’s in this repo
+## What it does
 
-This is a Rust workspace containing:
+- **Records streams automatically.** Add a streamer, walk away. rust-srec watches and records when they go live.
+- **Captures chat too.** Danmaku and live chat are saved alongside the video where the platform allows.
+- **Fixes broken recordings.** Built-in repair for FLV and HLS streams handles timestamp drift, missing metadata, and similar issues.
+- **Stays out of your way.** Lightweight, runs in Docker, and offers a web UI plus a REST API with Swagger docs.
 
-- `rust-srec/` (package: `rust-srec`): the recorder backend (REST API + scheduler + pipeline + DB)
-- `strev-cli/` (package: `strev`): a CLI for extracting/inspecting stream media info from platforms
-- `mesio-cli/` (package: `mesio`): a CLI for downloading/fixing FLV/HLS streams and files
-- `crates/`: reusable protocol/container crates (FLV/HLS/TS) and platform extractors
+## Supported platforms
+
+Bilibili · Douyin · Douyu · Huya · Twitch · TikTok · AcFun · Picarto · Redbook · TwitCasting · Weibo · PandaTV (legacy)
+
+## Quick start (Docker)
+
+The fastest way to try it:
+
+```bash
+# grab the compose file and edit VERSION / volumes as needed
+curl -O https://raw.githubusercontent.com/hua0512/rust-srec/main/rust-srec/docker-compose.yml
+docker compose up -d
+```
+
+Then open the web UI and follow the [getting-started guide](https://docs.srec.rs/en/getting-started/).
+
+> Image tags use a leading `v` — set `VERSION=v0.3.1`, not `0.3.1`.
+
+Prefer a binary or to build from source? See the [installation guide](https://docs.srec.rs/en/getting-started/installation).
 
 ## Highlights
 
-- Multi-platform support via `platforms-parser` (12 platforms): acfun, bilibili, douyin, douyu, huya,
-  pandatv (legacy), picarto, redbook, tiktok, twitcasting, twitch, weibo
-- Automatic recording when streamers go live, with persistent state in SQLite (migrations run at startup)
-- Post-processing DAG pipelines (segment, paired-segment, session-complete) with built-in processors
-- Danmaku/chat capture alongside video (where supported by the platform)
-- Multiple download engines: `ffmpeg`, `streamlink`, and the built-in Rust engine `mesio`
-- REST API with OpenAPI + Swagger UI (`/api/docs`) and JWT authentication
-- Docker-first deployment (official images in `rust-srec/docker-compose.yml`)
+- **Multi-platform** — 12 streaming sites supported out of the box.
+- **Three download engines** — pick `ffmpeg`, `streamlink`, or the built-in Rust engine (`mesio`).
+- **Post-processing pipelines** — automatically transcode, segment, or hand off recordings to your own scripts.
+- **Web UI + REST API** — manage streamers from the browser; automate with the API (JWT-protected, OpenAPI docs at `/api/docs`).
+- **Persistent and reliable** — SQLite-backed state; schema upgrades happen on startup.
 
-Note: Docker images are tagged as `vX.Y.Z` (leading `v`). If you set `VERSION` in `rust-srec/docker-compose.yml`, use `v0.1.0` (not `0.1.0`).
+## Companion CLI tools
 
-## CLI tools
+Two standalone tools ship in the same repo:
 
-- `strev` (source in `strev-cli/`): platform extraction / stream inspection
-  - Docs: `strev-cli/README.md`
-  - Build: `cargo build --release -p strev`
-- `mesio` (source in `mesio-cli/`): download + repair FLV/HLS (and pipe output to other tools)
-  - Docs: `mesio-cli/README.md`
-  - Build: `cargo build --release -p mesio`
+| Tool | What it's for | Docs |
+| --- | --- | --- |
+| `strev` | Inspect a live-stream URL and pull out media info from supported platforms. | [`strev-cli/README.md`](./strev-cli/README.md) |
+| `mesio` | Download and repair FLV / HLS streams from the command line. | [`mesio-cli/README.md`](./mesio-cli/README.md) |
 
-## Workspace crates (selected)
+## Helpful links
 
-- `crates/platforms` (crate: `platforms-parser`): platform URL parsing/extraction + danmaku providers
-- `crates/mesio` (crate: `mesio-engine`): Rust download engine for FLV/HLS with retries, caching, proxy
-- `crates/flv`, `crates/hls`, `crates/ts`: container/protocol parsing and helpers
-- `crates/flv-fix`, `crates/hls-fix`: stream repair and post-processing utilities
+- [Configuration reference](https://docs.srec.rs/en/getting-started/configuration)
+- [Architecture overview](https://docs.srec.rs/en/concepts/architecture)
+- [Engines explained](https://docs.srec.rs/en/concepts/engines)
+- [FAQ](https://docs.srec.rs/en/getting-started/faq)
 
-## Development
+## For developers
+
+This is a Cargo workspace. The main pieces:
+
+- `rust-srec/` — the recorder backend (API, scheduler, pipeline, database)
+- `strev-cli/`, `mesio-cli/` — the CLI tools above
+- `crates/` — reusable libraries: platform extractors, FLV / HLS / TS parsers, the `mesio` download engine, and stream-repair utilities
 
 Common commands:
 
-- Build: `cargo build`
-- Test: `cargo test`
-- Lint: `cargo clippy -- -D warnings`
-- Format: `cargo fmt`
+```bash
+cargo build                       # build everything
+cargo test                        # run tests
+cargo clippy -- -D warnings       # lint
+cargo fmt                         # format
+```
+
+Contributions welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## License
 
-Licensed under either of:
-
-- Apache License, Version 2.0
-- MIT license
+Released under the [MIT License](./LICENSE).
