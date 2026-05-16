@@ -899,6 +899,30 @@ impl SessionLifecycle {
         let hysteresis_duration =
             chrono::Duration::from_std(handle.elapsed()).unwrap_or(chrono::Duration::zero());
 
+        // Restore `streamers.state = LIVE` before broadcasting. The
+        // hysteresis-resume path short-circuits before `start_or_resume`, so
+        // the atomic `set_live` write that path performs never runs here. If
+        // a prior `monitor::service::handle_error` flipped the row to
+        // `NOT_LIVE` during the transient failure that drove this hysteresis
+        // entry, the row stays stale otherwise — and the container's
+        // short-queue-wait cached recheck (`services::container::run_live_download_pipeline`)
+        // aborts the resumed download as a result. Log-and-continue on
+        // failure: the in-memory CAS above already won and rolling it back is
+        // brittle; pre-fix behaviour was "DB stays NOT_LIVE", so this is no
+        // worse than today on the rare DB-failure path.
+        if let Err(e) = self
+            .repo
+            .mark_streamer_live(args.streamer_id, args.now)
+            .await
+        {
+            warn!(
+                streamer_id = args.streamer_id,
+                session_id,
+                error = %e,
+                "resume_from_hysteresis: set_live DB write failed; cache may stay stale"
+            );
+        }
+
         // Restore in-memory state to Recording. Preserve the original
         // `started_at` from the prior entry.
         let started_at = self
@@ -2958,6 +2982,59 @@ mod tests {
         // Session active again. Wait past the original deadline; Ended
         // must NOT fire (timer was cancelled).
         assert!(lifecycle.is_session_active(started.session_id()));
+    }
+
+    /// I3b — Resume from Hysteresis must restore `streamers.state = LIVE`
+    /// even when a prior `monitor::service::handle_error` flipped the row
+    /// to `NOT_LIVE` during the transient failure. Regression for the
+    /// "streamer shows offline on web while recording is in flight" bug:
+    /// `resume_from_hysteresis` short-circuits before `start_or_resume` and
+    /// previously left the streamer DB row stale, so the container's
+    /// short-queue-wait cached recheck aborted the resumed download.
+    #[tokio::test]
+    async fn i3b_resume_restores_streamer_state_live() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started
+        assert_eq!(streamer_state(&pool, STREAMER_ID).await, "LIVE");
+
+        lifecycle
+            .on_download_terminal(&make_terminal_completed_clean_disconnect(
+                started.session_id(),
+            ))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Ending
+
+        // Simulate `monitor::service::handle_error` flipping the streamer
+        // row during the transient failure that drove this hysteresis
+        // entry (first error → `disabled_until=None` → `state=NOT_LIVE`).
+        sqlx::query("UPDATE streamers SET state = 'NOT_LIVE' WHERE id = ?")
+            .bind(STREAMER_ID)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(streamer_state(&pool, STREAMER_ID).await, "NOT_LIVE");
+
+        // LiveDetected within the hysteresis window → resume path.
+        let _resumed = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+
+        // Drain Resumed + Started{from_hysteresis:true} to keep ordering
+        // assertions matching the I3 test next door.
+        let _ = rx.recv().await.unwrap(); // Resumed
+        let _ = rx.recv().await.unwrap(); // Started{from_hysteresis:true}
+
+        // The DB row must now be LIVE again — the fix's whole point.
+        assert_eq!(streamer_state(&pool, STREAMER_ID).await, "LIVE");
     }
 
     /// J1 — `DefinitiveOffline { ConsecutiveFailures }` skips Hysteresis.

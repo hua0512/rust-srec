@@ -300,6 +300,24 @@ impl SessionLifecycleRepository {
         Ok(outcome)
     }
 
+    /// Flip the streamer row to `LIVE` (and refresh `last_live_time`) in its
+    /// own short transaction.
+    ///
+    /// Used by `SessionLifecycle::resume_from_hysteresis`, which short-circuits
+    /// before [`Self::start_or_resume`] (Strategy B keeps `end_time` `NULL` so
+    /// the existing session row stays valid). Without this write, any prior
+    /// `monitor::service::handle_error` call that flipped the streamer to
+    /// `NOT_LIVE` during the transient failure leaves the row stale until the
+    /// session eventually ends — which surfaces in the web UI ("showing
+    /// offline" while the recording is in flight) and races with the
+    /// container's short-queue-wait cached recheck.
+    pub async fn mark_streamer_live(&self, streamer_id: &str, now: DateTime<Utc>) -> Result<()> {
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        StreamerTxOps::set_live(&mut tx, streamer_id, now).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// Light "session ended" bundle: close the session row only, without
     /// touching streamer state or the outbox. Writes a `session_ended`
     /// audit row in the same transaction so the `live_sessions.end_time`

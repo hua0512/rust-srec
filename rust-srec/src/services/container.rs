@@ -2596,6 +2596,7 @@ impl ServiceContainer {
                                     &session_cancels,
                                     &pending_pipelines,
                                     synthetic,
+                                    /* from_hysteresis_resume */ true,
                                 )
                                 .await;
                             }
@@ -2651,6 +2652,7 @@ impl ServiceContainer {
                                     &session_cancels,
                                     &pending_pipelines,
                                     event,
+                                    /* from_hysteresis_resume */ false,
                                 ).await;
                             }
                             Err(_) => break,
@@ -3458,6 +3460,7 @@ impl ServiceContainer {
         session_cancels: &Arc<SessionCancelTokens>,
         pending_pipelines: &Arc<DashMap<String, ()>>,
         event: MonitorEvent,
+        from_hysteresis_resume: bool,
     ) {
         match event {
             MonitorEvent::StreamerLive {
@@ -3513,6 +3516,7 @@ impl ServiceContainer {
                             media_headers,
                             media_extras,
                         },
+                        from_hysteresis_resume,
                     )
                     .await;
                 });
@@ -3872,6 +3876,12 @@ async fn run_live_download_pipeline(
     session_cancels: Arc<SessionCancelTokens>,
     pending_pipelines: Arc<DashMap<String, ()>>,
     payload: StreamerLivePayload,
+    // `true` when this invocation comes from
+    // `SessionLifecycle::resume_from_hysteresis` (via the synthetic
+    // `MonitorEvent::StreamerLive` built in `setup_resume_download_subscriber`).
+    // Lets the short-queue-wait branch skip the cached-state recheck that
+    // would otherwise race the lifecycle's `set_live` write.
+    from_hysteresis_resume: bool,
 ) {
     use crate::downloader::{AcquireRequest, PreflightRequest, Priority as QueuePriority};
 
@@ -4121,7 +4131,7 @@ async fn run_live_download_pipeline(
             download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
             return;
         }
-    } else {
+    } else if !from_hysteresis_resume {
         // Cheap re-check for the short-wait case: is the streamer
         // still in a state that permits a fresh recording? `Live`
         // specifically, NOT just `is_active()` — `OutOfSchedule`
@@ -4129,6 +4139,19 @@ async fn run_live_download_pipeline(
         // still being monitored) but recording is not allowed.
         // Without this tighter check, a schedule window could close
         // mid-wait and we'd start an out-of-schedule recording.
+        //
+        // Skipped on `from_hysteresis_resume`: the lifecycle's
+        // `resume_from_hysteresis` is itself a definitive live signal
+        // and has already issued a `set_live` DB write, but
+        // `StreamMonitor::handle_live` reloads the streamer-manager
+        // cache *after* the broadcast — so this recheck can fire
+        // while the cache still reflects a stale `NotLive` from a
+        // prior `handle_error`. Schedule-boundary safety for resume
+        // is preserved upstream by `LiveStatus::Filtered { OutOfSchedule }`
+        // (which prevents `on_live_detected` from firing at all out
+        // of schedule) and downstream by the
+        // `MonitorEvent::StateChanged { OutOfSchedule }` handler that
+        // actively stops downloads when a window closes mid-recording.
         let meta = streamer_manager.get_streamer(&streamer_id);
         let permits_start = meta
             .as_ref()
