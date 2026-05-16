@@ -3015,9 +3015,8 @@ mod tests {
         // Simulate `monitor::service::handle_error` flipping the streamer
         // row during the transient failure that drove this hysteresis
         // entry (first error → `disabled_until=None` → `state=NOT_LIVE`).
-        sqlx::query("UPDATE streamers SET state = 'NOT_LIVE' WHERE id = ?")
-            .bind(STREAMER_ID)
-            .execute(&pool)
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .update_streamer_state(STREAMER_ID, StreamerState::NotLive.as_str())
             .await
             .unwrap();
         assert_eq!(streamer_state(&pool, STREAMER_ID).await, "NOT_LIVE");
