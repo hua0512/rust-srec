@@ -899,17 +899,17 @@ impl SessionLifecycle {
         let hysteresis_duration =
             chrono::Duration::from_std(handle.elapsed()).unwrap_or(chrono::Duration::zero());
 
-        // Restore `streamers.state = LIVE` before broadcasting. The
-        // hysteresis-resume path short-circuits before `start_or_resume`, so
-        // the atomic `set_live` write that path performs never runs here. If
-        // a prior `monitor::service::handle_error` flipped the row to
-        // `NOT_LIVE` during the transient failure that drove this hysteresis
-        // entry, the row stays stale otherwise — and the container's
-        // short-queue-wait cached recheck (`services::container::run_live_download_pipeline`)
-        // aborts the resumed download as a result. Log-and-continue on
-        // failure: the in-memory CAS above already won and rolling it back is
-        // brittle; pre-fix behaviour was "DB stays NOT_LIVE", so this is no
-        // worse than today on the rare DB-failure path.
+        // Set `streamers.state = LIVE` before broadcasting. This path reuses
+        // the existing session row and does not go through `start_or_resume`,
+        // so without this write the row keeps whatever
+        // `monitor::service::handle_error` last wrote — `NOT_LIVE` after a
+        // non-authoritative download failure. Subscribers of the broadcasts
+        // below read that state through `streamer_manager`, so the value
+        // must be correct before the send.
+        //
+        // Log and continue on DB failure: the CAS above already won, so the
+        // in-memory state is committed to "Recording". Reverting it would
+        // leave the actor and the lifecycle disagreeing.
         if let Err(e) = self
             .repo
             .mark_streamer_live(args.streamer_id, args.now)
@@ -2984,13 +2984,12 @@ mod tests {
         assert!(lifecycle.is_session_active(started.session_id()));
     }
 
-    /// I3b — Resume from Hysteresis must restore `streamers.state = LIVE`
-    /// even when a prior `monitor::service::handle_error` flipped the row
-    /// to `NOT_LIVE` during the transient failure. Regression for the
-    /// "streamer shows offline on web while recording is in flight" bug:
-    /// `resume_from_hysteresis` short-circuits before `start_or_resume` and
-    /// previously left the streamer DB row stale, so the container's
-    /// short-queue-wait cached recheck aborted the resumed download.
+    /// Resume from hysteresis must set `streamers.state = LIVE`. If a
+    /// download failure earlier in the session flipped the row to
+    /// `NOT_LIVE` (via `monitor::service::handle_error`), the resume path
+    /// must restore it — otherwise downstream readers (cache, container
+    /// queue-wait state check, web UI) keep seeing `NOT_LIVE` after the
+    /// recording has resumed.
     #[tokio::test]
     async fn i3b_resume_restores_streamer_state_live() {
         let pool = setup_pool().await;

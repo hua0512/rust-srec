@@ -3876,11 +3876,13 @@ async fn run_live_download_pipeline(
     session_cancels: Arc<SessionCancelTokens>,
     pending_pipelines: Arc<DashMap<String, ()>>,
     payload: StreamerLivePayload,
-    // `true` when this invocation comes from
-    // `SessionLifecycle::resume_from_hysteresis` (via the synthetic
-    // `MonitorEvent::StreamerLive` built in `setup_resume_download_subscriber`).
-    // Lets the short-queue-wait branch skip the cached-state recheck that
-    // would otherwise race the lifecycle's `set_live` write.
+    // `true` when called for a session that just resumed out of
+    // hysteresis. The resume-download subscriber synthesises a
+    // `MonitorEvent::StreamerLive` from the lifecycle's
+    // `SessionTransition::Started { from_hysteresis: true, .. }` and routes
+    // it through the same pipeline as a fresh-live event; this flag
+    // tells the short-queue-wait branch to trust the lifecycle signal
+    // instead of re-reading the streamer-manager cache.
     from_hysteresis_resume: bool,
 ) {
     use crate::downloader::{AcquireRequest, PreflightRequest, Priority as QueuePriority};
@@ -4140,18 +4142,15 @@ async fn run_live_download_pipeline(
         // Without this tighter check, a schedule window could close
         // mid-wait and we'd start an out-of-schedule recording.
         //
-        // Skipped on `from_hysteresis_resume`: the lifecycle's
-        // `resume_from_hysteresis` is itself a definitive live signal
-        // and has already issued a `set_live` DB write, but
-        // `StreamMonitor::handle_live` reloads the streamer-manager
-        // cache *after* the broadcast — so this recheck can fire
-        // while the cache still reflects a stale `NotLive` from a
-        // prior `handle_error`. Schedule-boundary safety for resume
-        // is preserved upstream by `LiveStatus::Filtered { OutOfSchedule }`
-        // (which prevents `on_live_detected` from firing at all out
-        // of schedule) and downstream by the
-        // `MonitorEvent::StateChanged { OutOfSchedule }` handler that
-        // actively stops downloads when a window closes mid-recording.
+        // Skipped on hysteresis resume: the lifecycle writes
+        // `state=LIVE` before broadcasting, but `StreamMonitor::handle_live`
+        // reloads the streamer-manager cache only after the broadcast
+        // returns, so this check can read a stale `NotLive`. Out-of-schedule
+        // streamers never reach this code path because
+        // `monitor::service::handle_live` runs only for `LiveStatus::Live`
+        // (filtered events take a different branch), and any window that
+        // closes mid-recording is caught later by the
+        // `MonitorEvent::StateChanged { OutOfSchedule }` handler.
         let meta = streamer_manager.get_streamer(&streamer_id);
         let permits_start = meta
             .as_ref()
