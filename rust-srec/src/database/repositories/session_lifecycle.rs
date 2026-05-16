@@ -300,6 +300,23 @@ impl SessionLifecycleRepository {
         Ok(outcome)
     }
 
+    /// Set `streamers.state = 'LIVE'` and refresh `last_live_time` in a single
+    /// `BEGIN IMMEDIATE` transaction.
+    ///
+    /// Used by [`crate::session::SessionLifecycle`] when resuming a session
+    /// out of hysteresis. That code path reuses the existing session row
+    /// (its `end_time` is still `NULL`) and does not invoke
+    /// [`Self::start_or_resume`], so the streamer row would otherwise keep
+    /// whatever state was last written — typically `NOT_LIVE`, set by
+    /// `monitor::service::handle_error` after a non-authoritative download
+    /// failure.
+    pub async fn mark_streamer_live(&self, streamer_id: &str, now: DateTime<Utc>) -> Result<()> {
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        StreamerTxOps::set_live(&mut tx, streamer_id, now).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// Light "session ended" bundle: close the session row only, without
     /// touching streamer state or the outbox. Writes a `session_ended`
     /// audit row in the same transaction so the `live_sessions.end_time`

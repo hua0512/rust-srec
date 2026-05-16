@@ -899,6 +899,30 @@ impl SessionLifecycle {
         let hysteresis_duration =
             chrono::Duration::from_std(handle.elapsed()).unwrap_or(chrono::Duration::zero());
 
+        // Set `streamers.state = LIVE` before broadcasting. This path reuses
+        // the existing session row and does not go through `start_or_resume`,
+        // so without this write the row keeps whatever
+        // `monitor::service::handle_error` last wrote — `NOT_LIVE` after a
+        // non-authoritative download failure. Subscribers of the broadcasts
+        // below read that state through `streamer_manager`, so the value
+        // must be correct before the send.
+        //
+        // Log and continue on DB failure: the CAS above already won, so the
+        // in-memory state is committed to "Recording". Reverting it would
+        // leave the actor and the lifecycle disagreeing.
+        if let Err(e) = self
+            .repo
+            .mark_streamer_live(args.streamer_id, args.now)
+            .await
+        {
+            warn!(
+                streamer_id = args.streamer_id,
+                session_id,
+                error = %e,
+                "resume_from_hysteresis: set_live DB write failed; cache may stay stale"
+            );
+        }
+
         // Restore in-memory state to Recording. Preserve the original
         // `started_at` from the prior entry.
         let started_at = self
@@ -2958,6 +2982,57 @@ mod tests {
         // Session active again. Wait past the original deadline; Ended
         // must NOT fire (timer was cancelled).
         assert!(lifecycle.is_session_active(started.session_id()));
+    }
+
+    /// Resume from hysteresis must set `streamers.state = LIVE`. If a
+    /// download failure earlier in the session flipped the row to
+    /// `NOT_LIVE` (via `monitor::service::handle_error`), the resume path
+    /// must restore it — otherwise downstream readers (cache, container
+    /// queue-wait state check, web UI) keep seeing `NOT_LIVE` after the
+    /// recording has resumed.
+    #[tokio::test]
+    async fn i3b_resume_restores_streamer_state_live() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started
+        assert_eq!(streamer_state(&pool, STREAMER_ID).await, "LIVE");
+
+        lifecycle
+            .on_download_terminal(&make_terminal_completed_clean_disconnect(
+                started.session_id(),
+            ))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Ending
+
+        // Simulate `monitor::service::handle_error` flipping the streamer
+        // row during the transient failure that drove this hysteresis
+        // entry (first error → `disabled_until=None` → `state=NOT_LIVE`).
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .update_streamer_state(STREAMER_ID, StreamerState::NotLive.as_str())
+            .await
+            .unwrap();
+        assert_eq!(streamer_state(&pool, STREAMER_ID).await, "NOT_LIVE");
+
+        // LiveDetected within the hysteresis window → resume path.
+        let _resumed = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+
+        // Drain Resumed + Started{from_hysteresis:true} to keep ordering
+        // assertions matching the I3 test next door.
+        let _ = rx.recv().await.unwrap(); // Resumed
+        let _ = rx.recv().await.unwrap(); // Started{from_hysteresis:true}
+
+        // The DB row must now be LIVE again — the fix's whole point.
+        assert_eq!(streamer_state(&pool, STREAMER_ID).await, "LIVE");
     }
 
     /// J1 — `DefinitiveOffline { ConsecutiveFailures }` skips Hysteresis.
