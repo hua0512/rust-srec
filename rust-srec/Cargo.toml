@@ -31,7 +31,7 @@ hkdf = "0.13"
 p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
 
 # Caching
-dashmap = "6.1"
+dashmap = "6.2"
 parking_lot = { workspace = true }
 
 # Logging
