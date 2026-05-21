@@ -41,7 +41,7 @@ tokio = { version = "1.51.0", features = ["rt-multi-thread", "macros", "fs", "io
 tokio-util = { version = "0.7.18", features = ["codec", "io", "rt", "time"] }
 reqwest = { version = "0.12.26", default-features = false, features = ["json", "stream", "rustls-tls-webpki-roots-no-provider", "gzip", "deflate"] }
 serde = { version = "1.0.217", features = ["derive", "rc"] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 thiserror = "2.0.18"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json", "fmt"] }
