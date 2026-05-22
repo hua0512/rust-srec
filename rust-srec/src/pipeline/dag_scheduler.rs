@@ -861,7 +861,7 @@ impl DagScheduler {
 mod tests {
     use super::*;
     use crate::database::models::dag::DagStepExecutionDbModel;
-    use crate::database::models::{DagPipelineDefinition, DagStep, PipelineStep};
+    use crate::database::models::{DagPipelineDefinition, DagStep, JobStatus, PipelineStep};
     use crate::database::repositories::dag::DagRepository;
     use crate::database::repositories::job::JobRepository;
     use crate::pipeline::JobQueue;
@@ -899,7 +899,7 @@ mod tests {
 
         async fn list_jobs_by_status(
             &self,
-            _status: &str,
+            _status: JobStatus,
         ) -> Result<Vec<crate::database::models::JobDbModel>> {
             unimplemented!("not needed for these tests")
         }
@@ -911,7 +911,7 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn update_job_status(&self, _id: &str, _status: &str) -> Result<()> {
+        async fn update_job_status(&self, _id: &str, _status: JobStatus) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
 
@@ -971,7 +971,7 @@ mod tests {
         async fn update_job_if_status(
             &self,
             _job: &crate::database::models::JobDbModel,
-            _expected_status: &str,
+            _expected_status: JobStatus,
         ) -> Result<u64> {
             unimplemented!("not needed for these tests")
         }

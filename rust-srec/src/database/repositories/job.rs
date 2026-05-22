@@ -3,7 +3,7 @@
 use crate::database::begin_immediate;
 use crate::database::models::{
     JobCounts, JobDbModel, JobExecutionLogDbModel, JobExecutionProgressDbModel, JobFilters,
-    Pagination,
+    JobStatus, Pagination,
 };
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
@@ -15,10 +15,10 @@ use sqlx::SqlitePool;
 pub trait JobRepository: Send + Sync {
     async fn get_job(&self, id: &str) -> Result<JobDbModel>;
     async fn list_pending_jobs(&self, job_type: &str) -> Result<Vec<JobDbModel>>;
-    async fn list_jobs_by_status(&self, status: &str) -> Result<Vec<JobDbModel>>;
+    async fn list_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobDbModel>>;
     async fn list_recent_jobs(&self, limit: i32) -> Result<Vec<JobDbModel>>;
     async fn create_job(&self, job: &JobDbModel) -> Result<()>;
-    async fn update_job_status(&self, id: &str, status: &str) -> Result<()>;
+    async fn update_job_status(&self, id: &str, status: JobStatus) -> Result<()>;
     /// Mark a job as FAILED and set error/completed_at.
     /// Returns the number of rows updated (0 means the job was already in a terminal state).
     async fn mark_job_failed(&self, id: &str, error: &str) -> Result<u64>;
@@ -56,7 +56,11 @@ pub trait JobRepository: Send + Sync {
     async fn update_job(&self, job: &JobDbModel) -> Result<()>;
     /// Update a job only if its current status matches `expected_status`.
     /// Returns the number of rows updated.
-    async fn update_job_if_status(&self, job: &JobDbModel, expected_status: &str) -> Result<u64>;
+    async fn update_job_if_status(
+        &self,
+        job: &JobDbModel,
+        expected_status: JobStatus,
+    ) -> Result<u64>;
     /// Reset processing jobs to pending (for recovery on startup).
     async fn reset_processing_jobs(&self) -> Result<i32>;
     async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32>;
@@ -145,19 +149,20 @@ impl JobRepository for SqlxJobRepository {
 
     async fn list_pending_jobs(&self, job_type: &str) -> Result<Vec<JobDbModel>> {
         let jobs = sqlx::query_as::<_, JobDbModel>(
-            "SELECT * FROM job WHERE status = 'PENDING' AND job_type = ? ORDER BY created_at",
+            "SELECT * FROM job WHERE status = ? AND job_type = ? ORDER BY created_at",
         )
+        .bind(JobStatus::Pending.as_str())
         .bind(job_type)
         .fetch_all(&self.pool)
         .await?;
         Ok(jobs)
     }
 
-    async fn list_jobs_by_status(&self, status: &str) -> Result<Vec<JobDbModel>> {
+    async fn list_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobDbModel>> {
         let jobs = sqlx::query_as::<_, JobDbModel>(
             "SELECT * FROM job WHERE status = ? ORDER BY created_at DESC",
         )
-        .bind(status)
+        .bind(status.as_str())
         .fetch_all(&self.pool)
         .await?;
         Ok(jobs)
@@ -214,11 +219,11 @@ impl JobRepository for SqlxJobRepository {
         .await
     }
 
-    async fn update_job_status(&self, id: &str, status: &str) -> Result<()> {
+    async fn update_job_status(&self, id: &str, status: JobStatus) -> Result<()> {
         retry_on_sqlite_busy("update_job_status", || async {
             let now = crate::database::time::now_ms();
             sqlx::query("UPDATE job SET status = ?, updated_at = ? WHERE id = ?")
-                .bind(status)
+                .bind(status.as_str())
                 .bind(now)
                 .bind(id)
                 .execute(&self.write_pool)
@@ -232,12 +237,15 @@ impl JobRepository for SqlxJobRepository {
         retry_on_sqlite_busy("mark_job_failed", || async {
             let now = crate::database::time::now_ms();
             let res = sqlx::query(
-                "UPDATE job SET status = 'FAILED', completed_at = ?, updated_at = ?, error = ? WHERE id = ? AND status IN ('PENDING', 'PROCESSING')",
+                "UPDATE job SET status = ?, completed_at = ?, updated_at = ?, error = ? WHERE id = ? AND status IN (?, ?)",
             )
+            .bind(JobStatus::Failed.as_str())
             .bind(now)
             .bind(now)
             .bind(error)
             .bind(id)
+            .bind(JobStatus::Pending.as_str())
+            .bind(JobStatus::Processing.as_str())
             .execute(&self.write_pool)
             .await?;
             Ok(res.rows_affected())
@@ -249,11 +257,14 @@ impl JobRepository for SqlxJobRepository {
         retry_on_sqlite_busy("mark_job_cancelled", || async {
             let now = crate::database::time::now_ms();
             let res = sqlx::query(
-                "UPDATE job SET status = 'CANCELLED', completed_at = ?, updated_at = ? WHERE id = ? AND status IN ('PENDING', 'PROCESSING')",
+                "UPDATE job SET status = ?, completed_at = ?, updated_at = ? WHERE id = ? AND status IN (?, ?)",
             )
+            .bind(JobStatus::Cancelled.as_str())
             .bind(now)
             .bind(now)
             .bind(id)
+            .bind(JobStatus::Pending.as_str())
+            .bind(JobStatus::Processing.as_str())
             .execute(&self.write_pool)
             .await?;
             Ok(res.rows_affected())
@@ -265,10 +276,13 @@ impl JobRepository for SqlxJobRepository {
         retry_on_sqlite_busy("reset_job_for_retry", || async {
             let now = crate::database::time::now_ms();
             let res = sqlx::query(
-                "UPDATE job SET status = 'PENDING', started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ? AND status IN ('FAILED', 'CANCELLED')",
+                "UPDATE job SET status = ?, started_at = NULL, completed_at = NULL, error = NULL, retry_count = retry_count + 1, updated_at = ? WHERE id = ? AND status IN (?, ?)",
             )
+            .bind(JobStatus::Pending.as_str())
             .bind(now)
             .bind(id)
+            .bind(JobStatus::Failed.as_str())
+            .bind(JobStatus::Cancelled.as_str())
             .execute(&self.write_pool)
             .await?;
 
@@ -283,7 +297,7 @@ impl JobRepository for SqlxJobRepository {
                     None => Err(Error::not_found("Job", id)),
                     Some(status) => Err(Error::InvalidStateTransition {
                         from: status.to_ascii_uppercase(),
-                        to: "PENDING".to_string(),
+                        to: JobStatus::Pending.as_str().to_string(),
                     }),
                 };
             }
@@ -300,19 +314,19 @@ impl JobRepository for SqlxJobRepository {
                     .join(", ");
                 (
                     format!(
-                        "SELECT COUNT(*) FROM job WHERE status = 'PENDING' AND job_type IN ({})",
+                        "SELECT COUNT(*) FROM job WHERE status = ? AND job_type IN ({})",
                         placeholders
                     ),
                     true,
                 )
             }
             _ => (
-                "SELECT COUNT(*) FROM job WHERE status = 'PENDING'".to_string(),
+                "SELECT COUNT(*) FROM job WHERE status = ?".to_string(),
                 false,
             ),
         };
 
-        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(JobStatus::Pending.as_str());
         if bind_job_types && let Some(types) = job_types {
             for jt in types {
                 query = query.bind(jt);
@@ -381,14 +395,15 @@ impl JobRepository for SqlxJobRepository {
                             r#"
                             SELECT id
                             FROM job
-                            WHERE status = 'PENDING' AND job_type IN ({})
+                            WHERE status = ? AND job_type IN ({})
                             ORDER BY priority DESC, created_at DESC
                             LIMIT 1
                             "#,
                             placeholders
                         );
 
-                        let mut query = sqlx::query_scalar::<_, String>(&sql);
+                        let mut query =
+                            sqlx::query_scalar::<_, String>(&sql).bind(JobStatus::Pending.as_str());
                         for jt in types {
                             query = query.bind(jt);
                         }
@@ -399,11 +414,12 @@ impl JobRepository for SqlxJobRepository {
                             r#"
                             SELECT id
                             FROM job
-                            WHERE status = 'PENDING'
+                            WHERE status = ?
                             ORDER BY priority DESC, created_at DESC
                             LIMIT 1
                             "#,
                         )
+                        .bind(JobStatus::Pending.as_str())
                         .fetch_optional(&self.pool)
                         .await?
                     }
@@ -416,17 +432,19 @@ impl JobRepository for SqlxJobRepository {
                 let claimed = sqlx::query_as::<_, JobDbModel>(
                     r#"
                     UPDATE job
-                    SET status = 'PROCESSING',
+                    SET status = ?,
                         started_at = ?,
                         updated_at = ?
                     WHERE id = ?
-                      AND status = 'PENDING'
+                      AND status = ?
                     RETURNING *
                     "#,
                 )
+                .bind(JobStatus::Processing.as_str())
                 .bind(now)
                 .bind(now)
                 .bind(&next_id)
+                .bind(JobStatus::Pending.as_str())
                 .fetch_optional(&self.write_pool)
                 .await?;
 
@@ -531,7 +549,11 @@ impl JobRepository for SqlxJobRepository {
         .await
     }
 
-    async fn update_job_if_status(&self, job: &JobDbModel, expected_status: &str) -> Result<u64> {
+    async fn update_job_if_status(
+        &self,
+        job: &JobDbModel,
+        expected_status: JobStatus,
+    ) -> Result<u64> {
         retry_on_sqlite_busy("update_job_if_status", || async {
             let now = crate::database::time::now_ms();
             let res = sqlx::query(
@@ -579,7 +601,7 @@ impl JobRepository for SqlxJobRepository {
             .bind(job.queue_wait_secs)
             .bind(&job.dag_step_execution_id)
             .bind(&job.id)
-            .bind(expected_status)
+            .bind(expected_status.as_str())
             .execute(&self.write_pool)
             .await?;
 
@@ -592,9 +614,11 @@ impl JobRepository for SqlxJobRepository {
         retry_on_sqlite_busy("reset_processing_jobs", || async {
             let now = crate::database::time::now_ms();
             let result = sqlx::query(
-                "UPDATE job SET status = 'PENDING', started_at = NULL, updated_at = ? WHERE status = 'PROCESSING'",
+                "UPDATE job SET status = ?, started_at = NULL, updated_at = ? WHERE status = ?",
             )
+            .bind(JobStatus::Pending.as_str())
             .bind(now)
+            .bind(JobStatus::Processing.as_str())
             .execute(&self.write_pool)
             .await?;
             Ok(result.rows_affected() as i32)
@@ -613,22 +637,24 @@ impl JobRepository for SqlxJobRepository {
                 DELETE FROM job_execution_logs 
                 WHERE job_id IN (
                     SELECT id FROM job 
-                    WHERE status IN ('COMPLETED', 'FAILED') 
+                    WHERE status IN (?, ?)
                     AND updated_at < ?
                 )
                 "#,
             )
+            .bind(JobStatus::Completed.as_str())
+            .bind(JobStatus::Failed.as_str())
             .bind(cutoff_ms)
             .execute(&self.write_pool)
             .await?;
 
             // Then delete the jobs
-            let result = sqlx::query(
-                "DELETE FROM job WHERE status IN ('COMPLETED', 'FAILED') AND updated_at < ?",
-            )
-            .bind(cutoff_ms)
-            .execute(&self.write_pool)
-            .await?;
+            let result = sqlx::query("DELETE FROM job WHERE status IN (?, ?) AND updated_at < ?")
+                .bind(JobStatus::Completed.as_str())
+                .bind(JobStatus::Failed.as_str())
+                .bind(cutoff_ms)
+                .execute(&self.write_pool)
+                .await?;
 
             Ok(result.rows_affected() as i32)
         })
@@ -1002,14 +1028,19 @@ impl JobRepository for SqlxJobRepository {
         let row: (i64, i64, i64, i64, i64) = sqlx::query_as(
             r#"
             SELECT
-                COALESCE(SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END), 0) as pending,
-                COALESCE(SUM(CASE WHEN status = 'PROCESSING' THEN 1 ELSE 0 END), 0) as processing,
-                COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END), 0) as completed,
-                COALESCE(SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END), 0) as failed,
-                COALESCE(SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END), 0) as cancelled
+                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as pending,
+                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as processing,
+                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as completed,
+                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as failed,
+                COALESCE(SUM(CASE WHEN status = ? THEN 1 ELSE 0 END), 0) as cancelled
             FROM job
             "#,
         )
+        .bind(JobStatus::Pending.as_str())
+        .bind(JobStatus::Processing.as_str())
+        .bind(JobStatus::Completed.as_str())
+        .bind(JobStatus::Failed.as_str())
+        .bind(JobStatus::Cancelled.as_str())
         .fetch_one(&self.pool)
         .await?;
 
@@ -1039,10 +1070,11 @@ impl JobRepository for SqlxJobRepository {
                 )
             ) as avg_time
             FROM job
-            WHERE status = 'COMPLETED'
+            WHERE status = ?
               AND (duration_secs IS NOT NULL OR (started_at IS NOT NULL AND completed_at IS NOT NULL))
             "#,
         )
+        .bind(JobStatus::Completed.as_str())
         .fetch_one(&self.pool)
         .await?;
 
@@ -1056,16 +1088,19 @@ impl JobRepository for SqlxJobRepository {
             let result = sqlx::query(
                 r#"
                 UPDATE job SET
-                    status = 'CANCELLED',
+                    status = ?,
                     completed_at = ?,
                     updated_at = ?
                 WHERE pipeline_id = ?
-                  AND status IN ('PENDING', 'PROCESSING')
+                  AND status IN (?, ?)
                 "#,
             )
+            .bind(JobStatus::Cancelled.as_str())
             .bind(now)
             .bind(now)
             .bind(pipeline_id)
+            .bind(JobStatus::Pending.as_str())
+            .bind(JobStatus::Processing.as_str())
             .execute(&self.write_pool)
             .await?;
 
@@ -1108,20 +1143,27 @@ impl JobRepository for SqlxJobRepository {
         let mut total_deleted: u64 = 0;
 
         loop {
-            // Get a batch of job IDs to delete
-            let job_ids: Vec<String> = sqlx::query_scalar(
-                r#"
-                SELECT id FROM job 
-                WHERE status IN ('COMPLETED', 'FAILED') 
-                AND (completed_at < ? OR (completed_at IS NULL AND updated_at < ?))
-                LIMIT ?
-                "#,
-            )
-            .bind(cutoff_ms)
-            .bind(cutoff_ms)
-            .bind(batch_size as i64)
-            .fetch_all(&self.pool)
-            .await?;
+            let purge_statuses = [JobStatus::Completed, JobStatus::Failed];
+            let mut builder =
+                sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT id FROM job WHERE status IN (");
+            {
+                let mut separated = builder.separated(", ");
+                for status in &purge_statuses {
+                    separated.push_bind(status.as_str());
+                }
+            }
+            builder.push(") AND (completed_at < ");
+            builder.push_bind(cutoff_ms);
+            builder.push(" OR (completed_at IS NULL AND updated_at < ");
+            builder.push_bind(cutoff_ms);
+            builder.push(")) LIMIT ");
+            builder.push_bind(batch_size as i64);
+
+            let job_ids: Vec<String> = builder
+                .build_query_scalar()
+                .persistent(false)
+                .fetch_all(&self.pool)
+                .await?;
 
             if job_ids.is_empty() {
                 break;
@@ -1189,20 +1231,27 @@ impl JobRepository for SqlxJobRepository {
         let cutoff_ms = crate::database::time::now_ms()
             - chrono::Duration::days(days as i64).num_milliseconds();
 
-        let job_ids: Vec<String> = sqlx::query_scalar(
-            r#"
-            SELECT id FROM job 
-            WHERE status IN ('COMPLETED', 'FAILED') 
-            AND (completed_at < ? OR (completed_at IS NULL AND updated_at < ?))
-            ORDER BY completed_at ASC, updated_at ASC
-            LIMIT ?
-            "#,
-        )
-        .bind(cutoff_ms)
-        .bind(cutoff_ms)
-        .bind(limit as i64)
-        .fetch_all(&self.pool)
-        .await?;
+        let purge_statuses = [JobStatus::Completed, JobStatus::Failed];
+        let mut builder =
+            sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT id FROM job WHERE status IN (");
+        {
+            let mut separated = builder.separated(", ");
+            for status in &purge_statuses {
+                separated.push_bind(status.as_str());
+            }
+        }
+        builder.push(") AND (completed_at < ");
+        builder.push_bind(cutoff_ms);
+        builder.push(" OR (completed_at IS NULL AND updated_at < ");
+        builder.push_bind(cutoff_ms);
+        builder.push(")) ORDER BY completed_at ASC, updated_at ASC LIMIT ");
+        builder.push_bind(limit as i64);
+
+        let job_ids: Vec<String> = builder
+            .build_query_scalar()
+            .persistent(false)
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok(job_ids)
     }

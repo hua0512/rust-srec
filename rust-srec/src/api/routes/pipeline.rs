@@ -77,9 +77,9 @@ use crate::api::models::{
 };
 use crate::api::server::AppState;
 use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
-use crate::database::models::{JobFilters, JobStatus as DbJobStatus, OutputFilters, Pagination};
+use crate::database::models::{JobFilters, JobStatus, OutputFilters, Pagination};
+use crate::pipeline::Job;
 use crate::pipeline::JobProgressSnapshot;
-use crate::pipeline::{Job, JobStatus as QueueJobStatus};
 
 /// Create the pipeline router (DAG-native).
 ///
@@ -659,7 +659,7 @@ pub async fn list_jobs(
 
     // Convert API filter params to database filter types
     let db_filters = JobFilters {
-        status: filters.status.map(api_status_to_db_status),
+        status: filters.status.map(api_status_to_job_status),
         streamer_id: filters.streamer_id,
         session_id: filters.session_id,
         pipeline_id: filters.pipeline_id,
@@ -716,7 +716,7 @@ pub async fn list_jobs_page(
         .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
 
     let db_filters = JobFilters {
-        status: filters.status.map(api_status_to_db_status),
+        status: filters.status.map(api_status_to_job_status),
         streamer_id: filters.streamer_id,
         session_id: filters.session_id,
         pipeline_id: filters.pipeline_id,
@@ -1327,25 +1327,25 @@ pub async fn create_pipeline(
 // Helper functions
 // ============================================================================
 
-/// Convert API JobStatus to database JobStatus.
-fn api_status_to_db_status(status: ApiJobStatus) -> DbJobStatus {
+/// Convert API JobStatus to persisted job status.
+fn api_status_to_job_status(status: ApiJobStatus) -> JobStatus {
     match status {
-        ApiJobStatus::Pending => DbJobStatus::Pending,
-        ApiJobStatus::Processing => DbJobStatus::Processing,
-        ApiJobStatus::Completed => DbJobStatus::Completed,
-        ApiJobStatus::Failed => DbJobStatus::Failed,
-        ApiJobStatus::Cancelled => DbJobStatus::Cancelled,
+        ApiJobStatus::Pending => JobStatus::Pending,
+        ApiJobStatus::Processing => JobStatus::Processing,
+        ApiJobStatus::Completed => JobStatus::Completed,
+        ApiJobStatus::Failed => JobStatus::Failed,
+        ApiJobStatus::Cancelled => JobStatus::Cancelled,
     }
 }
 
-/// Convert queue JobStatus to API JobStatus.
-fn queue_status_to_api_status(status: QueueJobStatus) -> ApiJobStatus {
+/// Convert persisted job status to API JobStatus.
+fn job_status_to_api_status(status: JobStatus) -> ApiJobStatus {
     match status {
-        QueueJobStatus::Pending => ApiJobStatus::Pending,
-        QueueJobStatus::Processing => ApiJobStatus::Processing,
-        QueueJobStatus::Completed => ApiJobStatus::Completed,
-        QueueJobStatus::Failed => ApiJobStatus::Failed,
-        QueueJobStatus::Cancelled => ApiJobStatus::Cancelled,
+        JobStatus::Pending => ApiJobStatus::Pending,
+        JobStatus::Processing => ApiJobStatus::Processing,
+        JobStatus::Completed => ApiJobStatus::Completed,
+        JobStatus::Failed => ApiJobStatus::Failed,
+        JobStatus::Cancelled => ApiJobStatus::Cancelled,
     }
 }
 
@@ -1357,7 +1357,7 @@ fn job_to_response(job: &Job, streamer_name: Option<String>) -> JobResponse {
         streamer_id: job.streamer_id.clone(),
         streamer_name,
         pipeline_id: job.pipeline_id.clone(),
-        status: queue_status_to_api_status(job.status),
+        status: job_status_to_api_status(job.status),
         processor_type: job.job_type.clone(),
         input_path: job.inputs.clone(),
         output_path: if job.outputs.is_empty() {
@@ -1969,13 +1969,13 @@ pub async fn retry_dag(
         };
 
         match job.status {
-            QueueJobStatus::Failed | QueueJobStatus::Cancelled => {
+            JobStatus::Failed | JobStatus::Cancelled => {
                 match pipeline_manager.retry_job(job_id).await {
                     Ok(job) => job_ids.push(job.id),
                     Err(e) => tracing::warn!("Failed to retry job {}: {}", job_id, e),
                 }
             }
-            QueueJobStatus::Completed => {
+            JobStatus::Completed => {
                 if let Err(e) = dag_scheduler
                     .on_job_completed(
                         &step.id,
@@ -2222,10 +2222,10 @@ pub async fn retry_all_failed_dags(
                     .await,
             ) {
                 match job.status {
-                    QueueJobStatus::Failed | QueueJobStatus::Cancelled => {
+                    JobStatus::Failed | JobStatus::Cancelled => {
                         let _ = pipeline_manager.retry_job(job_id).await;
                     }
-                    QueueJobStatus::Completed => {
+                    JobStatus::Completed => {
                         let _ = dag_scheduler
                             .on_job_completed(
                                 &step.id,
@@ -2637,7 +2637,7 @@ mod tests {
         state
     }
 
-    async fn enqueue_job_with_status(status: QueueJobStatus) -> (AppState, String) {
+    async fn enqueue_job_with_status(status: JobStatus) -> (AppState, String) {
         let state = build_test_state();
         let manager = state.pipeline_manager.as_ref().unwrap().clone();
 
@@ -2656,7 +2656,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cancel_job_cancels_processing_job() {
-        let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Processing).await;
+        let (state, job_id) = enqueue_job_with_status(JobStatus::Processing).await;
 
         let response = cancel_job(State(state.clone()), Path(job_id.clone()))
             .await
@@ -2669,12 +2669,12 @@ mod tests {
 
         let manager = state.pipeline_manager.as_ref().unwrap();
         let job = manager.get_job(&job_id).await.unwrap().unwrap();
-        assert_eq!(job.status, QueueJobStatus::Cancelled);
+        assert_eq!(job.status, JobStatus::Cancelled);
     }
 
     #[tokio::test]
     async fn test_delete_job_deletes_completed_job() {
-        let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Completed).await;
+        let (state, job_id) = enqueue_job_with_status(JobStatus::Completed).await;
 
         let response = delete_job(State(state.clone()), Path(job_id.clone()))
             .await
@@ -2692,7 +2692,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_job_rejects_processing_job() {
-        let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Processing).await;
+        let (state, job_id) = enqueue_job_with_status(JobStatus::Processing).await;
 
         let result = delete_job(State(state), Path(job_id));
 
@@ -2701,7 +2701,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cancel_job_rejects_completed_job() {
-        let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Completed).await;
+        let (state, job_id) = enqueue_job_with_status(JobStatus::Completed).await;
 
         let result = cancel_job(State(state), Path(job_id));
 
@@ -2717,7 +2717,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_job_returns_cancelled_status() {
-        let (state, job_id) = enqueue_job_with_status(QueueJobStatus::Pending).await;
+        let (state, job_id) = enqueue_job_with_status(JobStatus::Pending).await;
         let manager = state.pipeline_manager.as_ref().unwrap();
         manager.cancel_job(&job_id).await.unwrap();
 
@@ -2767,7 +2767,7 @@ mod tests {
         assert_eq!(response.0.items[0].status, ApiJobStatus::Cancelled);
 
         let pending = manager.get_job(&pending_job_id).await.unwrap().unwrap();
-        assert_eq!(pending.status, QueueJobStatus::Pending);
+        assert_eq!(pending.status, JobStatus::Pending);
     }
 
     #[test]
@@ -2846,49 +2846,49 @@ mod tests {
     }
 
     #[test]
-    fn test_api_status_to_db_status() {
+    fn test_api_status_to_job_status() {
         assert_eq!(
-            api_status_to_db_status(ApiJobStatus::Pending),
-            DbJobStatus::Pending
+            api_status_to_job_status(ApiJobStatus::Pending),
+            JobStatus::Pending
         );
         assert_eq!(
-            api_status_to_db_status(ApiJobStatus::Processing),
-            DbJobStatus::Processing
+            api_status_to_job_status(ApiJobStatus::Processing),
+            JobStatus::Processing
         );
         assert_eq!(
-            api_status_to_db_status(ApiJobStatus::Completed),
-            DbJobStatus::Completed
+            api_status_to_job_status(ApiJobStatus::Completed),
+            JobStatus::Completed
         );
         assert_eq!(
-            api_status_to_db_status(ApiJobStatus::Failed),
-            DbJobStatus::Failed
+            api_status_to_job_status(ApiJobStatus::Failed),
+            JobStatus::Failed
         );
         assert_eq!(
-            api_status_to_db_status(ApiJobStatus::Cancelled),
-            DbJobStatus::Cancelled
+            api_status_to_job_status(ApiJobStatus::Cancelled),
+            JobStatus::Cancelled
         );
     }
 
     #[test]
-    fn test_queue_status_to_api_status() {
+    fn test_job_status_to_api_status() {
         assert_eq!(
-            queue_status_to_api_status(QueueJobStatus::Pending),
+            job_status_to_api_status(JobStatus::Pending),
             ApiJobStatus::Pending
         );
         assert_eq!(
-            queue_status_to_api_status(QueueJobStatus::Processing),
+            job_status_to_api_status(JobStatus::Processing),
             ApiJobStatus::Processing
         );
         assert_eq!(
-            queue_status_to_api_status(QueueJobStatus::Completed),
+            job_status_to_api_status(JobStatus::Completed),
             ApiJobStatus::Completed
         );
         assert_eq!(
-            queue_status_to_api_status(QueueJobStatus::Failed),
+            job_status_to_api_status(JobStatus::Failed),
             ApiJobStatus::Failed
         );
         assert_eq!(
-            queue_status_to_api_status(QueueJobStatus::Cancelled),
+            job_status_to_api_status(JobStatus::Cancelled),
             ApiJobStatus::Cancelled
         );
     }
