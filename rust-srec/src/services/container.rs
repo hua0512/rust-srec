@@ -26,7 +26,7 @@ use crate::credentials::{
 use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
-    ConfigRepository, NotificationRepository, SqlxNotificationRepository,
+    ConfigRepository, NotificationRepository, SessionRepository, SqlxNotificationRepository,
 };
 use crate::database::repositories::{
     SqlxCredentialStore,
@@ -592,6 +592,8 @@ pub struct ServiceContainer {
     pub event_broadcaster: ConfigEventBroadcaster,
     /// Download manager.
     pub download_manager: Arc<DownloadManager>,
+    /// Session repository shared by monitor, pipeline, danmu, and download startup.
+    pub session_repository: Arc<SqlxSessionRepository>,
     /// Output-root write gate (#508). Shared by the download manager for
     /// pre-start checks + runtime ENOSPC routing and by the health checker
     /// for aggregated `/health` reporting.
@@ -1015,6 +1017,7 @@ impl ServiceContainer {
             streamer_manager,
             event_broadcaster,
             download_manager,
+            session_repository: session_repo,
             output_root_gate,
             gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
@@ -1244,7 +1247,7 @@ impl ServiceContainer {
         // Create danmu service with custom config
         let danmu_service_start = Instant::now();
         let danmu_service =
-            Arc::new(DanmuService::new(danmu_config).with_session_repository(session_repo));
+            Arc::new(DanmuService::new(danmu_config).with_session_repository(session_repo.clone()));
         let danmu_service_ms = danmu_service_start.elapsed().as_millis();
 
         // Create notification service with default config
@@ -1381,6 +1384,7 @@ impl ServiceContainer {
             streamer_manager,
             event_broadcaster,
             download_manager,
+            session_repository: session_repo.clone(),
             output_root_gate,
             gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
@@ -2444,6 +2448,50 @@ impl ServiceContainer {
             }
         });
 
+        // SessionTransition::Ended → DownloadManager::clear_session_segment_index.
+        //
+        // The handler is a synchronous DashMap remove; the subscriber does no
+        // async work after `recv`, so its broadcast cursor cannot Lag from
+        // upstream load. Each subscriber on `session_lifecycle` has an
+        // independent cursor, so a slow neighbour (the pipeline-manager
+        // subscriber above, which awaits `handle_session_transition`) cannot
+        // drop cleanups for `DownloadManager::session_segment_indices`. Without
+        // this isolation, a `Lagged` on the pipeline subscriber would leak
+        // session-scoped segment-index counters until process restart.
+        let download_manager = self.download_manager.clone();
+        let mut transition_rx = self.session_lifecycle.subscribe();
+        let cancellation_token = self.cancellation_token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        debug!("Download session-cleanup handler shutting down");
+                        break;
+                    }
+                    result = transition_rx.recv() => {
+                        match result {
+                            Ok(transition) => {
+                                if let crate::session::SessionTransition::Ended { session_id, .. } = transition {
+                                    download_manager.clear_session_segment_index(&session_id);
+                                }
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                warn!(
+                                    lagged = n,
+                                    "Download session-cleanup handler lagged; DownloadManager::session_segment_indices entries for the missed sessions will persist until process restart"
+                                );
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                debug!("Download session-cleanup channel closed");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
         // SessionTransition → stop danmu collection on Failed.
         //
         // Cancelled does not emit SessionTransition (the engine may still
@@ -2535,6 +2583,7 @@ impl ServiceContainer {
         let config_service = self.config_service.clone();
         let danmu_service = self.danmu_service.clone();
         let stream_monitor = self.stream_monitor.clone();
+        let session_repository = self.session_repository.clone();
         let session_cancels = self.session_cancels.clone();
         let pending_pipelines = self.pending_pipelines.clone();
         let session_lifecycle = self.session_lifecycle.clone();
@@ -2593,6 +2642,7 @@ impl ServiceContainer {
                                     &config_service,
                                     &danmu_service,
                                     &stream_monitor,
+                                    &session_repository,
                                     &session_cancels,
                                     &pending_pipelines,
                                     synthetic,
@@ -2628,6 +2678,7 @@ impl ServiceContainer {
         let config_service = self.config_service.clone();
         let danmu_service = self.danmu_service.clone();
         let stream_monitor = self.stream_monitor.clone();
+        let session_repository = self.session_repository.clone();
         let session_cancels = self.session_cancels.clone();
         let pending_pipelines = self.pending_pipelines.clone();
         let mut receiver = self.monitor_event_broadcaster.subscribe();
@@ -2649,6 +2700,7 @@ impl ServiceContainer {
                                     &config_service,
                                     &danmu_service,
                                     &stream_monitor,
+                                    &session_repository,
                                     &session_cancels,
                                     &pending_pipelines,
                                     event,
@@ -3457,6 +3509,7 @@ impl ServiceContainer {
                 SqlxConfigRepository,
             >,
         >,
+        session_repository: &Arc<SqlxSessionRepository>,
         session_cancels: &Arc<SessionCancelTokens>,
         pending_pipelines: &Arc<DashMap<String, ()>>,
         event: MonitorEvent,
@@ -3495,6 +3548,7 @@ impl ServiceContainer {
                 let config_service = config_service.clone();
                 let danmu_service = danmu_service.clone();
                 let stream_monitor = stream_monitor.clone();
+                let session_repository = session_repository.clone();
                 let session_cancels = session_cancels.clone();
                 let pending_pipelines = pending_pipelines.clone();
                 tokio::spawn(async move {
@@ -3504,6 +3558,7 @@ impl ServiceContainer {
                         config_service,
                         danmu_service,
                         stream_monitor,
+                        session_repository,
                         session_cancels,
                         pending_pipelines,
                         StreamerLivePayload {
@@ -3873,6 +3928,7 @@ async fn run_live_download_pipeline(
             SqlxConfigRepository,
         >,
     >,
+    session_repository: Arc<SqlxSessionRepository>,
     session_cancels: Arc<SessionCancelTokens>,
     pending_pipelines: Arc<DashMap<String, ()>>,
     payload: StreamerLivePayload,
@@ -4181,6 +4237,21 @@ async fn run_live_download_pipeline(
     let stream_url_selected = best_stream.url.clone();
     let stream_format = best_stream.stream_format.as_str();
     let media_format = best_stream.media_format.as_str();
+    let initial_segment_index = match session_repository
+        .next_session_segment_index(&session_id)
+        .await
+    {
+        Ok(index) => index,
+        Err(e) => {
+            warn!(
+                session_id = %session_id,
+                streamer_id = %streamer_id,
+                error = %e,
+                "Failed to load next persisted session segment index; starting from zero"
+            );
+            0
+        }
+    };
 
     let mut headers = media_headers.as_ref().cloned().unwrap_or_default();
     if let Some(extras) = best_stream.extras.as_ref() {
@@ -4210,6 +4281,7 @@ async fn run_live_download_pipeline(
         streamer_name.clone(),
         session_id.clone(),
     )
+    .with_initial_segment_index(initial_segment_index)
     .with_filename_template(
         merged_config
             .output_filename_template
@@ -4250,7 +4322,7 @@ async fn run_live_download_pipeline(
     }
 
     info!(
-        "Starting download for {} with stream URL: {} (stream_format: {}, media_format: {}, headers_needed: {}, output: {}, queue_wait_ms: {})",
+        "Starting download for {} with stream URL: {} (stream_format: {}, media_format: {}, headers_needed: {}, output: {}, queue_wait_ms: {}, initial_segment_index: {})",
         streamer_name,
         stream_url_selected,
         stream_format,
@@ -4258,6 +4330,7 @@ async fn run_live_download_pipeline(
         best_stream.is_headers_needed,
         merged_config.output_folder,
         waited_ms,
+        initial_segment_index,
     );
 
     let cookies = merged_config.cookies.clone();

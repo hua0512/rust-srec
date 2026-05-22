@@ -157,6 +157,7 @@ struct ActiveDownload {
     /// Last known output path (from segments)
     pub output_path: Option<String>,
     current_segment_index: Option<u32>,
+    current_engine_segment_index: Option<u32>,
     current_segment_path: Option<String>,
     current_segment_started_at: Option<DateTime<Utc>>,
     /// Queue slot held by the download. Released (and the next waiter
@@ -179,6 +180,14 @@ pub struct DownloadManager {
     active_downloads: Arc<DashMap<String, ActiveDownload>>,
     /// Pending configuration updates keyed by download_id.
     pending_updates: Arc<DashMap<String, PendingConfigUpdate>>,
+    /// Next session-scoped segment index keyed by recording session id.
+    /// The per-download `engine_segment_index -> session_segment_index`
+    /// mapping is held as a local variable in the spawn loop in
+    /// `start_with_slot`, so this map carries only the monotonic counter.
+    /// Cleared by `clear_session_segment_index` on
+    /// `SessionTransition::Ended` (the only surface that's actually shared
+    /// across download attempts within a session).
+    session_segment_indices: Arc<DashMap<String, u32>>,
     /// Engine registry.
     engines: RwLock<HashMap<EngineType, Arc<dyn DownloadEngine>>>,
     /// Circuit breaker manager.
@@ -706,6 +715,7 @@ impl DownloadManager {
             queue,
             active_downloads: Arc::new(DashMap::new()),
             pending_updates: Arc::new(DashMap::new()),
+            session_segment_indices: Arc::new(DashMap::new()),
             engines: RwLock::new(HashMap::new()),
             circuit_breakers,
             output_root_gate: OnceLock::new(),
@@ -757,6 +767,37 @@ impl DownloadManager {
         if self.output_root_gate.set(gate).is_err() {
             warn!("Ignoring attempt to replace already-configured output-root gate");
         }
+    }
+
+    /// Clear session-scoped segment allocation state after a session reaches
+    /// its final ended state. Only the monotonic counter is shared across
+    /// download attempts within the session; the per-download
+    /// `engine_segment_index -> session_segment_index` mapping is held local
+    /// to the spawn loop in `start_with_slot` and drops automatically when
+    /// that loop drains, so there is no per-download state to clear here.
+    pub fn clear_session_segment_index(&self, session_id: &str) {
+        self.session_segment_indices.remove(session_id);
+    }
+
+    fn seed_session_segment_index(
+        indices: &DashMap<String, u32>,
+        session_id: &str,
+        next: u32,
+    ) {
+        indices
+            .entry(session_id.to_string())
+            .and_modify(|current| *current = (*current).max(next))
+            .or_insert(next);
+    }
+
+    fn allocate_next_session_segment_index(
+        indices: &DashMap<String, u32>,
+        session_id: &str,
+    ) -> u32 {
+        let mut entry = indices.entry(session_id.to_string()).or_insert(0);
+        let index = *entry;
+        *entry = entry.saturating_add(1);
+        index
     }
 
     /// Set the config repository.
@@ -1373,6 +1414,11 @@ impl DownloadManager {
     ) -> Result<String> {
         let is_high_priority = matches!(slot.priority(), Priority::High);
         let active_slot = slot.into_active();
+        Self::seed_session_segment_index(
+            &self.session_segment_indices,
+            &config.session_id,
+            config.initial_segment_index,
+        );
 
         // Generate download ID
         let download_id = uuid::Uuid::new_v4().to_string();
@@ -1399,6 +1445,7 @@ impl DownloadManager {
                 is_high_priority,
                 output_path: None,
                 current_segment_index: None,
+                current_engine_segment_index: None,
                 current_segment_path: None,
                 current_segment_started_at: None,
                 slot: Some(active_slot),
@@ -1451,6 +1498,7 @@ impl DownloadManager {
         // Clone references for the spawned task
         let active_downloads = self.active_downloads.clone();
         let pending_updates = self.pending_updates.clone();
+        let session_segment_indices = self.session_segment_indices.clone();
         let circuit_breakers_ref = self.circuit_breakers.get(&engine_key);
         // Handle into the segment event loop so runtime ENOSPC from the
         // engine stderr readers can reach `gate.record_failure` — the
@@ -1465,6 +1513,24 @@ impl DownloadManager {
             // tokio::broadcast (clone-per-subscriber) and the WS clients.
             const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(250);
             let mut last_progress_emit = Instant::now() - PROGRESS_MIN_INTERVAL;
+
+            // engine_segment_index -> session_segment_index for THIS download
+            // attempt. Local to the spawn loop — populated as we observe
+            // engine events, dropped when the loop exits. Trailing
+            // `SegmentCompleted` events flushed by the engine after
+            // `stop_download_with_reason` or after the dedicated cleanup
+            // subscriber ran `clear_session_segment_index` still resolve to
+            // the index allocated by their matching `SegmentStarted`, because
+            // the map is alive for as long as we are draining the channel.
+            //
+            // A *new* engine_segment_index arriving after
+            // `clear_session_segment_index` ran would allocate from a
+            // recreated counter starting at 0, but that requires the engine
+            // to start a fresh segment after the session has been declared
+            // Ended — which is not realistic for stop-then-flush, and the
+            // orphan is ignored by the pipeline coordinator's
+            // `session_complete_triggered` gate.
+            let mut engine_to_session: HashMap<u32, u32> = HashMap::new();
 
             while let Some(event) = segment_rx.recv().await {
                 match event {
@@ -1491,13 +1557,20 @@ impl DownloadManager {
                             active_downloads
                                 .get(&download_id_clone)
                                 .and_then(|download| {
-                                    if download.current_segment_index == Some(index) {
+                                    if download.current_engine_segment_index == Some(index) {
                                         download.current_segment_started_at.as_ref().cloned()
                                     } else {
                                         None
                                     }
                                 })
                         });
+                        let segment_index =
+                            *engine_to_session.entry(index).or_insert_with(|| {
+                                Self::allocate_next_session_segment_index(
+                                    &session_segment_indices,
+                                    &session_id,
+                                )
+                            });
 
                         // Broadcast send is synchronous, ignore if no receivers
                         let _ = event_tx.send(DownloadManagerEvent::Progress(
@@ -1507,7 +1580,7 @@ impl DownloadManager {
                                 streamer_name: streamer_name.clone(),
                                 session_id: session_id.clone(),
                                 segment_path: segment_path.clone(),
-                                segment_index: index,
+                                segment_index,
                                 started_at,
                                 completed_at,
                                 duration_secs,
@@ -1519,7 +1592,8 @@ impl DownloadManager {
 
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
                             download.output_path = Some(segment_path);
-                            if download.current_segment_index == Some(index) {
+                            if download.current_engine_segment_index == Some(index) {
+                                download.current_engine_segment_index = None;
                                 download.current_segment_index = None;
                                 download.current_segment_path = None;
                                 download.current_segment_started_at = None;
@@ -1683,9 +1757,17 @@ impl DownloadManager {
                         started_at,
                     } => {
                         let segment_path = path.to_string_lossy().to_string();
+                        let segment_index =
+                            *engine_to_session.entry(sequence).or_insert_with(|| {
+                                Self::allocate_next_session_segment_index(
+                                    &session_segment_indices,
+                                    &session_id,
+                                )
+                            });
 
                         if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
-                            download.current_segment_index = Some(sequence);
+                            download.current_engine_segment_index = Some(sequence);
+                            download.current_segment_index = Some(segment_index);
                             download.current_segment_path = Some(segment_path.clone());
                             download.current_segment_started_at = Some(started_at);
                         }
@@ -1698,7 +1780,7 @@ impl DownloadManager {
                                 streamer_name: streamer_name.clone(),
                                 session_id: session_id.clone(),
                                 segment_path: segment_path.clone(),
-                                segment_index: sequence,
+                                segment_index,
                                 started_at,
                             },
                         ));
@@ -1719,7 +1801,8 @@ impl DownloadManager {
                         debug!(
                             download_id = %download_id_clone,
                             path = %path.display(),
-                            sequence = sequence,
+                            engine_segment_index = sequence,
+                            segment_index = segment_index,
                             "Segment started"
                         );
                     }
@@ -2305,7 +2388,212 @@ impl Default for DownloadManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use std::sync::atomic::Ordering;
+
+    #[derive(Clone)]
+    struct ScriptedSegmentEngine {
+        prelude: Vec<SegmentEvent>,
+        /// Optional barrier: when set, the engine emits `prelude`, then awaits
+        /// this notify before emitting `tail` + `DownloadCompleted`. Lets a
+        /// test interleave `stop_download` between the prelude and the tail
+        /// to reproduce the trailing-flush race.
+        release_tail: Option<Arc<tokio::sync::Notify>>,
+        tail: Vec<SegmentEvent>,
+    }
+
+    impl ScriptedSegmentEngine {
+        fn new(events: Vec<SegmentEvent>) -> Self {
+            Self {
+                prelude: events,
+                release_tail: None,
+                tail: Vec::new(),
+            }
+        }
+
+        fn with_gated_tail(
+            prelude: Vec<SegmentEvent>,
+            release: Arc<tokio::sync::Notify>,
+            tail: Vec<SegmentEvent>,
+        ) -> Self {
+            Self {
+                prelude,
+                release_tail: Some(release),
+                tail,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl DownloadEngine for ScriptedSegmentEngine {
+        fn engine_type(&self) -> EngineType {
+            EngineType::Ffmpeg
+        }
+
+        async fn start(
+            &self,
+            handle: Arc<DownloadHandle>,
+        ) -> std::result::Result<(), EngineStartError> {
+            for event in self.prelude.clone() {
+                handle
+                    .event_tx
+                    .send(event)
+                    .await
+                    .map_err(|e| EngineStartError {
+                        kind: DownloadFailureKind::Other,
+                        message: format!("failed to emit scripted segment event: {}", e),
+                    })?;
+            }
+            if let Some(release) = self.release_tail.as_ref() {
+                release.notified().await;
+            }
+            for event in self.tail.clone() {
+                handle
+                    .event_tx
+                    .send(event)
+                    .await
+                    .map_err(|e| EngineStartError {
+                        kind: DownloadFailureKind::Other,
+                        message: format!("failed to emit scripted tail event: {}", e),
+                    })?;
+            }
+            handle
+                .event_tx
+                .send(SegmentEvent::DownloadCompleted {
+                    total_bytes: 0,
+                    total_duration_secs: 0.0,
+                    total_segments: 0,
+                    engine_signal: EngineEndSignal::Unknown,
+                })
+                .await
+                .map_err(|e| EngineStartError {
+                    kind: DownloadFailureKind::Other,
+                    message: format!("failed to emit scripted completion event: {}", e),
+                })?;
+            Ok(())
+        }
+
+        async fn stop(&self, handle: &DownloadHandle) -> Result<()> {
+            handle.cancel();
+            Ok(())
+        }
+
+        fn is_available(&self) -> bool {
+            true
+        }
+
+        fn version(&self) -> Option<String> {
+            Some("scripted".to_string())
+        }
+    }
+
+    fn completed_segment(path: std::path::PathBuf, index: u32) -> SegmentEvent {
+        SegmentEvent::SegmentCompleted(SegmentInfo {
+            path,
+            duration_secs: 1.0,
+            size_bytes: 128,
+            index,
+            started_at: None,
+            completed_at: Utc::now(),
+            split_reason_code: None,
+            split_reason_details_json: None,
+        })
+    }
+
+    fn test_download_config(output_dir: std::path::PathBuf, session_id: &str) -> DownloadConfig {
+        DownloadConfig::new(
+            "https://example.com/test.flv",
+            output_dir,
+            "test-streamer-id",
+            "TestStreamer",
+            session_id,
+        )
+    }
+
+    async fn start_scripted_download(
+        manager: &DownloadManager,
+        config: DownloadConfig,
+        events: Vec<SegmentEvent>,
+    ) -> Result<String> {
+        start_scripted_download_with_engine(manager, config, ScriptedSegmentEngine::new(events))
+            .await
+    }
+
+    async fn start_scripted_download_with_engine(
+        manager: &DownloadManager,
+        config: DownloadConfig,
+        scripted: ScriptedSegmentEngine,
+    ) -> Result<String> {
+        let engine = EngineHandle {
+            engine: Arc::new(scripted),
+            engine_type: EngineType::Ffmpeg,
+            engine_key: EngineKey::global(EngineType::Ffmpeg),
+        };
+        let slot = manager
+            .acquire_slot(
+                AcquireRequest {
+                    session_id: config.session_id.clone(),
+                    streamer_id: config.streamer_id.clone(),
+                    streamer_name: config.streamer_name.clone(),
+                    engine_type: EngineType::Ffmpeg,
+                    priority: Priority::Normal,
+                },
+                CancellationToken::new(),
+            )
+            .await?;
+
+        manager.start_with_slot(slot, config, engine).await
+    }
+
+    async fn collect_segment_completed(
+        events: &mut broadcast::Receiver<DownloadManagerEvent>,
+    ) -> DownloadProgressEvent {
+        loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for download event")
+                .expect("download event channel closed");
+            if let DownloadManagerEvent::Progress(
+                progress @ DownloadProgressEvent::SegmentCompleted { .. },
+            ) = event
+            {
+                return progress;
+            }
+        }
+    }
+
+    async fn wait_for_download_terminal(events: &mut broadcast::Receiver<DownloadManagerEvent>) {
+        loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for terminal download event")
+                .expect("download event channel closed");
+            if matches!(event, DownloadManagerEvent::Terminal(_)) {
+                return;
+            }
+        }
+    }
+
+    async fn collect_segment_progress_events(
+        events: &mut broadcast::Receiver<DownloadManagerEvent>,
+        count: usize,
+    ) -> Vec<DownloadProgressEvent> {
+        let mut collected = Vec::new();
+        while collected.len() < count {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for download event")
+                .expect("download event channel closed");
+            if let DownloadManagerEvent::Progress(
+                progress @ (DownloadProgressEvent::SegmentStarted { .. }
+                | DownloadProgressEvent::SegmentCompleted { .. }),
+            ) = event
+            {
+                collected.push(progress);
+            }
+        }
+        collected
+    }
 
     #[test]
     fn test_download_manager_config_default() {
@@ -2320,6 +2608,270 @@ mod tests {
         let manager = DownloadManager::new();
         assert_eq!(manager.active_count(), 0);
         assert!(!manager.available_engines().is_empty());
+    }
+
+    #[tokio::test]
+    async fn repeated_engine_local_indices_use_session_scoped_indices() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let manager = DownloadManager::new();
+        let mut events = manager.subscribe();
+        let session_id = "session-reused-local-index";
+
+        let first_path = temp.path().join("segment-a.flv");
+        start_scripted_download(
+            &manager,
+            test_download_config(temp.path().to_path_buf(), session_id),
+            vec![completed_segment(first_path, 0)],
+        )
+        .await
+        .expect("first download should start");
+        let first = collect_segment_completed(&mut events).await;
+        wait_for_download_terminal(&mut events).await;
+
+        let second_path = temp.path().join("segment-b.flv");
+        start_scripted_download(
+            &manager,
+            test_download_config(temp.path().to_path_buf(), session_id),
+            vec![completed_segment(second_path, 0)],
+        )
+        .await
+        .expect("second download should start");
+        let second = collect_segment_completed(&mut events).await;
+        wait_for_download_terminal(&mut events).await;
+
+        let DownloadProgressEvent::SegmentCompleted {
+            segment_index: first_index,
+            ..
+        } = first
+        else {
+            panic!("expected first completed segment event");
+        };
+        let DownloadProgressEvent::SegmentCompleted {
+            segment_index: second_index,
+            ..
+        } = second
+        else {
+            panic!("expected second completed segment event");
+        };
+
+        assert_eq!(first_index, 0);
+        assert_eq!(second_index, 1);
+    }
+
+    #[tokio::test]
+    async fn segment_started_and_completed_share_session_index() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let manager = DownloadManager::new();
+        let mut events = manager.subscribe();
+        let segment_path = temp.path().join("segment.flv");
+
+        start_scripted_download(
+            &manager,
+            test_download_config(temp.path().to_path_buf(), "session-start-complete"),
+            vec![
+                SegmentEvent::SegmentStarted {
+                    path: segment_path.clone(),
+                    sequence: 0,
+                    started_at: Utc::now(),
+                },
+                completed_segment(segment_path, 0),
+            ],
+        )
+        .await
+        .expect("download should start");
+
+        let segment_events = collect_segment_progress_events(&mut events, 2).await;
+        let DownloadProgressEvent::SegmentStarted {
+            segment_index: started_index,
+            ..
+        } = &segment_events[0]
+        else {
+            panic!("expected segment started event first");
+        };
+        let DownloadProgressEvent::SegmentCompleted {
+            segment_index: completed_index,
+            ..
+        } = &segment_events[1]
+        else {
+            panic!("expected segment completed event second");
+        };
+
+        assert_eq!(*started_index, 0);
+        assert_eq!(completed_index, started_index);
+        wait_for_download_terminal(&mut events).await;
+    }
+
+    /// Trailing `SegmentCompleted` flushed after `stop_download_with_reason`
+    /// must reuse the session_segment_index that the matching
+    /// `SegmentStarted` allocated. The mapping is the spawn loop's local
+    /// `engine_to_session` `HashMap`, which is alive as long as the loop is
+    /// draining the engine's channel and is unaffected by
+    /// `active_downloads.remove(download_id)`.
+    #[tokio::test]
+    async fn segment_completed_after_stop_keeps_session_index() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let manager = DownloadManager::new();
+        let mut events = manager.subscribe();
+        let segment_path = temp.path().join("segment.flv");
+        let release_tail = Arc::new(tokio::sync::Notify::new());
+
+        let scripted = ScriptedSegmentEngine::with_gated_tail(
+            vec![SegmentEvent::SegmentStarted {
+                path: segment_path.clone(),
+                sequence: 0,
+                started_at: Utc::now(),
+            }],
+            release_tail.clone(),
+            vec![SegmentEvent::SegmentCompleted(SegmentInfo {
+                path: segment_path,
+                duration_secs: 1.0,
+                size_bytes: 128,
+                index: 0,
+                started_at: None,
+                completed_at: Utc::now(),
+                split_reason_code: None,
+                split_reason_details_json: None,
+            })],
+        );
+
+        let download_id = start_scripted_download_with_engine(
+            &manager,
+            test_download_config(temp.path().to_path_buf(), "session-trailing-flush"),
+            scripted,
+        )
+        .await
+        .expect("download should start");
+
+        // Drain the SegmentStarted so we know its session_index.
+        let started_index = loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for segment started")
+                .expect("download event channel closed");
+            if let DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
+                segment_index,
+                ..
+            }) = event
+            {
+                break segment_index;
+            }
+        };
+
+        // Stop the download — drops the `ActiveDownload` entry while the
+        // scripted engine is still parked on `release_tail`, so the
+        // trailing `SegmentCompleted` arrives after `active_downloads.remove`.
+        manager
+            .stop_download(&download_id)
+            .await
+            .expect("stop should succeed");
+
+        // Release the trailing SegmentCompleted.
+        release_tail.notify_one();
+
+        // The trailing SegmentCompleted must report the same session_index
+        // as the SegmentStarted.
+        let completed = collect_segment_completed(&mut events).await;
+        let DownloadProgressEvent::SegmentCompleted {
+            segment_index: completed_index,
+            ..
+        } = completed
+        else {
+            panic!("expected segment completed event");
+        };
+        assert_eq!(completed_index, started_index);
+    }
+
+    /// `clear_session_segment_index` can fire mid-drain (the dedicated
+    /// `SessionTransition::Ended` subscriber in `services/container.rs` runs
+    /// as soon as `SessionLifecycle` writes `end_time`, independent of the
+    /// download's spawn loop). The trailing `SegmentCompleted` that follows
+    /// must still report the same session_index as its matching
+    /// `SegmentStarted`. The spawn loop's local `engine_to_session` map is
+    /// what makes this hold — it survives the session-counter eviction.
+    ///
+    /// The prelude includes a complete first segment (Start+Complete for
+    /// engine seq=0) so the session counter advances past 0 before the
+    /// second `SegmentStarted` (seq=1) lands. A naive design that wipes the
+    /// mapping along with the counter would re-allocate the trailing
+    /// `SegmentCompleted(1)` as session_index=0 from the recreated counter,
+    /// not 1 — that's what this test rules out.
+    #[tokio::test]
+    async fn segment_completed_after_session_cleanup_keeps_index() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let manager = DownloadManager::new();
+        let mut events = manager.subscribe();
+        let first_path = temp.path().join("segment-0.flv");
+        let second_path = temp.path().join("segment-1.flv");
+        let release_tail = Arc::new(tokio::sync::Notify::new());
+        let session_id = "session-cleanup-mid-drain";
+
+        let scripted = ScriptedSegmentEngine::with_gated_tail(
+            vec![
+                SegmentEvent::SegmentStarted {
+                    path: first_path.clone(),
+                    sequence: 0,
+                    started_at: Utc::now(),
+                },
+                completed_segment(first_path, 0),
+                SegmentEvent::SegmentStarted {
+                    path: second_path.clone(),
+                    sequence: 1,
+                    started_at: Utc::now(),
+                },
+            ],
+            release_tail.clone(),
+            vec![completed_segment(second_path.clone(), 1)],
+        );
+
+        start_scripted_download_with_engine(
+            &manager,
+            test_download_config(temp.path().to_path_buf(), session_id),
+            scripted,
+        )
+        .await
+        .expect("download should start");
+
+        // Drain events until we see the SegmentStarted for engine seq=1 —
+        // that's the one whose matching SegmentCompleted is gated.
+        let started_index = loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for segment started")
+                .expect("download event channel closed");
+            if let DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
+                segment_index,
+                segment_path,
+                ..
+            }) = event
+                && segment_path == second_path.to_string_lossy()
+            {
+                break segment_index;
+            }
+        };
+        // With the counter advanced past 0, the second SegmentStarted's
+        // session_index must be > 0; otherwise the trailing assertion below
+        // can't distinguish fixed from broken.
+        assert!(
+            started_index > 0,
+            "test setup expects session counter to advance past 0 before the gated tail; got {started_index}"
+        );
+
+        // Simulate the `SessionTransition::Ended` subscriber firing while the
+        // engine is still parked.
+        manager.clear_session_segment_index(session_id);
+
+        // Release the trailing SegmentCompleted.
+        release_tail.notify_one();
+
+        let completed = collect_segment_completed(&mut events).await;
+        let DownloadProgressEvent::SegmentCompleted {
+            segment_index: completed_index,
+            ..
+        } = completed
+        else {
+            panic!("expected segment completed event");
+        };
+        assert_eq!(completed_index, started_index);
     }
 
     #[tokio::test]
