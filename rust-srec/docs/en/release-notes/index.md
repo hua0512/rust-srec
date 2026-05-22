@@ -4,7 +4,7 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — no staged changes yet for the next release
+- [`unreleased`](./unreleased.md) — resumed recordings keep consistent segment numbering, end-of-session and paired video + danmaku post-processing wait for the right files before running, and a temporary CDN failure no longer flips a streamer to offline
 
 ## Latest release
 
