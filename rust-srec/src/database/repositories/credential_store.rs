@@ -2,12 +2,11 @@
 //!
 //! This is the database-backed persistence implementation for the credentials subsystem.
 
-use async_trait::async_trait;
 use sqlx::SqlitePool;
 use tracing::{debug, instrument};
 
 use crate::credentials::{
-    CredentialError, CredentialScope, CredentialSource, CredentialStore, RefreshedCredentials,
+    CredentialError, CredentialScope, CredentialSource, RefreshedCredentials,
 };
 
 /// SQLx-backed credential store.
@@ -250,13 +249,12 @@ impl SqlxCredentialStore {
     }
 }
 
-#[async_trait]
-impl CredentialStore for SqlxCredentialStore {
+impl SqlxCredentialStore {
     #[instrument(
         skip(self, credentials),
         fields(scope = %source.scope.describe(), platform = %source.platform_name)
     )]
-    async fn update_credentials(
+    pub async fn update_credentials(
         &self,
         source: &CredentialSource,
         credentials: &RefreshedCredentials,
@@ -278,7 +276,7 @@ impl CredentialStore for SqlxCredentialStore {
     }
 
     #[instrument(skip(self), fields(scope = %scope.describe()))]
-    async fn update_check_result(
+    pub async fn update_check_result(
         &self,
         scope: &CredentialScope,
         result: &str,

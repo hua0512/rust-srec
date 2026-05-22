@@ -135,7 +135,7 @@ pub struct AppState {
     /// Pipeline preset repository for pipeline presets (workflow sequences)
     pub pipeline_preset_repository: Option<Arc<dyn PipelinePresetRepository>>,
     /// Job preset repository for job presets (reusable processor configs)
-    pub job_preset_repository: Option<Arc<dyn crate::database::repositories::JobPresetRepository>>,
+    pub job_preset_repository: Option<Arc<crate::database::repositories::SqliteJobPresetRepository>>,
     /// Notification repository for channel/subscription management
     pub notification_repository: Option<Arc<dyn NotificationRepository>>,
     /// Notification service for testing and reloading
@@ -362,7 +362,7 @@ impl AppState {
     /// Set the job preset repository.
     pub fn with_job_preset_repository(
         mut self,
-        repo: Arc<dyn crate::database::repositories::JobPresetRepository>,
+        repo: Arc<crate::database::repositories::SqliteJobPresetRepository>,
     ) -> Self {
         self.job_preset_repository = Some(repo);
         self
