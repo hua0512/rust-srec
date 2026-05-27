@@ -88,7 +88,7 @@ rustls = { version = "0.23.40", default-features = false, features = ["logging",
 rustls-platform-verifier = "0.7.0"
 libsm = "0.6.0"
 rustc-hash = "2.1"
-memchr = "2.7.6"
+memchr = "2.8.1"
 criterion = "0.8.1"
 zlib-rs = "0.6.3"
 
