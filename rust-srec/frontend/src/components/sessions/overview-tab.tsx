@@ -1,3 +1,4 @@
+import React, { Suspense } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +21,13 @@ import {
 import { getMediaUrl } from '@/lib/url';
 import { isPlayable } from '@/lib/media';
 import type { SessionDanmuStatistics } from '@/api/schemas';
-import { DanmuStatsPanel } from './danmu-stats-panel';
+import { Skeleton } from '@/components/ui/skeleton';
+
+const DanmuStatsPanel = React.lazy(() =>
+  import('./danmu-stats-panel').then((module) => ({
+    default: module.DanmuStatsPanel,
+  })),
+);
 
 interface OverviewTabProps {
   session: any;
@@ -225,13 +232,36 @@ export function OverviewTab({
         </div>
       </div>
 
-      <DanmuStatsPanel
-        stats={danmuStats}
-        isLoading={isDanmuStatsLoading}
-        isError={isDanmuStatsError}
-        isUnavailable={isDanmuStatsUnavailable}
-        onRetry={onRetryDanmuStats}
-      />
+      <Suspense
+        fallback={
+          <Card className="overflow-hidden border-border/50 shadow-lg bg-card/40 backdrop-blur-xl relative">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-primary/5 rounded-full blur-3xl -mr-12 -mt-12 pointer-events-none" />
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                <Activity className="h-5 w-5 text-chart-1" />
+                <Trans>Danmu Statistics</Trans>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Skeleton className="h-20 rounded-xl" />
+                <Skeleton className="h-20 rounded-xl" />
+                <Skeleton className="h-20 rounded-xl" />
+                <Skeleton className="h-20 rounded-xl" />
+              </div>
+              <Skeleton className="h-56 rounded-xl" />
+            </CardContent>
+          </Card>
+        }
+      >
+        <DanmuStatsPanel
+          stats={danmuStats}
+          isLoading={isDanmuStatsLoading}
+          isError={isDanmuStatsError}
+          isUnavailable={isDanmuStatsUnavailable}
+          onRetry={onRetryDanmuStats}
+        />
+      </Suspense>
     </motion.div>
   );
 }

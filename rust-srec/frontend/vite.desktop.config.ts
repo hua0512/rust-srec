@@ -83,7 +83,7 @@ export default defineConfig({
         loading: path.resolve(__dirname, 'desktop-loading.html'),
       },
       output: {
-        advancedChunks: {
+        codeSplitting: {
           groups: [
             { name: 'vendor-player-art', test: /node_modules[\\/]artplayer/ },
             { name: 'vendor-player-hls', test: /node_modules[\\/]hls\\.js/ },

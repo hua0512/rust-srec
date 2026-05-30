@@ -36,7 +36,7 @@ export default defineConfig(() => ({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        advancedChunks: {
+        codeSplitting: {
           groups: [
             { name: 'vendor-player-art', test: /node_modules[\\/]artplayer/ },
             { name: 'vendor-player-hls', test: /node_modules[\\/]hls\\.js/ },

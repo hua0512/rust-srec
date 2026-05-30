@@ -9,10 +9,10 @@ import { type I18n } from '@lingui/core';
 import { useEffect, useState } from 'react';
 
 import appCss from '../styles.css?url';
-import '@fontsource/inter/400.css';
-import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
-import '@fontsource/inter/700.css';
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-500.css';
+import '@fontsource/inter/latin-600.css';
+import '@fontsource/inter/latin-700.css';
 import { NotFound } from '@/components/not-found';
 import { QueryClient } from '@tanstack/react-query';
 import { ThemeProvider } from '@/components/providers/theme-provider';
