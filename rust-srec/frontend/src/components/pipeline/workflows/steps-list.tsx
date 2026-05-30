@@ -1,6 +1,13 @@
 import { motion, Reorder, AnimatePresence } from 'motion/react';
-import { memo } from 'react';
-import { X, Workflow, GripVertical, Settings, ArrowRight } from 'lucide-react';
+import { memo, useMemo } from 'react';
+import {
+  X,
+  Workflow,
+  GripVertical,
+  Settings,
+  ArrowRight,
+  AlertTriangle,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trans } from '@lingui/react/macro';
@@ -14,6 +21,10 @@ import {
   getCategoryName,
   getJobPresetName,
 } from '@/components/pipeline/presets/default-presets-i18n';
+import {
+  buildPresetProcessorMap,
+  getDeleteAfterTransformStepIds,
+} from './delete-warning';
 
 interface StepsListProps {
   steps: DagStepDefinition[];
@@ -33,6 +44,17 @@ export const StepsList = memo(
     });
 
     const presets = presetsData?.presets || [];
+
+    // Flag delete steps wired after a transform step: they would delete the converted artifact
+    // produced by that step, not the original recording.
+    const warnedStepIds = useMemo(
+      () =>
+        getDeleteAfterTransformStepIds(
+          steps,
+          buildPresetProcessorMap(presetsData?.presets),
+        ),
+      [steps, presetsData],
+    );
 
     return (
       <div className="rounded-2xl border border-dashed border-border/60 bg-muted/5 min-h-[120px] p-4 sm:p-6 h-full flex flex-col relative">
@@ -127,6 +149,16 @@ export const StepsList = memo(
                                 ? i18n._(msg`Inline: ${stepName}`)
                                 : stepName}
                           </span>
+                          {warnedStepIds.has(id) && (
+                            <span
+                              className="inline-flex shrink-0"
+                              title={i18n._(
+                                msg`This Delete step deletes the converted result, not the original recording. Enable "Remove Input on Success" on the transcode step instead.`,
+                              )}
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 flex-wrap mt-0.5">
                           {presetInfo?.category && (

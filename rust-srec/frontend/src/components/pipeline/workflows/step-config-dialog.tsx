@@ -6,16 +6,21 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Unlink } from 'lucide-react';
+import { Loader2, Unlink, AlertTriangle } from 'lucide-react';
 import { useEffect, useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { listJobPresets } from '@/server/functions/job';
+import {
+  usePresetProcessorMap,
+  getTransformDependencyIds,
+} from './delete-warning';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input as UiInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -24,6 +29,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface StepConfigDialogProps {
   open: boolean;
@@ -50,6 +65,10 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const isWorkflow = step?.type === 'workflow';
   const workflowName = isWorkflow ? (step as any).name : null;
   const [isDetached, setIsDetached] = useState(false);
+  // Holds the validated form data while the delete-after-transform confirmation is shown, so
+  // "Add anyway" can complete the deferred save.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingData, setPendingData] = useState<any>(null);
 
   // Reset detached state when dialog closes
   useEffect(() => {
@@ -156,7 +175,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, step, formValuesJson]);
 
-  const handleSubmit = (data: any) => {
+  const performSave = (data: any) => {
     if (!dagStep) return;
 
     let finalStepContent: PipelineStep;
@@ -182,6 +201,17 @@ export const StepConfigDialog = memo(function StepConfigDialog({
       step: finalStepContent,
     });
     onOpenChange(false);
+  };
+
+  const handleSubmit = (data: any) => {
+    // Block saving a delete step wired after a transform until the user confirms. The dialog
+    // alert and canvas badge explain why; "Add anyway" in the confirmation runs performSave.
+    if (transformDependencyIds.length > 0) {
+      setPendingData(data);
+      setConfirmOpen(true);
+      return;
+    }
+    performSave(data);
   };
 
   // Determine processor definition for the preset (for display purposes)
@@ -221,6 +251,24 @@ export const StepConfigDialog = memo(function StepConfigDialog({
       setDependsOn(dagStep.depends_on || []);
     }
   }, [open, dagStep]);
+
+  // Warn when this delete step depends on a transform step: the DAG feeds it that step's
+  // produced (converted) file, so deleting would discard the result rather than the source.
+  // Uses the live `dependsOn` state so the warning tracks edits made in this dialog.
+  const presetProcessorByName = usePresetProcessorMap(open);
+  const transformDependencyIds = useMemo(
+    () =>
+      dagStep
+        ? getTransformDependencyIds(
+            { ...dagStep, depends_on: dependsOn },
+            allSteps,
+            presetProcessorByName,
+          )
+        : [],
+    [dagStep, dependsOn, allSteps, presetProcessorByName],
+  );
+
+  const transformDepLabel = transformDependencyIds.join(', ');
 
   const handleDetach = () => {
     if (!presetDetail) return;
@@ -273,6 +321,27 @@ export const StepConfigDialog = memo(function StepConfigDialog({
             )}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Surfaced above the tabs (not only in Flow & Dependencies) so a delete-after-transform
+            misconfiguration is visible the moment the step is opened, regardless of active tab. */}
+        {transformDependencyIds.length > 0 && (
+          <div className="px-6 pt-4 shrink-0">
+            <Alert variant="destructive" className="bg-destructive/5">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <Trans>
+                  This Delete step will delete the files produced by{' '}
+                  <strong className="text-foreground">
+                    {transformDepLabel}
+                  </strong>{' '}
+                  (the converted result), not your original recording. To delete
+                  the original source after converting, enable "Remove Input on
+                  Success" on the transcode step instead.
+                </Trans>
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
 
         {/* Content Body */}
         <Tabs
@@ -545,6 +614,38 @@ export const StepConfigDialog = memo(function StepConfigDialog({
           </div>
         </div>
       </DialogContent>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Trans>Delete the converted result?</Trans>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <Trans>
+                This Delete step depends on{' '}
+                <strong className="text-foreground">{transformDepLabel}</strong>{' '}
+                and will delete the converted result, not your original
+                recording. To delete the original after converting, enable
+                "Remove Input on Success" on the transcode step. Add this Delete
+                step anyway?
+              </Trans>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmOpen(false);
+                if (pendingData !== null) performSave(pendingData);
+              }}
+            >
+              <Trans>Add anyway</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 });

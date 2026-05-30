@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, memo } from 'react';
+import { useCallback, useEffect, useState, memo, useMemo } from 'react';
 import {
   ReactFlow,
   Background,
@@ -24,6 +24,10 @@ import { Button } from '@/components/ui/button';
 import { LayoutGrid } from 'lucide-react';
 import { getLayoutedElements } from './layout';
 import { Trans } from '@lingui/react/macro';
+import {
+  usePresetProcessorMap,
+  getDeleteAfterTransformStepIds,
+} from '../delete-warning';
 
 const nodeTypes = {
   stepNode: StepNode,
@@ -57,6 +61,14 @@ const WorkflowFlowEditorInner = memo(
     const [hasLaidOut, setHasLaidOut] = useState(false);
     const nodesInitialized = useNodesInitialized();
     const { fitView } = useReactFlow();
+
+    // Flag delete nodes wired after a transform step: they would delete the converted artifact
+    // produced by that step, not the original recording.
+    const presetProcessorByName = usePresetProcessorMap();
+    const warnedStepIds = useMemo(
+      () => getDeleteAfterTransformStepIds(steps, presetProcessorByName),
+      [steps, presetProcessorByName],
+    );
 
     // Memoized remove handler to avoid creating new functions on every render
     const handleRemoveStep = useCallback(
@@ -97,6 +109,7 @@ const WorkflowFlowEditorInner = memo(
             id: s.id,
             onEdit: onEditStep,
             onRemove: handleRemoveStep,
+            hasDeleteWarning: warnedStepIds.has(s.id),
           };
 
           if (existing) {
@@ -127,7 +140,14 @@ const WorkflowFlowEditorInner = memo(
       });
 
       setEdges(newEdges);
-    }, [steps, onEditStep, handleRemoveStep, setNodes, setEdges]);
+    }, [
+      steps,
+      onEditStep,
+      handleRemoveStep,
+      setNodes,
+      setEdges,
+      warnedStepIds,
+    ]);
 
     // Separate effect to handle Auto-Layout logic
     // We want to re-layout when the structure changes (e.g. loading a preset)

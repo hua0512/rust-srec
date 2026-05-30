@@ -16,6 +16,10 @@
 
   Paired post-processing now waits until both the video and the danmaku for the same segment are actually ready before it starts, and the same paired job is no longer triggered twice for one segment.
 
+- **"Delete Source" no longer deletes your converted video**
+
+  A **Delete Source** step placed after a convert/transcode step was removing the newly converted file instead of the original recording, because a delete step always acts on the files produced by the step right before it. The built-in **Space Saver** workflow had this issue and now removes the original after compressing, as intended. To delete the original after converting, turn on **Remove Input on Success** on the convert step — the pipeline editor now warns you if you place a delete step there instead. Deleting after an **Upload** step is unaffected and still safe.
+
 ### Recording reliability
 
 - **Streamer no longer flips to offline after a temporary CDN failure**
