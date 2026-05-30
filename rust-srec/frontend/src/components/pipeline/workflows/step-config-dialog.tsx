@@ -29,6 +29,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface StepConfigDialogProps {
   open: boolean;
@@ -55,6 +65,10 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const isWorkflow = step?.type === 'workflow';
   const workflowName = isWorkflow ? (step as any).name : null;
   const [isDetached, setIsDetached] = useState(false);
+  // Holds the validated form data while the delete-after-transform confirmation is shown, so
+  // "Add anyway" can complete the deferred save.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingData, setPendingData] = useState<any>(null);
 
   // Reset detached state when dialog closes
   useEffect(() => {
@@ -161,7 +175,7 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, step, formValuesJson]);
 
-  const handleSubmit = (data: any) => {
+  const performSave = (data: any) => {
     if (!dagStep) return;
 
     let finalStepContent: PipelineStep;
@@ -187,6 +201,17 @@ export const StepConfigDialog = memo(function StepConfigDialog({
       step: finalStepContent,
     });
     onOpenChange(false);
+  };
+
+  const handleSubmit = (data: any) => {
+    // Block saving a delete step wired after a transform until the user confirms. The dialog
+    // alert and canvas badge explain why; "Add anyway" in the confirmation runs performSave.
+    if (transformDependencyIds.length > 0) {
+      setPendingData(data);
+      setConfirmOpen(true);
+      return;
+    }
+    performSave(data);
   };
 
   // Determine processor definition for the preset (for display purposes)
@@ -589,6 +614,38 @@ export const StepConfigDialog = memo(function StepConfigDialog({
           </div>
         </div>
       </DialogContent>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <Trans>Delete the converted result?</Trans>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <Trans>
+                This Delete step depends on{' '}
+                <strong className="text-foreground">{transformDepLabel}</strong>{' '}
+                and will delete the converted result, not your original
+                recording. To delete the original after converting, enable
+                "Remove Input on Success" on the transcode step. Add this Delete
+                step anyway?
+              </Trans>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Trans>Cancel</Trans>
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmOpen(false);
+                if (pendingData !== null) performSave(pendingData);
+              }}
+            >
+              <Trans>Add anyway</Trans>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 });
