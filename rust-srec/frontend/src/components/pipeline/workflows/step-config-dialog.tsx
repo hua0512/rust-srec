@@ -342,6 +342,27 @@ export const StepConfigDialog = memo(function StepConfigDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* Surfaced above the tabs (not only in Flow & Dependencies) so a delete-after-transform
+            misconfiguration is visible the moment the step is opened, regardless of active tab. */}
+        {transformDependencyIds.length > 0 && (
+          <div className="px-6 pt-4 shrink-0">
+            <Alert variant="destructive" className="bg-destructive/5">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <Trans>
+                  This Delete step will delete the files produced by{' '}
+                  <strong className="text-foreground">
+                    {transformDepLabel}
+                  </strong>{' '}
+                  (the converted result), not your original recording. To delete
+                  the original source after converting, enable "Remove Input on
+                  Success" on the transcode step instead.
+                </Trans>
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+
         {/* Content Body */}
         <Tabs
           defaultValue={isWorkflow ? 'flow' : 'config'}
@@ -511,23 +532,6 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                     <Label className="text-sm font-medium">
                       <Trans>Depends On (Ancestors)</Trans>
                     </Label>
-                    {transformDependencyIds.length > 0 && (
-                      <Alert variant="destructive" className="bg-destructive/5">
-                        <AlertTriangle className="h-4 w-4" />
-                        <AlertDescription>
-                          <Trans>
-                            This Delete step will delete the files produced by{' '}
-                            <strong className="text-foreground">
-                              {transformDepLabel}
-                            </strong>{' '}
-                            (the converted result), not your original recording.
-                            To delete the original source after converting,
-                            enable "Remove Input on Success" on the transcode
-                            step instead.
-                          </Trans>
-                        </AlertDescription>
-                      </Alert>
-                    )}
                     <div className="border border-border/40 rounded-lg bg-background/50 overflow-hidden">
                       <div className="p-1 max-h-[300px] overflow-y-auto">
                         {allSteps.length > 1 ? (
