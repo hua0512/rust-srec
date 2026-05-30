@@ -326,7 +326,7 @@ impl JobRepository for SqlxJobRepository {
             ),
         };
 
-        let mut query = sqlx::query_scalar::<_, i64>(&sql).bind(JobStatus::Pending.as_str());
+        let mut query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql)).bind(JobStatus::Pending.as_str());
         if bind_job_types && let Some(types) = job_types {
             for jt in types {
                 query = query.bind(jt);
@@ -403,7 +403,7 @@ impl JobRepository for SqlxJobRepository {
                         );
 
                         let mut query =
-                            sqlx::query_scalar::<_, String>(&sql).bind(JobStatus::Pending.as_str());
+                            sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql)).bind(JobStatus::Pending.as_str());
                         for jt in types {
                             query = query.bind(jt);
                         }
@@ -837,7 +837,7 @@ impl JobRepository for SqlxJobRepository {
         );
 
         // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
 
         // Bind parameters for count query
         if let Some(status) = &filters.status {
@@ -878,7 +878,7 @@ impl JobRepository for SqlxJobRepository {
         let total_count = count_query.fetch_one(&self.pool).await? as u64;
 
         // Execute data query
-        let mut data_query = sqlx::query_as::<_, JobDbModel>(&data_sql);
+        let mut data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
 
         // Bind parameters for data query
         if let Some(status) = &filters.status {
@@ -979,7 +979,7 @@ impl JobRepository for SqlxJobRepository {
             where_clause
         );
 
-        let mut data_query = sqlx::query_as::<_, JobDbModel>(&data_sql);
+        let mut data_query = sqlx::query_as::<_, JobDbModel>(sqlx::AssertSqlSafe(data_sql));
 
         if let Some(status) = &filters.status {
             data_query = data_query.bind(status.as_str());
