@@ -61,9 +61,12 @@ async fn apply_per_connection_pragmas(
     .await?;
 
     // Set cache size (64MB)
-    sqlx::query(sqlx::AssertSqlSafe(format!("PRAGMA cache_size = {}", DEFAULT_CACHE_SIZE_KB)))
-        .execute(&mut *conn)
-        .await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA cache_size = {}",
+        DEFAULT_CACHE_SIZE_KB
+    )))
+    .execute(&mut *conn)
+    .await?;
 
     // Enable memory-mapped I/O for better performance
     sqlx::query("PRAGMA mmap_size = 268435456") // 256MB

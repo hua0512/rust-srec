@@ -1870,9 +1870,9 @@ mod tests {
             [PipelineCommand::CreatePairedSegmentDag { outputs, .. }] => {
                 assert_eq!(outputs.segment_index, 0);
             }
-            other => panic!(
-                "expected only the paired command; session-complete must wait: {other:?}"
-            ),
+            other => {
+                panic!("expected only the paired command; session-complete must wait: {other:?}")
+            }
         }
 
         // `PairedDagStarted` clears `pending_paired_starts`, but

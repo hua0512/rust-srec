@@ -779,11 +779,7 @@ impl DownloadManager {
         self.session_segment_indices.remove(session_id);
     }
 
-    fn seed_session_segment_index(
-        indices: &DashMap<String, u32>,
-        session_id: &str,
-        next: u32,
-    ) {
+    fn seed_session_segment_index(indices: &DashMap<String, u32>, session_id: &str, next: u32) {
         indices
             .entry(session_id.to_string())
             .and_modify(|current| *current = (*current).max(next))
@@ -1564,13 +1560,12 @@ impl DownloadManager {
                                     }
                                 })
                         });
-                        let segment_index =
-                            *engine_to_session.entry(index).or_insert_with(|| {
-                                Self::allocate_next_session_segment_index(
-                                    &session_segment_indices,
-                                    &session_id,
-                                )
-                            });
+                        let segment_index = *engine_to_session.entry(index).or_insert_with(|| {
+                            Self::allocate_next_session_segment_index(
+                                &session_segment_indices,
+                                &session_id,
+                            )
+                        });
 
                         // Broadcast send is synchronous, ignore if no receivers
                         let _ = event_tx.send(DownloadManagerEvent::Progress(

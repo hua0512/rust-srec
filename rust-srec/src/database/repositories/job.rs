@@ -326,7 +326,8 @@ impl JobRepository for SqlxJobRepository {
             ),
         };
 
-        let mut query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql)).bind(JobStatus::Pending.as_str());
+        let mut query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql))
+            .bind(JobStatus::Pending.as_str());
         if bind_job_types && let Some(types) = job_types {
             for jt in types {
                 query = query.bind(jt);
@@ -402,8 +403,8 @@ impl JobRepository for SqlxJobRepository {
                             placeholders
                         );
 
-                        let mut query =
-                            sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql)).bind(JobStatus::Pending.as_str());
+                        let mut query = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(sql))
+                            .bind(JobStatus::Pending.as_str());
                         for jt in types {
                             query = query.bind(jt);
                         }
