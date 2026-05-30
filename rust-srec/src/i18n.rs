@@ -149,9 +149,20 @@ mod tests {
 
     #[test]
     fn available_locales_includes_en_and_zh_cn() {
+        // `available_locales!()` yields `Vec<Cow<'_, str>>`; compare each element
+        // against a `&str` rather than `Vec::contains`, which would expect a
+        // `&Cow<str>` argument to match the element type.
         let locales = rust_i18n::available_locales!();
-        assert!(locales.contains(&"en"), "missing en in {:?}", locales);
-        assert!(locales.contains(&"zh-CN"), "missing zh-CN in {:?}", locales);
+        assert!(
+            locales.iter().any(|l| l == "en"),
+            "missing en in {:?}",
+            locales
+        );
+        assert!(
+            locales.iter().any(|l| l == "zh-CN"),
+            "missing zh-CN in {:?}",
+            locales
+        );
     }
 
     // ---------- t_str! macro ----------
