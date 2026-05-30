@@ -7,19 +7,16 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, Unlink, AlertTriangle } from 'lucide-react';
-import {
-  useEffect,
-  useMemo,
-  useState,
-  memo,
-  Suspense,
-  useCallback,
-} from 'react';
+import { useEffect, useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { listJobPresets } from '@/server/functions/job';
+import {
+  usePresetProcessorMap,
+  getTransformDependencyIds,
+} from './delete-warning';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input as UiInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,23 +29,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-
-// Processors that produce a NEW primary artifact distinct from their input (e.g. the remux
-// family transcodes to a new file). The DAG feeds each step the outputs of the steps it
-// depends_on, so a `delete` step depending on one of these receives the produced file and would
-// delete the converted result, not the original recording. The transcode family exposes
-// `remove_input_on_success` to delete the source in place instead.
-const TRANSFORM_PROCESSORS = new Set([
-  'remux',
-  'transcode',
-  'convert',
-  'compression',
-  'audio_extract',
-  'thumbnail',
-  'ass_burnin',
-  'danmaku_factory',
-  'metadata',
-]);
 
 interface StepConfigDialogProps {
   open: boolean;
@@ -247,46 +227,21 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     }
   }, [open, dagStep]);
 
-  // Resolve a step to its processor so a delete step can be warned when it depends on a
-  // transform. Presets are fetched once and mapped name -> processor; inline steps carry the
-  // processor directly; workflow steps are skipped (they expand into their own steps later).
-  const { data: allPresetsData } = useQuery({
-    queryKey: ['job', 'presets', 'processor-map'],
-    queryFn: () => listJobPresets({ data: { limit: 200 } }),
-    enabled: open,
-  });
-
-  const presetProcessorByName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const p of allPresetsData?.presets ?? []) {
-      map.set(p.name, p.processor);
-    }
-    return map;
-  }, [allPresetsData]);
-
-  const resolveProcessor = useCallback(
-    (s: DagStepDefinition | null | undefined): string | null => {
-      const st = s?.step;
-      if (!st) return null;
-      if (st.type === 'inline') return st.processor;
-      if (st.type === 'preset')
-        return presetProcessorByName.get(st.name) ?? null;
-      return null;
-    },
-    [presetProcessorByName],
+  // Warn when this delete step depends on a transform step: the DAG feeds it that step's
+  // produced (converted) file, so deleting would discard the result rather than the source.
+  // Uses the live `dependsOn` state so the warning tracks edits made in this dialog.
+  const presetProcessorByName = usePresetProcessorMap(open);
+  const transformDependencyIds = useMemo(
+    () =>
+      dagStep
+        ? getTransformDependencyIds(
+            { ...dagStep, depends_on: dependsOn },
+            allSteps,
+            presetProcessorByName,
+          )
+        : [],
+    [dagStep, dependsOn, allSteps, presetProcessorByName],
   );
-
-  // A delete step receives the outputs of the steps it depends_on; if any of those is a
-  // transform, those outputs are converted artifacts and deleting them discards the result
-  // rather than the source.
-  const isDeleteStep = resolveProcessor(dagStep) === 'delete';
-  const transformDependencyIds = useMemo(() => {
-    if (!isDeleteStep) return [] as string[];
-    return dependsOn.filter((depId) => {
-      const proc = resolveProcessor(allSteps.find((s) => s.id === depId));
-      return proc != null && TRANSFORM_PROCESSORS.has(proc);
-    });
-  }, [isDeleteStep, dependsOn, allSteps, resolveProcessor]);
 
   const transformDepLabel = transformDependencyIds.join(', ');
 

@@ -1,7 +1,14 @@
 import { Handle, Position, NodeProps, type Node } from '@xyflow/react';
 import { cn } from '@/lib/utils';
 import { DagStepDefinition } from '@/api/schemas';
-import { Settings2, Trash2, Database, Zap, Box } from 'lucide-react';
+import {
+  Settings2,
+  Trash2,
+  Database,
+  Zap,
+  Box,
+  AlertTriangle,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 import { GlassNode } from '../../graph-shared';
@@ -18,13 +25,14 @@ export type StepNodeData = {
   id: string;
   onEdit?: (id: string) => void;
   onRemove?: (id: string) => void;
+  hasDeleteWarning?: boolean;
 };
 
 export type StepNode = Node<StepNodeData, 'stepNode'>;
 
 export function StepNode({ data }: NodeProps<StepNode>) {
   const { i18n } = useLingui();
-  const { step, id, onEdit, onRemove } = data;
+  const { step, id, onEdit, onRemove, hasDeleteWarning } = data;
 
   console.log('StepNode render:', { id, stepType: step.type });
 
@@ -53,13 +61,25 @@ export function StepNode({ data }: NodeProps<StepNode>) {
       />
 
       <div className="flex items-start justify-between mb-4 relative z-10">
-        <div
-          className={cn(
-            'p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-inner ring-1 ring-white/5',
-            bgClass,
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              'p-2.5 rounded-xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-inner ring-1 ring-white/5',
+              bgClass,
+            )}
+          >
+            <Icon className={cn('h-4 w-4', colorClass)} />
+          </div>
+          {hasDeleteWarning && (
+            <span
+              className="inline-flex"
+              title={i18n._(
+                msg`This Delete step deletes the converted result, not the original recording. Enable "Remove Input on Success" on the transcode step instead.`,
+              )}
+            >
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+            </span>
           )}
-        >
-          <Icon className={cn('h-4 w-4', colorClass)} />
         </div>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button
