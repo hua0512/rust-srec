@@ -6,8 +6,8 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Unlink } from 'lucide-react';
-import { useEffect, useMemo, useState, memo, Suspense } from 'react';
+import { Loader2, Unlink, AlertTriangle } from 'lucide-react';
+import { useEffect, useMemo, useState, memo, Suspense, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
@@ -16,6 +16,7 @@ import { listJobPresets } from '@/server/functions/job';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input as UiInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -24,6 +25,23 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+
+// Processors that produce a NEW primary artifact distinct from their input (e.g. the remux
+// family transcodes to a new file). The DAG feeds each step the outputs of the steps it
+// depends_on, so a `delete` step depending on one of these receives the produced file and would
+// delete the converted result, not the original recording. The transcode family exposes
+// `remove_input_on_success` to delete the source in place instead.
+const TRANSFORM_PROCESSORS = new Set([
+  'remux',
+  'transcode',
+  'convert',
+  'compression',
+  'audio_extract',
+  'thumbnail',
+  'ass_burnin',
+  'danmaku_factory',
+  'metadata',
+]);
 
 interface StepConfigDialogProps {
   open: boolean;
@@ -221,6 +239,49 @@ export const StepConfigDialog = memo(function StepConfigDialog({
       setDependsOn(dagStep.depends_on || []);
     }
   }, [open, dagStep]);
+
+  // Resolve a step to its processor so a delete step can be warned when it depends on a
+  // transform. Presets are fetched once and mapped name -> processor; inline steps carry the
+  // processor directly; workflow steps are skipped (they expand into their own steps later).
+  const { data: allPresetsData } = useQuery({
+    queryKey: ['job', 'presets', 'processor-map'],
+    queryFn: () => listJobPresets({ data: { limit: 200 } }),
+    enabled: open,
+  });
+
+  const presetProcessorByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of allPresetsData?.presets ?? []) {
+      map.set(p.name, p.processor);
+    }
+    return map;
+  }, [allPresetsData]);
+
+  const resolveProcessor = useCallback(
+    (s: DagStepDefinition | null | undefined): string | null => {
+      const st = s?.step;
+      if (!st) return null;
+      if (st.type === 'inline') return st.processor;
+      if (st.type === 'preset')
+        return presetProcessorByName.get(st.name) ?? null;
+      return null;
+    },
+    [presetProcessorByName],
+  );
+
+  // A delete step receives the outputs of the steps it depends_on; if any of those is a
+  // transform, those outputs are converted artifacts and deleting them discards the result
+  // rather than the source.
+  const isDeleteStep = resolveProcessor(dagStep) === 'delete';
+  const transformDependencyIds = useMemo(() => {
+    if (!isDeleteStep) return [] as string[];
+    return dependsOn.filter((depId) => {
+      const proc = resolveProcessor(allSteps.find((s) => s.id === depId));
+      return proc != null && TRANSFORM_PROCESSORS.has(proc);
+    });
+  }, [isDeleteStep, dependsOn, allSteps, resolveProcessor]);
+
+  const transformDepLabel = transformDependencyIds.join(', ');
 
   const handleDetach = () => {
     if (!presetDetail) return;
@@ -443,6 +504,23 @@ export const StepConfigDialog = memo(function StepConfigDialog({
                     <Label className="text-sm font-medium">
                       <Trans>Depends On (Ancestors)</Trans>
                     </Label>
+                    {transformDependencyIds.length > 0 && (
+                      <Alert variant="destructive" className="bg-destructive/5">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          <Trans>
+                            This Delete step will delete the files produced by{' '}
+                            <strong className="text-foreground">
+                              {transformDepLabel}
+                            </strong>{' '}
+                            (the converted result), not your original recording.
+                            To delete the original source after converting,
+                            enable "Remove Input on Success" on the transcode
+                            step instead.
+                          </Trans>
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     <div className="border border-border/40 rounded-lg bg-background/50 overflow-hidden">
                       <div className="p-1 max-h-[300px] overflow-y-auto">
                         {allSteps.length > 1 ? (

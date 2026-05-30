@@ -67,7 +67,7 @@ export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<string, any> = {
   'preset-default-audio-mp3': msg`Extract audio track to MP3 format (192kbps). Good for podcasts and music.`,
   'preset-default-audio-aac': msg`Extract audio track to AAC format (256kbps). High quality, widely compatible.`,
   'preset-default-archive-zip': msg`Create a ZIP archive of the file. Good for bundling with metadata.`,
-  'preset-default-delete': msg`Delete the source file. Use as the last step in a pipeline to clean up.`,
+  'preset-default-delete': msg`Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use "Remove Input on Success" on the transcode step to delete the source instead.`,
   'preset-default-copy': msg`Copy the file to another location. Keeps the original file.`,
   'preset-default-move': msg`Move the file to another location. Removes the original file.`,
   'preset-default-upload': msg`Upload file to cloud storage using rclone. Configure remote in rclone config.`,

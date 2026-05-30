@@ -69,7 +69,9 @@ To improve efficiency, the system provides two types of presets:
 The DAG system supports complex topologies. For instance, you can run `remux` and `thumbnail` in parallel, while the `upload` step waits for both to succeed before starting (fan-in).
 
 ### Automatic Cleanup
-By adding a `delete` step at the end of a DAG and setting its `depends_on` to `upload`, you can implement a safe "delete source after successful upload" logic.
+A `delete` step removes the files produced by the steps it depends on — not the original recording. This is safe after an `upload` step (rclone copy passes the uploaded files through as its output), so a `delete` with `depends_on: upload` implements "delete the local copy after a successful upload".
+
+Do **not** place a `delete` step after a `remux`/transcode step: it would delete the converted result, because that is what the transcode produced. To delete the original source after converting, enable **Remove Input on Success** (`remove_input_on_success`) on the transcode step instead.
 
 ::: tip Performance Tip
 Re-encoding (like `burn_in`) is extremely CPU-intensive. It is recommended to limit the concurrency in the `cpu_pool` to avoid high system load that could impact download stability.
@@ -86,7 +88,7 @@ Each step performs a single processing task:
 | `remux` | Convert to different container (e.g., FLV → MP4) |
 | `thumbnail` | Extract thumbnail image |
 | `upload` | Upload to cloud storage |
-| `delete` | Delete source files |
+| `delete` | Delete the files produced by the previous step |
 | `preset` | Sub-DAG from preset |
 
 ### Dependencies
