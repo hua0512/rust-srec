@@ -17,8 +17,8 @@ use super::progress::{JobProgressSnapshot, JobProgressUpdate, ProgressReporter};
 use crate::database::models::JobExecutionProgressDbModel;
 use crate::database::models::job::LogEntry as DbLogEntry;
 use crate::database::models::{
-    JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus as DbJobStatus, MediaFileType,
-    MediaOutputDbModel, Pagination, TitleEntry,
+    JobDbModel, JobExecutionLogDbModel, JobFilters, JobStatus, MediaFileType, MediaOutputDbModel,
+    Pagination, TitleEntry,
 };
 use crate::database::repositories::{JobRepository, SessionRepository, StreamerRepository};
 use crate::pipeline::processors::utils as processor_utils;
@@ -131,33 +131,6 @@ pub enum QueueDepthStatus {
     Warning,
     /// Queue depth is at critical level.
     Critical,
-}
-
-/// Job status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum JobStatus {
-    /// Job is waiting to be processed.
-    Pending,
-    /// Job is currently being processed.
-    Processing,
-    /// Job completed successfully.
-    Completed,
-    /// Job failed.
-    Failed,
-    Cancelled,
-}
-
-impl JobStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Pending => "PENDING",
-            Self::Processing => "PROCESSING",
-            Self::Completed => "COMPLETED",
-            Self::Failed => "FAILED",
-            Self::Cancelled => "CANCELLED",
-        }
-    }
 }
 
 /// Log level for job execution logs.
@@ -1021,7 +994,7 @@ impl JobQueue {
             completed_job_type = Some(db_job.job_type.clone());
             completed_session_id = db_job.session_id.clone();
 
-            if db_job.status != DbJobStatus::Processing.as_str() {
+            if db_job.get_status() != Some(JobStatus::Processing) {
                 self.finalize_cancelled_job(job_id);
                 return Ok(());
             }
@@ -1057,7 +1030,7 @@ impl JobQueue {
             }
 
             let updated = repo
-                .update_job_if_status(&db_job, DbJobStatus::Processing.as_str())
+                .update_job_if_status(&db_job, JobStatus::Processing)
                 .await?;
             if updated == 0 {
                 self.finalize_cancelled_job(job_id);
@@ -1493,7 +1466,7 @@ impl JobQueue {
                     };
 
                     match status {
-                        DbJobStatus::Pending | DbJobStatus::Processing => {
+                        JobStatus::Pending | JobStatus::Processing => {
                             return Err(Error::InvalidStateTransition {
                                 from: status.as_str().to_string(),
                                 to: "DELETED".to_string(),
@@ -1548,7 +1521,10 @@ impl JobQueue {
 
             // Convert to Job and collect cancelled ones
             for db_job in db_jobs {
-                if db_job.status == "PENDING" || db_job.status == "PROCESSING" {
+                if matches!(
+                    db_job.get_status(),
+                    Some(JobStatus::Pending | JobStatus::Processing)
+                ) {
                     let mut job = db_model_to_job(&db_job);
                     job.status = JobStatus::Cancelled;
                     job.completed_at = Some(Utc::now());
@@ -1649,7 +1625,7 @@ impl JobQueue {
 
         // Load pending jobs into cache
         let filters = JobFilters {
-            status: Some(DbJobStatus::Pending),
+            status: Some(JobStatus::Pending),
             ..Default::default()
         };
         let pagination = Pagination::new(10000, 0); // Load all pending jobs
@@ -2046,17 +2022,10 @@ impl JobQueue {
         for entry in self.jobs_cache.iter() {
             let job = entry.value();
 
-            if let Some(status) = &filters.status {
-                let status_enum = match status {
-                    DbJobStatus::Pending => JobStatus::Pending,
-                    DbJobStatus::Processing => JobStatus::Processing,
-                    DbJobStatus::Completed => JobStatus::Completed,
-                    DbJobStatus::Failed => JobStatus::Failed,
-                    DbJobStatus::Cancelled => JobStatus::Cancelled,
-                };
-                if job.status != status_enum {
-                    continue;
-                }
+            if let Some(status) = filters.status
+                && job.status != status
+            {
+                continue;
             }
             if let Some(streamer_id) = &filters.streamer_id
                 && &job.streamer_id != streamer_id
@@ -2159,14 +2128,6 @@ pub struct JobStats {
 
 /// Convert a Job to JobDbModel.
 fn job_to_db_model(job: &Job) -> JobDbModel {
-    let status = match job.status {
-        JobStatus::Pending => DbJobStatus::Pending,
-        JobStatus::Processing => DbJobStatus::Processing,
-        JobStatus::Completed => DbJobStatus::Completed,
-        JobStatus::Failed => DbJobStatus::Failed,
-        JobStatus::Cancelled => DbJobStatus::Cancelled,
-    };
-
     let inputs_json = json::to_string_or_fallback(
         &job.inputs,
         "[]",
@@ -2213,7 +2174,7 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
     JobDbModel {
         id: job.id.clone(),
         job_type: job.job_type.clone(),
-        status: status.as_str().to_string(),
+        status: job.status.as_str().to_string(),
         config: job.config.clone().unwrap_or_else(|| "{}".to_string()),
         state,
         created_at: job.created_at.timestamp_millis(),
@@ -2237,14 +2198,7 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
 
 /// Convert a JobDbModel to Job.
 fn db_model_to_job(db_job: &JobDbModel) -> Job {
-    let status = match DbJobStatus::parse(&db_job.status) {
-        Some(DbJobStatus::Pending) => JobStatus::Pending,
-        Some(DbJobStatus::Processing) => JobStatus::Processing,
-        Some(DbJobStatus::Completed) => JobStatus::Completed,
-        Some(DbJobStatus::Failed) => JobStatus::Failed,
-        Some(DbJobStatus::Cancelled) => JobStatus::Cancelled,
-        None => JobStatus::Pending,
-    };
+    let status = db_job.get_status().unwrap_or(JobStatus::Pending);
 
     let created_at = crate::database::time::ms_to_datetime(db_job.created_at);
 

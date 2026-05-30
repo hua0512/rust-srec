@@ -524,6 +524,7 @@ mod tests {
             streamer_id: "test-streamer".to_string(),
             streamer_name: "test-streamer".to_string(),
             session_id: "test-session".to_string(),
+            initial_segment_index: 0,
             protocol: DownloadProtocol::Hls,
             enable_processing: false,
             pipeline_config: None,

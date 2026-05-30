@@ -19,11 +19,15 @@ mod purge;
 mod throttle;
 mod worker_pool;
 
-pub use coordination::{SegmentOutput, SessionCompleteCoordinator, SessionOutputs, SourceType};
+pub use crate::database::models::JobStatus;
+pub use coordination::{
+    PipelineCommand, PipelineCoordinationEvent, PipelineCoordinator, SegmentOutput, SessionOutputs,
+    SourceType,
+};
 pub use dag_scheduler::{DagCreationResult, DagScheduler};
 pub use job_queue::{
-    Job, JobExecutionInfo, JobLogEntry, JobQueue, JobQueueConfig, JobResult, JobStats, JobStatus,
-    LogLevel, QueueDepthStatus,
+    Job, JobExecutionInfo, JobLogEntry, JobQueue, JobQueueConfig, JobResult, JobStats, LogLevel,
+    QueueDepthStatus,
 };
 pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,

@@ -22,19 +22,23 @@ flowchart LR
 The power of rust-srec lies in its automated trigger mechanism. You can trigger pipelines at different stages:
 
 ### 1. Segment Pipeline
-- **Trigger**: When a single video segment (`.flv`, `.ts`) or danmaku file (`.xml`, `.json`) finished downloading.
+- **Trigger**: When a single video segment (`.flv`, `.ts`) or danmaku file (`.xml`, `.json`) finishes downloading.
 - **Usage**: Remuxing, taking thumbnails, danmaku format conversion.
 - **Input**: A single file.
 
 ### 2. Paired Segment Pipeline
-- **Trigger**: When both the **video segment** and its corresponding **danmaku file** for the same index are ready, and their respective segment pipelines đã finished successfully.
+- **Trigger**: When both the **video segment** and its corresponding **danmaku file** for the same segment are ready, after any segment-level processing has finished.
 - **Usage**: Hard-burning danmaku into video (Burn-in), merging segment metadata.
 - **Input**: A video file + a matching danmaku file.
 
 ### 3. Session Complete Pipeline
-- **Trigger**: When the entire streaming session ends (streamer offline) and all preliminary pipelines (Segment & Paired) for all segments in that session have finished successfully.
+- **Trigger**: When the entire streaming session ends, the final recording files are available, and all earlier segment or paired processing for that session has finished.
 - **Usage**: Combining all segments, uploading to cloud storage (e.g., via Rclone to Google Drive/OneDrive), sending final completion notifications.
 - **Input**: A list of all final products produced during the session.
+
+::: tip Reliability note
+If danmaku finishes before the final video file is ready, rust-srec waits before starting the session-complete pipeline. This keeps final jobs such as merge, upload, or cleanup from running with missing video inputs.
+:::
 
 ## Built-in Processors
 

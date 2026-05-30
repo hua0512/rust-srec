@@ -773,7 +773,7 @@ mod job_repository_tests {
         let job = create_job(&pool, "DOWNLOAD", JobStatus::Pending).await;
 
         // Update status
-        repo.update_job_status(&job.id, JobStatus::Processing.as_str())
+        repo.update_job_status(&job.id, JobStatus::Processing)
             .await
             .expect("Failed to update status");
 
@@ -828,7 +828,7 @@ mod job_repository_tests {
         assert_eq!(reset_count, 0);
 
         let cancelled = repo
-            .list_jobs_by_status(JobStatus::Cancelled.as_str())
+            .list_jobs_by_status(JobStatus::Cancelled)
             .await
             .expect("Failed to query");
 

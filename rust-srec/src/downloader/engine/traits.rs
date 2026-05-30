@@ -120,6 +120,8 @@ pub struct DownloadConfig {
     pub streamer_name: String,
     /// Session ID for tracking.
     pub session_id: String,
+    /// First session-scoped segment index for this download attempt.
+    pub initial_segment_index: u32,
     /// Stream protocol selected for this download.
     pub protocol: DownloadProtocol,
 
@@ -169,6 +171,7 @@ impl DownloadConfig {
             streamer_id: streamer_id.into(),
             streamer_name: streamer_name.into(),
             session_id: session_id.into(),
+            initial_segment_index: 0,
             protocol: DownloadProtocol::Unknown,
             enable_processing: true,
             pipeline_config: None,
@@ -193,6 +196,12 @@ impl DownloadConfig {
     /// Set the stream protocol selected for the download.
     pub fn with_protocol(mut self, protocol: DownloadProtocol) -> Self {
         self.protocol = protocol;
+        self
+    }
+
+    /// Set the first session-scoped segment index for this download attempt.
+    pub fn with_initial_segment_index(mut self, index: u32) -> Self {
+        self.initial_segment_index = index;
         self
     }
 

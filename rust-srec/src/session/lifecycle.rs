@@ -2205,7 +2205,7 @@ mod tests {
     /// where a late `SegmentCompleted` arrives after `DownloadFailed`; the
     /// gate must wait for that trailing DAG before firing.
     ///
-    /// Uses the SessionCompleteCoordinator directly (rather than going
+    /// Uses the PipelineCoordinator directly (rather than going
     /// through the full `handle_download_event(SegmentCompleted)` path which
     /// also writes to the DB via `persist_segment`). The coordinator's
     /// counters are the authoritative gate, so this isolates the ordering

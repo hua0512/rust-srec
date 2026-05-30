@@ -72,6 +72,7 @@ pub trait SessionRepository: Send + Sync {
         session_id: &str,
         pagination: &Pagination,
     ) -> Result<Vec<SessionSegmentDbModel>>;
+    async fn next_session_segment_index(&self, session_id: &str) -> Result<u32>;
 
     // Danmu Statistics
     async fn get_danmu_statistics(
@@ -396,6 +397,22 @@ impl SessionRepository for SqlxSessionRepository {
         .fetch_all(&self.pool)
         .await?;
         Ok(segments)
+    }
+
+    async fn next_session_segment_index(&self, session_id: &str) -> Result<u32> {
+        let next: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(segment_index), -1) + 1 FROM session_segments WHERE session_id = ?",
+        )
+        .bind(session_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        u32::try_from(next).map_err(|_| {
+            Error::Database(format!(
+                "next session segment index {} for session {} is outside u32 range",
+                next, session_id
+            ))
+        })
     }
 
     async fn delete_media_output(&self, id: &str) -> Result<()> {
@@ -814,5 +831,58 @@ mod tests {
         assert_eq!(saved.created_at, Some(1_700_000_000_000));
         assert_eq!(saved.completed_at, Some(1_700_000_009_500));
         assert!(saved.persisted_at >= 1_700_000_000_000);
+    }
+
+    #[tokio::test]
+    async fn next_session_segment_index_returns_zero_without_segments() {
+        let repo = setup_test_repo().await;
+
+        let next = repo.next_session_segment_index("session-1").await.unwrap();
+
+        assert_eq!(next, 0);
+    }
+
+    #[tokio::test]
+    async fn next_session_segment_index_returns_max_plus_one() {
+        let repo = setup_test_repo().await;
+        let segment = SessionSegmentDbModel::new(
+            "session-1",
+            0,
+            "/tmp/segment-000.ts",
+            9.5,
+            2048,
+            crate::database::models::SessionSegmentLifecycle::default(),
+            crate::database::models::SessionSegmentSplitReason::default(),
+        );
+        repo.create_session_segment(&segment).await.unwrap();
+
+        let next = repo.next_session_segment_index("session-1").await.unwrap();
+
+        assert_eq!(next, 1);
+    }
+
+    #[tokio::test]
+    async fn next_session_segment_index_uses_max_when_duplicates_exist() {
+        let repo = setup_test_repo().await;
+        for (index, path) in [
+            (0, "/tmp/segment-000-a.ts"),
+            (0, "/tmp/segment-000-b.ts"),
+            (3, "/tmp/segment-003.ts"),
+        ] {
+            let segment = SessionSegmentDbModel::new(
+                "session-1",
+                index,
+                path,
+                9.5,
+                2048,
+                crate::database::models::SessionSegmentLifecycle::default(),
+                crate::database::models::SessionSegmentSplitReason::default(),
+            );
+            repo.create_session_segment(&segment).await.unwrap();
+        }
+
+        let next = repo.next_session_segment_index("session-1").await.unwrap();
+
+        assert_eq!(next, 4);
     }
 }
