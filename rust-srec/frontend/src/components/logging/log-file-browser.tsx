@@ -295,7 +295,7 @@ export function LogFileBrowser() {
                       date > new Date() || date < new Date('2020-01-01')
                     }
                     numberOfMonths={2}
-                    initialFocus
+                    autoFocus
                   />
                 </PopoverContent>
               </Popover>

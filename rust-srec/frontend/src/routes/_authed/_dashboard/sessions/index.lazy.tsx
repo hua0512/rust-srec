@@ -363,7 +363,7 @@ function SessionsPage() {
                       date > new Date() || date < new Date('1900-01-01')
                     }
                     numberOfMonths={2}
-                    initialFocus
+                    autoFocus
                     className="rounded-md border shadow-xs"
                   />
                 </PopoverContent>
