@@ -83,7 +83,7 @@ tempfile = { workspace = true }
 
 # Backend i18n for every NotificationEvent variant (including credential events);
 # API errors and health messages stay English by design.
-rust-i18n = "3"
+rust-i18n = "4"
 
 [build-dependencies]
 prost-build = { workspace = true }
