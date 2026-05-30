@@ -2052,7 +2052,7 @@ msgstr "导入前删除所有现有配置。此操作无法撤销。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:70
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
-msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全的。在转码/remux 之后，它删除的是转码结果而非原始文件——若要删除源文件，请改为在转码步骤上启用“Remove Input on Success”。"
+msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全的。在转码/remux 之后，它删除的是转码结果而非原始文件——若要删除源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
 #: src/components/notifications/forms/webhook-form.tsx:133
 msgid "Delivery Policy"
@@ -7605,7 +7605,7 @@ msgstr "这些超时设置在管道工作线程池启动时应用。更改需要
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:511
 msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
-msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“Remove Input on Success”。"
+msgstr "此删除步骤将删除 <0>{transformDepLabel}</0> 产出的文件（即转码结果），而不是原始录制文件。若要在转码后删除原始源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:380
 msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
