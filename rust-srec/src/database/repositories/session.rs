@@ -227,7 +227,7 @@ impl SessionRepository for SqlxSessionRepository {
             let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
             let sql = format!("DELETE FROM live_sessions WHERE id IN ({})", placeholders);
 
-            let mut query = sqlx::query(&sql);
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
             for id in ids {
                 query = query.bind(id);
             }
@@ -608,7 +608,7 @@ impl SessionRepository for SqlxSessionRepository {
         );
 
         // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
 
         // Bind parameters for count query (excluding active_only which is a static condition)
         if let Some(streamer_id) = &filters.streamer_id {
@@ -631,7 +631,7 @@ impl SessionRepository for SqlxSessionRepository {
         let total_count = count_query.fetch_one(&self.pool).await? as u64;
 
         // Execute data query
-        let mut data_query = sqlx::query_as::<_, LiveSessionDbModel>(&data_sql);
+        let mut data_query = sqlx::query_as::<_, LiveSessionDbModel>(sqlx::AssertSqlSafe(data_sql));
 
         // Bind parameters for data query
         if let Some(streamer_id) = &filters.streamer_id {
@@ -719,7 +719,7 @@ impl SessionRepository for SqlxSessionRepository {
         );
 
         // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
 
         // Bind parameters for count query
         if let Some(session_id) = &filters.session_id {
@@ -739,7 +739,7 @@ impl SessionRepository for SqlxSessionRepository {
         let total_count = count_query.fetch_one(&self.pool).await? as u64;
 
         // Execute data query
-        let mut data_query = sqlx::query_as::<_, MediaOutputDbModel>(&data_sql);
+        let mut data_query = sqlx::query_as::<_, MediaOutputDbModel>(sqlx::AssertSqlSafe(data_sql));
 
         // Bind parameters for data query
         if let Some(session_id) = &filters.session_id {

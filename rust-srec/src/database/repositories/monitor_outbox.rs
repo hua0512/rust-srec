@@ -151,7 +151,7 @@ impl MonitorOutboxOps {
             placeholders
         );
 
-        let mut query = sqlx::query(&sql).bind(now);
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(now);
         for id in ids {
             query = query.bind(id);
         }
@@ -176,7 +176,7 @@ impl MonitorOutboxOps {
             when_clauses, id_placeholders
         );
 
-        let mut query = sqlx::query(&sql);
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
         for (id, error) in failures {
             query = query.bind(id).bind(error);
         }

@@ -202,7 +202,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         );
 
         // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
         if let Some(ref cat) = filters.category {
             count_query = count_query.bind(cat);
         }
@@ -216,7 +216,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         let total = count_query.fetch_one(&*self.pool).await? as u64;
 
         // Execute data query
-        let mut data_query = sqlx::query_as::<_, JobPreset>(&data_sql);
+        let mut data_query = sqlx::query_as::<_, JobPreset>(sqlx::AssertSqlSafe(data_sql));
         if let Some(ref cat) = filters.category {
             data_query = data_query.bind(cat);
         }
@@ -403,7 +403,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         );
 
         // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
         if let Some(ref search) = filters.search {
             let search_pattern = format!("%{}%", search);
             count_query = count_query.bind(search_pattern);
@@ -411,7 +411,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         let total = count_query.fetch_one(&*self.pool).await? as u64;
 
         // Execute data query
-        let mut data_query = sqlx::query_as::<_, PipelinePreset>(&data_sql);
+        let mut data_query = sqlx::query_as::<_, PipelinePreset>(sqlx::AssertSqlSafe(data_sql));
         if let Some(ref search) = filters.search {
             let search_pattern = format!("%{}%", search);
             data_query = data_query.bind(search_pattern);

@@ -45,23 +45,23 @@ async fn apply_per_connection_pragmas(
     conn: &mut sqlx::SqliteConnection,
 ) -> Result<(), sqlx::Error> {
     // Ensure WAL auto-checkpoint is enabled to avoid unbounded WAL growth.
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "PRAGMA wal_autocheckpoint = {}",
         DEFAULT_WAL_AUTOCHECKPOINT_PAGES
-    ))
+    )))
     .execute(&mut *conn)
     .await?;
 
     // Cap WAL/journal size growth to reduce disk usage under write-heavy workloads.
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "PRAGMA journal_size_limit = {}",
         DEFAULT_JOURNAL_SIZE_LIMIT_BYTES
-    ))
+    )))
     .execute(&mut *conn)
     .await?;
 
     // Set cache size (64MB)
-    sqlx::query(&format!("PRAGMA cache_size = {}", DEFAULT_CACHE_SIZE_KB))
+    sqlx::query(sqlx::AssertSqlSafe(format!("PRAGMA cache_size = {}", DEFAULT_CACHE_SIZE_KB)))
         .execute(&mut *conn)
         .await?;
 

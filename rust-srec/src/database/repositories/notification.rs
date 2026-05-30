@@ -330,7 +330,7 @@ impl NotificationRepository for SqlxNotificationRepository {
 
         query_str.push_str(" ORDER BY nel.created_at DESC LIMIT ? OFFSET ?");
 
-        let mut query = sqlx::query_as::<_, NotificationEventLogDbModel>(&query_str);
+        let mut query = sqlx::query_as::<_, NotificationEventLogDbModel>(sqlx::AssertSqlSafe(query_str));
 
         if let Some(s) = search {
             let search_pattern = format!("%{}%", s);

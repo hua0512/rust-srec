@@ -69,7 +69,7 @@ impl SqlxCredentialStore {
                 json_expr
             );
 
-            let mut query = sqlx::query(&sql);
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
             for bind in &binds {
                 query = query.bind(bind);
             }

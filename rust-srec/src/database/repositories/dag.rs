@@ -274,7 +274,7 @@ impl DagRepository for SqlxDagRepository {
             where_clause
         );
 
-        let mut query = sqlx::query_as::<_, DagExecutionDbModel>(&sql);
+        let mut query = sqlx::query_as::<_, DagExecutionDbModel>(sqlx::AssertSqlSafe(sql));
         if let Some(status) = status {
             query = query.bind(status);
         }
@@ -305,7 +305,7 @@ impl DagRepository for SqlxDagRepository {
 
         let sql = format!("SELECT COUNT(*) FROM dag_execution {}", where_clause);
 
-        let mut query = sqlx::query_scalar::<_, i64>(&sql);
+        let mut query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(sql));
         if let Some(status) = status {
             query = query.bind(status);
         }
