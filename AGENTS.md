@@ -7,7 +7,7 @@ Repo overview
 - CLIs: `strev-cli/` (package `strev`), `mesio-cli/` (package `mesio`).
 - Libraries: `crates/*` (protocol/container + platform extractors + download engine).
 - Frontend UI: `rust-srec/frontend/` (Vite/TanStack + Tailwind, pnpm).
-- Docs site: `rust-srec/docs/` (VitePress, npm).
+- Docs site: `rust-srec/docs/` (VitePress, pnpm).
 
 Build / lint / test
 
@@ -19,8 +19,9 @@ Rust (run from repo root; match CI by adding `--locked`)
 - Format: `cargo fmt --all`
 - Lint (CI): `cargo clippy --locked --all-targets --all-features -- -D warnings`
   **Windows note**: do not use `--all-features` on Windows; OpenSSL is not available. Use default features instead.
-- Test (Cargo): `cargo test --locked --workspace`
-- Doctests only (CI runs on ubuntu): `cargo test --locked --workspace --doc`
+- Test (nextest, preferred; used in CI): `cargo nextest run --locked --workspace`
+- Test (Cargo fallback if nextest not installed): `cargo test --locked --workspace`
+- Doctests (nextest does not run doctests; CI runs on ubuntu): `cargo test --locked --workspace --doc`
 
 Run / debug (Rust)
 
@@ -41,7 +42,7 @@ Release build notes (CI parity)
   Example (static Linux): `cargo build -p rust-srec --locked --release --target x86_64-unknown-linux-musl --features static-ssl --bins`
   Example (static Linux strev): `cargo build -p strev --locked --release --target x86_64-unknown-linux-musl --features static-ssl`
 
-Fast test runner (recommended; used in CI)
+Test runner (cargo-nextest, preferred; used in CI)
 
 - Install: `cargo install cargo-nextest --locked`
 - Run full suite: `cargo nextest run --locked --workspace`
@@ -50,7 +51,7 @@ Fast test runner (recommended; used in CI)
 - Filter by test name substring (nextest expression):
   `cargo nextest run --locked -p rust-srec -E 'test(name ~ "some_substring")'`
 
-Run a single test (Cargo)
+Run a single test (Cargo fallback)
 
 - Unit test by substring: `cargo test -p rust-srec -- <substring>`
 - Integration test target: `cargo test -p rust-srec --test <test_target_name>`
@@ -77,14 +78,15 @@ Frontend toolchain
 
 Docs site (run from `rust-srec/docs/`)
 
-- Install: `npm ci`
-- Dev: `npm run docs:dev`
-- Build: `npm run docs:build`
-- Preview: `npm run docs:preview`
+- Install: `pnpm install` (CI uses `pnpm install --frozen-lockfile`)
+- Dev: `pnpm run docs:dev`
+- Build: `pnpm run docs:build`
+- Preview: `pnpm run docs:preview`
 
 Docs toolchain
 
-- CI uses Node 20 for docs deploy (see `.github/workflows/deploy-docs.yml`).
+- pnpm is pinned via `packageManager` in `rust-srec/docs/package.json` (`pnpm@10.28.1`).
+- CI uses Node 24 for docs deploy (see `.github/workflows/deploy-docs.yml`).
 
 Code style / engineering conventions
 
