@@ -7,6 +7,9 @@
 // - rust-srec/src-tauri/Cargo.toml (version.workspace = true)
 // - rust-srec/src-tauri/tauri.conf.json (no version; Tauri falls back to Cargo)
 //
+// After bumping, runs `cargo update --workspace` so Cargo.lock carries the new
+// workspace-member versions; release builds use `--locked` and fail otherwise.
+//
 // Optional docs scaffolding (`--docs`) also:
 // - creates versioned release note pages under rust-srec/docs/en|zh/release-notes/
 // - updates release-notes index/archive pages
@@ -17,6 +20,7 @@
 // Pass `--from-latest` to seed the localized release-note pages from the latest
 // existing version files before converting them into placeholders.
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -108,6 +112,27 @@ function setWorkspacePackageVersion(cargoTomlText, version) {
     newSection +
     cargoTomlText.slice(sectionEndIdx)
   );
+}
+
+// Keep Cargo.lock in step with the bumped [workspace.package].version. The
+// release workflows build with `--locked`, so a lockfile still pinning the old
+// workspace-member versions fails the build. `cargo update --workspace` rewrites
+// only the workspace members (rust-srec, rust-srec-desktop) and leaves external
+// dependencies at their locked versions.
+function syncCargoLock(repoRoot, dryRun) {
+  if (dryRun) {
+    process.stdout.write('[dry-run] Would run `cargo update --workspace` to sync Cargo.lock\n');
+    return;
+  }
+
+  try {
+    execFileSync('cargo', ['update', '--workspace'], { cwd: repoRoot, stdio: 'inherit' });
+  } catch {
+    process.stderr.write(
+      'WARNING: `cargo update --workspace` failed (cargo missing or offline). ' +
+        'Run it manually and commit Cargo.lock before tagging — release builds use --locked.\n'
+    );
+  }
 }
 
 function listVersionedReleaseNoteFiles(dirPath) {
@@ -435,6 +460,8 @@ function main() {
   if (after !== before) {
     writeMaybe(rootCargoTomlPath, after, dryRun);
   }
+
+  syncCargoLock(repoRoot, dryRun);
 
   if (updateDocs) {
     updateDocsForVersion(repoRoot, version, dryRun, fromLatest);

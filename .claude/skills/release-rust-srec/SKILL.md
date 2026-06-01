@@ -35,6 +35,7 @@ node scripts/bump-rust-srec-version.mjs <X.Y.Z> --docs             # apply
 ```
 The script:
 - sets `Cargo.toml` `[workspace.package].version`;
+- runs `cargo update --workspace` so `Cargo.lock` carries the new `rust-srec` / `rust-srec-desktop` versions — **required**: release CI builds with `--locked` and fails on a stale lockfile (run `cargo update --workspace` by hand if you ever bump the version without the script);
 - creates `rust-srec/docs/{en,zh}/release-notes/vX.Y.Z.md` **only if absent** (pre-written pages from step 3 are preserved);
 - moves the previous "Latest release" entry into "Archive" in both `index.md`;
 - inserts `vX.Y.Z` into the VitePress sidebar (`.vitepress/config.mts`) for both locales;
@@ -66,8 +67,9 @@ Overwrite `rust-srec/docs/release-notes-body.md` with the real body: `## rust-sr
 ### 9. Verify
 - Every `vX.Y.Z` link in the sidebars and both `index.md` resolves to an existing file.
 - `.vitepress/config.mts` still parses (balanced braces/commas around the inserted sidebar entry).
+- Confirm the lockfile is `--locked`-clean: `cargo metadata --locked` (fast, no compile) — the `rust-srec` / `rust-srec-desktop` entries in `Cargo.lock` must already show the new version, or the tagged release build fails under `--locked`.
 - If docs deps are installed: `cd rust-srec/docs && pnpm run docs:build`.
-- Optional: `cargo build -p rust-srec` to confirm the version bump compiles.
+- Optional: `cargo build --locked -p rust-srec` to confirm the version bump compiles under the same flags CI uses.
 
 ### 10. Tag (only when asked)
 ```sh
@@ -77,6 +79,7 @@ git push origin rust-srec-vX.Y.Z
 
 ## Files touched
 - `Cargo.toml`
+- `Cargo.lock` (workspace-member versions, via `cargo update --workspace`)
 - `rust-srec/docs/{en,zh}/release-notes/vX.Y.Z.md` (new)
 - `rust-srec/docs/{en,zh}/release-notes/unreleased.md` (reset)
 - `rust-srec/docs/{en,zh}/release-notes/index.md`
