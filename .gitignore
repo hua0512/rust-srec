@@ -36,7 +36,8 @@ desktop.ini
 # AI
 .kiro/
 .roo/
-.claude/
+.claude/*
+!.claude/skills/
 .sisyphus/
 .roomodes
 .cursorrules
