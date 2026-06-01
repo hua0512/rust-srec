@@ -1,16 +1,16 @@
-## rust-srec v0.3.1
+## rust-srec v0.3.2
 
-This update continues the recording-session reliability work from **v0.3.0** — fewer false session endings on transient download failures, cleaner schedule-end transitions, and quieter out-of-schedule checks — and adds **GPU health monitoring** to the System Health page. The `/api/health` endpoint is also significantly faster and lighter, so opening the System Health page stays instant even on busy systems.
+This update is focused on pipeline and recording reliability — end-of-session and paired post-processing now wait for the files they need before running, resumed recordings keep their segment numbering, the **Delete Source** step no longer removes a freshly converted video, and a temporary CDN failure no longer flips a live streamer to offline.
 
 ### Highlights
-- Added **GPU health monitoring** on the System Health page — a lost GPU (a known issue with the NVIDIA Container Toolkit on cgroup v2 hosts) now triggers an immediate notification instead of waiting for the next failed remux job. The probe interval is configurable from the global settings page.
-- Made **`/api/health` much faster and lighter** — the dashboard's health endpoint now reads a cached snapshot rather than re-running every check on each poll, so opening the System Health page is instant and background CPU stays low even on busy systems.
-- **Fewer false session endings** when a download hits a temporary failure — rust-srec now keeps better track of which engine and stream type reported the failure, so transient network trouble is less likely to split a recording into multiple sessions.
-- **Recording schedules end sessions more cleanly** — when a stream leaves its allowed schedule window, the active session is now closed through the normal session flow, keeping the dashboard, notifications, post-processing, and timeline aligned.
-- **Quieter out-of-schedule checks** and a fix for the **queue freshness threshold** not persisting after settings updates.
+- **Resumed recordings keep their segment numbering** — when a recording resumes after a brief interruption, new segments continue numbering from where the previous attempt left off instead of restarting at `0`, keeping thumbnails, paired danmaku, the segment list, notifications, and post-processing aligned.
+- **Session Complete Pipeline waits for the final recording** — end-of-session steps like merging, uploading, or the completion notification now wait until the final video file is saved and all per-segment processing has finished, instead of starting too early when the danmaku side finishes first.
+- **Paired Segment Pipeline matches files more reliably** — paired post-processing waits until both the video and the danmaku for the same segment are ready before it starts, and the same paired job is no longer triggered twice.
+- **"Delete Source" no longer deletes your converted video** — a **Delete Source** step after a convert/transcode step was removing the newly converted file instead of the original, since a delete step always acts on the output of the step before it. The built-in **Space Saver** workflow is fixed, and the pipeline editor now warns when a delete step is placed there; use **Remove Input on Success** on the convert step to delete the original instead. Deleting after an **Upload** step is unaffected and still safe.
+- **Streamer no longer flips to offline after a temporary CDN failure** — fixed a case where a streamer would appear offline (and stop recording) after a transient CDN failure such as an HTTP 404 on a signed playback URL; the live state is now restored as soon as the recorder resumes.
 
 ### Review before upgrading
-- One new database migration runs automatically on startup (adds the GPU health probe interval to global config).
-- The old **session gap time** setting is removed from the configuration UI and ignored on import. Backups from earlier versions continue to import successfully — no manual cleanup is needed.
+- Internal pipeline coordination was reorganized to make these reliability improvements easier to maintain. Existing pipeline settings and presets continue to work without changes.
+- Dependency and build updates: `sqlx` 0.8.6 → 0.9.0, `rust-i18n` 3 → 4, and `rquickjs` 0.11.0 → 0.12.0, plus the web frontend moving to react-day-picker v10 with bundle optimizations. None of these change how rust-srec behaves for you.
 
-See the [v0.3.1 release notes](https://docs.srec.rs/en/release-notes/v0.3.1) for the full list and the Chinese version at [/zh/release-notes/v0.3.1](https://docs.srec.rs/zh/release-notes/v0.3.1).
+See the [v0.3.2 release notes](https://docs.srec.rs/en/release-notes/v0.3.2) for the full list and the Chinese version at [/zh/release-notes/v0.3.2](https://docs.srec.rs/zh/release-notes/v0.3.2).

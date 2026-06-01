@@ -96,6 +96,8 @@ export default defineConfig({
                         {
                             text: 'Release Notes',
                             items: [
+                                { text: 'v0.3.2', link: '/en/release-notes/v0.3.2' },
+
                                 { text: 'v0.3.1', link: '/en/release-notes/v0.3.1' },
 
                                 { text: 'v0.3.0', link: '/en/release-notes/v0.3.0' },
@@ -175,6 +177,8 @@ export default defineConfig({
                         {
                             text: '更新日志',
                             items: [
+                                { text: 'v0.3.2', link: '/zh/release-notes/v0.3.2' },
+
                                 { text: 'v0.3.1', link: '/zh/release-notes/v0.3.1' },
 
                                 { text: 'v0.3.0', link: '/zh/release-notes/v0.3.0' },
