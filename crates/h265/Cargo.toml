@@ -9,7 +9,7 @@ bytes = { workspace = true }
 byteorder = { workspace = true }
 expgolomb = { path = "../expgolomb" }
 bytes-util = { path = "../bytes-util" }
-bitflags = "2.11.0"
+bitflags = "2.12.1"
 
 
 [dev-dependencies]
