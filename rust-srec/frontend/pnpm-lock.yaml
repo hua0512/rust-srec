@@ -84,11 +84,11 @@ importers:
         specifier: ^0.10.5
         version: 0.10.5(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(csstype@3.2.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(solid-js@1.9.10)
       '@tanstack/react-query':
-        specifier: ^5.100.14
-        version: 5.100.14(react@19.2.7)
+        specifier: ^5.101.0
+        version: 5.101.0(react@19.2.7)
       '@tanstack/react-query-devtools':
         specifier: ^5.100.14
-        version: 5.100.14(@tanstack/react-query@5.100.14(react@19.2.7))(react@19.2.7)
+        version: 5.100.14(@tanstack/react-query@5.101.0(react@19.2.7))(react@19.2.7)
       '@tanstack/react-router':
         specifier: 1.170.10
         version: 1.170.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -142,7 +142,7 @@ importers:
         version: 1.8.0
       nitro:
         specifier: latest
-        version: 3.0.260522-beta(chokidar@5.0.0)(dotenv@17.4.2)(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3))
+        version: 3.0.260603-beta(chokidar@5.0.0)(dotenv@17.4.2)(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3))
       qrcode.react:
         specifier: ^4.2.0
         version: 4.2.0(react@19.2.7)
@@ -2425,8 +2425,8 @@ packages:
     resolution: {integrity: sha512-79pf/RkhteYZTRgcR4F9kbk84P2N8rugQJswxfIqovlbRiT3yI7eBE+5QorIrZaOKktsgzRlXh1l/du/xpl4iA==}
     engines: {node: '>=20.19'}
 
-  '@tanstack/query-core@5.100.14':
-    resolution: {integrity: sha512-5X41dGpxgeaHISCRW2oYwcSycZeULZzAunaudXT9ov1KOTj9xwt0CH6hbwqP1/z74ZWF7rYFnDpyYH07XFcZew==}
+  '@tanstack/query-core@5.101.0':
+    resolution: {integrity: sha512-cQetA74EB+seWySv1TTKr828TnP0u39m6LykwDXIo84SNortpDkp30TMEjkqtYCNP9c40uT/iwl6MLiufEt0Ow==}
 
   '@tanstack/query-devtools@5.100.14':
     resolution: {integrity: sha512-g96SmSSQecYTYcyuAMRXr895GplJv01UGt7qttQWPOUyZ5EGz5tbRc589bMc2m5BsPFD6O0PCEAHdbDYNP6UBw==}
@@ -2446,8 +2446,8 @@ packages:
       '@tanstack/react-query': ^5.100.14
       react: ^18 || ^19
 
-  '@tanstack/react-query@5.100.14':
-    resolution: {integrity: sha512-oOr6aRdSFEwWhzxEkD/9ZcItM3+LjBSkeVmadWKwUssAHTsqd/7bOjWrX4AbvEkoEhgAxzN0Xk6H/aYzXiYBAw==}
+  '@tanstack/react-query@5.101.0':
+    resolution: {integrity: sha512-rLlJXSpkqfizLWgkR5+eLeIk0MvTx/meEIR7LRjxic+qxiQP8zVjq7BqQkiCMNLQBlLfuOLqqr6KO5GtrDlmSg==}
     peerDependencies:
       react: ^18 || ^19
 
@@ -4029,16 +4029,16 @@ packages:
   nf3@0.3.17:
     resolution: {integrity: sha512-N9zEWySuJFw+gR0lhS5863YsvNeudOdqRyFvNb+jMXbeTJOdrjDqkCpDginIZfUm0LzT1t1nCRiDeqQm/8kirQ==}
 
-  nitro@3.0.260522-beta:
-    resolution: {integrity: sha512-L/z2eOWgkiQHc65kv+SEMgau505afSRF7NJlbooaaZEZscFrNSD7rXZzeVubQlgIzPbhOG8o73bk9soIiGTHRA==}
+  nitro@3.0.260603-beta:
+    resolution: {integrity: sha512-ffaSHK00a7YDlDizoEHwcxPwpQpdBRRA8k42ymTsRnfl3ipGeKgv4gnPr6DgmCNTo4tYVPK3bHBEv1gNhWpo/A==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
       '@vercel/queue': ^0.2.0
       dotenv: '*'
       giget: '*'
-      jiti: ^2.6.1
-      rollup: ^4.60.3
+      jiti: ^2.7.0
+      rollup: ^4.60.4
       vite: ^7 || ^8
       xml2js: ^0.6.2
       zephyr-agent: ^0.2.0
@@ -6950,7 +6950,7 @@ snapshots:
 
   '@tanstack/history@1.162.0': {}
 
-  '@tanstack/query-core@5.100.14': {}
+  '@tanstack/query-core@5.101.0': {}
 
   '@tanstack/query-devtools@5.100.14': {}
 
@@ -6967,15 +6967,15 @@ snapshots:
       - solid-js
       - utf-8-validate
 
-  '@tanstack/react-query-devtools@5.100.14(@tanstack/react-query@5.100.14(react@19.2.7))(react@19.2.7)':
+  '@tanstack/react-query-devtools@5.100.14(@tanstack/react-query@5.101.0(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@tanstack/query-devtools': 5.100.14
-      '@tanstack/react-query': 5.100.14(react@19.2.7)
+      '@tanstack/react-query': 5.101.0(react@19.2.7)
       react: 19.2.7
 
-  '@tanstack/react-query@5.100.14(react@19.2.7)':
+  '@tanstack/react-query@5.101.0(react@19.2.7)':
     dependencies:
-      '@tanstack/query-core': 5.100.14
+      '@tanstack/query-core': 5.101.0
       react: 19.2.7
 
   '@tanstack/react-router-devtools@1.167.0(@tanstack/react-router@1.170.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@tanstack/router-core@1.171.8)(csstype@3.2.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
@@ -8532,7 +8532,7 @@ snapshots:
 
   nf3@0.3.17: {}
 
-  nitro@3.0.260522-beta(chokidar@5.0.0)(dotenv@17.4.2)(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3)):
+  nitro@3.0.260603-beta(chokidar@5.0.0)(dotenv@17.4.2)(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3)):
     dependencies:
       consola: 3.4.2
       crossws: 0.4.5(srvx@0.11.16)
