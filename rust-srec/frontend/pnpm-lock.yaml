@@ -60,8 +60,8 @@ importers:
         specifier: ^2.2.6
         version: 2.2.6(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-separator':
-        specifier: ^1.1.8
-        version: 1.1.8(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+        specifier: ^1.1.9
+        version: 1.1.9(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-slider':
         specifier: ^1.3.6
         version: 1.3.6(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -142,7 +142,7 @@ importers:
         version: 1.8.0
       nitro:
         specifier: latest
-        version: 3.0.260522-beta(chokidar@5.0.0)(dotenv@17.4.2)(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3))
+        version: 3.0.260603-beta(chokidar@5.0.0)(dotenv@17.4.2)(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3))
       qrcode.react:
         specifier: ^4.2.0
         version: 4.2.0(react@19.2.7)
@@ -1626,6 +1626,15 @@ packages:
       '@types/react':
         optional: true
 
+  '@radix-ui/react-compose-refs@1.1.3':
+    resolution: {integrity: sha512-rYOP8OMnuuPMQF1uhPVlGNcCDlkokKqGFE3JcxFViIkAXP7EvFWUliJAstrapypaBLJNHbZL6jGhbVDGTwmVhA==}
+    peerDependencies:
+      '@types/react': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
   '@radix-ui/react-context@1.1.2':
     resolution: {integrity: sha512-jCi/QKUM2r1Ju5a3J64TH2A5SpKAgh0LpknyqdQ4m6DCV0xJ2HG1xARRwNGPQfi1SLdLWZ1OJz6F4OMBBNiGJA==}
     peerDependencies:
@@ -1827,6 +1836,19 @@ packages:
       '@types/react-dom':
         optional: true
 
+  '@radix-ui/react-primitive@2.1.5':
+    resolution: {integrity: sha512-zifXeB8Y88qCYx8PLZ5oQb32KwZub+s925mMoZsBBq9KUQqWKkREubTfs6ASjRPPBe7Jt9O8OHH89+95VG+grA==}
+    peerDependencies:
+      '@types/react': '*'
+      '@types/react-dom': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+      react-dom: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-dom':
+        optional: true
+
   '@radix-ui/react-roving-focus@1.1.11':
     resolution: {integrity: sha512-7A6S9jSgm/S+7MdtNDSb+IU859vQqJ/QAtcYQcfFC6W8RS4IxIZDldLR0xqCFZ6DCyrQLjLPsxtTNch5jVA4lA==}
     peerDependencies:
@@ -1866,8 +1888,8 @@ packages:
       '@types/react-dom':
         optional: true
 
-  '@radix-ui/react-separator@1.1.8':
-    resolution: {integrity: sha512-sDvqVY4itsKwwSMEe0jtKgfTh+72Sy3gPmQpjqcQneqQ4PFmr/1I0YA+2/puilhggCe2gJcx5EBAYFkWkdpa5g==}
+  '@radix-ui/react-separator@1.1.9':
+    resolution: {integrity: sha512-gvgW+JV/Mbjj6darztTetnmElpQEzZrXpJvfj+dOxNAxiyHEAyUvEjjl4zxblvmjmKmi3jfPoy7ZdxzCuUBJSA==}
     peerDependencies:
       '@types/react': '*'
       '@types/react-dom': '*'
@@ -1903,6 +1925,15 @@ packages:
 
   '@radix-ui/react-slot@1.2.4':
     resolution: {integrity: sha512-Jl+bCv8HxKnlTLVrcDE8zTMJ09R9/ukw4qBs/oZClOfoQk/cOTbDn+NceXfV7j09YPVQUryJPHurafcSg6EVKA==}
+    peerDependencies:
+      '@types/react': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
+  '@radix-ui/react-slot@1.2.5':
+    resolution: {integrity: sha512-rCMO3QsIVKv5JTY5CVbo2MvO77SpEqqYc8AvRE7OWqRDOIqAKjsp+DrmnY9uc8NPdxB5E2z47HTYGeE2+NTptg==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
@@ -4029,16 +4060,16 @@ packages:
   nf3@0.3.17:
     resolution: {integrity: sha512-N9zEWySuJFw+gR0lhS5863YsvNeudOdqRyFvNb+jMXbeTJOdrjDqkCpDginIZfUm0LzT1t1nCRiDeqQm/8kirQ==}
 
-  nitro@3.0.260522-beta:
-    resolution: {integrity: sha512-L/z2eOWgkiQHc65kv+SEMgau505afSRF7NJlbooaaZEZscFrNSD7rXZzeVubQlgIzPbhOG8o73bk9soIiGTHRA==}
+  nitro@3.0.260603-beta:
+    resolution: {integrity: sha512-ffaSHK00a7YDlDizoEHwcxPwpQpdBRRA8k42ymTsRnfl3ipGeKgv4gnPr6DgmCNTo4tYVPK3bHBEv1gNhWpo/A==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
       '@vercel/queue': ^0.2.0
       dotenv: '*'
       giget: '*'
-      jiti: ^2.6.1
-      rollup: ^4.60.3
+      jiti: ^2.7.0
+      rollup: ^4.60.4
       vite: ^7 || ^8
       xml2js: ^0.6.2
       zephyr-agent: ^0.2.0
@@ -6225,6 +6256,12 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.16
 
+  '@radix-ui/react-compose-refs@1.1.3(@types/react@19.2.16)(react@19.2.7)':
+    dependencies:
+      react: 19.2.7
+    optionalDependencies:
+      '@types/react': 19.2.16
+
   '@radix-ui/react-context@1.1.2(@types/react@19.2.16)(react@19.2.7)':
     dependencies:
       react: 19.2.7
@@ -6431,6 +6468,15 @@ snapshots:
       '@types/react': 19.2.16
       '@types/react-dom': 19.2.3(@types/react@19.2.16)
 
+  '@radix-ui/react-primitive@2.1.5(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+    dependencies:
+      '@radix-ui/react-slot': 1.2.5(@types/react@19.2.16)(react@19.2.7)
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+    optionalDependencies:
+      '@types/react': 19.2.16
+      '@types/react-dom': 19.2.3(@types/react@19.2.16)
+
   '@radix-ui/react-roving-focus@1.1.11(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@radix-ui/primitive': 1.1.3
@@ -6494,9 +6540,9 @@ snapshots:
       '@types/react': 19.2.16
       '@types/react-dom': 19.2.3(@types/react@19.2.16)
 
-  '@radix-ui/react-separator@1.1.8(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@radix-ui/react-separator@1.1.9(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
-      '@radix-ui/react-primitive': 2.1.4(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@radix-ui/react-primitive': 2.1.5(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
     optionalDependencies:
@@ -6532,6 +6578,13 @@ snapshots:
   '@radix-ui/react-slot@1.2.4(@types/react@19.2.16)(react@19.2.7)':
     dependencies:
       '@radix-ui/react-compose-refs': 1.1.2(@types/react@19.2.16)(react@19.2.7)
+      react: 19.2.7
+    optionalDependencies:
+      '@types/react': 19.2.16
+
+  '@radix-ui/react-slot@1.2.5(@types/react@19.2.16)(react@19.2.7)':
+    dependencies:
+      '@radix-ui/react-compose-refs': 1.1.3(@types/react@19.2.16)(react@19.2.7)
       react: 19.2.7
     optionalDependencies:
       '@types/react': 19.2.16
@@ -8532,7 +8585,7 @@ snapshots:
 
   nf3@0.3.17: {}
 
-  nitro@3.0.260522-beta(chokidar@5.0.0)(dotenv@17.4.2)(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3)):
+  nitro@3.0.260603-beta(chokidar@5.0.0)(dotenv@17.4.2)(jiti@2.7.0)(lru-cache@11.5.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.3)):
     dependencies:
       consola: 3.4.2
       crossws: 0.4.5(srvx@0.11.16)
