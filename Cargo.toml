@@ -74,7 +74,7 @@ tar = "0.4"
 chrono-tz = "0.10"
 cron = "0.16"
 dotenvy = "0.15"
-sysinfo = { version = "0.38" }
+sysinfo = { version = "0.39" }
 tracing-appender = "0.2"
 tokio-tungstenite = { version = "0.29.0", default-features = false, features = ["connect"] }
 m3u8-rs = "6.0.0"
