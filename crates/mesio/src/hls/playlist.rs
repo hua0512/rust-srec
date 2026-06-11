@@ -6,15 +6,16 @@ use crate::hls::HlsDownloaderError;
 use crate::hls::config::{HlsConfig, HlsVariantSelectionPolicy};
 use crate::hls::events::HlsStreamEvent;
 use crate::hls::scheduler::ScheduledSegmentJob;
+use crate::hls::segment_lifecycle::{
+    SegmentJobKind, SegmentJobOutcome, SegmentLifecycleConfig, SegmentLifecycleRegistry,
+};
 use crate::hls::twitch_processor::TwitchPlaylistProcessor;
 use async_trait::async_trait;
 use m3u8_rs::{MasterPlaylist, MediaPlaylist, MediaSegment, parse_playlist_res};
-use moka::future::Cache;
-use moka::policy::EvictionPolicy;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
@@ -34,10 +35,15 @@ pub trait PlaylistProvider: Send + Sync {
         playlist_url: &str,
         initial_playlist: MediaPlaylist,
         base_url: String,
-        segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
-        client_event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
+        channels: PlaylistEngineChannels,
         token: CancellationToken,
     ) -> Result<(), HlsDownloaderError>;
+}
+
+pub struct PlaylistEngineChannels {
+    pub segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
+    pub segment_outcome_rx: mpsc::UnboundedReceiver<SegmentJobOutcome>,
+    pub client_event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +73,20 @@ pub struct PlaylistEngine {
     clients: Arc<ClientPool>,
     cache_service: Option<Arc<CacheManager>>,
     config: Arc<HlsConfig>,
+}
+
+#[derive(Default)]
+struct SegmentParseContext {
+    last_non_empty_segment_uri: Option<String>,
+    last_byterange_uri: Option<String>,
+    last_byterange_end: Option<u64>,
+}
+
+struct SegmentProcessingContext<'a> {
+    lifecycle: &'a mut SegmentLifecycleRegistry,
+    last_map_uri: &'a mut Option<String>,
+    parse: &'a mut SegmentParseContext,
+    twitch_processor: &'a mut Option<TwitchPlaylistProcessor>,
 }
 
 /// Tracks segment arrival patterns to adaptively adjust playlist refresh intervals.
@@ -415,16 +435,22 @@ impl PlaylistProvider for PlaylistEngine {
         playlist_url_str: &str,
         mut current_playlist: MediaPlaylist,
         base_url: String,
-        segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
-        client_event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
+        channels: PlaylistEngineChannels,
         token: CancellationToken,
     ) -> Result<(), HlsDownloaderError> {
+        let PlaylistEngineChannels {
+            segment_request_tx,
+            mut segment_outcome_rx,
+            client_event_tx,
+        } = channels;
+
         let playlist_url =
             Url::parse(playlist_url_str).map_err(|e| HlsDownloaderError::Playlist {
                 reason: format!("Invalid playlist URL for monitoring {playlist_url_str}: {e}"),
             })?;
 
         let mut last_map_uri: Option<String> = None;
+        let mut segment_parse_context = SegmentParseContext::default();
         let mut retries = 0;
         let mut last_playlist_bytes: Option<bytes::Bytes> = None;
 
@@ -434,11 +460,11 @@ impl PlaylistProvider for PlaylistEngine {
             None
         };
 
-        const SEEN_SEGMENTS_LRU_CAPACITY: usize = 100;
-        let seen_segment_uris: Cache<String, ()> = Cache::builder()
-            .max_capacity(SEEN_SEGMENTS_LRU_CAPACITY as u64)
-            .eviction_policy(EvictionPolicy::lru())
-            .build();
+        let mut segment_lifecycle = SegmentLifecycleRegistry::new(SegmentLifecycleConfig {
+            max_entries: self.config.playlist_config.segment_lifecycle_max_entries,
+            retry_delay: self.config.fetcher_config.segment_retry_delay_base,
+            max_reschedules: self.config.fetcher_config.max_segment_retries,
+        });
 
         // Adaptive refresh tracking
         let mut adaptive_tracker = AdaptiveRefreshTracker::new(
@@ -448,6 +474,7 @@ impl PlaylistProvider for PlaylistEngine {
         );
 
         loop {
+            Self::drain_segment_outcomes(&mut segment_outcome_rx, &mut segment_lifecycle);
             match self
                 .fetch_and_parse_playlist(&playlist_url, &last_playlist_bytes, &token)
                 .await
@@ -458,9 +485,12 @@ impl PlaylistProvider for PlaylistEngine {
                         .process_segments(
                             &new_playlist,
                             &base_url,
-                            &seen_segment_uris,
-                            &mut last_map_uri,
-                            &mut twitch_processor,
+                            SegmentProcessingContext {
+                                lifecycle: &mut segment_lifecycle,
+                                last_map_uri: &mut last_map_uri,
+                                parse: &mut segment_parse_context,
+                                twitch_processor: &mut twitch_processor,
+                            },
                             playlist_url.query(),
                         )
                         .await?;
@@ -474,6 +504,7 @@ impl PlaylistProvider for PlaylistEngine {
 
                     current_playlist = new_playlist;
                     last_playlist_bytes = Some(new_playlist_bytes);
+                    segment_lifecycle.prune_before_msn(current_playlist.media_sequence);
 
                     if current_playlist.end_list {
                         info!("Playlist monitoring finished (ENDLIST): {playlist_url}.");
@@ -496,6 +527,24 @@ impl PlaylistProvider for PlaylistEngine {
                     // Playlist unchanged, just wait for next refresh
                     retries = 0;
                     adaptive_tracker.record_refresh(0); // No new segments
+                    if segment_lifecycle.has_due_retry(Instant::now()) {
+                        let jobs = self
+                            .process_segments(
+                                &current_playlist,
+                                &base_url,
+                                SegmentProcessingContext {
+                                    lifecycle: &mut segment_lifecycle,
+                                    last_map_uri: &mut last_map_uri,
+                                    parse: &mut segment_parse_context,
+                                    twitch_processor: &mut twitch_processor,
+                                },
+                                playlist_url.query(),
+                            )
+                            .await?;
+                        adaptive_tracker.record_refresh(jobs.len());
+                        self.send_jobs(jobs, &segment_request_tx, playlist_url_str)
+                            .await?;
+                    }
                 }
                 Err(e) => {
                     error!("Error refreshing playlist {playlist_url}: {e}");
@@ -520,7 +569,12 @@ impl PlaylistProvider for PlaylistEngine {
             let base_refresh_interval =
                 Duration::from_secs_f64(current_playlist.target_duration as f64 * 0.5)
                     .max(self.config.playlist_config.live_refresh_interval);
-            let refresh_delay = adaptive_tracker.get_refresh_interval(base_refresh_interval);
+            let refresh_delay = segment_lifecycle
+                .time_until_next_retry(Instant::now())
+                .map(|retry_delay| {
+                    retry_delay.min(adaptive_tracker.get_refresh_interval(base_refresh_interval))
+                })
+                .unwrap_or_else(|| adaptive_tracker.get_refresh_interval(base_refresh_interval));
 
             tokio::select! {
                 biased;
@@ -546,6 +600,15 @@ impl PlaylistEngine {
             clients,
             cache_service,
             config,
+        }
+    }
+
+    fn drain_segment_outcomes(
+        segment_outcome_rx: &mut mpsc::UnboundedReceiver<SegmentJobOutcome>,
+        segment_lifecycle: &mut SegmentLifecycleRegistry,
+    ) {
+        while let Ok(outcome) = segment_outcome_rx.try_recv() {
+            segment_lifecycle.apply_outcome(outcome, Instant::now());
         }
     }
 
@@ -714,18 +777,20 @@ impl PlaylistEngine {
         &self,
         new_playlist: &MediaPlaylist,
         base_url: &str,
-        seen_segment_uris: &Cache<String, ()>,
-        last_map_uri: &mut Option<String>,
-        twitch_processor: &mut Option<TwitchPlaylistProcessor>,
+        processing_context: SegmentProcessingContext<'_>,
         parent_query: Option<&str>,
     ) -> Result<Vec<ScheduledSegmentJob>, HlsDownloaderError> {
+        let SegmentProcessingContext {
+            lifecycle: segment_lifecycle,
+            last_map_uri,
+            parse: parse_context,
+            twitch_processor,
+        } = processing_context;
+
         let mut jobs_to_send = Vec::new();
         let base_url_parsed = Url::parse(base_url).ok();
         let base_url_arc: Arc<str> = Arc::from(base_url);
         let playlist_level_map = Self::parse_playlist_level_map(new_playlist);
-        let mut last_non_empty_segment_uri: Option<String> = None;
-        let mut last_byterange_uri: Option<String> = None;
-        let mut last_byterange_end: Option<u64> = None;
 
         // Helper to merge query params from parent if missing in child
         let parent_params: Vec<(String, String)> = parent_query
@@ -814,36 +879,51 @@ impl PlaylistEngine {
 
                     if last_map_uri.as_ref() != Some(&final_map_uri) {
                         debug!("New init segment detected: {}", final_map_uri);
-                        let init_media_segment = MediaSegment {
-                            uri: final_map_uri.clone(),
-                            duration: 0.0,
-                            byte_range: map_info.byte_range.clone(),
-                            discontinuity,
-                            key: resolved_key.clone(),
-                            map: None,
-                            ..Default::default()
-                        };
+                        *last_map_uri = Some(final_map_uri.clone());
+                    }
+
+                    let identity = Arc::<str>::from(format!("init:{final_map_uri}"));
+                    let init_media_segment = MediaSegment {
+                        uri: final_map_uri.clone(),
+                        duration: 0.0,
+                        byte_range: map_info.byte_range.clone(),
+                        discontinuity,
+                        key: resolved_key.clone(),
+                        map: None,
+                        ..Default::default()
+                    };
+                    if segment_lifecycle.should_schedule(identity.as_ref(), Instant::now()) {
+                        let msn = new_playlist.media_sequence + idx as u64;
+                        segment_lifecycle.mark_scheduled(
+                            Arc::clone(&identity),
+                            msn,
+                            SegmentJobKind::Init,
+                        );
                         let init_job = ScheduledSegmentJob {
+                            identity,
                             base_url: Arc::clone(&base_url_arc),
-                            media_sequence_number: new_playlist.media_sequence + idx as u64,
+                            media_sequence_number: msn,
                             media_segment: Arc::new(init_media_segment),
+                            kind: SegmentJobKind::Init,
                             is_init_segment: true,
                             is_prefetch: false,
                             parsed_url: Url::parse(&final_map_uri).ok().map(Arc::new),
                         };
                         jobs_to_send.push(init_job);
-                        *last_map_uri = Some(final_map_uri);
                     }
                 }
 
                 let effective_segment_uri = if segment.uri.trim().is_empty() {
                     if segment.byte_range.is_some() {
-                        last_non_empty_segment_uri.as_deref().unwrap_or("")
+                        parse_context
+                            .last_non_empty_segment_uri
+                            .as_deref()
+                            .unwrap_or("")
                     } else {
                         ""
                     }
                 } else {
-                    last_non_empty_segment_uri = Some(segment.uri.clone());
+                    parse_context.last_non_empty_segment_uri = Some(segment.uri.clone());
                     segment.uri.as_str()
                 };
 
@@ -858,8 +938,10 @@ impl PlaylistEngine {
 
                     if let Some(byte_range) = segment.byte_range.as_ref() {
                         let inferred_offset = byte_range.offset.or_else(|| {
-                            if last_byterange_uri.as_deref() == Some(effective_segment_uri) {
-                                last_byterange_end
+                            if parse_context.last_byterange_uri.as_deref()
+                                == Some(effective_segment_uri)
+                            {
+                                parse_context.last_byterange_end
                             } else {
                                 None
                             }
@@ -870,21 +952,23 @@ impl PlaylistEngine {
                                 length: byte_range.length,
                                 offset: Some(offset),
                             });
-                            last_byterange_uri = Some(effective_segment_uri.to_string());
-                            last_byterange_end = Some(offset.saturating_add(byte_range.length));
+                            parse_context.last_byterange_uri =
+                                Some(effective_segment_uri.to_string());
+                            parse_context.last_byterange_end =
+                                Some(offset.saturating_add(byte_range.length));
                         } else {
                             warn!(
                                 msn = msn,
                                 uri = %effective_segment_uri,
                                 "Skipping segment with BYTERANGE missing offset and no prior range to infer from"
                             );
-                            last_byterange_uri = None;
-                            last_byterange_end = None;
+                            parse_context.last_byterange_uri = None;
+                            parse_context.last_byterange_end = None;
                             should_skip = true;
                         }
                     } else {
-                        last_byterange_uri = None;
-                        last_byterange_end = None;
+                        parse_context.last_byterange_uri = None;
+                        parse_context.last_byterange_end = None;
                     }
 
                     if !should_skip {
@@ -909,23 +993,35 @@ impl PlaylistEngine {
                             final_segment_uri.clone()
                         };
 
-                        if !seen_segment_uris.contains_key(&segment_identity) {
+                        if segment_lifecycle.should_schedule(&segment_identity, Instant::now()) {
                             if is_ad {
                                 debug!("Skipping Twitch ad segment: {}", segment.uri);
                             } else {
+                                let job_kind = if segment.title.as_deref() == Some("PREFETCH_SEGMENT") {
+                                    SegmentJobKind::Prefetch
+                                } else {
+                                    SegmentJobKind::Media
+                                };
+                                let identity = Arc::<str>::from(segment_identity);
                                 let mut segment_for_job = segment.clone();
                                 segment_for_job.key = resolved_key.clone();
                                 segment_for_job.uri = final_segment_uri.clone();
                                 segment_for_job.byte_range = effective_byte_range.clone();
                                 segment_for_job.discontinuity = discontinuity;
-                                seen_segment_uris.insert(segment_identity, ()).await;
+                                segment_lifecycle.mark_scheduled(
+                                    Arc::clone(&identity),
+                                    msn,
+                                    job_kind,
+                                );
                                 trace!("New segment detected: {}", final_segment_uri);
                                 let job = ScheduledSegmentJob {
+                                    identity,
                                     base_url: Arc::clone(&base_url_arc),
                                     media_sequence_number: msn,
                                     media_segment: Arc::new(segment_for_job),
+                                    kind: job_kind,
                                     is_init_segment: false,
-                                    is_prefetch: segment.title.as_deref() == Some("PREFETCH_SEGMENT"),
+                                    is_prefetch: job_kind == SegmentJobKind::Prefetch,
                                     parsed_url: Url::parse(&final_segment_uri).ok().map(Arc::new),
                                 };
                                 jobs_to_send.push(job);
@@ -988,7 +1084,6 @@ impl PlaylistEngine {
 mod tests {
     use super::*;
     use crate::hls::config::HlsConfig;
-    use moka::future::Cache;
     use std::collections::VecDeque;
     use tokio_util::sync::CancellationToken;
 
@@ -1006,22 +1101,38 @@ mod tests {
         }
     }
 
+    fn test_lifecycle() -> SegmentLifecycleRegistry {
+        SegmentLifecycleRegistry::new(SegmentLifecycleConfig {
+            max_entries: 100,
+            retry_delay: Duration::ZERO,
+            max_reschedules: 3,
+        })
+    }
+
+    fn test_parse_context() -> SegmentParseContext {
+        SegmentParseContext::default()
+    }
+
     #[tokio::test]
     async fn process_segments_skips_empty_uri_segment() {
         let engine = test_engine();
         let playlist = parse_media_playlist(
             "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:2.0,\n\n",
         );
-        let seen: Cache<String, ()> = Cache::builder().max_capacity(100).build();
+        let mut segment_lifecycle = test_lifecycle();
         let mut last_map_uri = None;
+        let mut parse_context = test_parse_context();
         let mut twitch_processor = None;
         let jobs = engine
             .process_segments(
                 &playlist,
                 "https://example.com/path/",
-                &seen,
-                &mut last_map_uri,
-                &mut twitch_processor,
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
                 None,
             )
             .await
@@ -1044,16 +1155,20 @@ mod tests {
             }),
             ..Default::default()
         });
-        let seen: Cache<String, ()> = Cache::builder().max_capacity(100).build();
+        let mut segment_lifecycle = test_lifecycle();
         let mut last_map_uri = None;
+        let mut parse_context = test_parse_context();
         let mut twitch_processor = None;
         let jobs = engine
             .process_segments(
                 &playlist,
                 "https://example.com/path/",
-                &seen,
-                &mut last_map_uri,
-                &mut twitch_processor,
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
                 None,
             )
             .await
@@ -1082,6 +1197,294 @@ mod tests {
                 offset: Some(10),
             })
         );
+    }
+
+    #[tokio::test]
+    async fn process_segments_preserves_byterange_context_across_refreshes() {
+        let engine = test_engine();
+        let first_playlist = parse_media_playlist(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:2.0,\n#EXT-X-BYTERANGE:10@0\nfile.ts\n",
+        );
+        let mut second_playlist = parse_media_playlist(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:2\n",
+        );
+        second_playlist.segments.push(MediaSegment {
+            uri: String::new(),
+            duration: 2.0,
+            byte_range: Some(m3u8_rs::ByteRange {
+                length: 5,
+                offset: None,
+            }),
+            ..Default::default()
+        });
+
+        let mut segment_lifecycle = test_lifecycle();
+        let mut last_map_uri = None;
+        let mut parse_context = test_parse_context();
+        let mut twitch_processor = None;
+
+        let first_jobs = engine
+            .process_segments(
+                &first_playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("first process_segments should succeed");
+        assert_eq!(first_jobs.len(), 1);
+
+        let second_jobs = engine
+            .process_segments(
+                &second_playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("second process_segments should succeed");
+
+        assert_eq!(second_jobs.len(), 1);
+        assert_eq!(
+            second_jobs[0].media_segment.uri,
+            "https://example.com/path/file.ts"
+        );
+        assert_eq!(
+            second_jobs[0].media_segment.byte_range,
+            Some(m3u8_rs::ByteRange {
+                length: 5,
+                offset: Some(10),
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn process_segments_does_not_duplicate_in_flight_segment() {
+        let engine = test_engine();
+        let playlist = parse_media_playlist(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:10\n#EXTINF:2.0,\nseg10.ts\n",
+        );
+        let mut segment_lifecycle = test_lifecycle();
+        let mut last_map_uri = None;
+        let mut parse_context = test_parse_context();
+        let mut twitch_processor = None;
+
+        let first_jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("first process_segments should succeed");
+        assert_eq!(first_jobs.len(), 1);
+
+        let second_jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("second process_segments should succeed");
+        assert!(second_jobs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_segments_reschedules_retryable_failure() {
+        let engine = test_engine();
+        let playlist = parse_media_playlist(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:10\n#EXTINF:2.0,\nseg10.ts\n",
+        );
+        let mut segment_lifecycle = test_lifecycle();
+        let mut last_map_uri = None;
+        let mut parse_context = test_parse_context();
+        let mut twitch_processor = None;
+
+        let first_jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("first process_segments should succeed");
+        assert_eq!(first_jobs.len(), 1);
+
+        segment_lifecycle.apply_outcome(
+            SegmentJobOutcome {
+                identity: Arc::clone(&first_jobs[0].identity),
+                media_sequence_number: first_jobs[0].media_sequence_number,
+                kind: first_jobs[0].kind,
+                result: crate::hls::segment_lifecycle::SegmentJobResult::Failed {
+                    retryable: true,
+                    reason: "404".to_string(),
+                },
+            },
+            Instant::now(),
+        );
+
+        let retry_jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("retry process_segments should succeed");
+        assert_eq!(retry_jobs.len(), 1);
+        assert_eq!(retry_jobs[0].identity, first_jobs[0].identity);
+    }
+
+    #[tokio::test]
+    async fn process_segments_does_not_reschedule_terminal_failure() {
+        let engine = test_engine();
+        let playlist = parse_media_playlist(
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:10\n#EXTINF:2.0,\nseg10.ts\n",
+        );
+        let mut segment_lifecycle = test_lifecycle();
+        let mut last_map_uri = None;
+        let mut parse_context = test_parse_context();
+        let mut twitch_processor = None;
+
+        let first_jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("first process_segments should succeed");
+        assert_eq!(first_jobs.len(), 1);
+
+        segment_lifecycle.apply_outcome(
+            SegmentJobOutcome {
+                identity: Arc::clone(&first_jobs[0].identity),
+                media_sequence_number: first_jobs[0].media_sequence_number,
+                kind: first_jobs[0].kind,
+                result: crate::hls::segment_lifecycle::SegmentJobResult::Failed {
+                    retryable: false,
+                    reason: "403".to_string(),
+                },
+            },
+            Instant::now(),
+        );
+
+        let retry_jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("retry process_segments should succeed");
+        assert!(retry_jobs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn process_segments_reschedules_retryable_init_segment_failure() {
+        let engine = test_engine();
+        let playlist = parse_media_playlist(
+            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:10\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:2.0,\nseg10.m4s\n",
+        );
+        let mut segment_lifecycle = test_lifecycle();
+        let mut last_map_uri = None;
+        let mut parse_context = test_parse_context();
+        let mut twitch_processor = None;
+
+        let first_jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("first process_segments should succeed");
+        let init_job = first_jobs
+            .iter()
+            .find(|job| job.is_init_segment)
+            .expect("init job should be scheduled");
+
+        segment_lifecycle.apply_outcome(
+            SegmentJobOutcome {
+                identity: Arc::clone(&init_job.identity),
+                media_sequence_number: init_job.media_sequence_number,
+                kind: init_job.kind,
+                result: crate::hls::segment_lifecycle::SegmentJobResult::Failed {
+                    retryable: true,
+                    reason: "404".to_string(),
+                },
+            },
+            Instant::now(),
+        );
+
+        let retry_jobs = engine
+            .process_segments(
+                &playlist,
+                "https://example.com/path/",
+                SegmentProcessingContext {
+                    lifecycle: &mut segment_lifecycle,
+                    last_map_uri: &mut last_map_uri,
+                    parse: &mut parse_context,
+                    twitch_processor: &mut twitch_processor,
+                },
+                None,
+            )
+            .await
+            .expect("retry process_segments should succeed");
+        assert!(retry_jobs.iter().any(|job| job.is_init_segment));
     }
 
     #[test]

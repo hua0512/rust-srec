@@ -267,20 +267,6 @@ fn apply_hls_engine_overrides(
 
     if let Some(ref pc) = cfg.performance_config {
         builder = builder.with_config(|hls_config| {
-            if let Some(ref prefetch) = pc.prefetch {
-                if let Some(v) = prefetch.enabled {
-                    hls_config.performance_config.prefetch.enabled = v;
-                }
-                if let Some(v) = prefetch.prefetch_count {
-                    hls_config.performance_config.prefetch.prefetch_count = v;
-                }
-                if let Some(v) = prefetch.max_buffer_before_skip {
-                    hls_config
-                        .performance_config
-                        .prefetch
-                        .max_buffer_before_skip = v;
-                }
-            }
             if let Some(ref bs) = pc.batch_scheduler {
                 if let Some(v) = bs.enabled {
                     hls_config.performance_config.batch_scheduler.enabled = v;
@@ -972,15 +958,6 @@ mod tests {
         assert_eq!(hls_config.output_config.buffer_limits.max_bytes, 123456);
         assert!(!hls_config.output_config.metrics_enabled);
 
-        assert!(hls_config.performance_config.prefetch.enabled);
-        assert_eq!(hls_config.performance_config.prefetch.prefetch_count, 4);
-        assert_eq!(
-            hls_config
-                .performance_config
-                .prefetch
-                .max_buffer_before_skip,
-            20
-        );
         assert!(!hls_config.performance_config.batch_scheduler.enabled);
         assert_eq!(
             hls_config

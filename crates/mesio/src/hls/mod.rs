@@ -10,10 +10,10 @@ mod hls_downloader;
 mod metrics;
 mod output;
 mod playlist;
-mod prefetch;
 mod processor;
 pub mod retry;
 mod scheduler;
+mod segment_lifecycle;
 mod segment_utils;
 mod twitch_processor;
 
@@ -24,4 +24,3 @@ pub use error::HlsDownloaderError;
 pub use events::{GapSkipReason, HlsStreamEvent};
 pub use hls_downloader::HlsDownloader;
 pub use metrics::{MetricsSnapshot, PerformanceMetrics};
-pub use prefetch::PrefetchManager;

@@ -8,9 +8,11 @@ use crate::hls::events::HlsStreamEvent;
 use crate::hls::fetcher::{SegmentDownloader, SegmentFetcher};
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::output::OutputManager;
-use crate::hls::playlist::{InitialPlaylist, PlaylistEngine, PlaylistProvider};
+use crate::hls::playlist::{
+    InitialPlaylist, PlaylistEngine, PlaylistEngineChannels, PlaylistProvider,
+};
 use crate::hls::processor::{SegmentProcessor, SegmentTransformer};
-use crate::hls::scheduler::{ScheduledSegmentJob, SegmentScheduler};
+use crate::hls::scheduler::{ScheduledSegmentJob, SegmentScheduler, SegmentSchedulerChannels};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -88,13 +90,15 @@ impl HlsStreamCoordinator {
         // Channels - sized for optimal throughput
         let (client_event_tx, client_event_rx) = mpsc::channel(32);
         // Processed segments buffer: concurrency * multiplier for smooth flow
-        let processed_segments_buffer_size = config.scheduler_config.download_concurrency
-            * config.scheduler_config.processed_segment_buffer_multiplier;
+        let download_concurrency = config.scheduler_config.download_concurrency.max(1);
+        let processed_segments_buffer_size =
+            download_concurrency * config.scheduler_config.processed_segment_buffer_multiplier;
         let (processed_segments_tx, processed_segments_rx) =
-            mpsc::channel(processed_segments_buffer_size);
+            mpsc::channel(processed_segments_buffer_size.max(1));
         // Segment request buffer: enough headroom for scheduler
         let (segment_request_tx, segment_request_rx) =
-            mpsc::channel::<ScheduledSegmentJob>(config.scheduler_config.download_concurrency * 2);
+            mpsc::channel::<ScheduledSegmentJob>(download_concurrency * 2);
+        let (segment_outcome_tx, segment_outcome_rx) = mpsc::unbounded_channel();
 
         let token_for_playlist_engine = token.clone();
         let token_for_scheduler = token.clone();
@@ -146,8 +150,11 @@ impl HlsStreamCoordinator {
             Arc::clone(&config),
             segment_fetcher,
             segment_processor,
-            segment_request_rx,
-            processed_segments_tx,
+            SegmentSchedulerChannels {
+                segment_request_rx,
+                output_tx: processed_segments_tx,
+                outcome_tx: segment_outcome_tx,
+            },
             token_for_scheduler,
             Arc::clone(&performance_metrics),
         );
@@ -182,8 +189,11 @@ impl HlsStreamCoordinator {
                         &playlist_url,
                         initial_media_playlist,
                         base_url_clone,
-                        segment_request_tx,
-                        client_event_tx_for_playlist,
+                        PlaylistEngineChannels {
+                            segment_request_tx,
+                            segment_outcome_rx,
+                            client_event_tx: client_event_tx_for_playlist,
+                        },
                         token_for_playlist_engine,
                     )
                     .await;

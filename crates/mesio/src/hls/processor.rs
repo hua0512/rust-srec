@@ -199,6 +199,7 @@ mod tests {
     use super::*;
     use crate::hls::config::HlsConfig;
     use crate::hls::decryption::KeyFetcher;
+    use crate::hls::segment_lifecycle::SegmentJobKind;
     use bytes::Bytes;
     use m3u8_rs::MediaSegment;
     use std::sync::Arc;
@@ -218,12 +219,14 @@ mod tests {
     /// Helper to create a test ScheduledSegmentJob without encryption
     fn create_unencrypted_job(uri: &str, msn: u64) -> ScheduledSegmentJob {
         ScheduledSegmentJob {
+            identity: Arc::<str>::from(uri),
             base_url: Arc::<str>::from("https://example.com/"),
             media_sequence_number: msn,
             media_segment: Arc::new(MediaSegment {
                 uri: uri.to_string(),
                 ..Default::default()
             }),
+            kind: SegmentJobKind::Media,
             is_init_segment: false,
             is_prefetch: false,
             parsed_url: url::Url::parse(uri).ok().map(Arc::new),

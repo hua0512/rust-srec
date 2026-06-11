@@ -4,13 +4,15 @@ use crate::hls::HlsDownloaderError;
 use crate::hls::config::{BatchSchedulerConfig, HlsConfig};
 use crate::hls::fetcher::SegmentDownloader;
 use crate::hls::metrics::PerformanceMetrics;
-use crate::hls::prefetch::PrefetchManager;
 use crate::hls::processor::SegmentTransformer;
+use crate::hls::segment_lifecycle::{SegmentJobKind, SegmentJobOutcome, SegmentJobResult};
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use hls::HlsData;
 use m3u8_rs::MediaSegment;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -20,9 +22,11 @@ use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct ScheduledSegmentJob {
+    pub identity: Arc<str>,
     pub base_url: Arc<str>,
     pub media_sequence_number: u64,
     pub media_segment: Arc<MediaSegment>,
+    pub kind: SegmentJobKind,
     pub is_init_segment: bool,
     /// Whether this job is a prefetch request (lower priority)
     pub is_prefetch: bool,
@@ -37,6 +41,7 @@ pub struct ScheduledSegmentJob {
 pub struct BatchScheduler {
     config: BatchSchedulerConfig,
     pending: Vec<ScheduledSegmentJob>,
+    pending_identities: HashSet<Arc<str>>,
     batch_start: Option<Instant>,
 }
 
@@ -47,17 +52,28 @@ impl BatchScheduler {
         Self {
             config,
             pending: Vec::with_capacity(capacity),
+            pending_identities: HashSet::with_capacity(capacity),
             batch_start: None,
         }
     }
 
     /// Add a job to the current batch
-    pub fn add_job(&mut self, job: ScheduledSegmentJob) {
+    pub fn add_job(&mut self, job: ScheduledSegmentJob) -> bool {
+        if !self.pending_identities.insert(Arc::clone(&job.identity)) {
+            trace!(
+                identity = %job.identity,
+                msn = job.media_sequence_number,
+                "Skipping duplicate pending segment job"
+            );
+            return false;
+        }
+
         if self.pending.is_empty() {
             // Start the batch window timer when first job arrives
             self.batch_start = Some(Instant::now());
         }
         self.pending.push(job);
+        true
     }
 
     /// Check if batch is ready for dispatch
@@ -71,7 +87,7 @@ impl BatchScheduler {
         }
 
         // Check if max batch size reached
-        if self.pending.len() >= self.config.max_batch_size {
+        if self.pending.len() >= self.config.max_batch_size.max(1) {
             return true;
         }
 
@@ -91,6 +107,7 @@ impl BatchScheduler {
     /// Returns the pending jobs sorted by MSN and resets the batch state.
     pub fn take_batch(&mut self) -> Vec<ScheduledSegmentJob> {
         let mut batch = std::mem::take(&mut self.pending);
+        self.pending_identities.clear();
         self.batch_start = None;
 
         // Sort by MSN (ascending). For identical MSNs, ensure init segments are dispatched before
@@ -125,12 +142,24 @@ impl BatchScheduler {
             );
         }
 
-        self.pending.append(&mut jobs);
+        for job in jobs.drain(..) {
+            if self.pending_identities.insert(Arc::clone(&job.identity)) {
+                self.pending.push(job);
+            }
+        }
     }
 
     /// Get the number of pending jobs in the current batch
     pub fn pending_count(&self) -> usize {
         self.pending.len()
+    }
+
+    pub fn has_pending_capacity(&self) -> bool {
+        self.pending.len() < self.config.max_batch_size.max(1)
+    }
+
+    pub fn contains_identity(&self, identity: &Arc<str>) -> bool {
+        self.pending_identities.contains(identity)
     }
 
     /// Check if batch scheduling is enabled
@@ -143,6 +172,10 @@ impl BatchScheduler {
     pub fn time_until_ready(&self) -> Option<Duration> {
         if self.pending.is_empty() {
             return None;
+        }
+
+        if self.pending.len() >= self.config.max_batch_size.max(1) {
+            return Some(Duration::ZERO);
         }
 
         if let Some(start) = self.batch_start {
@@ -168,31 +201,35 @@ pub struct ProcessedSegmentOutput {
     pub discontinuity: bool,
 }
 
+pub struct SegmentSchedulerChannels {
+    pub segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
+    pub output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
+    pub outcome_tx: mpsc::UnboundedSender<SegmentJobOutcome>,
+}
+
+type SegmentProcessingResult = (
+    u64,
+    bool,
+    bool,
+    ScheduledSegmentJob,
+    Result<ProcessedSegmentOutput, HlsDownloaderError>,
+);
+
+type SegmentFuture = Pin<Box<dyn Future<Output = SegmentProcessingResult> + Send>>;
+
 pub struct SegmentScheduler {
     config: Arc<HlsConfig>,
     segment_fetcher: Arc<dyn SegmentDownloader>,
     segment_processor: Arc<dyn SegmentTransformer>,
     segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
     output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
+    outcome_tx: mpsc::UnboundedSender<SegmentJobOutcome>,
     token: CancellationToken,
     batch_scheduler: BatchScheduler,
-    /// Prefetch manager for predictive segment downloading
-    prefetch_manager: PrefetchManager,
-    /// Known segments from playlist (MSN -> job template for prefetch)
-    known_segments: BTreeMap<u64, ScheduledSegmentJob>,
-    /// Current buffer size estimate (number of segments in flight + pending)
-    buffer_size: usize,
-    /// Segments currently in-flight (being downloaded), used to prevent duplicate prefetch
-    in_flight_segments: HashSet<u64>,
-    /// Performance metrics for tracking prefetch operations
+    /// Segment identities currently being downloaded.
+    active_job_identities: HashSet<Arc<str>>,
+    /// Performance metrics for tracking scheduler operations
     metrics: Option<Arc<PerformanceMetrics>>,
-
-    /// Whether any init segment jobs have been observed for this stream.
-    /// Used to gate prefetching on fMP4 streams until an init segment is seen.
-    init_required: bool,
-
-    /// Whether we've successfully processed at least one init segment job.
-    init_seen: bool,
 }
 
 impl SegmentScheduler {
@@ -200,28 +237,27 @@ impl SegmentScheduler {
         config: Arc<HlsConfig>,
         segment_fetcher: Arc<dyn SegmentDownloader>,
         segment_processor: Arc<dyn SegmentTransformer>,
-        segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
-        output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
+        channels: SegmentSchedulerChannels,
         token: CancellationToken,
     ) -> Self {
+        let SegmentSchedulerChannels {
+            segment_request_rx,
+            output_tx,
+            outcome_tx,
+        } = channels;
         let batch_scheduler =
             BatchScheduler::new(config.performance_config.batch_scheduler.clone());
-        let prefetch_manager = PrefetchManager::new(config.performance_config.prefetch.clone());
         Self {
             config,
             segment_fetcher,
             segment_processor,
             segment_request_rx,
             output_tx,
+            outcome_tx,
             token,
             batch_scheduler,
-            prefetch_manager,
-            known_segments: BTreeMap::new(),
-            buffer_size: 0,
-            in_flight_segments: HashSet::new(),
+            active_job_identities: HashSet::new(),
             metrics: None,
-            init_required: false,
-            init_seen: false,
         }
     }
 
@@ -230,24 +266,16 @@ impl SegmentScheduler {
         config: Arc<HlsConfig>,
         segment_fetcher: Arc<dyn SegmentDownloader>,
         segment_processor: Arc<dyn SegmentTransformer>,
-        segment_request_rx: mpsc::Receiver<ScheduledSegmentJob>,
-        output_tx: mpsc::Sender<Result<ProcessedSegmentOutput, HlsDownloaderError>>,
+        channels: SegmentSchedulerChannels,
         token: CancellationToken,
         metrics: Arc<PerformanceMetrics>,
     ) -> Self {
-        let mut scheduler = Self::new(
-            config,
-            segment_fetcher,
-            segment_processor,
-            segment_request_rx,
-            output_tx,
-            token,
-        );
+        let mut scheduler = Self::new(config, segment_fetcher, segment_processor, channels, token);
         scheduler.metrics = Some(metrics);
         scheduler
     }
 
-    /// Result of segment processing, including metadata for prefetch tracking
+    /// Result of segment processing, including metadata for lifecycle tracking
     async fn perform_segment_processing(
         segment_fetcher: Arc<dyn SegmentDownloader>,
         segment_processor: Arc<dyn SegmentTransformer>,
@@ -256,6 +284,7 @@ impl SegmentScheduler {
         u64,
         bool,
         bool,
+        ScheduledSegmentJob,
         Result<ProcessedSegmentOutput, HlsDownloaderError>,
     ) {
         let msn = job.media_sequence_number;
@@ -268,7 +297,7 @@ impl SegmentScheduler {
             Ok(data) => data,
             Err(e) => {
                 error!(uri = %job.media_segment.uri, error = %e, "Segment download failed");
-                return (msn, is_prefetch, is_init_segment, Err(e));
+                return (msn, is_prefetch, is_init_segment, job, Err(e));
             }
         };
 
@@ -293,104 +322,56 @@ impl SegmentScheduler {
             }
         };
 
-        (msn, is_prefetch, is_init_segment, result)
+        (msn, is_prefetch, is_init_segment, job, result)
     }
 
-    /// Store a job template for potential prefetching
-    fn track_segment_job(&mut self, job: &ScheduledSegmentJob) {
-        // Don't track init segments or prefetch jobs
-        if job.is_init_segment || job.is_prefetch {
-            return;
-        }
+    fn build_outcome(
+        identity: Arc<str>,
+        media_sequence_number: u64,
+        kind: SegmentJobKind,
+        result: &Result<ProcessedSegmentOutput, HlsDownloaderError>,
+    ) -> SegmentJobOutcome {
+        let result = match result {
+            Ok(_) => SegmentJobResult::Completed,
+            Err(error) => SegmentJobResult::Failed {
+                retryable: Self::is_retryable_segment_error(error),
+                reason: error.to_string(),
+            },
+        };
 
-        self.known_segments
-            .insert(job.media_sequence_number, job.clone());
-
-        // Cleanup old entries to prevent unbounded growth
-        // Keep only segments within a reasonable window
-        const MAX_TRACKED_SEGMENTS: usize = 100;
-        while self.known_segments.len() > MAX_TRACKED_SEGMENTS {
-            if let Some((&oldest_msn, _)) = self.known_segments.first_key_value() {
-                self.known_segments.remove(&oldest_msn);
-                self.prefetch_manager.cleanup_before(oldest_msn + 1);
-            }
+        SegmentJobOutcome {
+            identity,
+            media_sequence_number,
+            kind,
+            result,
         }
     }
 
-    /// Get prefetch jobs to dispatch after a segment completes
-    fn get_prefetch_jobs(&mut self, completed_msn: u64) -> Vec<ScheduledSegmentJob> {
-        if !self.prefetch_manager.is_enabled() {
-            return Vec::new();
-        }
-
-        // Get known segment MSNs
-        let known_msns: Vec<u64> = self.known_segments.keys().copied().collect();
-
-        // Get prefetch targets, excluding segments already in-flight
-        let targets = self.prefetch_manager.get_prefetch_targets(
-            completed_msn,
-            self.buffer_size,
-            &known_msns,
-            &self.in_flight_segments,
-        );
-
-        if targets.is_empty() {
-            return Vec::new();
-        }
-
-        debug!(
-            completed_msn = completed_msn,
-            targets = ?targets,
-            buffer_size = self.buffer_size,
-            "Initiating prefetch for segments"
-        );
-
-        // Create prefetch jobs for each target
-        let mut prefetch_jobs = Vec::new();
-        for msn in targets {
-            if let Some(template_job) = self.known_segments.get(&msn) {
-                let mut prefetch_job = template_job.clone();
-                prefetch_job.is_prefetch = true;
-                prefetch_jobs.push(prefetch_job);
-
-                // Record prefetch initiation in metrics (Requirement 7.4)
-                if let Some(metrics) = &self.metrics {
-                    metrics.record_prefetch_initiated();
-                }
+    fn is_retryable_segment_error(error: &HlsDownloaderError) -> bool {
+        match error {
+            HlsDownloaderError::HttpStatus { status, .. } => {
+                status.is_server_error()
+                    || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                    || *status == reqwest::StatusCode::NOT_FOUND
             }
+            HlsDownloaderError::SegmentFetch { retryable, .. } => *retryable,
+            HlsDownloaderError::Network { .. } | HlsDownloaderError::Timeout { .. } => true,
+            _ => false,
         }
-
-        prefetch_jobs
     }
 
     /// Take all pending jobs from the batch scheduler and push them into the
     /// `FuturesUnordered` work-set, respecting `max_concurrency`. Any jobs that
     /// cannot be dispatched because the concurrency limit has been reached are
     /// re-queued into the batch scheduler for the next dispatch cycle.
-    fn dispatch_batch_to_futures<F>(
+    fn dispatch_batch_to_futures(
         batch_scheduler: &mut BatchScheduler,
-        futures: &mut FuturesUnordered<F>,
-        buffer_size: &mut usize,
-        in_flight_segments: &mut HashSet<u64>,
+        futures: &mut FuturesUnordered<SegmentFuture>,
+        active_job_identities: &mut HashSet<Arc<str>>,
         segment_fetcher: &Arc<dyn SegmentDownloader>,
         segment_processor: &Arc<dyn SegmentTransformer>,
         max_concurrency: usize,
-    ) where
-        F: From<
-            std::pin::Pin<
-                Box<
-                    dyn std::future::Future<
-                            Output = (
-                                u64,
-                                bool,
-                                bool,
-                                Result<ProcessedSegmentOutput, HlsDownloaderError>,
-                            ),
-                        > + Send,
-                >,
-            >,
-        >,
-    {
+    ) {
         let batch = batch_scheduler.take_batch();
         let mut leftovers = Vec::new();
         for job in batch {
@@ -398,75 +379,63 @@ impl SegmentScheduler {
                 leftovers.push(job);
                 continue;
             }
-            *buffer_size += 1;
-            in_flight_segments.insert(job.media_sequence_number);
-            futures.push(F::from(Box::pin(Self::perform_segment_processing(
+            if !active_job_identities.insert(Arc::clone(&job.identity)) {
+                trace!(
+                    identity = %job.identity,
+                    msn = job.media_sequence_number,
+                    "Skipping duplicate active segment job"
+                );
+                continue;
+            }
+            futures.push(Box::pin(Self::perform_segment_processing(
                 Arc::clone(segment_fetcher),
                 Arc::clone(segment_processor),
                 job,
-            ))));
+            )));
         }
         batch_scheduler.requeue_ready_jobs(leftovers);
     }
 
     /// Push a single job directly into the futures work-set (no batching).
-    fn dispatch_single_to_futures<F>(
+    fn dispatch_single_to_futures(
         job: ScheduledSegmentJob,
-        futures: &mut FuturesUnordered<F>,
-        buffer_size: &mut usize,
-        in_flight_segments: &mut HashSet<u64>,
+        futures: &mut FuturesUnordered<SegmentFuture>,
+        active_job_identities: &mut HashSet<Arc<str>>,
         segment_fetcher: &Arc<dyn SegmentDownloader>,
         segment_processor: &Arc<dyn SegmentTransformer>,
-    ) where
-        F: From<
-            std::pin::Pin<
-                Box<
-                    dyn std::future::Future<
-                            Output = (
-                                u64,
-                                bool,
-                                bool,
-                                Result<ProcessedSegmentOutput, HlsDownloaderError>,
-                            ),
-                        > + Send,
-                >,
-            >,
-        >,
-    {
-        *buffer_size += 1;
-        in_flight_segments.insert(job.media_sequence_number);
-        futures.push(F::from(Box::pin(Self::perform_segment_processing(
+    ) -> bool {
+        if !active_job_identities.insert(Arc::clone(&job.identity)) {
+            trace!(
+                identity = %job.identity,
+                msn = job.media_sequence_number,
+                "Skipping duplicate active segment job"
+            );
+            return false;
+        }
+        futures.push(Box::pin(Self::perform_segment_processing(
             Arc::clone(segment_fetcher),
             Arc::clone(segment_processor),
             job,
-        ))));
+        )));
+        true
     }
 
     pub async fn run(&mut self) {
-        // Type alias for the future returned by perform_segment_processing
-        type SegmentFuture = std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = (
-                            u64,
-                            bool,
-                            bool,
-                            Result<ProcessedSegmentOutput, HlsDownloaderError>,
-                        ),
-                    > + Send,
-            >,
-        >;
-
         info!("Segment scheduler started.");
         let mut futures: FuturesUnordered<SegmentFuture> = FuturesUnordered::new();
         let mut draining = false;
         let batch_enabled = self.batch_scheduler.is_enabled();
-        let prefetch_enabled = self.prefetch_manager.is_enabled();
 
         loop {
+            let max_concurrency = self.config.scheduler_config.download_concurrency.max(1);
             let in_progress_count = futures.len();
-            let can_accept_more =
-                in_progress_count < self.config.scheduler_config.download_concurrency;
+            let can_accept_more = in_progress_count < max_concurrency;
+            let can_receive_more = !draining
+                && if batch_enabled {
+                    self.batch_scheduler.has_pending_capacity()
+                } else {
+                    can_accept_more
+                };
 
             // Calculate batch timeout for select
             let batch_timeout = if batch_enabled {
@@ -491,11 +460,10 @@ impl SegmentScheduler {
                         Self::dispatch_batch_to_futures(
                             &mut self.batch_scheduler,
                             &mut futures,
-                            &mut self.buffer_size,
-                            &mut self.in_flight_segments,
+                            &mut self.active_job_identities,
                             &self.segment_fetcher,
                             &self.segment_processor,
-                            self.config.scheduler_config.download_concurrency,
+                            max_concurrency,
                         );
                     }
                 }
@@ -507,28 +475,35 @@ impl SegmentScheduler {
                         Self::dispatch_batch_to_futures(
                             &mut self.batch_scheduler,
                             &mut futures,
-                            &mut self.buffer_size,
-                            &mut self.in_flight_segments,
+                            &mut self.active_job_identities,
                             &self.segment_fetcher,
                             &self.segment_processor,
-                            self.config.scheduler_config.download_concurrency,
+                            max_concurrency,
                         );
                     }
                 }
 
                 // 3. Receive new segment jobs
                 // This branch is disabled when `draining` is true.
-                maybe_job_request = self.segment_request_rx.recv(), if !draining && can_accept_more => {
+                maybe_job_request = self.segment_request_rx.recv(), if can_receive_more => {
                     if let Some(job_request) = maybe_job_request {
                         trace!(uri = %job_request.media_segment.uri, msn = %job_request.media_sequence_number, "Received new segment job.");
 
-                        if job_request.is_init_segment {
-                            self.init_required = true;
+                        if self.active_job_identities.contains(&job_request.identity)
+                            || self.batch_scheduler.contains_identity(&job_request.identity)
+                        {
+                            trace!(
+                                identity = %job_request.identity,
+                                msn = job_request.media_sequence_number,
+                                "Skipping duplicate segment job request"
+                            );
+                            continue;
                         }
 
-                        // Track segment for potential prefetching
-                        if prefetch_enabled {
-                            self.track_segment_job(&job_request);
+                        if job_request.is_prefetch
+                            && let Some(metrics) = &self.metrics
+                        {
+                            metrics.record_prefetch_initiated();
                         }
 
                         if batch_enabled {
@@ -541,11 +516,10 @@ impl SegmentScheduler {
                                 Self::dispatch_batch_to_futures(
                                     &mut self.batch_scheduler,
                                     &mut futures,
-                                    &mut self.buffer_size,
-                                    &mut self.in_flight_segments,
+                                    &mut self.active_job_identities,
                                     &self.segment_fetcher,
                                     &self.segment_processor,
-                                    self.config.scheduler_config.download_concurrency,
+                                    max_concurrency,
                                 );
                             }
                         } else {
@@ -553,8 +527,7 @@ impl SegmentScheduler {
                             Self::dispatch_single_to_futures(
                                 job_request,
                                 &mut futures,
-                                &mut self.buffer_size,
-                                &mut self.in_flight_segments,
+                                &mut self.active_job_identities,
                                 &self.segment_fetcher,
                                 &self.segment_processor,
                             );
@@ -571,11 +544,10 @@ impl SegmentScheduler {
                             Self::dispatch_batch_to_futures(
                                 &mut self.batch_scheduler,
                                 &mut futures,
-                                &mut self.buffer_size,
-                                &mut self.in_flight_segments,
+                                &mut self.active_job_identities,
                                 &self.segment_fetcher,
                                 &self.segment_processor,
-                                self.config.scheduler_config.download_concurrency,
+                                max_concurrency,
                             );
                         }
                     }
@@ -583,56 +555,26 @@ impl SegmentScheduler {
 
                 // 4. Handle completed futures
                 // This branch remains active during draining to finish in-progress work.
-                Some((completed_msn, is_prefetch, is_init_segment, processed_result)) = futures.next() => {
-                    // Update buffer size
-                    if self.buffer_size > 0 {
-                        self.buffer_size -= 1;
-                    }
+                Some((completed_msn, is_prefetch, _is_init_segment, completed_job, processed_result)) = futures.next() => {
+                    self.active_job_identities.remove(&completed_job.identity);
 
-                    // Remove segment from in-flight tracking
-                    self.in_flight_segments.remove(&completed_msn);
-
-                    // Mark segment as completed in prefetch manager
-                    if prefetch_enabled {
-                        self.prefetch_manager.mark_completed(completed_msn);
+                    let outcome = Self::build_outcome(
+                        Arc::clone(&completed_job.identity),
+                        completed_msn,
+                        completed_job.kind,
+                        &processed_result,
+                    );
+                    if self.outcome_tx.send(outcome).is_err() {
+                        debug!("Segment lifecycle outcome receiver closed.");
                     }
 
                     match processed_result {
                         Ok(processed_output) => {
-                            if is_init_segment {
-                                self.init_seen = true;
-                            }
-
                             // Record prefetch usage metric when a prefetched segment completes successfully
                             if is_prefetch
                                 && let Some(metrics) = &self.metrics
                             {
                                 metrics.record_prefetch_used();
-                            }
-
-                            // Initiate prefetch for next segments after successful download
-                            // Only prefetch after non-prefetch jobs to avoid cascading prefetches
-                            let should_prefetch = prefetch_enabled
-                                && !is_prefetch
-                                && !draining
-                                && !is_init_segment
-                                && (!self.init_required || self.init_seen);
-
-                            if should_prefetch {
-                                let prefetch_jobs = self.get_prefetch_jobs(completed_msn);
-                                let max_concurrency = self.config.scheduler_config.download_concurrency;
-                                for prefetch_job in prefetch_jobs {
-                                    if futures.len() < max_concurrency {
-                                        Self::dispatch_single_to_futures(
-                                            prefetch_job,
-                                            &mut futures,
-                                            &mut self.buffer_size,
-                                            &mut self.in_flight_segments,
-                                            &self.segment_fetcher,
-                                            &self.segment_processor,
-                                        );
-                                    }
-                                }
                             }
 
                             if self.output_tx.send(Ok(processed_output)).await.is_err() {
@@ -645,12 +587,7 @@ impl SegmentScheduler {
                             // Network/timeout errors (e.g. CDN body decode timeouts) are
                             // recoverable — the reorder buffer will treat the missing segment
                             // as a gap and skip it, just like a 404.
-                            let should_ignore = matches!(
-                                e,
-                                HlsDownloaderError::SegmentFetch { .. }
-                                    | HlsDownloaderError::Network { .. }
-                                    | HlsDownloaderError::Timeout { .. }
-                            );
+                            let should_ignore = Self::is_retryable_segment_error(&e);
 
                             warn!(
                                 error = %e,
@@ -706,13 +643,22 @@ mod tests {
         is_init_segment: bool,
         is_prefetch: bool,
     ) -> ScheduledSegmentJob {
+        let kind = if is_init_segment {
+            SegmentJobKind::Init
+        } else if is_prefetch {
+            SegmentJobKind::Prefetch
+        } else {
+            SegmentJobKind::Media
+        };
         ScheduledSegmentJob {
+            identity: Arc::<str>::from(format!("{kind:?}:segment_{msn}.ts")),
             base_url: Arc::<str>::from("https://example.com/"),
             media_sequence_number: msn,
             media_segment: Arc::new(MediaSegment {
                 uri: format!("segment_{}.ts", msn),
                 ..Default::default()
             }),
+            kind,
             is_init_segment,
             is_prefetch,
             parsed_url: None,
@@ -739,11 +685,39 @@ mod tests {
         let config = BatchSchedulerConfig::default();
         let mut scheduler = BatchScheduler::new(config);
 
-        scheduler.add_job(create_test_job(1));
+        assert!(scheduler.add_job(create_test_job(1)));
         assert_eq!(scheduler.pending_count(), 1);
 
-        scheduler.add_job(create_test_job(2));
+        assert!(scheduler.add_job(create_test_job(2)));
         assert_eq!(scheduler.pending_count(), 2);
+    }
+
+    #[test]
+    fn test_batch_scheduler_deduplicates_by_identity() {
+        let config = BatchSchedulerConfig::default();
+        let mut scheduler = BatchScheduler::new(config);
+
+        assert!(scheduler.add_job(create_test_job(1)));
+        assert!(!scheduler.add_job(create_test_job(1)));
+        assert_eq!(scheduler.pending_count(), 1);
+    }
+
+    #[test]
+    fn test_batch_scheduler_tracks_requeued_identity() {
+        let config = BatchSchedulerConfig {
+            enabled: true,
+            batch_window_ms: 50,
+            max_batch_size: 5,
+        };
+        let mut scheduler = BatchScheduler::new(config);
+        let job = create_test_job(1);
+        let identity = Arc::clone(&job.identity);
+
+        scheduler.requeue_ready_jobs(vec![job]);
+
+        assert_eq!(scheduler.pending_count(), 1);
+        assert!(scheduler.contains_identity(&identity));
+        assert_eq!(scheduler.time_until_ready(), Some(Duration::ZERO));
     }
 
     #[test]
@@ -855,5 +829,38 @@ mod tests {
         };
         let scheduler = BatchScheduler::new(config);
         assert!(!scheduler.is_enabled());
+    }
+
+    #[test]
+    fn segment_error_classification_treats_404_as_retryable() {
+        let err = HlsDownloaderError::http_status(
+            reqwest::StatusCode::NOT_FOUND,
+            "https://example.com/segment.ts",
+            "hls segment fetch",
+        );
+
+        assert!(SegmentScheduler::is_retryable_segment_error(&err));
+    }
+
+    #[test]
+    fn segment_error_classification_treats_403_as_terminal() {
+        let err = HlsDownloaderError::http_status(
+            reqwest::StatusCode::FORBIDDEN,
+            "https://example.com/segment.ts",
+            "hls segment fetch",
+        );
+
+        assert!(!SegmentScheduler::is_retryable_segment_error(&err));
+    }
+
+    #[test]
+    fn segment_error_classification_treats_500_as_retryable() {
+        let err = HlsDownloaderError::http_status(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            "https://example.com/segment.ts",
+            "hls segment fetch",
+        );
+
+        assert!(SegmentScheduler::is_retryable_segment_error(&err));
     }
 }

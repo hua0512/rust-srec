@@ -207,12 +207,6 @@ export const MesioHlsOutputConfigOverrideSchema = z.object({
   metrics_enabled: z.boolean().optional(),
 });
 
-export const MesioPrefetchOverrideSchema = z.object({
-  enabled: z.boolean().optional(),
-  prefetch_count: optionalInt(0),
-  max_buffer_before_skip: optionalInt(0),
-});
-
 export const MesioBatchSchedulerOverrideSchema = z.object({
   enabled: z.boolean().optional(),
   batch_window_ms: optionalInt(0),
@@ -220,7 +214,6 @@ export const MesioBatchSchedulerOverrideSchema = z.object({
 });
 
 export const MesioHlsPerformanceConfigOverrideSchema = z.object({
-  prefetch: MesioPrefetchOverrideSchema.optional(),
   batch_scheduler: MesioBatchSchedulerOverrideSchema.optional(),
   zero_copy_enabled: z.boolean().optional(),
   metrics_enabled: z.boolean().optional(),

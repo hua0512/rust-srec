@@ -2,29 +2,6 @@ use std::time::Duration;
 
 use crate::DownloaderConfig;
 
-// --- Performance Configuration Types ---
-
-/// Configuration for segment prefetching
-#[derive(Debug, Clone)]
-pub struct PrefetchConfig {
-    /// Enable prefetching
-    pub enabled: bool,
-    /// Number of segments to prefetch ahead
-    pub prefetch_count: usize,
-    /// Maximum buffer size before skipping prefetch
-    pub max_buffer_before_skip: usize,
-}
-
-impl Default for PrefetchConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            prefetch_count: 2,
-            max_buffer_before_skip: 40,
-        }
-    }
-}
-
 /// Configuration for batch scheduling
 #[derive(Debug, Clone)]
 pub struct BatchSchedulerConfig {
@@ -49,8 +26,6 @@ impl Default for BatchSchedulerConfig {
 /// Aggregated performance configuration for HLS pipeline
 #[derive(Debug, Clone)]
 pub struct HlsPerformanceConfig {
-    /// Prefetch configuration
-    pub prefetch: PrefetchConfig,
     /// Batch scheduler configuration
     pub batch_scheduler: BatchSchedulerConfig,
     /// Zero-copy forwarding enabled
@@ -62,7 +37,6 @@ pub struct HlsPerformanceConfig {
 impl Default for HlsPerformanceConfig {
     fn default() -> Self {
         Self {
-            prefetch: PrefetchConfig::default(),
             batch_scheduler: BatchSchedulerConfig::default(),
             zero_copy_enabled: true,
             metrics_enabled: true,
@@ -140,6 +114,7 @@ pub struct HlsPlaylistConfig {
     pub live_max_refresh_retries: u32,
     pub live_refresh_retry_delay: Duration,
     pub variant_selection_policy: HlsVariantSelectionPolicy,
+    pub segment_lifecycle_max_entries: usize,
     /// Enable adaptive refresh interval based on actual segment arrival rate
     pub adaptive_refresh_enabled: bool,
     /// Minimum adaptive refresh interval (won't go below this)
@@ -156,6 +131,7 @@ impl Default for HlsPlaylistConfig {
             live_max_refresh_retries: 5,
             live_refresh_retry_delay: Duration::from_secs(1),
             variant_selection_policy: Default::default(),
+            segment_lifecycle_max_entries: 512,
             adaptive_refresh_enabled: true,
             adaptive_refresh_min_interval: Duration::from_millis(500),
             adaptive_refresh_max_interval: Duration::from_secs(3),

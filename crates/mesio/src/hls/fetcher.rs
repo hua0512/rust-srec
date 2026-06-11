@@ -191,24 +191,18 @@ impl SegmentFetcher {
                         if let Some(metrics) = &self.performance_metrics {
                             metrics.record_download_error();
                         }
-                        RetryAction::Fail(HlsDownloaderError::SegmentFetch {
-                            reason: format!(
-                                "Client error {} for segment {}",
-                                response.status(),
-                                segment_url
-                            ),
-                            retryable: false,
-                        })
+                        RetryAction::Fail(HlsDownloaderError::http_status(
+                            response.status(),
+                            segment_url.as_str(),
+                            "hls segment fetch",
+                        ))
                     } else {
                         // Server errors (5xx) are retryable
-                        RetryAction::Retry(HlsDownloaderError::SegmentFetch {
-                            reason: format!(
-                                "Server error {} for segment {}",
-                                response.status(),
-                                segment_url
-                            ),
-                            retryable: true,
-                        })
+                        RetryAction::Retry(HlsDownloaderError::http_status(
+                            response.status(),
+                            segment_url.as_str(),
+                            "hls segment fetch",
+                        ))
                     }
                 }
                 Err(e) => {

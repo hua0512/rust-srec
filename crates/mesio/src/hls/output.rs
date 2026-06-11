@@ -379,21 +379,24 @@ impl OutputManager {
         }
     }
 
-    /// Check if buffer is at capacity.
-    /// Returns true if either segment count or byte size limit is reached.
-    ///
-    pub fn is_buffer_full(&self) -> bool {
+    fn buffer_limit_state(&self) -> Option<(usize, usize, usize, usize)> {
         let limits = &self.config.output_config.buffer_limits;
 
-        // Check segment count limit (0 = unlimited)
         let segment_limit_reached =
             limits.max_segments > 0 && self.reorder_buffer.len() >= limits.max_segments;
-
-        // Check byte size limit (0 = unlimited)
         let byte_limit_reached =
             limits.max_bytes > 0 && self.current_buffer_bytes >= limits.max_bytes;
 
-        segment_limit_reached || byte_limit_reached
+        if segment_limit_reached || byte_limit_reached {
+            Some((
+                self.reorder_buffer.len(),
+                limits.max_segments,
+                self.current_buffer_bytes,
+                limits.max_bytes,
+            ))
+        } else {
+            None
+        }
     }
 
     /// Update gap strategy at runtime.
@@ -566,10 +569,13 @@ impl OutputManager {
 
                 }
 
-                // Branch 3: Input from SegmentScheduler
-                // --- Buffer Capacity Check ---
-                // Apply backpressure by not receiving from input channel when buffer is full
-                processed_result = self.input_rx.recv(), if !self.is_buffer_full() => {
+                // Branch 3: Input from SegmentScheduler.
+                //
+                // Keep draining the scheduler channel even when the reorder buffer is at a
+                // configured limit: the next queued item may be the missing segment or init
+                // segment that lets us emit buffered data and release memory. Applying
+                // backpressure here can deadlock the output stage behind an out-of-order result.
+                processed_result = self.input_rx.recv() => {
 
                     // Update last_input_received_time for live streams
                     if self.is_live_stream {
@@ -670,14 +676,13 @@ impl OutputManager {
                             }
 
                             // Log warning if buffer is now at capacity
-                            if self.is_buffer_full() {
-                                let limits = &self.config.output_config.buffer_limits;
+                            if let Some((segments, max_segments, bytes, max_bytes)) = self.buffer_limit_state() {
                                 warn!(
-                                    "Reorder buffer at capacity. Segments: {}/{}, Bytes: {}/{}. Applying backpressure.",
-                                    self.reorder_buffer.len(),
-                                    limits.max_segments,
-                                    self.current_buffer_bytes,
-                                    limits.max_bytes
+                                    "Reorder buffer at capacity. Segments: {}/{}, Bytes: {}/{}. Continuing to drain scheduler output so gaps can resolve.",
+                                    segments,
+                                    max_segments,
+                                    bytes,
+                                    max_bytes
                                 );
                             }
 
@@ -1426,6 +1431,91 @@ mod tests {
             },
             Bytes::from(data.to_vec()),
         )
+    }
+
+    fn test_ts_segment(uri: &str, data: &[u8]) -> HlsData {
+        HlsData::ts(
+            m3u8_rs::MediaSegment {
+                uri: uri.to_string(),
+                duration: 1.0,
+                title: None,
+                byte_range: None,
+                discontinuity: false,
+                key: None,
+                map: None,
+                program_date_time: None,
+                daterange: None,
+                unknown_tags: vec![],
+            },
+            Bytes::from(data.to_vec()),
+        )
+    }
+
+    #[tokio::test]
+    async fn continues_reading_when_reorder_buffer_is_at_capacity() {
+        let mut config = HlsConfig::default();
+        config.output_config.live_max_overall_stall_duration = None;
+        config.output_config.buffer_limits.max_segments = 1;
+        config.output_config.buffer_limits.max_bytes = 0;
+        config.output_config.live_gap_strategy = GapSkipStrategy::WaitIndefinitely;
+
+        let (input_tx, input_rx) = mpsc::channel(16);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+        let token = CancellationToken::new();
+
+        let mut mgr = OutputManager::new(
+            Arc::new(config),
+            input_rx,
+            event_tx,
+            true,
+            100,
+            token.clone(),
+        );
+
+        let join = tokio::spawn(async move {
+            mgr.run().await;
+        });
+
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "segment101.ts".to_string(),
+                data: test_ts_segment("segment101.ts", b"media101"),
+                media_sequence_number: 101,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+        input_tx
+            .send(Ok(ProcessedSegmentOutput {
+                original_segment_uri: "segment100.ts".to_string(),
+                data: test_ts_segment("segment100.ts", b"media100"),
+                media_sequence_number: 100,
+                discontinuity: false,
+            }))
+            .await
+            .unwrap();
+
+        let mut emitted_uris = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(evt) = event_rx.recv().await {
+                if let Ok(HlsStreamEvent::Data(data)) = evt
+                    && let Some(segment) = data.media_segment()
+                {
+                    emitted_uris.push(segment.uri.clone());
+                    if emitted_uris.len() >= 2 {
+                        break;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for ordered output");
+
+        assert_eq!(emitted_uris, ["segment100.ts", "segment101.ts"]);
+
+        token.cancel();
+        drop(input_tx);
+        let _ = join.await;
     }
 
     #[tokio::test]
