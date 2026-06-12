@@ -106,7 +106,9 @@ Transforms raw segment bytes into HLS payloads.
 
 Responsibilities:
 
-- Decrypt encrypted segments.
+- Decrypt encrypted segments through a bounded crypto executor.
+- Fetch and cache decryption keys without blocking async I/O.
+- Derive the effective IV from the playlist key tag or MSN.
 - Preserve `Bytes` when no transform is needed.
 - Convert mutable transforms through `BytesMut` only when required.
 - Return typed payloads for init/media/TS data.
@@ -190,6 +192,42 @@ pub struct SegmentDescriptor {
 ```
 
 The descriptor is allowed to carry parser-native structures for compatibility, but identity and scheduling should use typed fields.
+
+### EncryptionDescriptor
+
+`EncryptionDescriptor` is the normalized encryption metadata needed by the payload processor. It should be created by the manifest planner so the processor does not need to reinterpret raw playlist key tags.
+
+```rust
+pub struct EncryptionDescriptor {
+    pub method: EncryptionMethod,
+    pub key_uri: Arc<str>,
+    pub iv: EffectiveIv,
+    pub key_format: KeyFormat,
+}
+
+pub enum EncryptionMethod {
+    Aes128Cbc,
+    SampleAes,
+}
+
+pub enum EffectiveIv {
+    Explicit([u8; 16]),
+    MediaSequenceDerived(u64),
+}
+
+pub enum KeyFormat {
+    Identity,
+    Unsupported(Arc<str>),
+}
+```
+
+Rules:
+
+- AES-128 CBC with `KEYFORMAT=identity` is the first supported target.
+- If an AES-128 key tag omits IV, derive the IV from the segment MSN before decryption.
+- Treat unsupported methods or key formats as terminal segment failures.
+- Cache fetched keys by normalized key URI and key format.
+- Do not store raw key bytes in logs or tracing fields.
 
 ### SegmentState
 
@@ -296,6 +334,88 @@ pub trait PayloadBuffer {
 
 This can later support memory cache payloads, file-backed payloads, or direct sink writes without changing scheduling state.
 
+## Encrypted Streams
+
+Encryption and decryption are CPU-bound once the key bytes and encrypted payload are available. The async runtime must not perform AES work on core I/O worker threads.
+
+Recommended encrypted-stream flow:
+
+```text
+DownloadExecutor
+    -> raw encrypted Bytes
+    -> PayloadProcessor
+    -> key cache / async key fetch
+    -> CryptoExecutor
+    -> decrypted Bytes
+    -> SequenceAssembler
+```
+
+### Key and IV Handling
+
+- Fetch keys asynchronously with retry/backoff.
+- Cache successful key fetches by normalized key URI and key format.
+- Validate AES-128 keys are exactly 16 bytes.
+- Parse explicit IV values once during planning or processing.
+- Derive missing AES-128 CBC IVs from the segment MSN.
+- Avoid logging raw keys, IVs, cookies, or signed URLs.
+
+### CryptoExecutor
+
+Use a crypto executor abstraction so the engine can change execution strategy without changing the rest of the pipeline.
+
+```rust
+pub enum CryptoBackend {
+    TokioBlocking,
+    DedicatedThreadPool,
+    Rayon,
+}
+
+pub trait CryptoExecutor {
+    async fn decrypt_aes128_cbc(
+        &self,
+        data: Bytes,
+        key: [u8; 16],
+        iv: [u8; 16],
+    ) -> Result<Bytes, HlsDownloaderError>;
+}
+```
+
+Default backend:
+
+- `TokioBlocking`.
+
+Reasoning:
+
+- It integrates with the existing Tokio pipeline.
+- It avoids blocking async I/O workers.
+- Segment-level parallelism already exists through concurrent segment processing.
+- AES-128 CBC is chained within a segment, so useful parallelism is mostly across segments, not within one segment.
+- It avoids adding a second CPU runtime until profiling proves it is needed.
+
+Optional backend:
+
+- `Rayon`, using a dedicated pool, not the global pool.
+
+Use Rayon only when profiling shows encrypted streams are CPU-bound and Tokio blocking work is contending with other blocking tasks. If enabled, configure a bounded pool:
+
+```rust
+let pool = rayon::ThreadPoolBuilder::new()
+    .num_threads(crypto_threads)
+    .build()?;
+```
+
+Do not call the Rayon global pool from random pipeline code. Keep it behind `CryptoExecutor` so CPU budgets are explicit.
+
+### Copy Behavior
+
+AES-CBC decryption requires mutable output. The expected copy path is:
+
+```text
+encrypted Bytes -> mutable buffer -> decrypt in place -> decrypted Bytes
+```
+
+This is an intentional exception to the zero-copy payload rule. The no-op clear segment path should remain zero-copy; encrypted segments should perform one controlled copy or allocation for decrypted output.
+
 ## Scheduling Model
 
 The executor should pull work from the state store:
@@ -396,6 +516,12 @@ Recommended counters:
 - stale completions rejected
 - bytes downloaded
 - bytes emitted
+- key fetch success/failure
+- key cache hits/misses
+- decryption operations
+- decryption bytes
+- decryption latency
+- crypto executor queue depth
 - cache hits/misses
 - reorder buffer depth/bytes
 
@@ -404,6 +530,8 @@ Recommended spans:
 - playlist URL and refresh generation
 - segment key, MSN, kind
 - retry attempt and reason
+- key URI fingerprint, never raw key bytes
+- crypto backend and decrypt duration
 - output gap from/to sequence
 
 ## Implementation Plan
@@ -440,6 +568,10 @@ Recommended spans:
 - Make processor return typed `SegmentPayload`.
 - Keep no-op transforms as handle moves.
 - Convert decrypt/repair paths through `BytesMut` only when required.
+- Add `EncryptionDescriptor` and normalize key/IV metadata before processing.
+- Introduce `CryptoExecutor` with `TokioBlocking` as the default backend.
+- Keep a `Rayon` backend optional and disabled by default until benchmarks justify it.
+- Add metrics for decryption latency, bytes, queue depth, and key cache behavior.
 
 ### Phase 5: Sequence Assembler Integration
 
@@ -476,4 +608,3 @@ Recommended spans:
 - Output does not stall when a later segment fills the reorder buffer before an earlier segment completes.
 - No media payload copy happens on the no-op path from fetcher to output.
 - Clippy and tests pass with `-D warnings`.
-
