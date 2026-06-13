@@ -3553,6 +3553,7 @@ version = "0.4.0"
 dependencies = [
  "aes 0.9.1",
  "async-trait",
+ "axum",
  "bytes",
  "cbc",
  "cipher 0.5.2",

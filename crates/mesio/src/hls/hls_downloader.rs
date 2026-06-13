@@ -1,10 +1,12 @@
 use crate::source::ContentSource;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Instant;
 use tracing::warn;
 
 use crate::media_protocol::{Cacheable, MultiSource};
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use hls::HlsData;
 use reqwest::Client;
 use tokio_stream::wrappers::ReceiverStream;
@@ -16,7 +18,33 @@ use crate::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{HlsConfig, HlsStreamCoordinator, HlsStreamEvent, coordinator::AllTaskHandles};
+use super::engine::{self, EngineHandles};
+use super::{HlsConfig, HlsStreamEvent};
+
+struct CancelOnDropStream {
+    inner: BoxMediaStream<HlsData, HlsDownloaderError>,
+    token: CancellationToken,
+}
+
+impl CancelOnDropStream {
+    fn new(inner: BoxMediaStream<HlsData, HlsDownloaderError>, token: CancellationToken) -> Self {
+        Self { inner, token }
+    }
+}
+
+impl Stream for CancelOnDropStream {
+    type Item = Result<HlsData, HlsDownloaderError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.inner.as_mut().poll_next(cx)
+    }
+}
+
+impl Drop for CancelOnDropStream {
+    fn drop(&mut self) {
+        self.token.cancel();
+    }
+}
 
 pub struct HlsDownloader {
     clients: Arc<crate::downloader::ClientPool>,
@@ -80,49 +108,38 @@ impl HlsDownloader {
         token: CancellationToken,
     ) -> Result<BoxMediaStream<HlsData, HlsDownloaderError>, DownloadError> {
         let config = Arc::new(self.config.clone());
+        let engine_token = token.child_token();
 
-        // Capture current span for HLS segment downloads to be children
-        let parent_span = tracing::Span::current();
-        let parent_span = if parent_span.is_none() {
-            None
-        } else {
-            Some(parent_span)
-        };
-
-        let (client_event_rx, handles) = HlsStreamCoordinator::setup_and_spawn(
+        let (client_event_rx, handles) = engine::start(
             url.to_string(),
-            config.clone(),
+            config,
             Arc::clone(&self.clients),
             cache_manager,
-            token,
-            parent_span,
+            engine_token.clone(),
         )
         .await?;
 
         let stream = ReceiverStream::new(client_event_rx);
 
-        // Spawn a separate task to await the completion of all pipeline components.
-        // This ensures that graceful shutdown logic is fully executed.
+        // Await the pipeline tasks off to the side so graceful-shutdown logic
+        // (reactor drain, assembler flush) always runs to completion.
         tokio::spawn(async move {
-            let AllTaskHandles {
-                playlist_engine_handle,
-                scheduler_handle,
-                output_manager_handle,
+            let EngineHandles {
+                watcher,
+                reactor,
+                assembler,
                 ..
             } = handles;
 
-            // It's important to await all handles to ensure cleanup.
-            if let Some(handle) = playlist_engine_handle
-                && let Err(e) = handle.await
-            {
-                warn!("Playlist engine task finished with error: {:?}", e);
+            if let Err(e) = watcher.await {
+                warn!("Playlist watcher task finished with error: {:?}", e);
             }
-
-            if let Err(e) = scheduler_handle.await {
-                warn!("Scheduler task finished with error: {:?}", e);
+            match reactor.await {
+                Ok(terminal) => debug!(?terminal, "Reactor task finished"),
+                Err(e) => warn!("Reactor task finished with error: {:?}", e),
             }
-            if let Err(e) = output_manager_handle.await {
-                warn!("Output manager task finished with error: {:?}", e);
+            if let Err(e) = assembler.await {
+                warn!("Assembler task finished with error: {:?}", e);
             }
 
             debug!("HLS pipeline tasks finished.");
@@ -140,7 +157,11 @@ impl HlsDownloader {
                         )))
                     }
                     HlsStreamEvent::EndlistEncountered => {
-                        debug!("ENDLIST encountered, emitting EndOfStream marker");
+                        debug!("ENDLIST encountered");
+                        None
+                    }
+                    HlsStreamEvent::StreamEnded => {
+                        debug!("HLS stream ended, emitting EndOfStream marker");
                         Some(Ok(HlsData::end_marker_with_reason(
                             hls::SplitReason::EndOfStream,
                         )))
@@ -151,8 +172,10 @@ impl HlsDownloader {
             }
         });
 
-        // Box the stream and return
-        Ok(stream.boxed())
+        Ok(Box::pin(CancelOnDropStream::new(
+            stream.boxed(),
+            engine_token,
+        )))
     }
 }
 

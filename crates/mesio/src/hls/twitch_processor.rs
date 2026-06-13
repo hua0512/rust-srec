@@ -15,6 +15,7 @@ struct AdDateRange {
     end_ms: i64,
 }
 
+#[derive(Debug)]
 pub(super) struct TwitchPlaylistProcessor {
     ad_dateranges: Cache<String, AdDateRange>,
     pub discontinuity: bool,
@@ -22,7 +23,39 @@ pub(super) struct TwitchPlaylistProcessor {
 
 #[inline]
 fn is_prefetch_segment(segment: &MediaSegment) -> bool {
-    segment.title.as_deref() == Some("PREFETCH_SEGMENT")
+    segment.title.as_deref() == Some(PREFETCH_SEGMENT_TITLE)
+}
+
+/// EXTINF title planted by [`preprocess_twitch_playlist`] so prefetch entries
+/// survive the m3u8 parser and can be recognized downstream.
+pub(super) const PREFETCH_SEGMENT_TITLE: &str = "PREFETCH_SEGMENT";
+
+/// Transforms Twitch-specific tags into m3u8-rs compatible ones.
+///
+/// - Keeps `#EXT-X-DATERANGE` tags so stitched ads stay detectable
+///   (Streamlink logic in [`TwitchPlaylistProcessor`]).
+/// - Rewrites `#EXT-X-TWITCH-PREFETCH` tags into standard segment entries
+///   titled [`PREFETCH_SEGMENT_TITLE`], so the parser only ever sees standard
+///   playlist syntax. Classification (prefetch priority, ad filtering) happens
+///   later in the planner, not here.
+pub(super) fn preprocess_twitch_playlist(playlist_content: &str) -> String {
+    let mut out = String::with_capacity(playlist_content.len());
+    for line in playlist_content.lines() {
+        if let Some(prefetch_uri) = line.strip_prefix("#EXT-X-TWITCH-PREFETCH:") {
+            debug!("Transformed prefetch tag to segment: {}", prefetch_uri);
+            // The duration is not provided. Use a placeholder and let the
+            // Twitch processor handle ad detection / time extrapolation.
+            out.push_str("#EXTINF:2.002,");
+            out.push_str(PREFETCH_SEGMENT_TITLE);
+            out.push('\n');
+            out.push_str(prefetch_uri);
+            out.push('\n');
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
 }
 
 #[inline]

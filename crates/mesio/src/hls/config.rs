@@ -90,6 +90,81 @@ impl Default for BufferLimits {
     }
 }
 
+// --- Engine (reactor) Configuration ---
+
+/// Identity policy selection for segment/key dedup across playlist refreshes.
+#[derive(Debug, Clone, Default)]
+pub enum IdentityPolicyConfig {
+    /// The full resolved URL is the identity (safe default: never
+    /// under-deduplicates). Rotated auth params fork identity under this
+    /// policy.
+    #[default]
+    FullUrl,
+    /// Identity strips the listed query keys (rotating tokens, signatures,
+    /// expiries) and sorts the rest. Only enable for sources whose token
+    /// scheme is known.
+    StripQueryKeys(Vec<String>),
+}
+
+/// Byte budgets, pending bounds, and lifecycle retry settings for the
+/// scheduler reactor.
+#[derive(Debug, Clone)]
+pub struct HlsEngineConfig {
+    /// Raw response-body bytes admitted concurrently (0 = unlimited).
+    /// Reserved at admission, reconciled against Content-Length and the
+    /// streamed body.
+    pub max_inflight_download_bytes: u64,
+    /// Decrypted/transformed output resident in the crypto stage
+    /// (0 = unlimited). Reserved at the encrypted-input upper bound.
+    pub max_processing_bytes: u64,
+    /// Completed payload bytes buffered in the reactor between completion and
+    /// the downstream permit-send.
+    pub max_pending_payload_bytes: u64,
+    /// Total `AssemblerInput` items buffered in the reactor, bounding the
+    /// near-zero-byte control items that payload bytes do not.
+    pub max_pending_items: usize,
+    /// Per-segment size estimate used at admission before any segment has
+    /// completed; afterwards an EMA of actual sizes takes over.
+    pub initial_segment_size_estimate: u64,
+    /// Hard per-segment cap (0 = disabled); a body exceeding it terminalizes
+    /// as oversize.
+    pub max_segment_size_bytes: u64,
+    /// Lifecycle reschedule budget per segment (distinct from the tight
+    /// per-attempt HTTP retries inside the fetch task).
+    pub lifecycle_retry_budget: u32,
+    pub lifecycle_retry_delay_base: Duration,
+    pub lifecycle_retry_delay_max: Duration,
+    /// Control-plane record backstop (applied within the window-prune
+    /// invariant).
+    pub max_state_entries: usize,
+    /// Init-segment records retained across window slides.
+    pub max_retained_inits: usize,
+    /// Identity policy for segment and key dedup.
+    pub identity_policy: IdentityPolicyConfig,
+    /// Decryption key cache entries.
+    pub key_cache_max_entries: u64,
+}
+
+impl Default for HlsEngineConfig {
+    fn default() -> Self {
+        Self {
+            max_inflight_download_bytes: 64 * 1024 * 1024,
+            max_processing_bytes: 32 * 1024 * 1024,
+            max_pending_payload_bytes: 32 * 1024 * 1024,
+            max_pending_items: 1024,
+            initial_segment_size_estimate: 2 * 1024 * 1024,
+            max_segment_size_bytes: 0,
+            lifecycle_retry_budget: 3,
+            lifecycle_retry_delay_base: Duration::from_millis(500),
+            lifecycle_retry_delay_max: Duration::from_secs(10),
+            max_state_entries: 2048,
+            max_retained_inits: 8,
+            identity_policy: IdentityPolicyConfig::default(),
+            key_cache_max_entries: 64,
+        }
+    }
+}
+
 // --- Top-Level Configuration ---
 #[derive(Debug, Clone, Default)]
 pub struct HlsConfig {
@@ -102,8 +177,14 @@ pub struct HlsConfig {
     pub decryption_config: HlsDecryptionConfig,
     pub cache_config: HlsCacheConfig,
     pub output_config: HlsOutputConfig,
-    /// Performance optimization configuration
+    /// Performance optimization configuration.
+    ///
+    /// `batch_scheduler` is retained for config compatibility but is no
+    /// longer consulted: the scheduler reactor admits work continuously,
+    /// gated by concurrency and byte budgets instead of batch windows.
     pub performance_config: HlsPerformanceConfig,
+    /// Scheduler-reactor budgets and lifecycle retry settings.
+    pub engine_config: HlsEngineConfig,
 }
 
 // --- Playlist Configuration ---

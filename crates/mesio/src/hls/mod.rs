@@ -1,25 +1,18 @@
-// Main module for the new HLS downloader implementation
+// HLS downloader: reactor-based engine (see HLS_ENGINE_ARCHITECTURE.md).
 
 pub mod config;
-mod coordinator;
-mod decryption;
+pub mod engine;
 pub mod error;
 pub mod events;
-mod fetcher;
 mod hls_downloader;
 mod metrics;
-mod output;
 mod playlist;
-mod processor;
 pub mod retry;
-mod scheduler;
-mod segment_lifecycle;
 mod segment_utils;
 mod twitch_processor;
 
 // Re-exports for easier access
-pub use config::{BufferLimits, GapSkipStrategy, HlsConfig};
-pub use coordinator::HlsStreamCoordinator;
+pub use config::{BufferLimits, GapSkipStrategy, HlsConfig, HlsEngineConfig, IdentityPolicyConfig};
 pub use error::HlsDownloaderError;
 pub use events::{GapSkipReason, HlsStreamEvent};
 pub use hls_downloader::HlsDownloader;

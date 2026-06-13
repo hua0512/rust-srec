@@ -49,6 +49,7 @@ hls = { path = "../hls" }
 
 [dev-dependencies]
 tokio = { version = "1.51.0", features = ["rt-multi-thread", "macros", "time"] }
+axum = { workspace = true }
 
 [features]
 default = []
