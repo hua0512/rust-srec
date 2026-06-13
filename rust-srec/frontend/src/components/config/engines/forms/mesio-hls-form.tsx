@@ -1192,127 +1192,75 @@ const HlsFetcherSettings = React.memo(({ hlsPath }: SubFormProps) => (
         )}
       />
       <FormField
-        name={`${hlsPath}.fetcher_config.streaming_threshold_bytes`}
+        name={`${hlsPath}.fetcher_config.key_download_timeout_ms`}
         render={({ field }) => (
           <FormItem>
-            <FormLabel className="text-xs">
-              <Trans>Streaming Threshold (bytes)</Trans>
+            <FormLabel className="text-[10px]">
+              <Trans>Key Timeout (ms)</Trans>
             </FormLabel>
             <FormControl>
               <Input
                 type="number"
                 {...field}
                 className="h-8 text-xs font-mono"
-                placeholder="Default: 2097152 (2 MiB)"
+                placeholder="Default: 5000"
               />
             </FormControl>
             <FormMessage />
           </FormItem>
         )}
       />
-    </div>
-
-    <div className="space-y-2">
-      <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <Trans>Decryption Keys</Trans>
-      </h4>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <FormField
-          name={`${hlsPath}.fetcher_config.key_download_timeout_ms`}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-[10px]">
-                <Trans>Timeout (ms)</Trans>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className="h-8 text-xs font-mono"
-                  placeholder="Default: 5000"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.max_key_retries`}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-[10px]">
-                <Trans>Max Retries</Trans>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className="h-8 text-xs font-mono"
-                  placeholder="Default: 3"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.key_retry_delay_base_ms`}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-[10px]">
-                <Trans>Retry Delay (ms)</Trans>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className="h-8 text-xs font-mono"
-                  placeholder="Default: 200"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.fetcher_config.max_key_retry_delay_ms`}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-[10px]">
-                <Trans>Max Retry Delay (ms)</Trans>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className="h-8 text-xs font-mono"
-                  placeholder="Default: 5000"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-    </div>
-
-    <div className="space-y-2">
-      <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <Trans>Caching</Trans>
-      </h4>
       <FormField
-        name={`${hlsPath}.fetcher_config.segment_raw_cache_ttl_ms`}
+        name={`${hlsPath}.fetcher_config.max_key_retries`}
         render={({ field }) => (
           <FormItem>
             <FormLabel className="text-[10px]">
-              <Trans>Raw Segment TTL (ms)</Trans>
+              <Trans>Max Key Retries</Trans>
             </FormLabel>
             <FormControl>
               <Input
                 type="number"
                 {...field}
                 className="h-8 text-xs font-mono"
-                placeholder="Default: 60000"
+                placeholder="Default: 3"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        name={`${hlsPath}.fetcher_config.key_retry_delay_base_ms`}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-[10px]">
+              <Trans>Key Retry Delay (ms)</Trans>
+            </FormLabel>
+            <FormControl>
+              <Input
+                type="number"
+                {...field}
+                className="h-8 text-xs font-mono"
+                placeholder="Default: 200"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        name={`${hlsPath}.fetcher_config.max_key_retry_delay_ms`}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="text-[10px]">
+              <Trans>Max Key Retry Delay (ms)</Trans>
+            </FormLabel>
+            <FormControl>
+              <Input
+                type="number"
+                {...field}
+                className="h-8 text-xs font-mono"
+                placeholder="Default: 5000"
               />
             </FormControl>
             <FormMessage />
@@ -1456,111 +1404,6 @@ const HlsCacheSettings = React.memo(({ hlsPath }: SubFormProps) => (
   </div>
 ));
 HlsCacheSettings.displayName = 'HlsCacheSettings';
-
-const HlsPerformanceSettings = React.memo(({ hlsPath }: SubFormProps) => (
-  <div className="space-y-4 animate-in fade-in duration-300">
-    <div className="grid gap-2">
-      <FormField
-        name={`${hlsPath}.performance_config.zero_copy_enabled`}
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 p-3 py-2 shadow-sm">
-            <FormLabel className="text-xs font-normal">
-              <Trans>Zero Copy Processing (Default: On)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Switch
-                checked={field.value ?? true}
-                onCheckedChange={field.onChange}
-                className="scale-75 origin-right"
-              />
-            </FormControl>
-          </FormItem>
-        )}
-      />
-      <FormField
-        name={`${hlsPath}.performance_config.metrics_enabled`}
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-muted/5 p-3 py-2 shadow-sm">
-            <FormLabel className="text-xs font-normal">
-              <Trans>Enable Performance Metrics (Default: On)</Trans>
-            </FormLabel>
-            <FormControl>
-              <Switch
-                checked={field.value ?? true}
-                onCheckedChange={field.onChange}
-                className="scale-75 origin-right"
-              />
-            </FormControl>
-          </FormItem>
-        )}
-      />
-    </div>
-
-    <div className="space-y-3">
-      <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/40 pb-1">
-        <Trans>Batch Scheduler</Trans>
-      </h4>
-      <FormField
-        name={`${hlsPath}.performance_config.batch_scheduler.enabled`}
-        render={({ field }) => (
-          <FormItem className="flex flex-row items-center gap-2 space-y-0">
-            <FormControl>
-              <Switch
-                checked={field.value ?? true}
-                onCheckedChange={field.onChange}
-                className="scale-75"
-              />
-            </FormControl>
-            <FormLabel className="text-xs font-normal">
-              <Trans>Enabled (Default: On)</Trans>
-            </FormLabel>
-          </FormItem>
-        )}
-      />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          name={`${hlsPath}.performance_config.batch_scheduler.batch_window_ms`}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-[10px]">
-                <Trans>Batch Window (ms)</Trans>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className="h-8 text-xs font-mono"
-                  placeholder="Default: 50"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          name={`${hlsPath}.performance_config.batch_scheduler.max_batch_size`}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-[10px]">
-                <Trans>Max Batch Size</Trans>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  {...field}
-                  className="h-8 text-xs font-mono"
-                  placeholder="Default: 5"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-    </div>
-  </div>
-));
-HlsPerformanceSettings.displayName = 'HlsPerformanceSettings';
 
 const HlsOutputSettings = React.memo(({ hlsPath }: SubFormProps) => (
   <div className="space-y-4 animate-in fade-in duration-300">
@@ -1827,15 +1670,6 @@ export function MesioHlsForm({ basePath = 'config' }: MesioHlsFormProps) {
               </span>
             </TabsTrigger>
             <TabsTrigger
-              value="performance"
-              className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
-            >
-              <Zap className="w-3 h-3 text-yellow-500" />
-              <span className="hidden sm:inline">
-                <Trans>Perf</Trans>
-              </span>
-            </TabsTrigger>
-            <TabsTrigger
               value="output"
               className="flex-1 min-w-[60px] text-[10px] gap-1 px-1"
             >
@@ -1866,9 +1700,6 @@ export function MesioHlsForm({ basePath = 'config' }: MesioHlsFormProps) {
           </TabsContent>
           <TabsContent value="cache" className="mt-0">
             <HlsCacheSettings hlsPath={hlsPath} />
-          </TabsContent>
-          <TabsContent value="performance" className="mt-0">
-            <HlsPerformanceSettings hlsPath={hlsPath} />
           </TabsContent>
           <TabsContent value="output" className="mt-0">
             <HlsOutputSettings hlsPath={hlsPath} />

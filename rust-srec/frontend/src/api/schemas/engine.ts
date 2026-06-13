@@ -133,8 +133,6 @@ export const MesioHlsFetcherConfigOverrideSchema = z.object({
   max_key_retries: optionalInt(0),
   key_retry_delay_base_ms: optionalInt(0),
   max_key_retry_delay_ms: optionalInt(0),
-  segment_raw_cache_ttl_ms: optionalInt(0),
-  streaming_threshold_bytes: optionalInt(0),
 });
 
 export const MesioHlsProcessorConfigOverrideSchema = z.object({
@@ -207,18 +205,6 @@ export const MesioHlsOutputConfigOverrideSchema = z.object({
   metrics_enabled: z.boolean().optional(),
 });
 
-export const MesioBatchSchedulerOverrideSchema = z.object({
-  enabled: z.boolean().optional(),
-  batch_window_ms: optionalInt(0),
-  max_batch_size: optionalInt(0),
-});
-
-export const MesioHlsPerformanceConfigOverrideSchema = z.object({
-  batch_scheduler: MesioBatchSchedulerOverrideSchema.optional(),
-  zero_copy_enabled: z.boolean().optional(),
-  metrics_enabled: z.boolean().optional(),
-});
-
 export const MesioHlsConfigSchema = z.object({
   base: MesioDownloaderBaseOverrideSchema.optional(),
   playlist_config: MesioHlsPlaylistConfigOverrideSchema.optional(),
@@ -228,7 +214,6 @@ export const MesioHlsConfigSchema = z.object({
   decryption_config: MesioHlsDecryptionConfigOverrideSchema.optional(),
   cache_config: MesioHlsCacheConfigOverrideSchema.optional(),
   output_config: MesioHlsOutputConfigOverrideSchema.optional(),
-  performance_config: MesioHlsPerformanceConfigOverrideSchema.optional(),
 });
 
 export const MesioConfigSchema = z.object({
