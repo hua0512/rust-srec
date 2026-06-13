@@ -7,7 +7,6 @@ pub mod events;
 mod hls_downloader;
 mod metrics;
 mod playlist;
-pub mod retry;
 mod segment_utils;
 mod twitch_processor;
 

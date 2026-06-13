@@ -25,6 +25,7 @@ use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
 use crate::hls::twitch_processor::{TwitchPlaylistProcessor, preprocess_twitch_playlist};
+use crate::session::{DownloadEvent, EventSink, ResourceId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalCause {
@@ -56,6 +57,7 @@ pub struct PlaylistWatcher {
     playlist_url: Url,
     base_url: Arc<str>,
     cancel: CancellationToken,
+    events: Option<EventSink>,
 }
 
 impl PlaylistWatcher {
@@ -66,13 +68,30 @@ impl PlaylistWatcher {
         base_url: Arc<str>,
         cancel: CancellationToken,
     ) -> Self {
+        Self::new_with_events(clients, config, playlist_url, base_url, cancel, None)
+    }
+
+    pub fn new_with_events(
+        clients: Arc<ClientPool>,
+        config: Arc<HlsConfig>,
+        playlist_url: Url,
+        base_url: Arc<str>,
+        cancel: CancellationToken,
+        events: Option<EventSink>,
+    ) -> Self {
         Self {
             clients,
             config,
             playlist_url,
             base_url,
             cancel,
+            events,
         }
+    }
+
+    pub fn with_events(mut self, events: Option<EventSink>) -> Self {
+        self.events = events;
+        self
     }
 
     /// Spawn the watcher task. The initial playlist (already fetched during
@@ -222,6 +241,17 @@ impl PlaylistWatcher {
         }
 
         let client = self.clients.client_for_url(&self.playlist_url);
+        let resource = ResourceId::HlsPlaylist {
+            url: Arc::from(self.playlist_url.as_str()),
+        };
+        emit_event(
+            &self.events,
+            DownloadEvent::ResourceStarted {
+                resource: resource.clone(),
+                display_url: Arc::from(self.playlist_url.as_str()),
+                content_length: None,
+            },
+        );
         let request = client
             .get(self.playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
@@ -248,6 +278,14 @@ impl PlaylistWatcher {
             bytes = response.bytes() => bytes,
         }
         .map_err(|e| HlsDownloaderError::Network { source: e })?;
+        emit_event(
+            &self.events,
+            DownloadEvent::ResourceFinished {
+                resource,
+                bytes: playlist_bytes.len() as u64,
+                from_cache: false,
+            },
+        );
 
         if let Some(last_bytes) = last_playlist_bytes.as_ref()
             && last_bytes == &playlist_bytes
@@ -278,6 +316,12 @@ impl PlaylistWatcher {
                 ),
             }),
         }
+    }
+}
+
+fn emit_event(events: &Option<EventSink>, event: DownloadEvent) {
+    if let Some(events) = events {
+        events.emit(event);
     }
 }
 

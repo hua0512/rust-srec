@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::hls::HlsDownloaderError;
+use crate::session::{DownloadEvent, ResourceId};
 
 use super::fetch::{FetchContext, fetch_and_process};
 use super::input::{AssemblerInput, PendingQueue, PlaylistNotice};
@@ -184,7 +185,18 @@ pub async fn run_reactor(
             Some(joined) = inflight.join_next() => {
                 match joined {
                     Ok(outcome) => {
-                        for item in store.apply_outcome(outcome, Instant::now()) {
+                        let effects = store.apply_outcome(outcome, Instant::now());
+                        if let Some(notice) = effects.retry_notice
+                            && let Some(events) = &fetch_ctx.events
+                        {
+                            events.emit(DownloadEvent::RetryScheduled {
+                                resource: Some(ResourceId::HlsSegment { key: notice.key }),
+                                attempt: notice.attempt,
+                                delay: notice.delay,
+                                reason: notice.reason,
+                            });
+                        }
+                        for item in effects.assembler_inputs {
                             pending.push(item);
                         }
                     }

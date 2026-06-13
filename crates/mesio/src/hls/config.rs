@@ -2,48 +2,6 @@ use std::time::Duration;
 
 use crate::DownloaderConfig;
 
-/// Configuration for batch scheduling
-#[derive(Debug, Clone)]
-pub struct BatchSchedulerConfig {
-    /// Enable batch scheduling
-    pub enabled: bool,
-    /// Time window to collect batch (ms)
-    pub batch_window_ms: u64,
-    /// Maximum segments per batch
-    pub max_batch_size: usize,
-}
-
-impl Default for BatchSchedulerConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            batch_window_ms: 50,
-            max_batch_size: 5,
-        }
-    }
-}
-
-/// Aggregated performance configuration for HLS pipeline
-#[derive(Debug, Clone)]
-pub struct HlsPerformanceConfig {
-    /// Batch scheduler configuration
-    pub batch_scheduler: BatchSchedulerConfig,
-    /// Zero-copy forwarding enabled
-    pub zero_copy_enabled: bool,
-    /// Performance metrics enabled
-    pub metrics_enabled: bool,
-}
-
-impl Default for HlsPerformanceConfig {
-    fn default() -> Self {
-        Self {
-            batch_scheduler: BatchSchedulerConfig::default(),
-            zero_copy_enabled: true,
-            metrics_enabled: true,
-        }
-    }
-}
-
 // --- Gap Skip Strategy ---
 /// Strategy for handling gaps in segment sequences
 #[derive(Debug, Clone)]
@@ -177,12 +135,6 @@ pub struct HlsConfig {
     pub decryption_config: HlsDecryptionConfig,
     pub cache_config: HlsCacheConfig,
     pub output_config: HlsOutputConfig,
-    /// Performance optimization configuration.
-    ///
-    /// `batch_scheduler` is retained for config compatibility but is no
-    /// longer consulted: the scheduler reactor admits work continuously,
-    /// gated by concurrency and byte budgets instead of batch windows.
-    pub performance_config: HlsPerformanceConfig,
     /// Scheduler-reactor budgets and lifecycle retry settings.
     pub engine_config: HlsEngineConfig,
 }
@@ -265,10 +217,12 @@ pub struct HlsFetcherConfig {
     pub max_key_retries: u32,
     pub key_retry_delay_base: Duration,
     pub max_key_retry_delay: Duration, // Hard cap on key retry backoff growth
-    pub segment_raw_cache_ttl: Duration, // TTL for caching raw (undecrypted) segments
-    /// Threshold in bytes above which segments are streamed instead of buffered entirely
-    /// This reduces memory spikes for large segments (default: 2MB)
-    pub streaming_threshold_bytes: usize,
+    /// Minimum bytes accumulated before a `DownloadEvent::Progress` is emitted.
+    /// Set to `0` to emit once per network chunk.
+    pub progress_emit_min_bytes: u64,
+    /// Maximum interval between `DownloadEvent::Progress` emissions while bytes
+    /// are arriving. Set to `Duration::ZERO` to emit once per network chunk.
+    pub progress_emit_min_interval: Duration,
 }
 
 impl Default for HlsFetcherConfig {
@@ -282,8 +236,8 @@ impl Default for HlsFetcherConfig {
             max_key_retries: 3,
             key_retry_delay_base: Duration::from_millis(200),
             max_key_retry_delay: Duration::from_secs(5),
-            segment_raw_cache_ttl: Duration::from_secs(60), // Default 1 minutes for raw segments
-            streaming_threshold_bytes: 2 * 1024 * 1024,     // 2MB threshold for streaming
+            progress_emit_min_bytes: 256 * 1024,
+            progress_emit_min_interval: Duration::from_millis(100),
         }
     }
 }
@@ -390,6 +344,3 @@ impl Default for HlsOutputConfig {
         }
     }
 }
-
-// Implement the marker trait from the main crate
-impl crate::media_protocol::ProtocolConfig for HlsConfig {}

@@ -38,14 +38,14 @@ pub enum HlsStreamEvent {
     /// exit. Followed by [`Self::StreamEnded`] once the segment pipeline drains.
     EndlistEncountered,
     StreamEnded,
-    /// A segment timed out and was skipped (Requirements 2.4)
+    /// A segment timed out and was skipped.
     SegmentTimeout {
         /// The sequence number of the segment that timed out
         sequence_number: u64,
         /// How long we waited before timing out
         waited_duration: Duration,
     },
-    /// Gap was skipped due to strategy threshold (Requirements 6.2)
+    /// Gap was skipped due to strategy threshold.
     GapSkipped {
         /// The sequence number we were waiting for
         from_sequence: u64,

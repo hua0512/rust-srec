@@ -6,6 +6,7 @@ use crate::downloader::ClientPool;
 use crate::hls::HlsDownloaderError;
 use crate::hls::config::{HlsConfig, HlsVariantSelectionPolicy};
 use crate::hls::twitch_processor::{TwitchPlaylistProcessor, preprocess_twitch_playlist};
+use crate::session::{DownloadEvent, EventSink, ResourceId};
 use m3u8_rs::{MasterPlaylist, MediaPlaylist, parse_playlist_res};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -29,6 +30,7 @@ pub struct PlaylistEngine {
     clients: Arc<ClientPool>,
     cache_service: Option<Arc<CacheManager>>,
     config: Arc<HlsConfig>,
+    events: Option<EventSink>,
 }
 
 impl PlaylistEngine {
@@ -41,7 +43,13 @@ impl PlaylistEngine {
             clients,
             cache_service,
             config,
+            events: None,
         }
+    }
+
+    pub fn with_events(mut self, events: Option<EventSink>) -> Self {
+        self.events = events;
+        self
     }
 
     pub async fn load_initial_playlist(
@@ -56,10 +64,31 @@ impl PlaylistEngine {
         if let Some(cache_service) = &self.cache_service
             && let Ok(Some((cached_data, _, _))) = cache_service.get(&cache_key).await
         {
+            emit_event(
+                &self.events,
+                DownloadEvent::ResourceFinished {
+                    resource: ResourceId::HlsPlaylist {
+                        url: Arc::from(playlist_url.as_str()),
+                    },
+                    bytes: cached_data.len() as u64,
+                    from_cache: true,
+                },
+            );
             return Self::parse_initial(&playlist_url, &cached_data);
         }
 
         let client = self.clients.client_for_url(&playlist_url);
+        let resource = ResourceId::HlsPlaylist {
+            url: Arc::from(playlist_url.as_str()),
+        };
+        emit_event(
+            &self.events,
+            DownloadEvent::ResourceStarted {
+                resource: resource.clone(),
+                display_url: Arc::from(playlist_url.as_str()),
+                content_length: None,
+            },
+        );
         let response = client
             .get(playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
@@ -79,6 +108,14 @@ impl PlaylistEngine {
             .bytes()
             .await
             .map_err(|e| HlsDownloaderError::Network { source: e })?;
+        emit_event(
+            &self.events,
+            DownloadEvent::ResourceFinished {
+                resource,
+                bytes: playlist_bytes.len() as u64,
+                from_cache: false,
+            },
+        );
 
         if let Some(cache_service) = &self.cache_service {
             let metadata = CacheMetadata::new(playlist_bytes.len() as u64)
@@ -215,6 +252,17 @@ impl PlaylistEngine {
 
         debug!("Selected media playlist URL: {media_playlist_url}");
         let client = self.clients.client_for_url(&media_playlist_url);
+        let resource = ResourceId::HlsPlaylist {
+            url: Arc::from(media_playlist_url.as_str()),
+        };
+        emit_event(
+            &self.events,
+            DownloadEvent::ResourceStarted {
+                resource: resource.clone(),
+                display_url: Arc::from(media_playlist_url.as_str()),
+                content_length: None,
+            },
+        );
         let response = client
             .get(media_playlist_url.clone())
             .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
@@ -234,6 +282,14 @@ impl PlaylistEngine {
             .bytes()
             .await
             .map_err(|e| HlsDownloaderError::Network { source: e })?;
+        emit_event(
+            &self.events,
+            DownloadEvent::ResourceFinished {
+                resource,
+                bytes: playlist_bytes.len() as u64,
+                from_cache: false,
+            },
+        );
         let playlist_bytes_to_parse: Cow<[u8]> =
             if TwitchPlaylistProcessor::is_twitch_playlist(media_playlist_url.as_str()) {
                 let playlist_content = String::from_utf8_lossy(&playlist_bytes);
@@ -260,5 +316,11 @@ impl PlaylistEngine {
                 reason: format!("Failed to parse media playlist: {e}"),
             }),
         }
+    }
+}
+
+fn emit_event(events: &Option<EventSink>, event: DownloadEvent) {
+    if let Some(events) = events {
+        events.emit(event);
     }
 }

@@ -15,11 +15,17 @@ use axum::extract::State;
 use axum::http::{StatusCode, Uri};
 use axum::response::Response;
 use bytes::Bytes;
+use flv::FlvData;
 use tokio_util::sync::CancellationToken;
 
+use mesio_engine::flv::FlvProtocolConfig;
 use mesio_engine::hls::engine::{self, EngineHandles};
 use mesio_engine::hls::{
     GapSkipReason, HlsConfig, HlsDownloaderError, HlsStreamEvent, IdentityPolicyConfig,
+};
+use mesio_engine::{
+    ContentSource, DownloadEvent, DownloadRequest, DownloadTerminal, MesioConfig, MesioDownloader,
+    ProtocolSelection, ResourceId,
 };
 
 // --- Mock origin ---
@@ -158,6 +164,22 @@ fn playlist(seq: u64, segments: &[&str], endlist: bool) -> String {
     s
 }
 
+fn minimal_flv_bytes() -> Vec<u8> {
+    let mut bytes = vec![
+        b'F', b'L', b'V', 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00,
+    ];
+    bytes.extend_from_slice(&[
+        0x09, // video tag
+        0x00, 0x00, 0x01, // data size
+        0x00, 0x00, 0x00, // timestamp
+        0x00, // timestamp extended
+        0x00, 0x00, 0x00, // stream id
+        0x17, // keyframe AVC header byte
+        0x00, 0x00, 0x00, 0x0C, // previous tag size
+    ]);
+    bytes
+}
+
 fn fast_config() -> HlsConfig {
     let mut config = HlsConfig::default();
     config.playlist_config.live_refresh_interval = Duration::from_millis(20);
@@ -176,10 +198,15 @@ async fn run_engine(
     config: HlsConfig,
 ) -> Vec<Result<HlsStreamEvent, HlsDownloaderError>> {
     let cancel = CancellationToken::new();
-    let (mut rx, handles): (_, EngineHandles) =
-        engine::start_standalone(format!("{base}/live.m3u8"), config, None, cancel.clone())
-            .await
-            .expect("engine starts");
+    let (mut rx, handles): (_, EngineHandles) = engine::start_standalone(
+        format!("{base}/live.m3u8"),
+        config,
+        None,
+        cancel.clone(),
+        None,
+    )
+    .await
+    .expect("engine starts");
 
     let mut events = Vec::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
@@ -631,7 +658,6 @@ async fn media_sequence_reset_terminates_with_error() {
 #[tokio::test(flavor = "multi_thread")]
 async fn public_downloader_api_streams_data_and_end_marker() {
     use futures::StreamExt;
-    use mesio_engine::Download;
     use mesio_engine::hls::HlsDownloader;
 
     let origin = Origin::new();
@@ -641,10 +667,15 @@ async fn public_downloader_api_streams_data_and_end_marker() {
     let base = origin.clone().serve().await;
 
     let downloader = HlsDownloader::new(fast_config()).expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()))
+        .with_cancel(CancellationToken::new());
     let mut stream = downloader
-        .download(&format!("{base}/live.m3u8"), CancellationToken::new())
+        .start_session(request)
         .await
-        .expect("download starts");
+        .expect("download starts")
+        .items;
 
     let mut segment_types = Vec::new();
     while let Some(item) = tokio::time::timeout(Duration::from_secs(15), stream.next())
@@ -668,7 +699,6 @@ async fn public_downloader_api_streams_data_and_end_marker() {
 #[tokio::test(flavor = "multi_thread")]
 async fn dropping_public_downloader_stream_cancels_live_engine() {
     use futures::StreamExt;
-    use mesio_engine::Download;
     use mesio_engine::hls::HlsDownloader;
 
     let origin = Origin::new();
@@ -677,10 +707,15 @@ async fn dropping_public_downloader_stream_cancels_live_engine() {
     let base = origin.clone().serve().await;
 
     let downloader = HlsDownloader::new(fast_config()).expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()))
+        .with_cancel(CancellationToken::new());
     let mut stream = downloader
-        .download(&format!("{base}/live.m3u8"), CancellationToken::new())
+        .start_session(request)
         .await
-        .expect("download starts");
+        .expect("download starts")
+        .items;
 
     let first = tokio::time::timeout(Duration::from_secs(15), stream.next())
         .await
@@ -697,5 +732,428 @@ async fn dropping_public_downloader_stream_cancels_live_engine() {
         origin.hits("live.m3u8"),
         settled_hits,
         "dropping the public stream must stop live playlist polling"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn session_events_observe_hls_segment_downloads() {
+    use futures::StreamExt;
+    use mesio_engine::hls::HlsDownloader;
+
+    let origin = Origin::new();
+    origin.push_playlist(playlist(0, &["seg0.ts"], true));
+    origin.add_file("seg0.ts", b"segment-session-progress".to_vec());
+    let base = origin.clone().serve().await;
+
+    let downloader = HlsDownloader::new(fast_config()).expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()));
+    let session = downloader
+        .start_session(request)
+        .await
+        .expect("session starts");
+    let mut items = session.items;
+    let mut events = session.events;
+
+    let mut seen_items = Vec::new();
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("stream item")
+    {
+        let data = item.expect("no stream error");
+        seen_items.push(data.segment_type());
+        if data.segment_type() == hls::SegmentType::EndMarker {
+            break;
+        }
+    }
+
+    let mut captured = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, events.next()).await {
+        captured.push(event);
+    }
+
+    assert!(
+        seen_items.contains(&hls::SegmentType::Ts),
+        "session should yield media item before event assertions"
+    );
+    assert!(
+        captured.iter().any(|event| matches!(
+            event,
+            DownloadEvent::ResourceStarted {
+                resource: ResourceId::HlsSegment { .. },
+                ..
+            }
+        )),
+        "expected segment resource-start event, got {captured:?}"
+    );
+    assert!(
+        captured.iter().any(|event| matches!(
+            event,
+            DownloadEvent::Progress {
+                resource: ResourceId::HlsSegment { .. },
+                bytes_delta,
+                ..
+            } if *bytes_delta > 0
+        )),
+        "expected segment progress event, got {captured:?}"
+    );
+    assert!(
+        captured.iter().any(|event| matches!(
+            event,
+            DownloadEvent::ResourceFinished {
+                resource: ResourceId::HlsSegment { .. },
+                bytes,
+                from_cache: false,
+            } if *bytes == b"segment-session-progress".len() as u64
+        )),
+        "expected segment resource-finished event, got {captured:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mesio_downloader_hls_sources_fail_over_with_discontinuity() {
+    use futures::StreamExt;
+
+    let first_origin = Origin::new();
+    first_origin.push_playlist(playlist(0, &["first0.ts"], false));
+    first_origin.add_file("first0.ts", b"first".to_vec());
+    first_origin.fail_playlist_after(1);
+    let first_base = first_origin.clone().serve().await;
+
+    let second_origin = Origin::new();
+    second_origin.push_playlist(playlist(0, &["second0.ts"], true));
+    second_origin.add_file("second0.ts", b"second".to_vec());
+    let second_base = second_origin.clone().serve().await;
+
+    let downloader = MesioDownloader::new(MesioConfig {
+        hls: fast_config(),
+        ..Default::default()
+    });
+    let request = DownloadRequest::from_url(&format!("{first_base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()))
+        .add_source(ContentSource::new(format!("{first_base}/live.m3u8"), 0))
+        .add_source(ContentSource::new(format!("{second_base}/live.m3u8"), 1));
+    let session = downloader
+        .start_hls(request)
+        .await
+        .expect("source session starts");
+    let mut items = session.items;
+    let mut events = session.events;
+
+    let mut item_types = Vec::new();
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("stream item")
+    {
+        let data = item.expect("no stream error");
+        item_types.push(data.segment_type());
+        if matches!(
+            data,
+            hls::HlsData::EndMarker(Some(hls::SplitReason::EndOfStream))
+        ) {
+            break;
+        }
+    }
+
+    let mut selected = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, events.next()).await {
+        if let DownloadEvent::SourceSelected { url, attempt, .. } = event {
+            selected.push((url.to_string(), attempt));
+        }
+    }
+
+    assert_eq!(
+        item_types,
+        vec![
+            hls::SegmentType::Ts,
+            hls::SegmentType::EndMarker,
+            hls::SegmentType::Ts,
+            hls::SegmentType::EndMarker,
+        ],
+        "HLS failover should synthesize a discontinuity before the next source"
+    );
+    assert_eq!(
+        selected,
+        vec![
+            (format!("{first_base}/live.m3u8"), 1),
+            (format!("{second_base}/live.m3u8"), 2),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mesio_downloader_hls_source_exhaustion_does_not_emit_extra_discontinuity() {
+    use futures::StreamExt;
+
+    let origin = Origin::new();
+    origin.push_playlist(playlist(0, &["seg0.ts"], false));
+    origin.add_file("seg0.ts", b"zero".to_vec());
+    origin.fail_playlist_after(1);
+    let base = origin.clone().serve().await;
+
+    let downloader = MesioDownloader::new(MesioConfig {
+        hls: fast_config(),
+        ..Default::default()
+    });
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()))
+        .add_source(ContentSource::new(format!("{base}/live.m3u8"), 0));
+    let session = downloader
+        .start_hls(request)
+        .await
+        .expect("source session starts");
+    let mut items = session.items;
+
+    let mut item_types = Vec::new();
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("stream item")
+    {
+        match item {
+            Ok(data) => item_types.push(data.segment_type()),
+            Err(_) => break,
+        }
+    }
+
+    assert_eq!(
+        item_types,
+        vec![hls::SegmentType::Ts],
+        "a discontinuity marker is only valid between two source sessions"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mesio_downloader_flv_source_selection_emits_event() {
+    use futures::StreamExt;
+
+    let origin = Origin::new();
+    origin.add_file(
+        "stream.flv",
+        vec![
+            b'F', b'L', b'V', 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00,
+        ],
+    );
+    let base = origin.clone().serve().await;
+
+    let downloader = MesioDownloader::new(MesioConfig::default());
+    let request = DownloadRequest::from_url(&format!("{base}/ignored.flv"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Flv(Default::default()))
+        .add_source(ContentSource::new(format!("{base}/stream.flv"), 7));
+    let session = downloader
+        .start_flv(request)
+        .await
+        .expect("FLV session starts from selected source");
+    let mut events = session.events;
+
+    let mut selected = None;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, events.next()).await {
+        if let DownloadEvent::SourceSelected {
+            url,
+            priority,
+            attempt,
+        } = event
+        {
+            selected = Some((url.to_string(), priority, attempt));
+            break;
+        }
+    }
+
+    assert_eq!(selected, Some((format!("{base}/stream.flv"), 7, 1)));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mesio_downloader_rejects_unimplemented_flv_reconnect_modes() {
+    let downloader = MesioDownloader::new(MesioConfig::default());
+    let request = DownloadRequest::from_url("http://127.0.0.1:9/stream.flv")
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Flv(mesio_engine::FlvRequestOptions {
+            reconnect: mesio_engine::FlvReconnect::ReconnectSameSourceWithDiscontinuity,
+        }));
+
+    let err = match downloader.start_flv(request).await {
+        Ok(_) => panic!("unsupported reconnect mode must be rejected before network I/O"),
+        Err(err) => err,
+    };
+
+    assert!(matches!(
+        err,
+        mesio_engine::DownloadError::Configuration { reason }
+            if reason.contains("FLV reconnect mode")
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mesio_downloader_rejects_flv_reconnect_from_request_options() {
+    let downloader = MesioDownloader::new(MesioConfig::default());
+    let mut request =
+        DownloadRequest::from_url("http://127.0.0.1:9/stream.flv").expect("valid URL");
+    request.options.flv.reconnect = mesio_engine::FlvReconnect::SwitchSourceWithDiscontinuity;
+
+    let err = match downloader.start_flv(request).await {
+        Ok(_) => panic!("unsupported reconnect mode must be rejected before network I/O"),
+        Err(err) => err,
+    };
+
+    assert!(matches!(
+        err,
+        mesio_engine::DownloadError::Configuration { reason }
+            if reason.contains("FLV reconnect mode")
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hls_progress_zero_threshold_emits_for_segment_chunk() {
+    use futures::StreamExt;
+    use mesio_engine::hls::HlsDownloader;
+
+    let origin = Origin::new();
+    origin.push_playlist(playlist(0, &["seg0.ts"], true));
+    origin.add_file("seg0.ts", b"chunk-progress".to_vec());
+    let base = origin.clone().serve().await;
+
+    let mut config = fast_config();
+    config.fetcher_config.progress_emit_min_bytes = 0;
+    config.fetcher_config.progress_emit_min_interval = Duration::ZERO;
+    let downloader = HlsDownloader::new(config).expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()));
+    let session = downloader
+        .start_session(request)
+        .await
+        .expect("download starts");
+    let mut items = session.items;
+    let mut events = session.events;
+
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("stream item")
+    {
+        if matches!(
+            item.expect("no stream error"),
+            hls::HlsData::EndMarker(Some(hls::SplitReason::EndOfStream))
+        ) {
+            break;
+        }
+    }
+
+    let mut saw_progress = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, events.next()).await {
+        if let DownloadEvent::Progress {
+            resource: ResourceId::HlsSegment { .. },
+            bytes_delta,
+            bytes_total,
+        } = event
+        {
+            saw_progress = bytes_delta == b"chunk-progress".len() as u64
+                && bytes_total == b"chunk-progress".len() as u64;
+            if saw_progress {
+                break;
+            }
+        }
+    }
+
+    assert!(saw_progress, "expected per-chunk HLS progress event");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn flv_progress_zero_threshold_emits_for_stream_chunk() {
+    use futures::StreamExt;
+    use mesio_engine::flv::FlvDownloader;
+
+    let origin = Origin::new();
+    let body = minimal_flv_bytes();
+    let body_len = body.len() as u64;
+    origin.add_file("stream.flv", body);
+    let base = origin.clone().serve().await;
+
+    let config = FlvProtocolConfig {
+        progress_emit_min_bytes: 0,
+        progress_emit_min_interval: Duration::ZERO,
+        ..Default::default()
+    };
+    let downloader = FlvDownloader::with_config(config).expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/stream.flv"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Flv(Default::default()));
+    let session = downloader
+        .start_session(request)
+        .await
+        .expect("download starts");
+    let mut items = session.items;
+    let mut events = session.events;
+
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("stream item")
+    {
+        if matches!(item.expect("no stream error"), FlvData::Tag(_)) {
+            break;
+        }
+    }
+
+    let mut saw_progress = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, events.next()).await {
+        if let DownloadEvent::Progress {
+            resource: ResourceId::FlvStream { .. },
+            bytes_delta,
+            bytes_total,
+        } = event
+        {
+            saw_progress = bytes_delta == body_len && bytes_total == body_len;
+            if saw_progress {
+                break;
+            }
+        }
+    }
+
+    assert!(saw_progress, "expected per-chunk FLV progress event");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hls_download_handle_join_reports_authoritative_end() {
+    use futures::StreamExt;
+    use mesio_engine::hls::HlsDownloader;
+
+    let origin = Origin::new();
+    origin.push_playlist(playlist(0, &["seg0.ts"], true));
+    origin.add_file("seg0.ts", b"zero".to_vec());
+    let base = origin.clone().serve().await;
+
+    let downloader = HlsDownloader::new(fast_config()).expect("downloader builds");
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()));
+    let session = downloader
+        .start_session(request)
+        .await
+        .expect("download starts");
+    let handle = session.handle.clone();
+    let mut stream = session.items;
+
+    while let Some(item) = tokio::time::timeout(Duration::from_secs(15), stream.next())
+        .await
+        .expect("stream item")
+    {
+        if matches!(
+            item.expect("no stream error"),
+            hls::HlsData::EndMarker(Some(hls::SplitReason::EndOfStream))
+        ) {
+            break;
+        }
+    }
+
+    assert_eq!(
+        handle.join().await.expect("join handle").expect("join ok"),
+        DownloadTerminal::AuthoritativeEnd
     );
 }

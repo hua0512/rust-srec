@@ -17,12 +17,13 @@
 //! # Architecture
 //!
 //! The `MesioEngine` acts as a thin coordinator that:
-//! 1. Detects the protocol type from the URL (HLS or FLV)
+//! 1. Starts protocol sessions through `mesio::MesioDownloader`
 //! 2. Delegates to the appropriate downloader (`HlsDownloader` or `FlvDownloader`)
 //! 3. Propagates results back to the caller
 //!
-//! Progress tracking is handled by the writers internally via `WriterTask` and
-//! `WriterState`, eliminating the need for duplicate tracking in the engine.
+//! Download telemetry is available from mesio session events. The rust-srec
+//! engine wrappers keep user-visible recording progress on the writer pipeline
+//! so byte accounting follows the actual persisted output.
 
 pub mod config;
 mod engine;
@@ -37,7 +38,6 @@ pub use hls_downloader::HlsDownloader;
 
 use crate::downloader::engine::traits::DownloadFailureKind;
 use mesio::DownloadError;
-use mesio::flv::error::FlvDownloadError;
 use reqwest::StatusCode;
 
 /// Classify a `mesio::DownloadError` into a `DownloadFailureKind`.
@@ -47,9 +47,9 @@ use reqwest::StatusCode;
 pub(super) fn classify_download_error(err: &DownloadError) -> DownloadFailureKind {
     match err {
         DownloadError::HttpStatus { status, .. } => classify_http_status(*status),
-        DownloadError::Network { .. } | DownloadError::Timeout { .. } => {
-            DownloadFailureKind::Network
-        }
+        DownloadError::Network { .. }
+        | DownloadError::StreamNetwork { .. }
+        | DownloadError::Timeout { .. } => DownloadFailureKind::Network,
         DownloadError::Io { .. } => DownloadFailureKind::Io,
         DownloadError::NotFound { .. } | DownloadError::SourceExhausted { .. } => {
             DownloadFailureKind::SourceUnavailable
@@ -78,15 +78,6 @@ pub(super) fn classify_download_error(err: &DownloadError) -> DownloadFailureKin
     }
 }
 
-/// Classify a `FlvDownloadError` into a `DownloadFailureKind`.
-pub(super) fn classify_flv_error(err: &FlvDownloadError) -> DownloadFailureKind {
-    match err {
-        FlvDownloadError::Download(e) => classify_download_error(e),
-        FlvDownloadError::Decoder(_) => DownloadFailureKind::Processing,
-        FlvDownloadError::AllSourcesFailed(_) => DownloadFailureKind::SourceUnavailable,
-    }
-}
-
 fn classify_http_status(status: StatusCode) -> DownloadFailureKind {
     let code = status.as_u16();
     if code == 429 {
@@ -97,5 +88,19 @@ fn classify_http_status(status: StatusCode) -> DownloadFailureKind {
         DownloadFailureKind::HttpServerError { status: code }
     } else {
         DownloadFailureKind::Other
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_network_error_classifies_as_network() {
+        let err = DownloadError::StreamNetwork {
+            reason: "stream reset".to_string(),
+        };
+
+        assert_eq!(classify_download_error(&err), DownloadFailureKind::Network);
     }
 }

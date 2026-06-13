@@ -1,8 +1,7 @@
 //! Mesio native download engine implementation.
 //!
-//! This engine uses the `mesio` crate's factory pattern for protocol detection
-//! and stream downloading. It supports HLS and FLV formats through the
-//! `MesioDownloaderFactory` API.
+//! This engine uses the `mesio` crate's session API for protocol detection and
+//! stream downloading.
 //!
 //! The engine acts as a thin coordinator that:
 //! 1. Detects the protocol type from the URL
@@ -14,7 +13,7 @@
 use async_trait::async_trait;
 use axum::http::HeaderMap;
 use mesio::flv::FlvProtocolConfig;
-use mesio::{FlvProtocolBuilder, HlsProtocolBuilder, MesioDownloaderFactory, ProtocolType};
+use mesio::{FlvProtocolBuilder, HlsProtocolBuilder, MesioDownloader, ProtocolType};
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -28,9 +27,8 @@ use crate::downloader::engine::traits::{
 
 /// Native Mesio download engine.
 ///
-/// This engine uses the `mesio` crate's `MesioDownloaderFactory` for
-/// protocol detection and delegates to specialized downloaders for
-/// HLS and FLV formats.
+/// This engine uses the `mesio` crate's session API for protocol detection and
+/// delegates to specialized downloaders for HLS and FLV formats.
 ///
 /// The engine is a thin coordinator that:
 /// - Detects protocol type from URL
@@ -88,11 +86,11 @@ impl MesioEngine {
         self
     }
 
-    /// Detect the protocol type from a URL using the mesio factory.
+    /// Detect the protocol type from a URL using mesio's session entry point.
     ///
     /// Returns the detected `ProtocolType` (HLS or FLV) based on URL patterns.
     pub fn detect_protocol(url: &str) -> Result<ProtocolType> {
-        MesioDownloaderFactory::detect_protocol(url)
+        MesioDownloader::detect_protocol(url)
             .map_err(|e| crate::Error::Other(format!("Protocol detection failed: {}", e)))
     }
 }
@@ -118,7 +116,6 @@ impl DownloadEngine for MesioEngine {
 
         info!("Starting mesio download for streamer {}", streamer_id);
 
-        // Detect protocol type using MesioDownloaderFactory
         let protocol_type = Self::detect_protocol(&config_snapshot.url).map_err(|e| {
             EngineStartError::new(
                 DownloadFailureKind::Configuration,

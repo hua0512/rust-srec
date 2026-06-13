@@ -276,7 +276,7 @@ pub struct MesioHlsConfig {
     /// Override scheduler settings (download concurrency, buffers).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scheduler_config: Option<MesioHlsSchedulerConfigOverride>,
-    /// Override segment/key fetcher settings (timeouts/retries/streaming threshold).
+    /// Override segment/key fetcher settings (timeouts/retries).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fetcher_config: Option<MesioHlsFetcherConfigOverride>,
     /// Override processor settings (processed segment cache TTL).
@@ -291,9 +291,6 @@ pub struct MesioHlsConfig {
     /// Override output buffering, gap handling, stall timeouts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_config: Option<MesioHlsOutputConfigOverride>,
-    /// Override performance-related toggles (batching/zero-copy/etc.).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub performance_config: Option<MesioHlsPerformanceConfigOverride>,
 }
 
 /// Serializable HTTP version preference for Mesio downloader.
@@ -398,9 +395,9 @@ pub struct MesioHlsFetcherConfigOverride {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_key_retry_delay_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub segment_raw_cache_ttl_ms: Option<u64>,
+    pub progress_emit_min_bytes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub streaming_threshold_bytes: Option<usize>,
+    pub progress_emit_min_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -469,26 +466,6 @@ pub struct MesioHlsOutputConfigOverride {
     pub buffer_limits: Option<MesioBufferLimitsOverride>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metrics_enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MesioHlsPerformanceConfigOverride {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub batch_scheduler: Option<MesioBatchSchedulerOverride>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub zero_copy_enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metrics_enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MesioBatchSchedulerOverride {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub batch_window_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_batch_size: Option<usize>,
 }
 
 /// Serializable gap-skip strategy for Mesio HLS.
@@ -571,16 +548,6 @@ mod tests {
             },
             "scheduler_config": {
               "download_concurrency": 3
-            },
-            "performance_config": {
-              "prefetch": {
-                "enabled": true,
-                "prefetch_count": 4,
-                "max_buffer_before_skip": 20
-              },
-              "batch_scheduler": {
-                "enabled": false
-              }
             }
           }
         }"#;
@@ -600,14 +567,6 @@ mod tests {
                 .as_ref()
                 .and_then(|cfg| cfg.download_concurrency),
             Some(3)
-        );
-        let performance = hls.performance_config.as_ref().unwrap();
-        assert_eq!(
-            performance
-                .batch_scheduler
-                .as_ref()
-                .and_then(|cfg| cfg.enabled),
-            Some(false)
         );
     }
 

@@ -6,7 +6,7 @@
 //! lifecycle retry policy, never touches the store, and never dedups.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
@@ -23,6 +23,7 @@ use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::segment_utils::is_m4s_segment;
+use crate::session::{DownloadEvent, EventSink, ResourceId};
 
 use super::budget::{ByteBudget, ByteReservation};
 use super::crypto::{CryptoExecutor, KeyCache, validate_key_bytes};
@@ -41,6 +42,7 @@ pub struct FetchContext {
     pub cache_manager: Option<Arc<CacheManager>>,
     pub metrics: Option<Arc<PerformanceMetrics>>,
     pub cancel: CancellationToken,
+    pub events: Option<EventSink>,
 }
 
 struct Failure {
@@ -94,6 +96,16 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
         if let Some(metrics) = &ctx.metrics {
             metrics.record_cache_hit();
         }
+        emit_event(
+            &ctx,
+            DownloadEvent::ResourceFinished {
+                resource: ResourceId::HlsSegment {
+                    key: descriptor.key.clone(),
+                },
+                bytes: bytes.len() as u64,
+                from_cache: true,
+            },
+        );
         reservation.reconcile(bytes.len() as u64);
         let payload = wrap_payload(bytes, &descriptor);
         drop(reservation);
@@ -309,6 +321,15 @@ async fn download_once(
     }
     let range_mode = validate_range_response(status, response.headers(), key.byte_range)
         .map_err(|e| (e, false))?;
+    let content_length = response.content_length();
+    emit_event(
+        ctx,
+        DownloadEvent::ResourceStarted {
+            resource: ResourceId::HlsSegment { key: key.clone() },
+            display_url: Arc::from(url.as_str()),
+            content_length,
+        },
+    );
 
     let max_segment_size = ctx.config.engine_config.max_segment_size_bytes;
 
@@ -319,7 +340,7 @@ async fn download_once(
 
     // First reconcile point: response headers. Content-Length was unknowable
     // at admission; grow (or shrink later) toward it now.
-    if let Some(content_length) = response.content_length() {
+    if let Some(content_length) = content_length {
         if (max_segment_size > 0 && content_length > max_segment_size)
             || can_never_fit(content_length)
         {
@@ -348,9 +369,11 @@ async fn download_once(
     // Stream the body, enforcing the reservation at chunk granularity: a
     // chunked or lying response cannot blow the budget one chunk at a time.
     let mut buffer = BytesMut::with_capacity(
-        usize::try_from(response.content_length().unwrap_or(8 * 1024)).unwrap_or(8 * 1024),
+        usize::try_from(content_length.unwrap_or(8 * 1024)).unwrap_or(8 * 1024),
     );
     let mut stream = response.bytes_stream();
+    let mut progress_since_last = 0_u64;
+    let mut last_progress_emit = Instant::now();
     loop {
         let chunk = tokio::select! {
             _ = ctx.cancel.cancelled() => {
@@ -365,6 +388,26 @@ async fn download_once(
         })?;
 
         let new_len = buffer.len() as u64 + chunk.len() as u64;
+        progress_since_last += chunk.len() as u64;
+        let elapsed = last_progress_emit.elapsed();
+        let progress_min_bytes = ctx.config.fetcher_config.progress_emit_min_bytes;
+        let progress_min_interval = ctx.config.fetcher_config.progress_emit_min_interval;
+        if progress_min_bytes == 0
+            || progress_min_interval.is_zero()
+            || progress_since_last >= progress_min_bytes
+            || elapsed >= progress_min_interval
+        {
+            emit_event(
+                ctx,
+                DownloadEvent::Progress {
+                    resource: ResourceId::HlsSegment { key: key.clone() },
+                    bytes_delta: progress_since_last,
+                    bytes_total: new_len,
+                },
+            );
+            progress_since_last = 0;
+            last_progress_emit = Instant::now();
+        }
         if (max_segment_size > 0 && new_len > max_segment_size) || can_never_fit(new_len) {
             return Err((
                 Failure::new(
@@ -395,13 +438,37 @@ async fn download_once(
     }
 
     let bytes = materialize_range(buffer.freeze(), range_mode).map_err(|e| (e, false))?;
+    if progress_since_last > 0 {
+        emit_event(
+            ctx,
+            DownloadEvent::Progress {
+                resource: ResourceId::HlsSegment { key: key.clone() },
+                bytes_delta: progress_since_last,
+                bytes_total: bytes.len() as u64,
+            },
+        );
+    }
     reservation.reconcile(bytes.len() as u64);
 
     if let Some(metrics) = &ctx.metrics {
         metrics.record_download(bytes.len() as u64, started.elapsed().as_millis() as u64);
     }
+    emit_event(
+        ctx,
+        DownloadEvent::ResourceFinished {
+            resource: ResourceId::HlsSegment { key: key.clone() },
+            bytes: bytes.len() as u64,
+            from_cache: false,
+        },
+    );
     trace!(size = bytes.len(), %url, "segment downloaded");
     Ok(bytes)
+}
+
+fn emit_event(ctx: &FetchContext, event: DownloadEvent) {
+    if let Some(events) = &ctx.events {
+        events.emit(event);
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -601,6 +668,16 @@ async fn decrypt_segment(
 async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8; 16], Failure> {
     let identity = Arc::clone(&enc.key_identity_uri);
     let fetch_url = Arc::clone(&enc.key_fetch_url);
+    emit_event(
+        ctx,
+        DownloadEvent::ResourceStarted {
+            resource: ResourceId::HlsKey {
+                uri: Arc::clone(&identity),
+            },
+            display_url: Arc::from(fetch_url.as_str()),
+            content_length: None,
+        },
+    );
     let result = ctx
         .key_cache
         .get_with(Arc::clone(&identity), {
@@ -634,23 +711,36 @@ async fn fetch_key(ctx: &FetchContext, enc: &EncryptionDescriptor) -> Result<[u8
         })
         .await;
 
-    result.map_err(|e| match e.as_ref() {
-        HlsDownloaderError::HttpStatus { status, .. } => Failure::new(
-            FailureClass::Http(status.as_u16()),
-            format!("key fetch failed: {e}"),
-        ),
-        HlsDownloaderError::Network { source } if source.is_timeout() => {
-            Failure::new(FailureClass::Timeout, format!("key fetch timed out: {e}"))
+    match result {
+        Ok(key) => {
+            emit_event(
+                ctx,
+                DownloadEvent::ResourceFinished {
+                    resource: ResourceId::HlsKey { uri: identity },
+                    bytes: key.len() as u64,
+                    from_cache: false,
+                },
+            );
+            Ok(key)
         }
-        HlsDownloaderError::Network { .. } => {
-            Failure::new(FailureClass::Network, format!("key fetch failed: {e}"))
-        }
-        HlsDownloaderError::Decryption { .. } => Failure::new(
-            FailureClass::InvalidFormat,
-            format!("key validation failed: {e}"),
-        ),
-        other => Failure::new(FailureClass::Network, format!("key fetch failed: {other}")),
-    })
+        Err(e) => Err(match e.as_ref() {
+            HlsDownloaderError::HttpStatus { status, .. } => Failure::new(
+                FailureClass::Http(status.as_u16()),
+                format!("key fetch failed: {e}"),
+            ),
+            HlsDownloaderError::Network { source } if source.is_timeout() => {
+                Failure::new(FailureClass::Timeout, format!("key fetch timed out: {e}"))
+            }
+            HlsDownloaderError::Network { .. } => {
+                Failure::new(FailureClass::Network, format!("key fetch failed: {e}"))
+            }
+            HlsDownloaderError::Decryption { .. } => Failure::new(
+                FailureClass::InvalidFormat,
+                format!("key validation failed: {e}"),
+            ),
+            other => Failure::new(FailureClass::Network, format!("key fetch failed: {other}")),
+        }),
+    }
 }
 
 fn classify_reqwest(e: &reqwest::Error) -> FailureClass {

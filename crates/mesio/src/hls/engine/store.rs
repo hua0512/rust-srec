@@ -105,6 +105,21 @@ impl SegmentOutcome {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct RetryNotice {
+    pub key: SegmentKey,
+    pub msn: u64,
+    pub attempt: u32,
+    pub delay: Duration,
+    pub reason: Arc<str>,
+}
+
+#[derive(Debug, Default)]
+pub struct OutcomeEffects {
+    pub assembler_inputs: Vec<AssemblerInput>,
+    pub retry_notice: Option<RetryNotice>,
+}
+
 /// A schedulable job handed to a fetch-and-process task. Owns the RAII
 /// download-byte reservation, so admission and byte-charging are one step.
 #[derive(Debug)]
@@ -514,11 +529,12 @@ impl SegmentStateStore {
         (jobs, inputs)
     }
 
-    /// Apply a finished future's outcome and return the assembler items it
-    /// implies: a `Payload` on success, a `TerminalFailed` when the failure
-    /// terminalizes. Retry policy is decided here, from the `FailureClass`
-    /// and the remaining lifecycle budget — never inside the fetch future.
-    pub fn apply_outcome(&mut self, outcome: SegmentOutcome, now: Instant) -> Vec<AssemblerInput> {
+    /// Apply a finished future's outcome and return the effects it implies:
+    /// a `Payload` on success, a `TerminalFailed` when the failure terminalizes,
+    /// and a best-effort retry notice when lifecycle retry is scheduled. Retry
+    /// policy is decided here, from the `FailureClass` and the remaining
+    /// lifecycle budget — never inside the fetch future.
+    pub fn apply_outcome(&mut self, outcome: SegmentOutcome, now: Instant) -> OutcomeEffects {
         match outcome {
             SegmentOutcome::Completed { key, msn, payload } => {
                 let payload_len = payload.len() as u64;
@@ -529,7 +545,10 @@ impl SegmentStateStore {
                 }
                 // A record pruned mid-flight (window long gone) still forwards
                 // its payload: the assembler stale-rejects if it is too old.
-                vec![AssemblerInput::Payload(payload)]
+                OutcomeEffects {
+                    assembler_inputs: vec![AssemblerInput::Payload(payload)],
+                    retry_notice: None,
+                }
             }
             SegmentOutcome::Failed {
                 key,
@@ -538,7 +557,7 @@ impl SegmentStateStore {
                 reason,
             } => {
                 let Some(record) = self.records.get_mut(&key) else {
-                    return Vec::new();
+                    return OutcomeEffects::default();
                 };
 
                 let retryable = match class {
@@ -589,9 +608,18 @@ impl SegmentStateStore {
                     self.retry_heap.push(Reverse(RetryEntry {
                         retry_at,
                         order,
-                        key,
+                        key: key.clone(),
                     }));
-                    Vec::new()
+                    OutcomeEffects {
+                        assembler_inputs: Vec::new(),
+                        retry_notice: Some(RetryNotice {
+                            key,
+                            msn,
+                            attempt: reschedules,
+                            delay,
+                            reason,
+                        }),
+                    }
                 } else {
                     record.state = SegmentState::TerminalFailed {
                         class,
@@ -603,7 +631,10 @@ impl SegmentStateStore {
                     // assembler decides whether the stream can continue (a
                     // failed init on an fMP4 stream is fatal, a failed media
                     // MSN is a gap to advance past).
-                    vec![AssemblerInput::TerminalFailed { key, msn }]
+                    OutcomeEffects {
+                        assembler_inputs: vec![AssemblerInput::TerminalFailed { key, msn }],
+                        retry_notice: None,
+                    }
                 }
             }
         }
@@ -819,7 +850,16 @@ mod tests {
             },
             now,
         );
-        assert!(out.is_empty(), "retryable failure emits nothing yet");
+        assert!(
+            out.assembler_inputs.is_empty(),
+            "retryable failure emits nothing yet"
+        );
+        let notice = out.retry_notice.expect("retry notice should be surfaced");
+        assert_eq!(notice.key, key);
+        assert_eq!(notice.msn, 1);
+        assert_eq!(notice.attempt, 1);
+        assert_eq!(notice.reason.as_ref(), "404");
+        assert_eq!(notice.delay, Duration::from_millis(10));
         assert!(s.has_unfinished_work());
 
         // Before the deadline: not schedulable.
@@ -855,15 +895,17 @@ mod tests {
                 now,
             );
             if attempt < 2 {
-                assert!(out.is_empty());
+                assert!(out.assembler_inputs.is_empty());
+                assert!(out.retry_notice.is_some());
                 now += Duration::from_secs(60);
                 let (jobs, _) = s.next_ready_jobs(1, now, &b);
                 assert_eq!(jobs.len(), 1, "attempt {attempt} reschedules");
             } else {
                 assert!(matches!(
-                    out.as_slice(),
+                    out.assembler_inputs.as_slice(),
                     [AssemblerInput::TerminalFailed { msn: 1, .. }]
                 ));
+                assert!(out.retry_notice.is_none());
             }
         }
         assert!(!s.has_unfinished_work());
@@ -899,7 +941,11 @@ mod tests {
             },
             Instant::now(),
         );
-        assert!(out.is_empty(), "stale-URL 403 must reschedule");
+        assert!(
+            out.assembler_inputs.is_empty(),
+            "stale-URL 403 must reschedule"
+        );
+        assert!(out.retry_notice.is_some());
 
         // Retry runs with the freshest URL and 403s again -> terminal.
         let later = Instant::now() + Duration::from_secs(60);
@@ -919,9 +965,10 @@ mod tests {
             later,
         );
         assert!(matches!(
-            out.as_slice(),
+            out.assembler_inputs.as_slice(),
             [AssemblerInput::TerminalFailed { msn: 1, .. }]
         ));
+        assert!(out.retry_notice.is_none());
     }
 
     #[test]
@@ -1005,7 +1052,11 @@ mod tests {
             },
             Instant::now(),
         );
-        assert!(matches!(out.as_slice(), [AssemblerInput::Payload(_)]));
+        assert!(matches!(
+            out.assembler_inputs.as_slice(),
+            [AssemblerInput::Payload(_)]
+        ));
+        assert!(out.retry_notice.is_none());
         assert!(s.current_size_estimate() < before, "EMA moved toward 4B");
         assert!(!s.has_unfinished_work());
     }

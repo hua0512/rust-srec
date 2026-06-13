@@ -44,6 +44,7 @@ use crate::hls::events::HlsStreamEvent;
 use crate::hls::metrics::PerformanceMetrics;
 use crate::hls::playlist::{InitialPlaylist, PlaylistEngine};
 use crate::hls::twitch_processor::TwitchPlaylistProcessor;
+use crate::session::EventSink;
 
 use assembler::SequenceAssembler;
 use budget::ByteBudget;
@@ -51,7 +52,8 @@ use crypto::{CryptoBackend, CryptoExecutor, KeyCache};
 use fetch::FetchContext;
 use identity::{SegmentIdentityPolicy, StripQueryIdentity};
 use planner::PlannerContext;
-use reactor::{ReactorConfig, Terminal, run_reactor};
+pub use reactor::Terminal;
+use reactor::{ReactorConfig, run_reactor};
 use store::StoreConfig;
 use watcher::PlaylistWatcher;
 
@@ -59,7 +61,7 @@ pub struct EngineHandles {
     pub watcher: JoinHandle<()>,
     pub reactor: JoinHandle<Terminal>,
     pub assembler: JoinHandle<()>,
-    pub performance_metrics: Arc<PerformanceMetrics>,
+    pub performance_metrics: Option<Arc<PerformanceMetrics>>,
 }
 
 /// `start` with a client pool built from `config.base`. Convenience for
@@ -69,6 +71,7 @@ pub async fn start_standalone(
     config: HlsConfig,
     cache_manager: Option<Arc<CacheManager>>,
     cancel: CancellationToken,
+    events: Option<EventSink>,
 ) -> Result<
     (
         mpsc::Receiver<Result<HlsStreamEvent, HlsDownloaderError>>,
@@ -77,24 +80,24 @@ pub async fn start_standalone(
     HlsDownloaderError,
 > {
     let clients = Arc::new(crate::downloader::create_client_pool(&config.base)?);
-    start(
+    start_with_events(
         initial_url,
         Arc::new(config),
         clients,
         cache_manager,
         cancel,
+        events,
     )
     .await
 }
 
-/// Load the initial playlist, select a variant, and spawn the watcher,
-/// reactor, and assembler. Returns the consumer event receiver.
-pub async fn start(
+pub async fn start_with_events(
     initial_url: String,
     config: Arc<HlsConfig>,
     clients: Arc<ClientPool>,
     cache_manager: Option<Arc<CacheManager>>,
     cancel: CancellationToken,
+    events: Option<EventSink>,
 ) -> Result<
     (
         mpsc::Receiver<Result<HlsStreamEvent, HlsDownloaderError>>,
@@ -102,14 +105,18 @@ pub async fn start(
     ),
     HlsDownloaderError,
 > {
-    let performance_metrics = Arc::new(PerformanceMetrics::new());
+    let performance_metrics = config
+        .output_config
+        .metrics_enabled
+        .then(|| Arc::new(PerformanceMetrics::new()));
 
     // --- Initial playlist + variant selection (one-shot, before any task) ---
     let playlist_engine = PlaylistEngine::new(
         Arc::clone(&clients),
         cache_manager.clone(),
         Arc::clone(&config),
-    );
+    )
+    .with_events(events.clone());
     let initial = playlist_engine.load_initial_playlist(&initial_url).await?;
     let (initial_media_playlist, base_url, media_playlist_url) = match &initial {
         InitialPlaylist::Master(_, _) => {
@@ -158,8 +165,9 @@ pub async fn start(
             engine.key_cache_max_entries,
         ),
         cache_manager,
-        metrics: Some(Arc::clone(&performance_metrics)),
+        metrics: performance_metrics.clone(),
         cancel: cancel.clone(),
+        events: events.clone(),
     });
 
     // --- Identity policy + planner context (per-source) ---
@@ -187,20 +195,23 @@ pub async fn start(
         media_playlist_url,
         Arc::from(base_url.as_str()),
         cancel.clone(),
-    );
+    )
+    .with_events(events.clone());
     let (playlist_rx, watcher_handle) = watcher.spawn(initial_media_playlist);
 
     // --- Task C: assembler (spawned before the reactor so its receiver is
     // live the moment outcomes start flowing) ---
-    let assembler = SequenceAssembler::new(
+    let mut assembler = SequenceAssembler::new(
         Arc::clone(&config),
         assembler_rx,
         client_event_tx,
         is_live,
         initial_media_sequence,
         cancel.clone(),
-    )
-    .with_performance_metrics(Arc::clone(&performance_metrics));
+    );
+    if let Some(metrics) = &performance_metrics {
+        assembler = assembler.with_performance_metrics(Arc::clone(metrics));
+    }
     let assembler_handle = tokio::spawn(assembler.run());
 
     // --- Task B: reactor ---
