@@ -4080,11 +4080,11 @@ msgstr "密钥缓存 TTL（毫秒）"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1237
 msgid "Key Retry Delay (ms)"
-msgstr ""
+msgstr "密钥重试延迟（毫秒）"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1199
 msgid "Key Timeout (ms)"
-msgstr ""
+msgstr "密钥超时（毫秒）"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:17
 msgid "Keyword"
@@ -4442,11 +4442,11 @@ msgstr "最大 IO 任务数"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1218
 msgid "Max Key Retries"
-msgstr ""
+msgstr "最大密钥重试次数"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1256
 msgid "Max Key Retry Delay (ms)"
-msgstr ""
+msgstr "最大密钥重试延迟（毫秒）"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:153
 msgid "Max number of retry attempts for metadata fetching."
