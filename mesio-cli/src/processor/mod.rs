@@ -3,10 +3,12 @@ mod generic;
 mod hls;
 
 use crate::{config::ProgramConfig, error::AppError};
-use mesio_engine::{DownloadManagerConfig, MesioDownloaderFactory, ProtocolType};
+use mesio_engine::{
+    DownloadRequest, DownloaderSession, MesioConfig, MesioDownloader, ProtocolSelection,
+};
 use pipeline_common::CancellationToken;
 use std::path::{Path, PathBuf};
-use tracing::{Level, error, info, span};
+use tracing::{Instrument, Level, error, info, span};
 
 /// Determine the type of input and process accordingly
 pub async fn process_inputs(
@@ -26,20 +28,20 @@ pub async fn process_inputs(
 
     // Create a span for overall processing
     let processing_span = span!(Level::INFO, "processing_inputs", count = inputs_len);
-    let _enter = processing_span.enter();
+    processing_span.in_scope(|| {
+        info!(
+            inputs_count = inputs_len,
+            "Starting processing of {} input{}",
+            inputs_len,
+            if inputs_len == 1 { "" } else { "s" }
+        );
+    });
 
-    info!(
-        inputs_count = inputs_len,
-        "Starting processing of {} input{}",
-        inputs_len,
-        if inputs_len == 1 { "" } else { "s" }
-    );
-
-    let factory = MesioDownloaderFactory::new()
-        .with_download_config(DownloadManagerConfig::default())
-        .with_flv_config(config.flv_config.clone().unwrap_or_default())
-        .with_hls_config(config.hls_config.clone().unwrap_or_default())
-        .with_token(token.clone());
+    let downloader = MesioDownloader::new(MesioConfig {
+        flv: config.flv_config.clone().unwrap_or_default(),
+        hls: config.hls_config.clone().unwrap_or_default(),
+        token: token.clone(),
+    });
 
     // Process each input
     for (index, input) in inputs.iter().enumerate() {
@@ -50,42 +52,38 @@ pub async fn process_inputs(
 
         // Create a span for this specific input
         let input_span = span!(Level::INFO, "process_input", index = input_index, input = %input);
-        let _input_enter = input_span.enter();
 
         // Process based on input type
         if input.starts_with("http://") || input.starts_with("https://") {
-            let mut downloader = factory.create_for_url(input, ProtocolType::Auto).await?;
+            let request = DownloadRequest::from_url(input)?
+                .with_protocol(ProtocolSelection::Auto)
+                .with_cancel(token.clone());
+            let session = downloader.start(request).await?;
 
-            let protocol_type = downloader.protocol_type();
-
-            match protocol_type {
-                ProtocolType::Flv => {
+            match session {
+                DownloaderSession::Flv(session) => {
                     flv::process_flv_stream(
                         input,
                         output_dir,
                         config,
                         name_template,
-                        &mut downloader,
+                        session,
                         token,
                     )
+                    .instrument(input_span.clone())
                     .await?;
                 }
-                ProtocolType::Hls => {
+                DownloaderSession::Hls(session) => {
                     hls::process_hls_stream(
                         input,
                         output_dir,
                         config,
                         name_template,
-                        &mut downloader,
+                        session,
                         token,
                     )
+                    .instrument(input_span.clone())
                     .await?;
-                }
-                _ => {
-                    error!("Unsupported protocol for: {input}");
-                    return Err(AppError::InvalidInput(format!(
-                        "Unsupported protocol: {input}"
-                    )));
                 }
             }
         } else {
@@ -96,7 +94,9 @@ pub async fn process_inputs(
                 if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
                     match extension.to_lowercase().as_str() {
                         "flv" => {
-                            flv::process_file(&path, output_dir, config, token).await?;
+                            flv::process_file(&path, output_dir, config, token)
+                                .instrument(input_span.clone())
+                                .await?;
                         }
                         // "m3u8" | "m3u" => {
                         //     hls::process_hls_file(&path, output_dir, config, &progress_manager).await?;

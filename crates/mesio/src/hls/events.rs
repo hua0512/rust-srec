@@ -10,6 +10,14 @@ pub enum GapSkipReason {
     DurationThreshold(Duration),
     /// Gap skipped because both count and duration thresholds were exceeded
     BothThresholds { count: u64, duration: Duration },
+    /// Upstream declared these MSNs will never arrive (window slide, ad
+    /// filtering, or terminal segment failure) — the assembler advances
+    /// without waiting on any threshold.
+    Upstream,
+    /// The reorder buffer reached its byte/segment cap while blocked on this
+    /// gap; the skip decision is forced immediately instead of waiting at the
+    /// cap (which would deadlock output behind an out-of-order result).
+    BufferPressure,
 }
 
 #[derive(Debug, Clone)]
@@ -30,14 +38,14 @@ pub enum HlsStreamEvent {
     /// exit. Followed by [`Self::StreamEnded`] once the segment pipeline drains.
     EndlistEncountered,
     StreamEnded,
-    /// A segment timed out and was skipped (Requirements 2.4)
+    /// A segment timed out and was skipped.
     SegmentTimeout {
         /// The sequence number of the segment that timed out
         sequence_number: u64,
         /// How long we waited before timing out
         waited_duration: Duration,
     },
-    /// Gap was skipped due to strategy threshold (Requirements 6.2)
+    /// Gap was skipped due to strategy threshold.
     GapSkipped {
         /// The sequence number we were waiting for
         from_sequence: u64,

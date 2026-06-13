@@ -7,7 +7,8 @@
 use futures::StreamExt;
 use hls::{HlsData, SplitReason};
 use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
-use mesio::{DownloadStream, MesioDownloaderFactory, ProtocolType};
+use mesio::flv::FlvProtocolConfig;
+use mesio::{DownloadRequest, MesioConfig, MesioDownloader, ProtocolSelection};
 use parking_lot::RwLock;
 use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
 use std::sync::Arc;
@@ -71,22 +72,23 @@ impl HlsDownloader {
         self.config.read().clone()
     }
 
-    /// Create a MesioDownloaderFactory with the configured settings.
-    fn create_factory(&self, token: CancellationToken) -> MesioDownloaderFactory {
+    /// Create a MesioDownloader with the configured settings.
+    fn create_downloader(&self, token: CancellationToken) -> MesioDownloader {
         let config = self.config_snapshot();
         let hls_config = build_hls_config(&config, self.hls_config.clone(), &self.engine_config);
 
-        MesioDownloaderFactory::new()
-            .with_hls_config(hls_config)
-            .with_token(token)
+        MesioDownloader::new(MesioConfig {
+            hls: hls_config,
+            flv: FlvProtocolConfig::default(),
+            token,
+        })
     }
 
     /// Run the HLS download, consuming the stream and writing to files.
     ///
     /// This method:
-    /// 1. Creates a MesioDownloaderFactory with the configured HLS settings
-    /// 2. Creates a DownloaderInstance::Hls using the factory
-    /// 3. Calls download_with_sources() to get the HLS stream
+    /// 1. Creates a MesioDownloader with the configured HLS settings
+    /// 2. Starts a typed HLS download session
     /// 4. Peeks the first segment to determine file extension (ts vs m4s)
     /// 5. If `enable_processing` is true, routes stream through HlsPipeline
     /// 6. Creates an HlsWriter with callbacks for segment events
@@ -97,36 +99,23 @@ impl HlsDownloader {
     pub async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
         let token = self.cancellation_token.child_token();
 
-        // Create factory with configuration
-        let factory = self.create_factory(token.clone());
+        let downloader = self.create_downloader(token.clone());
 
         let url = self.config_snapshot().url;
 
-        // Create the HLS downloader instance
-        let mut downloader = factory
-            .create_for_url(&url, ProtocolType::Hls)
-            .await
+        let request = DownloadRequest::from_url(&url)
             .map_err(|e| {
                 let kind = classify_download_error(&e);
-                EngineStartError::new(kind, format!("Failed to create HLS downloader: {}", e))
-            })?;
+                EngineStartError::new(kind, format!("Invalid HLS download URL: {}", e))
+            })?
+            .with_protocol(ProtocolSelection::Hls(Default::default()))
+            .with_cancel(token.clone());
 
-        // Get the download stream
-        let download_stream = downloader.download_with_sources(&url).await.map_err(|e| {
+        let session = downloader.start_hls(request).await.map_err(|e| {
             let kind = classify_download_error(&e);
             EngineStartError::new(kind, format!("Failed to start HLS download: {}", e))
         })?;
-
-        // Extract the HLS stream from the DownloadStream enum
-        let mut hls_stream = match download_stream {
-            DownloadStream::Hls(stream) => stream,
-            _ => {
-                return Err(EngineStartError::new(
-                    DownloadFailureKind::Configuration,
-                    "Expected HLS stream but got different protocol",
-                ));
-            }
-        };
+        let mut hls_stream = session.items;
 
         // Peek at the first segment to determine file extension
         let first_segment = loop {

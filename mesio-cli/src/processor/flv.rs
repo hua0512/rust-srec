@@ -11,7 +11,7 @@ use flv_fix::FlvPipeline;
 use flv_fix::FlvWriterConfig;
 use flv_fix::writer::FlvWriter;
 use futures::{Stream, StreamExt};
-use mesio_engine::DownloaderInstance;
+use mesio_engine::DownloadSession;
 use pipeline_common::{
     CancellationToken, PipelineError, ProtocolWriter, WriterStats, config::PipelineConfig,
 };
@@ -20,7 +20,7 @@ use std::pin::Pin;
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::BufReader;
-use tracing::{Level, Span, info, span};
+use tracing::{Instrument, Level, Span, info, span};
 
 async fn process_raw_stream(
     stream: Pin<Box<dyn Stream<Item = Result<FlvData, PipelineError>> + Send>>,
@@ -84,13 +84,13 @@ pub async fn process_file(
 
     // Create span for file processing
     let file_span = span!(Level::INFO, "process_flv_file", path = %input_path.display());
-    let _file_enter = file_span.enter();
-
-    info!(
-        path = %input_path.display(),
-        processing_enabled = config.enable_processing,
-        "Starting to process file"
-    );
+    file_span.in_scope(|| {
+        info!(
+            path = %input_path.display(),
+            processing_enabled = config.enable_processing,
+            "Starting to process file"
+        );
+    });
 
     let file = File::open(input_path).await?;
     let file_reader = BufReader::new(file);
@@ -149,7 +149,6 @@ pub async fn process_file(
         let base_name = format!("{base_name}_p%i");
         // Create a span for pipeline processing
         let pipeline_span = span!(Level::INFO, "flv_pipeline");
-        let _pipeline_enter = pipeline_span.enter();
         spans::init_processing_span(&pipeline_span, "Processing FLV tags");
 
         process_stream::<FlvPipeline, FlvWriter>(
@@ -166,11 +165,11 @@ pub async fn process_file(
             },
             token.clone(),
         )
+        .instrument(pipeline_span)
         .await?
     } else {
         // Create a span for raw stream writing
         let write_span = span!(Level::INFO, "flv_write_raw");
-        let _write_enter = write_span.enter();
         spans::init_writing_span(&write_span, "Writing raw FLV");
 
         process_raw_stream(
@@ -179,6 +178,7 @@ pub async fn process_file(
             &base_name,
             &config.pipeline_config,
         )
+        .instrument(write_span)
         .await?
     };
 
@@ -202,7 +202,7 @@ pub async fn process_flv_stream(
     output_dir: &Path,
     config: &ProgramConfig,
     name_template: &str,
-    downloader: &mut DownloaderInstance,
+    session: DownloadSession<FlvData>,
     token: &CancellationToken,
 ) -> Result<u64, AppError> {
     // Check if we're in pipe output mode
@@ -221,24 +221,25 @@ pub async fn process_flv_stream(
     // Create span for FLV stream download
     // Note: Progress bars are disabled in pipe mode via main.rs configuration
     let download_span = span!(Level::INFO, "download_flv", url = %url_str);
-    let _download_enter = download_span.enter();
 
     // Only initialize download span visuals if not in pipe mode
     if !is_pipe_mode {
         spans::init_download_span(&download_span, format!("Downloading {}", url_str));
     }
 
-    // Expand the name template with the URL filename
     let base_name = expand_name_url(name_template, url_str)?;
-    downloader.add_source(url_str, 0);
-
-    let stream = match downloader {
-        DownloaderInstance::Flv(flv) => flv.download_with_sources(url_str).await?,
-        _ => {
-            return Err(AppError::InvalidInput(
-                "Expected FLV downloader".to_string(),
-            ));
-        }
+    let DownloadSession {
+        items: stream,
+        events,
+        handle,
+    } = session;
+    let progress_task = if is_pipe_mode {
+        None
+    } else {
+        Some(tokio::spawn(spans::render_download_events(
+            events,
+            download_span.clone(),
+        )))
     };
 
     let stream = stream.map(|r| r.map_err(|e| PipelineError::Strategy(Box::new(e))));
@@ -288,6 +289,8 @@ pub async fn process_flv_stream(
             "FLV pipe output complete"
         );
 
+        handle.cancel();
+        spans::summarize_dropped_events(&handle, &download_span);
         return Ok(pipe_stats.items_written as u64);
     } else if config.enable_processing {
         process_stream::<FlvPipeline, FlvWriter>(
@@ -316,6 +319,11 @@ pub async fn process_flv_stream(
     };
 
     let elapsed = start_time.elapsed();
+    handle.cancel();
+    if let Some(task) = progress_task {
+        let _ = task.await;
+    }
+    spans::summarize_dropped_events(&handle, &download_span);
 
     // Log completion (goes to stderr in pipe mode)
     info!(

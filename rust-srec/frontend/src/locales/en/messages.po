@@ -166,8 +166,10 @@ msgid "^Started.*"
 msgstr "^Started.*"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:574
-msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
-msgstr "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
+msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if "
+"the provider caps you at 10 requests/second."
+msgstr "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if "
+"the provider caps you at 10 requests/second."
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:105
 msgid "0 (None) - 9 (Best)"
@@ -181,7 +183,7 @@ msgstr "0 = unlimited"
 msgid "0 = Unlimited"
 msgstr "0 = Unlimited"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1719
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1497
 msgid "0 disables the limit."
 msgstr "0 disables the limit."
 
@@ -505,8 +507,12 @@ msgid "Any additional command line arguments to pass to Streamlink"
 msgstr "Any additional command line arguments to pass to Streamlink"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:96
-msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
-msgstr "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
+msgid "API protocol to use for live stream extraction. WUP is the standard "
+"protocol for the PC app. Note that WUP and MP only work with numeric "
+"room IDs."
+msgstr "API protocol to use for live stream extraction. WUP is the standard "
+"protocol for the PC app. Note that WUP and MP only work with numeric "
+"room IDs."
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:138
 msgid "API Request Retries"
@@ -556,21 +562,29 @@ msgstr "Archive to Cloud"
 
 #. placeholder {0}: selectedIds.size
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:237
-msgid "Are you sure you want to delete {0} sessions? This action cannot be undone."
-msgstr "Are you sure you want to delete {0} sessions? This action cannot be undone."
+msgid "Are you sure you want to delete {0} sessions? This action cannot be "
+"undone."
+msgstr "Are you sure you want to delete {0} sessions? This action cannot be "
+"undone."
 
 #. placeholder {0}: template.name
 #: src/components/config/templates/template-card.tsx:188
-msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
-msgstr "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
+msgid "Are you sure you want to delete the template \"{0}\"? This action cannot "
+"be undone."
+msgstr "Are you sure you want to delete the template \"{0}\"? This action "
+"cannot be undone."
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:333
-msgid "Are you sure you want to delete this job? This will permanently remove it from your list."
-msgstr "Are you sure you want to delete this job? This will permanently remove it from your list."
+msgid "Are you sure you want to delete this job? This will permanently remove "
+"it from your list."
+msgstr "Are you sure you want to delete this job? This will permanently remove "
+"it from your list."
 
 #: src/components/sessions/session-card.tsx:76
-msgid "Are you sure you want to delete this session? This action cannot be undone."
-msgstr "Are you sure you want to delete this session? This action cannot be undone."
+msgid "Are you sure you want to delete this session? This action cannot be "
+"undone."
+msgstr "Are you sure you want to delete this session? This action cannot be "
+"undone."
 
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:148
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:210
@@ -609,8 +623,10 @@ msgid "Attempt to get the highest original quality available."
 msgstr "Attempt to get the highest original quality available."
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:63
-msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
-msgstr "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
+msgid "Attempts to get origin quality by replacing the audio stream. May result "
+"in audio-only streams if it fails."
+msgstr "Attempts to get origin quality by replacing the audio stream. May "
+"result in audio-only streams if it fails."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:46
 #: src/components/pipeline/presets/preset-card.tsx:89
@@ -709,8 +725,10 @@ msgid "Automate your stream recordings with ease and reliability."
 msgstr "Automate your stream recordings with ease and reliability."
 
 #: src/components/config/global/file-config-card.tsx:40
-msgid "Automatically generate a thumbnail for the first segment of each session."
-msgstr "Automatically generate a thumbnail for the first segment of each session."
+msgid "Automatically generate a thumbnail for the first segment of each "
+"session."
+msgstr "Automatically generate a thumbnail for the first segment of each "
+"session."
 
 #: src/components/notifications/subscription-manager.tsx:446
 msgid "available"
@@ -794,7 +812,7 @@ msgstr "Bandwidth Limit"
 msgid "Bandwidth Limit help"
 msgstr "Bandwidth Limit help"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1833
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1611
 msgid "Base"
 msgstr "Base"
 
@@ -819,8 +837,10 @@ msgid "Basic Information"
 msgstr "Basic Information"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:114
-msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
-msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
+msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail "
+"preview."
+msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail "
+"preview."
 
 #: src/components/streamers/edit/streamer-config-form.tsx:94
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:287
@@ -832,17 +852,9 @@ msgstr "Basic settings for the streamer."
 msgid "Batch parse error: {0}"
 msgstr "Batch parse error: {0}"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1501
-msgid "Batch Scheduler"
-msgstr "Batch Scheduler"
-
 #: src/components/player/url-input-form.tsx:137
 msgid "Batch URLs"
 msgstr "Batch URLs"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1526
-msgid "Batch Window (ms)"
-msgstr "Batch Window (ms)"
 
 #: src/components/notifications/forms/webhook-form.tsx:249
 msgid "Bearer Token"
@@ -908,8 +920,10 @@ msgid "Break"
 msgstr "Break"
 
 #: src/components/logging/log-file-browser.tsx:251
-msgid "Browse and download application log files. Filter by date range or download all."
-msgstr "Browse and download application log files. Filter by date range or download all."
+msgid "Browse and download application log files. Filter by date range or "
+"download all."
+msgstr "Browse and download application log files. Filter by date range or "
+"download all."
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:164
 msgid "Browse generated media artifacts from pipeline jobs"
@@ -924,13 +938,15 @@ msgstr "Browser Notifications"
 msgid "Browser Status"
 msgstr "Browser Status"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1768
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1546
 msgid "Buffer Limits"
 msgstr "Buffer Limits"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:86
-msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
-msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Manifest-aware and batch-safe."
+msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). "
+"Manifest-aware and batch-safe."
+msgstr "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). "
+"Manifest-aware and batch-safe."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:639
 msgid "Burst capacity for TPS Limit (--tpslimit-burst)."
@@ -944,13 +960,9 @@ msgstr "bytes"
 msgid "C:path1.flv,C:path2.flv"
 msgstr "C:path1.flv,C:path2.flv"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1891
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1669
 msgid "Cache"
 msgstr "Cache"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1301
-msgid "Caching"
-msgstr "Caching"
 
 #: src/components/config/engines/engine-card.tsx:237
 #: src/components/config/global/backup-restore-card.tsx:580
@@ -1097,8 +1109,10 @@ msgid "Chat ID"
 msgstr "Chat ID"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:521
-msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
-msgstr "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
+msgid "Cheap operations, so the default of 8 is usually fine. Increase if you "
+"have many small files against a slow remote."
+msgstr "Cheap operations, so the default of 8 is usually fine. Increase if you "
+"have many small files against a slow remote."
 
 #: src/components/streamers/edit/status-check-history.tsx:283
 msgid "Check duration"
@@ -1172,8 +1186,10 @@ msgid "Click to add. You can reorder steps in the editor."
 msgstr "Click to add. You can reorder steps in the editor."
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:140
-msgid "Client platform type used for stream authentication signing. Different platforms use different signing methods."
-msgstr "Client platform type used for stream authentication signing. Different platforms use different signing methods."
+msgid "Client platform type used for stream authentication signing. Different "
+"platforms use different signing methods."
+msgstr "Client platform type used for stream authentication signing. Different "
+"platforms use different signing methods."
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:114
 msgid "Client Type (ctype)"
@@ -1270,12 +1286,18 @@ msgid "Component Status"
 msgstr "Component Status"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:428
-msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
-msgstr "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
+msgid "Composes with Bandwidth Limit — useful to keep one big file from "
+"saturating the whole link while still allowing many small ones to run in "
+"parallel."
+msgstr "Composes with Bandwidth Limit — useful to keep one big file from "
+"saturating the whole link while still allowing many small ones to run "
+"in parallel."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:115
-msgid "Compress video for storage, upload to cloud, then delete local file to save space."
-msgstr "Compress video for storage, upload to cloud, then delete local file to save space."
+msgid "Compress video for storage, upload to cloud, then delete local file to "
+"save space."
+msgstr "Compress video for storage, upload to cloud, then delete local file to "
+"save space."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:44
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:63
@@ -1367,16 +1389,20 @@ msgid "Configure granular options for the selected engine."
 msgstr "Configure granular options for the selected engine."
 
 #: src/components/notifications/browser-channel-dialog.tsx:68
-msgid "Configure how you receive alerts in this browser and via system push notifications."
-msgstr "Configure how you receive alerts in this browser and via system push notifications."
+msgid "Configure how you receive alerts in this browser and via system push "
+"notifications."
+msgstr "Configure how you receive alerts in this browser and via system push "
+"notifications."
 
 #: src/components/config/global/backup-restore-card.tsx:320
 msgid "Configure how you want to import data from the selected backup file."
 msgstr "Configure how you want to import data from the selected backup file."
 
 #: src/components/notifications/desktop-channel-dialog.tsx:82
-msgid "Configure native OS notifications for important events while running the desktop app."
-msgstr "Configure native OS notifications for important events while running the desktop app."
+msgid "Configure native OS notifications for important events while running the "
+"desktop app."
+msgstr "Configure native OS notifications for important events while running "
+"the desktop app."
 
 #: src/components/config/shared/proxy-settings-card.tsx:245
 msgid "Configure proxy strategies and connection details."
@@ -1473,8 +1499,10 @@ msgid "Control verbosity for each module. Lower levels include higher ones."
 msgstr "Control verbosity for each module. Lower levels include higher ones."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:85
-msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
-msgstr "Convert danmu XML (Bilibili-style) into .ass subtitles using DanmakuFactory. Manifest-aware and batch-safe."
+msgid "Convert danmu XML (Bilibili-style) into .ass subtitles using "
+"DanmakuFactory. Manifest-aware and batch-safe."
+msgstr "Convert danmu XML (Bilibili-style) into .ass subtitles using "
+"DanmakuFactory. Manifest-aware and batch-safe."
 
 #: src/components/config/shared/network-settings-card.tsx:213
 msgid "Cookies"
@@ -1585,8 +1613,10 @@ msgid "Create a copy of \"{0}\" with a new name."
 msgstr "Create a copy of \"{0}\" with a new name."
 
 #: src/components/filters/FilterList.tsx:26
-msgid "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
-msgstr "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
+msgid "Create a filter to control when this streamer is recorded. You can "
+"filter by time, keywords, categories, and more."
+msgstr "Create a filter to control when this streamer is recorded. You can "
+"filter by time, keywords, categories, and more."
 
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:205
 msgid "Create a template to define reusable download configurations."
@@ -1652,12 +1682,16 @@ msgid "Create Workflow"
 msgstr "Create Workflow"
 
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:373
-msgid "Create your first job preset to define reusable processor configurations for your pipelines."
-msgstr "Create your first job preset to define reusable processor configurations for your pipelines."
+msgid "Create your first job preset to define reusable processor configurations "
+"for your pipelines."
+msgstr "Create your first job preset to define reusable processor "
+"configurations for your pipelines."
 
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:258
-msgid "Create your first workflow to define a sequence of processing steps for your recordings."
-msgstr "Create your first workflow to define a sequence of processing steps for your recordings."
+msgid "Create your first workflow to define a sequence of processing steps for "
+"your recordings."
+msgstr "Create your first workflow to define a sequence of processing steps for "
+"your recordings."
 
 #: src/components/config/global/backup-restore-card.tsx:178
 #: src/components/pipeline/outputs/output-card.tsx:189
@@ -1698,16 +1732,22 @@ msgid "Critical"
 msgstr "Critical"
 
 #: src/components/notifications/subscription-manager.tsx:188
-msgid "Critical alert when the GPU becomes unavailable to the container (most often the NVIDIA Container Toolkit cgroup-v2 issue), so NVENC remux/transcode jobs would fail."
-msgstr "Critical alert when the GPU becomes unavailable to the container (most often the NVIDIA Container Toolkit cgroup-v2 issue), so NVENC remux/transcode jobs would fail."
+msgid "Critical alert when the GPU becomes unavailable to the container (most "
+"often the NVIDIA Container Toolkit cgroup-v2 issue), so NVENC "
+"remux/transcode jobs would fail."
+msgstr "Critical alert when the GPU becomes unavailable to the container (most "
+"often the NVIDIA Container Toolkit cgroup-v2 issue), so NVENC "
+"remux/transcode jobs would fail."
 
 #: src/components/notifications/subscription-manager.tsx:193
 msgid "Critical alert when the processing queue is full."
 msgstr "Critical alert when the processing queue is full."
 
 #: src/components/notifications/subscription-manager.tsx:184
-msgid "Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue."
-msgstr "Critical alert when the recording output filesystem becomes unwritable and recordings cannot continue."
+msgid "Critical alert when the recording output filesystem becomes unwritable "
+"and recordings cannot continue."
+msgstr "Critical alert when the recording output filesystem becomes unwritable "
+"and recordings cannot continue."
 
 #: src/components/notifications/browser-channel-dialog.tsx:150
 #: src/components/notifications/desktop-channel-dialog.tsx:50
@@ -1893,17 +1933,13 @@ msgstr "Date range:"
 msgid "Day (01-31)"
 msgstr "Day (01-31)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1881
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1659
 msgid "Decryption"
 msgstr "Decryption"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1441
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1389
 msgid "Decryption Key TTL (ms)"
 msgstr "Decryption Key TTL (ms)"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1217
-msgid "Decryption Keys"
-msgstr "Decryption Keys"
 
 #: src/components/config/platforms/platform-card.tsx:107
 #: src/components/config/platforms/platform-card.tsx:122
@@ -1926,28 +1962,40 @@ msgid "Default Engine"
 msgstr "Default Engine"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:620
-msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
-msgstr "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
+msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts "
+"of activity."
+msgstr "Default is 1 (no burst). Increase if the provider tolerates short "
+"bursts of activity."
 
 #: src/components/config/global/pipeline-config-card.tsx:145
-msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
-msgstr "Default pipeline flow. Configure the sequence of processors for new jobs."
+msgid "Default pipeline flow. Configure the sequence of processors for new "
+"jobs."
+msgstr "Default pipeline flow. Configure the sequence of processors for new "
+"jobs."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1693
-msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
-msgstr "Default uses Mesio’s built-in live stall timeout. Disabled means wait indefinitely."
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1471
+msgid "Default uses Mesio’s built-in live stall timeout. Disabled means wait "
+"indefinitely."
+msgstr "Default uses Mesio’s built-in live stall timeout. Disabled means wait "
+"indefinitely."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:125
-msgid "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
-msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files."
+msgid "Default workflow: Remux to MP4 (deletes original), generate "
+"native-resolution thumbnail, upload both to cloud and delete local "
+"files."
+msgstr "Default workflow: Remux to MP4 (deletes original), generate "
+"native-resolution thumbnail, upload both to cloud and delete local "
+"files."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:477
 msgid "Define how this step identifies itself and connects to others."
 msgstr "Define how this step identifies itself and connects to others."
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:33
-msgid "Define rules to automatically record or skip streams based on title, time, or language."
-msgstr "Define rules to automatically record or skip streams based on title, time, or language."
+msgid "Define rules to automatically record or skip streams based on title, "
+"time, or language."
+msgstr "Define rules to automatically record or skip streams based on title, "
+"time, or language."
 
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:162
 msgid "Define sequences of processing steps for your recordings"
@@ -2056,12 +2104,20 @@ msgid "Deleted"
 msgstr "Deleted"
 
 #: src/components/config/global/backup-restore-card.tsx:552
-msgid "Deletes all existing configurations before importing. This action cannot be undone."
-msgstr "Deletes all existing configurations before importing. This action cannot be undone."
+msgid "Deletes all existing configurations before importing. This action cannot "
+"be undone."
+msgstr "Deletes all existing configurations before importing. This action "
+"cannot be undone."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:70
-msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
-msgstr "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
+msgid "Deletes the files produced by the previous step. Safe after an Upload "
+"step. After a transcode/remux it deletes the converted result, not the "
+"original — use \"Remove Input on Success\" on the transcode step to "
+"delete the source instead."
+msgstr "Deletes the files produced by the previous step. Safe after an Upload "
+"step. After a transcode/remux it deletes the converted result, not the "
+"original — use \"Remove Input on Success\" on the transcode step to "
+"delete the source instead."
 
 #: src/components/notifications/forms/webhook-form.tsx:133
 msgid "Delivery Policy"
@@ -2098,8 +2154,10 @@ msgid "Desktop Notifications"
 msgstr "Desktop Notifications"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:119
-msgid "Desktop notifications are shown by the operating system even when the app is minimized."
-msgstr "Desktop notifications are shown by the operating system even when the app is minimized."
+msgid "Desktop notifications are shown by the operating system even when the "
+"app is minimized."
+msgstr "Desktop notifications are shown by the operating system even when the "
+"app is minimized."
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:96
 msgid "Destination Directory"
@@ -2431,13 +2489,9 @@ msgstr "Enable Monitoring"
 msgid "Enable or disable this webhook"
 msgstr "Enable or disable this webhook"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1753
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1531
 msgid "Enable Output Metrics (Default: On)"
 msgstr "Enable Output Metrics (Default: On)"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1485
-msgid "Enable Performance Metrics (Default: On)"
-msgstr "Enable Performance Metrics (Default: On)"
 
 #: src/components/config/shared/proxy-settings-card.tsx:119
 msgid "Enable Proxy"
@@ -2457,14 +2511,6 @@ msgstr "Enable recording of danmu/chat messages along with the video."
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:543
 msgid "Enabled"
 msgstr "Enabled"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1579
-msgid "Enabled (Default: Off)"
-msgstr "Enabled (Default: Off)"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1515
-msgid "Enabled (Default: On)"
-msgstr "Enabled (Default: On)"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:128
 msgid "Encoder Preset"
@@ -2695,8 +2741,10 @@ msgid "Execute Command"
 msgstr "Execute Command"
 
 #: src/components/config/shared/event-hooks-form.tsx:123
-msgid "Execute shell commands on lifecycle events. Commands run in the system shell."
-msgstr "Execute shell commands on lifecycle events. Commands run in the system shell."
+msgid "Execute shell commands on lifecycle events. Commands run in the system "
+"shell."
+msgstr "Execute shell commands on lifecycle events. Commands run in the system "
+"shell."
 
 #: src/components/config/global/concurrency-card.tsx:283
 msgid "Execute Timeout"
@@ -2745,8 +2793,12 @@ msgid "Export Configuration"
 msgstr "Export Configuration"
 
 #: src/components/config/global/backup-restore-card.tsx:289
-msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
-msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
+msgid "Exports include all global settings, platforms, templates, streamers, "
+"engines, and notification channels. Sensitive data like passwords might "
+"be redacted or encrypted depending on platform settings."
+msgstr "Exports include all global settings, platforms, templates, streamers, "
+"engines, and notification channels. Sensitive data like passwords might "
+"be redacted or encrypted depending on platform settings."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:162
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:111
@@ -2763,12 +2815,16 @@ msgid "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 msgstr "Extract audio to high-quality MP3 (320kbps) for podcast distribution."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:68
-msgid "Extract audio track to AAC format (256kbps). High quality, widely compatible."
-msgstr "Extract audio track to AAC format (256kbps). High quality, widely compatible."
+msgid "Extract audio track to AAC format (256kbps). High quality, widely "
+"compatible."
+msgstr "Extract audio track to AAC format (256kbps). High quality, widely "
+"compatible."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:67
-msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
-msgstr "Extract audio track to MP3 format (192kbps). Good for podcasts and music."
+msgid "Extract audio track to MP3 format (192kbps). Good for podcasts and "
+"music."
+msgstr "Extract audio track to MP3 format (192kbps). Good for podcasts and "
+"music."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:117
 msgid "Extract high-quality audio for podcast distribution and upload."
@@ -3095,20 +3151,28 @@ msgid "Fast encoding for quick sharing on social media or messaging."
 msgstr "Fast encoding for quick sharing on social media or messaging."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:92
-msgid "Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires RTX 4000+ series."
-msgstr "Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires RTX 4000+ series."
+msgid "Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires "
+"RTX 4000+ series."
+msgstr "Fast GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 28). Requires "
+"RTX 4000+ series."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:87
-msgid "Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great speed-to-quality ratio."
-msgstr "Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great speed-to-quality ratio."
+msgid "Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great "
+"speed-to-quality ratio."
+msgstr "Fast GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 23). Great "
+"speed-to-quality ratio."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:89
-msgid "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Smaller files than H.264."
-msgstr "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Smaller files than H.264."
+msgid "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). "
+"Smaller files than H.264."
+msgstr "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). "
+"Smaller files than H.264."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:60
-msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
-msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
+msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and "
+"file size."
+msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and "
+"file size."
 
 #: src/components/streamers/edit/status-check-history.tsx:373
 #: src/components/streamers/edit/status-check-history.tsx:394
@@ -3131,7 +3195,7 @@ msgstr "Fetch"
 msgid "Fetch Delay"
 msgstr "Fetch Delay"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1861
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1639
 msgid "Fetcher"
 msgstr "Fetcher"
 
@@ -3196,8 +3260,10 @@ msgid "Files"
 msgstr "Files"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:715
-msgid "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
-msgstr "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
+msgid "Files smaller than this stay single-threaded. Examples: <0>250M</0>, "
+"<1>1G</1>."
+msgstr "Files smaller than this stay single-threaded. Examples: <0>250M</0>, "
+"<1>1G</1>."
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:19
 msgid "Filter by title keywords"
@@ -3362,14 +3428,16 @@ msgid "Full HD Thumbnail"
 msgstr "Full HD Thumbnail"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:122
-msgid "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
-msgstr "Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all."
+msgid "Full multimedia processing: Remux video, extract audio and thumbnail in "
+"parallel, then upload all."
+msgstr "Full multimedia processing: Remux video, extract audio and thumbnail in "
+"parallel, then upload all."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:103
 msgid "Full Processing"
 msgstr "Full Processing"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1676
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1454
 msgid "Gap Eval Interval (ms)"
 msgstr "Gap Eval Interval (ms)"
 
@@ -3391,32 +3459,40 @@ msgid "General Configuration"
 msgstr "General Configuration"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:64
-msgid "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
-msgstr "Generate a Full HD thumbnail (1280px width) for modern displays and video players."
+msgid "Generate a Full HD thumbnail (1280px width) for modern displays and "
+"video players."
+msgstr "Generate a Full HD thumbnail (1280px width) for modern displays and "
+"video players."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:63
 msgid "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 msgstr "Generate a high-resolution thumbnail (640px width) at 10 seconds."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:65
-msgid "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
-msgstr "Generate a maximum quality thumbnail (1920px width) preserving full 1080p detail."
+msgid "Generate a maximum quality thumbnail (1920px width) preserving full "
+"1080p detail."
+msgstr "Generate a maximum quality thumbnail (1920px width) preserving full "
+"1080p detail."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:81
 msgid "Generate a thumbnail at 30 seconds with 480px width for previews."
 msgstr "Generate a thumbnail at 30 seconds with 480px width for previews."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:66
-msgid "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
-msgstr "Generate a thumbnail at native stream resolution (no scaling). Best quality, largest file size."
+msgid "Generate a thumbnail at native stream resolution (no scaling). Best "
+"quality, largest file size."
+msgstr "Generate a thumbnail at native stream resolution (no scaling). Best "
+"quality, largest file size."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:62
 msgid "Generate a thumbnail image from the video at 10 seconds (320px width)."
 msgstr "Generate a thumbnail image from the video at 10 seconds (320px width)."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:123
-msgid "Generate multiple preview images at different timestamps for a gallery view."
-msgstr "Generate multiple preview images at different timestamps for a gallery view."
+msgid "Generate multiple preview images at different timestamps for a gallery "
+"view."
+msgstr "Generate multiple preview images at different timestamps for a gallery "
+"view."
 
 #: src/components/credentials/bilibili-qr-login-dialog.tsx:168
 msgid "Generate new QR code"
@@ -3503,12 +3579,16 @@ msgid "GPU Standard"
 msgstr "GPU Standard"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:127
-msgid "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
-msgstr "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload."
+msgid "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, "
+"and cloud upload."
+msgstr "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, "
+"and cloud upload."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:126
-msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
-msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
+msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail "
+"generation."
+msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail "
+"generation."
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:88
 #: src/components/config/engines/forms/streamlink-form.tsx:79
@@ -3588,20 +3668,28 @@ msgid "High Quality Compression"
 msgstr "High Quality Compression"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:93
-msgid "High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+."
-msgstr "High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+."
+msgid "High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). "
+"Best compression ratio, requires RTX 4000+."
+msgstr "High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). "
+"Best compression ratio, requires RTX 4000+."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:88
-msgid "High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). Best NVENC quality."
-msgstr "High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). Best NVENC quality."
+msgid "High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). "
+"Best NVENC quality."
+msgstr "High quality GPU-accelerated H.264 encoding using NVIDIA NVENC (CQ 20). "
+"Best NVENC quality."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:90
-msgid "High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 21). Best compression ratio with GPU."
-msgstr "High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 21). Best compression ratio with GPU."
+msgid "High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ "
+"21). Best compression ratio with GPU."
+msgstr "High quality GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ "
+"21). Best compression ratio with GPU."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:61
-msgid "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
-msgstr "High quality H.265/HEVC compression (CRF 22). Smaller files but slower encoding."
+msgid "High quality H.265/HEVC compression (CRF 22). Smaller files but slower "
+"encoding."
+msgstr "High quality H.265/HEVC compression (CRF 22). Smaller files but slower "
+"encoding."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:26
 msgid "High Quality MP3"
@@ -3619,8 +3707,10 @@ msgid "High+"
 msgstr "High+"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:478
-msgid "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
-msgstr "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
+msgid "Higher = faster on fast connections, but more aggressive on the remote "
+"and your CPU. Increase only if your network and provider can handle it."
+msgstr "Higher = faster on fast connections, but more aggressive on the remote "
+"and your CPU. Increase only if your network and provider can handle it."
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:482
 msgid "Highest bitrate"
@@ -3660,7 +3750,7 @@ msgstr "Hooks"
 msgid "Hour (00-23)"
 msgstr "Hour (00-23)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1345
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1293
 msgid "How long to keep decrypted/processed segments in cache."
 msgstr "How long to keep decrypted/processed segments in cache."
 
@@ -3669,20 +3759,32 @@ msgid "How many files rclone uploads in parallel."
 msgstr "How many files rclone uploads in parallel."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:614
-msgid "How many requests can briefly burst above TPS Limit before throttling kicks in."
-msgstr "How many requests can briefly burst above TPS Limit before throttling kicks in."
+msgid "How many requests can briefly burst above TPS Limit before throttling "
+"kicks in."
+msgstr "How many requests can briefly burst above TPS Limit before throttling "
+"kicks in."
 
 #: src/components/config/global/concurrency-card.tsx:379
-msgid "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe — no restart required. Values below 30 seconds are discouraged."
-msgstr "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe — no restart required. Values below 30 seconds are discouraged."
+msgid "How often rust-srec runs nvidia-smi to detect when the container loses "
+"GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). "
+"Only active when nvidia-smi is available; otherwise the GPU row is not "
+"registered. Default 30 seconds. Changes apply on the next probe — no "
+"restart required. Values below 30 seconds are discouraged."
+msgstr "How often rust-srec runs nvidia-smi to detect when the container loses "
+"GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). "
+"Only active when nvidia-smi is available; otherwise the GPU row is not "
+"registered. Default 30 seconds. Changes apply on the next probe — no "
+"restart required. Values below 30 seconds are discouraged."
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:197
 msgid "How to pair video files with .ass subtitles"
 msgstr "How to pair video files with .ass subtitles"
 
 #: src/components/config/shared/network-settings-card.tsx:233
-msgid "HTTP cookies for authentication. These are automatically updated when refreshed."
-msgstr "HTTP cookies for authentication. These are automatically updated when refreshed."
+msgid "HTTP cookies for authentication. These are automatically updated when "
+"refreshed."
+msgstr "HTTP cookies for authentication. These are automatically updated when "
+"refreshed."
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:69
 msgid "HTTP middleware"
@@ -3753,8 +3855,10 @@ msgid "Identity and type of the engine."
 msgstr "Identity and type of the engine."
 
 #: src/components/filters/forms/KeywordFilterForm.tsx:65
-msgid "If any of these keywords appear in the title, the stream will be ignored."
-msgstr "If any of these keywords appear in the title, the stream will be ignored."
+msgid "If any of these keywords appear in the title, the stream will be "
+"ignored."
+msgstr "If any of these keywords appear in the title, the stream will be "
+"ignored."
 
 #: src/components/filters/forms/CategoryFilterForm.tsx:55
 msgid "If enabled, streams in these categories will be ignored."
@@ -3769,8 +3873,10 @@ msgid "If set, stream titles must contain at least one of these keywords."
 msgstr "If set, stream titles must contain at least one of these keywords."
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:242
-msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
-msgstr "If your account has Telegram 2FA enabled, use Desktop login (`-T desktop`) or run `tdl login` locally in a terminal."
+msgid "If your account has Telegram 2FA enabled, use Desktop login (`-T "
+"desktop`) or run `tdl login` locally in a terminal."
+msgstr "If your account has Telegram 2FA enabled, use Desktop login (`-T "
+"desktop`) or run `tdl login` locally in a terminal."
 
 #: src/components/streamers/config/stream-selection-input.tsx:204
 msgid "Ignore streams above this bitrate."
@@ -3902,8 +4008,12 @@ msgid "Interactive 24-hour timeline selection."
 msgstr "Interactive 24-hour timeline selection."
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:457
-msgid "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
-msgstr "Interactive password entry via this API is not supported on Windows. Please use \"Desktop Login\" (import tdata) or log in once in a regular terminal."
+msgid "Interactive password entry via this API is not supported on Windows. "
+"Please use \"Desktop Login\" (import tdata) or log in once in a regular "
+"terminal."
+msgstr "Interactive password entry via this API is not supported on Windows. "
+"Please use \"Desktop Login\" (import tdata) or log in once in a regular "
+"terminal."
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:488
 msgid "Internal"
@@ -3914,12 +4024,16 @@ msgid "Interval (seconds)"
 msgstr "Interval (seconds)"
 
 #: src/components/config/global/network-system-card.tsx:63
-msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
-msgstr "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
+msgid "Interval between checks to see if a streamer is currently live. Slower "
+"intervals reduce API usage but might delay recording starts."
+msgstr "Interval between checks to see if a streamer is currently live. Slower "
+"intervals reduce API usage but might delay recording starts."
 
 #: src/components/config/global/network-system-card.tsx:105
-msgid "Interval between checks when a streamer is live to detect when the stream ends."
-msgstr "Interval between checks when a streamer is live to detect when the stream ends."
+msgid "Interval between checks when a streamer is live to detect when the "
+"stream ends."
+msgstr "Interval between checks when a streamer is live to detect when the "
+"stream ends."
 
 #: src/components/config/platforms/tabs/general-tab.tsx:64
 msgid "Interval between checks."
@@ -4027,9 +4141,17 @@ msgstr "Keep uploading other files if one fails"
 msgid "Key"
 msgstr "Key"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1365
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1313
 msgid "Key Cache TTL (ms)"
 msgstr "Key Cache TTL (ms)"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1237
+msgid "Key Retry Delay (ms)"
+msgstr "Key Retry Delay (ms)"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1199
+msgid "Key Timeout (ms)"
+msgstr "Key Timeout (ms)"
 
 #: src/components/filters/forms/FilterTypeSelector.tsx:17
 msgid "Keyword"
@@ -4093,8 +4215,10 @@ msgid "Limits & Validation"
 msgstr "Limits & Validation"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:422
-msgid "Limits each individual file's transfer rate rather than the overall total."
-msgstr "Limits each individual file's transfer rate rather than the overall total."
+msgid "Limits each individual file's transfer rate rather than the overall "
+"total."
+msgstr "Limits each individual file's transfer rate rather than the overall "
+"total."
 
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:77
 #: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:80
@@ -4124,7 +4248,7 @@ msgstr "Live"
 msgid "LIVE"
 msgstr "LIVE"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1728
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1506
 msgid "Live Gap Strategy"
 msgstr "Live Gap Strategy"
 
@@ -4267,8 +4391,10 @@ msgid "Low"
 msgstr "Low"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:91
-msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
-msgstr "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
+msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. "
+"Minimal encoding delay."
+msgstr "Low-latency GPU-accelerated H.264 encoding for real-time applications. "
+"Minimal encoding delay."
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:480
 msgid "Lower value = Higher Quality"
@@ -4338,19 +4464,11 @@ msgstr "Match Strategy"
 msgid "Matching resolution"
 msgstr "Matching resolution"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1545
-msgid "Max Batch Size"
-msgstr "Max Batch Size"
-
 #: src/components/streamers/config/stream-selection-input.tsx:186
 msgid "Max Bitrate (bps)"
 msgstr "Max Bitrate (bps)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1610
-msgid "Max Buffer Before Skip"
-msgstr "Max Buffer Before Skip"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1795
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1573
 msgid "Max Bytes"
 msgstr "Max Bytes"
 
@@ -4391,6 +4509,14 @@ msgstr "Max Interval (s)"
 msgid "Max IO Jobs"
 msgstr "Max IO Jobs"
 
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1218
+msgid "Max Key Retries"
+msgstr "Max Key Retries"
+
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1256
+msgid "Max Key Retry Delay (ms)"
+msgstr "Max Key Retry Delay (ms)"
+
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:153
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "Max number of retry attempts for metadata fetching."
@@ -4400,7 +4526,7 @@ msgstr "Max number of retry attempts for metadata fetching."
 msgid "Max Part Size"
 msgstr "Max Part Size"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1708
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1486
 msgid "Max Pending Init Segments"
 msgstr "Max Pending Init Segments"
 
@@ -4412,7 +4538,6 @@ msgstr "Max Quality Thumbnail"
 msgid "Max Refresh Retries"
 msgstr "Max Refresh Retries"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1244
 #: src/components/config/shared/retry-policy-form.tsx:56
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:53
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:317
@@ -4421,7 +4546,6 @@ msgid "Max Retries"
 msgstr "Max Retries"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:1180
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1282
 msgid "Max Retry Delay (ms)"
 msgstr "Max Retry Delay (ms)"
 
@@ -4429,11 +4553,11 @@ msgstr "Max Retry Delay (ms)"
 msgid "Max Segment Retries"
 msgstr "Max Segment Retries"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1776
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1554
 msgid "Max Segments"
 msgstr "Max Segments"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1691
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1469
 msgid "Max Stall Duration (ms)"
 msgstr "Max Stall Duration (ms)"
 
@@ -4631,8 +4755,10 @@ msgid "Multi-Thread Streams help"
 msgstr "Multi-Thread Streams help"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:721
-msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
-msgstr "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
+msgid "Multi-thread upload only helps on large files; on small ones the "
+"splitting overhead outweighs the benefit."
+msgstr "Multi-thread upload only helps on large files; on small ones the "
+"splitting overhead outweighs the benefit."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:105
 msgid "Multimedia Archive"
@@ -5063,16 +5189,24 @@ msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
 #: src/components/config/global/network-system-card.tsx:146
-msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
-msgstr "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
+msgid "Number of consecutive failed checks required to definitively confirm a "
+"streamer has gone offline. Higher values prevent \"fake\" offline "
+"detection."
+msgstr "Number of consecutive failed checks required to definitively confirm a "
+"streamer has gone offline. Higher values prevent \"fake\" offline "
+"detection."
 
 #: src/components/config/global/network-system-card.tsx:191
-msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
-msgstr "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
+msgid "Number of days to keep the history of completed, failed, or interrupted "
+"jobs in the database."
+msgstr "Number of days to keep the history of completed, failed, or interrupted "
+"jobs in the database."
 
 #: src/components/config/global/network-system-card.tsx:232
-msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
-msgstr "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
+msgid "Number of days to keep the notification event log in the database. This "
+"affects the Notifications → Events page."
+msgstr "Number of days to keep the notification event log in the database. This "
+"affects the Notifications → Events page."
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
@@ -5149,7 +5283,7 @@ msgstr "Offline Detection"
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1380
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1328
 msgid "Offload Decryption (Default: On)"
 msgstr "Offload Decryption (Default: On)"
 
@@ -5194,8 +5328,10 @@ msgid "Only include files with this extension (without dot)"
 msgstr "Only include files with this extension (without dot)"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:675
-msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
-msgstr "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
+msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to "
+"disable."
+msgstr "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 "
+"to disable."
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:844
 msgid "Only supported for MP4/MOV/M4V"
@@ -5256,7 +5392,7 @@ msgstr "Out of Schedule"
 msgid "Out of Space"
 msgstr "Out of Space"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1909
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1678
 #: src/components/config/platforms/platform-card.tsx:130
 #: src/components/config/shared-config-editor.tsx:168
 #: src/components/config/templates/template-card.tsx:161
@@ -5475,8 +5611,10 @@ msgid "Past"
 msgstr "Past"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:69
-msgid "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
-msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or PATH."
+msgid "Path to DanmakuFactory binary. If empty, uses environment variable or "
+"PATH."
+msgstr "Path to DanmakuFactory binary. If empty, uses environment variable or "
+"PATH."
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:526
 msgid "Path to Telegram Desktop (contains tdata)"
@@ -5532,8 +5670,10 @@ msgid "Per-File Bandwidth Limit help"
 msgstr "Per-File Bandwidth Limit help"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:445
-msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
-msgstr "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
+msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; "
+"composes with it."
+msgstr "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; "
+"composes with it."
 
 #: src/components/config/global/pipeline-config-card.tsx:166
 #: src/components/config/shared-config-editor.tsx:412
@@ -5550,10 +5690,6 @@ msgstr "Per-segment Pipeline"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:212
 msgid "Per-Streamer"
 msgstr "Per-Streamer"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1900
-msgid "Perf"
-msgstr "Perf"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:781
 #: src/components/sessions/overview-tab.tsx:195
@@ -5721,7 +5857,7 @@ msgstr "Play"
 msgid "Player"
 msgstr "Player"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1842
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1620
 msgid "Playlist"
 msgstr "Playlist"
 
@@ -5730,7 +5866,7 @@ msgctxt "terminal-cause"
 msgid "Playlist Gone"
 msgstr "Playlist Gone"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1403
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1351
 msgid "Playlist TTL (ms)"
 msgstr "Playlist TTL (ms)"
 
@@ -5751,8 +5887,10 @@ msgid "Please fix validation errors"
 msgstr "Please fix validation errors"
 
 #: src/components/config/global/backup-restore-card.tsx:435
-msgid "Please restart the system to ensure all configuration changes are fully applied."
-msgstr "Please restart the system to ensure all configuration changes are fully applied."
+msgid "Please restart the system to ensure all configuration changes are fully "
+"applied."
+msgstr "Please restart the system to ensure all configuration changes are fully "
+"applied."
 
 #: src/components/config/global/backup-restore-card.tsx:129
 msgid "Please select a JSON file"
@@ -5796,7 +5934,8 @@ msgstr "Prefer Manifest"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:225
 msgid "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
-msgstr "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last."
+msgstr "Prefer QR login first; Phone & Code (2FA optional) second; Desktop "
+"last."
 
 #: src/components/streamers/config/stream-selection-input.tsx:61
 msgid "Preferences"
@@ -5821,14 +5960,6 @@ msgstr "Preferred Qualities"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:58
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1591
-msgid "Prefetch Count"
-msgstr "Prefetch Count"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1564
-msgid "Prefetching"
-msgstr "Prefetching"
 
 #: src/components/pipeline/presets/processors/compression-config-form.tsx:130
 msgid "Preserve Paths"
@@ -5942,8 +6073,10 @@ msgid "Process exited with code {0}"
 msgstr "Process exited with code {0}"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:121
-msgid "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
-msgstr "Process locally: Remux to MP4, generate thumbnail, move to archive folder."
+msgid "Process locally: Remux to MP4, generate thumbnail, move to archive "
+"folder."
+msgstr "Process locally: Remux to MP4, generate thumbnail, move to archive "
+"folder."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:124
 msgid "Process video and extract podcast audio in parallel, then upload both."
@@ -5953,7 +6086,7 @@ msgstr "Process video and extract podcast audio in parallel, then upload both."
 msgid "Processed Buffer Multiplier"
 msgstr "Processed Buffer Multiplier"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1334
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1282
 msgid "Processed Segment TTL (ms)"
 msgstr "Processed Segment TTL (ms)"
 
@@ -5972,7 +6105,7 @@ msgstr "Processing Behavior"
 msgid "Processing nodes"
 msgstr "Processing nodes"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1871
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1649
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:143
 msgid "Processor"
 msgstr "Processor"
@@ -6086,8 +6219,10 @@ msgid "Rate Limiting"
 msgstr "Rate Limiting"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:567
-msgid "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
-msgstr "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
+msgid "Rate-limits API calls to the remote. Useful when a provider returns 429 "
+"\"too many requests\" under heavy load."
+msgstr "Rate-limits API calls to the remote. Useful when a provider returns 429 "
+"\"too many requests\" under heavy load."
 
 #: src/components/streamers/edit/active-download-card.tsx:175
 #: src/components/streamers/progress-indicator.tsx:132
@@ -6097,10 +6232,6 @@ msgstr "Ratio"
 #: src/components/config/platforms/tabs/platform-specific-tab.tsx:223
 msgid "Raw JSON Editor"
 msgstr "Raw JSON Editor"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1308
-msgid "Raw Segment TTL (ms)"
-msgstr "Raw Segment TTL (ms)"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:69
 #: src/components/pipeline/presets/preset-templates.ts:32
@@ -6235,7 +6366,8 @@ msgstr "Regex Pattern"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:221
 msgid "Regex patterns to exclude files. Matched against full path and filename."
-msgstr "Regex patterns to exclude files. Matched against full path and filename."
+msgstr "Regex patterns to exclude files. Matched against full path and "
+"filename."
 
 #: src/components/sessions/timeline-tab.tsx:161
 msgctxt "terminal-cause"
@@ -6277,30 +6409,36 @@ msgid "Remux to MKV"
 msgstr "Remux to MKV"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:59
-msgid "Remux to MKV without re-encoding. Matroska supports more codecs and features."
-msgstr "Remux to MKV without re-encoding. Matroska supports more codecs and features."
+msgid "Remux to MKV without re-encoding. Matroska supports more codecs and "
+"features."
+msgstr "Remux to MKV without re-encoding. Matroska supports more codecs and "
+"features."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:78
 msgid "Remux to MP4 with faststart flag for web streaming optimization."
 msgstr "Remux to MP4 with faststart flag for web streaming optimization."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:84
-msgid "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
-msgstr "Remux to MP4 without re-encoding and delete the original file on success. Saves disk space."
+msgid "Remux to MP4 without re-encoding and delete the original file on "
+"success. Saves disk space."
+msgstr "Remux to MP4 without re-encoding and delete the original file on "
+"success. Saves disk space."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:58
-msgid "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
-msgstr "Remux to MP4 without re-encoding. Fast and lossless - just changes the container format."
+msgid "Remux to MP4 without re-encoding. Fast and lossless - just changes the "
+"container format."
+msgstr "Remux to MP4 without re-encoding. Fast and lossless - just changes the "
+"container format."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:24
 msgid "Remux with Faststart"
 msgstr "Remux with Faststart"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1638
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1416
 msgid "Reorder Duration (ms)"
 msgstr "Reorder Duration (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1657
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1435
 msgid "Reorder Max Segments"
 msgstr "Reorder Max Segments"
 
@@ -6414,7 +6552,6 @@ msgid "Retry All Failed"
 msgstr "Retry All Failed"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:968
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1263
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:78
 msgid "Retry Delay (ms)"
 msgstr "Retry Delay (ms)"
@@ -6469,12 +6606,15 @@ msgid "Run a custom FFmpeg command. Edit the args to customize."
 msgstr "Run a custom FFmpeg command. Edit the args to customize."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:77
-msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
-msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
+msgid "Run a custom shell command with placeholders (e.g. {input}, "
+"{inputs_json}, {streamer}, %Y%m%d)."
+msgstr "Run a custom shell command with placeholders (e.g. {input}, "
+"{inputs_json}, {streamer}, %Y%m%d)."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1382
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1330
 msgid "Runs decryption on a blocking thread pool to avoid stalling async tasks."
-msgstr "Runs decryption on a blocking thread pool to avoid stalling async tasks."
+msgstr "Runs decryption on a blocking thread pool to avoid stalling async "
+"tasks."
 
 #: src/components/config/global/pipeline-config-card.tsx:281
 #: src/components/config/shared-config-editor.tsx:537
@@ -6483,13 +6623,19 @@ msgstr "Runs for each recorded segment immediately after it's finished."
 
 #: src/components/config/global/pipeline-config-card.tsx:313
 #: src/components/config/shared-config-editor.tsx:614
-msgid "Runs once after the entire session ends and all segment pipelines have completed."
-msgstr "Runs once after the entire session ends and all segment pipelines have completed."
+msgid "Runs once after the entire session ends and all segment pipelines have "
+"completed."
+msgstr "Runs once after the entire session ends and all segment pipelines have "
+"completed."
 
 #: src/components/config/global/pipeline-config-card.tsx:261
 #: src/components/config/shared-config-editor.tsx:513
-msgid "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
-msgstr "Runs once after the recording session concludes and all individual segment pipelines have finished. Ideal for session-wide actions like merging all segments, final notifications, or cleanup."
+msgid "Runs once after the recording session concludes and all individual "
+"segment pipelines have finished. Ideal for session-wide actions like "
+"merging all segments, final notifications, or cleanup."
+msgstr "Runs once after the recording session concludes and all individual "
+"segment pipelines have finished. Ideal for session-wide actions like "
+"merging all segments, final notifications, or cleanup."
 
 #: src/components/config/shared/event-hooks-form.tsx:148
 msgid "Runs when a download begins."
@@ -6505,16 +6651,20 @@ msgstr "Runs when a download encounters an error."
 
 #: src/components/config/global/pipeline-config-card.tsx:223
 #: src/components/config/shared-config-editor.tsx:471
-msgid "Runs when both the video segment and its corresponding danmu segment are available."
-msgstr "Runs when both the video segment and its corresponding danmu segment are available."
+msgid "Runs when both the video segment and its corresponding danmu segment are "
+"available."
+msgstr "Runs when both the video segment and its corresponding danmu segment "
+"are available."
 
 #: src/components/config/shared-config-editor.tsx:569
 msgid "Runs when both video and danmu segments are available."
 msgstr "Runs when both video and danmu segments are available."
 
 #: src/components/config/global/pipeline-config-card.tsx:297
-msgid "Runs when both video and danmu segments are available. Requires \"Record Danmu\" to be enabled."
-msgstr "Runs when both video and danmu segments are available. Requires \"Record Danmu\" to be enabled."
+msgid "Runs when both video and danmu segments are available. Requires \"Record "
+"Danmu\" to be enabled."
+msgstr "Runs when both video and danmu segments are available. Requires "
+"\"Record Danmu\" to be enabled."
 
 #: src/components/config/shared/event-hooks-form.tsx:166
 msgid "Runs when the post-processing pipeline completes."
@@ -6590,8 +6740,10 @@ msgid "Saving..."
 msgstr "Saving..."
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:247
-msgid "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
-msgstr "Scan a directory for new files created by the command. Detected files will be passed to the next pipeline step."
+msgid "Scan a directory for new files created by the command. Detected files "
+"will be passed to the next pipeline step."
+msgstr "Scan a directory for new files created by the command. Detected files "
+"will be passed to the next pipeline step."
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:260
 msgid "Scan Directory"
@@ -6618,7 +6770,7 @@ msgstr "Schedule recording times"
 msgid "Scheduled"
 msgstr "Scheduled"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1852
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1630
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:331
 msgid "Scheduler"
 msgstr "Scheduler"
@@ -6705,7 +6857,7 @@ msgstr "Segment"
 msgid "Segment Timeout (ms)"
 msgstr "Segment Timeout (ms)"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1422
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1370
 msgid "Segment TTL (ms)"
 msgstr "Segment TTL (ms)"
 
@@ -6938,8 +7090,10 @@ msgid "Sessions"
 msgstr "Sessions"
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:481
-msgid "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is in PATH."
-msgstr "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is in PATH."
+msgid "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is "
+"in PATH."
+msgstr "Set \"TDL Binary Path\" to your `tdl` executable, or make sure `tdl` is "
+"in PATH."
 
 #: src/components/config/shared/limits-card.tsx:37
 msgid "Set constraints on downloads."
@@ -6985,8 +7139,10 @@ msgid "Show password"
 msgstr "Show password"
 
 #: src/components/notifications/browser-channel-dialog.tsx:97
-msgid "Shows notifications while the application tab is open by polling recent events."
-msgstr "Shows notifications while the application tab is open by polling recent events."
+msgid "Shows notifications while the application tab is open by polling recent "
+"events."
+msgstr "Shows notifications while the application tab is open by polling recent "
+"events."
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:283
 msgid "Sidebar Layout"
@@ -7324,10 +7480,6 @@ msgstr "Streamers currently live will appear here."
 msgid "Streaming services"
 msgstr "Streaming services"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1199
-msgid "Streaming Threshold (bytes)"
-msgstr "Streaming Threshold (bytes)"
-
 #: src/components/config/engines/forms/streamlink-form.tsx:40
 msgid "streamlink"
 msgstr "streamlink"
@@ -7381,8 +7533,10 @@ msgid "Supported Platforms"
 msgstr "Supported Platforms"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:107
-msgid "Supports placeholders: {platform}, {streamer}, {title}, {streamer_id}, {session_id} and time tokens like %Y/%m/%d."
-msgstr "Supports placeholders: {platform}, {streamer}, {title}, {streamer_id}, {session_id} and time tokens like %Y/%m/%d."
+msgid "Supports placeholders: {platform}, {streamer}, {title}, {streamer_id}, "
+"{session_id} and time tokens like %Y/%m/%d."
+msgstr "Supports placeholders: {platform}, {streamer}, {title}, {streamer_id}, "
+"{session_id} and time tokens like %Y/%m/%d."
 
 #: src/components/config/engines/forms/mesio-form.tsx:119
 msgid "Suppress redundant headers to reduce player micro-stutter"
@@ -7447,8 +7601,10 @@ msgid "Target number of messages to capture per sample period."
 msgstr "Target number of messages to capture per sample period."
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:273
-msgid "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
-msgstr "TDL account namespace (`tdl --ns ...`). Use this to manage multiple Telegram accounts."
+msgid "TDL account namespace (`tdl --ns ...`). Use this to manage multiple "
+"Telegram accounts."
+msgstr "TDL account namespace (`tdl --ns ...`). Use this to manage multiple "
+"Telegram accounts."
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:478
 msgid "TDL binary not found"
@@ -7566,8 +7722,10 @@ msgid "Test notification sent"
 msgstr "Test notification sent"
 
 #: src/components/config/global/backup-restore-card.tsx:315
-msgid "The configuration has been successfully processed. Here is a summary of the changes:"
-msgstr "The configuration has been successfully processed. Here is a summary of the changes:"
+msgid "The configuration has been successfully processed. Here is a summary of "
+"the changes:"
+msgstr "The configuration has been successfully processed. Here is a summary of "
+"the changes:"
 
 #: src/components/config/global/backup-restore-card.tsx:421
 msgid "The configuration matches existing data"
@@ -7582,8 +7740,12 @@ msgid "The page you are looking for does not exist."
 msgstr "The page you are looking for does not exist."
 
 #: src/components/streamers/card/use-streamer-status.tsx:185
-msgid "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
-msgstr "The platform reported this account as missing. It may have been deleted, banned, or the URL/ID is incorrect. Consider removing or updating this streamer."
+msgid "The platform reported this account as missing. It may have been deleted, "
+"banned, or the URL/ID is incorrect. Consider removing or updating this "
+"streamer."
+msgstr "The platform reported this account as missing. It may have been "
+"deleted, banned, or the URL/ID is incorrect. Consider removing or "
+"updating this streamer."
 
 #: src/components/config/engines/engine-editor.tsx:260
 msgid "The underlying tool used for downloading."
@@ -7605,42 +7767,72 @@ msgid "Theme Preset"
 msgstr "Theme Preset"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:219
-msgid "These settings only apply to the desktop app. The server will still deliver channel notifications (Discord/Email/Webhook) normally."
-msgstr "These settings only apply to the desktop app. The server will still deliver channel notifications (Discord/Email/Webhook) normally."
+msgid "These settings only apply to the desktop app. The server will still "
+"deliver channel notifications (Discord/Email/Webhook) normally."
+msgstr "These settings only apply to the desktop app. The server will still "
+"deliver channel notifications (Discord/Email/Webhook) normally."
 
 #: src/components/config/global/concurrency-card.tsx:180
-msgid "These timeouts are applied when the pipeline worker pools start. Changes require a restart to take effect."
-msgstr "These timeouts are applied when the pipeline worker pools start. Changes require a restart to take effect."
+msgid "These timeouts are applied when the pipeline worker pools start. Changes "
+"require a restart to take effect."
+msgstr "These timeouts are applied when the pipeline worker pools start. "
+"Changes require a restart to take effect."
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:77
 #: src/components/pipeline/workflows/steps-list.tsx:156
-msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
-msgstr "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
+msgid "This Delete step deletes the converted result, not the original "
+"recording. Enable \"Remove Input on Success\" on the transcode step "
+"instead."
+msgstr "This Delete step deletes the converted result, not the original "
+"recording. Enable \"Remove Input on Success\" on the transcode step "
+"instead."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:624
-msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
-msgstr "This Delete step depends on <0>{transformDepLabel}</0> and will delete the converted result, not your original recording. To delete the original after converting, enable \"Remove Input on Success\" on the transcode step. Add this Delete step anyway?"
+msgid "This Delete step depends on <0>{transformDepLabel}</0> and will delete "
+"the converted result, not your original recording. To delete the "
+"original after converting, enable \"Remove Input on Success\" on the "
+"transcode step. Add this Delete step anyway?"
+msgstr "This Delete step depends on <0>{transformDepLabel}</0> and will delete "
+"the converted result, not your original recording. To delete the "
+"original after converting, enable \"Remove Input on Success\" on the "
+"transcode step. Add this Delete step anyway?"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:332
-msgid "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
-msgstr "This Delete step will delete the files produced by <0>{transformDepLabel}</0> (the converted result), not your original recording. To delete the original source after converting, enable \"Remove Input on Success\" on the transcode step instead."
+msgid "This Delete step will delete the files produced by "
+"<0>{transformDepLabel}</0> (the converted result), not your original "
+"recording. To delete the original source after converting, enable "
+"\"Remove Input on Success\" on the transcode step instead."
+msgstr "This Delete step will delete the files produced by "
+"<0>{transformDepLabel}</0> (the converted result), not your original "
+"recording. To delete the original source after converting, enable "
+"\"Remove Input on Success\" on the transcode step instead."
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:380
-msgid "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
-msgstr "This filter activates only during the window highlighted on the timeline. If the start time is after the end time, the window will wrap around midnight automatically."
+msgid "This filter activates only during the window highlighted on the "
+"timeline. If the start time is after the end time, the window will wrap "
+"around midnight automatically."
+msgstr "This filter activates only during the window highlighted on the "
+"timeline. If the start time is after the end time, the window will wrap "
+"around midnight automatically."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:298
 msgid "This is a default preset. Description cannot be modified."
 msgstr "This is a default preset. Description cannot be modified."
 
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:494
-msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
-msgstr "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and restart."
+msgid "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and "
+"restart."
+msgstr "This login requires a Telegram 2FA password. Enable \"Allow 2FA\" and "
+"restart."
 
 #: src/components/config/global/pipeline-config-card.tsx:183
 #: src/components/config/shared-config-editor.tsx:431
-msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
-msgstr "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
+msgid "This pipeline runs immediately after a recording segment is finished. "
+"Use it for tasks that only require the individual video segment, such as "
+"remuxing, thumbnail generation, or per-segment uploads."
+msgstr "This pipeline runs immediately after a recording segment is finished. "
+"Use it for tasks that only require the individual video segment, such "
+"as remuxing, thumbnail generation, or per-segment uploads."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:310
 msgid "This step is a sub-workflow: <0>{workflowName}</0>."
@@ -7655,12 +7847,18 @@ msgid "This stream is already active"
 msgstr "This stream is already active"
 
 #: src/components/streamers/card/use-streamer-status.tsx:279
-msgid "This stream is live but the global download limit is fully in use. Recording and danmu collection will start automatically when a slot frees."
-msgstr "This stream is live but the global download limit is fully in use. Recording and danmu collection will start automatically when a slot frees."
+msgid "This stream is live but the global download limit is fully in use. "
+"Recording and danmu collection will start automatically when a slot "
+"frees."
+msgstr "This stream is live but the global download limit is fully in use. "
+"Recording and danmu collection will start automatically when a slot "
+"frees."
 
 #: src/components/streamers/card/use-streamer-status.tsx:359
-msgid "This streamer is currently live, but outside your configured recording schedule."
-msgstr "This streamer is currently live, but outside your configured recording schedule."
+msgid "This streamer is currently live, but outside your configured recording "
+"schedule."
+msgstr "This streamer is currently live, but outside your configured recording "
+"schedule."
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:183
 msgid "This will cancel all pending and processing jobs in this pipeline."
@@ -7672,23 +7870,31 @@ msgid "This will permanently delete the notification channel \"{0}\"."
 msgstr "This will permanently delete the notification channel \"{0}\"."
 
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:225
-msgid "This will permanently delete the pipeline and all its associated jobs and logs. This action cannot be undone."
-msgstr "This will permanently delete the pipeline and all its associated jobs and logs. This action cannot be undone."
+msgid "This will permanently delete the pipeline and all its associated jobs "
+"and logs. This action cannot be undone."
+msgstr "This will permanently delete the pipeline and all its associated jobs "
+"and logs. This action cannot be undone."
 
 #. placeholder {0}: preset.name
 #: src/components/pipeline/presets/preset-card.tsx:198
-msgid "This will permanently delete the preset \"{0}\". Pipelines using this preset may fail if not updated."
-msgstr "This will permanently delete the preset \"{0}\". Pipelines using this preset may fail if not updated."
+msgid "This will permanently delete the preset \"{0}\". Pipelines using this "
+"preset may fail if not updated."
+msgstr "This will permanently delete the preset \"{0}\". Pipelines using this "
+"preset may fail if not updated."
 
 #. placeholder {0}: workflow.name
 #: src/components/pipeline/workflows/workflow-card.tsx:187
-msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
-msgstr "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
+msgid "This will permanently delete the workflow \"{0}\". Streamers using this "
+"workflow will need to be updated."
+msgstr "This will permanently delete the workflow \"{0}\". Streamers using this "
+"workflow will need to be updated."
 
 #. placeholder {0}: engine.name
 #: src/components/config/engines/engine-card.tsx:229
-msgid "This will permanently remove the \"{0}\" configuration. This action cannot be undone."
-msgstr "This will permanently remove the \"{0}\" configuration. This action cannot be undone."
+msgid "This will permanently remove the \"{0}\" configuration. This action "
+"cannot be undone."
+msgstr "This will permanently remove the \"{0}\" configuration. This action "
+"cannot be undone."
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:341
 msgid "Throughput"
@@ -7744,10 +7950,6 @@ msgstr "Timeline"
 #: src/components/config/engines/forms/ffmpeg-form.tsx:65
 msgid "Timeout"
 msgstr "Timeout"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1225
-msgid "Timeout (ms)"
-msgstr "Timeout (ms)"
 
 #: src/components/notifications/forms/gotify-form.tsx:107
 msgid "Timeout (s)"
@@ -7885,8 +8087,10 @@ msgid "Transient error"
 msgstr "Transient error"
 
 #: src/components/streamers/card/use-streamer-status.tsx:91
-msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
-msgstr "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
+msgid "Transient monitoring errors are being preserved until sustained download "
+"progress confirms the stream is healthy."
+msgstr "Transient monitoring errors are being preserved until sustained "
+"download progress confirms the stream is healthy."
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:154
 msgid "Treat interactive game streams (互动玩法) as offline."
@@ -7985,8 +8189,10 @@ msgid "Try adjusting your search or filters"
 msgstr "Try adjusting your search or filters"
 
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:362
-msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
-msgstr "Try adjusting your search or filters, or add a new streamer to start monitoring."
+msgid "Try adjusting your search or filters, or add a new streamer to start "
+"monitoring."
+msgstr "Try adjusting your search or filters, or add a new streamer to start "
+"monitoring."
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:501
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:285
@@ -8060,8 +8266,10 @@ msgid "Unhealthy"
 msgstr "Unhealthy"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:363
-msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
-msgstr "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
+msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for "
+"larger sizes."
+msgstr "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for "
+"larger sizes."
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:218
 msgid "Unix timestamp"
@@ -8145,12 +8353,16 @@ msgid "Upload everything regardless of file type"
 msgstr "Upload everything regardless of file type"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:74
-msgid "Upload file to cloud storage and delete local copy after successful upload."
-msgstr "Upload file to cloud storage and delete local copy after successful upload."
+msgid "Upload file to cloud storage and delete local copy after successful "
+"upload."
+msgstr "Upload file to cloud storage and delete local copy after successful "
+"upload."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:73
-msgid "Upload file to cloud storage using rclone. Configure remote in rclone config."
-msgstr "Upload file to cloud storage using rclone. Configure remote in rclone config."
+msgid "Upload file to cloud storage using rclone. Configure remote in rclone "
+"config."
+msgstr "Upload file to cloud storage using rclone. Configure remote in rclone "
+"config."
 
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:160
 msgid "Uptime"
@@ -8200,8 +8412,10 @@ msgid "Use TLS"
 msgstr "Use TLS"
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:396
-msgid "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
-msgstr "Used for Desktop login (fallback); points to Telegram Desktop folder containing `tdata`."
+msgid "Used for Desktop login (fallback); points to Telegram Desktop folder "
+"containing `tdata`."
+msgstr "Used for Desktop login (fallback); points to Telegram Desktop folder "
+"containing `tdata`."
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:116
 #: src/components/config/engines/forms/mesio-hls-form.tsx:722
@@ -8264,8 +8478,10 @@ msgid "Variant Selection Policy"
 msgstr "Variant Selection Policy"
 
 #: src/components/config/global/file-config-card.tsx:77
-msgid "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, %S"
-msgstr "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, %S"
+msgid "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, "
+"%S"
+msgstr "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, "
+"%S"
 
 #: src/components/config/shared/danmu-config-form.tsx:138
 msgid "Velocity Based (Dynamic)"
@@ -8321,8 +8537,10 @@ msgid "View All"
 msgstr "View All"
 
 #: src/components/logging/log-viewer.tsx:379
-msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
-msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
+msgid "View application logs in real-time. Logs are limited to the last "
+"{MAX_LOG_ENTRIES} entries."
+msgstr "View application logs in real-time. Logs are limited to the last "
+"{MAX_LOG_ENTRIES} entries."
 
 #: src/components/sessions/recordings-tab.tsx:171
 msgid "View Danmu"
@@ -8338,11 +8556,11 @@ msgstr "View Detailed Logs & Outputs"
 msgid "View Details"
 msgstr "View Details"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1732
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1510
 msgid "VOD Gap Strategy"
 msgstr "VOD Gap Strategy"
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1738
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1516
 msgid "VOD Segment Timeout (ms)"
 msgstr "VOD Segment Timeout (ms)"
 
@@ -8388,8 +8606,10 @@ msgid "Web Push"
 msgstr "Web Push"
 
 #: src/components/notifications/browser-channel-dialog.tsx:191
-msgid "Web Push allows receiving notifications even when you close the browser. It requires browser permission and valid server keys."
-msgstr "Web Push allows receiving notifications even when you close the browser. It requires browser permission and valid server keys."
+msgid "Web Push allows receiving notifications even when you close the browser. "
+"It requires browser permission and valid server keys."
+msgstr "Web Push allows receiving notifications even when you close the "
+"browser. It requires browser permission and valid server keys."
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:233
 msgid "Web Push disabled for this browser"
@@ -8426,10 +8646,18 @@ msgid "Welcome back"
 msgstr "Welcome back"
 
 #: src/components/config/global/concurrency-card.tsx:331
-msgid "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
-msgstr "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
+msgid "When a recording has been waiting in the concurrency queue longer than "
+"this, rust-srec re-checks the streamer to refresh stream URLs and "
+"headers before starting. Below this threshold the URLs captured at the "
+"original live event are reused. Default 60 seconds. Set to 0 to refresh "
+"on every queue wait."
+msgstr "When a recording has been waiting in the concurrency queue longer than "
+"this, rust-srec re-checks the streamer to refresh stream URLs and "
+"headers before starting. Below this threshold the URLs captured at the "
+"original live event are reused. Default 60 seconds. Set to 0 to refresh "
+"on every queue wait."
 
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1740
+#: src/components/config/engines/forms/mesio-hls-form.tsx:1518
 msgid "When enabled, each VOD segment must complete within this timeout."
 msgstr "When enabled, each VOD segment must complete within this timeout."
 
@@ -8438,8 +8666,10 @@ msgid "Where TDL stores its session and configuration."
 msgstr "Where TDL stores its session and configuration."
 
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:304
-msgid "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
-msgstr "Where TDL stores session data (`tdl --storage ...`). Example: `type=bolt,path=/data/tdl`."
+msgid "Where TDL stores session data (`tdl --storage ...`). Example: "
+"`type=bolt,path=/data/tdl`."
+msgstr "Where TDL stores session data (`tdl --storage ...`). Example: "
+"`type=bolt,path=/data/tdl`."
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:533
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:80
@@ -8515,16 +8745,14 @@ msgid "Yesterday"
 msgstr "Yesterday"
 
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:596
-msgid "Your digital library is currently empty. Start recording to populate your sessions here."
-msgstr "Your digital library is currently empty. Start recording to populate your sessions here."
+msgid "Your digital library is currently empty. Start recording to populate "
+"your sessions here."
+msgstr "Your digital library is currently empty. Start recording to populate "
+"your sessions here."
 
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:211
 msgid "YYYY-MM-DD"
 msgstr "YYYY-MM-DD"
-
-#: src/components/config/engines/forms/mesio-hls-form.tsx:1468
-msgid "Zero Copy Processing (Default: On)"
-msgstr "Zero Copy Processing (Default: On)"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:15
 msgid "ZIP Archive"

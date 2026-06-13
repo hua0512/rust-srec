@@ -6,10 +6,16 @@
 
 use crate::DownloadError;
 use rand::RngExt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SourceFailureDisposition {
+    DeactivateSource,
+    TryNextSource,
+}
 
 /// Strategy for selecting among multiple sources
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -223,67 +229,83 @@ impl SourceManager {
 
     /// Select a source for the next request
     pub fn select_source(&mut self) -> Option<ContentSource> {
+        self.select_source_excluding(&HashSet::new())
+    }
+
+    /// Select a source while skipping URLs already attempted in the current
+    /// failover sweep.
+    pub fn select_source_excluding(
+        &mut self,
+        excluded_urls: &HashSet<String>,
+    ) -> Option<ContentSource> {
         if self.sources.is_empty() {
             return None;
         }
 
         let source = if self.sources.len() == 1 {
             let source = &self.sources[0];
-            self.is_source_available(&source.url)
+            (!excluded_urls.contains(&source.url) && self.is_source_available(&source.url))
                 .then(|| source.clone())
         } else {
-            // Select a source based on the strategy
             match self.strategy {
-                SourceSelectionStrategy::Priority => self.select_by_priority(),
-                SourceSelectionStrategy::RoundRobin => self.select_round_robin(),
-                SourceSelectionStrategy::FastestResponse => self.select_fastest(),
-                SourceSelectionStrategy::Random => self.select_random(),
+                SourceSelectionStrategy::Priority => {
+                    self.select_by_priority_excluding(excluded_urls)
+                }
+                SourceSelectionStrategy::RoundRobin => {
+                    self.select_round_robin_excluding(excluded_urls)
+                }
+                SourceSelectionStrategy::FastestResponse => {
+                    self.select_fastest_excluding(excluded_urls)
+                }
+                SourceSelectionStrategy::Random => self.select_random_excluding(excluded_urls),
             }
         };
 
-        // Update the recent selections list
         if let Some(ref src) = source {
-            // If we've reached capacity, remove oldest
-            if self.recent_selections.len() >= 3 {
-                self.recent_selections.remove(0);
-            }
-            self.recent_selections.push(src.url.clone());
-
-            // Mark the source as used
-            if let Some(health) = self.health.get_mut(&src.url) {
-                health.last_used = Some(Instant::now());
-            }
+            self.record_selection(src);
         }
 
         source
     }
 
-    /// Select a source using the priority strategy
-    fn select_by_priority(&self) -> Option<ContentSource> {
-        // Sources are kept sorted by priority.
+    fn record_selection(&mut self, source: &ContentSource) {
+        if self.recent_selections.len() >= 3 {
+            self.recent_selections.remove(0);
+        }
+        self.recent_selections.push(source.url.clone());
+
+        if let Some(health) = self.health.get_mut(&source.url) {
+            health.last_used = Some(Instant::now());
+        }
+    }
+
+    fn select_by_priority_excluding(
+        &self,
+        excluded_urls: &HashSet<String>,
+    ) -> Option<ContentSource> {
         self.sources
             .iter()
-            .find(|s| self.is_source_available(&s.url))
+            .find(|s| !excluded_urls.contains(&s.url) && self.is_source_available(&s.url))
             .cloned()
     }
 
-    /// Select a source using round-robin strategy
-    fn select_round_robin(&mut self) -> Option<ContentSource> {
+    fn select_round_robin_excluding(
+        &mut self,
+        excluded_urls: &HashSet<String>,
+    ) -> Option<ContentSource> {
         if self.sources.is_empty() {
             return None;
         }
 
-        // Find the next available source in round-robin fashion
         let mut checked = 0;
         let mut index = self.current_index;
 
-        // Loop until we find an available source or checked all sources
         while checked < self.sources.len() {
             let source = &self.sources[index];
             index = (index + 1) % self.sources.len();
             checked += 1;
 
-            if self.is_source_available(&source.url) {
+            if !excluded_urls.contains(&source.url) && self.is_source_available(&source.url) {
                 self.current_index = index;
                 return Some(source.clone());
             }
@@ -292,28 +314,26 @@ impl SourceManager {
         None
     }
 
-    /// Select the fastest source
-    fn select_fastest(&mut self) -> Option<ContentSource> {
-        // Sort sources by response time if needed
+    fn select_fastest_excluding(
+        &mut self,
+        excluded_urls: &HashSet<String>,
+    ) -> Option<ContentSource> {
         self.sort_sources();
 
-        // Return the fastest available source
         self.sources
             .iter()
-            .find(|s| self.is_source_available(&s.url))
+            .find(|s| !excluded_urls.contains(&s.url) && self.is_source_available(&s.url))
             .cloned()
     }
 
-    /// Select a random source
-    fn select_random(&self) -> Option<ContentSource> {
-        // Reservoir sample a uniformly random available source without allocating.
+    fn select_random_excluding(&self, excluded_urls: &HashSet<String>) -> Option<ContentSource> {
         let mut rng = rand::rng();
         let mut chosen: Option<&ContentSource> = None;
 
         for (index, source) in self
             .sources
             .iter()
-            .filter(|s| self.is_source_available(&s.url))
+            .filter(|s| !excluded_urls.contains(&s.url) && self.is_source_available(&s.url))
             .enumerate()
         {
             let seen = index + 1;
@@ -330,20 +350,48 @@ impl SourceManager {
         self.record_result(url, true, response_time);
     }
 
-    /// Check if an error indicates a non-recoverable condition for a source
-    fn is_non_recoverable_error(error: &DownloadError) -> bool {
+    /// Decide whether a failed source is permanently invalid or only failed
+    /// for this selection attempt.
+    fn source_failure_disposition(error: &DownloadError) -> SourceFailureDisposition {
         match error {
+            DownloadError::StreamNetwork { .. } => SourceFailureDisposition::TryNextSource,
             DownloadError::Network { source } => {
-                source.status().is_some_and(|s| s.is_client_error())
+                source
+                    .status()
+                    .map_or(SourceFailureDisposition::TryNextSource, |status| {
+                        if status == reqwest::StatusCode::UNAUTHORIZED
+                            || status == reqwest::StatusCode::FORBIDDEN
+                        {
+                            SourceFailureDisposition::TryNextSource
+                        } else if status.is_client_error() {
+                            SourceFailureDisposition::DeactivateSource
+                        } else {
+                            SourceFailureDisposition::TryNextSource
+                        }
+                    })
             }
-            _ => error.is_non_recoverable_source_error(),
+            DownloadError::HttpStatus { status, .. } => {
+                if *status == reqwest::StatusCode::UNAUTHORIZED
+                    || *status == reqwest::StatusCode::FORBIDDEN
+                {
+                    SourceFailureDisposition::TryNextSource
+                } else if status.is_client_error() {
+                    SourceFailureDisposition::DeactivateSource
+                } else {
+                    SourceFailureDisposition::TryNextSource
+                }
+            }
+            _ if error.is_non_recoverable_source_error() => {
+                SourceFailureDisposition::DeactivateSource
+            }
+            _ => SourceFailureDisposition::TryNextSource,
         }
     }
 
     /// Record a failed request to a source and update health
     pub fn record_failure(&mut self, url: &str, error: &DownloadError, response_time: Duration) {
         // Deactivate source permanently for non-recoverable errors
-        if Self::is_non_recoverable_error(error) {
+        if Self::source_failure_disposition(error) == SourceFailureDisposition::DeactivateSource {
             self.set_source_active(url, false);
             return;
         }
@@ -521,5 +569,47 @@ impl SourceManager {
     /// Get the current source selection strategy
     pub fn get_strategy(&self) -> &SourceSelectionStrategy {
         &self.strategy
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::StatusCode;
+
+    #[test]
+    fn record_failure_keeps_unauthorized_and_forbidden_sources_available() {
+        for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+            let url = format!("https://cdn.example/stream.m3u8?token={}", status.as_u16());
+            let mut manager = SourceManager::new();
+            manager.add_url(&url, 0);
+
+            let error = DownloadError::http_status(status, url.clone(), "initial_request");
+            manager.record_failure(&url, &error, Duration::from_millis(10));
+
+            assert_eq!(
+                manager.healthy_count(),
+                1,
+                "{status} should not permanently deactivate signed URL sources"
+            );
+            assert_eq!(
+                manager.select_source().map(|source| source.url),
+                Some(url),
+                "{status} source should remain selectable for a future refreshed URL attempt"
+            );
+        }
+    }
+
+    #[test]
+    fn record_failure_deactivates_other_client_errors() {
+        let url = "https://cdn.example/missing.m3u8";
+        let mut manager = SourceManager::new();
+        manager.add_url(url, 0);
+
+        let error = DownloadError::http_status(StatusCode::NOT_FOUND, url, "initial_request");
+        manager.record_failure(url, &error, Duration::from_millis(10));
+
+        assert_eq!(manager.healthy_count(), 0);
+        assert!(manager.select_source().is_none());
     }
 }
