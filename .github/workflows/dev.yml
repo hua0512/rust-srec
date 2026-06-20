@@ -23,7 +23,7 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: mozilla-actions/sccache-action@v0.0.10
         with:
           version: "v0.13.0"
@@ -56,7 +56,7 @@ jobs:
           - os: macos-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Enable sccache
         if: runner.os != 'macOS' || runner.arch == 'ARM64'
         shell: pwsh
@@ -117,7 +117,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Prepare
         run: |
           platform=${{ matrix.platform }}
