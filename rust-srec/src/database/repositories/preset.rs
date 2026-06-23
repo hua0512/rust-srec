@@ -18,45 +18,7 @@ pub struct JobPresetFilters {
     pub search: Option<String>,
 }
 
-/// Repository for managing job presets.
-#[async_trait]
-pub trait JobPresetRepository: Send + Sync {
-    /// Get a preset by ID.
-    async fn get_preset(&self, id: &str) -> Result<Option<JobPreset>>;
-
-    /// Get a preset by name.
-    async fn get_preset_by_name(&self, name: &str) -> Result<Option<JobPreset>>;
-
-    /// Check if a preset name exists (optionally excluding a specific ID).
-    async fn name_exists(&self, name: &str, exclude_id: Option<&str>) -> Result<bool>;
-
-    /// List all presets.
-    async fn list_presets(&self) -> Result<Vec<JobPreset>>;
-
-    /// List presets filtered by category.
-    async fn list_presets_by_category(&self, category: Option<&str>) -> Result<Vec<JobPreset>>;
-
-    /// List presets with filtering, searching, and pagination.
-    async fn list_presets_filtered(
-        &self,
-        filters: &JobPresetFilters,
-        pagination: &Pagination,
-    ) -> Result<(Vec<JobPreset>, u64)>;
-
-    /// List all unique categories.
-    async fn list_categories(&self) -> Result<Vec<String>>;
-
-    /// Create a new preset.
-    async fn create_preset(&self, preset: &JobPreset) -> Result<()>;
-
-    /// Update an existing preset.
-    async fn update_preset(&self, preset: &JobPreset) -> Result<()>;
-
-    /// Delete a preset.
-    async fn delete_preset(&self, id: &str) -> Result<()>;
-}
-
-/// SQLite implementation of JobPresetRepository.
+/// SQLite-backed job preset repository.
 pub struct SqliteJobPresetRepository {
     pool: Arc<SqlitePool>,
     write_pool: Arc<SqlitePool>,
@@ -69,9 +31,8 @@ impl SqliteJobPresetRepository {
     }
 }
 
-#[async_trait]
-impl JobPresetRepository for SqliteJobPresetRepository {
-    async fn get_preset(&self, id: &str) -> Result<Option<JobPreset>> {
+impl SqliteJobPresetRepository {
+    pub async fn get_preset(&self, id: &str) -> Result<Option<JobPreset>> {
         let preset = sqlx::query_as::<_, JobPreset>(
             r#"
             SELECT * FROM job_presets WHERE id = $1
@@ -84,7 +45,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok(preset)
     }
 
-    async fn get_preset_by_name(&self, name: &str) -> Result<Option<JobPreset>> {
+    pub async fn get_preset_by_name(&self, name: &str) -> Result<Option<JobPreset>> {
         let preset = sqlx::query_as::<_, JobPreset>(
             r#"
             SELECT * FROM job_presets WHERE name = $1
@@ -97,7 +58,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok(preset)
     }
 
-    async fn name_exists(&self, name: &str, exclude_id: Option<&str>) -> Result<bool> {
+    pub async fn name_exists(&self, name: &str, exclude_id: Option<&str>) -> Result<bool> {
         let count: (i64,) = if let Some(id) = exclude_id {
             sqlx::query_as(
                 r#"
@@ -122,7 +83,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok(count.0 > 0)
     }
 
-    async fn list_presets(&self) -> Result<Vec<JobPreset>> {
+    pub async fn list_presets(&self) -> Result<Vec<JobPreset>> {
         let presets = sqlx::query_as::<_, JobPreset>(
             r#"
             SELECT * FROM job_presets ORDER BY name
@@ -134,7 +95,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok(presets)
     }
 
-    async fn list_presets_by_category(&self, category: Option<&str>) -> Result<Vec<JobPreset>> {
+    pub async fn list_presets_by_category(&self, category: Option<&str>) -> Result<Vec<JobPreset>> {
         let presets = if let Some(cat) = category {
             sqlx::query_as::<_, JobPreset>(
                 r#"
@@ -157,7 +118,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok(presets)
     }
 
-    async fn list_presets_filtered(
+    pub async fn list_presets_filtered(
         &self,
         filters: &JobPresetFilters,
         pagination: &Pagination,
@@ -235,7 +196,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok((presets, total))
     }
 
-    async fn list_categories(&self) -> Result<Vec<String>> {
+    pub async fn list_categories(&self) -> Result<Vec<String>> {
         let categories: Vec<(String,)> = sqlx::query_as(
             r#"
             SELECT DISTINCT category FROM job_presets WHERE category IS NOT NULL ORDER BY category
@@ -247,7 +208,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok(categories.into_iter().map(|(c,)| c).collect())
     }
 
-    async fn create_preset(&self, preset: &JobPreset) -> Result<()> {
+    pub async fn create_preset(&self, preset: &JobPreset) -> Result<()> {
         sqlx::query(
             r#"
             INSERT INTO job_presets (id, name, description, category, processor, config, created_at, updated_at)
@@ -268,7 +229,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok(())
     }
 
-    async fn update_preset(&self, preset: &JobPreset) -> Result<()> {
+    pub async fn update_preset(&self, preset: &JobPreset) -> Result<()> {
         sqlx::query(
             r#"
             UPDATE job_presets
@@ -289,7 +250,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         Ok(())
     }
 
-    async fn delete_preset(&self, id: &str) -> Result<()> {
+    pub async fn delete_preset(&self, id: &str) -> Result<()> {
         sqlx::query(
             r#"
             DELETE FROM job_presets WHERE id = $1

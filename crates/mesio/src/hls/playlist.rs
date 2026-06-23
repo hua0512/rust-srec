@@ -7,7 +7,6 @@ use crate::hls::config::{HlsConfig, HlsVariantSelectionPolicy};
 use crate::hls::events::HlsStreamEvent;
 use crate::hls::scheduler::ScheduledSegmentJob;
 use crate::hls::twitch_processor::TwitchPlaylistProcessor;
-use async_trait::async_trait;
 use m3u8_rs::{MasterPlaylist, MediaPlaylist, MediaSegment, parse_playlist_res};
 use moka::future::Cache;
 use moka::policy::EvictionPolicy;
@@ -20,25 +19,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
-#[async_trait]
-pub trait PlaylistProvider: Send + Sync {
-    async fn load_initial_playlist(&self, url: &str)
-    -> Result<InitialPlaylist, HlsDownloaderError>;
-    async fn select_media_playlist(
-        &self,
-        initial_playlist_with_base_url: &InitialPlaylist,
-        policy: &HlsVariantSelectionPolicy,
-    ) -> Result<MediaPlaylistDetails, HlsDownloaderError>;
-    async fn monitor_media_playlist(
-        &self,
-        playlist_url: &str,
-        initial_playlist: MediaPlaylist,
-        base_url: String,
-        segment_request_tx: mpsc::Sender<ScheduledSegmentJob>,
-        client_event_tx: mpsc::Sender<Result<HlsStreamEvent, HlsDownloaderError>>,
-        token: CancellationToken,
-    ) -> Result<(), HlsDownloaderError>;
-}
 
 #[derive(Debug, Clone)]
 pub enum InitialPlaylist {
@@ -149,9 +129,8 @@ impl AdaptiveRefreshTracker {
     }
 }
 
-#[async_trait]
-impl PlaylistProvider for PlaylistEngine {
-    async fn load_initial_playlist(
+impl PlaylistEngine {
+    pub async fn load_initial_playlist(
         &self,
         url_str: &str,
     ) -> Result<InitialPlaylist, HlsDownloaderError> {
@@ -259,7 +238,7 @@ impl PlaylistProvider for PlaylistEngine {
         }
     }
 
-    async fn select_media_playlist(
+    pub async fn select_media_playlist(
         &self,
         initial_playlist_with_base_url: &InitialPlaylist,
         policy: &HlsVariantSelectionPolicy,
@@ -410,7 +389,7 @@ impl PlaylistProvider for PlaylistEngine {
         }
     }
 
-    async fn monitor_media_playlist(
+    pub async fn monitor_media_playlist(
         &self,
         playlist_url_str: &str,
         mut current_playlist: MediaPlaylist,

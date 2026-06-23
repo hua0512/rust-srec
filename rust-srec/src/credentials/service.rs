@@ -17,16 +17,16 @@ use crate::streamer::StreamerMetadata;
 use super::error::CredentialError;
 use super::manager::{CredentialManager, CredentialStatus, RefreshState, RefreshedCredentials};
 use super::resolver::CredentialResolver;
-use super::store::CredentialStore;
 use super::tracker::{DailyCheckTracker, RefreshFailureTracker};
 use super::types::{CredentialEvent, CredentialScope, CredentialSource};
+use crate::database::repositories::SqlxCredentialStore;
 
 /// Credential refresh service.
 ///
 /// Orchestrates detection, refresh, and persistence of platform credentials.
 pub struct CredentialRefreshService<R: ConfigRepository> {
     resolver: Arc<CredentialResolver<R>>,
-    store: Arc<dyn CredentialStore>,
+    store: Arc<SqlxCredentialStore>,
     managers: HashMap<String, Arc<dyn CredentialManager>>,
     daily_tracker: Arc<DailyCheckTracker>,
     failure_tracker: Arc<RefreshFailureTracker>,
@@ -38,7 +38,7 @@ pub struct CredentialRefreshService<R: ConfigRepository> {
 
 impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     /// Create a new credential refresh service.
-    pub fn new(resolver: Arc<CredentialResolver<R>>, store: Arc<dyn CredentialStore>) -> Self {
+    pub fn new(resolver: Arc<CredentialResolver<R>>, store: Arc<SqlxCredentialStore>) -> Self {
         Self {
             resolver,
             store,

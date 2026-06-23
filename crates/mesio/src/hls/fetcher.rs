@@ -6,7 +6,6 @@ use crate::hls::HlsDownloaderError;
 use crate::hls::config::HlsConfig;
 use crate::hls::retry::{RetryAction, RetryPolicy, is_retryable_reqwest_error, retry_with_backoff};
 use crate::{CacheManager, cache::CacheKey};
-use async_trait::async_trait;
 use bytes::Bytes;
 use indicatif::ProgressStyle;
 use std::sync::Arc;
@@ -17,14 +16,6 @@ use url::Url;
 use tokio_util::sync::CancellationToken;
 
 use crate::hls::scheduler::ScheduledSegmentJob;
-
-#[async_trait]
-pub trait SegmentDownloader: Send + Sync {
-    async fn download_segment_from_job(
-        &self,
-        job: &ScheduledSegmentJob,
-    ) -> Result<Bytes, HlsDownloaderError>;
-}
 
 pub struct SegmentFetcher {
     clients: Arc<ClientPool>,
@@ -257,14 +248,13 @@ impl SegmentFetcher {
     }
 }
 
-#[async_trait]
-impl SegmentDownloader for SegmentFetcher {
+impl SegmentFetcher {
     /// Downloads a segment from the given job.
     /// If the segment is already cached, it retrieves it from the cache.
     /// If not, it downloads the segment and caches it.
     /// Returns the raw bytes of the segment.
     #[instrument(skip(self, job), fields(msn = job.media_sequence_number))]
-    async fn download_segment_from_job(
+    pub async fn download_segment_from_job(
         &self,
         job: &ScheduledSegmentJob,
     ) -> Result<Bytes, HlsDownloaderError> {
