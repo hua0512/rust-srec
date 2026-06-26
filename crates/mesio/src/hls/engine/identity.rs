@@ -2,7 +2,7 @@
 //!
 //! `SegmentKey` is the canonical identity for lifecycle and scheduling. Dedup
 //! across playlist refreshes, retries, and prefetch promotion all compare keys,
-//! never raw URLs. See `HLS_ENGINE_ARCHITECTURE.md` (Core Data Model).
+//! never raw URLs. See `docs/HLS_ENGINE_ARCHITECTURE.md` (Core Data Model).
 
 use std::sync::Arc;
 use url::Url;

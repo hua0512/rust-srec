@@ -1,4 +1,4 @@
-// HLS downloader: reactor-based engine (see HLS_ENGINE_ARCHITECTURE.md).
+// HLS downloader: reactor-based engine (see docs/HLS_ENGINE_ARCHITECTURE.md).
 
 pub mod config;
 pub mod engine;

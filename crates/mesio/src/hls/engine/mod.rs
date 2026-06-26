@@ -13,7 +13,7 @@
 //!
 //! Control-plane state lives in exactly one place — the reactor. Data-plane
 //! payloads move by value as `Bytes` handles. See
-//! `crates/mesio/HLS_ENGINE_ARCHITECTURE.md` for the full design.
+//! `crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md` for the full design.
 
 pub mod assembler;
 pub mod budget;

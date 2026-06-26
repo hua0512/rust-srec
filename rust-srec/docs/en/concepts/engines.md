@@ -53,3 +53,7 @@ Because the headers and packet structures are not inspected, some advanced featu
 ## 4. HLS Consistency Fix (Mesio Exclusive)
 
 When using the Mesio engine for HLS streams, the **HLS Consistency Fix** feature can automatically detect and resolve common HLS delivery issues, such as timestamp discontinuities or missing segments, before the data is written to the final file. This ensures a smoother playback experience for the recorded content.
+
+## 5. Mesio Architecture
+
+Mesio is an **in-process Rust engine** with a reactor-based HLS downloader and a unified download-session model shared by HLS and FLV. For the architecture diagram and a walkthrough of how it works under the hood, see the dedicated [Mesio Engine](./mesio.md) page.
