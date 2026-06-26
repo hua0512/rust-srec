@@ -7,8 +7,7 @@
 use flv::data::FlvData;
 use flv_fix::{FlvPipeline, FlvPipelineConfig, FlvWriter, FlvWriterConfig};
 use mesio::flv::FlvProtocolConfig;
-use mesio::flv::error::FlvDownloadError;
-use mesio::{DownloadStream, MesioDownloaderFactory, ProtocolType};
+use mesio::{DownloadError, DownloadRequest, MesioConfig, MesioDownloader, ProtocolSelection};
 use parking_lot::RwLock;
 use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
 use std::sync::Arc;
@@ -16,13 +15,10 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use super::classify_flv_error;
 use super::config::build_flv_config;
 use super::helpers::{self, DownloadStats};
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{
-    DownloadConfig, DownloadFailureKind, EngineStartError, SegmentEvent,
-};
+use crate::downloader::engine::traits::{DownloadConfig, EngineStartError, SegmentEvent};
 
 /// FLV-specific download orchestrator.
 ///
@@ -71,22 +67,23 @@ impl FlvDownloader {
         self.config.read().clone()
     }
 
-    /// Create a MesioDownloaderFactory with the configured settings.
-    fn create_factory(&self, token: CancellationToken) -> MesioDownloaderFactory {
+    /// Create a MesioDownloader with the configured settings.
+    fn create_downloader(&self, token: CancellationToken) -> MesioDownloader {
         let config = self.config_snapshot();
         let flv_config = build_flv_config(&config, self.flv_config.clone());
 
-        MesioDownloaderFactory::new()
-            .with_flv_config(flv_config)
-            .with_token(token)
+        MesioDownloader::new(MesioConfig {
+            hls: mesio::hls::HlsConfig::default(),
+            flv: flv_config,
+            token,
+        })
     }
 
     /// Run the FLV download, consuming the stream and writing to files.
     ///
     /// This method:
-    /// 1. Creates a MesioDownloaderFactory with the configured FLV settings
-    /// 2. Creates a DownloaderInstance::Flv using the factory
-    /// 3. Calls download_with_sources() to get the FLV stream
+    /// 1. Creates a MesioDownloader with the configured FLV settings
+    /// 2. Starts a typed FLV download session
     /// 4. If `enable_processing` is true, routes stream through FlvPipeline
     /// 5. Creates a FlvWriter with callbacks for segment events
     /// 6. Sends FlvData items to the writer via channel
@@ -96,39 +93,23 @@ impl FlvDownloader {
     pub async fn run(self) -> std::result::Result<DownloadStats, EngineStartError> {
         let token = self.cancellation_token.child_token();
 
-        // Create factory with configuration
-        let factory = self.create_factory(token.clone());
+        let downloader = self.create_downloader(token.clone());
 
         let url = self.config_snapshot().url;
 
-        // Create the FLV downloader instance
-        let mut downloader = factory
-            .create_for_url(&url, ProtocolType::Flv)
-            .await
+        let request = DownloadRequest::from_url(&url)
             .map_err(|e| {
                 let kind = super::classify_download_error(&e);
-                EngineStartError::new(kind, format!("Failed to create FLV downloader: {}", e))
-            })?;
+                EngineStartError::new(kind, format!("Invalid FLV download URL: {}", e))
+            })?
+            .with_protocol(ProtocolSelection::Flv(Default::default()))
+            .with_cancel(token.clone());
 
-        // Add the source URL
-        downloader.add_source(&url, 0);
-
-        // Get the download stream
-        let download_stream = downloader.download_with_sources(&url).await.map_err(|e| {
+        let session = downloader.start_flv(request).await.map_err(|e| {
             let kind = super::classify_download_error(&e);
             EngineStartError::new(kind, format!("Failed to start FLV download: {}", e))
         })?;
-
-        // Extract the FLV stream from the DownloadStream enum
-        let flv_stream = match download_stream {
-            DownloadStream::Flv(stream) => stream,
-            _ => {
-                return Err(EngineStartError::new(
-                    DownloadFailureKind::Configuration,
-                    "Expected FLV stream but got different protocol",
-                ));
-            }
-        };
+        let flv_stream = session.items;
 
         let config_snapshot = self.config_snapshot();
 
@@ -147,7 +128,7 @@ impl FlvDownloader {
     async fn download_with_pipeline(
         &self,
         token: CancellationToken,
-        flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, FlvDownloadError>>
+        flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, DownloadError>>
         + Send
         + Unpin,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
@@ -207,7 +188,7 @@ impl FlvDownloader {
             &token,
             &streamer_id,
             "FLV",
-            classify_flv_error,
+            super::classify_download_error,
             |_| {},
         )
         .await;
@@ -243,7 +224,7 @@ impl FlvDownloader {
     async fn download_raw(
         &self,
         token: CancellationToken,
-        flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, FlvDownloadError>>
+        flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, DownloadError>>
         + Send
         + Unpin,
     ) -> std::result::Result<DownloadStats, EngineStartError> {
@@ -285,7 +266,7 @@ impl FlvDownloader {
             &token,
             &streamer_id,
             "FLV",
-            classify_flv_error,
+            super::classify_download_error,
             |_| {},
         )
         .await;
@@ -355,9 +336,7 @@ mod tests {
         let flv_stream = futures::stream::iter([
             Ok(header),
             Ok(tag),
-            Err(FlvDownloadError::AllSourcesFailed(
-                "simulated stream error".to_string(),
-            )),
+            Err(DownloadError::source_exhausted("simulated stream error")),
         ]);
 
         let events_task = tokio::spawn(async move {

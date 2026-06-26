@@ -24,6 +24,9 @@ pub enum DownloadError {
         source: reqwest::Error,
     },
 
+    #[error("stream network error: {reason}")]
+    StreamNetwork { reason: String },
+
     #[error("request failed with HTTP {status} during {operation} for {url}")]
     HttpStatus {
         status: StatusCode,
@@ -115,34 +118,6 @@ impl DownloadError {
         }
     }
 
-    pub fn is_retryable(&self) -> bool {
-        match self {
-            Self::Cancelled => false,
-            Self::InvalidUrl { .. }
-            | Self::UnsupportedProtocol { .. }
-            | Self::ProtocolDetectionFailed { .. }
-            | Self::ProxyConfiguration { .. }
-            | Self::InvalidContent { .. }
-            | Self::Configuration { .. }
-            | Self::NotFound { .. } => false,
-            Self::HttpStatus { status, .. } => {
-                status.is_server_error() || *status == StatusCode::TOO_MANY_REQUESTS
-            }
-            Self::SegmentFetch { retryable, .. } => *retryable,
-            Self::Network { .. }
-            | Self::Io { .. }
-            | Self::Cache { .. }
-            | Self::Playlist { .. }
-            | Self::SegmentProcess { .. }
-            | Self::Decryption { .. }
-            | Self::SourceExhausted { .. }
-            | Self::FlvDecode { .. }
-            | Self::Protocol { .. }
-            | Self::Timeout { .. }
-            | Self::Internal { .. } => true,
-        }
-    }
-
     pub fn is_non_recoverable_source_error(&self) -> bool {
         match self {
             Self::HttpStatus { status, .. } => status.is_client_error(),
@@ -151,6 +126,7 @@ impl DownloadError {
             | Self::ProtocolDetectionFailed { .. }
             | Self::InvalidContent { .. }
             | Self::NotFound { .. } => true,
+            Self::StreamNetwork { .. } => false,
             Self::SegmentFetch { retryable, .. } => !retryable,
             _ => false,
         }

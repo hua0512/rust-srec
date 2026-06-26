@@ -1,16 +1,15 @@
-## rust-srec v0.3.2
+## rust-srec (unreleased)
 
-This update is focused on pipeline and recording reliability — end-of-session and paired post-processing now wait for the files they need before running, resumed recordings keep their segment numbering, the **Delete Source** step no longer removes a freshly converted video, and a temporary CDN failure no longer flips a live streamer to offline.
+This update rebuilds the **Mesio** HLS recording engine for robustness and unifies how Mesio downloads HLS and FLV streams. Encrypted HLS is handled more reliably, memory use stays bounded on busy or encrypted streams, and segment de-duplication now survives playlist refreshes that rotate auth tokens such as Twitch signed URLs.
 
 ### Highlights
-- **Resumed recordings keep their segment numbering** — when a recording resumes after a brief interruption, new segments continue numbering from where the previous attempt left off instead of restarting at `0`, keeping thumbnails, paired danmaku, the segment list, notifications, and post-processing aligned.
-- **Session Complete Pipeline waits for the final recording** — end-of-session steps like merging, uploading, or the completion notification now wait until the final video file is saved and all per-segment processing has finished, instead of starting too early when the danmaku side finishes first.
-- **Paired Segment Pipeline matches files more reliably** — paired post-processing waits until both the video and the danmaku for the same segment are ready before it starts, and the same paired job is no longer triggered twice.
-- **"Delete Source" no longer deletes your converted video** — a **Delete Source** step after a convert/transcode step was removing the newly converted file instead of the original, since a delete step always acts on the output of the step before it. The built-in **Space Saver** workflow is fixed, and the pipeline editor now warns when a delete step is placed there; use **Remove Input on Success** on the convert step to delete the original instead. Deleting after an **Upload** step is unaffected and still safe.
-- **Streamer no longer flips to offline after a temporary CDN failure** — fixed a case where a streamer would appear offline (and stop recording) after a transient CDN failure such as an HTTP 404 on a signed playback URL; the live state is now restored as soon as the recorder resumes.
+- **Rebuilt HLS recording engine** — the Mesio HLS engine now runs on a single control loop that owns all download state, with in-flight downloads, decryption work, and output buffers each bounded by explicit memory budgets, so a fast or encrypted stream can no longer grow memory without limit.
+- **More reliable encrypted (AES-128 / fMP4) HLS** — decryption runs off the main scheduling loop and is memory-gated, fMP4 init segments are guaranteed to be written before the media that depends on them, and a terminally failed init becomes a visible gap instead of stalling the recording.
+- **De-duplication survives rotating auth tokens** — segments are no longer re-downloaded when a playlist refresh rotates signatures or tokens; for known token schemes (e.g. Twitch signed URLs) the rotating parameters are stripped, and a signed URL that expires mid-download is retried transparently.
+- **Explicit gaps instead of silent stalls** — when the live window slides and segments drop out before they can be fetched, the engine emits a clear gap signal so missing data is observable rather than appearing as a frozen recording.
+- **Unified Mesio HLS/FLV download sessions** — HLS and FLV downloads now share one session model, so progress reporting, retry handling, and cancellation behave consistently across both protocols.
 
 ### Review before upgrading
-- Internal pipeline coordination was reorganized to make these reliability improvements easier to maintain. Existing pipeline settings and presets continue to work without changes.
-- Dependency and build updates: `sqlx` 0.8.6 → 0.9.0, `rust-i18n` 3 → 4, and `rquickjs` 0.11.0 → 0.12.0, plus the web frontend moving to react-day-picker v10 with bundle optimizations. None of these change how rust-srec behaves for you.
+- A database migration removes several Mesio HLS engine settings that no longer affected recording — the **Performance** tab (batch-scheduler and zero-copy toggles) plus the streaming-threshold and raw-segment-cache fields. Existing configurations are cleaned up automatically; no action is required, and the remaining timeout, retry, decryption-key, and gap-skip settings continue to work as before.
 
-See the [v0.3.2 release notes](https://docs.srec.rs/en/release-notes/v0.3.2) for the full list and the Chinese version at [/zh/release-notes/v0.3.2](https://docs.srec.rs/zh/release-notes/v0.3.2).
+See the [unreleased release notes](https://docs.srec.rs/en/release-notes/unreleased) for the full list and the Chinese version at [/zh/release-notes/unreleased](https://docs.srec.rs/zh/release-notes/unreleased).

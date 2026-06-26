@@ -91,6 +91,18 @@ impl FlvProtocolBuilder {
         self
     }
 
+    /// Set the byte threshold for FLV progress events.
+    pub fn progress_emit_min_bytes(mut self, bytes: u64) -> Self {
+        self.config.progress_emit_min_bytes = bytes;
+        self
+    }
+
+    /// Set the time threshold for FLV progress events.
+    pub fn progress_emit_min_interval(mut self, interval: Duration) -> Self {
+        self.config.progress_emit_min_interval = interval;
+        self
+    }
+
     impl_base_downloader_config_methods!(config.base);
 
     /// Access the raw configuration for more advanced customization
@@ -243,6 +255,18 @@ impl HlsProtocolBuilder {
         self
     }
 
+    /// Set the byte threshold for HLS segment progress events.
+    pub fn progress_emit_min_bytes(mut self, bytes: u64) -> Self {
+        self.config.fetcher_config.progress_emit_min_bytes = bytes;
+        self
+    }
+
+    /// Set the time threshold for HLS segment progress events.
+    pub fn progress_emit_min_interval(mut self, interval: Duration) -> Self {
+        self.config.fetcher_config.progress_emit_min_interval = interval;
+        self
+    }
+
     /// Set maximum number of retries for downloading a segment.
     pub fn max_segment_retries(mut self, retries: u32) -> Self {
         self.config.fetcher_config.max_segment_retries = retries;
@@ -270,12 +294,6 @@ impl HlsProtocolBuilder {
     /// Set base delay for exponential backoff when retrying key downloads.
     pub fn key_retry_delay_base(mut self, delay: Duration) -> Self {
         self.config.fetcher_config.key_retry_delay_base = delay;
-        self
-    }
-
-    /// Set TTL for caching raw (undecrypted) segments.
-    pub fn segment_raw_cache_ttl(mut self, ttl: Duration) -> Self {
-        self.config.fetcher_config.segment_raw_cache_ttl = ttl;
         self
     }
 

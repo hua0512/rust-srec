@@ -276,7 +276,7 @@ pub struct MesioHlsConfig {
     /// Override scheduler settings (download concurrency, buffers).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scheduler_config: Option<MesioHlsSchedulerConfigOverride>,
-    /// Override segment/key fetcher settings (timeouts/retries/streaming threshold).
+    /// Override segment/key fetcher settings (timeouts/retries).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fetcher_config: Option<MesioHlsFetcherConfigOverride>,
     /// Override processor settings (processed segment cache TTL).
@@ -291,9 +291,6 @@ pub struct MesioHlsConfig {
     /// Override output buffering, gap handling, stall timeouts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_config: Option<MesioHlsOutputConfigOverride>,
-    /// Override performance-related toggles (prefetch/batching/zero-copy/etc.).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub performance_config: Option<MesioHlsPerformanceConfigOverride>,
 }
 
 /// Serializable HTTP version preference for Mesio downloader.
@@ -398,9 +395,9 @@ pub struct MesioHlsFetcherConfigOverride {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_key_retry_delay_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub segment_raw_cache_ttl_ms: Option<u64>,
+    pub progress_emit_min_bytes: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub streaming_threshold_bytes: Option<usize>,
+    pub progress_emit_min_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -471,28 +468,6 @@ pub struct MesioHlsOutputConfigOverride {
     pub metrics_enabled: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MesioHlsPerformanceConfigOverride {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefetch: Option<MesioPrefetchOverride>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub batch_scheduler: Option<MesioBatchSchedulerOverride>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub zero_copy_enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metrics_enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MesioBatchSchedulerOverride {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub batch_window_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_batch_size: Option<usize>,
-}
-
 /// Serializable gap-skip strategy for Mesio HLS.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -501,17 +476,6 @@ pub enum MesioGapSkipStrategy {
     SkipAfterCount { count: u64 },
     SkipAfterDuration { duration_ms: u64 },
     SkipAfterBoth { count: u64, duration_ms: u64 },
-}
-
-/// Partial override for Mesio HLS prefetch.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MesioPrefetchOverride {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefetch_count: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_buffer_before_skip: Option<usize>,
 }
 
 fn default_buffer_size() -> usize {
@@ -584,13 +548,6 @@ mod tests {
             },
             "scheduler_config": {
               "download_concurrency": 3
-            },
-            "performance_config": {
-              "prefetch": {
-                "enabled": true,
-                "prefetch_count": 4,
-                "max_buffer_before_skip": 20
-              }
             }
           }
         }"#;
@@ -611,14 +568,6 @@ mod tests {
                 .and_then(|cfg| cfg.download_concurrency),
             Some(3)
         );
-        let prefetch = hls
-            .performance_config
-            .as_ref()
-            .and_then(|cfg| cfg.prefetch.as_ref())
-            .unwrap();
-        assert_eq!(prefetch.enabled, Some(true));
-        assert_eq!(prefetch.prefetch_count, Some(4));
-        assert_eq!(prefetch.max_buffer_before_skip, Some(20));
     }
 
     #[test]

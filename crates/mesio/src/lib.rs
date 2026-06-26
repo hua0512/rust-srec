@@ -9,7 +9,7 @@
 //! - Multiple protocol support (HLS, FLV)
 //! - Efficient download management with caching
 //! - Source selection with fallback capabilities
-//! - Factory pattern for protocol instantiation
+//! - Protocol-neutral session and event API
 //! - Protocol auto-detection from URLs
 
 pub mod builder;
@@ -18,13 +18,15 @@ pub mod cache;
 pub mod config;
 pub mod downloader;
 pub mod error;
-pub mod factory;
 pub mod flv;
 pub mod hls;
-pub mod media_protocol;
 pub mod protocol_builder;
 pub mod proxy;
+pub mod session;
 pub mod source;
+
+/// A boxed async media stream.
+pub type BoxMediaStream<D, E> = std::pin::Pin<Box<dyn futures::Stream<Item = Result<D, E>> + Send>>;
 
 pub use config::DEFAULT_USER_AGENT;
 
@@ -33,35 +35,20 @@ pub use cache::{CacheConfig, CacheManager};
 pub use config::{DownloaderConfig, HttpVersionPreference};
 pub use error::DownloadError;
 
-// Re-export legacy protocol traits for backward compatibility
-pub use media_protocol::{BoxMediaStream, ProtocolConfig};
-
-// Re-export new capability-based traits
-pub use media_protocol::{
-    Cacheable,
-    Download,
-    MultiSource,
-    // Base traits
-    ProtocolBase,
-    RawDownload,
-    RawResumable,
-    Resumable,
-    download_raw_with_resume,
-    // Utility functions
-    download_with_resume,
-    download_with_sources,
-    download_with_sources_and_cache,
-};
-
 // Re-export protocol builders
 pub use protocol_builder::{FlvProtocolBuilder, HlsProtocolBuilder, ProtocolBuilder};
 pub use source::{ContentSource, SourceManager, SourceSelectionStrategy};
 
 // Re-export downloader utilities
-pub use downloader::{DownloadManager, DownloadManagerConfig, create_client};
+pub use downloader::create_client;
 
-// Re-export factory types
-pub use factory::{DownloadStream, DownloaderInstance, MesioDownloaderFactory, ProtocolType};
+// Re-export session/event API
+pub use session::{
+    DownloadEvent, DownloadEventStream, DownloadHandle, DownloadOptions, DownloadRequest,
+    DownloadSession, DownloadTerminal, DownloaderSession, EventSink, FlvReconnect,
+    FlvRequestOptions, HlsRequestOptions, MediaEngine, MesioConfig, MesioDownloader,
+    ProtocolSelection, ProtocolType, ResourceId,
+};
 
 // Re-export proxy utilities
 pub use proxy::{ProxyAuth, ProxyConfig, ProxyType};

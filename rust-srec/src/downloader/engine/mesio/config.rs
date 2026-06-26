@@ -179,10 +179,6 @@ fn apply_hls_engine_overrides(
         if let Some(v) = fc.key_retry_delay_base_ms {
             builder = builder.key_retry_delay_base(ms(v));
         }
-        if let Some(v) = fc.segment_raw_cache_ttl_ms {
-            builder = builder.segment_raw_cache_ttl(ms(v));
-        }
-
         builder = builder.with_config(|hls_config| {
             if let Some(v) = fc.max_segment_retry_delay_ms {
                 hls_config.fetcher_config.max_segment_retry_delay = ms(v);
@@ -190,8 +186,11 @@ fn apply_hls_engine_overrides(
             if let Some(v) = fc.max_key_retry_delay_ms {
                 hls_config.fetcher_config.max_key_retry_delay = ms(v);
             }
-            if let Some(v) = fc.streaming_threshold_bytes {
-                hls_config.fetcher_config.streaming_threshold_bytes = v;
+            if let Some(v) = fc.progress_emit_min_bytes {
+                hls_config.fetcher_config.progress_emit_min_bytes = v;
+            }
+            if let Some(v) = fc.progress_emit_min_interval_ms {
+                hls_config.fetcher_config.progress_emit_min_interval = ms(v);
             }
         });
     }
@@ -261,45 +260,6 @@ fn apply_hls_engine_overrides(
             }
             if let Some(v) = oc.metrics_enabled {
                 hls_config.output_config.metrics_enabled = v;
-            }
-        });
-    }
-
-    if let Some(ref pc) = cfg.performance_config {
-        builder = builder.with_config(|hls_config| {
-            if let Some(ref prefetch) = pc.prefetch {
-                if let Some(v) = prefetch.enabled {
-                    hls_config.performance_config.prefetch.enabled = v;
-                }
-                if let Some(v) = prefetch.prefetch_count {
-                    hls_config.performance_config.prefetch.prefetch_count = v;
-                }
-                if let Some(v) = prefetch.max_buffer_before_skip {
-                    hls_config
-                        .performance_config
-                        .prefetch
-                        .max_buffer_before_skip = v;
-                }
-            }
-            if let Some(ref bs) = pc.batch_scheduler {
-                if let Some(v) = bs.enabled {
-                    hls_config.performance_config.batch_scheduler.enabled = v;
-                }
-                if let Some(v) = bs.batch_window_ms {
-                    hls_config
-                        .performance_config
-                        .batch_scheduler
-                        .batch_window_ms = v;
-                }
-                if let Some(v) = bs.max_batch_size {
-                    hls_config.performance_config.batch_scheduler.max_batch_size = v;
-                }
-            }
-            if let Some(v) = pc.zero_copy_enabled {
-                hls_config.performance_config.zero_copy_enabled = v;
-            }
-            if let Some(v) = pc.metrics_enabled {
-                hls_config.performance_config.metrics_enabled = v;
             }
         });
     }
@@ -849,10 +809,6 @@ mod tests {
             r#"
             {
               "hls": {
-                "download_concurrency": 3,
-                "live_gap_strategy": {"type":"skip_after_count","count":3},
-                "prefetch": {"enabled": false, "prefetch_count": 1, "max_buffer_before_skip": 5},
-
                 "base": {
                   "read_timeout_ms": 1234,
                   "http_version": "http1_only",
@@ -870,7 +826,8 @@ mod tests {
                   "max_segment_retries": 42,
                   "max_segment_retry_delay_ms": 5555,
                   "max_key_retry_delay_ms": 6666,
-                  "streaming_threshold_bytes": 314159
+                  "progress_emit_min_bytes": 0,
+                  "progress_emit_min_interval_ms": 0
                 },
                 "processor_config": {
                   "processed_segment_ttl_ms": 60000
@@ -889,11 +846,6 @@ mod tests {
                   "vod_segment_timeout_ms": null,
                   "buffer_limits": { "max_segments": 11, "max_bytes": 123456 },
                   "metrics_enabled": false
-                },
-                "performance_config": {
-                  "prefetch": {"enabled": true, "prefetch_count": 4, "max_buffer_before_skip": 20},
-                  "batch_scheduler": {"enabled": false, "batch_window_ms": 99, "max_batch_size": 123},
-                  "zero_copy_enabled": false
                 }
               }
             }
@@ -939,7 +891,11 @@ mod tests {
             hls_config.fetcher_config.max_key_retry_delay,
             std::time::Duration::from_millis(6666)
         );
-        assert_eq!(hls_config.fetcher_config.streaming_threshold_bytes, 314159);
+        assert_eq!(hls_config.fetcher_config.progress_emit_min_bytes, 0);
+        assert_eq!(
+            hls_config.fetcher_config.progress_emit_min_interval,
+            std::time::Duration::ZERO
+        );
         assert_eq!(
             hls_config.processor_config.processed_segment_ttl,
             std::time::Duration::from_millis(60000)
@@ -971,28 +927,5 @@ mod tests {
         assert_eq!(hls_config.output_config.buffer_limits.max_segments, 11);
         assert_eq!(hls_config.output_config.buffer_limits.max_bytes, 123456);
         assert!(!hls_config.output_config.metrics_enabled);
-
-        assert!(hls_config.performance_config.prefetch.enabled);
-        assert_eq!(hls_config.performance_config.prefetch.prefetch_count, 4);
-        assert_eq!(
-            hls_config
-                .performance_config
-                .prefetch
-                .max_buffer_before_skip,
-            20
-        );
-        assert!(!hls_config.performance_config.batch_scheduler.enabled);
-        assert_eq!(
-            hls_config
-                .performance_config
-                .batch_scheduler
-                .batch_window_ms,
-            99
-        );
-        assert_eq!(
-            hls_config.performance_config.batch_scheduler.max_batch_size,
-            123
-        );
-        assert!(!hls_config.performance_config.zero_copy_enabled);
     }
 }

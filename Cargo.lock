@@ -3552,7 +3552,7 @@ name = "mesio-engine"
 version = "0.4.0"
 dependencies = [
  "aes 0.9.1",
- "async-trait",
+ "axum",
  "bytes",
  "cbc",
  "cipher 0.5.2",
@@ -3561,7 +3561,6 @@ dependencies = [
  "futures",
  "hex",
  "hls",
- "indicatif",
  "m3u8-rs",
  "moka",
  "parking_lot",
@@ -3576,7 +3575,6 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
- "tracing-indicatif",
  "tracing-subscriber",
  "url",
 ]

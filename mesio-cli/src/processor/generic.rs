@@ -80,9 +80,6 @@ where
         })
     };
 
-    // Ensure subsequent async work executes within the writer span
-    let _writer_guard = writer_span.enter();
-
     let mut stream = stream;
     while let Some(item_result) = stream.next().await {
         if input_tx.send(item_result).await.is_err() {
@@ -92,7 +89,6 @@ where
     }
 
     drop(input_tx); // Close the channel to signal completion to the processing task
-    drop(_writer_guard);
 
     let writer_result = writer_task
         .await

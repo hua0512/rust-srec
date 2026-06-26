@@ -2,11 +2,15 @@ use crate::output::pipe_hls_strategy::PipeHlsStrategy;
 use crate::output::provider::OutputFormat;
 use crate::processor::generic::process_pipe_stream;
 use crate::utils::spans;
-use crate::{config::ProgramConfig, error::AppError, utils::create_dirs, utils::expand_name_url};
+use crate::{
+    config::ProgramConfig,
+    error::AppError,
+    utils::{create_dirs, expand_name_url},
+};
 use futures::{StreamExt, stream};
 use hls::HlsData;
 use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
-use mesio_engine::{DownloadError, DownloaderInstance};
+use mesio_engine::{DownloadError, DownloadSession};
 use pipeline_common::CancellationToken;
 use pipeline_common::PipelineError;
 use std::path::Path;
@@ -20,7 +24,7 @@ pub async fn process_hls_stream(
     output_dir: &Path,
     config: &ProgramConfig,
     name_template: &str,
-    downloader: &mut DownloaderInstance,
+    session: DownloadSession<HlsData>,
     token: &CancellationToken,
 ) -> Result<u64, AppError> {
     // Check if we're in pipe output mode
@@ -37,8 +41,6 @@ pub async fn process_hls_stream(
     let start_time = Instant::now();
 
     let base_name = expand_name_url(name_template, url_str)?;
-    downloader.add_source(url_str, 10);
-
     // Create the writer progress span up-front so downloads inherit it
     // Note: Progress bars are disabled in pipe mode via main.rs configuration
     let writer_span = span!(Level::INFO, "writer_processing");
@@ -52,21 +54,28 @@ pub async fn process_hls_stream(
 
     // Only initialize download span visuals if not in pipe mode
     if !is_pipe_mode {
-        spans::init_spinner_span(&download_span, format!("Downloading {}", url_str));
+        spans::init_hls_download_span(&download_span, format!("Downloading {}", url_str));
     }
 
-    // Start the download while the download span is active so child spans attach correctly
-    let mut stream = {
-        let _writer_enter = writer_span.enter();
-        let _download_enter = download_span.enter();
-        match downloader {
-            DownloaderInstance::Hls(hls_manager) => {
-                hls_manager.download_with_sources(url_str).await?
-            }
-            _ => {
-                return Err(AppError::InvalidInput(
-                    "Expected HLS downloader".to_string(),
-                ));
+    let DownloadSession {
+        items: mut stream,
+        events,
+        handle,
+    } = session;
+    let progress_task = if is_pipe_mode {
+        None
+    } else {
+        Some(tokio::spawn(spans::render_download_events(
+            events,
+            download_span.clone(),
+        )))
+    };
+    let cleanup_session = |progress_task: Option<tokio::task::JoinHandle<()>>| {
+        let handle = handle.clone();
+        async move {
+            handle.cancel();
+            if let Some(task) = progress_task {
+                let _ = task.await;
             }
         }
     };
@@ -75,12 +84,14 @@ pub async fn process_hls_stream(
     let first_segment = match stream.next().await {
         Some(Ok(segment)) => segment,
         Some(Err(e)) => {
+            cleanup_session(progress_task).await;
             return Err(AppError::InvalidInput(format!(
                 "Failed to get first HLS segment: {e}"
             )));
         }
         None => {
             info!("HLS stream is empty.");
+            cleanup_session(progress_task).await;
             return Err(AppError::Download(DownloadError::source_exhausted(
                 "HLS stream is empty",
             )));
@@ -92,6 +103,7 @@ pub async fn process_hls_stream(
         HlsData::M4sData(_) => "m4s",
         // should never happen
         HlsData::EndMarker(_) => {
+            cleanup_session(progress_task).await;
             return Err(AppError::InvalidInput(
                 "First segment is EndMarker".to_string(),
             ));
@@ -136,6 +148,8 @@ pub async fn process_hls_stream(
             "HLS pipe output complete"
         );
 
+        handle.cancel();
+        spans::summarize_dropped_events(&handle, &download_span);
         return Ok(pipe_stats.items_written as u64);
     } else {
         let max_file_size = if config.pipeline_config.max_file_size > 0 {
@@ -166,6 +180,11 @@ pub async fn process_hls_stream(
     if !is_pipe_mode {
         download_span.pb_set_finish_message(&format!("Downloaded {}", url_str));
     }
+    handle.cancel();
+    if let Some(task) = progress_task {
+        let _ = task.await;
+    }
+    spans::summarize_dropped_events(&handle, &download_span);
     drop(download_span);
 
     let elapsed = start_time.elapsed();

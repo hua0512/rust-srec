@@ -1,22 +1,51 @@
-use crate::source::ContentSource;
+use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Instant;
+use std::task::{Context, Poll};
 use tracing::warn;
 
-use crate::media_protocol::{Cacheable, MultiSource};
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use hls::HlsData;
 use reqwest::Client;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
 
 use crate::{
-    BoxMediaStream, CacheManager, Download, DownloadError, ProtocolBase, SourceManager,
-    downloader::create_client_pool, hls::HlsDownloaderError,
+    BoxMediaStream, DownloadError, downloader::create_client_pool, hls::HlsDownloaderError,
 };
+use crate::{
+    DownloadEvent, DownloadRequest, DownloadSession, EventSink, MediaEngine, ProtocolSelection,
+    ProtocolType,
+};
+use crate::{DownloadHandle, DownloadTerminal};
 use tokio_util::sync::CancellationToken;
 
-use super::{HlsConfig, HlsStreamCoordinator, HlsStreamEvent, coordinator::AllTaskHandles};
+use super::engine::{self, EngineHandles, Terminal};
+use super::{HlsConfig, HlsStreamEvent};
+
+struct CancelOnDropStream {
+    inner: BoxMediaStream<HlsData, HlsDownloaderError>,
+    token: CancellationToken,
+}
+
+impl CancelOnDropStream {
+    fn new(inner: BoxMediaStream<HlsData, HlsDownloaderError>, token: CancellationToken) -> Self {
+        Self { inner, token }
+    }
+}
+
+impl Stream for CancelOnDropStream {
+    type Item = Result<HlsData, HlsDownloaderError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.inner.as_mut().poll_next(cx)
+    }
+}
+
+impl Drop for CancelOnDropStream {
+    fn drop(&mut self) {
+        self.token.cancel();
+    }
+}
 
 pub struct HlsDownloader {
     clients: Arc<crate::downloader::ClientPool>,
@@ -43,177 +72,159 @@ impl HlsDownloader {
         self.clients.default_client()
     }
 
-    async fn try_download_from_source(
+    pub async fn start_session(
         &self,
-        source: &ContentSource,
-        source_manager: &mut SourceManager,
-        token: CancellationToken,
-    ) -> Result<BoxMediaStream<HlsData, HlsDownloaderError>, DownloadError> {
-        let start_time = Instant::now();
-        match self
-            .perform_download(&source.url, Some(source_manager), None, token)
-            .await
+        request: DownloadRequest,
+    ) -> Result<DownloadSession<HlsData>, DownloadError> {
+        let token = request.cancel.unwrap_or_default();
+        let engine_token = token.child_token();
+        let event_capacity =
+            (self.config.scheduler_config.download_concurrency.max(1) * 64).max(256);
+        let (events, event_stream) = EventSink::channel(event_capacity);
+
+        events.emit(DownloadEvent::Started {
+            protocol: ProtocolType::Hls,
+            url: Arc::from(request.url.as_str()),
+        });
+
+        let mut config = self.config.clone();
+        if let ProtocolSelection::Hls(options) = &request.protocol
+            && let Some(policy) = options.variant_selection_policy.clone()
         {
-            Ok(stream) => {
-                let elapsed = start_time.elapsed();
-                source_manager.record_success(&source.url, elapsed);
-                Ok(stream)
-            }
-            Err(err) => {
-                let elapsed = start_time.elapsed();
-                source_manager.record_failure(&source.url, &err, elapsed);
-                warn!(
-                    url = %source.url,
-                    error = %err,
-                    "Failed to download from source"
-                );
-                Err(err)
-            }
+            config.playlist_config.variant_selection_policy = policy;
         }
-    }
-
-    pub async fn perform_download(
-        &self,
-        url: &str,
-        _source_manager: Option<&mut SourceManager>,
-        cache_manager: Option<Arc<CacheManager>>,
-        token: CancellationToken,
-    ) -> Result<BoxMediaStream<HlsData, HlsDownloaderError>, DownloadError> {
-        let config = Arc::new(self.config.clone());
-
-        // Capture current span for HLS segment downloads to be children
-        let parent_span = tracing::Span::current();
-        let parent_span = if parent_span.is_none() {
-            None
-        } else {
-            Some(parent_span)
-        };
-
-        let (client_event_rx, handles) = HlsStreamCoordinator::setup_and_spawn(
-            url.to_string(),
-            config.clone(),
+        let config = Arc::new(config);
+        let (client_event_rx, handles) = engine::start_with_events(
+            request.url.to_string(),
+            config,
             Arc::clone(&self.clients),
-            cache_manager,
-            token,
-            parent_span,
+            request.cache,
+            engine_token.clone(),
+            Some(events.clone()),
         )
         .await?;
 
-        let stream = ReceiverStream::new(client_event_rx);
+        let stream_events = events.clone();
+        let stream = ReceiverStream::new(client_event_rx).filter_map(move |event| {
+            let events = stream_events.clone();
+            async move {
+                match event {
+                    Ok(event) => match event {
+                        HlsStreamEvent::Data(data) => Some(Ok(*data)),
+                        HlsStreamEvent::DiscontinuityTagEncountered { .. } => Some(Ok(
+                            HlsData::end_marker_with_reason(hls::SplitReason::Discontinuity),
+                        )),
+                        HlsStreamEvent::EndlistEncountered => None,
+                        HlsStreamEvent::StreamEnded => Some(Ok(HlsData::end_marker_with_reason(
+                            hls::SplitReason::EndOfStream,
+                        ))),
+                        HlsStreamEvent::PlaylistRefreshed {
+                            media_sequence_base,
+                            target_duration,
+                        } => {
+                            events.emit(DownloadEvent::PlaylistRefreshed {
+                                media_sequence_base,
+                                target_duration,
+                            });
+                            None
+                        }
+                        HlsStreamEvent::SegmentTimeout {
+                            sequence_number,
+                            waited_duration,
+                        } => {
+                            events.emit(DownloadEvent::SegmentTimeout {
+                                sequence_number,
+                                waited: waited_duration,
+                            });
+                            None
+                        }
+                        HlsStreamEvent::GapSkipped {
+                            from_sequence,
+                            to_sequence,
+                            reason,
+                        } => {
+                            events.emit(DownloadEvent::GapSkipped {
+                                from_sequence,
+                                to_sequence,
+                                reason,
+                            });
+                            None
+                        }
+                    },
+                    Err(e) => Some(Err(e)),
+                }
+            }
+        });
 
-        // Spawn a separate task to await the completion of all pipeline components.
-        // This ensures that graceful shutdown logic is fully executed.
-        tokio::spawn(async move {
-            let AllTaskHandles {
-                playlist_engine_handle,
-                scheduler_handle,
-                output_manager_handle,
+        let metrics = handles.performance_metrics.clone();
+        let lifecycle = tokio::spawn(async move {
+            let EngineHandles {
+                watcher,
+                reactor,
+                assembler,
                 ..
             } = handles;
 
-            // It's important to await all handles to ensure cleanup.
-            if let Some(handle) = playlist_engine_handle
-                && let Err(e) = handle.await
-            {
-                warn!("Playlist engine task finished with error: {:?}", e);
+            if let Err(e) = watcher.await {
+                warn!("Playlist watcher task finished with error: {:?}", e);
             }
-
-            if let Err(e) = scheduler_handle.await {
-                warn!("Scheduler task finished with error: {:?}", e);
-            }
-            if let Err(e) = output_manager_handle.await {
-                warn!("Output manager task finished with error: {:?}", e);
+            let terminal = match reactor.await {
+                Ok(terminal) => {
+                    debug!(?terminal, "Reactor task finished");
+                    terminal.into()
+                }
+                Err(e) => {
+                    warn!("Reactor task finished with error: {:?}", e);
+                    DownloadTerminal::PipelineError(Arc::from(format!("reactor task failed: {e}")))
+                }
+            };
+            if let Err(e) = assembler.await {
+                warn!("Assembler task finished with error: {:?}", e);
             }
 
             debug!("HLS pipeline tasks finished.");
+            terminal
         });
 
-        // map receiver stream to BoxMediaStream
-        let stream = stream.filter_map(|event| async move {
-            match event {
-                Ok(event) => match event {
-                    HlsStreamEvent::Data(data) => Some(Ok(*data)),
-                    HlsStreamEvent::DiscontinuityTagEncountered { .. } => {
-                        debug!("Discontinuity tag encountered");
-                        Some(Ok(HlsData::end_marker_with_reason(
-                            hls::SplitReason::Discontinuity,
-                        )))
-                    }
-                    HlsStreamEvent::EndlistEncountered => {
-                        debug!("ENDLIST encountered, emitting EndOfStream marker");
-                        Some(Ok(HlsData::end_marker_with_reason(
-                            hls::SplitReason::EndOfStream,
-                        )))
-                    }
-                    _ => None,
-                },
-                Err(e) => Some(Err(e)),
-            }
-        });
+        let stream: BoxMediaStream<HlsData, DownloadError> = Box::pin(CancelOnDropStream::new(
+            stream.boxed(),
+            engine_token.clone(),
+        ));
 
-        // Box the stream and return
-        Ok(stream.boxed())
+        Ok(DownloadSession {
+            items: stream,
+            events: event_stream,
+            handle: DownloadHandle::new(
+                engine_token,
+                metrics,
+                events.dropped_counter(),
+                Some(lifecycle),
+            ),
+        })
     }
 }
 
-impl ProtocolBase for HlsDownloader {
-    type Config = HlsConfig;
-
-    fn new(config: Self::Config) -> Result<Self, DownloadError> {
-        Self::with_config(config)
-    }
-}
-
-impl Download for HlsDownloader {
-    type Data = HlsData;
-    type Error = HlsDownloaderError;
-    type Stream = BoxMediaStream<Self::Data, Self::Error>;
-
-    async fn download(
-        &self,
-        url: &str,
-        token: CancellationToken,
-    ) -> Result<Self::Stream, DownloadError> {
-        self.perform_download(url, None, None, token).await
-    }
-}
-
-impl MultiSource for HlsDownloader {
-    async fn download_with_sources(
-        &self,
-        url: &str,
-        source_manager: &mut SourceManager,
-        token: CancellationToken,
-    ) -> Result<Self::Stream, DownloadError> {
-        if !source_manager.has_sources() {
-            source_manager.add_url(url, 0);
+impl From<Terminal> for DownloadTerminal {
+    fn from(value: Terminal) -> Self {
+        match value {
+            Terminal::AuthoritativeEnd => Self::AuthoritativeEnd,
+            Terminal::Cancelled => Self::Cancelled,
+            Terminal::DownstreamClosed => Self::DownstreamClosed,
+            Terminal::PipelineError(reason) => Self::PipelineError(reason),
         }
-
-        let mut last_error: Option<DownloadError> = None;
-
-        while let Some(content_source) = source_manager.select_source() {
-            match self
-                .try_download_from_source(&content_source, source_manager, token.clone())
-                .await
-            {
-                Ok(stream) => return Ok(stream),
-                Err(err) => {
-                    last_error = Some(err);
-                }
-            }
-        }
-        Err(last_error.unwrap_or_else(|| DownloadError::source_exhausted("No source available")))
     }
 }
 
-impl Cacheable for HlsDownloader {
-    async fn download_with_cache(
+impl MediaEngine for HlsDownloader {
+    type Item = HlsData;
+
+    async fn start(
         &self,
-        url: &str,
-        cache_manager: Arc<CacheManager>,
-        token: CancellationToken,
-    ) -> Result<Self::Stream, DownloadError> {
-        self.perform_download(url, None, Some(cache_manager), token)
-            .await
+        mut request: DownloadRequest,
+    ) -> Result<DownloadSession<Self::Item>, DownloadError> {
+        if matches!(request.protocol, ProtocolSelection::Auto) {
+            request.protocol = ProtocolSelection::Hls(Default::default());
+        }
+        self.start_session(request).await
     }
 }
