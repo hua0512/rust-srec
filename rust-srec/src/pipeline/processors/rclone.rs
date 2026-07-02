@@ -540,17 +540,7 @@ impl RcloneProcessor {
             String::new()
         };
 
-        let reference = match config.time_anchor {
-            TimeAnchor::JobCreated => input.created_at,
-            TimeAnchor::SessionStart => input.session_start.unwrap_or_else(|| {
-                tracing::debug!(
-                    session_id = %input.session_id,
-                    "time_anchor=session_start but job has no session start; falling back to created_at"
-                );
-                input.created_at
-            }),
-        };
-        let reference_timestamp_ms = reference.timestamp_millis();
+        let reference_timestamp_ms = config.time_anchor.reference_time(input).timestamp_millis();
 
         // Debug: Log all placeholder-related values before expansion
         tracing::debug!(
@@ -704,22 +694,8 @@ impl Processor for RcloneProcessor {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_utils::utc_datetime;
     use super::*;
-
-    fn utc_datetime(
-        year: i32,
-        month: u32,
-        day: u32,
-        hour: u32,
-        minute: u32,
-        second: u32,
-    ) -> chrono::DateTime<chrono::Utc> {
-        use chrono::TimeZone;
-
-        chrono::Utc
-            .with_ymd_and_hms(year, month, day, hour, minute, second)
-            .unwrap()
-    }
 
     fn expected_local_destination(dt: chrono::DateTime<chrono::Utc>) -> String {
         format!(

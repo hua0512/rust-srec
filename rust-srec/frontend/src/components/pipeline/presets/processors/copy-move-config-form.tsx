@@ -24,16 +24,11 @@ import { Copy, Settings2, Terminal } from 'lucide-react';
 import { ListInput } from '@/components/ui/list-input';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import { PLACEHOLDER_TOKENS } from '../../constants';
 
 type CopyMoveConfig = z.infer<typeof CopyMoveConfigSchema>;
 
 const EXECUTION_TIME_ANCHOR = 'execution_time';
-
-// Kept out of the <Trans> message as a bound value: literal `{...}` tokens
-// inlined into a lingui message become unbound ICU placeholders and render
-// as empty strings.
-const PLACEHOLDER_TOKENS =
-  '{platform}, {streamer}, {title}, {streamer_id}, {session_id}';
 
 export function CopyMoveConfigForm({
   control,

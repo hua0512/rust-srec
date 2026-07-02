@@ -16,6 +16,7 @@ use crate::database::models::{
     DagStepStatus, JobDbModel, PipelineStep, ReadyStep,
 };
 use crate::database::repositories::{DagRepository, JobRepository};
+use crate::pipeline::job_queue::{JobStateMeta, job_state_json, parse_job_state};
 use crate::pipeline::{Job, JobQueue, JobStatus};
 use crate::{Error, Result};
 
@@ -572,14 +573,37 @@ impl DagScheduler {
             session_id.clone(),
         );
         job_db.config = config;
-        job_db.state = serde_json::json!({
-            "streamer_name": streamer_name.clone(),
-            "session_title": session_title.clone(),
-            "platform": platform.clone(),
-            "session_start_ms": session_start.as_ref().map(|dt| dt.timestamp_millis()),
-        })
-        .to_string();
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());
+
+        // Build the in-memory Job before persisting so job_state_json is the
+        // single source of the state shape (its inverse parse_job_state is
+        // what db_model_to_job and recover_placeholder_metadata read back).
+        let job = Job {
+            id: job_db.id.clone(),
+            job_type: processor,
+            inputs,
+            outputs: Vec::new(),
+            priority: 0,
+            status: JobStatus::Pending,
+            streamer_id: job_db.streamer_id.clone().unwrap_or_default(),
+            session_id: job_db.session_id.clone().unwrap_or_default(),
+            streamer_name,
+            session_title,
+            platform,
+            session_start,
+            config: Some(job_db.config.clone()),
+            created_at: chrono::Utc::now(),
+            started_at: None,
+            completed_at: None,
+            error: None,
+            retry_count: 0,
+            pipeline_id: Some(dag_id.to_string()),
+            execution_info: None,
+            duration_secs: None,
+            queue_wait_secs: None,
+            dag_step_execution_id: Some(step_execution_id.to_string()),
+        };
+        job_db.state = job_state_json(&job);
 
         let job_id = job_db.id.clone();
 
@@ -606,33 +630,6 @@ impl DagScheduler {
             }
             return Err(e);
         }
-
-        // Create in-memory Job and enqueue
-        let job = Job {
-            id: job_db.id.clone(),
-            job_type: processor,
-            inputs,
-            outputs: Vec::new(),
-            priority: 0,
-            status: JobStatus::Pending,
-            streamer_id: job_db.streamer_id.clone().unwrap_or_default(),
-            session_id: job_db.session_id.clone().unwrap_or_default(),
-            streamer_name,
-            session_title,
-            platform,
-            session_start,
-            config: Some(job_db.config.clone()),
-            created_at: chrono::Utc::now(),
-            started_at: None,
-            completed_at: None,
-            error: None,
-            retry_count: 0,
-            pipeline_id: Some(dag_id.to_string()),
-            execution_info: None,
-            duration_secs: None,
-            queue_wait_secs: None,
-            dag_step_execution_id: Some(step_execution_id.to_string()),
-        };
 
         // Add to job queue cache and notify workers
         self.job_queue.enqueue_existing(job).await?;
@@ -749,8 +746,12 @@ impl DagScheduler {
         // JSON. Relying on the dequeue-time backfill
         // (JobQueue::resolve_job_metadata) instead would lose session_start
         // whenever the live_sessions row was deleted before the retry.
-        let (streamer_name, session_title, platform, session_start) =
-            self.recover_placeholder_metadata(&steps).await;
+        let JobStateMeta {
+            streamer_name,
+            session_title,
+            platform,
+            session_start,
+        } = self.recover_placeholder_metadata(&steps).await;
 
         let mut status_by_step_id = HashMap::<String, String>::with_capacity(steps.len());
         let mut outputs_by_step_id = HashMap::<String, Vec<String>>::with_capacity(steps.len());
@@ -829,19 +830,13 @@ impl DagScheduler {
     }
 
     /// Recover the placeholder metadata persisted by [`Self::create_step_job`]
-    /// (`streamer_name`, `session_title`, `platform`, `session_start_ms` in the
-    /// job `state` JSON) from the first sibling step that has a job row with
-    /// any of those values set. Returns all-`None` when no step has a job yet
-    /// or none carries metadata.
+    /// in the job `state` JSON from the first sibling step that has a job row
+    /// with any of those values set. Returns all-`None` when no step has a
+    /// job yet or none carries metadata.
     async fn recover_placeholder_metadata(
         &self,
         steps: &[DagStepExecutionDbModel],
-    ) -> (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<DateTime<Utc>>,
-    ) {
+    ) -> JobStateMeta {
         for step in steps {
             let Some(job_id) = step.job_id.as_deref() else {
                 continue;
@@ -849,38 +844,16 @@ impl DagScheduler {
             let Ok(job) = self.job_repository.get_job(job_id).await else {
                 continue;
             };
-            let Ok(state) = serde_json::from_str::<serde_json::Value>(&job.state) else {
-                continue;
-            };
-            let Some(obj) = state.as_object() else {
-                continue;
-            };
-
-            let get_str = |key: &str| {
-                obj.get(key)
-                    .and_then(|v| v.as_str())
-                    .map(ToString::to_string)
-            };
-            let streamer_name = get_str("streamer_name");
-            let session_title = get_str("session_title");
-            let platform = get_str("platform");
-            let session_start = obj
-                .get("session_start_ms")
-                .and_then(|v| v.as_i64())
-                .map(crate::database::time::ms_to_datetime);
 
             // A sibling created before this feature (or by an earlier retry)
             // may carry an all-null state; keep scanning for one with values.
-            if streamer_name.is_some()
-                || session_title.is_some()
-                || platform.is_some()
-                || session_start.is_some()
-            {
-                return (streamer_name, session_title, platform, session_start);
+            let meta = parse_job_state(&job.state);
+            if meta.has_any() {
+                return meta;
             }
         }
 
-        (None, None, None, None)
+        JobStateMeta::default()
     }
 
     /// List DAG executions with optional status and session_id filters.

@@ -11,6 +11,8 @@ mod metadata;
 mod rclone;
 mod remux;
 mod tdl;
+#[cfg(test)]
+mod test_utils;
 mod thumbnail;
 mod traits;
 pub mod utils;

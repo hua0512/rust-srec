@@ -31,6 +31,26 @@ pub enum TimeAnchor {
     SessionStart,
 }
 
+impl TimeAnchor {
+    /// Resolve the timestamp this anchor selects from `input`.
+    ///
+    /// `SessionStart` falls back to `input.created_at` when the job carries
+    /// no session start (empty/synthetic `session_id`, or the session row
+    /// was gone when the job's metadata was resolved).
+    pub fn reference_time(self, input: &ProcessorInput) -> DateTime<Utc> {
+        match self {
+            TimeAnchor::JobCreated => input.created_at,
+            TimeAnchor::SessionStart => input.session_start.unwrap_or_else(|| {
+                tracing::debug!(
+                    session_id = %input.session_id,
+                    "time_anchor=session_start but job has no session start; falling back to created_at"
+                );
+                input.created_at
+            }),
+        }
+    }
+}
+
 /// Input for a processor.
 #[derive(Debug, Clone)]
 pub struct ProcessorInput {

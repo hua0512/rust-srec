@@ -44,14 +44,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { PLACEHOLDER_TOKENS } from '../../constants';
 
 type RcloneConfig = z.infer<typeof RcloneConfigSchema>;
-
-// Kept out of the <Trans> message as a bound value: literal `{...}` tokens
-// inlined into a lingui message become unbound ICU placeholders and render
-// as empty strings.
-const PLACEHOLDER_TOKENS =
-  '{platform}, {streamer}, {title}, {streamer_id}, {session_id}';
 
 /**
  * A small "?" icon next to a form label that reveals richer guidance

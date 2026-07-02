@@ -2166,13 +2166,32 @@ pub struct JobStats {
     pub avg_processing_time_secs: Option<f64>,
 }
 
+/// Placeholder metadata carried in the job `state` JSON column.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct JobStateMeta {
+    pub(crate) streamer_name: Option<String>,
+    pub(crate) session_title: Option<String>,
+    pub(crate) platform: Option<String>,
+    pub(crate) session_start: Option<DateTime<Utc>>,
+}
+
+impl JobStateMeta {
+    /// True when at least one field carries a value.
+    pub(crate) fn has_any(&self) -> bool {
+        self.streamer_name.is_some()
+            || self.session_title.is_some()
+            || self.platform.is_some()
+            || self.session_start.is_some()
+    }
+}
+
 /// Serialize a job's placeholder metadata into the `state` column JSON.
 ///
-/// Single source of the state shape: used by [`job_to_db_model`] at persist
-/// time and by [`JobQueue::resolve_job_metadata`] when writing back-filled
-/// values, and parsed by [`db_model_to_job`] and
-/// `DagScheduler::recover_placeholder_metadata`.
-fn job_state_json(job: &Job) -> String {
+/// Single source of the state shape, together with its inverse
+/// [`parse_job_state`]: used by [`job_to_db_model`] at persist time, by
+/// [`JobQueue::resolve_job_metadata`] when writing back-filled values, and
+/// by `DagScheduler::create_step_job`.
+pub(crate) fn job_state_json(job: &Job) -> String {
     if job.streamer_name.is_some()
         || job.session_title.is_some()
         || job.platform.is_some()
@@ -2187,6 +2206,36 @@ fn job_state_json(job: &Job) -> String {
         .to_string()
     } else {
         "{}".to_string()
+    }
+}
+
+/// Parse the placeholder metadata out of a job `state` JSON string.
+///
+/// Inverse of [`job_state_json`]; malformed JSON or missing keys yield
+/// all-`None`. Used by [`db_model_to_job`] and
+/// `DagScheduler::recover_placeholder_metadata`.
+pub(crate) fn parse_job_state(state: &str) -> JobStateMeta {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(state) else {
+        return JobStateMeta::default();
+    };
+    let Some(obj) = value.as_object() else {
+        return JobStateMeta::default();
+    };
+
+    let get_str = |key: &str| {
+        obj.get(key)
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string)
+    };
+
+    JobStateMeta {
+        streamer_name: get_str("streamer_name"),
+        session_title: get_str("session_title"),
+        platform: get_str("platform"),
+        session_start: obj
+            .get("session_start_ms")
+            .and_then(|v| v.as_i64())
+            .map(crate::database::time::ms_to_datetime),
     }
 }
 
@@ -2289,30 +2338,12 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         vec![output_str]
     };
 
-    let mut streamer_name = None;
-    let mut session_title = None;
-    let mut platform = None;
-    let mut session_start = None;
-    if let Ok(state) = serde_json::from_str::<serde_json::Value>(&db_job.state)
-        && let Some(obj) = state.as_object()
-    {
-        streamer_name = obj
-            .get("streamer_name")
-            .and_then(|v| v.as_str())
-            .map(ToString::to_string);
-        session_title = obj
-            .get("session_title")
-            .and_then(|v| v.as_str())
-            .map(ToString::to_string);
-        platform = obj
-            .get("platform")
-            .and_then(|v| v.as_str())
-            .map(ToString::to_string);
-        session_start = obj
-            .get("session_start_ms")
-            .and_then(|v| v.as_i64())
-            .map(crate::database::time::ms_to_datetime);
-    }
+    let JobStateMeta {
+        streamer_name,
+        session_title,
+        platform,
+        session_start,
+    } = parse_job_state(&db_job.state);
 
     Job {
         id: db_job.id.clone(),

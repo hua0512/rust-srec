@@ -196,23 +196,10 @@ impl Processor for CopyMoveProcessor {
             )
         })?;
 
-        // Expand placeholders in destination path.
-        let reference_timestamp_ms = match config.time_anchor {
-            None => None,
-            Some(TimeAnchor::JobCreated) => Some(input.created_at.timestamp_millis()),
-            Some(TimeAnchor::SessionStart) => {
-                let reference = input.session_start.as_ref().unwrap_or_else(|| {
-                    tracing::debug!(
-                        session_id = %input.session_id,
-                        "time_anchor=session_start but job has no session start; falling back to created_at"
-                    );
-                    &input.created_at
-                });
-                Some(reference.timestamp_millis())
-            }
-        };
-
-        let dest_dir = if config.time_anchor.is_some() {
+        // Expand placeholders in destination path. `time_anchor: None`
+        // preserves the historical expand_placeholders behavior (current
+        // local time at execution).
+        let dest_dir = if let Some(anchor) = config.time_anchor {
             expand_placeholders_at(
                 dest_template,
                 &input.streamer_id,
@@ -220,7 +207,7 @@ impl Processor for CopyMoveProcessor {
                 input.streamer_name.as_deref(),
                 input.session_title.as_deref(),
                 input.platform.as_deref(),
-                reference_timestamp_ms,
+                Some(anchor.reference_time(input).timestamp_millis()),
             )
         } else {
             expand_placeholders(
@@ -616,23 +603,9 @@ impl Processor for CopyMoveProcessor {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_utils::utc_datetime;
     use super::*;
     use tempfile::TempDir;
-
-    fn utc_datetime(
-        year: i32,
-        month: u32,
-        day: u32,
-        hour: u32,
-        minute: u32,
-        second: u32,
-    ) -> chrono::DateTime<chrono::Utc> {
-        use chrono::TimeZone;
-
-        chrono::Utc
-            .with_ymd_and_hms(year, month, day, hour, minute, second)
-            .unwrap()
-    }
 
     #[test]
     fn test_copy_move_processor_type() {
