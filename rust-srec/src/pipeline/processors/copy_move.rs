@@ -834,9 +834,10 @@ mod tests {
             ))
             .join("source.txt");
         assert!(expected_dest.exists());
+        assert_eq!(output.outputs.len(), 1);
         assert_eq!(
-            output.outputs,
-            vec![expected_dest.to_string_lossy().to_string()]
+            fs::canonicalize(&output.outputs[0]).await.unwrap(),
+            fs::canonicalize(expected_dest).await.unwrap()
         );
     }
 
