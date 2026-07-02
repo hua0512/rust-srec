@@ -1,4 +1,5 @@
 use super::*;
+use chrono::{DateTime, Utc};
 
 impl<CR, SR> PipelineManager<CR, SR>
 where
@@ -633,22 +634,30 @@ where
         }
     }
 
-    /// Look up the session title from the repository.
-    /// Returns the most recent title from the titles JSON array.
-    pub(super) async fn lookup_session_title(&self, session_id: &str) -> Option<String> {
-        let repo = self.session_repo.as_ref()?;
+    /// Look up session metadata from the repository.
+    /// Returns the most recent title from the titles JSON array and the session start time.
+    pub(super) async fn lookup_session_meta(
+        &self,
+        session_id: &str,
+    ) -> (Option<String>, Option<DateTime<Utc>>) {
+        let Some(repo) = self.session_repo.as_ref() else {
+            return (None, None);
+        };
 
         match repo.get_session(session_id).await {
             Ok(session) => {
+                let session_start = Some(crate::database::time::ms_to_datetime(session.start_time));
                 // Parse the titles JSON array and get the most recent title
-                if let Some(titles_json) = session.titles
+                let title = if let Some(titles_json) = session.titles
                     && let Ok(entries) = serde_json::from_str::<Vec<TitleEntry>>(&titles_json)
                 {
                     // Return the last (most recent) title
-                    return entries.last().map(|e| e.title.clone());
-                }
+                    entries.last().map(|e| e.title.clone())
+                } else {
+                    None
+                };
 
-                None
+                (title, session_start)
             }
             Err(e) => {
                 debug!(
@@ -656,7 +665,7 @@ where
                     error = %e,
                     "Failed to look up session title"
                 );
-                None
+                (None, None)
             }
         }
     }
@@ -853,7 +862,7 @@ where
 
         // Look up metadata for placeholder support
         let streamer_name = self.lookup_streamer_name(streamer_id).await;
-        let session_title = self.lookup_session_title(session_id).await;
+        let (session_title, session_start) = self.lookup_session_meta(session_id).await;
         let platform = self.lookup_platform_name(streamer_id).await;
 
         // Delegate to DAG scheduler
@@ -866,6 +875,7 @@ where
                 streamer_name.clone(),
                 session_title.clone(),
                 platform.clone(),
+                session_start,
                 metadata,
                 before_root_jobs,
             )

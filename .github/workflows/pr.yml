@@ -148,6 +148,8 @@ jobs:
         run: pnpm run fmt:check
       - name: Run lint
         run: pnpm run lint
+      - name: Run tests
+        run: pnpm run test
       - name: Run build
         run: pnpm run build
 

@@ -6,6 +6,7 @@
 //! - Implementing fail-fast behavior on job failure
 //! - Tracking DAG execution progress
 
+use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -15,6 +16,7 @@ use crate::database::models::{
     DagStepStatus, JobDbModel, PipelineStep, ReadyStep,
 };
 use crate::database::repositories::{DagRepository, JobRepository};
+use crate::pipeline::job_queue::{JobStateMeta, job_state_json, parse_job_state};
 use crate::pipeline::{Job, JobQueue, JobStatus};
 use crate::{Error, Result};
 
@@ -152,6 +154,7 @@ impl DagScheduler {
         streamer_name: Option<String>,
         session_title: Option<String>,
         platform: Option<String>,
+        session_start: Option<DateTime<Utc>>,
     ) -> Result<DagCreationResult> {
         self.create_dag_pipeline_with_hook(
             dag_definition,
@@ -161,6 +164,7 @@ impl DagScheduler {
             streamer_name,
             session_title,
             platform,
+            session_start,
             None,
             None,
         )
@@ -179,6 +183,7 @@ impl DagScheduler {
         streamer_name: Option<String>,
         session_title: Option<String>,
         platform: Option<String>,
+        session_start: Option<DateTime<Utc>>,
         metadata: Option<DagExecutionMetadata>,
         before_root_jobs: Option<BeforeRootJobsHook>,
     ) -> Result<DagCreationResult> {
@@ -238,6 +243,7 @@ impl DagScheduler {
                     streamer_name.clone(),
                     session_title.clone(),
                     platform.clone(),
+                    session_start,
                 )
                 .await?;
 
@@ -313,6 +319,7 @@ impl DagScheduler {
         streamer_name: Option<&str>,
         session_title: Option<&str>,
         platform: Option<&str>,
+        session_start: Option<DateTime<Utc>>,
     ) -> Result<DagJobCompletedUpdate> {
         let streamer_name = streamer_name.map(ToString::to_string);
         let session_title = session_title.map(ToString::to_string);
@@ -376,6 +383,7 @@ impl DagScheduler {
                         streamer_name.clone(),
                         session_title.clone(),
                         platform.clone(),
+                        session_start,
                     )
                     .await
                 {
@@ -535,6 +543,7 @@ impl DagScheduler {
         streamer_name: Option<String>,
         session_title: Option<String>,
         platform: Option<String>,
+        session_start: Option<DateTime<Utc>>,
     ) -> Result<String> {
         // Get processor and config from the step
         let (processor, config) = match &dag_step.step {
@@ -564,13 +573,37 @@ impl DagScheduler {
             session_id.clone(),
         );
         job_db.config = config;
-        job_db.state = serde_json::json!({
-            "streamer_name": streamer_name.clone(),
-            "session_title": session_title.clone(),
-            "platform": platform.clone(),
-        })
-        .to_string();
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());
+
+        // Build the in-memory Job before persisting so job_state_json is the
+        // single source of the state shape (its inverse parse_job_state is
+        // what db_model_to_job and recover_placeholder_metadata read back).
+        let job = Job {
+            id: job_db.id.clone(),
+            job_type: processor,
+            inputs,
+            outputs: Vec::new(),
+            priority: 0,
+            status: JobStatus::Pending,
+            streamer_id: job_db.streamer_id.clone().unwrap_or_default(),
+            session_id: job_db.session_id.clone().unwrap_or_default(),
+            streamer_name,
+            session_title,
+            platform,
+            session_start,
+            config: Some(job_db.config.clone()),
+            created_at: chrono::Utc::now(),
+            started_at: None,
+            completed_at: None,
+            error: None,
+            retry_count: 0,
+            pipeline_id: Some(dag_id.to_string()),
+            execution_info: None,
+            duration_secs: None,
+            queue_wait_secs: None,
+            dag_step_execution_id: Some(step_execution_id.to_string()),
+        };
+        job_db.state = job_state_json(&job);
 
         let job_id = job_db.id.clone();
 
@@ -597,32 +630,6 @@ impl DagScheduler {
             }
             return Err(e);
         }
-
-        // Create in-memory Job and enqueue
-        let job = Job {
-            id: job_db.id.clone(),
-            job_type: processor,
-            inputs,
-            outputs: Vec::new(),
-            priority: 0,
-            status: JobStatus::Pending,
-            streamer_id: job_db.streamer_id.clone().unwrap_or_default(),
-            session_id: job_db.session_id.clone().unwrap_or_default(),
-            streamer_name,
-            session_title,
-            platform,
-            config: Some(job_db.config.clone()),
-            created_at: chrono::Utc::now(),
-            started_at: None,
-            completed_at: None,
-            error: None,
-            retry_count: 0,
-            pipeline_id: Some(dag_id.to_string()),
-            execution_info: None,
-            duration_secs: None,
-            queue_wait_secs: None,
-            dag_step_execution_id: Some(step_execution_id.to_string()),
-        };
 
         // Add to job queue cache and notify workers
         self.job_queue.enqueue_existing(job).await?;
@@ -720,28 +727,31 @@ impl DagScheduler {
         // Some cancelled steps may already have all dependencies completed (e.g. a parallel
         // branch when fail-fast triggers). Since no new completion events will occur for those
         // dependencies, proactively enqueue any now-ready steps.
-        self.enqueue_now_ready_steps(dag_id, None, None, None)
-            .await?;
+        self.enqueue_now_ready_steps(dag_id).await?;
 
         Ok(())
     }
 
-    async fn enqueue_now_ready_steps(
-        &self,
-        dag_id: &str,
-        streamer_name: Option<&str>,
-        session_title: Option<&str>,
-        platform: Option<&str>,
-    ) -> Result<Vec<String>> {
-        let streamer_name = streamer_name.map(ToString::to_string);
-        let session_title = session_title.map(ToString::to_string);
-        let platform = platform.map(ToString::to_string);
-
+    async fn enqueue_now_ready_steps(&self, dag_id: &str) -> Result<Vec<String>> {
         let dag = self.dag_repository.get_dag(dag_id).await?;
         let dag_def = dag
             .get_dag_definition()
             .ok_or_else(|| Error::Validation("Failed to parse DAG definition".into()))?;
         let steps = self.dag_repository.get_steps_by_dag(dag_id).await?;
+
+        // The retry entry point (reset_dag_for_retry) only knows the dag_id,
+        // so the placeholder metadata for jobs created here is recovered from
+        // a sibling step's job row: create_step_job persisted streamer_name /
+        // session_title / platform / session_start_ms in every job's state
+        // JSON. Relying on the dequeue-time backfill
+        // (JobQueue::resolve_job_metadata) instead would lose session_start
+        // whenever the live_sessions row was deleted before the retry.
+        let JobStateMeta {
+            streamer_name,
+            session_title,
+            platform,
+            session_start,
+        } = self.recover_placeholder_metadata(&steps).await;
 
         let mut status_by_step_id = HashMap::<String, String>::with_capacity(steps.len());
         let mut outputs_by_step_id = HashMap::<String, Vec<String>>::with_capacity(steps.len());
@@ -810,12 +820,40 @@ impl DagScheduler {
                     streamer_name.clone(),
                     session_title.clone(),
                     platform.clone(),
+                    session_start,
                 )
                 .await?;
             new_job_ids.push(job_id);
         }
 
         Ok(new_job_ids)
+    }
+
+    /// Recover the placeholder metadata persisted by [`Self::create_step_job`]
+    /// in the job `state` JSON from the first sibling step that has a job row
+    /// with any of those values set. Returns all-`None` when no step has a
+    /// job yet or none carries metadata.
+    async fn recover_placeholder_metadata(
+        &self,
+        steps: &[DagStepExecutionDbModel],
+    ) -> JobStateMeta {
+        for step in steps {
+            let Some(job_id) = step.job_id.as_deref() else {
+                continue;
+            };
+            let Ok(job) = self.job_repository.get_job(job_id).await else {
+                continue;
+            };
+
+            // A sibling created before this feature (or by an earlier retry)
+            // may carry an all-null state; keep scanning for one with values.
+            let meta = parse_job_state(&job.state);
+            if meta.has_any() {
+                return meta;
+            }
+        }
+
+        JobStateMeta::default()
     }
 
     /// List DAG executions with optional status and session_id filters.
@@ -1104,6 +1142,163 @@ mod tests {
 
         let out = DagScheduler::collect_leaf_outputs_from_step_executions(&def, &step_execs);
         assert_eq!(out, vec!["x".to_string(), "y".to_string(), "z".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_dag_jobs_persist_session_start() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool,
+        ));
+        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo, job_repo.clone());
+        let session_start = chrono::DateTime::parse_from_rfc3339("2024-01-01T23:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let dag_def = DagPipelineDefinition::new(
+            "session start propagation",
+            vec![
+                DagStep {
+                    id: "A".to_string(),
+                    step: PipelineStep::inline("noop", serde_json::json!({})),
+                    depends_on: vec![],
+                },
+                DagStep {
+                    id: "B".to_string(),
+                    step: PipelineStep::inline("noop", serde_json::json!({})),
+                    depends_on: vec!["A".to_string()],
+                },
+            ],
+        );
+
+        let created = scheduler
+            .create_dag_pipeline(
+                dag_def,
+                &["/input.flv".to_string()],
+                Some("streamer-1".to_string()),
+                Some("session-1".to_string()),
+                Some("Streamer".to_string()),
+                Some("Title".to_string()),
+                Some("Platform".to_string()),
+                Some(session_start),
+            )
+            .await
+            .unwrap();
+
+        let root_job = job_repo.get_job(&created.root_job_ids[0]).await.unwrap();
+        let root_state: serde_json::Value = serde_json::from_str(&root_job.state).unwrap();
+        assert_eq!(
+            root_state
+                .get("session_start_ms")
+                .and_then(|value| value.as_i64()),
+            Some(session_start.timestamp_millis())
+        );
+
+        let update = scheduler
+            .on_job_completed(
+                root_job.dag_step_execution_id.as_deref().unwrap(),
+                &["/tmp/a.mp4".to_string()],
+                Some("Streamer"),
+                Some("Title"),
+                Some("Platform"),
+                Some(session_start),
+            )
+            .await
+            .unwrap();
+        assert_eq!(update.new_job_ids.len(), 1);
+
+        let downstream_job = job_repo.get_job(&update.new_job_ids[0]).await.unwrap();
+        let downstream_state: serde_json::Value =
+            serde_json::from_str(&downstream_job.state).unwrap();
+        assert_eq!(
+            downstream_state
+                .get("session_start_ms")
+                .and_then(|value| value.as_i64()),
+            Some(session_start.timestamp_millis())
+        );
+    }
+
+    /// The retry fan-out path (reset_dag_for_retry -> enqueue_now_ready_steps)
+    /// has no session context of its own; jobs it creates must recover the
+    /// placeholder metadata from a sibling step's persisted job state.
+    #[tokio::test]
+    async fn test_retry_fanout_recovers_metadata_from_sibling_job() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo, job_repo.clone());
+        let session_start = chrono::DateTime::parse_from_rfc3339("2024-01-01T23:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let dag_def = DagPipelineDefinition::new(
+            "retry fanout metadata recovery",
+            vec![
+                DagStep {
+                    id: "A".to_string(),
+                    step: PipelineStep::inline("noop", serde_json::json!({})),
+                    depends_on: vec![],
+                },
+                DagStep {
+                    id: "B".to_string(),
+                    step: PipelineStep::inline("noop", serde_json::json!({})),
+                    depends_on: vec!["A".to_string()],
+                },
+            ],
+        );
+
+        let created = scheduler
+            .create_dag_pipeline(
+                dag_def,
+                &["/input.flv".to_string()],
+                Some("streamer-1".to_string()),
+                Some("session-1".to_string()),
+                Some("Streamer".to_string()),
+                Some("Title".to_string()),
+                Some("Platform".to_string()),
+                Some(session_start),
+            )
+            .await
+            .unwrap();
+
+        // Put the DAG in the shape reset_dag_for_retry produces for a
+        // fail-fast cancelled parallel branch: dependency completed with
+        // outputs, dependent step BLOCKED with no job row attached.
+        let steps = scheduler.get_dag_steps(&created.dag_id).await.unwrap();
+        let step_a = steps.iter().find(|s| s.step_id == "A").unwrap();
+        sqlx::query("UPDATE dag_step_execution SET status = ?, outputs = ? WHERE id = ?")
+            .bind(DagStepStatus::Completed.as_str())
+            .bind(r#"["/tmp/a.mp4"]"#)
+            .bind(&step_a.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let new_job_ids = scheduler
+            .enqueue_now_ready_steps(&created.dag_id)
+            .await
+            .unwrap();
+        assert_eq!(new_job_ids.len(), 1);
+
+        let recovered_job = job_repo.get_job(&new_job_ids[0]).await.unwrap();
+        let state: serde_json::Value = serde_json::from_str(&recovered_job.state).unwrap();
+        assert_eq!(
+            state.get("session_start_ms").and_then(|v| v.as_i64()),
+            Some(session_start.timestamp_millis())
+        );
+        assert_eq!(
+            state.get("streamer_name").and_then(|v| v.as_str()),
+            Some("Streamer")
+        );
     }
 
     #[tokio::test]

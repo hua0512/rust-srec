@@ -7,7 +7,9 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tracing::{error, info, warn};
 
-use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
+use super::traits::{
+    Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
+};
 use crate::Result;
 use crate::utils::filename::expand_placeholders_at;
 
@@ -42,6 +44,9 @@ pub struct RcloneConfig {
 
     /// Transfer operation. Defaults to [`RcloneOperation::Copy`].
     pub operation: RcloneOperation,
+
+    /// Timestamp source for time placeholder expansion.
+    pub time_anchor: TimeAnchor,
 
     /// Free-form extra CLI arguments appended verbatim after the
     /// throughput flags. Provided as a power-user escape hatch; prefer
@@ -523,7 +528,8 @@ impl RcloneProcessor {
     /// Determine remote destination path with placeholder expansion.
     /// Supports: {streamer}, {title}, {streamer_id}, {session_id}, and time placeholders (%Y, %m, %d, etc.)
     ///
-    /// Time placeholders use `input.created_at` to ensure consistency across retries.
+    /// Time placeholders use the configured [`TimeAnchor`]. `job_created` preserves
+    /// retry consistency, while `session_start` groups a live session under its start date.
     fn determine_remote_destination(input: &ProcessorInput, config: &RcloneConfig) -> String {
         // For batch mode, we need a destination root (directory), not a specific file path
         let remote_destination_raw = if let Some(out) = input.outputs.first() {
@@ -534,9 +540,7 @@ impl RcloneProcessor {
             String::new()
         };
 
-        // Use job's created_at timestamp for time placeholder expansion.
-        // This ensures retries use the same timestamp as the original job.
-        let reference_timestamp_ms = input.created_at.timestamp_millis();
+        let reference_timestamp_ms = config.time_anchor.reference_time(input).timestamp_millis();
 
         // Debug: Log all placeholder-related values before expansion
         tracing::debug!(
@@ -546,6 +550,8 @@ impl RcloneProcessor {
             streamer_name = ?input.streamer_name,
             session_title = ?input.session_title,
             created_at = %input.created_at,
+            session_start = ?input.session_start,
+            time_anchor = ?config.time_anchor,
             "Rclone: Expanding placeholders"
         );
 
@@ -688,7 +694,15 @@ impl Processor for RcloneProcessor {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_utils::utc_datetime;
     use super::*;
+
+    fn expected_local_destination(dt: chrono::DateTime<chrono::Utc>) -> String {
+        format!(
+            "remote:/{}/StreamerName",
+            pipeline_common::expand_path_template_at("%Y/%m/%d", Some(dt.timestamp_millis()))
+        )
+    }
 
     #[test]
     fn test_find_common_base_dir_single() {
@@ -753,6 +767,7 @@ mod tests {
             streamer_name: Some("StreamerName".to_string()),
             session_title: Some("Live Title".to_string()),
             platform: None,
+            session_start: None,
             config: Some(r#"{"destination_root": "remote:/{streamer}/{title}/"}"#.to_string()),
             created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
         };
@@ -776,6 +791,7 @@ mod tests {
             streamer_name: Some("StreamerName".to_string()),
             session_title: Some("Live Title".to_string()),
             platform: None,
+            session_start: None,
             config: Some(r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/"}"#.to_string()),
             created_at: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
         };
@@ -783,8 +799,111 @@ mod tests {
         let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
         let destination = RcloneProcessor::determine_remote_destination(&input, &config);
 
-        // Should use created_at (2024-01-01) for time placeholders
-        assert_eq!(destination, "remote:/2024/01/01/StreamerName");
+        assert_eq!(destination, expected_local_destination(input.created_at));
+    }
+
+    #[test]
+    fn test_determine_remote_destination_with_session_start_anchor() {
+        let session_start = utc_datetime(2024, 1, 1, 12, 0, 0);
+        let created_at = utc_datetime(2024, 1, 2, 12, 0, 0);
+        let input = ProcessorInput {
+            inputs: vec!["/input.mp4".to_string()],
+            outputs: vec![],
+            streamer_id: "123".to_string(),
+            session_id: "456".to_string(),
+            streamer_name: Some("StreamerName".to_string()),
+            session_title: Some("Live Title".to_string()),
+            platform: None,
+            session_start: Some(session_start),
+            config: Some(
+                r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/", "time_anchor": "session_start"}"#
+                    .to_string(),
+            ),
+            created_at,
+        };
+
+        let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
+        let destination = RcloneProcessor::determine_remote_destination(&input, &config);
+
+        assert_eq!(destination, expected_local_destination(session_start));
+    }
+
+    #[test]
+    fn test_determine_remote_destination_session_start_falls_back_to_created_at() {
+        let created_at = utc_datetime(2024, 1, 2, 12, 0, 0);
+        let input = ProcessorInput {
+            inputs: vec!["/input.mp4".to_string()],
+            outputs: vec![],
+            streamer_id: "123".to_string(),
+            session_id: "456".to_string(),
+            streamer_name: Some("StreamerName".to_string()),
+            session_title: Some("Live Title".to_string()),
+            platform: None,
+            session_start: None,
+            config: Some(
+                r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/", "time_anchor": "session_start"}"#
+                    .to_string(),
+            ),
+            created_at,
+        };
+
+        let config: RcloneConfig = serde_json::from_str(input.config.as_ref().unwrap()).unwrap();
+        let destination = RcloneProcessor::determine_remote_destination(&input, &config);
+
+        assert_eq!(destination, expected_local_destination(created_at));
+    }
+
+    #[test]
+    fn test_session_start_anchor_groups_jobs_that_cross_dates() {
+        let session_start = utc_datetime(2024, 1, 1, 12, 0, 0);
+        let first_created_at = utc_datetime(2024, 1, 2, 12, 0, 0);
+        let second_created_at = utc_datetime(2024, 1, 3, 12, 0, 0);
+        let base_input = ProcessorInput {
+            inputs: vec!["/input.mp4".to_string()],
+            outputs: vec![],
+            streamer_id: "123".to_string(),
+            session_id: "456".to_string(),
+            streamer_name: Some("StreamerName".to_string()),
+            session_title: Some("Live Title".to_string()),
+            platform: None,
+            session_start: Some(session_start),
+            config: None,
+            created_at: first_created_at,
+        };
+        let session_config: RcloneConfig = serde_json::from_str(
+            r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/", "time_anchor": "session_start"}"#,
+        )
+        .unwrap();
+        let job_config: RcloneConfig =
+            serde_json::from_str(r#"{"destination_root": "remote:/%Y/%m/%d/{streamer}/"}"#)
+                .unwrap();
+        let later_input = ProcessorInput {
+            created_at: second_created_at,
+            ..base_input.clone()
+        };
+
+        let first_session_destination =
+            RcloneProcessor::determine_remote_destination(&base_input, &session_config);
+        let second_session_destination =
+            RcloneProcessor::determine_remote_destination(&later_input, &session_config);
+        assert_eq!(
+            first_session_destination,
+            expected_local_destination(session_start)
+        );
+        assert_eq!(second_session_destination, first_session_destination);
+
+        let first_job_destination =
+            RcloneProcessor::determine_remote_destination(&base_input, &job_config);
+        let second_job_destination =
+            RcloneProcessor::determine_remote_destination(&later_input, &job_config);
+        assert_eq!(
+            first_job_destination,
+            expected_local_destination(first_created_at)
+        );
+        assert_eq!(
+            second_job_destination,
+            expected_local_destination(second_created_at)
+        );
     }
 
     #[test]
@@ -839,6 +958,14 @@ mod tests {
         assert_eq!(cfg.bwlimit.as_deref(), Some("5M"));
         assert!(cfg.args.is_empty());
         assert_eq!(cfg.operation, RcloneOperation::Copy);
+        assert_eq!(cfg.time_anchor, TimeAnchor::JobCreated);
+    }
+
+    #[test]
+    fn rclone_config_deserializes_time_anchor() {
+        let cfg: RcloneConfig =
+            serde_json::from_str(r#"{"time_anchor": "session_start"}"#).unwrap();
+        assert_eq!(cfg.time_anchor, TimeAnchor::SessionStart);
     }
 
     #[test]

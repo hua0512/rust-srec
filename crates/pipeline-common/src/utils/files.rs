@@ -47,8 +47,17 @@ fn expand_template_internal(
     reference_timestamp_ms: Option<i64>,
 ) -> String {
     let now = if let Some(ts_ms) = reference_timestamp_ms {
-        time::OffsetDateTime::from_unix_timestamp(ts_ms / 1000)
-            .unwrap_or_else(|_| time::OffsetDateTime::now_utc())
+        let utc = time::OffsetDateTime::from_unix_timestamp(ts_ms / 1000)
+            .unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+        // Render the reference in the local offset that was in effect AT that
+        // instant — not the offset at expansion time — so it matches what the
+        // now_local() branch below produced when the reference instant was
+        // "now" (e.g. a recording filename's %Y%m%d expanded at file open),
+        // and so re-expanding the same reference later (job retries, DST
+        // transitions in between) yields the same rendering.
+        time::UtcOffset::local_offset_at(utc)
+            .map(|offset| utc.to_offset(offset))
+            .unwrap_or(utc)
     } else {
         time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc())
     };
@@ -169,5 +178,68 @@ pub fn sanitize_filename(input: &str) -> String {
         } else {
             result
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn reference_timestamp_uses_offset_at_instant_not_at_expansion() {
+        // cargo-nextest runs each test in its own process, so mutating TZ
+        // here cannot race sibling tests. glibc initializes its timezone
+        // state lazily on the FIRST localtime_r call and never re-reads the
+        // env var, so tzset() forces a re-read in case another test in this
+        // binary (e.g. one calling now_local) resolved the ambient zone
+        // first — that ordering is unpredictable under plain `cargo test`,
+        // which shares one process across test threads.
+        // The POSIX TZ string carries its own DST rules (2nd Sunday of March
+        // / 1st Sunday of November), so no tzdata files are needed.
+        // POSIX tzset; not bound by the libc crate for unix targets.
+        unsafe extern "C" {
+            fn tzset();
+        }
+        unsafe {
+            std::env::set_var("TZ", "EST5EDT,M3.2.0,M11.1.0");
+            tzset();
+        }
+
+        // 2026-03-08T04:30:00Z is 23:30 EST (-05:00) on 2026-03-07, before
+        // that day's 07:00Z spring-forward transition. Rendering must use
+        // the offset at that instant regardless of the offset at test time.
+        assert_eq!(
+            expand_path_template_at("%Y%m%d-%H%M", Some(1_772_944_200_000)),
+            "20260307-2330"
+        );
+
+        // 2026-03-08T12:00:00Z is 08:00 EDT (-04:00), after the transition.
+        assert_eq!(
+            expand_path_template_at("%Y%m%d-%H%M", Some(1_772_971_200_000)),
+            "20260308-0800"
+        );
+    }
+
+    #[test]
+    fn referenced_now_matches_unreferenced_now_calendar_minute() {
+        let template = "%Y%m%d%H%M";
+        let before_ms = current_unix_ms();
+        let expanded_now = expand_path_template(template);
+        let after_ms = current_unix_ms();
+
+        let before_ref = expand_path_template_at(template, Some(before_ms));
+        let after_ref = expand_path_template_at(template, Some(after_ms));
+        assert!(
+            expanded_now == before_ref || expanded_now == after_ref,
+            "unreferenced={expanded_now}, before_ref={before_ref}, after_ref={after_ref}"
+        );
+    }
+
+    fn current_unix_ms() -> i64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
     }
 }

@@ -31,3 +31,23 @@ This update rebuilds the **Mesio** HLS recording engine for robustness and unifi
 - **Simplified Mesio engine settings**
 
   Several Mesio HLS settings that no longer affected recording were removed from the engine settings form, including the **Performance** tab (the batch-scheduler and zero-copy toggles) along with the streaming-threshold and raw-segment-cache fields. Stored configurations are cleaned up automatically by a database migration — no action is required, and the remaining timeout, retry, decryption-key, and gap-skip settings continue to work as before.
+
+## Pipeline uploads
+
+- **Session-start date anchors for upload destinations**
+
+  Rclone pipeline steps now include a `time_anchor` setting. Keep the default `job_created` behavior, or choose `session_start` so date placeholders such as `%Y/%m/%d` use the live session's start time and a stream crossing midnight stays in one dated remote folder. Copy/move steps can also opt into `job_created` or `session_start` anchoring while preserving their existing execution-time behavior by default.
+
+- **Upload destination dates use server local time**
+
+  Time placeholders in upload destination paths now render in the server's local time zone when an explicit reference timestamp is used. They previously rendered in UTC, which could put uploads in a different dated directory than local recording filenames on non-UTC deployments. The time zone offset is taken from the moment being rendered, so recordings around daylight-saving transitions keep the date their filenames carry, and retried uploads land in the same dated folder as the original run.
+
+## Pipeline step forms
+
+- **Placeholder names show up in help texts again**
+
+  Some pipeline step forms rendered placeholder help text with the names missing — for example the danmaku conversion step showed "Use  and  placeholders." instead of naming `{input}` and `{output}`. The rclone and copy/move destination fields now also document the supported placeholders directly in the form.
+
+- **Clearer error for invalid copy/move step configuration**
+
+  A copy/move step whose saved configuration fails to parse (for example a mistyped option value) now reports the actual parse error instead of a misleading "no destination directory specified" message.

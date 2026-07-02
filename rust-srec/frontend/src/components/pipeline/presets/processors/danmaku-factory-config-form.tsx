@@ -20,6 +20,9 @@ import { motion } from 'motion/react';
 
 type DanmakuFactoryConfig = z.infer<typeof DanmakuFactoryConfigSchema>;
 
+const INPUT_TOKEN = '{input}';
+const OUTPUT_TOKEN = '{output}';
+
 export function DanmakuFactoryConfigForm({
   control,
   pathPrefix,
@@ -92,9 +95,12 @@ export function DanmakuFactoryConfigForm({
                     />
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">
+                    {/* Tokens are bound values: literal `{...}` inlined into a
+                        lingui message becomes an unbound ICU placeholder and
+                        renders as an empty string. */}
                     <Trans>
-                      Command template args. Use {'{input}'} and {'{output}'}{' '}
-                      placeholders.
+                      Command template args. Use {INPUT_TOKEN} and{' '}
+                      {OUTPUT_TOKEN} placeholders.
                     </Trans>
                   </FormDescription>
                   <FormMessage />

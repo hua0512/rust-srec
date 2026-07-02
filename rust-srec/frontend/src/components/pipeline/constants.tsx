@@ -128,3 +128,10 @@ export function getPlatformColor(platform: string): string {
   const key = platform.toLowerCase();
   return PLATFORM_COLORS[key] || 'bg-primary/10 text-primary border-primary/20';
 }
+
+// Metadata placeholder tokens supported by processor destination templates
+// (rclone destination_root, copy/move destination). Kept out of lingui
+// <Trans> messages as a bound value: literal `{...}` tokens inlined into a
+// message become unbound ICU placeholders and render as empty strings.
+export const PLACEHOLDER_TOKENS =
+  '{platform}, {streamer}, {title}, {streamer_id}, {session_id}';

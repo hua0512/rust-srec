@@ -19,10 +19,12 @@ use std::path::Path;
 use tokio::fs;
 use tracing::{debug, error, info};
 
-use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, parse_config_or_default};
+use super::traits::{
+    Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
+};
+use super::utils::create_log_entry;
 use crate::Result;
-use crate::utils::filename::expand_placeholders;
+use crate::utils::filename::{expand_placeholders, expand_placeholders_at};
 
 /// Default value for create_dirs option.
 fn default_true() -> bool {
@@ -52,6 +54,12 @@ pub struct CopyMoveConfig {
     /// This is required at runtime; the processor will return an error if it is missing.
     pub destination: Option<String>,
 
+    /// Optional timestamp source for time placeholder expansion.
+    ///
+    /// None preserves the historical execution-time expansion behavior.
+    #[serde(default)]
+    pub time_anchor: Option<TimeAnchor>,
+
     /// Whether to create destination directories if they don't exist.
     #[serde(default = "default_true")]
     pub create_dirs: bool,
@@ -76,6 +84,7 @@ impl Default for CopyMoveConfig {
         Self {
             operation: CopyMoveOperation::Copy,
             destination: None,
+            time_anchor: None,
             create_dirs: true,
             verify_integrity: true,
             overwrite: false,
@@ -154,15 +163,25 @@ impl Processor for CopyMoveProcessor {
     async fn process(
         &self,
         input: &ProcessorInput,
-        ctx: &ProcessorContext,
+        _ctx: &ProcessorContext,
     ) -> Result<ProcessorOutput> {
         let start = std::time::Instant::now();
 
         // Initialize logs vector
         let mut logs = Vec::new();
 
-        let config: CopyMoveConfig =
-            parse_config_or_default(input.config.as_deref(), ctx, "copy_move", Some(&mut logs));
+        // Parse strictly (like RcloneProcessor) rather than via
+        // parse_config_or_default: falling back to CopyMoveConfig::default()
+        // on a malformed config clears `destination`, so the job would fail
+        // anyway — but with a misleading "No destination directory specified"
+        // error that hides the actual parse problem (e.g. a misspelled
+        // `time_anchor` variant).
+        let config: CopyMoveConfig = match input.config.as_deref() {
+            Some(s) => serde_json::from_str(s).map_err(|e| {
+                crate::Error::Validation(format!("Invalid copy/move config JSON: {e}"))
+            })?,
+            None => CopyMoveConfig::default(),
+        };
 
         if input.inputs.is_empty() {
             return Err(crate::Error::PipelineError(
@@ -177,19 +196,34 @@ impl Processor for CopyMoveProcessor {
             )
         })?;
 
-        // Expand placeholders in destination path
-        let dest_dir = expand_placeholders(
-            dest_template,
-            &input.streamer_id,
-            &input.session_id,
-            input.streamer_name.as_deref(),
-            input.session_title.as_deref(),
-            input.platform.as_deref(),
-        );
+        // Expand placeholders in destination path. `time_anchor: None`
+        // preserves the historical expand_placeholders behavior (current
+        // local time at execution).
+        let dest_dir = if let Some(anchor) = config.time_anchor {
+            expand_placeholders_at(
+                dest_template,
+                &input.streamer_id,
+                &input.session_id,
+                input.streamer_name.as_deref(),
+                input.session_title.as_deref(),
+                input.platform.as_deref(),
+                Some(anchor.reference_time(input).timestamp_millis()),
+            )
+        } else {
+            expand_placeholders(
+                dest_template,
+                &input.streamer_id,
+                &input.session_id,
+                input.streamer_name.as_deref(),
+                input.session_title.as_deref(),
+                input.platform.as_deref(),
+            )
+        };
 
         debug!(
             template = %dest_template,
             expanded = %dest_dir,
+            time_anchor = ?config.time_anchor,
             "CopyMove: Placeholder expansion result"
         );
 
@@ -569,6 +603,7 @@ impl Processor for CopyMoveProcessor {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_utils::utc_datetime;
     use super::*;
     use tempfile::TempDir;
 
@@ -600,6 +635,7 @@ mod tests {
         assert!(config.create_dirs);
         assert!(config.verify_integrity);
         assert!(!config.overwrite);
+        assert_eq!(config.time_anchor, None);
     }
 
     #[test]
@@ -620,6 +656,39 @@ mod tests {
         assert!(!config.verify_integrity);
         assert!(config.overwrite);
         assert_eq!(config.exclude_patterns, vec!["\\.tmp$"]);
+        assert_eq!(config.time_anchor, None);
+    }
+
+    #[test]
+    fn test_copy_move_config_parse_time_anchor() {
+        let config: CopyMoveConfig =
+            serde_json::from_str(r#"{"destination": "/dest", "time_anchor": "session_start"}"#)
+                .unwrap();
+        assert_eq!(config.time_anchor, Some(TimeAnchor::SessionStart));
+    }
+
+    /// A malformed config must fail with the parse error itself, not fall
+    /// back to defaults and then error about the (discarded) destination.
+    #[tokio::test]
+    async fn test_copy_move_invalid_config_fails_with_parse_error() {
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec!["/input.flv".to_string()],
+            config: Some(r#"{"destination": "/dest", "time_anchor": "session-start"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("Invalid copy/move config JSON"),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains("unknown variant"),
+            "unexpected error: {message}"
+        );
     }
 
     #[test]
@@ -724,6 +793,51 @@ mod tests {
                 skip_path.to_string_lossy().to_string(),
                 "excluded".to_string()
             )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_copy_move_session_start_anchor_expands_destination_date() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source.txt");
+        let dest_root = temp_dir.path().join("output");
+        fs::write(&source_path, "test content").await.unwrap();
+
+        let session_start = utc_datetime(2024, 1, 1, 12, 0, 0);
+        let created_at = utc_datetime(2024, 1, 2, 12, 0, 0);
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![source_path.to_string_lossy().to_string()],
+            outputs: vec![],
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination": format!("{}/%Y/%m/%d", dest_root.to_string_lossy()),
+                    "time_anchor": "session_start",
+                })
+                .to_string(),
+            ),
+            streamer_id: "test".to_string(),
+            session_id: "session-1".to_string(),
+            session_start: Some(session_start),
+            created_at,
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+
+        let expected_dest = dest_root
+            .join(pipeline_common::expand_path_template_at(
+                "%Y/%m/%d",
+                Some(session_start.timestamp_millis()),
+            ))
+            .join("source.txt");
+        assert!(expected_dest.exists());
+        assert_eq!(output.outputs.len(), 1);
+        assert_eq!(
+            fs::canonicalize(&output.outputs[0]).await.unwrap(),
+            fs::canonicalize(expected_dest).await.unwrap()
         );
     }
 

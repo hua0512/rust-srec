@@ -50,7 +50,7 @@ Each pipeline step is executed by a specialized processor:
 | `danmaku_factory` | Danmaku conversion | `output_format` (ass) |
 | `burn_in` | Hard burn subtitles into video | `video_path`, `subtitle_path` |
 | `thumbnail` | Extracts keyframes as thumbnails | `timestamp`, `width`, `height` |
-| `rclone` | Cloud synchronization | `remote`, `path`, `args` |
+| `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `args` |
 | `tdl_upload` | Specific upload tool support | `args` |
 | `metadata` | Writes metadata (nfo, json) | - |
 | `delete` | Automatically cleans up files | - |

@@ -44,6 +44,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { PLACEHOLDER_TOKENS } from '../../constants';
 
 type RcloneConfig = z.infer<typeof RcloneConfigSchema>;
 
@@ -233,8 +234,22 @@ export function RcloneConfigForm({
               name={`${prefix}destination_root` as any}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
+                  <FormLabel className="inline-flex items-center gap-1.5">
                     <Trans>Destination Root</Trans>
+                    <FieldHint label={i18n._(msg`Destination Root help`)}>
+                      <p>
+                        <Trans>
+                          Supports placeholders: {PLACEHOLDER_TOKENS} and time
+                          tokens like %Y/%m/%d.
+                        </Trans>
+                      </p>
+                      <p>
+                        <Trans>
+                          Keep date and time tokens in your filename template
+                          when multiple sessions share one destination folder.
+                        </Trans>
+                      </p>
+                    </FieldHint>
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -245,7 +260,50 @@ export function RcloneConfigForm({
                     />
                   </FormControl>
                   <FormDescription>
-                    <Trans>Base path for remote storage.</Trans>
+                    <Trans>
+                      Base path for remote storage. Supports metadata and time
+                      placeholders.
+                    </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={control}
+              name={`${prefix}time_anchor` as any}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <Trans>Date placeholder anchor</Trans>
+                  </FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value ?? 'job_created'}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="h-11 bg-background/50">
+                        <SelectValue
+                          placeholder={i18n._(msg`Select date anchor`)}
+                        />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="job_created">
+                        <Trans>Job creation time (default)</Trans>
+                      </SelectItem>
+                      <SelectItem value="session_start">
+                        <Trans>Stream start time</Trans>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    <Trans>
+                      Use stream start time to keep a midnight-crossing stream
+                      in one dated folder and group all segments of a session
+                      together.
+                    </Trans>
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
