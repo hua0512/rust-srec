@@ -20,6 +20,17 @@ pub enum ProcessorType {
     Io,
 }
 
+/// Timestamp source for processor time placeholder expansion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeAnchor {
+    /// Expand time tokens with `ProcessorInput::created_at`.
+    #[default]
+    JobCreated,
+    /// Expand time tokens with `ProcessorInput::session_start`, falling back to created_at.
+    SessionStart,
+}
+
 /// Input for a processor.
 #[derive(Debug, Clone)]
 pub struct ProcessorInput {
@@ -39,6 +50,8 @@ pub struct ProcessorInput {
     pub session_title: Option<String>,
     /// Platform name (e.g., "Twitch", "Huya").
     pub platform: Option<String>,
+    /// live_sessions.start_time of the session this job belongs to.
+    pub session_start: Option<DateTime<Utc>>,
     /// When the job was originally created.
     /// Used for time-based placeholder expansion to ensure consistency across retries.
     pub created_at: DateTime<Utc>,
@@ -55,6 +68,7 @@ impl Default for ProcessorInput {
             streamer_name: None,
             session_title: None,
             platform: None,
+            session_start: None,
             created_at: Utc::now(),
         }
     }
@@ -77,6 +91,7 @@ impl ProcessorInput {
             streamer_name: None,
             session_title: None,
             platform: None,
+            session_start: None,
             created_at: Utc::now(),
         }
     }
@@ -108,6 +123,12 @@ impl ProcessorInput {
     /// Set the created_at timestamp.
     pub fn with_created_at(mut self, created_at: DateTime<Utc>) -> Self {
         self.created_at = created_at;
+        self
+    }
+
+    /// Set the session start timestamp.
+    pub fn with_session_start(mut self, session_start: DateTime<Utc>) -> Self {
+        self.session_start = Some(session_start);
         self
     }
 }
@@ -286,6 +307,7 @@ mod tests {
             streamer_name: Some("Test Streamer".to_string()),
             session_title: Some("Test Title".to_string()),
             platform: None,
+            session_start: None,
             created_at: Utc::now(),
         };
 

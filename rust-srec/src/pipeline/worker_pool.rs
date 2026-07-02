@@ -460,6 +460,7 @@ impl WorkerPool {
                                 streamer_name: job.streamer_name.take(),
                                 session_title: job.session_title.take(),
                                 platform: job.platform.take(),
+                                session_start: job.session_start.take(),
                                 created_at: job.created_at,
                             };
 
@@ -676,6 +677,7 @@ impl WorkerPool {
                                                 input.streamer_name.as_deref(),
                                                 input.session_title.as_deref(),
                                                 input.platform.as_deref(),
+                                                input.session_start,
                                             )
                                             .await
                                         {

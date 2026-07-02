@@ -75,6 +75,7 @@ export const RemuxConfigSchema = z.object({
 
 // --- Rclone Processor ---
 export const RcloneOperationSchema = z.enum(['copy', 'move', 'sync']);
+export const TimeAnchorSchema = z.enum(['job_created', 'session_start']);
 
 export const RcloneConfigSchema = z.object({
   rclone_path: z.string().default('rclone'),
@@ -83,6 +84,7 @@ export const RcloneConfigSchema = z.object({
   config_path: z.string().optional(),
   remote_path: z.string().optional(), // Legacy support or direct override
   operation: RcloneOperationSchema.default('copy'),
+  time_anchor: TimeAnchorSchema.default('job_created'),
   args: z.array(z.string()).default([]),
 
   // Throughput / bandwidth controls (rclone CLI flags). Empty/undefined
@@ -135,6 +137,7 @@ export const CopyMoveOperationSchema = z.enum(['copy', 'move']);
 export const CopyMoveConfigSchema = z.object({
   operation: CopyMoveOperationSchema.default('copy'),
   destination: z.string().min(1, 'Destination is required'),
+  time_anchor: TimeAnchorSchema.optional(),
   create_dirs: z.boolean().default(true),
   verify_integrity: z.boolean().default(true),
   overwrite: z.boolean().default(false),

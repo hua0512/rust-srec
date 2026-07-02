@@ -1983,6 +1983,7 @@ pub async fn retry_dag(
                         job.streamer_name.as_deref(),
                         job.session_title.as_deref(),
                         job.platform.as_deref(),
+                        job.session_start,
                     )
                     .await
                 {
@@ -2233,6 +2234,7 @@ pub async fn retry_all_failed_dags(
                                 job.streamer_name.as_deref(),
                                 job.session_title.as_deref(),
                                 job.platform.as_deref(),
+                                job.session_start,
                             )
                             .await;
                     }

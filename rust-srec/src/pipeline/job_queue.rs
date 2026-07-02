@@ -339,6 +339,8 @@ pub struct Job {
     pub session_title: Option<String>,
     /// Platform name (e.g., "Twitch", "Huya").
     pub platform: Option<String>,
+    /// live_sessions.start_time of the session this job belongs to; None for jobs whose session_id does not reference a real session row.
+    pub session_start: Option<DateTime<Utc>>,
     /// Additional configuration as JSON.
     pub config: Option<String>,
     /// When the job was created.
@@ -385,6 +387,7 @@ impl Job {
             streamer_name: None,
             session_title: None,
             platform: None,
+            session_start: None,
             config: None,
             created_at: Utc::now(),
             started_at: None,
@@ -420,6 +423,7 @@ impl Job {
             streamer_name: None,
             session_title: None,
             platform: None,
+            session_start: None,
             config: None,
             created_at: Utc::now(),
             started_at: None,
@@ -473,6 +477,12 @@ impl Job {
     /// Set the platform.
     pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
         self.platform = Some(platform.into());
+        self
+    }
+
+    /// Set the session start timestamp.
+    pub fn with_session_start(mut self, session_start: DateTime<Utc>) -> Self {
+        self.session_start = Some(session_start);
         self
     }
 
@@ -766,11 +776,16 @@ impl JobQueue {
         Ok(Some(snapshot))
     }
 
-    /// Resolve missing metadata (streamer_name, session_title) for a job.
+    /// Resolve missing metadata (streamer_name, session_title, session_start) for a job.
     ///
     /// This is useful for jobs recovered from the database where metadata
     /// is not persisted. It looks up the streamer and session repositories.
+    /// Anything resolved is written back to the job row's `state` column so
+    /// the values survive later deletion of the backing streamer/session rows
+    /// (a retry re-reads the job from the DB via `db_model_to_job`).
     pub async fn resolve_job_metadata(&self, job: &mut Job) {
+        let mut backfilled = false;
+
         // Only resolve if we have a streamer_id and name is missing
         if job.streamer_name.is_none()
             && !job.streamer_id.is_empty()
@@ -785,6 +800,7 @@ impl JobQueue {
                         "Resolved streamer_name from repository"
                     );
                     job.streamer_name = Some(streamer.name);
+                    backfilled = true;
                 }
                 Err(e) => {
                     tracing::debug!(
@@ -797,15 +813,22 @@ impl JobQueue {
             }
         }
 
-        // Only resolve if we have a session_id and title is missing
-        if job.session_title.is_none()
+        // Only resolve if we have a session_id and session metadata is missing
+        if (job.session_title.is_none() || job.session_start.is_none())
             && !job.session_id.is_empty()
             && let Some(session_repo) = self.session_repo.get()
         {
             match session_repo.get_session(&job.session_id).await {
                 Ok(session) => {
+                    if job.session_start.is_none() {
+                        job.session_start =
+                            Some(crate::database::time::ms_to_datetime(session.start_time));
+                        backfilled = true;
+                    }
+
                     // Parse titles JSON and get the most recent one
-                    if let Some(titles_json) = session.titles
+                    if job.session_title.is_none()
+                        && let Some(titles_json) = session.titles
                         && let Ok(entries) = serde_json::from_str::<Vec<TitleEntry>>(&titles_json)
                         && let Some(last_entry) = entries.last()
                     {
@@ -816,6 +839,7 @@ impl JobQueue {
                             "Resolved session_title from repository"
                         );
                         job.session_title = Some(last_entry.title.clone());
+                        backfilled = true;
                     }
                 }
                 Err(e) => {
@@ -826,6 +850,19 @@ impl JobQueue {
                         "Failed to lookup session_title"
                     );
                 }
+            }
+        }
+
+        // Best-effort durability: without this write the streamer/session
+        // rows must still exist at every future dequeue of this job.
+        if backfilled && let Some(repo) = &self.job_repository {
+            let state = job_state_json(job);
+            if let Err(e) = repo.update_job_state(&job.id, &state).await {
+                tracing::debug!(
+                    job_id = %job.id,
+                    error = %e,
+                    "Failed to persist resolved job metadata"
+                );
             }
         }
     }
@@ -1717,6 +1754,9 @@ impl JobQueue {
             if let Some(platform) = job.platform.as_ref() {
                 split_job = split_job.with_platform(platform.clone());
             }
+            if let Some(session_start) = job.session_start {
+                split_job = split_job.with_session_start(session_start);
+            }
 
             let job_id = self.enqueue(split_job).await?;
             created_job_ids.push(job_id);
@@ -2126,6 +2166,30 @@ pub struct JobStats {
     pub avg_processing_time_secs: Option<f64>,
 }
 
+/// Serialize a job's placeholder metadata into the `state` column JSON.
+///
+/// Single source of the state shape: used by [`job_to_db_model`] at persist
+/// time and by [`JobQueue::resolve_job_metadata`] when writing back-filled
+/// values, and parsed by [`db_model_to_job`] and
+/// `DagScheduler::recover_placeholder_metadata`.
+fn job_state_json(job: &Job) -> String {
+    if job.streamer_name.is_some()
+        || job.session_title.is_some()
+        || job.platform.is_some()
+        || job.session_start.is_some()
+    {
+        serde_json::json!({
+            "streamer_name": job.streamer_name.clone(),
+            "session_title": job.session_title.clone(),
+            "platform": job.platform.clone(),
+            "session_start_ms": job.session_start.as_ref().map(|dt| dt.timestamp_millis()),
+        })
+        .to_string()
+    } else {
+        "{}".to_string()
+    }
+}
+
 /// Convert a Job to JobDbModel.
 fn job_to_db_model(job: &Job) -> JobDbModel {
     let inputs_json = json::to_string_or_fallback(
@@ -2147,17 +2211,7 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         "Failed to serialize job outputs; storing empty list",
     );
 
-    let state =
-        if job.streamer_name.is_some() || job.session_title.is_some() || job.platform.is_some() {
-            serde_json::json!({
-                "streamer_name": job.streamer_name.clone(),
-                "session_title": job.session_title.clone(),
-                "platform": job.platform.clone(),
-            })
-            .to_string()
-        } else {
-            "{}".to_string()
-        };
+    let state = job_state_json(job);
 
     // Serialize execution_info to JSON
     let execution_info_json = job.execution_info.as_ref().and_then(|info| {
@@ -2238,6 +2292,7 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
     let mut streamer_name = None;
     let mut session_title = None;
     let mut platform = None;
+    let mut session_start = None;
     if let Ok(state) = serde_json::from_str::<serde_json::Value>(&db_job.state)
         && let Some(obj) = state.as_object()
     {
@@ -2253,6 +2308,10 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
             .get("platform")
             .and_then(|v| v.as_str())
             .map(ToString::to_string);
+        session_start = obj
+            .get("session_start_ms")
+            .and_then(|v| v.as_i64())
+            .map(crate::database::time::ms_to_datetime);
     }
 
     Job {
@@ -2286,6 +2345,7 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         streamer_name,
         session_title,
         platform,
+        session_start,
     }
 }
 
@@ -2342,6 +2402,103 @@ mod tests {
         assert_eq!(restored.platform.as_deref(), Some("Twitch"));
         assert_eq!(restored.streamer_name.as_deref(), Some("StreamerName"));
         assert_eq!(restored.session_title.as_deref(), Some("SessionTitle"));
+    }
+
+    /// resolve_job_metadata must write back-filled values to the job row's
+    /// state column so a later dequeue does not depend on the live_sessions
+    /// row still existing.
+    #[tokio::test]
+    async fn test_resolve_job_metadata_persists_backfilled_state() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db_path = dir.path().join("job_queue_test.db");
+        let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
+        let pool = crate::database::init_pool(&db_url).await.unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        // Satisfy the live_sessions -> streamers -> platform_config FK chain.
+        sqlx::query("INSERT INTO platform_config (id, platform_name) VALUES ('p1', 'test')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO streamers (id, name, url, platform_config_id, state) \
+             VALUES ('streamer-1', 'Streamer', 'https://example.com/s1', 'p1', 'NOT_LIVE')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let session_start_ms: i64 = 1_704_152_700_000;
+        sqlx::query(
+            "INSERT INTO live_sessions (id, streamer_id, start_time) \
+             VALUES ('session-1', 'streamer-1', ?)",
+        )
+        .bind(session_start_ms)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo.clone());
+        queue.set_session_repo(Arc::new(
+            crate::database::repositories::session::SqlxSessionRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ),
+        ));
+
+        let mut job = Job::new(
+            "rclone",
+            vec!["/input.flv".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        queue.enqueue(job.clone()).await.unwrap();
+        assert!(
+            !job_repo
+                .get_job(&job.id)
+                .await
+                .unwrap()
+                .state
+                .contains("session_start_ms")
+        );
+
+        queue.resolve_job_metadata(&mut job).await;
+        assert_eq!(
+            job.session_start.map(|dt| dt.timestamp_millis()),
+            Some(session_start_ms)
+        );
+
+        // The resolved value must now be in the DB row, not just in memory.
+        let db_job = job_repo.get_job(&job.id).await.unwrap();
+        let state: serde_json::Value = serde_json::from_str(&db_job.state).unwrap();
+        assert_eq!(
+            state.get("session_start_ms").and_then(|v| v.as_i64()),
+            Some(session_start_ms)
+        );
+    }
+
+    #[test]
+    fn test_job_db_state_roundtrip_preserves_session_start() {
+        let session_start = chrono::DateTime::parse_from_rfc3339("2024-01-01T23:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let job = Job::new(
+            "rclone",
+            vec!["/input.flv".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        )
+        .with_session_start(session_start);
+
+        let db = job_to_db_model(&job);
+        assert!(db.state.contains("session_start_ms"));
+
+        let restored = db_model_to_job(&db);
+        assert_eq!(restored.session_start, Some(session_start));
     }
 
     #[test]

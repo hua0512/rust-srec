@@ -27,6 +27,14 @@ import { msg } from '@lingui/core/macro';
 
 type CopyMoveConfig = z.infer<typeof CopyMoveConfigSchema>;
 
+const EXECUTION_TIME_ANCHOR = 'execution_time';
+
+// Kept out of the <Trans> message as a bound value: literal `{...}` tokens
+// inlined into a lingui message become unbound ICU placeholders and render
+// as empty strings.
+const PLACEHOLDER_TOKENS =
+  '{platform}, {streamer}, {title}, {streamer_id}, {session_id}';
+
 export function CopyMoveConfigForm({
   control,
   pathPrefix,
@@ -105,9 +113,55 @@ export function CopyMoveConfigForm({
                   </FormControl>
                   <FormDescription className="text-[11px] ml-1">
                     <Trans>
-                      Supports placeholders: {'{platform}'}, {'{streamer}'},{' '}
-                      {'{title}'}, {'{streamer_id}'}, {'{session_id}'} and time
+                      Supports placeholders: {PLACEHOLDER_TOKENS} and time
                       tokens like %Y/%m/%d.
+                    </Trans>
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={control}
+              name={`${prefix}time_anchor` as any}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs text-muted-foreground ml-1">
+                    <Trans>Date placeholder anchor</Trans>
+                  </FormLabel>
+                  <Select
+                    onValueChange={(value) =>
+                      field.onChange(
+                        value === EXECUTION_TIME_ANCHOR ? undefined : value,
+                      )
+                    }
+                    value={field.value ?? EXECUTION_TIME_ANCHOR}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
+                        <SelectValue
+                          placeholder={i18n._(msg`Select date anchor`)}
+                        />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value={EXECUTION_TIME_ANCHOR}>
+                        <Trans>Execution time (default)</Trans>
+                      </SelectItem>
+                      <SelectItem value="job_created">
+                        <Trans>Job creation time</Trans>
+                      </SelectItem>
+                      <SelectItem value="session_start">
+                        <Trans>Stream start time</Trans>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription className="text-[11px] ml-1">
+                    <Trans>
+                      Use stream start time to keep a midnight-crossing stream
+                      in one dated folder. Execution time preserves the existing
+                      copy/move behavior.
                     </Trans>
                   </FormDescription>
                   <FormMessage />
