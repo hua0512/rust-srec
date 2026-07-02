@@ -72,7 +72,7 @@ argon2 = "0.5"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 tar = "0.4"
 chrono-tz = "0.10"
-cron = "0.16"
+cron = "0.17"
 dotenvy = "0.15"
 sysinfo = { version = "0.39" }
 tracing-appender = "0.2"
