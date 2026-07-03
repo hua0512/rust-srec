@@ -28,7 +28,7 @@ base64 = { workspace = true }
 rustls = { workspace = true }
 aes-gcm = "0.11"
 hkdf = "0.13"
-p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
+p256 = { version = "0.14", features = ["ecdsa", "ecdh"] }
 
 # Caching
 dashmap = "6.1"
