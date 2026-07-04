@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Trans } from '@lingui/react/macro';
 import { Switch } from '@/components/ui/switch';
 import { Zap, Cloud, Gamepad2, RotateCcw } from 'lucide-react';
+import { DouyuQualityCombobox } from './douyu-quality-combobox';
 
 interface DouyuConfigFieldsProps {
   form: UseFormReturn<any>;
@@ -70,18 +71,18 @@ export function DouyuConfigFields({ form, fieldName }: DouyuConfigFieldsProps) {
                     </FormLabel>
                   </div>
                   <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      onChange={(e) =>
-                        field.onChange(parseInt(e.target.value) || 0)
-                      }
-                      value={field.value ?? 0}
-                      className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all"
+                    <DouyuQualityCombobox
+                      fieldName={fieldName}
+                      form={form}
+                      value={field.value}
+                      onChange={field.onChange}
                     />
                   </FormControl>
                   <FormDescription className="text-[10px] font-medium pt-1">
-                    <Trans>Use 0 for original quality.</Trans>
+                    <Trans>
+                      Select a preset or type a Douyu rate. Audio only requests
+                      AAC without video.
+                    </Trans>
                   </FormDescription>
                 </FormItem>
               )}
