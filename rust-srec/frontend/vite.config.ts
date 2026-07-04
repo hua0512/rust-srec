@@ -1,5 +1,3 @@
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { devtools } from '@tanstack/devtools-vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
@@ -9,14 +7,6 @@ import { nitro } from 'nitro/vite';
 
 import { lingui } from '@lingui/vite-plugin';
 import oxlintPlugin from 'vite-plugin-oxlint';
-
-const rootDir = dirname(fileURLToPath(import.meta.url));
-const oxlintBinary = resolve(
-  rootDir,
-  'node_modules',
-  '.bin',
-  process.platform === 'win32' ? 'oxlint.CMD' : 'oxlint',
-);
 
 export default defineConfig(() => ({
   plugins: [
@@ -29,7 +19,7 @@ export default defineConfig(() => ({
       plugins: [['@lingui/swc-plugin', {}]],
     }),
     // Limit oxlint to source folders (avoid linting build outputs).
-    oxlintPlugin({ path: 'src', oxlintPath: oxlintBinary }),
+    oxlintPlugin({ path: 'src' }),
   ],
   resolve: {
     tsconfigPaths: true,
