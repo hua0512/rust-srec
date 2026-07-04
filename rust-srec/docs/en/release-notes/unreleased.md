@@ -4,6 +4,8 @@
 
 This update rebuilds the **Mesio** HLS recording engine for robustness and unifies how Mesio downloads HLS and FLV streams. Encrypted HLS streams are handled more reliably, memory use stays bounded on busy or encrypted streams, and segment de-duplication now survives playlist refreshes that rotate auth tokens such as Twitch signed URLs. A few Mesio engine settings that no longer affected recording were removed, and existing configurations are migrated automatically.
 
+Douyu extraction also gets a smaller but useful cleanup: audio-only streams can now be selected directly from the quality picker, H.265 streams are identified from Douyu's own CDN metadata, and more "room unavailable" responses are handled as offline states instead of noisy extraction failures.
+
 ## HLS recording engine
 
 - **Rebuilt HLS engine for more predictable recording**
@@ -31,6 +33,20 @@ This update rebuilds the **Mesio** HLS recording engine for robustness and unifi
 - **Simplified Mesio engine settings**
 
   Several Mesio HLS settings that no longer affected recording were removed from the engine settings form, including the **Performance** tab (the batch-scheduler and zero-copy toggles) along with the streaming-threshold and raw-segment-cache fields. Stored configurations are cleaned up automatically by a database migration — no action is required, and the remaining timeout, retry, decryption-key, and gap-skip settings continue to work as before.
+
+## Douyu streams
+
+- **Audio-only is part of the quality picker**
+
+  Douyu's quality setting now includes an **Audio only** option alongside the usual quality presets. You can still type a custom Douyu rate when needed, but common choices such as original quality, HD, low quality, and AAC audio are available from the same control.
+
+- **H.265 detection follows Douyu CDN metadata**
+
+  Douyu stream entries now use the `isH265` value returned by Douyu's CDN list to mark HEVC streams. There is no separate frontend switch to manage, so recordings follow the format Douyu reports for the selected CDN and rate.
+
+- **More unavailable-room responses are treated cleanly**
+
+  Douyu error codes `-3`, `-4`, and `-5` are now handled as unavailable or offline stream states. This reduces false hard failures when a room closes, the streamer goes offline during extraction, or Douyu returns a temporary unavailable response.
 
 ## Pipeline uploads
 
