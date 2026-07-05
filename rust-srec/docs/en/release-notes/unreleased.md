@@ -77,3 +77,7 @@ Douyu extraction also gets a smaller but useful cleanup: audio-only streams can 
 - **Live watchdog restarts downloads that disappeared silently**
 
   As a safety net for any path that drops a download start without feedback, the periodic live watchdog now recognizes "reported live, but no download activity for five minutes" and re-triggers the download start instead of discarding the check result.
+
+- **Disabling a streamer can no longer be undone by an in-flight status check**
+
+  Disabling a streamer while one of its status checks was still in flight could let that check re-mark the streamer as live, create a recording session, and start a download after the disable. Session creation now re-checks the streamer's state at the database serialization point, so a disable that has been saved always wins — the late check is discarded instead of overriding user intent.
