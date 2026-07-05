@@ -906,16 +906,14 @@ impl DownloadManager {
         if !self.circuit_breakers.is_allowed(&engine_key) {
             warn!("Engine {} is disabled by circuit breaker", engine_key);
 
-            let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
-                DownloadTerminalEvent::Rejected {
-                    streamer_id: req.streamer_id.clone(),
-                    streamer_name: req.streamer_name.clone(),
-                    session_id: req.session_id.clone(),
-                    reason: format!("Circuit breaker open for engine {}", engine_key),
-                    retry_after_secs: Some(self.config.read().circuit_breaker_cooldown_secs),
-                    kind: DownloadRejectedKind::CircuitBreaker,
-                },
-            ));
+            self.emit_rejected(
+                req.streamer_id.clone(),
+                req.streamer_name.clone(),
+                req.session_id.clone(),
+                format!("Circuit breaker open for engine {}", engine_key),
+                Some(self.config.read().circuit_breaker_cooldown_secs),
+                DownloadRejectedKind::CircuitBreaker,
+            );
 
             return Err(crate::Error::Other(format!(
                 "Engine {} is disabled by circuit breaker",
@@ -934,19 +932,17 @@ impl DownloadManager {
                 "Output root gate rejected download (Degraded); emitting DownloadRejected"
             );
             let cooldown = super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS;
-            let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
-                DownloadTerminalEvent::Rejected {
-                    streamer_id: req.streamer_id.clone(),
-                    streamer_name: req.streamer_name.clone(),
-                    session_id: req.session_id.clone(),
-                    reason: blocked.to_string(),
-                    retry_after_secs: Some(cooldown),
-                    kind: DownloadRejectedKind::OutputRootUnavailable {
-                        path: blocked.root.clone(),
-                        io_kind: blocked.kind,
-                    },
+            self.emit_rejected(
+                req.streamer_id.clone(),
+                req.streamer_name.clone(),
+                req.session_id.clone(),
+                blocked.to_string(),
+                Some(cooldown),
+                DownloadRejectedKind::OutputRootUnavailable {
+                    path: blocked.root.clone(),
+                    io_kind: blocked.kind,
                 },
-            ));
+            );
             return Err(crate::Error::Other(format!(
                 "Output root {} is unwritable ({}); gate has the filesystem in Degraded state",
                 blocked.root.display(),
@@ -970,16 +966,14 @@ impl DownloadManager {
                     .get()
                     .map(|g| g.resolve_path(&req.output_dir))
                     .unwrap_or_else(|| super::output_root_gate::resolve_root(&req.output_dir, &[]));
-                let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
-                    DownloadTerminalEvent::Rejected {
-                        streamer_id: req.streamer_id.clone(),
-                        streamer_name: req.streamer_name.clone(),
-                        session_id: req.session_id.clone(),
-                        reason: engine_err.message.clone(),
-                        retry_after_secs: Some(super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS),
-                        kind: DownloadRejectedKind::OutputRootUnavailable { path, io_kind },
-                    },
-                ));
+                self.emit_rejected(
+                    req.streamer_id.clone(),
+                    req.streamer_name.clone(),
+                    req.session_id.clone(),
+                    engine_err.message.clone(),
+                    Some(super::output_root_gate::DEFAULT_GATE_COOLDOWN_SECS),
+                    DownloadRejectedKind::OutputRootUnavailable { path, io_kind },
+                );
             }
             return Err(crate::Error::Other(engine_err.message));
         }
@@ -2006,18 +2000,19 @@ impl DownloadManager {
         self.event_tx.subscribe()
     }
 
-    /// Emit [`DownloadTerminalEvent::Rejected`] on behalf of a caller that
-    /// refused to start a download before [`Self::preflight`] ran.
-    ///
-    /// The container's temporarily-disabled gate uses this when it drops a
-    /// `StreamerLive` because the streamer is inside its error-backoff
-    /// window (`disabled_until`). Going through the same event `preflight`
-    /// emits keeps every rejection consumer on one path: the session
-    /// lifecycle ends the just-created/resumed session
-    /// (`TerminalCause::Rejected` is an authoritative end), and the
+    /// Emit [`DownloadTerminalEvent::Rejected`] — the single construction
+    /// point for rejection events. [`Self::preflight`] routes its circuit-
+    /// breaker and output-root rejections through here, and callers that
+    /// refuse a download before `preflight` runs (the container's
+    /// temporarily-disabled gate) use it too, so every rejection consumer
+    /// sees one shape: the session lifecycle ends the just-created/resumed
+    /// session (`TerminalCause::Rejected` is an authoritative end), and the
     /// scheduler reschedules the streamer actor after `retry_after_secs`
     /// instead of leaving it parked in Live with no download and no
     /// `DownloadEnded` ever arriving.
+    ///
+    /// Parameter order mirrors the [`DownloadTerminalEvent::Rejected`]
+    /// field order.
     pub fn emit_rejected(
         &self,
         streamer_id: String,

@@ -4032,10 +4032,8 @@ async fn run_live_download_pipeline(
             // authoritative end) and the actor re-checks once the backoff
             // expires.
             let retry_after_secs = metadata
-                .remaining_backoff()
-                .and_then(|d| d.to_std().ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0)
+                .remaining_backoff_std()
+                .map_or(0, |d| d.as_secs())
                 .saturating_add(2);
             info!(
                 streamer_id = %streamer_id,

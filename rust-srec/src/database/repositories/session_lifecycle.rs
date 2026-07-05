@@ -169,24 +169,36 @@ impl SessionLifecycleRepository {
     /// that picks the right action against the most-recent session row,
     /// marks the streamer Live, optionally refreshes the avatar, and
     /// enqueues [`MonitorEvent::StreamerLive`].
+    /// Read the streamer row's `state` inside `tx`, returning it only when
+    /// it forbids starting or resuming a session — see
+    /// [`StreamerState::is_active`].
+    ///
+    /// This is the authoritative inactive guard shared by
+    /// [`Self::start_or_resume`] and [`Self::mark_streamer_live`].
+    /// `MonitorService::process_status` and the container's StreamerLive
+    /// gate read the in-memory metadata cache, which lags a concurrent user
+    /// disable (`StreamerManager::partial_update_streamer` commits
+    /// `state = 'DISABLED'` before its broadcast fans out), so an in-flight
+    /// live check can pass those guards. This read shares the caller's
+    /// `BEGIN IMMEDIATE` boundary with the subsequent `set_live` write, so
+    /// a disable that committed first is always observed.
+    async fn inactive_state(
+        tx: &mut sqlx::SqliteConnection,
+        streamer_id: &str,
+    ) -> Result<Option<StreamerState>> {
+        Ok(StreamerTxOps::get_state(tx, streamer_id)
+            .await?
+            .filter(|s| !s.is_active()))
+    }
+
     pub async fn start_or_resume(&self, inputs: StartSessionInputs) -> Result<StartSessionOutcome> {
         let mut tx = begin_immediate(&self.write_pool).await?;
 
-        // Authoritative inactive guard. `MonitorService::process_status` and
-        // the container's StreamerLive gate both read the in-memory metadata
-        // cache, which lags a concurrent user disable —
-        // `StreamerManager::partial_update_streamer` commits
-        // `state = 'DISABLED'` before its broadcast fans out, so an in-flight
-        // live check can pass those guards and still land here. This read
-        // shares the `BEGIN IMMEDIATE` boundary with the writes below, so a
-        // disable that committed first is always observed. Without it,
-        // `set_live` would overwrite the user's state and the enqueued
-        // `StreamerLive` event would start a download for a disabled
-        // streamer.
-        if let Some(state) = StreamerTxOps::get_state(&mut tx, &inputs.streamer_id)
-            .await?
-            .filter(|s| !s.is_active())
-        {
+        // Authoritative inactive guard (see `inactive_state`): without it,
+        // `set_live` below would overwrite a just-committed user disable
+        // with LIVE, and the enqueued `StreamerLive` event would start a
+        // download for a disabled streamer.
+        if let Some(state) = Self::inactive_state(&mut tx, &inputs.streamer_id).await? {
             tx.commit().await?;
             info!(
                 streamer_id = %inputs.streamer_id,
@@ -356,10 +368,7 @@ impl SessionLifecycleRepository {
         now: DateTime<Utc>,
     ) -> Result<Option<StreamerState>> {
         let mut tx = begin_immediate(&self.write_pool).await?;
-        if let Some(state) = StreamerTxOps::get_state(&mut tx, streamer_id)
-            .await?
-            .filter(|s| !s.is_active())
-        {
+        if let Some(state) = Self::inactive_state(&mut tx, streamer_id).await? {
             tx.commit().await?;
             return Ok(Some(state));
         }
@@ -735,6 +744,15 @@ mod tests {
             .get::<String, _>(0)
     }
 
+    async fn set_streamer_state(pool: &SqlitePool, state: &str) {
+        sqlx::query("UPDATE streamers SET state = ? WHERE id = ?")
+            .bind(state)
+            .bind(STREAMER_ID)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
     async fn outbox_event_types(pool: &SqlitePool) -> Vec<String> {
         sqlx::query("SELECT event_type FROM monitor_event_outbox ORDER BY id")
             .fetch_all(pool)
@@ -780,11 +798,7 @@ mod tests {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
 
-        sqlx::query("UPDATE streamers SET state = 'DISABLED' WHERE id = ?")
-            .bind(STREAMER_ID)
-            .execute(&pool)
-            .await
-            .unwrap();
+        set_streamer_state(&pool, "DISABLED").await;
 
         let outcome = repo.start_or_resume(start_inputs(Utc::now())).await.unwrap();
 
@@ -811,11 +825,7 @@ mod tests {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
 
-        sqlx::query("UPDATE streamers SET state = 'CANCELLED' WHERE id = ?")
-            .bind(STREAMER_ID)
-            .execute(&pool)
-            .await
-            .unwrap();
+        set_streamer_state(&pool, "CANCELLED").await;
 
         let blocked = repo
             .mark_streamer_live(STREAMER_ID, Utc::now())
@@ -824,11 +834,7 @@ mod tests {
         assert_eq!(blocked, Some(StreamerState::Cancelled));
         assert_eq!(streamer_state(&pool).await, "CANCELLED");
 
-        sqlx::query("UPDATE streamers SET state = 'NOT_LIVE' WHERE id = ?")
-            .bind(STREAMER_ID)
-            .execute(&pool)
-            .await
-            .unwrap();
+        set_streamer_state(&pool, "NOT_LIVE").await;
 
         let marked = repo
             .mark_streamer_live(STREAMER_ID, Utc::now())
