@@ -508,7 +508,7 @@ msgstr "Any additional command line arguments to pass to Streamlink"
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:138
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:139
 msgid "API Request Retries"
 msgstr "API Request Retries"
 
@@ -642,6 +642,9 @@ msgid "Audio Extraction"
 msgstr "Audio Extraction"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:491
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:118
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:191
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:206
 msgid "Audio only"
 msgstr "Audio only"
 
@@ -1768,6 +1771,10 @@ msgstr "Custom imported theme is active."
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Custom proxy URL for Twitch playlists"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:121
+msgid "Custom rate"
+msgstr "Custom rate"
+
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:246
 msgid "Custom Tags"
 msgstr "Custom Tags"
@@ -1909,6 +1916,10 @@ msgstr "default"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
 msgid "Default"
 msgstr "Default"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:35
+msgid "Default Douyu quality"
+msgstr "Default Douyu quality"
 
 #: src/components/config/global/concurrency-card.tsx:413
 msgid "Default Engine"
@@ -2167,6 +2178,18 @@ msgstr "Double click to edit items."
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:91
 msgid "Double Screen Data"
 msgstr "Double Screen Data"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:47
+msgid "Douyu HD rate"
+msgstr "Douyu HD rate"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:53
+msgid "Douyu SD or low rate"
+msgstr "Douyu SD or low rate"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:41
+msgid "Douyu UHD rate"
+msgstr "Douyu UHD rate"
 
 #: src/components/config/engines/engine-card.tsx:148
 msgid "Down"
@@ -2769,7 +2792,7 @@ msgstr "Extraction API Mode"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:40
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:27
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:28
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:29
 msgid "Extraction Settings"
 msgstr "Extraction Settings"
@@ -3200,7 +3223,7 @@ msgstr "Filter deleted successfully"
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:110
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:111
 msgid "Filter Interactive Games"
 msgstr "Filter Interactive Games"
 
@@ -3521,6 +3544,10 @@ msgstr "H2 Keep-Alive (ms)"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:790
 msgid "Hardware Acceleration"
 msgstr "Hardware Acceleration"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:46
+msgid "HD"
+msgstr "HD"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:9
 msgid "HD Thumbnail"
@@ -4396,7 +4423,7 @@ msgstr "Max Key Retries"
 msgid "Max Key Retry Delay (ms)"
 msgstr "Max Key Retry Delay (ms)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:153
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:154
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "Max number of retry attempts for metadata fetching."
 
@@ -4690,7 +4717,7 @@ msgstr "Native Resolution Thumbnail"
 msgid "Network"
 msgstr "Network"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:98
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:99
 msgid "Network & Content"
 msgstr "Network & Content"
 
@@ -5214,6 +5241,10 @@ msgstr "Only supported for MP4/MOV/M4V"
 msgid "Open menu"
 msgstr "Open menu"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:176
+msgid "Open quality options"
+msgstr "Open quality options"
+
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:158
 msgid "Operation"
@@ -5249,6 +5280,10 @@ msgstr "Optional extra arguments appended to `tdl login`."
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:173
 msgid "Options"
 msgstr "Options"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:34
+msgid "Original / Blu-ray"
+msgstr "Original / Blu-ray"
 
 #: src/components/sessions/timeline-tab.tsx:169
 msgctxt "terminal-cause"
@@ -5801,7 +5836,7 @@ msgstr "Prefer QR login first; Phone & Code (2FA optional) second; Desktop last.
 msgid "Preferences"
 msgstr "Preferences"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:42
 msgid "Preferred CDN"
 msgstr "Preferred CDN"
 
@@ -6031,7 +6066,7 @@ msgstr "Quality (qscale)"
 msgid "Quality Control"
 msgstr "Quality Control"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:70
 msgid "Quality Rate"
 msgstr "Quality Rate"
 
@@ -6306,6 +6341,10 @@ msgstr "Replace output files"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:229
 msgid "Replace output files if they already exist"
 msgstr "Replace output files if they already exist"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:209
+msgid "Request AAC audio without a video track."
+msgstr "Request AAC audio without a video track."
 
 #: src/components/notifications/forms/webhook-form.tsx:187
 msgid "Request timeout duration"
@@ -6613,6 +6652,10 @@ msgstr "Scheduler"
 msgid "Script"
 msgstr "Script"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:52
+msgid "SD / Low"
+msgstr "SD / Low"
+
 #: src/components/pipeline/workflows/step-library.tsx:270
 msgid "Search by name or description..."
 msgstr "Search by name or description..."
@@ -6708,6 +6751,10 @@ msgstr "Select a default engine"
 msgid "Select a format"
 msgstr "Select a format"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:82
+msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
+msgstr "Select a preset or type a Douyu rate. Audio only requests AAC without video."
+
 #: src/components/pipeline/workflows/step-library.tsx:252
 msgid "Select a processing job or workflow to add to your pipeline."
 msgstr "Select a processing job or workflow to add to your pipeline."
@@ -6770,6 +6817,10 @@ msgstr "Select login type"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:169
 msgid "Select operation"
 msgstr "Select operation"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:167
+msgid "Select or type a rate"
+msgstr "Select or type a rate"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:330
 msgid "Select preset"
@@ -7071,7 +7122,7 @@ msgstr "Specific settings for the platform."
 msgid "Specific TTWID Cookie"
 msgstr "Specific TTWID Cookie"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:53
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:54
 msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 
@@ -7881,7 +7932,7 @@ msgstr "Transient monitoring errors are being preserved until sustained download
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "Treat interactive game streams (互动玩法) as offline."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:113
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:114
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
@@ -8035,6 +8086,10 @@ msgstr "Type your answer here..."
 msgid "type=bolt,path=/data/tdl"
 msgstr "type=bolt,path=/data/tdl"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:40
+msgid "Ultra HD"
+msgstr "Ultra HD"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:29
 msgid "Ultrafast Compression"
 msgstr "Ultrafast Compression"
@@ -8159,10 +8214,6 @@ msgstr "URL is required"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:839
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:84
-msgid "Use 0 for original quality."
-msgstr "Use 0 for original quality."
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:202
 msgid "Use danmu_inputs from job manifest"

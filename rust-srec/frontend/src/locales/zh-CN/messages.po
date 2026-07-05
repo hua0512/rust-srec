@@ -508,7 +508,7 @@ msgstr "传递给 Streamlink 的其他命令行参数"
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:138
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:139
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
@@ -642,6 +642,9 @@ msgid "Audio Extraction"
 msgstr "音频提取"
 
 #: src/components/config/engines/forms/mesio-hls-form.tsx:491
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:118
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:191
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:206
 msgid "Audio only"
 msgstr "仅音频"
 
@@ -1768,6 +1771,10 @@ msgstr "自定义导入主题已激活。"
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Twitch 播放列表的自定义代理 URL"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:121
+msgid "Custom rate"
+msgstr "自定义画质值"
+
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:246
 msgid "Custom Tags"
 msgstr "自定义标签"
@@ -1909,6 +1916,10 @@ msgstr "默认"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
 msgid "Default"
 msgstr "默认"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:35
+msgid "Default Douyu quality"
+msgstr "斗鱼默认画质"
 
 #: src/components/config/global/concurrency-card.tsx:413
 msgid "Default Engine"
@@ -2167,6 +2178,18 @@ msgstr "双击以编辑项目。"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:91
 msgid "Double Screen Data"
 msgstr "双屏数据"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:47
+msgid "Douyu HD rate"
+msgstr "斗鱼高清画质值"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:53
+msgid "Douyu SD or low rate"
+msgstr "斗鱼标清或低清画质值"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:41
+msgid "Douyu UHD rate"
+msgstr "斗鱼超清画质值"
 
 #: src/components/config/engines/engine-card.tsx:148
 msgid "Down"
@@ -2769,7 +2792,7 @@ msgstr "API 模式"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:40
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:27
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:28
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:29
 msgid "Extraction Settings"
 msgstr "提取设置"
@@ -3200,7 +3223,7 @@ msgstr "过滤器删除成功"
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:110
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:111
 msgid "Filter Interactive Games"
 msgstr "过滤互动玩法"
 
@@ -3521,6 +3544,10 @@ msgstr "H2 保活（毫秒）"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:790
 msgid "Hardware Acceleration"
 msgstr "硬件加速"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:46
+msgid "HD"
+msgstr "高清"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:9
 msgid "HD Thumbnail"
@@ -4396,7 +4423,7 @@ msgstr "最大密钥重试次数"
 msgid "Max Key Retry Delay (ms)"
 msgstr "最大密钥重试延迟（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:153
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:154
 msgid "Max number of retry attempts for metadata fetching."
 msgstr "元数据获取的最大重试次数。"
 
@@ -4690,7 +4717,7 @@ msgstr "原始分辨率缩略图"
 msgid "Network"
 msgstr "网络"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:98
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:99
 msgid "Network & Content"
 msgstr "网络与内容"
 
@@ -5214,6 +5241,10 @@ msgstr "仅支持 MP4/MOV/M4V"
 msgid "Open menu"
 msgstr "打开菜单"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:176
+msgid "Open quality options"
+msgstr "打开画质选项"
+
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:57
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:158
 msgid "Operation"
@@ -5249,6 +5280,10 @@ msgstr "附加到 `tdl login` 的可选额外参数。"
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:173
 msgid "Options"
 msgstr "选项"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:34
+msgid "Original / Blu-ray"
+msgstr "原画 / 蓝光"
 
 #: src/components/sessions/timeline-tab.tsx:169
 msgctxt "terminal-cause"
@@ -5801,7 +5836,7 @@ msgstr "优先使用二维码登录；其次是手机号和验证码（可选两
 msgid "Preferences"
 msgstr "偏好设置"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:42
 msgid "Preferred CDN"
 msgstr "首选 CDN"
 
@@ -6031,7 +6066,7 @@ msgstr "质量（qscale）"
 msgid "Quality Control"
 msgstr "质量控制"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:70
 msgid "Quality Rate"
 msgstr "画质等级"
 
@@ -6306,6 +6341,10 @@ msgstr "替换输出文件"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:229
 msgid "Replace output files if they already exist"
 msgstr "若输出文件已存在则替换"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:209
+msgid "Request AAC audio without a video track."
+msgstr "请求不含视频轨的 AAC 音频。"
 
 #: src/components/notifications/forms/webhook-form.tsx:187
 msgid "Request timeout duration"
@@ -6613,6 +6652,10 @@ msgstr "调度器"
 msgid "Script"
 msgstr "脚本"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:52
+msgid "SD / Low"
+msgstr "标清 / 低清"
+
 #: src/components/pipeline/workflows/step-library.tsx:270
 msgid "Search by name or description..."
 msgstr "按名称或描述搜索..."
@@ -6708,6 +6751,10 @@ msgstr "选择默认引擎"
 msgid "Select a format"
 msgstr "选择格式"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:82
+msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
+msgstr "选择预设或输入斗鱼画质值。仅音频会请求不含视频的 AAC。"
+
 #: src/components/pipeline/workflows/step-library.tsx:252
 msgid "Select a processing job or workflow to add to your pipeline."
 msgstr "选择要添加到处理管道的处理任务或工作流。"
@@ -6770,6 +6817,10 @@ msgstr "选择登录类型"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:169
 msgid "Select operation"
 msgstr "选择操作"
+
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:167
+msgid "Select or type a rate"
+msgstr "选择或输入画质值"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:330
 msgid "Select preset"
@@ -7071,7 +7122,7 @@ msgstr "平台的特定设置。"
 msgid "Specific TTWID Cookie"
 msgstr "特定 TTWID Cookie"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:53
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:54
 msgid "Specify preferred content delivery network (e.g., ws-h5, hw-h5)."
 msgstr "指定首选的内容分发网络（例如 ws-h5, hw-h5）。"
 
@@ -7881,7 +7932,7 @@ msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:113
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:114
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
@@ -8035,6 +8086,10 @@ msgstr "在此输入你的回答..."
 msgid "type=bolt,path=/data/tdl"
 msgstr "type=bolt,path=/data/tdl"
 
+#: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:40
+msgid "Ultra HD"
+msgstr "超清"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:29
 msgid "Ultrafast Compression"
 msgstr "极速压缩"
@@ -8159,10 +8214,6 @@ msgstr "必须填写 URL"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:839
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
-
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:84
-msgid "Use 0 for original quality."
-msgstr "使用 0 表示原画质量。"
 
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:202
 msgid "Use danmu_inputs from job manifest"
