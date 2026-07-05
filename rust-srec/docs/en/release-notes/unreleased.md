@@ -67,3 +67,13 @@ Douyu extraction also gets a smaller but useful cleanup: audio-only streams can 
 - **Clearer error for invalid copy/move step configuration**
 
   A copy/move step whose saved configuration fails to parse (for example a mistyped option value) now reports the actual parse error instead of a misleading "no destination directory specified" message.
+
+## Recording reliability
+
+- **Recording recovers on its own after repeated download start failures**
+
+  When a stream's CDN briefly rejected downloads (for example Douyu edge nodes returning HTTP 404 while the room was still live), three consecutive failures put the streamer into a short error backoff. A timing race between that backoff and the session-resume path could leave the recording session marked active with no download running — the room kept showing as live with an error, but recording never restarted until monitoring was toggled manually. The download-start gate now reports this refusal the same way other rejected downloads are reported: the session closes cleanly and a status check is scheduled for the moment the backoff expires, so recording resumes automatically once the stream is reachable again.
+
+- **Live watchdog restarts downloads that disappeared silently**
+
+  As a safety net for any path that drops a download start without feedback, the periodic live watchdog now recognizes "reported live, but no download activity for five minutes" and re-triggers the download start instead of discarding the check result.
