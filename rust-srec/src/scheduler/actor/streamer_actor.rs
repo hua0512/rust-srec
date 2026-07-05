@@ -477,6 +477,21 @@ impl StreamerActor {
         }
     }
 
+    /// Whether no download heartbeat has arrived for the stall window.
+    ///
+    /// While Live, `last_download_activity_at` is fed by
+    /// `handle_download_heartbeat`; a healthy download keeps it fresh. When
+    /// it goes stale the download is gone but no `DownloadEnded` was
+    /// delivered (e.g. the start was dropped by a container gate after the
+    /// session had already resumed). Callers must read this BEFORE applying
+    /// a check result — `perform_check` / `handle_batch_result` refresh the
+    /// timestamp from a Live check result, which would mask the staleness.
+    fn download_heartbeats_stale(&self) -> bool {
+        self.state
+            .last_download_activity_at
+            .is_none_or(|t| t.elapsed() >= self.live_stall_watchdog_interval())
+    }
+
     fn handle_suppressed_live_status(
         &mut self,
         suppression: ProcessStatusSuppression,
@@ -596,6 +611,10 @@ impl StreamerActor {
         let is_live_watchdog =
             self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none();
 
+        // Captured before the check so the Live-result refresh of
+        // `last_download_activity_at` below can't mask it.
+        let heartbeats_stale = self.download_heartbeats_stale();
+
         // Fetch fresh metadata from the store
         let metadata = self
             .get_metadata()
@@ -607,6 +626,29 @@ impl StreamerActor {
                 let previous_runtime_state = self.state.clone();
                 let next_state = result.state;
                 let error_count = self.get_error_count();
+
+                // Stall-watchdog reconciliation: a watchdog check that still
+                // sees Live while no download heartbeat arrived for the
+                // stall window means the download is gone but no
+                // DownloadEnded was delivered. The `(Live, Live)` arm of
+                // `HysteresisState::should_emit` would suppress the result
+                // and park this actor forever; reset the local state so the
+                // check registers as a NotLive→Live transition and
+                // `process_status` re-drives the download. Safe when a
+                // download is alive but silent: the container dedups via
+                // `has_active_download` before starting another one.
+                if is_live_watchdog
+                    && heartbeats_stale
+                    && next_state == StreamerState::Live
+                    && self.state.streamer_state == StreamerState::Live
+                {
+                    info!(
+                        streamer_id = %self.id,
+                        streamer_name = %metadata.name,
+                        "live watchdog: no download heartbeats for the stall window; forcing live re-emit"
+                    );
+                    self.state.streamer_state = StreamerState::NotLive;
+                }
 
                 if next_state == StreamerState::Live {
                     self.state.last_download_activity_at = Some(Instant::now());
@@ -853,6 +895,26 @@ impl StreamerActor {
         }
 
         // Record the check result and get hysteresis decision
+        //
+        // Same stall-watchdog reconciliation as `perform_check`: a batch
+        // result that still reports Live while download heartbeats have
+        // been silent for the stall window must not be swallowed by the
+        // `(Live, Live)` suppression — reset the local state so the result
+        // registers as a transition and `process_status` re-drives the
+        // download. Staleness is read before the Live-result refresh below.
+        let is_live_watchdog =
+            self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none();
+        if is_live_watchdog
+            && self.download_heartbeats_stale()
+            && next_state == StreamerState::Live
+        {
+            info!(
+                streamer_id = %self.id,
+                "live watchdog (batch): no download heartbeats for the stall window; forcing live re-emit"
+            );
+            self.state.streamer_state = StreamerState::NotLive;
+        }
+
         if next_state == StreamerState::Live {
             self.state.last_download_activity_at = Some(Instant::now());
         }
@@ -1257,6 +1319,38 @@ impl StreamerActor {
                 }
 
                 self.state.streamer_state = StreamerState::OutOfSpace;
+                self.state.next_check = Some(
+                    std::time::Instant::now() + std::time::Duration::from_secs(retry_after_secs),
+                );
+            }
+            DownloadEndPolicy::StreamerBackoffBlocked {
+                reason,
+                retry_after_secs,
+                ..
+            } => {
+                // The download-start gate refused to start because the
+                // streamer is inside its `disabled_until` error backoff. The
+                // backoff was already persisted by
+                // `MonitorService::handle_error`, so unlike the
+                // CircuitBreakerBlocked arm there is no `set_infra_blocked`
+                // write to make. Only local scheduling needs correcting: the
+                // live check that raced the backoff commit left this actor
+                // in Live with no download, where the `(Live, Live)` arm of
+                // `HysteresisState::should_emit` would keep `process_status`
+                // from ever firing again. Drop to TemporalDisabled and
+                // re-check once the backoff expires; that check re-detects
+                // Live and restarts the download through the normal monitor
+                // path (`start_or_resume` enqueues `StreamerLive` on both
+                // its Created and ReusedActive branches).
+                info!(
+                    streamer_id = %self.id,
+                    reason = %reason,
+                    retry_after_secs,
+                    "download blocked by streamer error backoff; rescheduling check at expiry"
+                );
+
+                self.state.streamer_state = StreamerState::TemporalDisabled;
+                self.state.last_download_activity_at = None;
                 self.state.next_check = Some(
                     std::time::Instant::now() + std::time::Duration::from_secs(retry_after_secs),
                 );
@@ -2316,6 +2410,162 @@ mod tests {
         assert!(actor.state.last_download_activity_at.is_some());
         assert!(actor.state.next_check.is_none());
         assert!(actor.state.hysteresis.was_live());
+    }
+
+    /// A live-watchdog check that still sees Live while download heartbeats
+    /// have been silent for the stall window must NOT be swallowed by the
+    /// `(Live, Live)` hysteresis suppression — it must call `process_status`
+    /// so the monitor can re-drive the download (a dead session otherwise
+    /// stays unrecovered: no download → no DownloadEnded → no transition).
+    #[tokio::test]
+    async fn test_live_watchdog_stall_forces_live_reemit() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let checker = Arc::new(SequenceStatusChecker::new(
+            vec![(
+                CheckResult::success(StreamerState::Live),
+                LiveStatus::Live {
+                    title: "Stalled Live".to_string(),
+                    category: None,
+                    started_at: None,
+                    viewer_count: None,
+                    avatar: None,
+                    streams: vec![],
+                    media_headers: None,
+                    media_extras: None,
+                    next_check_hint: None,
+                    candidates: vec![],
+                },
+            )],
+            vec![ProcessStatusResult::Applied],
+        ));
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            checker.clone() as Arc<dyn StatusChecker>,
+        );
+
+        // Wedged shape: Live with no scheduled check (watchdog mode) and no
+        // download heartbeat ever observed.
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.next_check = None;
+        actor.state.last_download_activity_at = None;
+
+        actor.perform_check().await.unwrap();
+
+        // process_status consumed its queued outcome — the Live result was
+        // re-emitted instead of suppressed.
+        assert!(
+            checker.outcomes.lock().unwrap().is_empty(),
+            "stalled live watchdog must call process_status"
+        );
+        assert_eq!(actor.state.streamer_state, StreamerState::Live);
+        assert!(actor.state.last_download_activity_at.is_some());
+        assert!(actor.state.hysteresis.was_live());
+    }
+
+    /// The reconciliation must not fire while a download is healthy: fresh
+    /// heartbeats mean the `(Live, Live)` suppression is doing its intended
+    /// job (avoiding redundant monitor writes on the 2h watchdog).
+    #[tokio::test]
+    async fn test_live_watchdog_with_fresh_heartbeats_keeps_suppression() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let checker = Arc::new(SequenceStatusChecker::new(
+            vec![(
+                CheckResult::success(StreamerState::Live),
+                LiveStatus::Live {
+                    title: "Healthy Live".to_string(),
+                    category: None,
+                    started_at: None,
+                    viewer_count: None,
+                    avatar: None,
+                    streams: vec![],
+                    media_headers: None,
+                    media_extras: None,
+                    next_check_hint: None,
+                    candidates: vec![],
+                },
+            )],
+            vec![ProcessStatusResult::Applied],
+        ));
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            checker.clone() as Arc<dyn StatusChecker>,
+        );
+
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.next_check = None;
+        // Heartbeat just arrived — download is alive.
+        actor.state.last_download_activity_at = Some(Instant::now());
+
+        actor.perform_check().await.unwrap();
+
+        assert_eq!(
+            checker.outcomes.lock().unwrap().len(),
+            1,
+            "healthy live watchdog must keep the (Live, Live) suppression"
+        );
+        assert_eq!(actor.state.streamer_state, StreamerState::Live);
+        assert!(actor.state.next_check.is_none());
+    }
+
+    /// `StreamerBackoffBlocked` (container refused the download start because
+    /// the streamer is inside its `disabled_until` error backoff) must move
+    /// the actor out of Live and schedule a re-check at backoff expiry —
+    /// otherwise the actor sits in watchdog mode where `(Live, Live)`
+    /// suppression never lets `process_status` restart the download.
+    #[tokio::test]
+    async fn test_download_ended_streamer_backoff_blocked_schedules_expiry_check() {
+        let metadata_store = create_test_metadata_store();
+        let config = create_test_config();
+        let token = CancellationToken::new();
+
+        let (mut actor, _handle) = StreamerActor::new(
+            "test-streamer".to_string(),
+            metadata_store,
+            config,
+            token,
+            create_noop_checker(),
+        );
+
+        actor.state.streamer_state = StreamerState::Live;
+        actor.state.hysteresis.mark_live();
+        actor.state.next_check = None;
+        actor.state.last_download_activity_at = Some(Instant::now());
+
+        actor
+            .handle_download_ended(
+                super::super::messages::DownloadEndPolicy::StreamerBackoffBlocked {
+                    reason: "streamer temporarily disabled (error backoff)".to_string(),
+                    retry_after_secs: 30,
+                    session_id: "session-1".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(actor.state.streamer_state, StreamerState::TemporalDisabled);
+        assert!(actor.state.last_download_activity_at.is_none());
+        let until = actor.state.time_until_next_check().unwrap();
+        assert!(until <= Duration::from_secs(30));
+        assert!(until > Duration::from_secs(20));
+        // TemporalDisabled → Live is an emitting transition in
+        // `HysteresisState::should_emit`, so the expiry check re-drives the
+        // download through the normal monitor path.
     }
 
     #[tokio::test]

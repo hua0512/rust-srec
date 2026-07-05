@@ -181,6 +181,27 @@ pub enum DownloadEndPolicy {
         session_id: String,
     },
 
+    /// Download start was refused because the streamer is inside its
+    /// error-backoff window (`disabled_until`, written by
+    /// `MonitorService::handle_error`).
+    ///
+    /// Emitted by the container's download-start gate when a `StreamerLive`
+    /// (typically a hysteresis-resume) races the backoff commit: the live
+    /// check passed the monitor's `is_disabled` guard before the disable
+    /// landed, so the actor is parked in Live with no download running.
+    /// The backoff is already persisted — the actor only needs to fix its
+    /// local scheduling: leave Live (otherwise the `(Live, Live)` arm of
+    /// `HysteresisState::should_emit` suppresses every future check) and
+    /// re-check once the window expires.
+    StreamerBackoffBlocked {
+        /// Human-readable reason from the rejecting gate.
+        reason: String,
+        /// Seconds until `disabled_until` expires (plus a small buffer).
+        retry_after_secs: u64,
+        /// Session ID of the download that was blocked.
+        session_id: String,
+    },
+
     /// Other error (unexpected/unknown reason).
     ///
     /// The actor preserves hysteresis and uses normal scheduling, allowing the

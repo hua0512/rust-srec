@@ -4020,11 +4020,37 @@ async fn run_live_download_pipeline(
             return;
         }
         if metadata.is_disabled() {
+            // Returning silently here would strand the pipeline: the session
+            // lifecycle has already committed this session to Recording (via
+            // `start_or_resume` or `resume_from_hysteresis`), and with no
+            // download there is never a DownloadStarted/DownloadEnded to move
+            // the streamer actor out of Live — the `(Live, Live)` arm of
+            // `HysteresisState::should_emit` then suppresses every future
+            // check and recording stays dead for the rest of the broadcast.
+            // Emit the same Rejected terminal `preflight` uses so the session
+            // lifecycle closes the session (`TerminalCause::Rejected` is an
+            // authoritative end) and the actor re-checks once the backoff
+            // expires.
+            let retry_after_secs = metadata
+                .remaining_backoff()
+                .and_then(|d| d.to_std().ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+                .saturating_add(2);
             info!(
                 streamer_id = %streamer_id,
                 streamer_name = %streamer_name,
                 disabled_until = ?metadata.disabled_until,
+                retry_after_secs,
                 "Ignoring StreamerLive while temporarily disabled"
+            );
+            download_manager.emit_rejected(
+                streamer_id.clone(),
+                streamer_name.clone(),
+                session_id.clone(),
+                "streamer temporarily disabled (error backoff)".to_string(),
+                Some(retry_after_secs),
+                crate::downloader::DownloadRejectedKind::StreamerBackoff,
             );
             return;
         }

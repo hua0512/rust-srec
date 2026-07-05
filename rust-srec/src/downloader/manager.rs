@@ -647,6 +647,12 @@ pub enum DownloadRejectedKind {
         path: std::path::PathBuf,
         io_kind: IoErrorKindSer,
     },
+    /// The streamer is inside its error-backoff window (`disabled_until` set
+    /// by `MonitorService::handle_error`). Emitted by the container's
+    /// download-start gate rather than `preflight` — the backoff itself is
+    /// already persisted, so the scheduler only reschedules the actor after
+    /// `retry_after_secs`; no `InfraBlockReason` write is needed.
+    StreamerBackoff,
 }
 
 /// Input to [`DownloadManager::preflight`].
@@ -2000,6 +2006,41 @@ impl DownloadManager {
         self.event_tx.subscribe()
     }
 
+    /// Emit [`DownloadTerminalEvent::Rejected`] on behalf of a caller that
+    /// refused to start a download before [`Self::preflight`] ran.
+    ///
+    /// The container's temporarily-disabled gate uses this when it drops a
+    /// `StreamerLive` because the streamer is inside its error-backoff
+    /// window (`disabled_until`). Going through the same event `preflight`
+    /// emits keeps every rejection consumer on one path: the session
+    /// lifecycle ends the just-created/resumed session
+    /// (`TerminalCause::Rejected` is an authoritative end), and the
+    /// scheduler reschedules the streamer actor after `retry_after_secs`
+    /// instead of leaving it parked in Live with no download and no
+    /// `DownloadEnded` ever arriving.
+    pub fn emit_rejected(
+        &self,
+        streamer_id: String,
+        streamer_name: String,
+        session_id: String,
+        reason: String,
+        retry_after_secs: Option<u64>,
+        kind: DownloadRejectedKind,
+    ) {
+        let _ = self
+            .event_tx
+            .send(DownloadManagerEvent::Terminal(
+                DownloadTerminalEvent::Rejected {
+                    streamer_id,
+                    streamer_name,
+                    session_id,
+                    reason,
+                    retry_after_secs,
+                    kind,
+                },
+            ));
+    }
+
     /// Update configuration for an active download.
     ///
     /// Queues configuration updates (cookies, headers, retry policy) to be applied
@@ -2603,6 +2644,45 @@ mod tests {
         let manager = DownloadManager::new();
         assert_eq!(manager.active_count(), 0);
         assert!(!manager.available_engines().is_empty());
+    }
+
+    /// `emit_rejected` must reach subscribers exactly like a
+    /// preflight-emitted rejection: the session lifecycle relies on the
+    /// `Rejected` terminal to close the session and the scheduler relies on
+    /// it to reschedule the streamer actor after `retry_after_secs`.
+    #[tokio::test]
+    async fn emit_rejected_broadcasts_terminal_event() {
+        let manager = DownloadManager::new();
+        let mut events = manager.subscribe();
+
+        manager.emit_rejected(
+            "streamer-1".to_string(),
+            "Streamer One".to_string(),
+            "session-1".to_string(),
+            "streamer temporarily disabled (error backoff)".to_string(),
+            Some(62),
+            DownloadRejectedKind::StreamerBackoff,
+        );
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+            .await
+            .expect("event should arrive")
+            .expect("channel open");
+
+        let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
+            streamer_id,
+            session_id,
+            retry_after_secs,
+            kind,
+            ..
+        }) = event
+        else {
+            panic!("expected Rejected terminal event, got {event:?}");
+        };
+        assert_eq!(streamer_id, "streamer-1");
+        assert_eq!(session_id, "session-1");
+        assert_eq!(retry_after_secs, Some(62));
+        assert!(matches!(kind, DownloadRejectedKind::StreamerBackoff));
     }
 
     #[tokio::test]
