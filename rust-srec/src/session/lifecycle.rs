@@ -453,6 +453,19 @@ impl SessionLifecycle {
 
         let outcome = self.repo.start_or_resume(inputs).await?;
 
+        // The row-level guard inside `start_or_resume` observed a
+        // user-disabled/cancelled (or fatal) streamer: nothing was written
+        // and no `StreamerLive` outbox event exists, so there is no session
+        // to track in memory either.
+        if let StartSessionOutcome::SuppressedInactive { state } = &outcome {
+            info!(
+                streamer_id = args.streamer_id,
+                state = %state,
+                "live detection suppressed: streamer row is inactive"
+            );
+            return Ok(outcome);
+        }
+
         self.sessions.insert(
             outcome.session_id().to_string(),
             SessionState::recording(
@@ -885,6 +898,53 @@ impl SessionLifecycle {
         session_id: &str,
         args: &LiveDetectedArgs<'_>,
     ) -> Option<StartSessionOutcome> {
+        // Set `streamers.state = LIVE` BEFORE claiming the hysteresis exit
+        // and before broadcasting. This path reuses the existing session row
+        // and does not go through `start_or_resume`, so without this write
+        // the row keeps whatever `monitor::service::handle_error` last wrote
+        // — `NOT_LIVE` after a non-authoritative download failure.
+        // Subscribers of the broadcasts below read that state through
+        // `streamer_manager`, so the value must be correct before the send.
+        //
+        // `mark_streamer_live` also carries the authoritative inactive
+        // guard: it reads the row's state inside its own `BEGIN IMMEDIATE`
+        // transaction, so a user disable that already committed is observed
+        // here even while the in-memory metadata cache (which the monitor's
+        // guards read) still lags. When blocked, the hysteresis handle
+        // stays armed — the disable path's `end_for_disable`, or the
+        // hysteresis timer if that broadcast is lost, ends the session
+        // through the normal path — and returning `SuppressedInactive`
+        // keeps `on_live_detected` from falling through to
+        // `start_or_resume`.
+        //
+        // A DB error logs and continues with the resume: a transient write
+        // failure must not kill the resume; the cache may stay stale until
+        // the next state write.
+        match self
+            .repo
+            .mark_streamer_live(args.streamer_id, args.now)
+            .await
+        {
+            Ok(None) => {}
+            Ok(Some(state)) => {
+                info!(
+                    streamer_id = %args.streamer_id,
+                    session_id,
+                    state = %state,
+                    "hysteresis resume suppressed: streamer row is inactive"
+                );
+                return Some(StartSessionOutcome::SuppressedInactive { state });
+            }
+            Err(e) => {
+                warn!(
+                    streamer_id = args.streamer_id,
+                    session_id,
+                    error = %e,
+                    "resume_from_hysteresis: set_live DB write failed; cache may stay stale"
+                );
+            }
+        }
+
         // CAS: claim the hysteresis exit. None = another path won.
         let Some((_, handle)) = self.hysteresis.remove(session_id) else {
             debug!(
@@ -898,30 +958,6 @@ impl SessionLifecycle {
         handle.cancel();
         let hysteresis_duration =
             chrono::Duration::from_std(handle.elapsed()).unwrap_or(chrono::Duration::zero());
-
-        // Set `streamers.state = LIVE` before broadcasting. This path reuses
-        // the existing session row and does not go through `start_or_resume`,
-        // so without this write the row keeps whatever
-        // `monitor::service::handle_error` last wrote — `NOT_LIVE` after a
-        // non-authoritative download failure. Subscribers of the broadcasts
-        // below read that state through `streamer_manager`, so the value
-        // must be correct before the send.
-        //
-        // Log and continue on DB failure: the CAS above already won, so the
-        // in-memory state is committed to "Recording". Reverting it would
-        // leave the actor and the lifecycle disagreeing.
-        if let Err(e) = self
-            .repo
-            .mark_streamer_live(args.streamer_id, args.now)
-            .await
-        {
-            warn!(
-                streamer_id = args.streamer_id,
-                session_id,
-                error = %e,
-                "resume_from_hysteresis: set_live DB write failed; cache may stay stale"
-            );
-        }
 
         // Restore in-memory state to Recording. Preserve the original
         // `started_at` from the prior entry.
@@ -3033,6 +3069,103 @@ mod tests {
 
         // The DB row must now be LIVE again — the fix's whole point.
         assert_eq!(streamer_state(&pool, STREAMER_ID).await, "LIVE");
+    }
+
+    /// A live detection that lost the race against a user disable must be
+    /// suppressed by the row-level guard inside `start_or_resume`: no
+    /// session in memory, no transition broadcast, and `state = DISABLED`
+    /// stays untouched instead of being overwritten with LIVE.
+    #[tokio::test]
+    async fn on_live_detected_suppressed_for_disabled_streamer() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle(pool.clone());
+        let mut rx = lifecycle.subscribe();
+
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .update_streamer_state(STREAMER_ID, StreamerState::Disabled.as_str())
+            .await
+            .unwrap();
+
+        let outcome = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            StartSessionOutcome::SuppressedInactive {
+                state: StreamerState::Disabled
+            }
+        );
+        assert_eq!(streamer_state(&pool, STREAMER_ID).await, "DISABLED");
+        assert!(
+            rx.try_recv().is_err(),
+            "suppressed live detection must not broadcast a transition"
+        );
+        assert!(outbox_event_types(&pool).await.is_empty());
+    }
+
+    /// The same race on the hysteresis-resume path: the resume must abort
+    /// before claiming the hysteresis exit, so the handle stays armed (the
+    /// disable teardown or the timer ends the session through the normal
+    /// path), no Resumed/Started is broadcast, and the DISABLED row is not
+    /// flipped to LIVE.
+    #[tokio::test]
+    async fn resume_suppressed_for_disabled_streamer_leaves_hysteresis_armed() {
+        let pool = setup_pool().await;
+        let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
+        let mut rx = lifecycle.subscribe();
+
+        let started = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Started
+
+        lifecycle
+            .on_download_terminal(&make_terminal_completed_clean_disconnect(
+                started.session_id(),
+            ))
+            .await
+            .unwrap();
+        let _ = rx.recv().await.unwrap(); // Ending
+
+        // User disable commits while the live re-check is in flight.
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .update_streamer_state(STREAMER_ID, StreamerState::Disabled.as_str())
+            .await
+            .unwrap();
+
+        let outcome = lifecycle
+            .on_live_detected(live_args(Utc::now()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            outcome,
+            StartSessionOutcome::SuppressedInactive {
+                state: StreamerState::Disabled
+            }
+        );
+        assert_eq!(
+            streamer_state(&pool, STREAMER_ID).await,
+            "DISABLED",
+            "resume must not overwrite the user's DISABLED state with LIVE"
+        );
+        assert!(
+            lifecycle.hysteresis.get(started.session_id()).is_some(),
+            "hysteresis handle must stay armed so the normal end path owns the session"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "suppressed resume must not broadcast Resumed/Started"
+        );
+        assert!(
+            db_session_end_time(&pool, started.session_id())
+                .await
+                .is_none(),
+            "the session end stays owned by the disable teardown / hysteresis timer"
+        );
     }
 
     /// J1 — `DefinitiveOffline { ConsecutiveFailures }` skips Hysteresis.

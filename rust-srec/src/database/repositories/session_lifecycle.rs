@@ -67,12 +67,22 @@ pub enum StartSessionOutcome {
     /// lifecycle returns when resuming a session out of `Hysteresis` —
     /// the session row was never ended in DB so reusing it is correct.
     ReusedActive { session_id: String },
+    /// Nothing was written: the streamer row's `state` was inactive
+    /// (user disabled/cancelled, or a fatal state) when read inside the
+    /// transaction. The monitor's cache-based guards drop these live
+    /// observations in the common case; this outcome is the authoritative
+    /// answer when a live check races the state commit.
+    SuppressedInactive { state: StreamerState },
 }
 
 impl StartSessionOutcome {
+    /// Recording session id. `SuppressedInactive` carries none — same
+    /// convention as `DownloadProgressEvent::session_id`: empty string
+    /// means absent, and callers gate on the variant before using it.
     pub fn session_id(&self) -> &str {
         match self {
             Self::Created { session_id } | Self::ReusedActive { session_id } => session_id,
+            Self::SuppressedInactive { .. } => "",
         }
     }
 }
@@ -161,6 +171,30 @@ impl SessionLifecycleRepository {
     /// enqueues [`MonitorEvent::StreamerLive`].
     pub async fn start_or_resume(&self, inputs: StartSessionInputs) -> Result<StartSessionOutcome> {
         let mut tx = begin_immediate(&self.write_pool).await?;
+
+        // Authoritative inactive guard. `MonitorService::process_status` and
+        // the container's StreamerLive gate both read the in-memory metadata
+        // cache, which lags a concurrent user disable —
+        // `StreamerManager::partial_update_streamer` commits
+        // `state = 'DISABLED'` before its broadcast fans out, so an in-flight
+        // live check can pass those guards and still land here. This read
+        // shares the `BEGIN IMMEDIATE` boundary with the writes below, so a
+        // disable that committed first is always observed. Without it,
+        // `set_live` would overwrite the user's state and the enqueued
+        // `StreamerLive` event would start a download for a disabled
+        // streamer.
+        if let Some(state) = StreamerTxOps::get_state(&mut tx, &inputs.streamer_id)
+            .await?
+            .filter(|s| !s.is_active())
+        {
+            tx.commit().await?;
+            info!(
+                streamer_id = %inputs.streamer_id,
+                state = %state,
+                "start_or_resume suppressed: streamer state is inactive"
+            );
+            return Ok(StartSessionOutcome::SuppressedInactive { state });
+        }
 
         let last = SessionTxOps::get_last_session(&mut tx, &inputs.streamer_id).await?;
 
@@ -310,11 +344,28 @@ impl SessionLifecycleRepository {
     /// whatever state was last written — typically `NOT_LIVE`, set by
     /// `monitor::service::handle_error` after a non-authoritative download
     /// failure.
-    pub async fn mark_streamer_live(&self, streamer_id: &str, now: DateTime<Utc>) -> Result<()> {
+    ///
+    /// Carries the same authoritative inactive guard as
+    /// [`Self::start_or_resume`]: when the row's state forbids sessions
+    /// (user disabled/cancelled, or fatal), nothing is written and the
+    /// blocking state is returned so the caller can abort the resume.
+    /// `Ok(None)` means the write went through.
+    pub async fn mark_streamer_live(
+        &self,
+        streamer_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Option<StreamerState>> {
         let mut tx = begin_immediate(&self.write_pool).await?;
+        if let Some(state) = StreamerTxOps::get_state(&mut tx, streamer_id)
+            .await?
+            .filter(|s| !s.is_active())
+        {
+            tx.commit().await?;
+            return Ok(Some(state));
+        }
         StreamerTxOps::set_live(&mut tx, streamer_id, now).await?;
         tx.commit().await?;
-        Ok(())
+        Ok(None)
     }
 
     /// Light "session ended" bundle: close the session row only, without
@@ -719,6 +770,72 @@ mod tests {
         assert!(matches!(again, StartSessionOutcome::ReusedActive { .. }));
         assert_eq!(first.session_id(), again.session_id());
         assert_eq!(outbox_event_types(&pool).await.len(), 2);
+    }
+
+    /// The in-tx state guard: a live check that lost the race against a
+    /// user disable must not create a session, overwrite `state=DISABLED`
+    /// with LIVE, or enqueue a `StreamerLive` outbox event.
+    #[tokio::test]
+    async fn start_or_resume_suppressed_when_streamer_disabled() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+
+        sqlx::query("UPDATE streamers SET state = 'DISABLED' WHERE id = ?")
+            .bind(STREAMER_ID)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let outcome = repo.start_or_resume(start_inputs(Utc::now())).await.unwrap();
+
+        assert_eq!(
+            outcome,
+            StartSessionOutcome::SuppressedInactive {
+                state: StreamerState::Disabled
+            }
+        );
+        assert_eq!(streamer_state(&pool).await, "DISABLED");
+        assert!(outbox_event_types(&pool).await.is_empty());
+        let sessions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM live_sessions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(sessions, 0, "no session row may be created while disabled");
+    }
+
+    /// Same guard on the hysteresis-resume write path: `mark_streamer_live`
+    /// must refuse to flip an inactive row to LIVE and report the blocking
+    /// state so the lifecycle aborts the resume.
+    #[tokio::test]
+    async fn mark_streamer_live_blocked_for_inactive_streamer() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+
+        sqlx::query("UPDATE streamers SET state = 'CANCELLED' WHERE id = ?")
+            .bind(STREAMER_ID)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let blocked = repo
+            .mark_streamer_live(STREAMER_ID, Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(blocked, Some(StreamerState::Cancelled));
+        assert_eq!(streamer_state(&pool).await, "CANCELLED");
+
+        sqlx::query("UPDATE streamers SET state = 'NOT_LIVE' WHERE id = ?")
+            .bind(STREAMER_ID)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let marked = repo
+            .mark_streamer_live(STREAMER_ID, Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(marked, None);
+        assert_eq!(streamer_state(&pool).await, "LIVE");
     }
 
     #[tokio::test]
