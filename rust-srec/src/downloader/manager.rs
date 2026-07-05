@@ -2022,18 +2022,16 @@ impl DownloadManager {
         retry_after_secs: Option<u64>,
         kind: DownloadRejectedKind,
     ) {
-        let _ = self
-            .event_tx
-            .send(DownloadManagerEvent::Terminal(
-                DownloadTerminalEvent::Rejected {
-                    streamer_id,
-                    streamer_name,
-                    session_id,
-                    reason,
-                    retry_after_secs,
-                    kind,
-                },
-            ));
+        let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
+            DownloadTerminalEvent::Rejected {
+                streamer_id,
+                streamer_name,
+                session_id,
+                reason,
+                retry_after_secs,
+                kind,
+            },
+        ));
     }
 
     /// Update configuration for an active download.

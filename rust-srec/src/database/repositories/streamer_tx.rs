@@ -48,7 +48,9 @@ impl StreamerTxOps {
             .fetch_optional(tx)
             .await?;
 
-        Ok(state.as_deref().and_then(crate::domain::StreamerState::parse))
+        Ok(state
+            .as_deref()
+            .and_then(crate::domain::StreamerState::parse))
     }
 
     /// Update the `last_error` column within a transaction.

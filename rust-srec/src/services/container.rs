@@ -2357,10 +2357,11 @@ impl ServiceContainer {
                     _ => {}
                 }
 
-                // Forward to pipeline manager
-                pipeline_manager
-                    .handle_download_event(download_event.clone())
-                    .await;
+                // Forward to pipeline manager. Last use of the event in
+                // this iteration — move it instead of cloning (Progress
+                // events carry ids/strings and fire on every progress tick
+                // of every active download).
+                pipeline_manager.handle_download_event(download_event).await;
             }
         });
     }

@@ -477,6 +477,15 @@ impl StreamerActor {
         }
     }
 
+    /// Whether a timer-driven check right now is the "live watchdog": the
+    /// actor believes the streamer is Live and no check is scheduled (Live
+    /// scheduling parks `next_check`; only the 2h watchdog / stall timers
+    /// wake the loop). Watchdog checks must not mutate DB error/backoff
+    /// state — the download may still be healthy.
+    fn is_live_watchdog(&self) -> bool {
+        self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none()
+    }
+
     /// Whether no download heartbeat has arrived for the stall window.
     ///
     /// While Live, `last_download_activity_at` is fed by
@@ -503,9 +512,7 @@ impl StreamerActor {
     /// Must run before the caller refreshes `last_download_activity_at`
     /// from a Live check result — that refresh would mask the staleness.
     fn force_live_reemit_if_stalled(&mut self, next_state: StreamerState, context: &'static str) {
-        let is_live_watchdog =
-            self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none();
-        if is_live_watchdog
+        if self.is_live_watchdog()
             && self.download_heartbeats_stale()
             && next_state == StreamerState::Live
         {
@@ -637,12 +644,10 @@ impl StreamerActor {
     /// This method connects to the actual monitoring infrastructure via the
     /// StatusChecker trait, which abstracts the status checking operation.
     async fn perform_check(&mut self) -> Result<(), ActorError> {
-        // If we're currently Live and no check is scheduled, any timer-driven check is the
-        // "live watchdog" (used only to avoid getting stuck when DownloadEnded is missed).
-        // For watchdog checks, failures should not mutate DB error/backoff state because the
-        // download may still be healthy; treat them as recoverable and keep the actor Live.
-        let is_live_watchdog =
-            self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none();
+        // Captured before the check so the result application below cannot
+        // change the answer mid-function; see `is_live_watchdog` for why
+        // watchdog failures must stay side-effect free.
+        let is_live_watchdog = self.is_live_watchdog();
 
         // Fetch fresh metadata from the store
         let metadata = self
@@ -874,8 +879,7 @@ impl StreamerActor {
         // Batch failures are handled as errors, not as offline transitions.
         // This matches perform_check() behavior and avoids incorrectly ending sessions.
         if is_error {
-            let is_live_watchdog =
-                self.state.streamer_state == StreamerState::Live && self.state.next_check.is_none();
+            let is_live_watchdog = self.is_live_watchdog();
             if is_live_watchdog {
                 let msg = error_message.as_deref().unwrap_or("Batch check failed");
                 warn!(

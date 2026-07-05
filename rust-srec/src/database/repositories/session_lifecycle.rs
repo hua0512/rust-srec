@@ -800,7 +800,10 @@ mod tests {
 
         set_streamer_state(&pool, "DISABLED").await;
 
-        let outcome = repo.start_or_resume(start_inputs(Utc::now())).await.unwrap();
+        let outcome = repo
+            .start_or_resume(start_inputs(Utc::now()))
+            .await
+            .unwrap();
 
         assert_eq!(
             outcome,

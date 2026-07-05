@@ -412,6 +412,11 @@ impl SessionLifecycle {
     ///      - active prior session (`end_time IS NULL`) → `ReusedActive`
     ///      - ended prior session, or no prior session → `Created`
     ///
+    ///   Both steps carry the repository's authoritative inactive guard
+    ///   (`SessionLifecycleRepository::inactive_state`): a streamer row
+    ///   whose state forbids sessions (user disabled/cancelled, fatal)
+    ///   yields `SuppressedInactive` — nothing written, nothing broadcast.
+    ///
     ///   No gap-resume rule, no continuation rule, no `hard_ended` cache.
     ///   The DB's `end_time` is the source of truth.
     pub async fn on_live_detected(
@@ -880,6 +885,12 @@ impl SessionLifecycle {
     /// Cancel an active hysteresis timer and transition `Hysteresis →
     /// Recording`. The session row's `end_time` was never written (DB
     /// strategy B), so no DB undo is needed. Emits `SessionTransition::Resumed`.
+    ///
+    /// Before claiming the exit, `mark_streamer_live` re-checks the
+    /// streamer row's state at the DB serialization point: an inactive row
+    /// (user disabled/cancelled, fatal) aborts the resume with
+    /// `SuppressedInactive` and leaves the hysteresis handle armed, so the
+    /// disable teardown or the timer ends the session normally.
     ///
     /// CAS contract: the `self.hysteresis.remove(session_id)` operation IS
     /// the atomic claim for the `Hysteresis → Recording` transition. If the
