@@ -176,13 +176,13 @@ mod tests {
     #[test]
     fn test_encode_tag_without_header_fails() {
         let mut encoder = FlvEncoder::default();
-        let tag = FlvTag {
-            tag_type: FlvTagType::Video,
-            timestamp_ms: 100,
-            stream_id: 0,
-            is_filtered: false,
-            data: Bytes::from_static(&[0x01, 0x02]),
-        };
+        let tag = FlvTag::new(
+            100,
+            0,
+            FlvTagType::Video,
+            false,
+            Bytes::from_static(&[0x01, 0x02]),
+        );
         let mut buf = BytesMut::new();
 
         let result = encoder.encode(FlvData::Tag(tag), &mut buf);
@@ -219,13 +219,13 @@ mod tests {
     fn test_encode_first_tag() {
         let mut encoder = FlvEncoder::default();
         let header = default_header();
-        let tag = FlvTag {
-            tag_type: FlvTagType::Video,
-            timestamp_ms: 100, // 0x64
-            stream_id: 0,
-            is_filtered: false,
-            data: Bytes::from_static(&[0xAA, 0xBB, 0xCC, 0xDD]), // 4 bytes data
-        };
+        let tag = FlvTag::new(
+            100,
+            0,
+            FlvTagType::Video,
+            false,
+            Bytes::from_static(&[0xAA, 0xBB, 0xCC, 0xDD]),
+        );
         let data_len = 4;
         let expected_tag_structure_size = PREV_TAG_FIELD_SIZE + TAG_HEADER_SIZE + data_len; // 4 + 11 + 4 = 19
         let expected_tag_size = TAG_HEADER_SIZE + data_len; // 11 + 4 = 15
@@ -263,22 +263,22 @@ mod tests {
     fn test_encode_second_tag() {
         let mut encoder = FlvEncoder::default();
         let header = default_header();
-        let tag1 = FlvTag {
-            tag_type: FlvTagType::Video,
-            timestamp_ms: 100,
-            stream_id: 0,
-            is_filtered: false,
-            data: Bytes::from_static(&[0xAA, 0xBB, 0xCC, 0xDD]), // 4 bytes data
-        };
+        let tag1 = FlvTag::new(
+            100,
+            0,
+            FlvTagType::Video,
+            false,
+            Bytes::from_static(&[0xAA, 0xBB, 0xCC, 0xDD]),
+        );
         let tag1_size = TAG_HEADER_SIZE + 4; // 15
 
-        let tag2 = FlvTag {
-            tag_type: FlvTagType::Audio,
-            timestamp_ms: 120, // 0x78
-            stream_id: 0,
-            is_filtered: false,
-            data: Bytes::from_static(&[0xEE, 0xFF]), // 2 bytes data
-        };
+        let tag2 = FlvTag::new(
+            120,
+            0,
+            FlvTagType::Audio,
+            false,
+            Bytes::from_static(&[0xEE, 0xFF]),
+        );
         let tag2_data_len = 2;
         let expected_tag2_structure_size = PREV_TAG_FIELD_SIZE + TAG_HEADER_SIZE + tag2_data_len; // 4 + 11 + 2 = 17
 
@@ -323,13 +323,7 @@ mod tests {
 
         // Create data larger than 24 bits can represent
         let large_data = vec![0u8; MAX_TAG_DATA_SIZE + 1];
-        let tag = FlvTag {
-            tag_type: FlvTagType::Video,
-            timestamp_ms: 100,
-            stream_id: 0,
-            is_filtered: false,
-            data: Bytes::from(large_data),
-        };
+        let tag = FlvTag::new(100, 0, FlvTagType::Video, false, Bytes::from(large_data));
 
         let mut buf = BytesMut::new();
         assert!(encoder.encode(FlvData::Header(header), &mut buf).is_ok()); // Header is fine
@@ -347,13 +341,13 @@ mod tests {
         let mut encoder = FlvEncoder::default();
         let header = default_header();
         let large_timestamp = 0x12345678; // Example timestamp needing extended byte
-        let tag = FlvTag {
-            tag_type: FlvTagType::Video,
-            timestamp_ms: large_timestamp,
-            stream_id: 0,
-            is_filtered: false,
-            data: Bytes::from_static(&[0x01]), // 1 byte data
-        };
+        let tag = FlvTag::new(
+            large_timestamp,
+            0,
+            FlvTagType::Video,
+            false,
+            Bytes::from_static(&[0x01]),
+        );
         let data_len = 1;
         let expected_tag_structure_size = PREV_TAG_FIELD_SIZE + TAG_HEADER_SIZE + data_len; // 4 + 11 + 1 = 16
 

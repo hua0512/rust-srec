@@ -1,15 +1,18 @@
 use crate::{
-    analyzer::{AnalyzerError, FlvAnalyzer},
-    script_modifier,
+    amf::{
+        builder::{FixedSizeMetadataError, OnMetaDataBuilder},
+        model::AmfScriptData,
+    },
+    analyzer::{AnalyzerError, FlvAnalyzer, FlvStats},
 };
-use flv::{FlvData, FlvHeader, FlvWriter};
+use flv::{FlvData, FlvHeader, FlvWriter, script::ScriptData};
 use pipeline_common::split_reason::SplitReason;
 use pipeline_common::{
     FormatStrategy, PostWriteAction, WriterConfig, WriterState, expand_filename_template,
 };
 use std::{
     fs::OpenOptions,
-    io::BufWriter,
+    io::{BufWriter, Seek, Write},
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -26,14 +29,15 @@ pub enum FlvStrategyError {
     Flv(#[from] flv::FlvError),
     #[error("Analysis error: {0}")]
     Analysis(#[from] AnalyzerError),
-    #[error("Script modifier error: {0}")]
-    ScriptModifier(#[from] script_modifier::ScriptModifierError),
+    #[error("Fixed-size metadata error: {0}")]
+    FixedSizeMetadata(#[from] FixedSizeMetadataError),
 }
 
 /// Typed configuration for FLV writer.
 pub struct FlvWriterConfig {
     pub output_dir: PathBuf,
     pub base_name: String,
+    /// Retained for configuration compatibility; metadata patching is always layout-stable.
     pub enable_low_latency: bool,
 }
 
@@ -50,13 +54,17 @@ pub struct FlvFormatStrategy {
     last_status_bytes: u64,
     /// The most recent split reason received, if any.
     last_split_reason: Option<SplitReason>,
+    metadata_patch: Option<MetadataPatch>,
+}
 
-    // Whether to use low-latency mode for metadata modification.
-    enable_low_latency: bool,
+struct MetadataPatch {
+    payload_offset: u64,
+    payload_size: usize,
+    model: AmfScriptData,
 }
 
 impl FlvFormatStrategy {
-    pub fn new(enable_low_latency: bool) -> Self {
+    pub fn new(_enable_low_latency: bool) -> Self {
         Self {
             analyzer: FlvAnalyzer::default(),
             pending_header: None,
@@ -66,7 +74,7 @@ impl FlvFormatStrategy {
             last_status_update: None,
             last_status_bytes: 0,
             last_split_reason: None,
-            enable_low_latency,
+            metadata_patch: None,
         }
     }
 
@@ -111,6 +119,52 @@ impl FlvFormatStrategy {
             self.current_tag_count,
             self.calculate_duration()
         ));
+    }
+
+    fn capture_metadata_patch(&mut self, tag: &flv::FlvTag, tag_start: u64) {
+        if self.metadata_patch.is_some() || !tag.is_script_tag() {
+            return;
+        }
+
+        let mut cursor = std::io::Cursor::new(tag.data.clone());
+        let Ok(script) = ScriptData::demux(&mut cursor) else {
+            return;
+        };
+        if script.name != crate::AMF0_ON_METADATA {
+            return;
+        }
+        let Some(properties) = script
+            .data
+            .first()
+            .and_then(amf0::Amf0Value::as_object_properties)
+        else {
+            return;
+        };
+        let Ok(model) = AmfScriptData::from_amf_object_ref(properties) else {
+            return;
+        };
+
+        self.metadata_patch = Some(MetadataPatch {
+            payload_offset: tag_start + flv::framing::TAG_HEADER_SIZE as u64,
+            payload_size: tag.data.len(),
+            model,
+        });
+    }
+
+    fn build_final_metadata(
+        patch: MetadataPatch,
+        stats: &FlvStats,
+    ) -> Result<crate::amf::builder::FixedSizeMetadata, FixedSizeMetadataError> {
+        let mut builder = OnMetaDataBuilder::from_script_data(patch.model).with_stats(stats);
+        if let Some(video_stats) = &stats.video_stats {
+            let (times, filepositions) = video_stats
+                .keyframes
+                .iter()
+                .map(|keyframe| (keyframe.timestamp_s, keyframe.file_position))
+                .unzip();
+            builder = builder.with_final_keyframes(times, filepositions);
+        }
+        builder.build_fixed_size(patch.payload_size)
     }
 }
 
@@ -157,6 +211,9 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
                 self.current_tag_count += 1;
 
+                let tag_start = self.analyzer.stats.file_size;
+                self.capture_metadata_patch(tag, tag_start);
+
                 self.analyzer
                     .analyze_tag(tag)
                     .map_err(FlvStrategyError::Analysis)?;
@@ -202,6 +259,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         self.last_status_update = None;
         self.last_status_bytes = 0;
         self.last_split_reason = None;
+        self.metadata_patch = None;
 
         info!(path = %path.display(), "Opening segment");
 
@@ -228,55 +286,41 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
         if let Ok(stats) = analyzer.build_stats().cloned() {
             info!("Path : {}: {}", path.display(), &stats);
-            let path_buf = path.to_path_buf();
-            let enable_low_latency = self.enable_low_latency;
-
-            let task = move || {
-                match script_modifier::inject_stats_into_script_data(
-                    &path_buf,
-                    &stats,
-                    enable_low_latency,
-                ) {
-                    Ok(_) => {
-                        tracing::info!(path = %path_buf.display(), "Successfully injected stats in background task");
-                    }
-                    Err(e) => {
-                        // The consumer may delete discarded/small segments immediately after close.
-                        // Treat a missing file as an expected race rather than a warning.
-                        match &e {
-                            script_modifier::ScriptModifierError::Io(ioe)
-                                if ioe.kind() == std::io::ErrorKind::NotFound =>
-                            {
-                                tracing::debug!(
-                                    path = %path_buf.display(),
-                                    "Skipping stats injection: file no longer exists"
-                                );
-                            }
-                            _ => {
-                                tracing::warn!(
-                                    path = %path_buf.display(),
-                                    error = ?e,
-                                    "Failed to inject stats into script data section in background task"
-                                );
-                            }
+            if let Some(patch) = self.metadata_patch.take() {
+                let payload_offset = patch.payload_offset;
+                match Self::build_final_metadata(patch, &stats) {
+                    Ok(metadata) => {
+                        if metadata.truncated {
+                            tracing::warn!(
+                                path = %path.display(),
+                                keyframes_written = metadata.keyframes_written,
+                                "Truncated FLV keyframe index to preserve metadata layout"
+                            );
                         }
+                        writer
+                            .writer
+                            .seek(std::io::SeekFrom::Start(payload_offset))?;
+                        writer.writer.write_all(&metadata.bytes)?;
+                        writer.writer.flush()?;
                     }
+                    Err(FixedSizeMetadataError::TooLarge { target, minimum }) => {
+                        tracing::warn!(
+                            path = %path.display(),
+                            target,
+                            minimum,
+                            "Metadata reservation is too small; leaving the script tag unchanged"
+                        );
+                    }
+                    Err(error) => return Err(error.into()),
                 }
-
-                info!(
-                    path = %path_buf.display(),
-                    tags = tag_count,
-                    duration_secs = ?duration_secs,
-                    "Closed segment"
-                );
-            };
-
-            // Prefer tokio's blocking pool when available, otherwise fall back to a plain thread.
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn_blocking(task);
-            } else {
-                std::thread::spawn(task);
             }
+
+            info!(
+                path = %path.display(),
+                tags = tag_count,
+                duration_secs = ?duration_secs,
+                "Closed segment"
+            );
         } else {
             info!(
                 path = %path.display(),
@@ -317,5 +361,76 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
     fn close_context(&self) -> Option<SplitReason> {
         self.last_split_reason.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        io::Seek,
+        sync::{Arc, Mutex},
+    };
+
+    use amf0::Amf0Value;
+    use bytes::Bytes;
+    use flv::{FlvTag, FlvTagType, parser::FlvParser, script::ScriptData};
+    use pipeline_common::{PipelineError, ProtocolWriter};
+
+    use super::*;
+    use crate::writer::FlvWriter as RecordingWriter;
+
+    #[test]
+    fn writer_patches_reserved_metadata_before_run_returns() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut writer = RecordingWriter::new(FlvWriterConfig {
+            output_dir: tempdir.path().to_path_buf(),
+            base_name: "segment-%i".to_string(),
+            enable_low_latency: true,
+        });
+        let opened_path = Arc::new(Mutex::new(None));
+        let callback_path = Arc::clone(&opened_path);
+        writer.set_on_segment_start_callback(move |path, _| {
+            *callback_path.lock().unwrap() = Some(path.to_path_buf());
+        });
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<FlvData, PipelineError>>(8);
+        let (payload, _) = OnMetaDataBuilder::new()
+            .with_placeholder_keyframes(20)
+            .build_bytes(0, false)
+            .unwrap();
+
+        tx.blocking_send(Ok(FlvData::Header(FlvHeader::new(false, true))))
+            .unwrap();
+        tx.blocking_send(Ok(FlvData::Tag(FlvTag::new(
+            0,
+            0,
+            FlvTagType::ScriptData,
+            false,
+            Bytes::from(payload),
+        ))))
+        .unwrap();
+        tx.blocking_send(Ok(crate::test_utils::create_video_tag(0, true)))
+            .unwrap();
+        tx.blocking_send(Ok(crate::test_utils::create_video_tag(2_000, true)))
+            .unwrap();
+        drop(tx);
+
+        writer.run(rx.into()).unwrap();
+
+        let path = opened_path.lock().unwrap().clone().unwrap();
+        let file = std::fs::File::open(path).unwrap();
+        let mut reader = std::io::BufReader::new(file);
+        FlvParser::parse_header(&mut reader).unwrap();
+        reader.seek(std::io::SeekFrom::Start(13)).unwrap();
+        let (tag, tag_type) = FlvParser::parse_tag(&mut reader).unwrap().unwrap();
+        assert_eq!(tag_type, FlvTagType::ScriptData);
+        let mut cursor = std::io::Cursor::new(tag.data);
+        let script = ScriptData::demux(&mut cursor).unwrap();
+        let properties = script.data[0].as_object_properties().unwrap();
+        let duration = properties
+            .iter()
+            .find(|(key, _)| key.as_ref() == "duration")
+            .map(|(_, value)| value)
+            .unwrap();
+        assert_eq!(duration, &Amf0Value::Number(2.0));
     }
 }

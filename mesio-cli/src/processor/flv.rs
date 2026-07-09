@@ -39,7 +39,7 @@ async fn process_raw_stream(
     let current_span = Span::current();
     let writer_task = tokio::task::spawn_blocking(move || {
         let _enter = current_span.enter();
-        writer.run(rx)
+        writer.run(rx.into())
     });
 
     let mut stream = stream;
@@ -106,7 +106,6 @@ pub async fn process_file(
             info!(
                 path = %input_path.display(),
                 processing_enabled = true,
-                low_latency = config.flv_pipeline_config.enable_low_latency,
                 output_mode = %config.output_format,
                 "Starting pipe output with FLV processing"
             );
@@ -253,7 +252,6 @@ pub async fn process_flv_stream(
             info!(
                 url = %url_str,
                 processing_enabled = true,
-                low_latency = config.flv_pipeline_config.enable_low_latency,
                 output_mode = %config.output_format,
                 "Starting pipe output with FLV processing"
             );

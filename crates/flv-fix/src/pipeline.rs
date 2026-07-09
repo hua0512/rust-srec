@@ -23,16 +23,16 @@
 
 use crate::operators::{
     ContinuityMode, DefragmentOperator, DuplicateTagFilterConfig, DuplicateTagFilterOperator,
-    GopSortOperator, HeaderCheckOperator, LimitConfig, LimitOperator, RepairStrategy,
-    ScriptFillerConfig, ScriptFilterOperator, ScriptKeyframesFillerOperator,
-    SequenceHeaderChangeMode, SplitOperator, TimeConsistencyOperator, TimingRepairConfig,
-    TimingRepairOperator,
+    GopSortOperator, HeaderCheckOperator, LimitConfig, LimitOperator,
+    MIN_INTERVAL_BETWEEN_KEYFRAMES_MS, RepairStrategy, ScriptFillerConfig, ScriptFilterOperator,
+    ScriptKeyframesFillerOperator, SequenceHeaderChangeMode, SplitOperator,
+    TimeConsistencyOperator, TimingRepairConfig, TimingRepairOperator,
 };
 use flv::data::FlvData;
 use flv::error::FlvError;
 use futures::stream::Stream;
 use pipeline_common::config::PipelineConfig;
-use pipeline_common::{ChannelPipeline, PipelineProvider, StreamerContext};
+use pipeline_common::{Pipeline, PipelineProvider, StreamerContext};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -69,6 +69,7 @@ pub struct FlvPipelineConfig {
     /// Configuration for keyframe index injection
     pub keyframe_index_config: Option<ScriptFillerConfig>,
 
+    /// Retained for configuration compatibility; metadata patching is always layout-stable.
     pub enable_low_latency: bool,
 
     pub pipe_mode: bool,
@@ -202,7 +203,7 @@ impl PipelineProvider for FlvPipeline {
     }
 
     /// Create and configure the pipeline with all necessary operators
-    fn build_pipeline(&self) -> ChannelPipeline<FlvData> {
+    fn build_pipeline(&self) -> Pipeline<FlvData> {
         let context = Arc::clone(&self.context);
         let config = self.config.clone();
 
@@ -211,16 +212,17 @@ impl PipelineProvider for FlvPipeline {
         let header_check_operator = HeaderCheckOperator::new(context.clone(), true, true);
 
         // Configure the limit operator
+        let max_duration_ms = self
+            .common_config
+            .max_duration
+            .map(|duration| u32::try_from(duration.as_millis()).unwrap_or(u32::MAX));
         let limit_config = LimitConfig {
             max_size_bytes: if self.common_config.max_file_size > 0 {
                 Some(self.common_config.max_file_size)
             } else {
                 None
             },
-            max_duration_ms: self
-                .common_config
-                .max_duration
-                .map(|d| d.as_millis() as u32),
+            max_duration_ms,
             split_at_keyframes_only: true,
             on_split: None,
         };
@@ -255,9 +257,13 @@ impl PipelineProvider for FlvPipeline {
 
         // Create the KeyframeIndexInjector operator if enabled and not in pipe mode
         let keyframe_index_operator = if !is_pipe_mode && config.keyframe_index_config.is_some() {
-            config
-                .keyframe_index_config
-                .map(|c| ScriptKeyframesFillerOperator::new(context.clone(), c))
+            config.keyframe_index_config.map(|mut filler_config| {
+                if let Some(max_duration_ms) = max_duration_ms {
+                    filler_config.keyframe_duration_ms =
+                        max_duration_ms.max(MIN_INTERVAL_BETWEEN_KEYFRAMES_MS);
+                }
+                ScriptKeyframesFillerOperator::new(context.clone(), filler_config)
+            })
         } else {
             None
         };
@@ -292,14 +298,11 @@ impl PipelineProvider for FlvPipeline {
         }
 
         // Add script filter
-        let sync_pipeline = if let Some(script_filter_op) = script_filter_operator {
+        if let Some(script_filter_op) = script_filter_operator {
             sync_pipeline.add_processor(script_filter_op)
         } else {
             sync_pipeline
-        };
-
-        // Wrap it in a ChannelPipeline to offload processing to a dedicated thread
-        ChannelPipeline::new(context).add_processor(sync_pipeline)
+        }
     }
 }
 
@@ -405,7 +408,7 @@ mod test {
                 enable_low_latency: true,
             });
 
-            let stats = writer_task.run(output_rx)?;
+            let stats = writer_task.run(output_rx.into())?;
 
             Ok::<_, WriterError>(stats)
         });

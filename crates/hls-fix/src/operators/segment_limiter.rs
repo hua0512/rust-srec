@@ -111,13 +111,13 @@ impl Processor<HlsData> for SegmentLimiterOperator {
                 if let HlsData::TsData(ts_data) = input {
                     // Check if the current segment would exceed the limit. If so, start a new sequence.
                     if let Some(reason) =
-                        self.check_limit_reached(&ts_data.data, ts_data.segment.duration)
+                        self.check_limit_reached(ts_data.data(), ts_data.segment.duration)
                     {
                         output(HlsData::end_marker_with_reason(reason))?;
                         self.reset_counters();
                     }
 
-                    self.track_segment(&ts_data.data, ts_data.segment.duration);
+                    self.track_segment(ts_data.data(), ts_data.segment.duration);
 
                     // Unconditionally output the current segment and track its metrics.
                     output(HlsData::TsData(ts_data))?;

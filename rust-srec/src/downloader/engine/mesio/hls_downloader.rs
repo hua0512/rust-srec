@@ -10,7 +10,9 @@ use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
 use mesio::flv::FlvProtocolConfig;
 use mesio::{DownloadRequest, MesioConfig, MesioDownloader, ProtocolSelection};
 use parking_lot::RwLock;
-use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
+use pipeline_common::{
+    PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, spawn_pipeline,
+};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
@@ -212,15 +214,16 @@ impl HlsDownloader {
         let pipeline_provider =
             HlsPipeline::with_config(context, &pipeline_config, hls_pipeline_config);
 
-        // Build the pipeline (returns ChannelPipeline)
         let pipeline = pipeline_provider.build_pipeline();
 
-        // Spawn the pipeline tasks
-        let pipeline_common::channel_pipeline::SpawnedPipeline {
+        let pipeline_common::SpawnedPipeline {
             input_tx: pipeline_input_tx,
             output_rx: pipeline_output_rx,
             tasks: processing_tasks,
-        } = pipeline.spawn();
+        } = spawn_pipeline(
+            pipeline,
+            HlsPipeline::channel_spec(pipeline_config.channel_size),
+        );
 
         // Create HlsWriter with callbacks
         let max_file_size = if config.max_segment_size_bytes > 0 {
@@ -346,7 +349,7 @@ impl HlsDownloader {
         helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 
         // Spawn blocking writer task
-        let writer_task = tokio::task::spawn_blocking(move || writer.run(rx));
+        let writer_task = tokio::task::spawn_blocking(move || writer.run(rx.into()));
 
         // Send first segment to writer
         if tx.send(Ok(first_segment)).await.is_err() {

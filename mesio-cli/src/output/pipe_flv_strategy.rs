@@ -363,13 +363,7 @@ mod tests {
 
     /// Create a test FLV tag
     fn create_test_tag(tag_type: FlvTagType, timestamp_ms: u32, data: Vec<u8>) -> FlvTag {
-        FlvTag {
-            timestamp_ms,
-            stream_id: 0,
-            tag_type,
-            is_filtered: false,
-            data: Bytes::from(data),
-        }
+        FlvTag::new(timestamp_ms, 0, tag_type, false, Bytes::from(data))
     }
 
     #[test]

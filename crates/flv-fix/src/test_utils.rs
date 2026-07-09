@@ -24,13 +24,13 @@ pub fn create_test_header() -> FlvData {
 /// Create a generic FlvTag for testing
 #[cfg(test)]
 pub fn create_test_tag(tag_type: FlvTagType, timestamp: u32, data: Vec<u8>) -> FlvData {
-    FlvData::Tag(FlvTag {
-        timestamp_ms: timestamp,
-        stream_id: 0,
+    FlvData::Tag(FlvTag::new(
+        timestamp,
+        0,
         tag_type,
-        is_filtered: false,
-        data: Bytes::from(data),
-    })
+        false,
+        Bytes::from(data),
+    ))
 }
 
 /// Create a video tag with specified timestamp and keyframe flag

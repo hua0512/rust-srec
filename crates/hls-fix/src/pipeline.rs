@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
 use hls::HlsData;
-use pipeline_common::{ChannelPipeline, PipelineProvider, StreamerContext, config::PipelineConfig};
+use pipeline_common::{
+    ChannelSpec, Pipeline, PipelineProvider, StreamerContext, config::PipelineConfig,
+};
 
 use crate::operators::{DefragmentOperator, SegmentLimiterOperator, SegmentSplitOperator};
+
+pub const DEFAULT_CHANNEL_BUDGET_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct HlsPipelineConfig {
@@ -57,6 +61,13 @@ pub struct HlsPipeline {
     common_config: PipelineConfig,
 }
 
+impl HlsPipeline {
+    pub fn channel_spec(item_capacity: usize) -> ChannelSpec<HlsData> {
+        ChannelSpec::bytes(DEFAULT_CHANNEL_BUDGET_BYTES, HlsData::size)
+            .with_item_capacity(item_capacity)
+    }
+}
+
 impl PipelineProvider for HlsPipeline {
     type Item = HlsData;
     type Config = HlsPipelineConfig;
@@ -73,7 +84,7 @@ impl PipelineProvider for HlsPipeline {
         }
     }
 
-    fn build_pipeline(&self) -> ChannelPipeline<Self::Item> {
+    fn build_pipeline(&self) -> Pipeline<Self::Item> {
         let mut sync_pipeline = pipeline_common::Pipeline::new(self.context.clone());
 
         if self.config.defragment {
@@ -93,6 +104,6 @@ impl PipelineProvider for HlsPipeline {
             ));
         }
 
-        ChannelPipeline::new(self.context.clone()).add_processor(sync_pipeline)
+        sync_pipeline
     }
 }

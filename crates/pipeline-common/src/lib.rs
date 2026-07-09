@@ -36,9 +36,11 @@ mod utils;
 mod writer_task;
 
 /// Re-export key traits and types
-pub use channel_pipeline::ChannelPipeline;
+pub use channel_pipeline::{
+    ChannelSpec, PipelineReceiver, PipelineSender, SpawnedPipeline, spawn_pipeline,
+};
 pub use context::StreamerContext;
-pub use pipeline::Pipeline;
+pub use pipeline::{Pipeline, ProgressSink, ProgressThrottle};
 pub use processor::Processor;
 pub use progress::{Progress, ProgressEvent};
 pub use run_completion::{RunCompletionError, settle_run};
@@ -91,10 +93,7 @@ pub trait ProtocolWriter: Send + 'static {
 
     fn get_state(&self) -> &WriterState;
 
-    fn run(
-        &mut self,
-        input: tokio::sync::mpsc::Receiver<Result<Self::Item, PipelineError>>,
-    ) -> Result<WriterStats, WriterError>;
+    fn run(&mut self, input: PipelineReceiver<Self::Item>) -> Result<WriterStats, WriterError>;
 }
 
 pub trait PipelineProvider: Send + 'static {
@@ -107,5 +106,5 @@ pub trait PipelineProvider: Send + 'static {
         config: Self::Config,
     ) -> Self;
 
-    fn build_pipeline(&self) -> ChannelPipeline<Self::Item>;
+    fn build_pipeline(&self) -> Pipeline<Self::Item>;
 }

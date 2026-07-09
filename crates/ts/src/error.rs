@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Errors that can occur during TS parsing
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum TsError {
     #[error("Invalid packet size: expected multiple of 188 bytes, got {0}")]
     InvalidPacketSize(usize),

@@ -2,9 +2,9 @@ use crate::error::{AppError, is_broken_pipe_error};
 use crate::utils::spans;
 use futures::{Stream, StreamExt};
 use pipeline_common::{
-    CancellationToken, FormatStrategy, PipelineError, PipelineProvider, ProtocolWriter,
-    RunCompletionError, StreamerContext, WriterConfig, WriterStats, WriterTask,
-    config::PipelineConfig, settle_run,
+    CancellationToken, ChannelSpec, FormatStrategy, PipelineError, PipelineProvider,
+    ProtocolWriter, RunCompletionError, StreamerContext, WriterConfig, WriterStats, WriterTask,
+    config::PipelineConfig, settle_run, spawn_pipeline,
 };
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -32,6 +32,7 @@ where
         pipeline_common_config,
         pipeline_config,
         stream,
+        ChannelSpec::items(pipeline_common_config.channel_size),
         writer_span,
         writer_initializer,
         token,
@@ -43,6 +44,7 @@ pub async fn process_stream_with_span<P, W>(
     pipeline_common_config: &PipelineConfig,
     pipeline_config: P::Config,
     stream: Pin<Box<dyn Stream<Item = Result<P::Item, PipelineError>> + Send>>,
+    channel_spec: ChannelSpec<P::Item>,
     writer_span: Span,
     writer_initializer: impl FnOnce(&Span) -> W,
     token: CancellationToken,
@@ -60,15 +62,13 @@ where
     let processing_span = span!(parent: &writer_span, Level::INFO, "pipeline_processing");
     spans::init_processing_span(&processing_span, "Processing pipeline");
 
-    // Build the pipeline (now ChannelPipeline)
     let pipeline = pipeline_provider.build_pipeline();
 
-    // Spawn the pipeline tasks
-    let pipeline_common::channel_pipeline::SpawnedPipeline {
+    let pipeline_common::SpawnedPipeline {
         input_tx,
         output_rx,
         tasks: processing_tasks,
-    } = pipeline.spawn();
+    } = spawn_pipeline(pipeline, channel_spec);
 
     // Initialize the writer using the provided span
     let mut writer = writer_initializer(&writer_span);
@@ -113,7 +113,7 @@ pub struct PipeStreamStats {
 /// Generic over the data type `D` and strategy `S`.
 /// When a broken pipe is detected, the cancellation token is triggered to stop upstream processing.
 fn spawn_pipe_writer_task<D, S>(
-    rx: tokio::sync::mpsc::Receiver<Result<D, PipelineError>>,
+    rx: pipeline_common::PipelineReceiver<D>,
     strategy: S,
     extension: &str,
     token: CancellationToken,
@@ -216,7 +216,7 @@ where
 {
     let token = CancellationToken::new();
     let (tx, rx) = tokio::sync::mpsc::channel(pipeline_config.channel_size);
-    let writer_task = spawn_pipe_writer_task(rx, strategy, extension, token.clone());
+    let writer_task = spawn_pipe_writer_task(rx.into(), strategy, extension, token.clone());
 
     let mut stream = stream;
     while let Some(item_result) = stream.next().await {
@@ -256,11 +256,11 @@ where
     let pipeline_provider = P::with_config(context, pipeline_config, pipeline_type_config);
     let pipeline = pipeline_provider.build_pipeline();
 
-    let pipeline_common::channel_pipeline::SpawnedPipeline {
+    let pipeline_common::SpawnedPipeline {
         input_tx,
         output_rx,
         tasks: processing_tasks,
-    } = pipeline.spawn();
+    } = spawn_pipeline(pipeline, ChannelSpec::items(pipeline_config.channel_size));
 
     // Pass the token to the writer task so it can cancel on broken pipe
     let writer_task = spawn_pipe_writer_task(output_rx, strategy, extension, token.clone());

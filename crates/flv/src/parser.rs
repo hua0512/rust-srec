@@ -1,6 +1,6 @@
 use bytes::BytesMut;
 use std::fs::File;
-use std::io::{self, BufReader, Cursor, Read};
+use std::io::{self, BufReader, Read};
 use std::path::Path;
 use tracing::{debug, error};
 
@@ -191,11 +191,15 @@ impl FlvParser {
             return Err(e);
         }
 
-        // Determine the tag type
         let tag_type = header.tag_type;
-
-        // Demux the tag
-        let tag = FlvTag::demux(&mut Cursor::new(tag_buffer.freeze()))?;
+        let tag_bytes = tag_buffer.freeze();
+        let tag = FlvTag::new(
+            header.timestamp_ms,
+            header.stream_id,
+            header.tag_type,
+            header.is_filtered,
+            tag_bytes.slice(framing::TAG_HEADER_SIZE..),
+        );
 
         Ok(Some((tag, tag_type)))
     }

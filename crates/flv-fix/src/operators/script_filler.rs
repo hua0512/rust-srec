@@ -111,13 +111,13 @@ impl ScriptKeyframesFillerOperator {
 
     /// Creates a fallback tag with the same metadata as the original but with default script payload
     fn create_fallback_tag(&self, original_tag: &FlvTag) -> FlvTag {
-        FlvTag {
-            timestamp_ms: original_tag.timestamp_ms,
-            stream_id: original_tag.stream_id,
-            tag_type: original_tag.tag_type,
-            is_filtered: false,
-            data: Self::create_script_tag_payload(),
-        }
+        FlvTag::new(
+            original_tag.timestamp_ms,
+            original_tag.stream_id,
+            original_tag.tag_type,
+            false,
+            Self::create_script_tag_payload(),
+        )
     }
 
     /// Processes the AMF data for a valid onMetaData object
@@ -166,13 +166,13 @@ impl ScriptKeyframesFillerOperator {
         debug!("New script data payload size: {}", buffer.len());
 
         // Create a new tag with the modified data
-        Ok(FlvTag {
-            timestamp_ms: tag.timestamp_ms,
-            stream_id: tag.stream_id,
-            tag_type: tag.tag_type,
-            is_filtered: false,
-            data: Bytes::from(buffer),
-        })
+        Ok(FlvTag::new(
+            tag.timestamp_ms,
+            tag.stream_id,
+            tag.tag_type,
+            false,
+            Bytes::from(buffer),
+        ))
     }
 
     /// Modifies the parsed AMF values to include the keyframes property.
@@ -496,15 +496,15 @@ mod tests {
             .unwrap();
 
         // Create a malformed script tag with invalid AMF data
-        let invalid_script_tag = FlvTag {
-            timestamp_ms: 0,
-            stream_id: 0,
-            tag_type: FlvTagType::ScriptData,
-            is_filtered: false,
-            data: Bytes::from(vec![
+        let invalid_script_tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::ScriptData,
+            false,
+            Bytes::from(vec![
                 0x02, 0x00, 0x0A, 0x6E, 0x6F, 0x74, 0x4D, 0x65, 0x74, 0x61, 0x44, 0x61, 0x74, 0x61,
-            ]), // "notMetaData" without proper AMF structure
-        };
+            ]),
+        );
 
         // Process should handle malformed data and create a fallback
         operator

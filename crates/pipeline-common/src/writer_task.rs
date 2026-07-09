@@ -6,8 +6,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tracing::debug;
 
-use crate::PipelineError;
 use crate::split_reason::SplitReason;
+use crate::{PipelineError, PipelineReceiver};
 
 /// Progress information from writer.
 /// Contains metrics about bytes written, items processed, media duration, and performance.
@@ -697,7 +697,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
     /// to decide whether to skip it (return `false`) or process it (return `true`).
     pub fn run_from_channel(
         &mut self,
-        mut rx: tokio::sync::mpsc::Receiver<Result<D, PipelineError>>,
+        mut rx: PipelineReceiver<D>,
         mut pre_filter: impl FnMut(&D, &WriterState) -> bool,
     ) -> Result<WriterStats, WriterError> {
         while let Some(result) = rx.blocking_recv() {

@@ -1157,19 +1157,19 @@ mod tests {
 
         // Same codec-config bytes, but different frame-type + composition-time.
         // The operator should ignore these differences and avoid splitting.
-        let same_config_different_prefix = FlvData::Tag(FlvTag {
-            timestamp_ms: 0,
-            stream_id: 0,
-            tag_type: flv::tag::FlvTagType::Video,
-            is_filtered: false,
-            data: Bytes::from(vec![
+        let same_config_different_prefix = FlvData::Tag(FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Video,
+            false,
+            Bytes::from(vec![
                 0x27, // Inter frame + AVC (same codec)
                 0x00, // AVC sequence header
                 0x12, 0x34, 0x56, // composition time (not part of config)
                 1,    // AVC configurationVersion (same as before)
                 0x64, 0x00, 0x28, // rest of AVCC bytes (same as before)
             ]),
-        });
+        ));
         operator
             .process(&context, same_config_different_prefix, &mut output_fn)
             .unwrap();
@@ -1215,18 +1215,18 @@ mod tests {
 
         // Same AudioSpecificConfig payload, but change legacy FLV audio header bits
         // (rate/size/type). The operator should ignore this and avoid splitting.
-        let same_config_different_header_bits = FlvData::Tag(FlvTag {
-            timestamp_ms: 0,
-            stream_id: 0,
-            tag_type: flv::tag::FlvTagType::Audio,
-            is_filtered: false,
-            data: Bytes::from(vec![
+        let same_config_different_header_bits = FlvData::Tag(FlvTag::new(
+            0,
+            0,
+            flv::tag::FlvTagType::Audio,
+            false,
+            Bytes::from(vec![
                 0xA3, // AAC + different rate/size/type bits than 0xAF
                 0x00, // AAC sequence header
                 1,    // same ASC payload
                 0x10,
             ]),
-        });
+        ));
         operator
             .process(&context, same_config_different_header_bits, &mut output_fn)
             .unwrap();

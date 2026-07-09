@@ -22,6 +22,139 @@ use ts::{PesHeader, StreamType, TsPacketRef};
 /// - Minimal allocations with capacity hints
 pub struct ResolutionDetector;
 
+pub(crate) struct StreamingResolutionDetector {
+    probes: Vec<VideoProbe>,
+    resolution: Option<Resolution>,
+}
+
+struct VideoProbe {
+    pid: u16,
+    stream_type: StreamType,
+    current_pes: BytesMut,
+    expected_pes_len: Option<usize>,
+    in_pes: bool,
+}
+
+impl StreamingResolutionDetector {
+    const MAX_PES_PROBE_BYTES: usize = 256 * 1024;
+
+    pub(crate) fn new() -> Self {
+        Self {
+            probes: Vec::new(),
+            resolution: None,
+        }
+    }
+
+    pub(crate) fn add_video_stream(&mut self, pid: u16, stream_type: StreamType) {
+        if !matches!(stream_type, StreamType::H264 | StreamType::H265)
+            || self.probes.iter().any(|probe| probe.pid == pid)
+        {
+            return;
+        }
+
+        self.probes.push(VideoProbe {
+            pid,
+            stream_type,
+            current_pes: BytesMut::with_capacity(4096),
+            expected_pes_len: None,
+            in_pes: false,
+        });
+    }
+
+    pub(crate) fn push_packet(&mut self, packet: &TsPacketRef) {
+        if self.resolution.is_some() {
+            return;
+        }
+
+        let resolution = self
+            .probes
+            .iter_mut()
+            .find(|probe| probe.pid == packet.pid)
+            .and_then(|probe| probe.push_packet(packet));
+        if resolution.is_some() {
+            self.resolution = resolution;
+        }
+    }
+
+    pub(crate) fn finish(mut self) -> Option<Resolution> {
+        if self.resolution.is_some() {
+            return self.resolution;
+        }
+
+        self.probes.iter_mut().find_map(VideoProbe::finish)
+    }
+}
+
+impl VideoProbe {
+    fn push_packet(&mut self, packet: &TsPacketRef) -> Option<Resolution> {
+        let payload = packet.payload()?;
+        if let Some(resolution) =
+            ResolutionDetector::scan_payload_for_sps(&payload, self.stream_type)
+        {
+            return Some(resolution);
+        }
+
+        if packet.payload_unit_start_indicator {
+            let previous_resolution = self.finish();
+            self.in_pes = true;
+            self.expected_pes_len = Self::expected_pes_len(&payload);
+            self.current_pes.clear();
+            if let Some(expected) = self.expected_pes_len {
+                self.current_pes.reserve(
+                    expected
+                        .min(StreamingResolutionDetector::MAX_PES_PROBE_BYTES)
+                        .saturating_sub(self.current_pes.capacity()),
+                );
+            }
+            self.append_payload(&payload);
+            if previous_resolution.is_some() {
+                return previous_resolution;
+            }
+        } else if self.in_pes {
+            self.append_payload(&payload);
+        }
+
+        if self
+            .expected_pes_len
+            .is_some_and(|expected| self.current_pes.len() >= expected)
+        {
+            return self.finish();
+        }
+
+        None
+    }
+
+    fn append_payload(&mut self, payload: &[u8]) {
+        let remaining =
+            StreamingResolutionDetector::MAX_PES_PROBE_BYTES.saturating_sub(self.current_pes.len());
+        let copy_len = remaining.min(payload.len());
+        self.current_pes.extend_from_slice(&payload[..copy_len]);
+
+        if copy_len < payload.len() {
+            self.in_pes = false;
+        }
+    }
+
+    fn expected_pes_len(payload: &[u8]) -> Option<usize> {
+        if payload.len() < 6 || payload[..3] != [0, 0, 1] {
+            return None;
+        }
+
+        let packet_len = u16::from_be_bytes([payload[4], payload[5]]) as usize;
+        (packet_len > 0).then_some(packet_len + 6)
+    }
+
+    fn finish(&mut self) -> Option<Resolution> {
+        let resolution = (self.in_pes && self.current_pes.len() >= 9)
+            .then(|| ResolutionDetector::try_parse_pes(&self.current_pes, self.stream_type))
+            .flatten();
+        self.current_pes.clear();
+        self.expected_pes_len = None;
+        self.in_pes = false;
+        resolution
+    }
+}
+
 impl ResolutionDetector {
     /// Extract resolution from pre-parsed TS packets
     ///

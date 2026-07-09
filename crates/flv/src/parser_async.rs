@@ -316,90 +316,54 @@ impl Decoder for FlvDecoder {
             return Ok(None); // Need more data for the tag body
         }
 
-        // --- 6. Demux Tag ---
-        // We have the full tag. Create a Bytes slice containing the *entire* tag.
+        // --- 6. Construct Tag ---
         let tag_bytes = src.split_to(total_tag_size).freeze();
         self.position += total_tag_size as u64;
-        // Cursor now owns the tag's Bytes
-        let mut cursor = Cursor::new(tag_bytes);
-
-        match FlvTag::demux(&mut cursor) {
-            Ok(tag) => {
-                trace!(
-                    "Successfully parsed FLV tag: Type={}, Timestamp={}, Size={}",
-                    tag.tag_type, tag.timestamp_ms, data_size
-                );
-                // Store the *full* size of the tag (header + data) for the next PreviousTagSize check
-                self.last_tag_size = total_tag_size as u32;
-                // After a successful tag, we expect the PreviousTagSize field next
-                self.expecting_tag_header = false;
-                Ok(Some(FlvData::Tag(tag))) // Successfully decoded a tag
-            }
-            Err(e) => {
-                // Demux failed (e.g., bad data *within* the tag body, or unexpected EOF *within* demux)
-                warn!(
-                    "Failed to demux FLV tag (type: {}, data_size: {}): {:?}. Discarded {} bytes.",
-                    tag_type, data_size, e, total_tag_size
-                );
-                // `split_to` already removed the bytes from `src`.
-                // We failed parsing, so the next item should be PreviousTagSize, but we don't trust the stream.
-                self.expecting_tag_header = false; // Expect PreviousTagSize next, potentially bad one
-                self.last_tag_size = 0; // Can't trust the size
-                // Return None to signal progress (discarded bad tag)
-                // without producing a full item. Let the next call handle PreviousTagSize.
-                trace!("Demux failed, returning None to yield after discarding tag.");
-                Ok(None)
-            }
-        }
+        let tag = FlvTag::new(
+            header.timestamp_ms,
+            header.stream_id,
+            header.tag_type,
+            header.is_filtered,
+            tag_bytes.slice(TAG_HEADER_SIZE..),
+        );
+        trace!(
+            "Successfully parsed FLV tag: Type={}, Timestamp={}, Size={}",
+            tag.tag_type, tag.timestamp_ms, data_size
+        );
+        self.last_tag_size = total_tag_size as u32;
+        self.expecting_tag_header = false;
+        Ok(Some(FlvData::Tag(tag)))
     }
 
     fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        // At EOF, we attempt to decode all remaining complete frames in the buffer.
-        let mut first_frame = None;
-
+        // FramedRead keeps calling decode_eof until it returns Ok(None) with an
+        // empty buffer, so we must return each buffered frame one at a time —
+        // returning only the first of several would drop the stream's tail tags.
         loop {
             let initial_len = src.len();
             if initial_len == 0 {
-                break;
+                return Ok(None);
             }
 
-            match self.decode(src) {
-                Ok(Some(frame)) => {
-                    if first_frame.is_none() {
-                        first_frame = Some(frame);
-                    } else {
-                        // We already have a frame to return. The trait doesn't allow more.
-                        // We've consumed this frame from the buffer, so it's "processed" but will be dropped.
-                        warn!(
-                            "Additional frame decoded at EOF was discarded due to Decoder trait limitations."
-                        );
-                    }
-                }
-                Ok(None) => {
-                    // Incomplete frame, this is the remainder to be discarded.
-                    if !src.is_empty() {
+            match self.decode(src)? {
+                Some(frame) => return Ok(Some(frame)),
+                None => {
+                    if src.len() == initial_len {
+                        // decode() made no progress: the remainder is a partial
+                        // tag that can never complete at EOF. Discard it so the
+                        // next call terminates the stream.
                         warn!(
                             "{} bytes remaining in buffer at EOF, discarding final partial tag.",
                             src.len()
                         );
                         src.clear();
+                        return Ok(None);
                     }
-                    break;
+                    // decode() consumed bytes without producing a frame
+                    // (resync / skipped garbage); try again on the remainder.
                 }
-                Err(e) => {
-                    // On error, we should probably stop and return the error.
-                    // Any frame we found before this will be lost.
-                    return Err(e);
-                }
-            }
-
-            // Safeguard against infinite loops if decode succeeds but doesn't consume.
-            if src.len() == initial_len {
-                break;
             }
         }
-
-        Ok(first_frame)
     }
 }
 
@@ -511,6 +475,75 @@ mod tests {
         assert!(result.unwrap().is_none()); // Expect None (need more data)
         assert!(!decoder.header_parsed);
         assert!(buffer.capacity() >= FLV_HEADER_SIZE); // Should have reserved
+    }
+
+    #[test]
+    fn test_decode_eof_returns_all_buffered_tags() {
+        init_tracing();
+        let mut decoder = FlvDecoder::default();
+
+        // FLV header + first PreviousTagSize, consumed by a normal decode call.
+        let mut buffer = BytesMut::from(
+            &[
+                0x46, 0x4C, 0x56, 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, // header
+                0x00, 0x00, 0x00, 0x00, // PreviousTagSize0
+            ][..],
+        );
+        assert!(matches!(
+            decoder.decode(&mut buffer).unwrap(),
+            Some(FlvData::Header(_))
+        ));
+        assert!(buffer.is_empty());
+
+        // Two complete 2-byte video tags separated by a PreviousTagSize field.
+        let tag = |ts: u8| {
+            [
+                0x09, // video
+                0x00, 0x00, 0x02, // data size 2
+                0x00, 0x00, ts, 0x00, // timestamp
+                0x00, 0x00, 0x00, // stream id
+                0x17, 0x01, // payload
+            ]
+        };
+        buffer.extend_from_slice(&tag(1));
+        buffer.extend_from_slice(&[0x00, 0x00, 0x00, 0x0D]); // PreviousTagSize = 11 + 2
+        buffer.extend_from_slice(&tag(2));
+
+        // FramedRead calls decode_eof repeatedly; every buffered tag must be
+        // yielded across calls, not just the first.
+        match decoder.decode_eof(&mut buffer).unwrap() {
+            Some(FlvData::Tag(t)) => assert_eq!(t.timestamp_ms, 1),
+            other => panic!("expected first tag, got {other:?}"),
+        }
+        match decoder.decode_eof(&mut buffer).unwrap() {
+            Some(FlvData::Tag(t)) => assert_eq!(t.timestamp_ms, 2),
+            other => panic!("expected second tag, got {other:?}"),
+        }
+        assert!(decoder.decode_eof(&mut buffer).unwrap().is_none());
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_decode_eof_discards_partial_tag() {
+        init_tracing();
+        let mut decoder = FlvDecoder::default();
+        let mut buffer = BytesMut::from(
+            &[
+                0x46, 0x4C, 0x56, 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, // header
+                0x00, 0x00, 0x00, 0x00, // PreviousTagSize0
+            ][..],
+        );
+        assert!(matches!(
+            decoder.decode(&mut buffer).unwrap(),
+            Some(FlvData::Header(_))
+        ));
+
+        // A tag header claiming 100 bytes of data with only 2 present.
+        buffer.extend_from_slice(&[
+            0x09, 0x00, 0x00, 0x64, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x17, 0x01,
+        ]);
+        assert!(decoder.decode_eof(&mut buffer).unwrap().is_none());
+        assert!(buffer.is_empty());
     }
 
     #[test]
