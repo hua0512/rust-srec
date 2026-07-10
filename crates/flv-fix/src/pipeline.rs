@@ -82,7 +82,7 @@ impl Default for FlvPipelineConfig {
             duplicate_tag_filter_config: DuplicateTagFilterConfig::default(),
             sequence_header_change_mode: SequenceHeaderChangeMode::Crc32,
             drop_duplicate_sequence_headers: false,
-            repair_strategy: RepairStrategy::Strict,
+            repair_strategy: RepairStrategy::Relaxed,
             continuity_mode: ContinuityMode::Reset,
             keyframe_index_config: Some(ScriptFillerConfig::default()),
             enable_low_latency: true,
@@ -95,6 +95,13 @@ impl FlvPipelineConfig {
     /// Create a new builder for FlvPipelineConfig
     pub fn builder() -> FlvPipelineConfigBuilder {
         FlvPipelineConfigBuilder::new()
+    }
+
+    fn timing_repair_config(&self) -> TimingRepairConfig {
+        TimingRepairConfig {
+            strategy: self.repair_strategy,
+            ..TimingRepairConfig::default()
+        }
     }
 }
 
@@ -231,7 +238,7 @@ impl PipelineProvider for FlvPipeline {
         // Create remaining operators
         let gop_sort_operator = GopSortOperator::new(context.clone());
         let timing_repair_operator =
-            TimingRepairOperator::new(context.clone(), TimingRepairConfig::default());
+            TimingRepairOperator::new(context.clone(), config.timing_repair_config());
         let split_operator = SplitOperator::with_config(
             context.clone(),
             config.sequence_header_change_mode,
@@ -323,6 +330,24 @@ mod test {
 
     use std::path::Path;
     use tracing::info;
+
+    #[test]
+    fn repair_strategy_defaults_to_relaxed_and_forwards_overrides() {
+        let default_config = FlvPipelineConfig::default();
+        assert_eq!(default_config.repair_strategy, RepairStrategy::Relaxed);
+        assert_eq!(
+            default_config.timing_repair_config().strategy,
+            RepairStrategy::Relaxed
+        );
+
+        let strict_config = FlvPipelineConfig::builder()
+            .repair_strategy(RepairStrategy::Strict)
+            .build();
+        assert_eq!(
+            strict_config.timing_repair_config().strategy,
+            RepairStrategy::Strict
+        );
+    }
 
     #[tokio::test]
     #[ignore]
