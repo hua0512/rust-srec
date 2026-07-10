@@ -395,7 +395,7 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
     pub fn new(config: WriterConfig, strategy: S) -> Self {
         std::fs::create_dir_all(&config.base_path).unwrap_or_else(|e| {
-            eprintln!("Failed to create base path {:?}: {}", &config.base_path, e);
+            eprintln!("Failed to create base path {:?}: {}", config.base_path, e);
         });
         Self {
             config,

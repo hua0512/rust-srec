@@ -413,13 +413,8 @@ impl FlvTag {
         match VideoData::demux(&mut reader) {
             Ok(video_data) => {
                 let body = video_data.body;
-                body.get_video_resolution().and_then(|res| {
-                    if res.width > 0.0 && res.height > 0.0 {
-                        Some(res)
-                    } else {
-                        None
-                    }
-                })
+                body.get_video_resolution()
+                    .filter(|res| res.width > 0.0 && res.height > 0.0)
             }
             Err(e) => {
                 debug!(

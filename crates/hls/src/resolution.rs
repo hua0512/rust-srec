@@ -334,10 +334,7 @@ impl ResolutionDetector {
 
         while pos + 2 < data.len() {
             // Fast scan for 0x00
-            let zero_pos = match memchr(0x00, &data[pos..]) {
-                Some(p) => pos + p,
-                None => return None,
-            };
+            let zero_pos = pos + memchr(0x00, &data[pos..])?;
 
             // Check for start code
             if zero_pos + 2 < data.len()

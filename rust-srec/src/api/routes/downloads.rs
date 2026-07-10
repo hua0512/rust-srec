@@ -414,8 +414,6 @@ fn map_event_to_protobuf(
             completed_at,
             duration_secs,
             size_bytes,
-            split_reason_code: _,
-            split_reason_details_json: _,
             ..
         }) => {
             let payload = SegmentCompleted {
