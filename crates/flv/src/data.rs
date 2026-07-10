@@ -42,7 +42,7 @@ impl FlvData {
     pub fn description(&self) -> String {
         match self {
             FlvData::Header(_) => "Header".to_string(),
-            FlvData::Tag(tag) => format!("{:?}@{}", tag.tag_type, tag.timestamp_ms),
+            FlvData::Tag(tag) => format!("{:?}@{}", tag.tag_type(), tag.timestamp_ms),
             FlvData::Split(reason) => format!("Split({reason:?})"),
             FlvData::EndOfSequence(_) => "EndOfSequence".to_string(),
         }

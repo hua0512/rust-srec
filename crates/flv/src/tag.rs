@@ -22,13 +22,13 @@ pub struct FlvTag {
     /// A stream id
     pub stream_id: u32,
     /// The type of the tag
-    pub tag_type: FlvTagType,
+    tag_type: FlvTagType,
     /// Whether the tag payload is filtered/encrypted (Filter bit set in tag header).
     ///
     /// When this is true, the payload is not a plain legacy AUDIODATA/VIDEODATA/SCRIPTDATA payload.
-    pub is_filtered: bool,
+    is_filtered: bool,
     /// Copy free buffer
-    pub data: Bytes,
+    data: Bytes,
     class: TagClass,
 }
 
@@ -231,6 +231,41 @@ impl FlvTag {
 
     pub fn classification(&self) -> TagClass {
         self.class
+    }
+
+    pub fn tag_type(&self) -> FlvTagType {
+        self.tag_type
+    }
+
+    pub fn set_tag_type(&mut self, tag_type: FlvTagType) {
+        self.tag_type = tag_type;
+        self.refresh_classification();
+    }
+
+    pub fn is_filtered(&self) -> bool {
+        self.is_filtered
+    }
+
+    pub fn set_filtered(&mut self, is_filtered: bool) {
+        self.is_filtered = is_filtered;
+        self.refresh_classification();
+    }
+
+    pub fn data(&self) -> &Bytes {
+        &self.data
+    }
+
+    pub fn into_data(self) -> Bytes {
+        self.data
+    }
+
+    pub fn set_data(&mut self, data: Bytes) {
+        self.data = data;
+        self.refresh_classification();
+    }
+
+    fn refresh_classification(&mut self) {
+        self.class = TagClass::from_payload(self.tag_type, self.is_filtered, &self.data);
     }
 
     pub fn demux(reader: &mut std::io::Cursor<Bytes>) -> std::io::Result<FlvTag> {
@@ -599,6 +634,26 @@ mod tests {
         );
 
         assert_eq!(tag.classification(), TagClass::default());
+    }
+
+    #[test]
+    fn classification_stays_current_when_payload_fields_change() {
+        let mut tag = video_tag(&[0x27, 0x01, 0, 0, 0]);
+        assert!(!tag.is_key_frame_nalu());
+
+        tag.set_data(Bytes::from_static(&[0x17, 0x01, 0, 0, 0]));
+        assert!(tag.is_key_frame_nalu());
+
+        tag.set_filtered(true);
+        assert_eq!(tag.classification(), TagClass::default());
+
+        tag.set_tag_type(FlvTagType::Audio);
+        tag.set_filtered(false);
+        tag.set_data(Bytes::from_static(&[0xAF, 0x00]));
+        assert!(tag.is_audio_sequence_header());
+        assert_eq!(tag.tag_type(), FlvTagType::Audio);
+        assert!(!tag.is_filtered());
+        assert_eq!(tag.data(), &Bytes::from_static(&[0xAF, 0x00]));
     }
 
     #[test]

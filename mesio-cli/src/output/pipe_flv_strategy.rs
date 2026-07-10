@@ -129,10 +129,10 @@ impl PipeFlvStrategy {
 
     /// Write FLV tag to the writer
     fn write_tag<W: Write>(writer: &mut W, tag: &FlvTag) -> io::Result<u64> {
-        let data_size = tag.data.len() as u32;
+        let data_size = tag.data().len() as u32;
 
         // Write tag type (1 byte)
-        writer.write_u8(tag.tag_type.into())?;
+        writer.write_u8(tag.tag_type().into())?;
 
         // Write data size (3 bytes)
         writer.write_u24::<BigEndian>(data_size)?;
@@ -145,7 +145,7 @@ impl PipeFlvStrategy {
         writer.write_u24::<BigEndian>(0)?;
 
         // Write tag data
-        writer.write_all(&tag.data)?;
+        writer.write_all(tag.data())?;
 
         // Write previous tag size (data size + 11 byte header)
         let previous_tag_size = data_size + 11;
@@ -153,7 +153,7 @@ impl PipeFlvStrategy {
 
         // Total bytes: 1 (type) + 3 (size) + 3 (timestamp) + 1 (timestamp ext) + 3 (stream id) + data + 4 (prev tag size)
         // = 11 + data.len() + 4
-        Ok((11 + tag.data.len() + 4) as u64)
+        Ok((11 + tag.data().len() + 4) as u64)
     }
 
     /// Get total bytes written

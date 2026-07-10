@@ -302,7 +302,7 @@ impl TimingState {
         let diff: i64 = (expected as i64) - (last.timestamp_ms as i64);
 
         // Determine threshold based on media type, considering rounding errors
-        let base_threshold = match tag.tag_type {
+        let base_threshold = match tag.tag_type() {
             FlvTagType::Video => self.video_frame_interval,
             FlvTagType::Audio => self.audio_sample_interval,
             _ => {
@@ -426,7 +426,11 @@ impl TimingRepairOperator {
         tag: &mut FlvTag,
         output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
-        let mut cursor = std::io::Cursor::new(tag.data.clone());
+        if tag.is_filtered() {
+            return output(FlvData::Tag(tag.clone()));
+        }
+
+        let mut cursor = std::io::Cursor::new(tag.data().clone());
         if let Ok(amf_data) = ScriptData::demux(&mut cursor)
             && amf_data.name == crate::AMF0_ON_METADATA
             && !amf_data.data.is_empty()
@@ -729,13 +733,43 @@ mod tests {
 
         if let FlvData::Tag(tag1) = &results[10]
             && let FlvData::Tag(tag2) = &results[11]
-            && tag2.tag_type == FlvTagType::Video
+            && tag2.tag_type() == FlvTagType::Video
         {
             assert!(
                 tag2.timestamp_ms > tag1.timestamp_ms,
                 "Rebounded timestamp should be corrected to maintain forward progress"
             );
         }
+    }
+
+    #[test]
+    fn filtered_script_payload_does_not_change_timing_parameters() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator =
+            TimingRepairOperator::new(Arc::clone(&context), TimingRepairConfig::default());
+        let initial_video_interval = operator.state.video_frame_interval;
+        let (payload, _) = crate::amf::builder::OnMetaDataBuilder::new()
+            .with_framerate(120.0)
+            .build_bytes(0, false)
+            .unwrap();
+        let filtered_tag = FlvTag::new(
+            0,
+            0,
+            FlvTagType::ScriptData,
+            true,
+            bytes::Bytes::from(payload),
+        );
+        let mut output = Vec::new();
+
+        operator
+            .process(&context, FlvData::Tag(filtered_tag), &mut |item| {
+                output.push(item);
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(operator.state.video_frame_interval, initial_video_interval);
+        assert!(matches!(&output[..], [FlvData::Tag(tag)] if tag.is_filtered()));
     }
 
     #[test]
@@ -814,9 +848,9 @@ mod tests {
 
         for item in &results {
             if let FlvData::Tag(tag) = item {
-                if tag.tag_type == FlvTagType::Audio {
+                if tag.tag_type() == FlvTagType::Audio {
                     audio_ts.push(tag.timestamp_ms);
-                } else if tag.tag_type == FlvTagType::Video {
+                } else if tag.tag_type() == FlvTagType::Video {
                     video_ts.push(tag.timestamp_ms);
                 }
             }

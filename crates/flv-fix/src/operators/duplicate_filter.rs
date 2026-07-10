@@ -71,9 +71,9 @@ impl FingerprintKey {
 impl PayloadIdentity {
     fn new(tag: &FlvTag) -> Self {
         Self {
-            tag_type: tag.tag_type.into(),
-            len: tag.data.len() as u64,
-            crc: crc32::crc32(tag.data.as_ref()) as u64,
+            tag_type: tag.tag_type().into(),
+            len: tag.data().len() as u64,
+            crc: crc32::crc32(tag.data().as_ref()) as u64,
         }
     }
 
@@ -320,9 +320,9 @@ impl Processor<FlvData> for DuplicateTagFilterOperator {
                     trace!(
                         "{} Dropping duplicate media tag: type={:?} ts={} len={}",
                         self.context.name,
-                        tag.tag_type,
+                        tag.tag_type(),
                         tag.timestamp_ms,
-                        tag.data.len()
+                        tag.data().len()
                     );
                     if self.dropped_duplicates >= self.next_drop_log_at {
                         debug!(

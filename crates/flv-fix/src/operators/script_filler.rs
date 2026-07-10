@@ -114,7 +114,7 @@ impl ScriptKeyframesFillerOperator {
         FlvTag::new(
             original_tag.timestamp_ms,
             original_tag.stream_id,
-            original_tag.tag_type,
+            original_tag.tag_type(),
             false,
             Self::create_script_tag_payload(),
         )
@@ -141,7 +141,7 @@ impl ScriptKeyframesFillerOperator {
 
         debug!("keyframes spacer_size={spacer_size}");
 
-        let original_payload_size = tag.data.len() as u32;
+        let original_payload_size = tag.data().len() as u32;
 
         let script_data_model = AmfScriptData::from_amf_object_ref(props).map_err(|e| {
             PipelineError::Strategy(Box::new(std::io::Error::new(
@@ -169,7 +169,7 @@ impl ScriptKeyframesFillerOperator {
         Ok(FlvTag::new(
             tag.timestamp_ms,
             tag.stream_id,
-            tag.tag_type,
+            tag.tag_type(),
             false,
             Bytes::from(buffer),
         ))
@@ -177,11 +177,11 @@ impl ScriptKeyframesFillerOperator {
 
     /// Modifies the parsed AMF values to include the keyframes property.
     fn add_keyframes_to_amf(&self, tag: FlvTag) -> Result<FlvTag, PipelineError> {
-        if !self.has_video {
+        if !self.has_video || tag.is_filtered() {
             return Ok(tag);
         }
         // Parse the AMF data using a reference to the tag data
-        let mut cursor = std::io::Cursor::new(tag.data.clone());
+        let mut cursor = std::io::Cursor::new(tag.data().clone());
 
         // Try to parse the AMF data
         match ScriptData::demux(&mut cursor) {
@@ -190,7 +190,7 @@ impl ScriptKeyframesFillerOperator {
                     "{} Script tag name: '{}', data length: {}, timestamp: {}ms",
                     self.context.name,
                     amf_data.name,
-                    tag.data.len(),
+                    tag.data().len(),
                     tag.timestamp_ms
                 );
 
@@ -229,9 +229,9 @@ impl ScriptKeyframesFillerOperator {
                     Tag data length: {}, timestamp: {}ms, first few bytes: {:?}",
                     self.context.name,
                     err,
-                    tag.data.len(),
+                    tag.data().len(),
                     tag.timestamp_ms,
-                    tag.data.iter().take(16).collect::<Vec<_>>()
+                    tag.data().iter().take(16).collect::<Vec<_>>()
                 );
 
                 // Use fallback
@@ -260,7 +260,7 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
 
                 output(FlvData::Header(header))
             }
-            FlvData::Tag(tag) if tag.tag_type == FlvTagType::ScriptData => {
+            FlvData::Tag(tag) if tag.tag_type() == FlvTagType::ScriptData => {
                 if !self.seen_first_script_tag {
                     debug!("{} Found first script tag. Modifying.", self.context.name);
                     self.seen_first_script_tag = true;
@@ -316,7 +316,7 @@ mod tests {
 
     // Helper function to extract keyframes object from tag data
     fn extract_keyframes(tag: &FlvTag) -> Option<HashMap<String, Vec<f64>>> {
-        let mut cursor = std::io::Cursor::new(tag.data.clone());
+        let mut cursor = std::io::Cursor::new(tag.data().clone());
         let amf_data = ScriptData::demux(&mut cursor).ok()?;
         let props = amf_data.data[0].as_object_properties()?;
         for (key, value) in props.iter() {
@@ -382,6 +382,38 @@ mod tests {
     }
 
     #[test]
+    fn filtered_script_tag_is_forwarded_without_rewriting() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator =
+            ScriptKeyframesFillerOperator::new(Arc::clone(&context), ScriptFillerConfig::default());
+        let FlvData::Tag(mut filtered_tag) = create_script_tag(0, false) else {
+            unreachable!();
+        };
+        filtered_tag.set_filtered(true);
+        let expected = filtered_tag.clone();
+        let mut output_items = Vec::new();
+
+        operator
+            .process(
+                &context,
+                FlvData::Header(FlvHeader::new(true, true)),
+                &mut |item| {
+                    output_items.push(item);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        operator
+            .process(&context, FlvData::Tag(filtered_tag), &mut |item| {
+                output_items.push(item);
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(output_items[1], FlvData::Tag(expected));
+    }
+
+    #[test]
     fn test_process_flow() {
         init_test_tracing!();
         let context = StreamerContext::arc_new(CancellationToken::new());
@@ -435,7 +467,7 @@ mod tests {
 
         // First script tag should be modified
         if let FlvData::Tag(tag) = &output_items[1] {
-            assert_eq!(tag.tag_type, FlvTagType::ScriptData);
+            assert_eq!(tag.tag_type(), FlvTagType::ScriptData);
             let keyframes = extract_keyframes(tag);
             assert!(
                 keyframes.is_some(),
@@ -447,7 +479,7 @@ mod tests {
 
         // Video tag should be unchanged
         if let FlvData::Tag(tag) = &output_items[2] {
-            assert_eq!(tag.tag_type, FlvTagType::Video);
+            assert_eq!(tag.tag_type(), FlvTagType::Video);
             if let FlvData::Tag(video) = &video_tag_clone {
                 assert_eq!(tag.timestamp_ms, video.timestamp_ms);
             } else {
@@ -459,11 +491,12 @@ mod tests {
 
         // Second script tag should be unchanged
         if let FlvData::Tag(tag) = &output_items[3] {
-            assert_eq!(tag.tag_type, FlvTagType::ScriptData);
+            assert_eq!(tag.tag_type(), FlvTagType::ScriptData);
             // It should be a different object than the first script tag
             if let FlvData::Tag(first_script) = &output_items[1] {
                 assert_ne!(
-                    tag.data, first_script.data,
+                    tag.data(),
+                    first_script.data(),
                     "Second script tag should not be modified"
                 );
             }
@@ -513,7 +546,7 @@ mod tests {
 
         // Check that we got a valid script tag back
         if let FlvData::Tag(tag) = &output_items[1] {
-            assert_eq!(tag.tag_type, FlvTagType::ScriptData);
+            assert_eq!(tag.tag_type(), FlvTagType::ScriptData);
             // Should contain valid AMF data now
             let keyframes = extract_keyframes(tag);
             assert!(

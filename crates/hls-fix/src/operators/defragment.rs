@@ -232,6 +232,17 @@ impl DefragmentOperator {
 
         // Special handling for M4S initialization segments
         if data.is_init_segment() {
+            if self.pre_init_overflowed {
+                warn!(
+                    stream = %self.context.name,
+                    "Delayed fMP4 init arrived after pre-init overflow; rotating output before the init segment"
+                );
+                output(HlsData::end_marker_with_reason(
+                    SplitReason::StreamStructureChange {
+                        description: "fMP4 init arrived after pre-init media overflow".to_string(),
+                    },
+                ))?;
+            }
             self.handle_new_header(data);
             return Ok(());
         }
@@ -552,6 +563,10 @@ mod tests {
         HlsData::mp4_segment(MediaSegment::empty(), Bytes::from(vec![0; size]))
     }
 
+    fn make_m4s_init(size: usize) -> HlsData {
+        HlsData::mp4_init(MediaSegment::empty(), Bytes::from(vec![0; size]))
+    }
+
     #[test]
     fn pre_init_byte_limit_emits_buffer_and_switches_to_passthrough() {
         let token = CancellationToken::new();
@@ -591,6 +606,44 @@ mod tests {
         }
         assert_eq!(out.len(), 3);
         assert!(out.iter().all(HlsData::is_mp4_media));
+    }
+
+    #[test]
+    fn delayed_init_after_pre_init_overflow_starts_a_new_output_file() {
+        let token = CancellationToken::new();
+        let context = StreamerContext::arc_new(token);
+        let mut operator = DefragmentOperator::with_pre_init_buffer_limit(Arc::clone(&context), 6);
+        let mut out = Vec::new();
+        let mut output = |item: HlsData| -> Result<(), PipelineError> {
+            out.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, make_m4s_media(4), &mut output)
+            .unwrap();
+        operator
+            .process(&context, make_m4s_media(4), &mut output)
+            .unwrap();
+        operator
+            .process(&context, make_m4s_media(4), &mut output)
+            .unwrap();
+        operator
+            .process(&context, make_m4s_init(4), &mut output)
+            .unwrap();
+        for _ in 0..4 {
+            operator
+                .process(&context, make_m4s_media(4), &mut output)
+                .unwrap();
+        }
+
+        assert!(out[..3].iter().all(HlsData::is_mp4_media));
+        assert!(matches!(
+            &out[3],
+            HlsData::EndMarker(Some(SplitReason::StreamStructureChange { .. }))
+        ));
+        assert!(out[4].is_mp4_init());
+        assert!(out[5..].iter().all(HlsData::is_mp4_media));
     }
 
     #[test]

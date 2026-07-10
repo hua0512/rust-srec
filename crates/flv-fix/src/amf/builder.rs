@@ -38,6 +38,7 @@ const NATURAL_METADATA_KEY_ORDER: &[&str] = &[
 /// A fluent builder for creating `onMetaData` script data.
 const FIXED_PADDING_KEY: &str = "__srec_padding";
 const FIXED_PADDING_OVERHEAD: usize = 2 + FIXED_PADDING_KEY.len() + 1 + 4;
+const MAX_FLV_TAG_PAYLOAD_SIZE: usize = 0xFF_FFFF;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FixedSizeMetadataError {
@@ -174,8 +175,10 @@ impl OnMetaDataBuilder {
         mut self,
         target_size: usize,
     ) -> Result<FixedSizeMetadata, FixedSizeMetadataError> {
-        let target_u32 = u32::try_from(target_size)
-            .map_err(|_| FixedSizeMetadataError::TargetTooLarge(target_size))?;
+        if target_size > MAX_FLV_TAG_PAYLOAD_SIZE {
+            return Err(FixedSizeMetadataError::TargetTooLarge(target_size));
+        }
+        let target_u32 = target_size as u32;
         self.data.custom_properties.remove(FIXED_PADDING_KEY);
         if self.data.metadatadate.is_none() {
             self.data.metadatadate = Some(time::OffsetDateTime::now_utc());
@@ -886,5 +889,14 @@ mod tests {
         let mut decoder = Amf0Decoder::new(&fixed.bytes);
         assert!(decoder.decode().is_ok());
         assert!(decoder.decode().is_ok());
+    }
+
+    #[test]
+    fn fixed_size_metadata_rejects_payload_above_flv_limit() {
+        let error = OnMetaDataBuilder::new()
+            .build_fixed_size(MAX_FLV_TAG_PAYLOAD_SIZE + 1)
+            .unwrap_err();
+
+        assert!(matches!(error, FixedSizeMetadataError::TargetTooLarge(_)));
     }
 }

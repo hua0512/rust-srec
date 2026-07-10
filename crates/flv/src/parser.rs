@@ -102,12 +102,12 @@ impl FlvParser {
                         FlvTagType::Video => video_tags += 1,
                         FlvTagType::Audio => audio_tags += 1,
                         FlvTagType::ScriptData => metadata_tags += 1,
-                        _ => debug!("Unknown tag type: {:?}", tag.tag_type),
+                        _ => debug!("Unknown tag type: {:?}", tag.tag_type()),
                     }
 
                     on_tag(&tag, tag_type, tag_position);
-                    expected_prev_tag_size = (framing::TAG_HEADER_SIZE + tag.data.len()) as u32;
-                    current_position += (framing::TAG_HEADER_SIZE + tag.data.len()) as u64;
+                    expected_prev_tag_size = (framing::TAG_HEADER_SIZE + tag.data().len()) as u32;
+                    current_position += (framing::TAG_HEADER_SIZE + tag.data().len()) as u64;
                 }
                 Ok(None) => break,
                 Err(e) => return Err(e),
@@ -140,7 +140,7 @@ impl FlvParser {
                 FlvTagType::Video => video_tags += 1,
                 FlvTagType::Audio => audio_tags += 1,
                 FlvTagType::ScriptData => metadata_tags += 1,
-                _ => error!("Unknown tag type: {:?}", tag.tag_type),
+                _ => error!("Unknown tag type: {:?}", tag.tag_type()),
             },
             initial_position,
             PrevTagSizeMode::Ignore,

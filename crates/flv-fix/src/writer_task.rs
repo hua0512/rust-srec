@@ -5,6 +5,7 @@ use crate::{
     },
     analyzer::{AnalyzerError, FlvAnalyzer, FlvStats},
 };
+use bytes::Bytes;
 use flv::{FlvData, FlvHeader, FlvWriter, script::ScriptData};
 use pipeline_common::split_reason::SplitReason;
 use pipeline_common::{
@@ -19,6 +20,8 @@ use std::{
 
 use tracing::{Span, info};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
+
+const METADATA_PATCH_RESERVATION_BYTES: usize = 256;
 
 /// Error type for FLV strategy
 #[derive(Debug, thiserror::Error)]
@@ -61,6 +64,7 @@ struct MetadataPatch {
     payload_offset: u64,
     payload_size: usize,
     model: AmfScriptData,
+    include_keyframes: bool,
 }
 
 impl FlvFormatStrategy {
@@ -121,42 +125,72 @@ impl FlvFormatStrategy {
         ));
     }
 
-    fn capture_metadata_patch(&mut self, tag: &flv::FlvTag, tag_start: u64) {
-        if self.metadata_patch.is_some() || !tag.is_script_tag() {
-            return;
+    fn prepare_metadata_patch(
+        &mut self,
+        tag: &flv::FlvTag,
+        tag_start: u64,
+    ) -> Result<Option<flv::FlvTag>, FlvStrategyError> {
+        if self.metadata_patch.is_some() || !tag.is_script_tag() || tag.is_filtered() {
+            return Ok(None);
         }
 
-        let mut cursor = std::io::Cursor::new(tag.data.clone());
+        let mut cursor = std::io::Cursor::new(tag.data().clone());
         let Ok(script) = ScriptData::demux(&mut cursor) else {
-            return;
+            return Ok(None);
         };
         if script.name != crate::AMF0_ON_METADATA {
-            return;
+            return Ok(None);
         }
         let Some(properties) = script
             .data
             .first()
             .and_then(amf0::Amf0Value::as_object_properties)
         else {
-            return;
+            return Ok(None);
         };
         let Ok(model) = AmfScriptData::from_amf_object_ref(properties) else {
-            return;
+            return Ok(None);
         };
+
+        let include_keyframes = model.spacer_size.is_some() || model.keyframes.is_some();
+        let prepared_tag = if model.spacer_size.is_none() {
+            let builder = OnMetaDataBuilder::from_script_data(model.clone());
+            let (canonical, _) = builder
+                .clone()
+                .build_bytes(0, false)
+                .map_err(FixedSizeMetadataError::from)?;
+            let reserved =
+                builder.build_fixed_size(canonical.len() + METADATA_PATCH_RESERVATION_BYTES)?;
+            Some(flv::FlvTag::new(
+                tag.timestamp_ms,
+                tag.stream_id,
+                tag.tag_type(),
+                tag.is_filtered(),
+                Bytes::from(reserved.bytes),
+            ))
+        } else {
+            None
+        };
+        let payload_size = prepared_tag
+            .as_ref()
+            .map_or_else(|| tag.data().len(), |prepared| prepared.data().len());
 
         self.metadata_patch = Some(MetadataPatch {
             payload_offset: tag_start + flv::framing::TAG_HEADER_SIZE as u64,
-            payload_size: tag.data.len(),
+            payload_size,
             model,
+            include_keyframes,
         });
+        Ok(prepared_tag)
     }
 
     fn build_final_metadata(
         patch: MetadataPatch,
         stats: &FlvStats,
     ) -> Result<crate::amf::builder::FixedSizeMetadata, FixedSizeMetadataError> {
+        let include_keyframes = patch.include_keyframes;
         let mut builder = OnMetaDataBuilder::from_script_data(patch.model).with_stats(stats);
-        if let Some(video_stats) = &stats.video_stats {
+        if include_keyframes && let Some(video_stats) = &stats.video_stats {
             let (times, filepositions) = video_stats
                 .keyframes
                 .iter()
@@ -212,14 +246,15 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
                 self.current_tag_count += 1;
 
                 let tag_start = self.analyzer.stats.file_size;
-                self.capture_metadata_patch(tag, tag_start);
+                let prepared_tag = self.prepare_metadata_patch(tag, tag_start)?;
+                let tag = prepared_tag.as_ref().unwrap_or(tag);
 
                 self.analyzer
                     .analyze_tag(tag)
                     .map_err(FlvStrategyError::Analysis)?;
 
                 writer.write_tag_f(tag)?;
-                bytes_written += (11 + 4 + tag.data.len()) as u64;
+                bytes_written += (11 + 4 + tag.data().len()) as u64;
                 Ok(bytes_written)
             }
             FlvData::Split(reason) => {
@@ -423,7 +458,7 @@ mod tests {
         reader.seek(std::io::SeekFrom::Start(13)).unwrap();
         let (tag, tag_type) = FlvParser::parse_tag(&mut reader).unwrap().unwrap();
         assert_eq!(tag_type, FlvTagType::ScriptData);
-        let mut cursor = std::io::Cursor::new(tag.data);
+        let mut cursor = std::io::Cursor::new(tag.data().clone());
         let script = ScriptData::demux(&mut cursor).unwrap();
         let properties = script.data[0].as_object_properties().unwrap();
         let duration = properties
@@ -432,5 +467,94 @@ mod tests {
             .map(|(_, value)| value)
             .unwrap();
         assert_eq!(duration, &Amf0Value::Number(2.0));
+    }
+
+    #[test]
+    fn writer_reserves_and_patches_unreserved_audio_metadata() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut writer = RecordingWriter::new(FlvWriterConfig {
+            output_dir: tempdir.path().to_path_buf(),
+            base_name: "segment-%i".to_string(),
+            enable_low_latency: true,
+        });
+        let opened_path = Arc::new(Mutex::new(None));
+        let callback_path = Arc::clone(&opened_path);
+        writer.set_on_segment_start_callback(move |path, _| {
+            *callback_path.lock().unwrap() = Some(path.to_path_buf());
+        });
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<FlvData, PipelineError>>(8);
+
+        tx.blocking_send(Ok(FlvData::Header(FlvHeader::new(true, false))))
+            .unwrap();
+        tx.blocking_send(Ok(crate::test_utils::create_script_tag(0, false)))
+            .unwrap();
+        tx.blocking_send(Ok(crate::test_utils::create_audio_tag(0)))
+            .unwrap();
+        tx.blocking_send(Ok(crate::test_utils::create_audio_tag(2_000)))
+            .unwrap();
+        drop(tx);
+
+        writer.run(rx.into()).unwrap();
+
+        let path = opened_path.lock().unwrap().clone().unwrap();
+        let file = std::fs::File::open(path).unwrap();
+        let mut reader = std::io::BufReader::new(file);
+        FlvParser::parse_header(&mut reader).unwrap();
+        reader.seek(std::io::SeekFrom::Start(13)).unwrap();
+        let (tag, tag_type) = FlvParser::parse_tag(&mut reader).unwrap().unwrap();
+        assert_eq!(tag_type, FlvTagType::ScriptData);
+        let mut cursor = std::io::Cursor::new(tag.data().clone());
+        let script = ScriptData::demux(&mut cursor).unwrap();
+        let properties = script.data[0].as_object_properties().unwrap();
+        let duration = properties
+            .iter()
+            .find(|(key, _)| key.as_ref() == "duration")
+            .map(|(_, value)| value)
+            .unwrap();
+        let has_audio = properties
+            .iter()
+            .find(|(key, _)| key.as_ref() == "hasAudio")
+            .map(|(_, value)| value)
+            .unwrap();
+        assert_eq!(duration, &Amf0Value::Number(2.0));
+        assert_eq!(has_audio, &Amf0Value::Boolean(true));
+    }
+
+    #[test]
+    fn writer_preserves_filtered_script_payload_even_when_it_is_parseable() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut writer = RecordingWriter::new(FlvWriterConfig {
+            output_dir: tempdir.path().to_path_buf(),
+            base_name: "segment-%i".to_string(),
+            enable_low_latency: true,
+        });
+        let opened_path = Arc::new(Mutex::new(None));
+        let callback_path = Arc::clone(&opened_path);
+        writer.set_on_segment_start_callback(move |path, _| {
+            *callback_path.lock().unwrap() = Some(path.to_path_buf());
+        });
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<FlvData, PipelineError>>(8);
+        let FlvData::Tag(mut script_tag) = crate::test_utils::create_script_tag(0, false) else {
+            unreachable!();
+        };
+        script_tag.set_filtered(true);
+        let original_payload = script_tag.data().clone();
+
+        tx.blocking_send(Ok(FlvData::Header(FlvHeader::new(true, true))))
+            .unwrap();
+        tx.blocking_send(Ok(FlvData::Tag(script_tag))).unwrap();
+        drop(tx);
+
+        writer.run(rx.into()).unwrap();
+
+        let path = opened_path.lock().unwrap().clone().unwrap();
+        let file = std::fs::File::open(path).unwrap();
+        let mut reader = std::io::BufReader::new(file);
+        FlvParser::parse_header(&mut reader).unwrap();
+        reader.seek(std::io::SeekFrom::Start(13)).unwrap();
+        let (tag, tag_type) = FlvParser::parse_tag(&mut reader).unwrap().unwrap();
+        assert_eq!(tag_type, FlvTagType::ScriptData);
+        assert!(tag.is_filtered());
+        assert_eq!(tag.data(), &original_payload);
     }
 }

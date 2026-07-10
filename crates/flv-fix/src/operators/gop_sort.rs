@@ -329,7 +329,7 @@ mod tests {
         // Check that the script tag and sequence headers are properly ordered
         if let FlvData::Tag(tag) = &output_items[1] {
             assert_eq!(
-                tag.tag_type,
+                tag.tag_type(),
                 FlvTagType::ScriptData,
                 "First tag should be script"
             );

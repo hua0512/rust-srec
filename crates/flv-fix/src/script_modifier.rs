@@ -86,11 +86,11 @@ pub fn inject_stats_into_script_data(
             warn!(error = ?e, "Failed to read PreviousTagSize while scanning tags; skipping stats injection.");
             return Ok(());
         }
-        if tag_type != FlvTagType::ScriptData {
+        if tag_type != FlvTagType::ScriptData || tag.is_filtered() {
             continue;
         }
 
-        let mut cursor = std::io::Cursor::new(tag.data.clone());
+        let mut cursor = std::io::Cursor::new(tag.data().clone());
         let data = flv::script::ScriptData::demux(&mut cursor)?;
         trace!("Script data: {:?}", data);
 
@@ -98,7 +98,7 @@ pub fn inject_stats_into_script_data(
             continue;
         }
 
-        let original_payload_data = tag.data.len() as u32;
+        let original_payload_data = tag.data().len() as u32;
         debug!("Found onMetaData at position: {tag_start_pos}");
         debug!("Original script data payload size: {original_payload_data}");
 
@@ -249,7 +249,7 @@ mod tests {
                 reader.read_exact(&mut previous_tag_size).unwrap();
                 if tag_type == RawTagType::ScriptData {
                     break tag_start + flv::framing::TAG_HEADER_SIZE
-                        ..tag_start + flv::framing::TAG_HEADER_SIZE + tag.data.len();
+                        ..tag_start + flv::framing::TAG_HEADER_SIZE + tag.data().len();
                 }
             }
         };
@@ -300,7 +300,7 @@ mod tests {
         .unwrap();
 
         let script_tag = found.expect("Expected onMetaData script tag");
-        let mut cursor = Cursor::new(script_tag.data.clone());
+        let mut cursor = Cursor::new(script_tag.data().clone());
         let script = ScriptData::demux(&mut cursor).unwrap();
         assert_eq!(script.name, crate::AMF0_ON_METADATA);
 
@@ -317,6 +317,47 @@ mod tests {
         assert_eq!(*duration, Amf0Value::Number(stats.duration as f64));
 
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn inject_stats_does_not_rewrite_filtered_metadata() {
+        use flv::{FlvHeader, FlvTag, FlvWriter};
+        use std::io::BufWriter;
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir.path().join("filtered-metadata.flv");
+        let (payload, _) = OnMetaDataBuilder::new()
+            .with_placeholder_keyframes(20)
+            .build_bytes(0, false)
+            .unwrap();
+        {
+            let file = File::create(&path).unwrap();
+            let mut writer = FlvWriter::new(BufWriter::new(file)).unwrap();
+            writer.write_header(&FlvHeader::new(true, true)).unwrap();
+            writer
+                .write_tag_f(&FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::ScriptData,
+                    true,
+                    bytes::Bytes::from(payload),
+                ))
+                .unwrap();
+            writer.close().unwrap();
+        }
+        let before = std::fs::read(&path).unwrap();
+
+        inject_stats_into_script_data(
+            &path,
+            &FlvStats {
+                duration: 42,
+                ..Default::default()
+            },
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read(path).unwrap(), before);
     }
 
     #[tokio::test]
@@ -360,7 +401,7 @@ mod tests {
                 analyzer.analyze_tag(tag).unwrap();
 
                 if tag.is_script_tag() {
-                    let mut script_data = Cursor::new(tag.data.clone());
+                    let mut script_data = Cursor::new(tag.data().clone());
                     let data = ScriptData::demux(&mut script_data).unwrap();
                     println!("Script data: {data:?}");
                 }

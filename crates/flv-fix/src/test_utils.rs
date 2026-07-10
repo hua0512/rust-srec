@@ -154,7 +154,7 @@ pub fn print_tags(items: &[FlvData]) {
         match item {
             FlvData::Header(_) => println!("  {i}: Header"),
             FlvData::Tag(tag) => {
-                let type_str = match tag.tag_type {
+                let type_str = match tag.tag_type() {
                     FlvTagType::Audio => {
                         if tag.is_audio_sequence_header() {
                             "Audio (Header)"

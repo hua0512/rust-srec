@@ -127,8 +127,8 @@ struct BudgetedMessage<T> {
 }
 
 impl<T> BudgetedMessage<T> {
-    fn into_item(self) -> Result<T, PipelineError> {
-        self.item
+    fn into_parts(self) -> (Result<T, PipelineError>, Option<OwnedSemaphorePermit>) {
+        (self.item, self._permit)
     }
 }
 
@@ -270,12 +270,19 @@ where
 
     let task = tokio::task::spawn_blocking(move || {
         let mut inputs = Vec::with_capacity(batch_items);
+        let mut input_permits = Vec::with_capacity(batch_items);
 
         while let Some(first) = input_rx.blocking_recv() {
-            inputs.push(first.into_item());
+            let (item, permit) = first.into_parts();
+            inputs.push(item);
+            input_permits.extend(permit);
             while inputs.len() < batch_items {
                 match input_rx.try_recv() {
-                    Ok(item) => inputs.push(item.into_item()),
+                    Ok(message) => {
+                        let (item, permit) = message.into_parts();
+                        inputs.push(item);
+                        input_permits.extend(permit);
+                    }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => break,
                 }
@@ -285,6 +292,7 @@ where
             let process_result = pipeline.process_items(inputs.drain(..), &mut |item| {
                 outputs.push(item);
             });
+            input_permits.clear();
 
             if let Err(source) = process_result {
                 if matches!(source, PipelineError::Cancelled) {
@@ -440,7 +448,7 @@ fn stage_finish_error(message: String) -> PipelineError {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::Duration;
 
     use super::*;
@@ -509,6 +517,40 @@ mod tests {
     }
 
     struct FinishFailingProcessor;
+
+    struct BlockingProcessor {
+        entered: Arc<AtomicBool>,
+        gate: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+    }
+
+    impl Processor<String> for BlockingProcessor {
+        fn process(
+            &mut self,
+            _context: &Arc<StreamerContext>,
+            input: String,
+            output: &mut dyn FnMut(String) -> Result<(), PipelineError>,
+        ) -> Result<(), PipelineError> {
+            self.entered.store(true, Ordering::SeqCst);
+            let (lock, wake) = &*self.gate;
+            let mut released = lock.lock().unwrap();
+            while !*released {
+                released = wake.wait(released).unwrap();
+            }
+            output(input)
+        }
+
+        fn finish(
+            &mut self,
+            _context: &Arc<StreamerContext>,
+            _output: &mut dyn FnMut(String) -> Result<(), PipelineError>,
+        ) -> Result<(), PipelineError> {
+            Ok(())
+        }
+
+        fn name(&self) -> &'static str {
+            "BlockingProcessor"
+        }
+    }
 
     impl Processor<String> for FinishFailingProcessor {
         fn process(
@@ -660,6 +702,63 @@ mod tests {
             task.await.unwrap().unwrap();
         }
         assert_eq!(counter.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn byte_budget_covers_items_while_the_pipeline_is_processing_them() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let entered = Arc::new(AtomicBool::new(false));
+        let gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let pipeline = Pipeline::new(context).add_processor(BlockingProcessor {
+            entered: Arc::clone(&entered),
+            gate: Arc::clone(&gate),
+        });
+        let SpawnedPipeline {
+            input_tx,
+            mut output_rx,
+            tasks,
+        } = spawn_pipeline(
+            pipeline,
+            ChannelSpec::bytes(4, String::len)
+                .with_item_capacity(4)
+                .with_max_batch_items(4),
+        );
+
+        input_tx.send(Ok("aaaa".to_string())).await.unwrap();
+        timeout(Duration::from_secs(1), async {
+            while !entered.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let blocked_tx = input_tx.clone();
+        let mut blocked_send =
+            tokio::spawn(async move { blocked_tx.send(Ok("bbbb".to_string())).await });
+        let send_was_blocked = timeout(Duration::from_millis(50), &mut blocked_send)
+            .await
+            .is_err();
+
+        let (lock, wake) = &*gate;
+        *lock.lock().unwrap() = true;
+        wake.notify_all();
+
+        assert!(send_was_blocked);
+
+        assert_eq!(output_rx.recv().await.unwrap().unwrap(), "aaaa");
+        timeout(Duration::from_secs(1), &mut blocked_send)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        drop(input_tx);
+
+        assert_eq!(output_rx.recv().await.unwrap().unwrap(), "bbbb");
+        while output_rx.recv().await.is_some() {}
+        for task in tasks {
+            task.await.unwrap().unwrap();
+        }
     }
 
     #[tokio::test]

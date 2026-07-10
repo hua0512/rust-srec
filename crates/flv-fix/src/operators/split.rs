@@ -158,7 +158,7 @@ impl SplitOperator {
 
     fn video_change_key(&self, tag: &FlvTag) -> u32 {
         match self.sequence_header_change_mode {
-            SequenceHeaderChangeMode::Crc32 => Self::calculate_crc32(tag.data.as_ref()),
+            SequenceHeaderChangeMode::Crc32 => Self::calculate_crc32(tag.data().as_ref()),
             SequenceHeaderChangeMode::SemanticSignature => {
                 Self::calculate_video_sequence_signature(tag)
             }
@@ -167,7 +167,7 @@ impl SplitOperator {
 
     fn audio_change_key(&self, tag: &FlvTag) -> u32 {
         match self.sequence_header_change_mode {
-            SequenceHeaderChangeMode::Crc32 => Self::calculate_crc32(tag.data.as_ref()),
+            SequenceHeaderChangeMode::Crc32 => Self::calculate_crc32(tag.data().as_ref()),
             SequenceHeaderChangeMode::SemanticSignature => {
                 Self::calculate_audio_sequence_signature(tag)
             }
@@ -186,7 +186,7 @@ impl SplitOperator {
     /// - enhanced: `fourcc || payload[5..]`
     ///   - skips the first byte (flags/packet type)
     fn calculate_video_sequence_signature(tag: &FlvTag) -> u32 {
-        let data = tag.data.as_ref();
+        let data = tag.data().as_ref();
         if data.is_empty() {
             return 0;
         }
@@ -222,7 +222,7 @@ impl SplitOperator {
     /// Layout: [AudioHeader][AACPacketType=0][AudioSpecificConfig...]
     /// We ignore the legacy audio header bits and only hash the AAC payload.
     fn calculate_audio_sequence_signature(tag: &FlvTag) -> u32 {
-        let data = tag.data.as_ref();
+        let data = tag.data().as_ref();
         let mut state = 0u32;
 
         if data.len() >= 2 {
@@ -251,7 +251,7 @@ impl SplitOperator {
         use flv::hevc::HevcPacket;
         use flv::video::{EnhancedPacket, VideoData, VideoTagBody};
 
-        let data = tag.data.clone();
+        let data = tag.data().clone();
         let mut cursor = std::io::Cursor::new(data);
 
         match VideoData::demux(&mut cursor) {
@@ -353,7 +353,7 @@ impl SplitOperator {
             .map(|sf| format!("{sf:?}"))
             .unwrap_or_else(|| "unknown".to_string());
 
-        let data = tag.data.as_ref();
+        let data = tag.data().as_ref();
 
         // For AAC: parse AudioSpecificConfig
         // Layout: [audio_header_byte][0x00=seq_header][AudioSpecificConfig...]
@@ -1037,7 +1037,7 @@ mod tests {
             last.is_video_sequence_header(),
             "Expected flushed video sequence header at end"
         );
-        assert_eq!(last.data[5], 2, "Expected version=2 sequence header");
+        assert_eq!(last.data()[5], 2, "Expected version=2 sequence header");
     }
 
     #[test]

@@ -328,7 +328,9 @@ impl Decoder for FlvDecoder {
         );
         trace!(
             "Successfully parsed FLV tag: Type={}, Timestamp={}, Size={}",
-            tag.tag_type, tag.timestamp_ms, data_size
+            tag.tag_type(),
+            tag.timestamp_ms,
+            data_size
         );
         self.last_tag_size = total_tag_size as u32;
         self.expecting_tag_header = false;
@@ -635,9 +637,9 @@ mod tests {
 
         match tag1_opt.unwrap() {
             FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type, FlvTagType::ScriptData);
+                assert_eq!(tag.tag_type(), FlvTagType::ScriptData);
                 assert_eq!(tag.timestamp_ms, 0);
-                assert_eq!(tag.data.len(), 15);
+                assert_eq!(tag.data().len(), 15);
                 assert_eq!(decoder.last_tag_size, 11 + 15); // Header + Data
             }
             _ => panic!("Expected Tag"),
@@ -687,9 +689,9 @@ mod tests {
 
         match tag2_opt.unwrap() {
             FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type, FlvTagType::Video);
+                assert_eq!(tag.tag_type(), FlvTagType::Video);
                 assert_eq!(tag.timestamp_ms, 100);
-                assert_eq!(tag.data.len(), 5);
+                assert_eq!(tag.data().len(), 5);
                 assert_eq!(decoder.last_tag_size, 11 + 5); // Header + Data
             }
             _ => panic!("Expected Tag"),
@@ -744,9 +746,9 @@ mod tests {
 
         match tag_opt.unwrap() {
             FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type, FlvTagType::Video);
+                assert_eq!(tag.tag_type(), FlvTagType::Video);
                 assert_eq!(tag.timestamp_ms, 200);
-                assert_eq!(tag.data.len(), 5);
+                assert_eq!(tag.data().len(), 5);
                 assert_eq!(decoder.last_tag_size, 11 + 5);
             }
             _ => panic!("Expected Tag"),
@@ -840,11 +842,11 @@ mod tests {
         // 4. Verify the tag was parsed correctly
         match tag_opt.unwrap() {
             FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type, FlvTagType::Video);
+                assert_eq!(tag.tag_type(), FlvTagType::Video);
                 assert_eq!(tag.timestamp_ms, 256);
-                assert_eq!(tag.data.len(), expected_data_size);
+                assert_eq!(tag.data().len(), expected_data_size);
                 // Verify the data content combines the partial arrivals
-                assert_eq!(&tag.data[..], &[0x01, 0x02, 0x03, 0x04, 0x05]);
+                assert_eq!(&tag.data()[..], &[0x01, 0x02, 0x03, 0x04, 0x05]);
                 assert_eq!(
                     decoder.last_tag_size, total_tag_size as u32,
                     "Last tag size mismatch"
@@ -917,7 +919,7 @@ mod tests {
                     FlvData::Tag(tag) => {
                         stats.tags_count += 1;
                         stats.last_timestamp = tag.timestamp_ms; // Track last timestamp
-                        match tag.tag_type {
+                        match tag.tag_type() {
                             FlvTagType::Video => stats.video_tags += 1,
                             FlvTagType::Audio => stats.audio_tags += 1,
                             FlvTagType::ScriptData => stats.metadata_tags += 1,
@@ -1021,9 +1023,9 @@ mod tests {
 
                     println!(
                         "Async parser: Tag Type: {}, Timestamp: {}, Size: {}",
-                        tag.tag_type,
+                        tag.tag_type(),
                         tag.timestamp_ms,
-                        tag.data.len()
+                        tag.data().len()
                     );
 
                     // Categorize the tag by type

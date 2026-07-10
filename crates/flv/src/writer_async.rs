@@ -70,7 +70,7 @@ impl Encoder<FlvData> for FlvEncoder {
                     ));
                 }
 
-                let data_len = tag.data.len();
+                let data_len = tag.data().len();
 
                 // FLV tag StreamID is defined as UI24 and, for FLV files, SHALL always be 0.
                 // (Multitrack in E-RTMP is signaled in the payload, not via StreamID.)
@@ -103,8 +103,8 @@ impl Encoder<FlvData> for FlvEncoder {
 
                 // 2. Tag header
                 let header_bytes = encode::encode_tag_header_bytes(
-                    tag.tag_type,
-                    tag.is_filtered,
+                    tag.tag_type(),
+                    tag.is_filtered(),
                     data_len_u32,
                     tag.timestamp_ms,
                     0,
@@ -113,7 +113,7 @@ impl Encoder<FlvData> for FlvEncoder {
 
                 // 3. Write Tag Data (Variable size)
                 //    Append the raw bytes payload efficiently.
-                dst.put(tag.data);
+                dst.put(tag.into_data());
 
                 // --- Update State for Next Tag ---
                 // The *next* tag's PreviousTagSize field needs the size of the tag we just wrote
