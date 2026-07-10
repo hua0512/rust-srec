@@ -4,7 +4,7 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — rebuilt Mesio HLS recording engine (memory-bounded behavior, more reliable encrypted HLS, de-duplication that survives rotating auth tokens like Twitch signed URLs) and unified Mesio HLS/FLV download sessions, plus a migration that drops a few unused Mesio engine settings
+- [`unreleased`](./unreleased.md) — rebuilt Mesio HLS recording engine (memory-bounded behavior, more reliable encrypted HLS, de-duplication that survives rotating auth tokens like Twitch signed URLs), unified Mesio HLS/FLV download sessions, and refactored the media-fix pipelines to reuse analysis, byte-bound HLS queues, and patch FLV metadata in place; also removes a few unused Mesio settings through an automatic migration
 
 ## Latest release
 
