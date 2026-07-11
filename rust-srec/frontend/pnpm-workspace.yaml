@@ -1,6 +1,6 @@
 allowBuilds:
-  "@bufbuild/buf": true
-  "@swc/core": true
+  '@bufbuild/buf': true
+  '@swc/core': true
   esbuild: true
   msw: true
   protobufjs: true
