@@ -1,3 +1,9 @@
-onlyBuiltDependencies:
-  - esbuild
-  - protobufjs
+allowBuilds:
+  "@bufbuild/buf": true
+  "@swc/core": true
+  esbuild: true
+  msw: true
+  protobufjs: true
+
+# mpegts.js depends on a pinned webworkify-webpack Git commit.
+blockExoticSubdeps: false

@@ -1,7 +1,7 @@
 {
     "name": "rust-srec-docs",
     "type": "module",
-    "packageManager": "pnpm@10.28.1",
+    "packageManager": "pnpm@11.11.0",
     "scripts": {
         "docs:dev": "vitepress dev",
         "docs:build": "vitepress build",
