@@ -31,6 +31,28 @@ impl StreamerTxOps {
         Ok(result.rows_affected())
     }
 
+    /// Read the streamer's current `state` column.
+    ///
+    /// Returns `None` when the row is missing or holds an unknown state
+    /// string. Session-start guards call this inside the same
+    /// `BEGIN IMMEDIATE` transaction that would write `state = 'LIVE'`, so
+    /// the answer is serialized against concurrent state writes (notably
+    /// the user-disable commit in `StreamerManager::partial_update_streamer`)
+    /// — unlike the in-memory metadata cache, which lags those commits.
+    pub async fn get_state(
+        tx: &mut SqliteConnection,
+        streamer_id: &str,
+    ) -> Result<Option<crate::domain::StreamerState>> {
+        let state: Option<String> = sqlx::query_scalar("SELECT state FROM streamers WHERE id = ?")
+            .bind(streamer_id)
+            .fetch_optional(tx)
+            .await?;
+
+        Ok(state
+            .as_deref()
+            .and_then(crate::domain::StreamerState::parse))
+    }
+
     /// Update the `last_error` column within a transaction.
     ///
     /// Pass `None` to clear the field. Used by infrastructure-level blocks

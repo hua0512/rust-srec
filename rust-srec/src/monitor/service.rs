@@ -638,9 +638,7 @@ impl<
             );
             return Ok(ProcessStatusResult::Suppressed(
                 ProcessStatusSuppression::TemporarilyDisabled {
-                    retry_after: streamer
-                        .remaining_backoff()
-                        .and_then(|duration| duration.to_std().ok()),
+                    retry_after: streamer.remaining_backoff_std(),
                 },
             ));
         }

@@ -140,6 +140,13 @@ impl StreamerMetadata {
         })
     }
 
+    /// [`Self::remaining_backoff`] as a `std::time::Duration`, for callers
+    /// scheduling timers or filling wire payloads. `None` when no backoff
+    /// is active.
+    pub fn remaining_backoff_std(&self) -> Option<std::time::Duration> {
+        self.remaining_backoff().and_then(|d| d.to_std().ok())
+    }
+
     /// Get the platform name derived from platform_config_id.
     ///
     /// Returns the platform name (e.g., "douyin", "twitch", "bilibili").

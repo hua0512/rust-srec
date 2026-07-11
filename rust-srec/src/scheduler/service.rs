@@ -1074,6 +1074,13 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                         retry_after_secs: retry_secs,
                         session_id,
                     },
+                    crate::downloader::DownloadRejectedKind::StreamerBackoff => {
+                        DownloadEndPolicy::StreamerBackoffBlocked {
+                            reason,
+                            retry_after_secs: retry_secs,
+                            session_id,
+                        }
+                    }
                 };
                 send_to_actor(streamer_id, StreamerMessage::DownloadEnded(policy)).await;
             }
