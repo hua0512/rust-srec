@@ -90,6 +90,7 @@ prost-build = { workspace = true }
 
 [dev-dependencies]
 m3u8-rs = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 
 [features]
