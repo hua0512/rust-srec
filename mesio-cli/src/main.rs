@@ -5,7 +5,6 @@ use clap::Parser;
 use config::ProgramConfig;
 use error::AppError;
 use flv_fix::FlvPipelineConfig;
-use flv_fix::RepairStrategy;
 use flv_fix::ScriptFillerConfig;
 use hls_fix::HlsPipelineConfig;
 use mesio_engine::flv::FlvProtocolConfig;
@@ -183,7 +182,6 @@ async fn bootstrap() -> Result<(), AppError> {
     // Configure flv pipeline config
     let flv_pipeline_config = FlvPipelineConfig::builder()
         .duplicate_tag_filtering(false)
-        .repair_strategy(RepairStrategy::Strict)
         .continuity_mode(flv_fix::ContinuityMode::Reset)
         .keyframe_index_config(if args.keyframe_index {
             if duration_limit_s > 0.0 {

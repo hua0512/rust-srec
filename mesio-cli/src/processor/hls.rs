@@ -162,6 +162,7 @@ pub async fn process_hls_stream(
             &config.pipeline_config,
             hls_pipe_config,
             Box::pin(stream),
+            HlsPipeline::channel_spec(config.pipeline_config.channel_size),
             writer_span.clone(),
             |_writer_span| {
                 HlsWriter::new(HlsWriterConfig {

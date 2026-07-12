@@ -6,9 +6,8 @@ use std::{
 
 use hls::{HlsData, M4sData};
 use pipeline_common::{
-    FormatStrategy, PipelineError, PostWriteAction, ProgressConfig, ProtocolWriter, SplitReason,
-    WriterConfig, WriterError, WriterProgress, WriterState, WriterStats, WriterTask,
-    expand_filename_template,
+    FormatStrategy, PostWriteAction, ProgressConfig, ProtocolWriter, SplitReason, WriterConfig,
+    WriterError, WriterProgress, WriterState, WriterStats, WriterTask, expand_filename_template,
 };
 
 use tracing::{Span, debug, info};
@@ -88,8 +87,8 @@ impl FormatStrategy<HlsData> for HlsFormatStrategy {
                 self.analyzer
                     .analyze_segment(item)
                     .map_err(HlsStrategyError::Analyzer)?;
-                let bytes_written = ts.data.len() as u64;
-                writer.write_all(&ts.data)?;
+                let bytes_written = ts.data().len() as u64;
+                writer.write_all(ts.data())?;
                 // Accumulate TS segment duration
                 self.target_duration += ts.segment.duration;
                 Ok(bytes_written)
@@ -303,7 +302,7 @@ impl ProtocolWriter for HlsWriter {
 
     fn run(
         &mut self,
-        input: tokio::sync::mpsc::Receiver<Result<HlsData, PipelineError>>,
+        input: pipeline_common::PipelineReceiver<HlsData>,
     ) -> Result<WriterStats, WriterError> {
         let mut saw_payload = false;
         self.writer_task.run_from_channel(input, |item, _state| {
@@ -336,7 +335,7 @@ mod tests {
 
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<HlsData, PipelineError>>(16);
 
-        let handle = std::thread::spawn(move || writer.run(rx));
+        let handle = std::thread::spawn(move || writer.run(rx.into()));
 
         let seg = |bytes: &'static [u8]| {
             Ok(HlsData::ts(
@@ -381,7 +380,7 @@ mod tests {
 
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<HlsData, PipelineError>>(16);
 
-        let handle = std::thread::spawn(move || writer.run(rx));
+        let handle = std::thread::spawn(move || writer.run(rx.into()));
 
         tx.blocking_send(Ok(HlsData::end_marker())).unwrap();
         tx.blocking_send(Ok(HlsData::end_marker())).unwrap();

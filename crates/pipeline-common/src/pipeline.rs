@@ -11,10 +11,63 @@
 
 use crate::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
-use tracing_indicatif::span_ext::IndicatifSpanExt;
+use std::time::{Duration, Instant};
 
 /// Default capacity hint for intermediate vectors
 const DEFAULT_STAGE_CAPACITY: usize = 8;
+
+pub trait ProgressSink: Send {
+    fn on_items(&mut self, processed_items: usize);
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ProgressThrottle {
+    item_interval: usize,
+    min_interval: Duration,
+}
+
+impl ProgressThrottle {
+    pub fn new(item_interval: usize, min_interval: Duration) -> Self {
+        Self {
+            item_interval: item_interval.max(1),
+            min_interval,
+        }
+    }
+
+    pub fn every_items(item_interval: usize) -> Self {
+        Self::new(item_interval, Duration::ZERO)
+    }
+}
+
+struct ProgressObserver {
+    sink: Box<dyn ProgressSink>,
+    throttle: ProgressThrottle,
+    next_item: usize,
+    last_update: Instant,
+}
+
+impl ProgressObserver {
+    fn new(sink: impl ProgressSink + 'static, throttle: ProgressThrottle) -> Self {
+        Self {
+            sink: Box::new(sink),
+            throttle,
+            next_item: throttle.item_interval,
+            last_update: Instant::now(),
+        }
+    }
+
+    fn observe(&mut self, processed_items: usize) {
+        if processed_items < self.next_item
+            || self.last_update.elapsed() < self.throttle.min_interval
+        {
+            return;
+        }
+
+        self.sink.on_items(processed_items);
+        self.next_item = processed_items.saturating_add(self.throttle.item_interval);
+        self.last_update = Instant::now();
+    }
+}
 
 /// A generic pipeline for processing data through a series of processors.
 ///
@@ -23,6 +76,8 @@ const DEFAULT_STAGE_CAPACITY: usize = 8;
 pub struct Pipeline<T> {
     processors: Vec<Box<dyn Processor<T> + Send>>,
     context: Arc<StreamerContext>,
+    progress: Option<ProgressObserver>,
+    processed_items: usize,
 }
 
 impl<T> Pipeline<T> {
@@ -31,6 +86,8 @@ impl<T> Pipeline<T> {
         Self {
             processors: Vec::new(),
             context,
+            progress: None,
+            processed_items: 0,
         }
     }
 
@@ -39,6 +96,15 @@ impl<T> Pipeline<T> {
     /// Returns self for method chaining.
     pub fn add_processor<P: Processor<T> + Send + 'static>(mut self, processor: P) -> Self {
         self.processors.push(Box::new(processor));
+        self
+    }
+
+    pub fn with_progress_sink(
+        mut self,
+        sink: impl ProgressSink + 'static,
+        throttle: ProgressThrottle,
+    ) -> Self {
+        self.progress = Some(ProgressObserver::new(sink, throttle));
         self
     }
 
@@ -73,7 +139,11 @@ impl<T> Pipeline<T> {
     }
 
     /// Process input items through the pipeline
-    fn process_items<I, O, E>(&mut self, input: I, output: &mut O) -> Result<(), PipelineError>
+    pub(crate) fn process_items<I, O, E>(
+        &mut self,
+        input: I,
+        output: &mut O,
+    ) -> Result<(), PipelineError>
     where
         I: Iterator<Item = Result<T, E>>,
         O: FnMut(Result<T, E>),
@@ -82,8 +152,6 @@ impl<T> Pipeline<T> {
         // Pre-allocate vectors for stage processing - these will be reused
         let mut current_stage_items: Vec<T> = Vec::with_capacity(DEFAULT_STAGE_CAPACITY);
         let mut next_stage_items: Vec<T> = Vec::with_capacity(DEFAULT_STAGE_CAPACITY);
-
-        let mut item_index: usize = 0;
 
         for item_result in input {
             // Check for cancellation before processing each input item
@@ -118,7 +186,7 @@ impl<T> Pipeline<T> {
                                 tracing::error!(
                                     processor = processor.name(),
                                     processor_index,
-                                    item_index,
+                                    item_index = self.processed_items,
                                     "Processor failed during processing"
                                 );
                                 return Err(e);
@@ -145,19 +213,17 @@ impl<T> Pipeline<T> {
                 }
             }
 
-            item_index += 1;
-
-            // Update progress on current span
-            let span = tracing::Span::current();
-            span.pb_set_position(item_index as u64);
-            span.pb_set_message(&format!("Processing item {}", item_index));
+            self.processed_items = self.processed_items.saturating_add(1);
+            if let Some(progress) = &mut self.progress {
+                progress.observe(self.processed_items);
+            }
         }
 
         Ok(())
     }
 
     /// Finalize all processors and route flushed data through remaining stages
-    fn finalize_processors<O, E>(&mut self, output: &mut O) -> Result<(), PipelineError>
+    pub(crate) fn finalize_processors<O, E>(&mut self, output: &mut O) -> Result<(), PipelineError>
     where
         O: FnMut(Result<T, E>),
         E: From<PipelineError>,
@@ -243,83 +309,10 @@ impl<T> Pipeline<T> {
     }
 }
 
-impl<T> Processor<T> for Pipeline<T>
-where
-    T: Send + 'static,
-{
-    fn name(&self) -> &'static str {
-        "Pipeline"
-    }
-
-    fn process(
-        &mut self,
-        _context: &Arc<StreamerContext>,
-        input: T,
-        output: &mut dyn FnMut(T) -> Result<(), PipelineError>,
-    ) -> Result<(), PipelineError> {
-        let input_iter = std::iter::once(Ok(input));
-        let mut output_error = None;
-
-        let mut wrapped_output = |res: Result<T, PipelineError>| {
-            if output_error.is_some() {
-                return;
-            }
-            match res {
-                Ok(item) => {
-                    if let Err(e) = output(item) {
-                        output_error = Some(e);
-                    }
-                }
-                Err(e) => {
-                    output_error = Some(e);
-                }
-            }
-        };
-
-        self.process_items(input_iter, &mut wrapped_output)?;
-
-        if let Some(e) = output_error {
-            Err(e)
-        } else {
-            Ok(())
-        }
-    }
-
-    fn finish(
-        &mut self,
-        _context: &Arc<StreamerContext>,
-        output: &mut dyn FnMut(T) -> Result<(), PipelineError>,
-    ) -> Result<(), PipelineError> {
-        let mut output_error = None;
-
-        let mut wrapped_output = |res: Result<T, PipelineError>| {
-            if output_error.is_some() {
-                return;
-            }
-            match res {
-                Ok(item) => {
-                    if let Err(e) = output(item) {
-                        output_error = Some(e);
-                    }
-                }
-                Err(e) => {
-                    output_error = Some(e);
-                }
-            }
-        };
-
-        self.finalize_processors(&mut wrapped_output)?;
-
-        if let Some(e) = output_error {
-            Err(e)
-        } else {
-            Ok(())
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
     use crate::cancellation::CancellationToken;
 
@@ -379,6 +372,14 @@ mod tests {
     // Processor that buffers items and flushes on finish
     struct BufferingProcessor {
         buffer: Vec<u32>,
+    }
+
+    struct RecordingProgressSink(Arc<Mutex<Vec<usize>>>);
+
+    impl ProgressSink for RecordingProgressSink {
+        fn on_items(&mut self, processed_items: usize) {
+            self.0.lock().unwrap().push(processed_items);
+        }
     }
 
     impl BufferingProcessor {
@@ -523,5 +524,20 @@ mod tests {
 
         // Empty pipeline passes through unchanged
         assert_eq!(results, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn progress_sink_is_opt_in_and_throttled() {
+        let context = Arc::new(StreamerContext::new(CancellationToken::new()));
+        let updates = Arc::new(Mutex::new(Vec::new()));
+        let pipeline = Pipeline::<u32>::new(context).with_progress_sink(
+            RecordingProgressSink(updates.clone()),
+            ProgressThrottle::every_items(2),
+        );
+
+        let input = (0..5).map(Ok::<_, PipelineError>);
+        pipeline.run(input, &mut |_| {}).unwrap();
+
+        assert_eq!(*updates.lock().unwrap(), [2, 4]);
     }
 }

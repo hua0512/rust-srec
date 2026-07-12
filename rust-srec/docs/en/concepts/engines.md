@@ -3,9 +3,9 @@
 Downloaders are the core of the application. They are responsible for downloading the video stream from the source. The application supports three downloaders: `Mesio`, `FFMPEG`, and `Streamlink`. Each downloader has its own features and limitations.
 
 > [!TIP]
-> For **Mesio** users, it is **highly recommended** to enable both **FLV Consistency Fix** and **HLS Consistency Fix**. These features ensure the recorded files remain playable and consistent even when the source stream encounters issues like timestamp jumps or network interruptions.
+> For **Mesio** users, it is **highly recommended** to enable both **FLV Consistency Fix** and **HLS Consistency Fix**. These pipelines correct or isolate timestamp and stream-structure changes so one bad transition is less likely to make the rest of a recording undecodable. Media that the source never delivered cannot be recovered.
 
-The `FFMPEG` downloader is the default downloader and is the most stable and reliable. It is written in C and is capable of downloading FLV and HLS streams. It provides excellent compatibility for various streaming scenarios, including support for non-standard HEVC in FLV/RTMP containers. It is the most efficient downloader in terms of CPU and memory usage. However, it does not support multithreading for HLS downloads.
+The `FFMPEG` downloader is the default downloader and is the most stable and reliable. It is written in C and is capable of downloading FLV and HLS streams. It provides excellent compatibility for various streaming scenarios, including support for non-standard HEVC in FLV/RTMP containers, and generally has low CPU and memory usage. However, it does not support multithreading for HLS downloads.
 
 > [!NOTE]
 > The FFMPEG version provided in our Docker images is a specialized build from [yt-dlp/FFmpeg-Builds](https://github.com/yt-dlp/FFmpeg-Builds/). This build is optimized for streaming and includes (or has upstreamed) critical patches for smooth integration with `yt-dlp`, such as fixing AAC HLS truncation, supporting long paths on Windows, and decoding non-standard HEVC in FLV containers.
@@ -26,15 +26,21 @@ The `FFMPEG` downloader is the default downloader and is the most stable and rel
 |        CPU Usage         |                  Lowest               |                   Low                   |                   Low                   |
 |       Memory Usage       |                  Lowest               |                   Low                   |                 Medium                  |
 
-## 2. FLV Consistency Fix Feature List
+## 2. FLV Consistency Fix
 
-|                          Feature                           | Engine Action   |
-| :--------------------------------------------------------: | --------------- |
-|                      Timestamp Jumps                       | Fix using delta |
-|    Video Header Changes (Resolution, Other Parameters)     | Split file      |
-|                    Audio Header Changes                    | Split file      |
-| AMF Metadata Injection (lastheadertimestamp, keyframes...) | Inject          |
-|                Duplicate TAG (experimental)                | Ignore          |
+When enabled, FLV items pass through one ordered repair chain before the writer. The chain preserves media payloads while fixing container-level structure:
+
+| Concern | Pipeline behavior |
+| --- | --- |
+| Missing FLV header | Insert a valid header before the first tag |
+| Video or audio format change | Start a new output file with the headers required for playback |
+| Out-of-order video data | Reorder nearby tags while keeping memory use bounded |
+| Timestamp jumps or regressions | Adjust timestamps to preserve playback continuity |
+| Duplicate media tags or sequence headers | Filter them when the corresponding option is enabled |
+| File size or duration limit | Rotate on a video keyframe, or on the next tag for audio-only output |
+| FLV statistics and seek index | Update metadata before the file is closed |
+
+Metadata updates do not rewrite the completed media data. If the available metadata space fills, the optional seek index is shortened instead. Filtered or encrypted script payloads are left unchanged.
 
 ## 3. Raw Data Mode
 
@@ -52,7 +58,12 @@ Because the headers and packet structures are not inspected, some advanced featu
 
 ## 4. HLS Consistency Fix (Mesio Exclusive)
 
-When using the Mesio engine for HLS streams, the **HLS Consistency Fix** feature can automatically detect and resolve common HLS delivery issues, such as timestamp discontinuities or missing segments, before the data is written to the final file. This ensures a smoother playback experience for the recorded content.
+Mesio's HLS download reactor and HLS fix pipeline have separate responsibilities:
+
+- The **download engine** orders fetched segments, writes required fMP4 initialization data before dependent media, applies the configured gap policy, and preserves playlist discontinuities as output boundaries.
+- The **consistency fix** starts a new output file when delivered segments contain incompatible codec, resolution, program-layout, or fMP4 initialization changes. It also enforces file-size and duration limits.
+
+The pipeline does not rewrite timestamps inside TS or fMP4 payloads, recreate missing media, or transcode codecs. A skipped segment remains an observable gap; the pipeline keeps delivered output ordered and rotates when a detected format change requires a new file.
 
 ## 5. Mesio Architecture
 

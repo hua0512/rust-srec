@@ -1,6 +1,6 @@
 use bytes::BytesMut;
 use std::fs::File;
-use std::io::{self, BufReader, Cursor, Read};
+use std::io::{self, BufReader, Read};
 use std::path::Path;
 use tracing::{debug, error};
 
@@ -102,12 +102,12 @@ impl FlvParser {
                         FlvTagType::Video => video_tags += 1,
                         FlvTagType::Audio => audio_tags += 1,
                         FlvTagType::ScriptData => metadata_tags += 1,
-                        _ => debug!("Unknown tag type: {:?}", tag.tag_type),
+                        _ => debug!("Unknown tag type: {:?}", tag.tag_type()),
                     }
 
                     on_tag(&tag, tag_type, tag_position);
-                    expected_prev_tag_size = (framing::TAG_HEADER_SIZE + tag.data.len()) as u32;
-                    current_position += (framing::TAG_HEADER_SIZE + tag.data.len()) as u64;
+                    expected_prev_tag_size = (framing::TAG_HEADER_SIZE + tag.data().len()) as u32;
+                    current_position += (framing::TAG_HEADER_SIZE + tag.data().len()) as u64;
                 }
                 Ok(None) => break,
                 Err(e) => return Err(e),
@@ -140,7 +140,7 @@ impl FlvParser {
                 FlvTagType::Video => video_tags += 1,
                 FlvTagType::Audio => audio_tags += 1,
                 FlvTagType::ScriptData => metadata_tags += 1,
-                _ => error!("Unknown tag type: {:?}", tag.tag_type),
+                _ => error!("Unknown tag type: {:?}", tag.tag_type()),
             },
             initial_position,
             PrevTagSizeMode::Ignore,
@@ -191,11 +191,15 @@ impl FlvParser {
             return Err(e);
         }
 
-        // Determine the tag type
         let tag_type = header.tag_type;
-
-        // Demux the tag
-        let tag = FlvTag::demux(&mut Cursor::new(tag_buffer.freeze()))?;
+        let tag_bytes = tag_buffer.freeze();
+        let tag = FlvTag::new(
+            header.timestamp_ms,
+            header.stream_id,
+            header.tag_type,
+            header.is_filtered,
+            tag_bytes.slice(framing::TAG_HEADER_SIZE..),
+        );
 
         Ok(Some((tag, tag_type)))
     }

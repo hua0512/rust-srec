@@ -1,5 +1,5 @@
 use hls::{
-    HlsData, M4sData, M4sInitSegmentData, Resolution, ResolutionDetector, StreamProfile,
+    HlsData, M4sData, M4sInitSegmentData, Resolution, StreamProfile, StreamProfileOptions,
     TsStreamInfo,
 };
 use pipeline_common::{PipelineError, Processor, SplitReason, StreamerContext};
@@ -118,24 +118,25 @@ impl SegmentSplitOperator {
     // Handle TS segment
     // Returns Some(reason) if a split is needed
     fn handle_ts_segment(&mut self, input: &HlsData) -> Result<Option<SplitReason>, PipelineError> {
-        let (current_stream_info, packets) = match input {
-            HlsData::TsData(ts_data) => match ts_data.parse_stream_and_packets() {
-                Ok((info, packets)) => (info, packets),
-                Err(e) => {
-                    warn!("{} Failed to parse TS packets: {}", self.context.name, e);
-                    return Ok(None);
+        let include_resolution =
+            self.last_resolution.is_some() || self.resolution_probe_remaining > 0;
+        let analysis = match input {
+            HlsData::TsData(ts_data) => {
+                match ts_data.analysis(StreamProfileOptions { include_resolution }) {
+                    Ok(analysis) => analysis,
+                    Err(e) => {
+                        warn!("{} Failed to analyze TS segment: {}", self.context.name, e);
+                        return Ok(None);
+                    }
                 }
-            },
+            }
             _ => {
                 debug!("{} Not a TS segment", self.context.name);
                 return Ok(None);
             }
         };
 
-        let has_psi =
-            current_stream_info.program_count > 0 || !current_stream_info.programs.is_empty();
-        if !has_psi {
-            // Not all live TS segments begin with PSI (PAT/PMT); absence alone is not a split trigger.
+        if !analysis.has_psi {
             debug!(
                 "{} TS segment has no PSI tables, skipping analysis",
                 self.context.name
@@ -143,100 +144,20 @@ impl SegmentSplitOperator {
             return Ok(None);
         }
 
-        // Compute a StreamProfile without re-parsing the TS data.
-        let mut has_video = false;
-        let mut has_audio = false;
-        let mut has_h264 = false;
-        let mut has_h265 = false;
-        let mut has_aac = false;
-        let mut has_ac3 = false;
-        let mut video_count = 0usize;
-        let mut audio_count = 0usize;
-
-        let mut video_streams = Vec::new();
-        for program in &current_stream_info.programs {
-            if !program.video_streams.is_empty() {
-                has_video = true;
-                video_count += program.video_streams.len();
-                for stream in &program.video_streams {
-                    video_streams.push((stream.pid, stream.stream_type));
-                    match stream.stream_type {
-                        ts::StreamType::H264 => has_h264 = true,
-                        ts::StreamType::H265 => has_h265 = true,
-                        _ => {}
-                    }
-                }
-            }
-            if !program.audio_streams.is_empty() {
-                has_audio = true;
-                audio_count += program.audio_streams.len();
-                for stream in &program.audio_streams {
-                    match stream.stream_type {
-                        ts::StreamType::AdtsAac | ts::StreamType::LatmAac => has_aac = true,
-                        ts::StreamType::Ac3 | ts::StreamType::EAc3 => has_ac3 = true,
-                        _ => {}
-                    }
-                }
-            }
+        let current_stream_info = analysis.stream_info.clone();
+        let mut profile = analysis.stream_profile();
+        if self.last_resolution.is_some() && !analysis.has_random_access {
+            profile.resolution = None;
         }
-
-        // For TS, SPS (and thus resolution) is most likely to appear on random access points.
-        // We can use the adaptation-field Random Access Indicator (RAI) as a cheap signal.
-        let has_random_access = packets.iter().any(|p| p.has_random_access_indicator());
-
-        // Resolution parsing is relatively expensive and not every TS segment contains SPS data.
-        // Strategy:
-        // - Before we have a baseline, probe (bounded) to try to learn one.
-        // - After we have a baseline, only probe on random access segments.
-        let resolution = if has_video {
-            let should_probe = if self.last_resolution.is_some() {
-                has_random_access
-            } else {
-                self.resolution_probe_remaining > 0
-            };
-
-            if should_probe {
-                let res =
-                    ResolutionDetector::extract_from_ts_packets(packets.iter(), &video_streams);
-                if res.is_none()
-                    && self.last_resolution.is_none()
-                    && self.resolution_probe_remaining > 0
-                {
-                    self.resolution_probe_remaining =
-                        self.resolution_probe_remaining.saturating_sub(1);
-                }
-                res
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let mut summary_parts = Vec::new();
-        if video_count > 0 {
-            summary_parts.push(format!("{video_count} video stream(s)"));
+        if profile.has_video
+            && include_resolution
+            && profile.resolution.is_none()
+            && self.last_resolution.is_none()
+            && self.resolution_probe_remaining > 0
+        {
+            self.resolution_probe_remaining = self.resolution_probe_remaining.saturating_sub(1);
         }
-        if audio_count > 0 {
-            summary_parts.push(format!("{audio_count} audio stream(s)"));
-        }
-        let summary = if summary_parts.is_empty() {
-            "No recognized streams".to_string()
-        } else {
-            summary_parts.join(", ")
-        };
-
-        let current_profile = Some(StreamProfile {
-            has_video,
-            has_audio,
-            has_h264,
-            has_h265,
-            has_av1: false,
-            has_aac,
-            has_ac3,
-            resolution,
-            summary,
-        });
+        let current_profile = Some(profile);
 
         let mut split_reason: Option<SplitReason> = None;
 
@@ -826,12 +747,10 @@ mod tests {
 
         // Create initial TS segment with H.264 + AAC
         let ts_data1 = create_ts_data_with_codecs(0x1B, 0x0F, 1); // H.264 + AAC
-        let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data1),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment1 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
 
         // Process the initial segment
         operator
@@ -840,12 +759,10 @@ mod tests {
 
         // Create second TS segment with H.265 + AC-3 (different codecs)
         let ts_data2 = create_ts_data_with_codecs(0x24, 0x81, 1); // H.265 + AC-3
-        let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data2),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment2 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
 
         // Process the modified segment
         operator
@@ -875,12 +792,10 @@ mod tests {
 
         // Create initial TS segment with program 1
         let ts_data1 = create_ts_data_with_codecs(0x1B, 0x0F, 1); // H.264 + AAC, program 1
-        let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data1),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment1 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
 
         // Process the initial segment
         operator
@@ -889,12 +804,10 @@ mod tests {
 
         // Create second TS segment with program 2 (different program number)
         let ts_data2 = create_ts_data_with_codecs(0x1B, 0x0F, 2); // H.264 + AAC, program 2
-        let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data2),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment2 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
 
         // Process the segment with different program
         operator
@@ -925,12 +838,10 @@ mod tests {
 
         // Create initial TS segment with H.264 (which typically defaults to 1920x1080)
         let ts_data1 = create_ts_data_with_codecs(0x1B, 0x0F, 1); // H.264 + AAC
-        let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data1),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment1 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
 
         // Process the initial segment
         operator
@@ -939,12 +850,10 @@ mod tests {
 
         // Create second TS segment with H.265 (which typically defaults to 3840x2160)
         let ts_data2 = create_ts_data_with_codecs(0x24, 0x0F, 1); // H.265 + AAC
-        let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data2),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment2 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
 
         // Process the segment with different codec (and implied resolution)
         operator
@@ -976,12 +885,10 @@ mod tests {
         // Segment 1: establish baseline resolution with RAI + 640x352 SPS.
         // Video PID in our test PMT helper is 0x100.
         let ts_data1 = create_ts_data_with_rai_and_sps(0x0100, true, 640, 352);
-        let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data1),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment1 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
         operator
             .process(&context, ts_segment1, &mut output_fn)
             .unwrap();
@@ -990,12 +897,10 @@ mod tests {
         // Segment 2: contains a different SPS (1280x720) but NO RAI.
         // With baseline existing, resolution probing should be skipped; no split.
         let ts_data2 = create_ts_data_with_rai_and_sps(0x0100, false, 1280, 720);
-        let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data2),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment2 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
         operator
             .process(&context, ts_segment2, &mut output_fn)
             .unwrap();
@@ -1020,12 +925,10 @@ mod tests {
 
         // Establish baseline resolution (RAI + SPS).
         let ts_data1 = create_ts_data_with_rai_and_sps(0x0100, true, 640, 352);
-        let ts_segment1 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data1),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment1 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data1))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
         operator
             .process(&context, ts_segment1, &mut |item: HlsData| {
                 output_items.push(item);
@@ -1038,12 +941,10 @@ mod tests {
         // Second segment: RAI present and SPS indicates a different resolution.
         // With baseline established, this should be probed and should trigger a split.
         let ts_data2 = create_ts_data_with_rai_and_sps(0x0100, true, 1280, 720);
-        let ts_segment2 = HlsData::TsData(hls::TsSegmentData {
-            segment: MediaSegment::empty(),
-            data: Bytes::from(ts_data2),
-            validate_crc: false,
-            continuity_mode: ts::ContinuityMode::Warn,
-        });
+        let ts_segment2 = HlsData::TsData(
+            hls::TsSegmentData::new(MediaSegment::empty(), Bytes::from(ts_data2))
+                .with_continuity_mode(ts::ContinuityMode::Warn),
+        );
         operator
             .process(&context, ts_segment2, &mut |item: HlsData| {
                 output_items.push(item);

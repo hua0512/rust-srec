@@ -9,7 +9,9 @@ use flv_fix::{FlvPipeline, FlvPipelineConfig, FlvWriter, FlvWriterConfig};
 use mesio::flv::FlvProtocolConfig;
 use mesio::{DownloadError, DownloadRequest, MesioConfig, MesioDownloader, ProtocolSelection};
 use parking_lot::RwLock;
-use pipeline_common::{PipelineError, PipelineProvider, ProtocolWriter, StreamerContext};
+use pipeline_common::{
+    ChannelSpec, PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, spawn_pipeline,
+};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -155,15 +157,13 @@ impl FlvDownloader {
         let pipeline_provider =
             FlvPipeline::with_config(context, &pipeline_config, flv_pipeline_config);
 
-        // Build the pipeline (returns ChannelPipeline)
         let pipeline = pipeline_provider.build_pipeline();
 
-        // Spawn the pipeline tasks
-        let pipeline_common::channel_pipeline::SpawnedPipeline {
+        let pipeline_common::SpawnedPipeline {
             input_tx: pipeline_input_tx,
             output_rx: pipeline_output_rx,
             tasks: processing_tasks,
-        } = pipeline.spawn();
+        } = spawn_pipeline(pipeline, ChannelSpec::items(pipeline_config.channel_size));
 
         // Create FlvWriter with callbacks
         let output_dir = config.output_dir.clone();
@@ -256,7 +256,7 @@ impl FlvDownloader {
         helpers::setup_writer_callbacks(&mut writer, &self.event_tx);
 
         // Spawn blocking writer task
-        let writer_task = tokio::task::spawn_blocking(move || writer.run(rx));
+        let writer_task = tokio::task::spawn_blocking(move || writer.run(rx.into()));
 
         // Consume the FLV stream and send to writer
         let stream_error = helpers::consume_stream(
@@ -325,13 +325,13 @@ mod tests {
         );
 
         let header = FlvData::Header(FlvHeader::new(true, true));
-        let tag = FlvData::Tag(FlvTag {
-            timestamp_ms: 0,
-            stream_id: 0,
-            tag_type: FlvTagType::ScriptData,
-            is_filtered: false,
-            data: Bytes::new(),
-        });
+        let tag = FlvData::Tag(FlvTag::new(
+            0,
+            0,
+            FlvTagType::ScriptData,
+            false,
+            Bytes::new(),
+        ));
 
         let flv_stream = futures::stream::iter([
             Ok(header),

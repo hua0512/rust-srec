@@ -12,4 +12,4 @@ pub use pipeline_common::split_reason::SplitReason;
 pub use profile::{SegmentType, StreamProfile, StreamProfileOptions};
 pub use resolution::ResolutionDetector;
 pub use segment::HlsData;
-pub use ts::{ProgramInfo, StreamEntry, TsSegmentData, TsStreamInfo};
+pub use ts::{ProgramInfo, StreamEntry, TsAnalysis, TsSegmentData, TsStreamInfo};

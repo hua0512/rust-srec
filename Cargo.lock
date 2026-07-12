@@ -1925,6 +1925,7 @@ dependencies = [
  "flv",
  "futures",
  "pipeline-common",
+ "tempfile",
  "thiserror 2.0.18",
  "time",
  "tokio",
@@ -4412,7 +4413,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "tracing-indicatif",
  "tracing-subscriber",
 ]
 

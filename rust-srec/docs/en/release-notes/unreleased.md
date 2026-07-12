@@ -4,6 +4,8 @@
 
 This update rebuilds the **Mesio** HLS recording engine for robustness and unifies how Mesio downloads HLS and FLV streams. Encrypted HLS streams are handled more reliably, memory use stays bounded on busy or encrypted streams, and segment de-duplication now survives playlist refreshes that rotate auth tokens such as Twitch signed URLs. A few Mesio engine settings that no longer affected recording were removed, and existing configurations are migrated automatically.
 
+FLV and HLS media processing also uses less CPU, memory, and disk I/O. Media analysis is reused instead of repeated, queues are bounded by bytes for large HLS segments, and FLV metadata is patched in place without shifting the completed file. Modern enhanced-RTMP keyframes and several truncated or malformed-input cases are handled more reliably as well.
+
 Douyu extraction also gets a smaller but useful cleanup: audio-only streams can now be selected directly from the quality picker, H.265 streams are identified from Douyu's own CDN metadata, and more "room unavailable" responses are handled as offline states instead of noisy extraction failures.
 
 ## Desktop app
@@ -29,6 +31,20 @@ Douyu extraction also gets a smaller but useful cleanup: audio-only streams can 
 - **Skipped segments and gaps are explicit**
 
   When the live window slides and segments drop out before they can be fetched, the engine emits a clear gap signal instead of silently stalling, so missing data is observable rather than appearing as a frozen recording.
+
+## FLV and HLS media processing
+
+- **Lower processing overhead with bounded memory use**
+
+  FLV codec and keyframe classification and HLS transport-stream analysis are now computed once and reused throughout the repair pipeline. Resolution detection reads only a bounded amount of stream data, processing work is batched, and HLS queues are limited by byte budgets rather than segment counts. Byte accounting remains attached while a batch is being processed, so batching cannot temporarily bypass that limit. If fragmented-MP4 media exhausts its pre-init safety buffer before a delayed init segment arrives, the repair pipeline rotates the output before writing that init. This reduces repeated parsing and prevents a handful of unusually large segments from causing disproportionate memory growth or invalid file ordering.
+
+- **FLV metadata is updated in place**
+
+  The writer now reserves baseline metadata space when recording starts, including for audio-only streams and recordings without a keyframe index. When keyframe indexing is enabled, the larger index reservation is patched before the writer closes. The repair step no longer shifts or rewrites the rest of a completed FLV file, reducing disk I/O and avoiding a costly end-of-recording pause on large files. The legacy low-latency CLI option remains accepted for compatibility, but metadata updates always use the in-place path.
+
+- **More resilient FLV repair**
+
+  Enhanced-RTMP video keyframes are recognized correctly, complete tags at end-of-file are no longer skipped, empty media payloads are handled safely, and GOP buffering has a hard limit. These changes improve splitting and metadata generation for newer codecs while keeping damaged or unusual streams from growing repair buffers without bound.
 
 ## Mesio downloader
 

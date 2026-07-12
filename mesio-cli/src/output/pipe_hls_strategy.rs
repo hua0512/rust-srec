@@ -127,10 +127,10 @@ impl PipeHlsStrategy {
         let bytes_written = match item {
             HlsData::TsData(ts) => {
                 writer
-                    .write_all(&ts.data)
+                    .write_all(ts.data())
                     .map_err(PipeHlsStrategyError::from_io_error)?;
                 self.has_written_data = true;
-                ts.data.len() as u64
+                ts.data().len() as u64
             }
             HlsData::M4sData(m4s_data) => {
                 let bytes = match m4s_data {

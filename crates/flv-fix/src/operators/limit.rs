@@ -769,13 +769,13 @@ mod tests {
         // Helper function to create audio tag
         let create_audio_tag = |timestamp: u32, size: usize| -> FlvData {
             let data = vec![0u8; size];
-            FlvData::Tag(FlvTag {
-                timestamp_ms: timestamp,
-                stream_id: 0,
-                tag_type: FlvTagType::Audio,
-                is_filtered: false,
-                data: Bytes::from(data),
-            })
+            FlvData::Tag(FlvTag::new(
+                timestamp,
+                0,
+                FlvTagType::Audio,
+                false,
+                Bytes::from(data),
+            ))
         };
 
         // Send initial headers
@@ -954,13 +954,13 @@ mod tests {
         // Helper function to create audio tag
         let create_audio_tag = |timestamp: u32, size: usize| -> FlvData {
             let data = vec![0u8; size];
-            FlvData::Tag(FlvTag {
-                timestamp_ms: timestamp,
-                stream_id: 0,
-                tag_type: FlvTagType::Audio,
-                is_filtered: false,
-                data: Bytes::from(data),
-            })
+            FlvData::Tag(FlvTag::new(
+                timestamp,
+                0,
+                FlvTagType::Audio,
+                false,
+                Bytes::from(data),
+            ))
         };
 
         // Process an audio-only header

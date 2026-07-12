@@ -464,7 +464,7 @@ impl FlvAnalyzer {
             self.has_audio_sequence_header = true;
 
             if self.stats.audio_codec.is_none() {
-                let audio_tag_utils = AudioTagUtils::new(tag.data.clone());
+                let audio_tag_utils = AudioTagUtils::new(tag.data().clone());
                 debug!(
                     "Audio properties detected: codec={:?}, rate={:?}, size={:?}, type={:?}",
                     audio_tag_utils.sound_format(),
@@ -508,7 +508,7 @@ impl FlvAnalyzer {
             self.stats.first_audio_timestamp = Some(tag.timestamp_ms);
         }
 
-        let data_size = tag.data.len() as u64;
+        let data_size = tag.data().len() as u64;
         self.stats.audio_tag_count += 1;
         self.stats.audio_tags_size +=
             data_size + flv::framing::TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64; // Tag header + PreviousTagSize
@@ -537,7 +537,7 @@ impl FlvAnalyzer {
                 } else {
                     debug!(
                         ts_ms = tag.timestamp_ms,
-                        len = tag.data.len(),
+                        len = tag.data().len(),
                         "Video sequence header present but resolution could not be parsed"
                     );
                 }
@@ -550,7 +550,7 @@ impl FlvAnalyzer {
                 } else {
                     debug!(
                         ts_ms = tag.timestamp_ms,
-                        len = tag.data.len(),
+                        len = tag.data().len(),
                         "Video sequence header present but codec id could not be parsed"
                     );
                 }
@@ -591,7 +591,7 @@ impl FlvAnalyzer {
             }
         }
 
-        let data_size = tag.data.len() as u64;
+        let data_size = tag.data().len() as u64;
         video_stats.video_tag_count += 1;
         video_stats.video_tags_size +=
             data_size + flv::framing::TAG_HEADER_SIZE as u64 + FLV_PREVIOUS_TAG_SIZE as u64; // Tag header + PreviousTagSize
@@ -607,10 +607,10 @@ impl FlvAnalyzer {
         } else if tag.is_script_tag() {
             self.stats.script_tag_count += 1;
         } else {
-            return Err(AnalyzerError::UnknownTagType(tag.tag_type.into()));
+            return Err(AnalyzerError::UnknownTagType(tag.tag_type().into()));
         }
 
-        let data_size = tag.data.len() as u64;
+        let data_size = tag.data().len() as u64;
 
         self.stats.tag_count += 1;
         self.stats.tags_size += data_size;

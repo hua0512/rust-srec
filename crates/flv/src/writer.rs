@@ -128,9 +128,9 @@ impl<W: Write + Seek> FlvWriter<W> {
 
     pub fn write_tag_f(&mut self, tag: &FlvTag) -> io::Result<()> {
         self.write_tag_with_filter(
-            tag.tag_type,
-            tag.is_filtered,
-            tag.data.clone(),
+            tag.tag_type(),
+            tag.is_filtered(),
+            tag.data().clone(),
             tag.timestamp_ms,
         )?;
         Ok(())

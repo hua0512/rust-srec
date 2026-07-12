@@ -92,12 +92,12 @@ pub struct CliArgs {
     )]
     pub enable_fix: bool,
 
-    /// Low-latency mode for FLV metadata modification
+    /// Legacy compatibility switch for FLV metadata modification
     #[arg(
         long,
         action = clap::ArgAction::Set,
         default_value = "true",
-        help = "Enable low-latency mode for FLV metadata modification. This will reduce the latency of script data modification, but it will also increase the size of the output file. Enabled by default.",
+        help = "Legacy compatibility option. FLV metadata updates are always fixed-size and in-place.",
         requires = "enable_fix",
     )]
     pub low_latency_fix: bool,

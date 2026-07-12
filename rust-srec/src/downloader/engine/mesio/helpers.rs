@@ -1,6 +1,7 @@
 //! Shared helpers for FLV and HLS download orchestrators.
 
 use std::fmt::Display;
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -8,8 +9,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use pipeline_common::{
-    PipelineError, RunCompletionError, SplitReason, WriterError, WriterProgress, WriterStats,
-    settle_run,
+    PipelineError, PipelineSender, RunCompletionError, SplitReason, WriterError, WriterProgress,
+    WriterStats, settle_run,
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -254,6 +255,25 @@ fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
 // consume_stream
 // ---------------------------------------------------------------------------
 
+pub(super) trait StreamSender<T> {
+    fn send_item(
+        &self,
+        item: std::result::Result<T, PipelineError>,
+    ) -> impl Future<Output = Result<(), ()>> + Send;
+}
+
+impl<T: Send> StreamSender<T> for mpsc::Sender<std::result::Result<T, PipelineError>> {
+    async fn send_item(&self, item: std::result::Result<T, PipelineError>) -> Result<(), ()> {
+        self.send(item).await.map_err(|_| ())
+    }
+}
+
+impl<T: Send> StreamSender<T> for PipelineSender<T> {
+    async fn send_item(&self, item: std::result::Result<T, PipelineError>) -> Result<(), ()> {
+        self.send(item).await.map_err(|_| ())
+    }
+}
+
 /// Consume a protocol stream, forwarding items to a channel.
 ///
 /// Returns `Some((kind, message))` if the stream yielded an error, or `None`
@@ -264,9 +284,9 @@ fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
 /// `HlsData::EndMarker(Some(SplitReason::EndOfStream))` to surface
 /// `EngineEndSignal::HlsEndlist`). FLV callers pass a no-op closure.
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn consume_stream<T, E: Display>(
+pub(super) async fn consume_stream<T: Send, E: Display>(
     stream: impl futures::Stream<Item = std::result::Result<T, E>> + Unpin,
-    tx: &mpsc::Sender<std::result::Result<T, PipelineError>>,
+    tx: &impl StreamSender<T>,
     parent_token: &CancellationToken,
     child_token: &CancellationToken,
     streamer_id: &str,
@@ -286,7 +306,7 @@ pub(super) async fn consume_stream<T, E: Display>(
         match result {
             Ok(item) => {
                 inspect(&item);
-                if tx.send(Ok(item)).await.is_err() {
+                if tx.send_item(Ok(item)).await.is_err() {
                     warn!("Channel closed, stopping {} download", protocol);
                     break;
                 }
@@ -297,7 +317,7 @@ pub(super) async fn consume_stream<T, E: Display>(
                 let msg = e.to_string();
                 stream_error = Some((kind, msg.clone()));
                 let _ = tx
-                    .send(Err(PipelineError::Strategy(Box::new(
+                    .send_item(Err(PipelineError::Strategy(Box::new(
                         std::io::Error::other(msg.clone()),
                     ))))
                     .await;

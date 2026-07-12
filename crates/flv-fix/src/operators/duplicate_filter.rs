@@ -33,6 +33,13 @@ struct TagKey(u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct FingerprintKey(u64);
 
+#[derive(Clone, Copy, Debug)]
+struct PayloadIdentity {
+    tag_type: u8,
+    len: u64,
+    crc: u64,
+}
+
 #[inline]
 fn mix64(mut x: u64) -> u64 {
     // SplitMix64
@@ -43,28 +50,39 @@ fn mix64(mut x: u64) -> u64 {
 }
 
 impl TagKey {
-    fn new(tag: &FlvTag) -> Self {
-        Self::new_with_timestamp(tag, tag.timestamp_ms)
-    }
-
-    fn new_with_timestamp(tag: &FlvTag, timestamp_ms: u32) -> Self {
-        let tag_type: u8 = tag.tag_type.into();
-        let ts = timestamp_ms as u64;
-        let len = tag.data.len() as u64;
-        let crc = crc32::crc32(tag.data.as_ref()) as u64;
-
-        let x = ((tag_type as u64) << 56) ^ (len.rotate_left(17)) ^ ts ^ (crc.rotate_left(1));
+    fn from_identity(identity: PayloadIdentity, timestamp_ms: u32) -> Self {
+        let x = ((identity.tag_type as u64) << 56)
+            ^ identity.len.rotate_left(17)
+            ^ timestamp_ms as u64
+            ^ identity.crc.rotate_left(1);
         TagKey(mix64(x))
     }
 }
 
 impl FingerprintKey {
-    fn new(tag: &FlvTag) -> Self {
-        let tag_type: u8 = tag.tag_type.into();
-        let len = tag.data.len() as u64;
-        let crc = crc32::crc32(tag.data.as_ref()) as u64;
-        let x = ((tag_type as u64) << 56) ^ (len.rotate_left(17)) ^ (crc.rotate_left(1));
+    fn from_identity(identity: PayloadIdentity) -> Self {
+        let x = ((identity.tag_type as u64) << 56)
+            ^ identity.len.rotate_left(17)
+            ^ identity.crc.rotate_left(1);
         FingerprintKey(mix64(x))
+    }
+}
+
+impl PayloadIdentity {
+    fn new(tag: &FlvTag) -> Self {
+        Self {
+            tag_type: tag.tag_type().into(),
+            len: tag.data().len() as u64,
+            crc: crc32::crc32(tag.data().as_ref()) as u64,
+        }
+    }
+
+    fn tag_key(self, timestamp_ms: u32) -> TagKey {
+        TagKey::from_identity(self, timestamp_ms)
+    }
+
+    fn fingerprint(self) -> FingerprintKey {
+        FingerprintKey::from_identity(self)
     }
 }
 
@@ -152,10 +170,7 @@ impl DuplicateTagFilterOperator {
         self.next_drop_log_at = 1_000;
     }
 
-    fn track_tag(&mut self, tag: &FlvTag) {
-        let fingerprint = FingerprintKey::new(tag);
-        let key = TagKey::new(tag);
-
+    fn track_tag(&mut self, tag: &FlvTag, key: TagKey, fingerprint: FingerprintKey) {
         self.seq = self.seq.wrapping_add(1);
         let seq = self.seq;
 
@@ -186,7 +201,12 @@ impl DuplicateTagFilterOperator {
         self.seen.contains(&key)
     }
 
-    fn replay_mapped_key(&mut self, tag: &FlvTag, fingerprint: FingerprintKey) -> Option<TagKey> {
+    fn replay_mapped_key(
+        &mut self,
+        tag: &FlvTag,
+        identity: PayloadIdentity,
+        fingerprint: FingerprintKey,
+    ) -> Option<TagKey> {
         if !self.replay_active || !self.config.enable_replay_offset_matching {
             return None;
         }
@@ -201,7 +221,7 @@ impl DuplicateTagFilterOperator {
         {
             let candidate = (prev_ts - ts) as i64;
             let mapped_ts = prev_ts;
-            let mapped_key = TagKey::new_with_timestamp(tag, mapped_ts);
+            let mapped_key = identity.tag_key(mapped_ts);
             if self.is_exact_duplicate(mapped_key) {
                 self.replay_offset_ms = Some(candidate);
                 return Some(mapped_key);
@@ -216,19 +236,23 @@ impl DuplicateTagFilterOperator {
         }
         let mapped_ts = mapped_ts_i64 as u32;
 
-        Some(TagKey::new_with_timestamp(tag, mapped_ts))
+        Some(identity.tag_key(mapped_ts))
     }
 
-    fn track_and_check(&mut self, tag: &FlvTag) -> bool {
+    fn track_and_check(
+        &mut self,
+        tag: &FlvTag,
+        identity: PayloadIdentity,
+        key: TagKey,
+        fingerprint: FingerprintKey,
+    ) -> bool {
         // 1) Exact match (type + timestamp + payload).
-        let key = TagKey::new(tag);
         if self.seen.contains(&key) {
             return true;
         }
 
         // 2) Replay-mode match: same payload, but timestamp shifted by a constant offset.
-        let fp = FingerprintKey::new(tag);
-        if let Some(mapped_key) = self.replay_mapped_key(tag, fp)
+        if let Some(mapped_key) = self.replay_mapped_key(tag, identity, fingerprint)
             && self.is_exact_duplicate(mapped_key)
         {
             return true;
@@ -287,14 +311,18 @@ impl Processor<FlvData> for DuplicateTagFilterOperator {
                     self.replay_active = true;
                 }
 
-                if self.track_and_check(&tag) {
+                let identity = PayloadIdentity::new(&tag);
+                let key = identity.tag_key(tag.timestamp_ms);
+                let fingerprint = identity.fingerprint();
+
+                if self.track_and_check(&tag, identity, key, fingerprint) {
                     self.dropped_duplicates = self.dropped_duplicates.saturating_add(1);
                     trace!(
                         "{} Dropping duplicate media tag: type={:?} ts={} len={}",
                         self.context.name,
-                        tag.tag_type,
+                        tag.tag_type(),
                         tag.timestamp_ms,
-                        tag.data.len()
+                        tag.data().len()
                     );
                     if self.dropped_duplicates >= self.next_drop_log_at {
                         debug!(
@@ -306,7 +334,7 @@ impl Processor<FlvData> for DuplicateTagFilterOperator {
                     return Ok(());
                 }
 
-                self.track_tag(&tag);
+                self.track_tag(&tag, key, fingerprint);
 
                 output(FlvData::Tag(tag))
             }

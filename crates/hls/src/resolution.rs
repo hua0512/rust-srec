@@ -22,6 +22,135 @@ use ts::{PesHeader, StreamType, TsPacketRef};
 /// - Minimal allocations with capacity hints
 pub struct ResolutionDetector;
 
+pub(crate) struct StreamingResolutionDetector {
+    probes: Vec<VideoProbe>,
+    resolution: Option<Resolution>,
+}
+
+struct VideoProbe {
+    pid: u16,
+    stream_type: StreamType,
+    current_pes: BytesMut,
+    expected_pes_len: Option<usize>,
+    in_pes: bool,
+}
+
+impl StreamingResolutionDetector {
+    const MAX_PES_PROBE_BYTES: usize = 256 * 1024;
+
+    pub(crate) fn new() -> Self {
+        Self {
+            probes: Vec::new(),
+            resolution: None,
+        }
+    }
+
+    pub(crate) fn add_video_stream(&mut self, pid: u16, stream_type: StreamType) {
+        if !matches!(stream_type, StreamType::H264 | StreamType::H265)
+            || self.probes.iter().any(|probe| probe.pid == pid)
+        {
+            return;
+        }
+
+        self.probes.push(VideoProbe {
+            pid,
+            stream_type,
+            current_pes: BytesMut::with_capacity(4096),
+            expected_pes_len: None,
+            in_pes: false,
+        });
+    }
+
+    pub(crate) fn push_packet(&mut self, packet: &TsPacketRef) {
+        if self.resolution.is_some() {
+            return;
+        }
+
+        let resolution = self
+            .probes
+            .iter_mut()
+            .find(|probe| probe.pid == packet.pid)
+            .and_then(|probe| probe.push_packet(packet));
+        if resolution.is_some() {
+            self.resolution = resolution;
+        }
+    }
+
+    pub(crate) fn finish(mut self) -> Option<Resolution> {
+        if self.resolution.is_some() {
+            return self.resolution;
+        }
+
+        self.probes.iter_mut().find_map(VideoProbe::finish)
+    }
+}
+
+impl VideoProbe {
+    fn push_packet(&mut self, packet: &TsPacketRef) -> Option<Resolution> {
+        let payload = packet.payload()?;
+        if let Some(resolution) =
+            ResolutionDetector::scan_payload_for_sps(&payload, self.stream_type)
+        {
+            return Some(resolution);
+        }
+
+        if packet.payload_unit_start_indicator {
+            let previous_resolution = self.finish();
+            self.in_pes = true;
+            self.expected_pes_len = Self::expected_pes_len(&payload);
+            self.current_pes.clear();
+            if let Some(expected) = self.expected_pes_len {
+                self.current_pes.reserve(
+                    expected
+                        .min(StreamingResolutionDetector::MAX_PES_PROBE_BYTES)
+                        .saturating_sub(self.current_pes.capacity()),
+                );
+            }
+            self.append_payload(&payload);
+            if previous_resolution.is_some() {
+                return previous_resolution;
+            }
+        } else if self.in_pes {
+            self.append_payload(&payload);
+        }
+
+        if self
+            .expected_pes_len
+            .is_some_and(|expected| self.current_pes.len() >= expected)
+        {
+            return self.finish();
+        }
+
+        None
+    }
+
+    fn append_payload(&mut self, payload: &[u8]) {
+        let remaining =
+            StreamingResolutionDetector::MAX_PES_PROBE_BYTES.saturating_sub(self.current_pes.len());
+        let copy_len = remaining.min(payload.len());
+        self.current_pes.extend_from_slice(&payload[..copy_len]);
+    }
+
+    fn expected_pes_len(payload: &[u8]) -> Option<usize> {
+        if payload.len() < 6 || payload[..3] != [0, 0, 1] {
+            return None;
+        }
+
+        let packet_len = u16::from_be_bytes([payload[4], payload[5]]) as usize;
+        (packet_len > 0).then_some(packet_len + 6)
+    }
+
+    fn finish(&mut self) -> Option<Resolution> {
+        let resolution = (self.in_pes && self.current_pes.len() >= 9)
+            .then(|| ResolutionDetector::try_parse_pes(&self.current_pes, self.stream_type))
+            .flatten();
+        self.current_pes.clear();
+        self.expected_pes_len = None;
+        self.in_pes = false;
+        resolution
+    }
+}
+
 impl ResolutionDetector {
     /// Extract resolution from pre-parsed TS packets
     ///
@@ -205,10 +334,7 @@ impl ResolutionDetector {
 
         while pos + 2 < data.len() {
             // Fast scan for 0x00
-            let zero_pos = match memchr(0x00, &data[pos..]) {
-                Some(p) => pos + p,
-                None => return None,
-            };
+            let zero_pos = pos + memchr(0x00, &data[pos..])?;
 
             // Check for start code
             if zero_pos + 2 < data.len()
@@ -382,5 +508,51 @@ mod tests {
         let data = [0x00, 0x00, 0x01, 0x68, 0x42, 0x00, 0x1f];
         let result = ResolutionDetector::find_and_parse_h264_sps(&data);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn capped_unbounded_pes_parses_the_retained_prefix() {
+        let sps = [
+            0x67, 0x64, 0x00, 0x1f, 0xac, 0xd9, 0x40, 0x78, 0x02, 0x27, 0xe5, 0xc0, 0x44, 0x00,
+            0x00, 0x03, 0x00, 0x04, 0x00, 0x00, 0x03, 0x00, 0xca, 0x3c, 0x48, 0x96, 0x11, 0x80,
+        ];
+        let mut complete_sps = vec![0, 0, 1];
+        complete_sps.extend_from_slice(&sps);
+        let expected = ResolutionDetector::scan_payload_for_sps(&complete_sps, StreamType::H264)
+            .expect("test SPS should be parseable");
+
+        let split_at = 8;
+        let remaining_sps = &sps[split_at..];
+        let first_len = StreamingResolutionDetector::MAX_PES_PROBE_BYTES - remaining_sps.len();
+        let mut first_payload = vec![0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x00, 0x00];
+        first_payload.resize(first_len - 3 - split_at, 0xFF);
+        first_payload.extend_from_slice(&[0, 0, 1]);
+        first_payload.extend_from_slice(&sps[..split_at]);
+        let mut second_payload = remaining_sps.to_vec();
+        second_payload.push(0xFF);
+
+        assert_eq!(first_payload.len(), first_len);
+        assert!(
+            ResolutionDetector::scan_payload_for_sps(&first_payload, StreamType::H264).is_none()
+        );
+        assert!(
+            ResolutionDetector::scan_payload_for_sps(&second_payload, StreamType::H264).is_none()
+        );
+
+        let mut probe = VideoProbe {
+            pid: 256,
+            stream_type: StreamType::H264,
+            current_pes: BytesMut::new(),
+            expected_pes_len: None,
+            in_pes: true,
+        };
+        probe.append_payload(&first_payload);
+        probe.append_payload(&second_payload);
+
+        assert_eq!(
+            probe.current_pes.len(),
+            StreamingResolutionDetector::MAX_PES_PROBE_BYTES
+        );
+        assert_eq!(probe.finish(), Some(expected));
     }
 }

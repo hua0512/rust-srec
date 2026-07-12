@@ -4,7 +4,7 @@
 
 ## 未发布
 
-- [`unreleased`](./unreleased.md) — 重写 Mesio HLS 录制引擎（内存有界、加密 HLS 更可靠、分段去重在 Twitch 签名链接等鉴权令牌轮换时仍有效），统一 Mesio HLS/FLV 下载会话，并通过迁移移除若干不再使用的 Mesio 引擎设置
+- [`unreleased`](./unreleased.md) — Mesio HLS 可靠性与媒体处理改进、统一 HLS/FLV 下载会话、斗鱼更新，以及自动清理不再使用的 Mesio 设置
 
 ## 最新版本
 

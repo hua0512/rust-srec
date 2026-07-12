@@ -31,7 +31,7 @@ use flv::data::FlvData;
 use flv::tag::FlvTag;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 /// GOP sorting operator that follows the Kotlin implementation's logic
 pub struct GopSortOperator {
@@ -43,6 +43,13 @@ pub struct GopSortOperator {
 impl GopSortOperator {
     /// Buffer size for gop tags before processing
     const TAGS_BUFFER_SIZE: usize = 10;
+
+    /// Hard cap on `gop_tags` regardless of codec. Normally a GOP is flushed at
+    /// the next keyframe (`FlvTag::is_key_frame_nalu`); if the stream's video
+    /// never matches that predicate (unknown codec, malformed tags), the buffer
+    /// would otherwise grow for the lifetime of the stream. Flushing a partial
+    /// GOP is safe: `push_tags` preserves per-stream timestamp order.
+    const MAX_GOP_TAGS: usize = 8192;
 
     pub fn new(context: Arc<StreamerContext>) -> Self {
         Self {
@@ -122,9 +129,10 @@ impl GopSortOperator {
                 );
                 output(FlvData::Tag(aac_tag))?;
 
-                // Clear the buffer since we've handled the important tags
-                self.gop_tags.clear();
-                return Ok(());
+                // The remaining buffered tags (e.g. audio frames that arrived
+                // between a split and the first keyframe) are real media and
+                // must not be discarded — fall through to the partition/merge
+                // path below to emit them in timestamp order.
             }
         }
 
@@ -212,6 +220,13 @@ impl Processor<FlvData> for GopSortOperator {
                 } else if !self.has_video && self.gop_tags.len() >= Self::TAGS_BUFFER_SIZE {
                     // if we don't have video, we flush the buffer when it's full
                     self.push_tags(output)?;
+                } else if self.gop_tags.len() >= Self::MAX_GOP_TAGS {
+                    warn!(
+                        "{} No keyframe seen in {} tags; flushing partial GOP to bound memory",
+                        self.context.name,
+                        self.gop_tags.len()
+                    );
+                    self.push_tags(output)?;
                 }
                 self.gop_tags.push(tag);
             }
@@ -244,6 +259,28 @@ mod tests {
     };
     use flv::tag::FlvTagType;
     use pipeline_common::{CancellationToken, StreamerContext};
+
+    #[test]
+    fn video_without_keyframes_flushes_at_hard_cap() {
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = GopSortOperator::new(Arc::clone(&context));
+        let mut output_items = Vec::new();
+        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
+            output_items.push(item);
+            Ok(())
+        };
+
+        operator
+            .process(&context, create_test_header(), &mut output_fn)
+            .unwrap();
+        for timestamp in 0..=GopSortOperator::MAX_GOP_TAGS as u32 {
+            operator
+                .process(&context, create_video_tag(timestamp, false), &mut output_fn)
+                .unwrap();
+        }
+
+        assert_eq!(output_items.len(), GopSortOperator::MAX_GOP_TAGS + 1);
+    }
 
     #[test]
     fn test_sequence_header_special_handling() {
@@ -292,7 +329,7 @@ mod tests {
         // Check that the script tag and sequence headers are properly ordered
         if let FlvData::Tag(tag) = &output_items[1] {
             assert_eq!(
-                tag.tag_type,
+                tag.tag_type(),
                 FlvTagType::ScriptData,
                 "First tag should be script"
             );
