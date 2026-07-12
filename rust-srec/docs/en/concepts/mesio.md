@@ -27,20 +27,11 @@ flowchart LR
     HANDLE["handle — cancellation + optional metrics"]
   end
 
-  ROUTE{Media fix enabled?}
-  FLVFIX[FlvPipeline<br/>structure + timing + metadata preparation]
-  HLSFIX[HlsPipeline<br/>init ordering + structure splits + limits]
-
   MD -->|HLS| PW
   MD -->|FLV| FLV
   AS --> SESS
   FLV --> SESS
-  ITEMS --> ROUTE
-  ROUTE -->|FLV| FLVFIX
-  ROUTE -->|HLS| HLSFIX
-  ROUTE -->|No| REC[Recorder<br/>writes segment files]
-  FLVFIX --> REC
-  HLSFIX --> REC
+  ITEMS --> REC[Recorder<br/>optional media repair + segment writing]
   EVENTS --> UI[Progress &amp; stats in the UI]
 ```
 
@@ -60,34 +51,10 @@ Mesio's HLS and FLV downloaders share this single session model, so progress rep
 
 ## Media-fix pipelines
 
-The download session and the media-fix pipeline are separate layers. When stream processing and the matching Mesio fix setting are enabled, session items pass through one synchronous operator chain on a blocking worker before reaching the writer. Otherwise, they go directly to the writer.
+The download session and media repair are separate layers. When stream processing and the matching Mesio fix setting are enabled, downloaded items are repaired before they reach the writer. Otherwise, they go directly to the writer.
 
-The diagrams below show the enabled fix paths. Operator order is fixed; nodes marked optional depend on the FLV configuration.
-
-### FLV fix path
-
-```mermaid
-flowchart LR
-  SESSION["Download / session<br/>FLV items → item-bounded batch bridge"]
-  SESSION --> STRUCT["FlvPipeline · structure<br/>Defragment → HeaderCheck → Split<br/>→ GopSort → DuplicateTagFilter (optional)"]
-  STRUCT --> TIMING["FlvPipeline · timing / limits<br/>TimeConsistency → TimingRepair<br/>→ Limit → TimeConsistency"]
-  TIMING --> SCRIPT["FlvPipeline · script metadata<br/>ScriptKeyframesFiller (optional) → ScriptFilter"]
-  SCRIPT --> OUTPUT["Writer / output<br/>FlvWriter analysis → fixed-size onMetaData patch<br/>→ FLV segment file"]
-```
-
-### HLS fix path
-
-```mermaid
-flowchart TB
-  DOWNLOAD["Download / session<br/>HLS reactor: ordering + init dependencies + gap policy<br/>→ session → 64 MiB byte-budgeted batch bridges"]
-  DOWNLOAD --> DEF["HlsPipeline · Defragment<br/>fMP4 pre-init guard"]
-  DEF --> SPLIT["HlsPipeline · SegmentSplit<br/>TS / fMP4 structure changes"]
-  SPLIT --> LIMIT["HlsPipeline · SegmentLimiter<br/>size / duration boundaries"]
-  LIMIT --> OUTPUT["Writer / output<br/>HlsWriter → TS or M4S segment file"]
-```
-
-- The **FLV pipeline** validates stream structure, splits on configured sequence-header changes, sorts bounded GOP windows, filters configured duplicates, repairs timestamp continuity, and applies file-size or duration boundaries. When keyframe indexing is enabled it also prepares an AMF `onMetaData` reservation. The FLV writer records final statistics and patches metadata and the keyframe index in place before closing the file; it never shifts the completed file tail.
-- The **HLS pipeline** guards fMP4 initialization ordering, analyzes TS stream structure, rotates output when codecs, resolution, program layout, or fMP4 initialization data changes, re-emits the applicable fMP4 init after a rotation, and applies file-size or duration boundaries. HLS channel bridges are byte-budgeted, while the FLV bridge remains item-bounded.
+- **FLV repair** fixes missing container structure and timestamp discontinuities, filters configured duplicates, starts a new output file when stream headers become incompatible, and maintains seek metadata. Processing buffers are bounded so malformed or unusual streams cannot grow them indefinitely.
+- **HLS repair** preserves fragmented-MP4 initialization order, checks delivered TS and fMP4 segments for incompatible format changes, starts a new output file when needed, and enforces file-size or duration limits. Memory use is bounded by data size rather than only by the number of queued segments.
 
 The HLS download reactor reports or skips unavailable media according to the configured gap policy. The fix pipeline receives only delivered media and explicit split or terminal markers; it cannot reconstruct bytes that the source never delivered and it does not transcode media payloads.
 

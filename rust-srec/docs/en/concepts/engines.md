@@ -33,14 +33,14 @@ When enabled, FLV items pass through one ordered repair chain before the writer.
 | Concern | Pipeline behavior |
 | --- | --- |
 | Missing FLV header | Insert a valid header before the first tag |
-| Video or audio sequence-header change | Rotate the output at a safe boundary and re-emit the required headers |
-| Out-of-order GOP data | Reorder tags within a bounded GOP buffer |
-| Timestamp jumps or regressions | Repair continuity through the timestamp-consistency and timing-repair stages |
+| Video or audio format change | Start a new output file with the headers required for playback |
+| Out-of-order video data | Reorder nearby tags while keeping memory use bounded |
+| Timestamp jumps or regressions | Adjust timestamps to preserve playback continuity |
 | Duplicate media tags or sequence headers | Filter them when the corresponding option is enabled |
 | File size or duration limit | Rotate on a video keyframe, or on the next tag for audio-only output |
-| AMF `onMetaData` statistics and keyframe index | Reserve space and patch the existing payload in place before close |
+| FLV statistics and seek index | Update metadata before the file is closed |
 
-The writer also reserves baseline metadata space for audio-only or unindexed recordings. If the keyframe reservation fills, the seek index is truncated rather than shifting the rest of the file. Filtered/encrypted script payloads are never decoded or rewritten.
+Metadata updates do not rewrite the completed media data. If the available metadata space fills, the optional seek index is shortened instead. Filtered or encrypted script payloads are left unchanged.
 
 ## 3. Raw Data Mode
 
@@ -60,8 +60,8 @@ Because the headers and packet structures are not inspected, some advanced featu
 
 Mesio's HLS download reactor and HLS fix pipeline have separate responsibilities:
 
-- The **download reactor** orders fetched segments, keeps fMP4 media behind its required init segment, applies the configured gap policy, and turns playlist discontinuities into explicit output boundaries.
-- The downstream **HLS fix pipeline** guards fMP4 initialization ordering, analyzes cached TS structure, rotates output on codec, resolution, program-layout, or fMP4-init changes, re-emits the applicable init segment after rotation, and enforces file-size or duration limits.
+- The **download engine** orders fetched segments, writes required fMP4 initialization data before dependent media, applies the configured gap policy, and preserves playlist discontinuities as output boundaries.
+- The **consistency fix** starts a new output file when delivered segments contain incompatible codec, resolution, program-layout, or fMP4 initialization changes. It also enforces file-size and duration limits.
 
 The pipeline does not rewrite timestamps inside TS or fMP4 payloads, recreate missing media, or transcode codecs. A skipped segment remains an observable gap; the pipeline keeps delivered output ordered and rotates when a detected format change requires a new file.
 
