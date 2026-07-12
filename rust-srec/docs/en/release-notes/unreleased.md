@@ -6,6 +6,12 @@ This update rebuilds the **Mesio** HLS recording engine for robustness and unifi
 
 Douyu extraction also gets a smaller but useful cleanup: audio-only streams can now be selected directly from the quality picker, H.265 streams are identified from Douyu's own CDN metadata, and more "room unavailable" responses are handled as offline states instead of noisy extraction failures.
 
+## Desktop app
+
+- **Windows GPU checks no longer flash console windows**
+
+  On Windows systems with NVIDIA GPUs, the desktop app could briefly flash black console windows at startup and every time the background GPU health check ran. GPU checks now run without opening console windows, and startup no longer performs an extra back-to-back check.
+
 ## HLS recording engine
 
 - **Rebuilt HLS engine for more predictable recording**

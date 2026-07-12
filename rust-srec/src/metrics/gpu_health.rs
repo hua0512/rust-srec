@@ -37,7 +37,6 @@ use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use chrono::Utc;
-use tokio::process::Command;
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
@@ -200,7 +199,7 @@ impl GpuHealthMonitor {
 
         let probe = tokio::time::timeout(
             Duration::from_secs(STARTUP_GATE_TIMEOUT_SECS),
-            Command::new("nvidia-smi")
+            process_utils::tokio_command("nvidia-smi")
                 .arg("--version")
                 .kill_on_drop(true)
                 .output(),
@@ -312,7 +311,7 @@ impl GpuHealthMonitor {
         let started = std::time::Instant::now();
         let exec = tokio::time::timeout(
             Duration::from_secs(PROBE_TIMEOUT_SECS),
-            Command::new("nvidia-smi")
+            process_utils::tokio_command("nvidia-smi")
                 .args([
                     "--query-gpu=name,driver_version,utilization.gpu,memory.used,memory.total,temperature.gpu",
                     "--format=csv,noheader,nounits",
@@ -500,11 +499,13 @@ fn executable_candidates(name: &str) -> Vec<OsString> {
     vec![OsString::from(name)]
 }
 
-/// Build a `tokio::time::interval` configured to skip missed ticks (so a
-/// slow probe never queues up a backlog) and to skip its always-immediate
-/// first tick.
+/// Builds an interval whose first tick occurs after the full period.
+///
+/// Missed ticks are skipped so a slow probe never queues up a backlog.
 fn build_interval(secs: u64) -> tokio::time::Interval {
-    let mut ticker = tokio::time::interval(Duration::from_secs(secs.max(MIN_INTERVAL_SECS)));
+    let period = Duration::from_secs(secs.max(MIN_INTERVAL_SECS));
+    let start = tokio::time::Instant::now() + period;
+    let mut ticker = tokio::time::interval_at(start, period);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     ticker
 }
@@ -606,6 +607,22 @@ mod tests {
             DEFAULT_PROBE_INTERVAL_SECS,
             crate::downloader::DEFAULT_GATE_COOLDOWN_SECS
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn interval_waits_full_period_before_first_tick() {
+        let started = tokio::time::Instant::now();
+        let mut ticker = build_interval(30);
+        let tick = tokio::spawn(async move { ticker.tick().await });
+
+        tokio::task::yield_now().await;
+        assert!(!tick.is_finished());
+
+        tokio::time::advance(Duration::from_secs(29)).await;
+        assert!(!tick.is_finished());
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(tick.await.unwrap().duration_since(started).as_secs(), 30);
     }
 
     #[test]
