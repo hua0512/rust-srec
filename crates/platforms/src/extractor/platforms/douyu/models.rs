@@ -312,6 +312,8 @@ pub struct DouyuH5PlayData {
     pub rtmp_cdn: String,
     pub rtmp_url: String,
     pub rtmp_live: String,
+    #[serde(default)]
+    pub player_1: Option<String>,
     #[serde(rename = "cdnsWithName")]
     pub cdns: Vec<CdnsWithName>,
     pub multirates: Vec<Multirates>,

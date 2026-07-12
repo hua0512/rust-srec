@@ -705,6 +705,18 @@ impl Douyu {
         }
     }
 
+    fn stream_url(play_info: &DouyuH5PlayData, is_h265: bool, only_audio: bool) -> String {
+        if is_h265
+            && !only_audio
+            && let Some(player_url) = play_info.player_1.as_deref()
+            && !player_url.is_empty()
+        {
+            return player_url.to_string();
+        }
+
+        format!("{}/{}", play_info.rtmp_url, play_info.rtmp_live)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn create_media_info(
         &self,
@@ -1108,9 +1120,7 @@ impl PlatformExtractor for Douyu {
             .get_play_info_fallback_with_scdn_avoidance(rid, cdn, rate, None)
             .await?;
 
-        let base_stream_url = format!("{}/{}", resp.rtmp_url, resp.rtmp_live);
-
-        stream_info.url = base_stream_url;
+        stream_info.url = Self::stream_url(&resp, is_h265, only_audio);
         stream_info.codec = Self::stream_codec(is_h265, only_audio).to_string();
         stream_info.is_audio_only = only_audio;
         Ok(())
@@ -1141,7 +1151,7 @@ mod tests {
         println!("{media_info:?}");
     }
 
-    use crate::extractor::platforms::douyu::models::DouyuH5PlayResponse;
+    use crate::extractor::platforms::douyu::models::{DouyuH5PlayData, DouyuH5PlayResponse};
 
     #[test]
     fn test_douyu_extractor_reads_audio_only_option() {
@@ -1162,6 +1172,51 @@ mod tests {
         assert_eq!(Douyu::stream_codec(true, false), "hevc,aac");
         assert_eq!(Douyu::stream_codec(false, false), "avc,aac");
         assert_eq!(Douyu::stream_codec(true, true), "aac");
+    }
+
+    #[test]
+    fn test_stream_url_uses_player_1_only_for_h265_video() {
+        let play_info: DouyuH5PlayData = serde_json::from_value(json!({
+            "room_id": 1,
+            "rtmp_cdn": "ws-h5",
+            "rtmp_url": "https://example.com/live",
+            "rtmp_live": "stream.flv",
+            "player_1": "https://example.com/hevc.flv",
+            "cdnsWithName": [],
+            "multirates": []
+        }))
+        .unwrap();
+
+        assert_eq!(
+            Douyu::stream_url(&play_info, true, false),
+            "https://example.com/hevc.flv"
+        );
+        assert_eq!(
+            Douyu::stream_url(&play_info, false, false),
+            "https://example.com/live/stream.flv"
+        );
+        assert_eq!(
+            Douyu::stream_url(&play_info, true, true),
+            "https://example.com/live/stream.flv"
+        );
+    }
+
+    #[test]
+    fn test_stream_url_falls_back_when_player_1_is_missing() {
+        let play_info: DouyuH5PlayData = serde_json::from_value(json!({
+            "room_id": 1,
+            "rtmp_cdn": "ws-h5",
+            "rtmp_url": "https://example.com/live",
+            "rtmp_live": "stream.flv",
+            "cdnsWithName": [],
+            "multirates": []
+        }))
+        .unwrap();
+
+        assert_eq!(
+            Douyu::stream_url(&play_info, true, false),
+            "https://example.com/live/stream.flv"
+        );
     }
 
     #[test]
