@@ -42,7 +42,7 @@ Douyu extraction also gets a smaller but useful cleanup: audio-only streams can 
 
 - **H.265 detection follows Douyu CDN metadata**
 
-  Douyu stream entries now use the `isH265` value returned by Douyu's CDN list to mark HEVC streams. There is no separate frontend switch to manage, so recordings follow the format Douyu reports for the selected CDN and rate.
+  Douyu stream entries now use the `isH265` value returned by Douyu's CDN list to mark HEVC streams. When a selected CDN supports H.265, the extractor uses Douyu's dedicated `player_1` URL and falls back to the standard stream URL if it is unavailable. There is no separate frontend switch to manage, and audio-only requests continue to use the AAC stream response.
 
 - **More unavailable-room responses are treated cleanly**
 
