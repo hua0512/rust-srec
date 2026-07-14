@@ -79,6 +79,14 @@ export const TwitcastingConfigSchema = z
   })
   .strict();
 
+// Bigo Live platform-specific configuration
+export const BigoConfigSchema = z
+  .object({
+    stream_password: z.string().nullable().optional(),
+    mint_token: z.boolean().nullable().optional(),
+  })
+  .strict();
+
 // Union of all platform configs
 export const AllPlatformConfigsSchema = z.union([
   HuyaConfigSchema,
@@ -88,5 +96,6 @@ export const AllPlatformConfigsSchema = z.union([
   TwitchConfigSchema,
   TikTokConfigSchema,
   TwitcastingConfigSchema,
+  BigoConfigSchema,
   z.record(z.string(), z.any()), // Fallback for other platforms
 ]);

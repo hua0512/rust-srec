@@ -4447,12 +4447,15 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 name = "platforms-parser"
 version = "0.2.0"
 dependencies = [
+ "aes",
  "async-trait",
  "base64 0.22.1",
  "brotli",
  "byteorder",
  "bytes",
+ "cbc",
  "chrono",
+ "cipher",
  "flate2",
  "futures",
  "libsm",

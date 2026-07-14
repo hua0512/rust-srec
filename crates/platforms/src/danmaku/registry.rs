@@ -1,6 +1,7 @@
 //! Registry of available danmu providers.
 
 use crate::danmaku::provider::DanmuProvider;
+use crate::extractor::platforms::bigo::create_bigo_danmu_provider;
 use crate::extractor::platforms::bilibili::danmu::create_bilibili_danmu_provider;
 use crate::extractor::platforms::douyin::create_douyin_danmu_provider;
 use crate::extractor::platforms::douyu::create_douyu_danmu_provider;
@@ -32,6 +33,7 @@ impl ProviderRegistry {
         registry.register(Arc::new(create_douyin_danmu_provider()));
         registry.register(Arc::new(create_twitch_danmu_provider()));
         registry.register(Arc::new(create_twitcasting_danmu_provider()));
+        registry.register(Arc::new(create_bigo_danmu_provider()));
         registry
     }
 
@@ -74,6 +76,7 @@ mod tests {
         assert!(platforms.contains(&"douyin"));
         assert!(platforms.contains(&"twitch"));
         assert!(platforms.contains(&"twitcasting"));
+        assert!(platforms.contains(&"bigo"));
     }
 
     #[test]

@@ -4,7 +4,7 @@ use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
 use super::streamlink_extractor::StreamlinkExtractor;
 use crate::extractor::platforms::{
-    self, acfun::Acfun, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya,
+    self, acfun::Acfun, bigo::Bigo, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya,
     pandatv::PandaTV, picarto::Picarto, redbook::RedBook, tiktok::TikTok, twitcasting::Twitcasting,
     twitch::Twitch, weibo::Weibo,
 };
@@ -54,6 +54,7 @@ static PLATFORMS: &[PlatformEntry] = platform_registry![
     platforms::tiktok::URL_REGEX => TikTok::new,
     platforms::twitcasting::URL_REGEX => Twitcasting::new,
     platforms::acfun::URL_REGEX => Acfun::new,
+    platforms::bigo::URL_REGEX => Bigo::new,
 ];
 
 /// A factory for creating platform-specific extractors.

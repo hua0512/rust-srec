@@ -20,6 +20,7 @@ import {
   TwitchConfigSchema,
   TikTokConfigSchema,
   TwitcastingConfigSchema,
+  BigoConfigSchema,
 } from '@/api/schemas';
 import { HuyaConfigFields } from './specific-configs/huya-config-fields';
 import { DouyinConfigFields } from './specific-configs/douyin-config-fields';
@@ -28,6 +29,7 @@ import { DouyuConfigFields } from './specific-configs/douyu-config-fields';
 import { TwitchConfigFields } from './specific-configs/twitch-config-fields';
 import { TikTokConfigFields } from './specific-configs/tiktok-config-fields';
 import { TwitcastingConfigFields } from './specific-configs/twitcasting-config-fields';
+import { BigoConfigFields } from './specific-configs/bigo-config-fields';
 
 const PLATFORM_SCHEMAS: Record<string, any> = {
   huya: HuyaConfigSchema,
@@ -37,6 +39,7 @@ const PLATFORM_SCHEMAS: Record<string, any> = {
   twitch: TwitchConfigSchema,
   tiktok: TikTokConfigSchema,
   twitcasting: TwitcastingConfigSchema,
+  bigo: BigoConfigSchema,
 };
 
 const SPECIFIC_CONFIG_COMPONENTS: Record<string, any> = {
@@ -47,6 +50,7 @@ const SPECIFIC_CONFIG_COMPONENTS: Record<string, any> = {
   twitch: TwitchConfigFields,
   tiktok: TikTokConfigFields,
   twitcasting: TwitcastingConfigFields,
+  bigo: BigoConfigFields,
 };
 
 interface PlatformSpecificTabProps {

@@ -3,7 +3,8 @@
 use crate::Error;
 use platforms_parser::extractor::platforms::douyu;
 use platforms_parser::extractor::platforms::{
-    acfun, bilibili, douyin, huya, pandatv, picarto, redbook, tiktok, twitcasting, twitch, weibo,
+    acfun, bigo, bilibili, douyin, huya, pandatv, picarto, redbook, tiktok, twitcasting, twitch,
+    weibo,
 };
 use serde::{Deserialize, Serialize};
 
@@ -61,6 +62,8 @@ impl StreamerUrl {
             return Some("Acfun");
         } else if douyu::URL_REGEX.is_match(url) {
             return Some("Douyu");
+        } else if bigo::URL_REGEX.is_match(url) {
+            return Some("Bigo");
         }
 
         None
@@ -171,6 +174,12 @@ mod tests {
 
         let bilibili = StreamerUrl::new("https://live.bilibili.com/123456").unwrap();
         assert_eq!(bilibili.platform(), Some("Bilibili"));
+
+        let bigo = StreamerUrl::new("https://www.bigo.tv/221338632").unwrap();
+        assert_eq!(bigo.platform(), Some("Bigo"));
+
+        let bigo_locale = StreamerUrl::new("https://www.bigo.tv/ja/221338632").unwrap();
+        assert_eq!(bigo_locale.platform(), Some("Bigo"));
 
         let unknown = StreamerUrl::new("https://unknown.com/streamer").unwrap();
         assert_eq!(unknown.platform(), None);

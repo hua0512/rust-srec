@@ -1,6 +1,6 @@
 # Supported Platforms
 
-rust-srec supports 12 streaming platforms with automatic stream detection and recording.
+rust-srec supports 13 streaming platforms with automatic stream detection and recording.
 
 ## Platform List
 
@@ -10,6 +10,7 @@ rust-srec supports 12 streaming platforms with automatic stream detection and re
 | [Douyin](./douyin.md) | `live.douyin.com/{room_id}` | FLV/HLS | ✅ |
 | [Douyu](./douyu.md) | `douyu.com/{room_id}` | FLV | ✅ |
 | [Huya](./huya.md) | `huya.com/{room_id}` | FLV/HLS | ✅ |
+| [Bigo Live](./bigo.md) | `bigo.tv/{id}` | HLS | ✅ |
 | [AcFun](./others.md#acfun) | `acfun.cn/live/{room_id}` | HLS | ❌ |
 | [PandaTV](./others.md#pandatv) | `pandalive.co.kr/play/{id}` | HLS | ❌ |
 | [Redbook](./others.md#redbook-小红书) | `xhslink.com/m/{id}` | HLS | ❌ |

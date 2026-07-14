@@ -8,6 +8,12 @@ FLV and HLS media processing also uses less CPU, memory, and disk I/O. Media ana
 
 Douyu extraction also gets a smaller but useful cleanup: audio-only streams can now be selected directly from the quality picker, H.265 streams are identified from Douyu's own CDN metadata, and more "room unavailable" responses are handled as offline states instead of noisy extraction failures.
 
+## Platforms
+
+- **New platform: Bigo Live**
+
+  You can add Bigo Live rooms (`bigo.tv`) as streamers with native HLS recording. Password-protected rooms are supported via platform settings or a `?pwd=` URL parameter, and live chat plus gifts can be recorded when danmaku is enabled. Website-style integrity token minting is on by default for better API parity.
+
 ## Desktop app
 
 - **Windows GPU checks no longer flash console windows**
