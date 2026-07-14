@@ -8,11 +8,35 @@ FLV and HLS media processing also uses less CPU, memory, and disk I/O. Media ana
 
 Douyu extraction also gets a smaller but useful cleanup: audio-only streams can now be selected directly from the quality picker, H.265 streams are identified from Douyu's own CDN metadata, and more "room unavailable" responses are handled as offline states instead of noisy extraction failures.
 
+The dashboard's theme system was rebuilt as well. Dark mode and custom themes now apply before the first frame on both the web and desktop apps — the desktop app no longer flashes white on launch in dark mode — and switching between light and dark is smoother and more predictable.
+
 ## Desktop app
+
+- **No more white flash when launching in dark mode**
+
+  The main window previously appeared before the saved theme was applied, so dark-mode users saw a white frame on every launch. The theme is now applied before the window is shown, and the loading splash screen follows your chosen theme instead of only the operating system setting — so a light-OS user who prefers a dark app gets a dark splash and a dark first frame.
 
 - **Windows GPU checks no longer flash console windows**
 
   On Windows systems with NVIDIA GPUs, the desktop app could briefly flash black console windows at startup and every time the background GPU health check ran. GPU checks now run without opening console windows, and startup no longer performs an extra back-to-back check.
+
+## Theme and appearance
+
+- **Custom themes apply at first paint**
+
+  A saved theme preset, imported theme, or color override is now restored before the page first renders, on both web and desktop — no more brief flash of the default palette on load. After updating the app, your saved theme keeps applying immediately unless the app's theme data itself changed in the update.
+
+- **Smoother, more reliable dark/light switching**
+
+  The circular reveal animation no longer occasionally flips the whole screen to the new theme before the animation starts. The header toggle now switches based on the appearance you currently see, so the first click always has an effect when the mode is set to **System**. Selecting a mode that looks identical to the current one (for example switching from **Dark** to **System** while the OS is dark) saves the preference without playing a pointless animation.
+
+- **Theme settings stay in sync across browser tabs**
+
+  Changing the preset, colors, or radius in one tab now updates every other open tab, matching how the light/dark mode already behaved.
+
+- **Delete confirmation buttons show the right text color**
+
+  A missing style definition left the text on some destructive confirmation buttons (template, notification channel, and workflow deletion) rendering in the wrong color. They now use the theme's destructive foreground color.
 
 ## HLS recording engine
 
