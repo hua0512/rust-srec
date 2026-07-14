@@ -809,3 +809,22 @@ Deep-review items deliberately left for separate work (documented, not fixed her
 - **Build-time static preset CSS + `data-theme` switching** would remove runtime preset compilation
   entirely (compile only imported themes/overrides at runtime). The single biggest simplification
   available, but a real rewrite — tracked as a future structural option, not part of this work.
+
+### 7.4 Reveal animation: CSS-owned keyframes (fixes intermittent flip-then-animate)
+
+User-reported: switching light→dark sometimes flipped the whole background dark first and only
+then played the circular reveal. Root cause: the reveal was attached from JS via
+`element.animate()` inside `viewTransition.ready.then(...)`, while styles.css set
+`animation: none` and stacked the incoming snapshot on top. Any presented frame between
+transition activation and the microtask that attaches the clip animation shows the new (dark)
+snapshot unclipped — intermittent under main-thread load (the update callback runs a full
+`flushSync` re-render, which widens that window).
+
+Fix: the keyframes now live in styles.css (`rs-theme-reveal-in`/`-out`), selected by
+`.dark::view-transition-new(root)` / `html:not(.dark)::view-transition-old(root)`, with the
+click point and end radius passed as inline `--reveal-x/--reveal-y/--reveal-r` custom
+properties on `<html>` (set before `startViewTransition`; the pseudo tree inherits from the
+root element). CSS animations on the pseudos apply from the first transition frame, so frame 0
+is already clipped to `circle(0px)` — the flash is structurally impossible. The hook no longer
+touches `viewTransition.ready` at all; only `finished` remains (lock release + rejection
+swallow).

@@ -161,7 +161,7 @@ export function ThemeSettingsSync() {
     // One-time migration from the retired inline-style token system: drop its
     // cache key and strip inline --* vars from <html> (left by an old blocking
     // script during a mixed-version deploy window, they would permanently
-    // shadow the user-theme <style> element). --x/--y belong to
+    // shadow the user-theme <style> element). --reveal-* geometry belongs to
     // use-circular-transition and must survive.
     try {
       localStorage.removeItem(LEGACY_VARS_CACHE_KEY);
@@ -171,7 +171,7 @@ export function ThemeSettingsSync() {
     const rootStyle = document.documentElement.style;
     for (let i = rootStyle.length - 1; i >= 0; i--) {
       const prop = rootStyle[i];
-      if (prop.startsWith('--') && prop !== '--x' && prop !== '--y') {
+      if (prop.startsWith('--') && !prop.startsWith('--reveal-')) {
         rootStyle.removeProperty(prop);
       }
     }

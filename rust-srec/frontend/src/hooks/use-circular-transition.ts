@@ -17,88 +17,54 @@ export function useCircularTransition(): CircularTransitionHook {
       if (typeof document === 'undefined') return;
       if (typeof window === 'undefined') return;
 
-      isTransitioningRef.current = true;
-
-      // Set CSS variables for the circular reveal animation - exactly like tweakcn
-      const x = (coords.x / window.innerWidth) * 100;
-      const y = (coords.y / window.innerHeight) * 100;
-
-      // Set the CSS variables on document element
-      document.documentElement.style.setProperty('--x', `${x}%`);
-      document.documentElement.style.setProperty('--y', `${y}%`);
-
       const prefersReducedMotion = window.matchMedia(
         '(prefers-reduced-motion: reduce)',
       ).matches;
 
-      // Check if View Transitions API is supported
-      if ('startViewTransition' in document && !prefersReducedMotion) {
-        const viewTransition = (
-          document as Document & {
-            startViewTransition: (callback: () => void) => {
-              ready: Promise<void>;
-              finished: Promise<void>;
-            };
-          }
-        ).startViewTransition(() => {
-          flushSync(() => {
-            callback();
-          });
-        });
-
-        const endRadius = Math.hypot(
-          Math.max(coords.x, window.innerWidth - coords.x),
-          Math.max(coords.y, window.innerHeight - coords.y),
-        );
-
-        void viewTransition.ready
-          .then(() => {
-            const clipPath = [
-              `circle(0px at ${coords.x}px ${coords.y}px)`,
-              `circle(${endRadius}px at ${coords.x}px ${coords.y}px)`,
-            ];
-
-            const targetIsDark =
-              document.documentElement.classList.contains('dark');
-
-            document.documentElement.animate(
-              {
-                clipPath: targetIsDark ? clipPath : [...clipPath].reverse(),
-              },
-              {
-                duration: 400,
-                easing: 'ease-in',
-                pseudoElement: targetIsDark
-                  ? '::view-transition-new(root)'
-                  : '::view-transition-old(root)',
-                fill: 'forwards',
-              },
-            );
-          })
-          .catch(() => {
-            // ready rejects when the reveal is skipped (document hidden,
-            // superseded by another view transition). The mode change already
-            // committed inside the update callback — only the animation is
-            // lost, so there is nothing to recover.
-          });
-
-        // finished settles on every path: it fulfills even for skipped
-        // transitions and rejects only if the update callback threw. Swallow
-        // the rejection — main.desktop.tsx routes unhandledrejection to
-        // renderFatal, which would replace the app with the boot-error screen
-        // over a failed reveal — and release the lock in all cases.
-        void viewTransition.finished
-          .catch(() => {})
-          .finally(() => {
-            isTransitioningRef.current = false;
-          });
-      } else {
-        // Fallback for browsers without View Transitions API
+      // No View Transitions support (or reduced motion): just flip the theme.
+      if (!('startViewTransition' in document) || prefersReducedMotion) {
         callback();
-        setTimeout(() => {
-          isTransitioningRef.current = false;
-        }, 400);
+        return;
       }
+
+      isTransitioningRef.current = true;
+
+      // Reveal geometry consumed by the @keyframes in styles.css. Set on
+      // <html> before startViewTransition so the pseudo-element animations
+      // (which begin on the very first transition frame) already have their
+      // clip-path origin/radius — avoids the flash where the new snapshot
+      // paints unclipped before a JS-attached animation starts.
+      const endRadius = Math.hypot(
+        Math.max(coords.x, window.innerWidth - coords.x),
+        Math.max(coords.y, window.innerHeight - coords.y),
+      );
+      const rootStyle = document.documentElement.style;
+      rootStyle.setProperty('--reveal-x', `${coords.x}px`);
+      rootStyle.setProperty('--reveal-y', `${coords.y}px`);
+      rootStyle.setProperty('--reveal-r', `${endRadius}px`);
+
+      const viewTransition = (
+        document as Document & {
+          startViewTransition: (callback: () => void) => {
+            finished: Promise<void>;
+          };
+        }
+      ).startViewTransition(() => {
+        flushSync(() => {
+          callback();
+        });
+      });
+
+      // finished settles on every path: it fulfills even for skipped
+      // transitions and rejects only if the update callback threw. Swallow
+      // the rejection — main.desktop.tsx routes unhandledrejection to
+      // renderFatal, which would replace the app with the boot-error screen
+      // over a failed reveal — and release the lock in all cases.
+      void viewTransition.finished
+        .catch(() => {})
+        .finally(() => {
+          isTransitioningRef.current = false;
+        });
     },
     [],
   );

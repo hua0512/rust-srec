@@ -214,24 +214,57 @@ html {
   animation-delay: 4s;
 }
 
+/* Theme-mode circular reveal (use-circular-transition.ts).
+   The animations are defined here, not via element.animate() after
+   viewTransition.ready: a JS-attached animation leaves a window where the
+   top snapshot paints unclipped (the theme appears to flip instantly, then
+   the reveal plays). CSS animations on the pseudos apply from the first
+   transition frame. --reveal-x/--reveal-y/--reveal-r are set inline on
+   <html> by the hook before startViewTransition. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
 }
 
-::view-transition-old(root) {
-  z-index: 9999;
-}
-
-::view-transition-new(root) {
-  z-index: 1;
-}
-
+/* Light -> dark: the incoming dark snapshot sits on top and grows from the
+   click point; the old light snapshot stays static underneath. */
 .dark::view-transition-old(root) {
   z-index: 1;
 }
 
 .dark::view-transition-new(root) {
   z-index: 9999;
+  animation: rs-theme-reveal-in 400ms ease-in forwards;
+}
+
+/* Dark -> light: the outgoing dark snapshot sits on top and shrinks into the
+   click point, uncovering the new light snapshot underneath. */
+html:not(.dark)::view-transition-old(root) {
+  z-index: 9999;
+  animation: rs-theme-reveal-out 400ms ease-in forwards;
+}
+
+html:not(.dark)::view-transition-new(root) {
+  z-index: 1;
+}
+
+@keyframes rs-theme-reveal-in {
+  from {
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
+
+  to {
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+}
+
+@keyframes rs-theme-reveal-out {
+  from {
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+
+  to {
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
 }

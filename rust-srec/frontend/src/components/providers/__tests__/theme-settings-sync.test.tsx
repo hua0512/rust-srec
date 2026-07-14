@@ -79,18 +79,20 @@ describe('ThemeSettingsSync', () => {
     expect(localStorage.getItem(THEME_CSS_CACHE_KEY)).toBeNull();
   });
 
-  it('strips legacy inline vars but preserves the reveal coordinates', () => {
+  it('strips legacy inline vars but preserves the reveal geometry', () => {
     const rootStyle = document.documentElement.style;
     rootStyle.setProperty('--primary', 'red');
-    rootStyle.setProperty('--x', '10%');
-    rootStyle.setProperty('--y', '20%');
+    rootStyle.setProperty('--reveal-x', '10px');
+    rootStyle.setProperty('--reveal-y', '20px');
+    rootStyle.setProperty('--reveal-r', '900px');
     localStorage.setItem(LEGACY_VARS_CACHE_KEY, '{}');
 
     render(<ThemeSettingsSync />);
 
     expect(rootStyle.getPropertyValue('--primary')).toBe('');
-    expect(rootStyle.getPropertyValue('--x')).toBe('10%');
-    expect(rootStyle.getPropertyValue('--y')).toBe('20%');
+    expect(rootStyle.getPropertyValue('--reveal-x')).toBe('10px');
+    expect(rootStyle.getPropertyValue('--reveal-y')).toBe('20px');
+    expect(rootStyle.getPropertyValue('--reveal-r')).toBe('900px');
     expect(localStorage.getItem(LEGACY_VARS_CACHE_KEY)).toBeNull();
   });
 
