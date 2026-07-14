@@ -1,18 +1,14 @@
 import { useCallback, useRef } from 'react';
 import { useTheme } from '@/components/providers/theme-provider';
+import { getSystemTheme, type Mode } from '@/lib/theme-config';
 import { flushSync } from 'react-dom';
 
 interface CircularTransitionHook {
-  startTransition: (
-    coords: { x: number; y: number },
-    callback: () => void,
-  ) => void;
-  toggleTheme: (event: React.MouseEvent) => void;
-  isTransitioning: () => boolean;
+  setModeWithReveal: (next: Mode, coords: { x: number; y: number }) => void;
 }
 
 export function useCircularTransition(): CircularTransitionHook {
-  const { mode, setMode } = useTheme();
+  const { resolvedMode, setMode } = useTheme();
   const isTransitioningRef = useRef(false);
 
   const startTransition = useCallback(
@@ -79,11 +75,22 @@ export function useCircularTransition(): CircularTransitionHook {
               },
             );
           })
+          .catch(() => {
+            // ready rejects when the reveal is skipped (document hidden,
+            // superseded by another view transition). The mode change already
+            // committed inside the update callback — only the animation is
+            // lost, so there is nothing to recover.
+          });
+
+        // finished settles on every path: it fulfills even for skipped
+        // transitions and rejects only if the update callback threw. Swallow
+        // the rejection — main.desktop.tsx routes unhandledrejection to
+        // renderFatal, which would replace the app with the boot-error screen
+        // over a failed reveal — and release the lock in all cases.
+        void viewTransition.finished
+          .catch(() => {})
           .finally(() => {
-            // Ensure we always release the lock even if animation fails.
-            void viewTransition.finished.finally(() => {
-              isTransitioningRef.current = false;
-            });
+            isTransitioningRef.current = false;
           });
       } else {
         // Fallback for browsers without View Transitions API
@@ -96,28 +103,21 @@ export function useCircularTransition(): CircularTransitionHook {
     [],
   );
 
-  const toggleTheme = useCallback(
-    (event: React.MouseEvent) => {
-      // Get precise click coordinates - use clientX/clientY directly like tweakcn
-      const coords = {
-        x: event.clientX,
-        y: event.clientY,
-      };
-
-      startTransition(coords, () => {
-        setMode(mode === 'dark' ? 'light' : 'dark');
-      });
+  const setModeWithReveal = useCallback(
+    (next: Mode, coords: { x: number; y: number }) => {
+      const nextResolved = next === 'system' ? getSystemTheme() : next;
+      if (nextResolved === resolvedMode) {
+        // Persist the preference change (e.g. dark -> system while the OS is
+        // dark); nothing changes visually, so skip the 400ms reveal.
+        setMode(next);
+        return;
+      }
+      startTransition(coords, () => setMode(next));
     },
-    [mode, setMode, startTransition],
+    [resolvedMode, setMode, startTransition],
   );
 
-  const isTransitioning = useCallback(() => {
-    return isTransitioningRef.current;
-  }, []);
-
   return {
-    startTransition,
-    toggleTheme,
-    isTransitioning,
+    setModeWithReveal,
   };
 }

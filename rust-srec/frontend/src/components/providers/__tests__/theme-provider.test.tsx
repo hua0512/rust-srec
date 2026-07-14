@@ -186,10 +186,53 @@ describe('ThemeProvider', () => {
     expect(document.documentElement.style.colorScheme).toBe('light');
   });
 
+  it('falls back to the default mode when localStorage holds a garbage value', () => {
+    localStorage.setItem('theme', 'purple');
+
+    const { result } = renderHook(() => useTheme(), { wrapper });
+
+    // Invalid stored value must never reach classList / color-scheme.
+    expect(result.current.mode).toBe('system');
+    expect(document.documentElement).toHaveClass('light');
+    expect(document.documentElement).not.toHaveClass('purple');
+  });
+
+  it('ignores garbage cross-tab storage values', () => {
+    localStorage.setItem('theme', 'dark');
+
+    const { result } = renderHook(() => useTheme(), { wrapper });
+    expect(result.current.mode).toBe('dark');
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'theme', newValue: 'purple' }),
+      );
+    });
+
+    expect(result.current.mode).toBe('system');
+    expect(document.documentElement).not.toHaveClass('purple');
+  });
+
+  it('hydrates from serverMode, then adopts localStorage and repairs the cookie', () => {
+    // SSR divergence scenario: cookie says light, localStorage says dark.
+    localStorage.setItem('theme', 'dark');
+
+    const { result } = renderHook(() => useTheme(), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <ThemeProvider serverMode="light">{children}</ThemeProvider>
+      ),
+    });
+
+    // The mount reconcile effect adopts localStorage as the client authority
+    // and rewrites the cookie so the next SSR pass agrees.
+    expect(result.current.mode).toBe('dark');
+    expect(document.documentElement).toHaveClass('dark');
+    expect(document.cookie).toContain('theme=dark');
+  });
+
   it('useTheme() returns default context value when used outside ThemeProvider', () => {
-    // createContext is called with a default value, so use() never returns
-    // undefined — the throw guard in useTheme is unreachable. Verify the
-    // default context is returned instead.
+    // The context carries a default value, so consumers outside the provider
+    // get inert defaults instead of a crash.
     const { result } = renderHook(() => useTheme());
 
     expect(result.current.mode).toBe('system');

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { defineConfig } from 'vite';
+import { defineConfig, type PluginOption } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import tailwindcss from '@tailwindcss/vite';
 import { devtools } from '@tanstack/devtools-vite';
@@ -9,10 +9,49 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import { lingui } from '@lingui/vite-plugin';
 import oxlintPlugin from 'vite-plugin-oxlint';
 
+import {
+  buildThemeScriptHTML,
+  CRITICAL_THEME_CSS,
+} from './src/lib/theme-script';
+import { computeThemeCacheId } from './theme-cache-id';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Must equal the __THEME_CACHE_ID__ define below: ThemeSettingsSync stamps the
+// css cache with the define value, and the script injected by themePrePaint
+// only replays cache entries stamped with its own cacheId argument.
+const themeCacheId = computeThemeCacheId();
+
+/**
+ * The desktop build has no SSR document (the web app injects the blocking
+ * theme script via the root route's head()), so inject the same script plus
+ * the critical background CSS into both HTML entries here. It runs during
+ * parse, before first paint, covering index.desktop.html and the splash.
+ */
+function themePrePaint(): PluginOption {
+  return {
+    name: 'rust-srec:theme-pre-paint',
+    transformIndexHtml: () => [
+      {
+        tag: 'style',
+        children: CRITICAL_THEME_CSS,
+        injectTo: 'head-prepend',
+      },
+      {
+        tag: 'script',
+        children: buildThemeScriptHTML(themeCacheId),
+        injectTo: 'head-prepend',
+      },
+    ],
+  };
+}
+
 export default defineConfig({
+  define: {
+    __THEME_CACHE_ID__: JSON.stringify(themeCacheId),
+  },
   plugins: [
+    themePrePaint(),
     lingui(),
     devtools(),
     tailwindcss(),

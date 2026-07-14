@@ -158,7 +158,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   if (isDesktop) {
     return (
       <div className="min-h-dvh">
-        <ThemeProvider serverMode={theme.mode}>{children}</ThemeProvider>
+        {/* No serverMode: there is no SSR markup to stay consistent with, so
+            ThemeProvider reads localStorage directly (the pre-paint script in
+            index.desktop.html applied the same value before first paint). */}
+        <ThemeProvider>{children}</ThemeProvider>
 
         <Devtools />
         <Toaster position="top-right" />

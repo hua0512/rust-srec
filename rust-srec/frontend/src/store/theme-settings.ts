@@ -21,16 +21,26 @@ export type ThemeSettingsState = {
   reset: () => void;
 };
 
-const DEFAULT_SETTINGS: Pick<
+/** Persisted-fields subset of ThemeSettingsState (everything but actions). */
+export type ThemeSettingsSnapshot = Pick<
   ThemeSettingsState,
   'base' | 'preset' | 'radius' | 'overrides' | 'importedTheme'
-> = {
+>;
+
+/** Exported so ThemeSettingsSync can detect pristine settings (no user-theme
+ *  <style> element needed — styles.css already carries these values, which
+ *  theme-default-drift.test.ts enforces). */
+export const DEFAULT_SETTINGS: ThemeSettingsSnapshot = {
   base: 'preset',
   preset: 'default',
   radius: '0.625rem',
   overrides: {},
   importedTheme: null,
 };
+
+/** localStorage key of the persisted store; ThemeSettingsSync listens for
+ *  cross-tab `storage` events on it. */
+export const STORAGE_KEY_SETTINGS = 'theme-settings';
 
 function normalizeCssVar(cssVar: string): string {
   return cssVar.startsWith('--') ? cssVar.slice(2) : cssVar;
@@ -76,7 +86,7 @@ export const useThemeSettings = create(
       reset: () => set(DEFAULT_SETTINGS),
     }),
     {
-      name: 'theme-settings',
+      name: STORAGE_KEY_SETTINGS,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
     },
