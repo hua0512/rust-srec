@@ -12,7 +12,7 @@ Douyu extraction also gets a smaller but useful cleanup: audio-only streams can 
 
 - **New platform: Bigo Live**
 
-  You can add Bigo Live rooms (`bigo.tv`) as streamers with native HLS recording. Password-protected rooms are supported via platform settings or a `?pwd=` URL parameter, and live chat plus gifts can be recorded when danmaku is enabled. Website-style integrity token minting is on by default for better API parity.
+  You can add Bigo Live rooms (`bigo.tv`) as streamers with native HLS recording. Password-protected rooms are supported via platform settings or a `?pwd=` URL parameter, and live chat plus gifts can be recorded when danmaku is enabled. Website-style integrity token minting is on by default for better API parity. The public stream is a single mid-quality portrait feed (typically around 480p–540p); higher browser-only qualities are not available on this path.
 
 ## Desktop app
 

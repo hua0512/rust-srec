@@ -17,12 +17,12 @@ Examples:
 
 ## Features
 
-- ✅ HLS streams (single public quality, usually labeled `live`)
+- ✅ HLS streams (single public quality, usually labeled `live`, typically ~540p portrait)
 - ✅ Danmaku collection (guest WebSocket: public chat and gifts)
 - ✅ Password-protected rooms
 - ✅ Integrity token minting for website-parity API requests (enabled by default)
 - ❌ Multi-quality / multi-bitrate selection on the public API path
-- ❌ Account login for higher quality or sending chat
+- ❌ Account login or browser-only paths that may offer higher quality (e.g. 1080p HEVC)
 
 ## Configuration
 
@@ -48,7 +48,7 @@ When danmaku is enabled for the streamer:
 - **Not supported**: sending chat, enter notices, hearts, follow/share notices.
 
 ::: info
-- **Quality**: The public API exposes one media playlist per room (typically labeled `live`). There is no multi-bitrate ladder on this path.
+- **Quality**: The public API exposes one media playlist per room (labeled `live`). That stream is usually mid-quality portrait video around **480p–540p** (for example ~480×854 H.264). There is no multi-bitrate ladder on this path, and integrity tokens do not unlock a higher public rendition. Browser-reported 1080p HEVC, when present, is not available through this API.
 - **Authentication**: Cookies and OAuth are not required for recording or receiving chat.
 - **Network**: If integrity token minting is blocked, disable **Mint Integrity Token** and retry.
 :::
