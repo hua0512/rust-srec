@@ -107,7 +107,10 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
         source: &CredentialSource,
     ) -> Result<Option<String>, CredentialError> {
         // Skip platforms without a registered credential manager (unsupported for auto-refresh).
-        if !self.managers.contains_key(&source.platform_name) {
+        let platform_key = source.platform_name.to_ascii_lowercase();
+        if !self.managers.contains_key(&platform_key)
+            && !self.managers.contains_key(&source.platform_name)
+        {
             // debug!(
             //     platform = %source.platform_name,
             //     "Platform does not support credential auto-refresh; skipping"
@@ -290,9 +293,10 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     ) -> Result<Option<String>, CredentialError> {
         let manager = self.get_manager(&source.platform_name)?;
 
-        // Check for refresh token
-        if !source.has_refresh_token() {
-            warn!("Missing refresh_token - cannot auto-refresh");
+        // Refresh token is required for OAuth-style platforms. Password re-login
+        // platforms (SOOP) use reauth_extra instead.
+        if !source.has_refresh_token() && !source.has_reauth_extra() {
+            warn!("Missing refresh_token / reauth credentials - cannot auto-refresh");
             let _failure_count = self
                 .failure_tracker
                 .record_failure(&source.scope, "Missing refresh token");
@@ -302,11 +306,21 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
         info!("Starting credential refresh");
 
         let mut state = RefreshState::new(source.cookies.clone(), source.refresh_token.clone());
-        // Pass access_token through extra JSON for platform-specific managers.
+        // Pass access_token and/or password reauth material through extra JSON.
+        let mut extra = serde_json::Map::new();
         if let Some(ref access_token) = source.access_token {
-            state.extra = Some(serde_json::json!({
-                "access_token": access_token
-            }));
+            extra.insert(
+                "access_token".to_string(),
+                serde_json::Value::String(access_token.clone()),
+            );
+        }
+        if let Some(serde_json::Value::Object(map)) = source.reauth_extra.clone() {
+            for (k, v) in map {
+                extra.insert(k, v);
+            }
+        }
+        if !extra.is_empty() {
+            state.extra = Some(serde_json::Value::Object(extra));
         }
 
         match manager.refresh(&state).await {
@@ -381,8 +395,13 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
         &self,
         platform_name: &str,
     ) -> Result<&Arc<dyn CredentialManager>, CredentialError> {
+        if let Some(manager) = self.managers.get(platform_name) {
+            return Ok(manager);
+        }
+        // Platform ids are stored lowercase (e.g. "soop"); display names may differ.
+        let key = platform_name.to_ascii_lowercase();
         self.managers
-            .get(platform_name)
+            .get(&key)
             .ok_or_else(|| CredentialError::UnsupportedPlatform(platform_name.to_string()))
     }
 
@@ -399,6 +418,39 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     pub fn invalidate(&self, scope: &CredentialScope) {
         self.daily_tracker.invalidate(scope);
         self.failure_tracker.clear(scope);
+    }
+
+    /// Persist session cookies minted during extract (e.g. SOOP reactive login).
+    ///
+    /// Updates the same configuration layer that supplied the credential source
+    /// and marks today's check status as valid.
+    pub async fn persist_session_cookies(
+        &self,
+        source: &CredentialSource,
+        cookies: String,
+    ) -> Result<(), CredentialError> {
+        if cookies.trim().is_empty() {
+            return Ok(());
+        }
+
+        let new_creds = RefreshedCredentials {
+            cookies,
+            refresh_token: source.refresh_token.clone(),
+            access_token: source.access_token.clone(),
+            expires_at: None,
+        };
+
+        self.store.update_credentials(source, &new_creds).await?;
+        self.daily_tracker
+            .record_check(&source.scope, CredentialStatus::Valid);
+        self.failure_tracker.clear(&source.scope);
+        let _ = self.store.update_check_result(&source.scope, "valid").await;
+        info!(
+            platform = %source.platform_name,
+            scope = %source.scope.describe(),
+            "Persisted session cookies from extract"
+        );
+        Ok(())
     }
 
     /// Create a credential event for notification.

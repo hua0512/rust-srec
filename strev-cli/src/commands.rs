@@ -247,13 +247,7 @@ impl CommandExecutor {
                     }
 
                     let stream_index = if auto_select {
-                        media_info
-                            .streams
-                            .iter()
-                            .enumerate()
-                            .max_by_key(|(_, s)| (s.bitrate, s.priority))
-                            .map(|(i, _)| i)
-                            .unwrap_or(0)
+                        Self::best_stream_index(&media_info.streams).unwrap_or(0)
                     } else {
                         0
                     };
@@ -435,18 +429,20 @@ impl CommandExecutor {
     }
 
     fn auto_select_stream(&self, mut streams: Vec<StreamInfo>) -> Result<StreamInfo> {
-        if streams.is_empty() {
-            return Err(CliError::no_streams_found());
-        }
+        let index = Self::best_stream_index(&streams).ok_or_else(CliError::no_streams_found)?;
+        Ok(streams.swap_remove(index))
+    }
 
-        // Find the index of the stream with max priority
-        let (index, _) = streams
+    fn best_stream_index(streams: &[StreamInfo]) -> Option<usize> {
+        streams
             .iter()
             .enumerate()
-            .max_by_key(|(_, s)| s.priority)
-            .unwrap(); // Safe because we checked for empty above
-
-        Ok(streams.swap_remove(index))
+            .min_by(|(_, a), (_, b)| {
+                a.priority
+                    .cmp(&b.priority)
+                    .then_with(|| b.bitrate.cmp(&a.bitrate))
+            })
+            .map(|(index, _)| index)
     }
 
     fn interactive_select_stream(&self, streams: Vec<StreamInfo>) -> Result<StreamInfo> {
@@ -643,5 +639,36 @@ impl CommandExecutor {
         let output_file = output_dir.map(|dir| dir.join("batch_summary.txt"));
         write_output(&summary, output_file.as_deref())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use platforms_parser::media::{StreamFormat, StreamInfo, formats::MediaFormat};
+
+    use super::CommandExecutor;
+
+    fn stream(priority: u32, bitrate: u64) -> StreamInfo {
+        StreamInfo::builder("", StreamFormat::Hls, MediaFormat::Ts)
+            .priority(priority)
+            .bitrate(bitrate)
+            .build()
+    }
+
+    #[test]
+    fn best_stream_uses_lowest_priority() {
+        let streams = vec![stream(3, 8_000_000), stream(0, 1_000_000)];
+        assert_eq!(CommandExecutor::best_stream_index(&streams), Some(1));
+    }
+
+    #[test]
+    fn best_stream_uses_bitrate_to_break_priority_ties() {
+        let streams = vec![stream(0, 1_000_000), stream(0, 8_000_000)];
+        assert_eq!(CommandExecutor::best_stream_index(&streams), Some(1));
+    }
+
+    #[test]
+    fn best_stream_rejects_empty_input() {
+        assert_eq!(CommandExecutor::best_stream_index(&[]), None);
     }
 }

@@ -25,6 +25,7 @@ use crate::danmaku::ConnectionConfig;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::event::DanmuItem;
 use crate::danmaku::provider::{DanmuConnection, DanmuProvider};
+use crate::extractor::utils::merge_cookie_headers;
 
 const MAX_ACTIVE_CONNECTIONS: usize = 1024;
 
@@ -169,63 +170,6 @@ fn connector_for_url(url: &str) -> Connector {
     }
 
     rustls_connector()
-}
-
-fn parse_cookie_header(input: &str) -> Vec<(String, String)> {
-    input
-        .split(';')
-        .filter_map(|part| {
-            let part = part.trim();
-            if part.is_empty() {
-                return None;
-            }
-
-            let mut kv = part.splitn(2, '=');
-            let name = kv.next()?.trim();
-            let value = kv.next()?.trim();
-            if name.is_empty() || value.is_empty() {
-                return None;
-            }
-
-            Some((name.to_string(), value.to_string()))
-        })
-        .collect()
-}
-
-fn merge_cookie_headers(base: Option<&str>, extra: Option<&str>) -> Option<String> {
-    let base = base.map(str::trim).filter(|s| !s.is_empty());
-    let extra = extra.map(str::trim).filter(|s| !s.is_empty());
-
-    match (base, extra) {
-        (None, None) => None,
-        (Some(base), None) => Some(base.to_string()),
-        (None, Some(extra)) => Some(extra.to_string()),
-        (Some(base), Some(extra)) => {
-            let mut parts = parse_cookie_header(base);
-            let mut index_by_name: HashMap<String, usize> = HashMap::with_capacity(parts.len());
-            for (idx, (name, _)) in parts.iter().enumerate() {
-                index_by_name.insert(name.clone(), idx);
-            }
-
-            for (name, value) in parse_cookie_header(extra) {
-                if let Some(existing_idx) = index_by_name.get(&name) {
-                    parts[*existing_idx].1 = value;
-                } else {
-                    let idx = parts.len();
-                    parts.push((name.clone(), value));
-                    index_by_name.insert(name, idx);
-                }
-            }
-
-            Some(
-                parts
-                    .into_iter()
-                    .map(|(k, v)| format!("{k}={v}"))
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            )
-        }
-    }
 }
 
 /// Protocol definitions for a specific platform.

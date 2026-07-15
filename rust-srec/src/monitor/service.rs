@@ -654,6 +654,70 @@ impl<
                 media_extras,
                 ..
             } => {
+                // Persist SOOP (etc.) session cookies minted by reactive login
+                // during extract so the next poll can reuse them.
+                if let Some(session_cookies) = media_extras
+                    .as_ref()
+                    .and_then(|e| e.get("session_cookies"))
+                    .map(|s| s.as_str())
+                    .filter(|s| !s.is_empty())
+                    && let Some(ref credential_service) = self.credential_service
+                {
+                    match self
+                        .config_service
+                        .get_context_for_streamer(&streamer.id)
+                        .await
+                    {
+                        Ok(context) => {
+                            if let Some(ref source) = context.credential_source {
+                                if let Err(e) = credential_service
+                                    .persist_session_cookies(source, session_cookies.to_string())
+                                    .await
+                                {
+                                    warn!(
+                                        error = %e,
+                                        streamer_id = %streamer.id,
+                                        "Failed to persist session cookies from extract"
+                                    );
+                                } else {
+                                    match &source.scope {
+                                        crate::credentials::CredentialScope::Streamer {
+                                            ..
+                                        } => {
+                                            self.config_service.invalidate_streamer(&streamer.id);
+                                        }
+                                        crate::credentials::CredentialScope::Template {
+                                            template_id,
+                                            ..
+                                        } => {
+                                            let _ = self
+                                                .config_service
+                                                .invalidate_template(template_id)
+                                                .await;
+                                        }
+                                        crate::credentials::CredentialScope::Platform {
+                                            platform_id,
+                                            ..
+                                        } => {
+                                            let _ = self
+                                                .config_service
+                                                .invalidate_platform(platform_id)
+                                                .await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                streamer_id = %streamer.id,
+                                "Failed to load context while persisting session cookies"
+                            );
+                        }
+                    }
+                }
+
                 self.handle_live(
                     streamer,
                     LiveStatusDetails {

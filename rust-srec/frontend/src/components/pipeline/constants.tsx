@@ -17,6 +17,7 @@ import {
   Camera,
   Flame,
   Type,
+  Tv,
 } from 'lucide-react';
 import {
   SiBilibili,
@@ -101,6 +102,7 @@ export const PLATFORM_ICONS: Record<string, React.ElementType> = {
   redbook: SiXiaohongshu, // Xiaohongshu
   twitcasting: Radio,
   weibo: SiSinaweibo,
+  soop: Tv,
   bigo: Radio,
 };
 
@@ -118,6 +120,7 @@ export const PLATFORM_COLORS: Record<string, string> = {
   redbook: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
   twitcasting: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
   weibo: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+  soop: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
   bigo: 'bg-sky-500/10 text-sky-500 border-sky-500/20',
 };
 

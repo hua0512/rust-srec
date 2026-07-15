@@ -29,3 +29,4 @@ pub use service::CredentialRefreshService;
 pub use store::CredentialStore;
 pub use tracker::{DailyCheckTracker, RefreshFailureTracker};
 pub use types::{CredentialEvent, CredentialScope, CredentialSource};
+pub(crate) use types::{extractor_platform_extras, platform_reauth_extra};

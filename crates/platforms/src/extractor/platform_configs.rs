@@ -104,6 +104,20 @@ pub struct TwitcastingConfig {
     pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
+/// SOOP (formerly AfreecaTV) platform-specific configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SoopConfig {
+    /// SOOP account username (login-required broadcasts, e.g. 19+)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    /// SOOP account password
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    /// Password for password-protected rooms
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_password: Option<String>,
+}
+
 /// Bigo Live platform-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BigoConfig {

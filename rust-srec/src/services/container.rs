@@ -21,7 +21,8 @@ use crate::api::{
 };
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
 use crate::credentials::{
-    CredentialRefreshService, CredentialResolver, platforms::BilibiliCredentialManager,
+    CredentialRefreshService, CredentialResolver,
+    platforms::{BilibiliCredentialManager, SoopCredentialManager},
 };
 use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
@@ -874,6 +875,10 @@ impl ServiceContainer {
             Ok(manager) => credential_service.register_manager(Arc::new(manager)),
             Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
         }
+        match SoopCredentialManager::new_lazy() {
+            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
+            Err(e) => warn!(error = %e, "Failed to init SOOP credential manager; skipping"),
+        }
         let credential_service = Arc::new(credential_service);
         stream_monitor.set_credential_service(Arc::clone(&credential_service));
         let stream_monitor = Arc::new(stream_monitor);
@@ -1173,6 +1178,10 @@ impl ServiceContainer {
         match BilibiliCredentialManager::new_lazy() {
             Ok(manager) => credential_service.register_manager(Arc::new(manager)),
             Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
+        }
+        match SoopCredentialManager::new_lazy() {
+            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
+            Err(e) => warn!(error = %e, "Failed to init SOOP credential manager; skipping"),
         }
         let credential_service = Arc::new(credential_service);
         stream_monitor.set_credential_service(Arc::clone(&credential_service));

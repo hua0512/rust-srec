@@ -20,6 +20,8 @@ use url::Url;
 
 use crate::hls::twitch_processor::{PREFETCH_SEGMENT_TITLE, TwitchPlaylistProcessor};
 
+use super::super::soop_processor::is_preloading_segment;
+
 use super::descriptor::{
     EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentDescriptor,
     SegmentSource,
@@ -82,10 +84,13 @@ pub struct PlannerContext {
     current_map: Option<m3u8_rs::Map>,
     /// Stateful Twitch ad detection (stitched-ad dateranges span snapshots).
     twitch: Option<TwitchPlaylistProcessor>,
+    /// When true, SOOP `preloading` placeholder segments are skipped at plan
+    /// time without removing them from the playlist (MSN indices stay stable).
+    soop: bool,
 }
 
 impl PlannerContext {
-    pub fn new(policy: SegmentIdentityPolicy, twitch: bool) -> Self {
+    pub fn new(policy: SegmentIdentityPolicy, twitch: bool, soop: bool) -> Self {
         Self {
             policy,
             next_undecided_msn: None,
@@ -94,6 +99,7 @@ impl PlannerContext {
             current_key: None,
             current_map: None,
             twitch: twitch.then(TwitchPlaylistProcessor::new),
+            soop,
         }
     }
 }
@@ -366,6 +372,17 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         if scanned.is_ad {
             if deciding {
                 debug!(msn, uri = %segment.uri, "dropping ad segment");
+                skip(&mut planned, msn);
+            }
+            continue;
+        }
+
+        // SOOP CDN playlists interleave placeholder segments whose URI contains
+        // "preloading". They carry no broadcast content; skip download but keep
+        // the playlist row so MSN = window_start + idx stays consistent.
+        if ctx.soop && is_preloading_segment(segment) {
+            if deciding {
+                debug!(msn, uri = %segment.uri, "dropping SOOP preloading placeholder");
                 skip(&mut planned, msn);
             }
             continue;
@@ -690,7 +707,7 @@ mod tests {
     }
 
     fn ctx() -> PlannerContext {
-        PlannerContext::new(SegmentIdentityPolicy::default(), false)
+        PlannerContext::new(SegmentIdentityPolicy::default(), false, false)
     }
 
     #[test]
@@ -876,7 +893,7 @@ mod tests {
     #[test]
     fn rotated_auth_param_resolves_to_same_key_under_policy() {
         let policy = SegmentIdentityPolicy::StripQuery(StripQueryIdentity::new(["token"]));
-        let mut c = PlannerContext::new(policy, false);
+        let mut c = PlannerContext::new(policy, false, false);
         let body_v1 = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:2.0,\nseg1.ts?token=aaa\n";
         let body_v2 = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:2.0,\nseg1.ts?token=bbb\n";
         let first = plan(&snapshot(0, body_v1), &mut c);

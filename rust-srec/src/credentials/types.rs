@@ -5,6 +5,52 @@ use serde::{Deserialize, Serialize};
 
 use crate::notification::NotificationPriority;
 
+const EXTRACTOR_CREDENTIAL_FIELDS: [&str; 5] = [
+    "refresh_token",
+    "access_token",
+    "last_cookie_check_date",
+    "last_cookie_check_result",
+    "session_cookies",
+];
+
+pub(crate) fn platform_reauth_extra(
+    platform_name: &str,
+    platform_specific: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    if !platform_name.eq_ignore_ascii_case("soop") {
+        return None;
+    }
+
+    let config = platform_specific?;
+    let username = config
+        .get("username")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let password = config
+        .get("password")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+
+    Some(serde_json::json!({
+        "username": username,
+        "password": password,
+    }))
+}
+
+pub(crate) fn extractor_platform_extras(
+    mut platform_specific: serde_json::Value,
+) -> serde_json::Value {
+    if let serde_json::Value::Object(ref mut fields) = platform_specific {
+        for field in EXTRACTOR_CREDENTIAL_FIELDS {
+            fields.remove(field);
+        }
+    }
+
+    platform_specific
+}
+
 /// Represents the configuration layer where credentials are defined.
 ///
 /// Credentials can be defined at Platform, Template, or Streamer scope.
@@ -92,6 +138,8 @@ pub struct CredentialSource {
     pub access_token: Option<String>,
     /// Platform name for this credential (e.g., "bilibili").
     pub platform_name: String,
+    /// Platform-specific re-login material (e.g. SOOP username/password).
+    pub reauth_extra: Option<serde_json::Value>,
 }
 
 impl CredentialSource {
@@ -108,6 +156,7 @@ impl CredentialSource {
             refresh_token,
             access_token: None,
             platform_name,
+            reauth_extra: None,
         }
     }
 
@@ -117,10 +166,29 @@ impl CredentialSource {
         self
     }
 
+    /// Attach re-login material (username/password, etc.).
+    pub fn with_reauth_extra(mut self, reauth_extra: Option<serde_json::Value>) -> Self {
+        self.reauth_extra = reauth_extra;
+        self
+    }
+
     /// Check if this credential has a refresh token.
     #[inline]
     pub fn has_refresh_token(&self) -> bool {
         self.refresh_token.is_some()
+    }
+
+    /// Password-based re-login material is present (e.g. SOOP).
+    #[inline]
+    pub fn has_reauth_extra(&self) -> bool {
+        self.reauth_extra.as_ref().is_some_and(|v| {
+            v.get("username")
+                .and_then(|u| u.as_str())
+                .is_some_and(|s| !s.trim().is_empty())
+                && v.get("password")
+                    .and_then(|p| p.as_str())
+                    .is_some_and(|s| !s.trim().is_empty())
+        })
     }
 }
 
@@ -270,5 +338,55 @@ impl CredentialEvent {
                 )
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extractor_platform_extras, platform_reauth_extra};
+
+    #[test]
+    fn extracts_soop_reauthentication_fields() {
+        let config = serde_json::json!({
+            "username": " viewer ",
+            "password": " secret-password ",
+            "stream_password": "room-password",
+        });
+
+        assert_eq!(
+            platform_reauth_extra("SOOP", Some(&config)),
+            Some(serde_json::json!({
+                "username": "viewer",
+                "password": "secret-password",
+            }))
+        );
+        assert!(platform_reauth_extra("twitch", Some(&config)).is_none());
+    }
+
+    #[test]
+    fn rejects_incomplete_soop_reauthentication_fields() {
+        let missing_password = serde_json::json!({ "username": "viewer" });
+        assert!(platform_reauth_extra("soop", Some(&missing_password)).is_none());
+    }
+
+    #[test]
+    fn strips_non_extractor_credential_metadata() {
+        let extras = extractor_platform_extras(serde_json::json!({
+            "username": "viewer",
+            "password": "secret-password",
+            "stream_password": "room-password",
+            "refresh_token": "refresh",
+            "access_token": "access",
+            "session_cookies": "AuthTicket=secret",
+        }));
+
+        assert_eq!(
+            extras,
+            serde_json::json!({
+                "username": "viewer",
+                "password": "secret-password",
+                "stream_password": "room-password",
+            })
+        );
     }
 }

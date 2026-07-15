@@ -114,7 +114,7 @@ msgid "{0} at {1}"
 msgstr "{0} at {1}"
 
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:105
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:109
 msgid "{0} Configuration"
 msgstr "{0} Configuration"
 
@@ -668,6 +668,7 @@ msgstr "Audio Settings"
 msgid "Auth Type"
 msgstr "Auth Type"
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:25
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:29
 #: src/components/config/shared/network-settings-card.tsx:162
 #: src/components/notifications/forms/webhook-form.tsx:200
@@ -1933,6 +1934,10 @@ msgstr "Default Engine"
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:126
+msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
+msgstr "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
+
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:52
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
@@ -2740,7 +2745,7 @@ msgstr "Exit Immersive"
 msgid "Experimental"
 msgstr "Experimental"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:247
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:251
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "Expert mode: Edit the raw platform-specific configuration directly."
 
@@ -3354,7 +3359,7 @@ msgstr "Force requesting the highest origin quality available (Direct stream)."
 msgid "Force specific output format."
 msgstr "Force specific output format."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:136
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:140
 msgid "Form"
 msgstr "Form"
 
@@ -4024,7 +4029,7 @@ msgstr "Jobs"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "Jobs will appear here when recordings are processed."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:152
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:156
 msgid "JSON"
 msgstr "JSON"
 
@@ -4330,7 +4335,7 @@ msgstr "Maintenance"
 msgid "Manage credentials and session cookies."
 msgstr "Manage credentials and session cookies."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:114
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:118
 msgid "Manage specialized extraction and identification options."
 msgstr "Manage specialized extraction and identification options."
 
@@ -4967,7 +4972,7 @@ msgstr "No recent sessions found."
 msgid "No refresh needed or not supported"
 msgstr "No refresh needed or not supported"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:165
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:169
 msgid "No specialized options available for this platform."
 msgstr "No specialized options available for this platform."
 
@@ -5499,6 +5504,7 @@ msgstr "Parsing..."
 msgid "Passthrough Inputs"
 msgstr "Passthrough Inputs"
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:70
 #: src/components/config/shared/proxy-settings-card.tsx:197
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
@@ -5737,7 +5743,7 @@ msgstr "Platform Override Settings"
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:110
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:114
 msgid "Platform Specific Configuration"
 msgstr "Platform Specific Configuration"
 
@@ -6133,7 +6139,7 @@ msgstr "Rate-limits API calls to the remote. Useful when a provider returns 429 
 msgid "Ratio"
 msgstr "Ratio"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:227
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:231
 msgid "Raw JSON Editor"
 msgstr "Raw JSON Editor"
 
@@ -7118,6 +7124,11 @@ msgstr "smtp.gmail.com"
 msgid "Something went wrong!"
 msgstr "Something went wrong!"
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:84
+msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
+msgstr "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
+
 #: src/components/player/stream-info-card.tsx:126
 msgid "Source"
 msgstr "Source"
@@ -7281,6 +7292,8 @@ msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:100
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:112
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:42
 msgid "Stream Password"
 msgstr "Stream Password"
@@ -7437,7 +7450,7 @@ msgstr "Successfully deleted {0} sessions"
 msgid "Supported"
 msgstr "Supported"
 
-#: src/components/config/platforms/supported-platforms.tsx:28
+#: src/components/config/platforms/supported-platforms.tsx:29
 msgid "Supported Platforms"
 msgstr "Supported Platforms"
 
@@ -8279,6 +8292,7 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "User Disabled"
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:38
 #: src/components/config/shared/proxy-settings-card.tsx:179
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91

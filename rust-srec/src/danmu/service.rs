@@ -334,6 +334,14 @@ impl DanmuService {
                     .cloned()
                     .or_else(|| provider.extract_room_id(streamer_url))
             }
+            "soop" => {
+                // SOOP chat path uses bj id; chat host/FTK arrive via MediaInfo extras.
+                extras
+                    .as_ref()
+                    .and_then(|e| e.get("bjid").or_else(|| e.get("channel_id")))
+                    .cloned()
+                    .or_else(|| provider.extract_room_id(streamer_url))
+            }
             "bigo" => {
                 // Bigo WS enter needs studio roomId (not siteId from the URL)
                 extras

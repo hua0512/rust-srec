@@ -13,6 +13,7 @@ const SUPPORTED_PLATFORMS = [
   'pandatv',
   'picarto',
   'redbook',
+  'soop',
   'tiktok',
   'twitcasting',
   'twitch',
