@@ -50,6 +50,7 @@ code {
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -85,6 +86,7 @@ code {
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
   --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286.067);
@@ -119,6 +121,7 @@ code {
   --accent: oklch(0.274 0.006 286.033);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.552 0.016 285.938);
@@ -211,24 +214,57 @@ html {
   animation-delay: 4s;
 }
 
+/* Theme-mode circular reveal (use-circular-transition.ts).
+   The animations are defined here, not via element.animate() after
+   viewTransition.ready: a JS-attached animation leaves a window where the
+   top snapshot paints unclipped (the theme appears to flip instantly, then
+   the reveal plays). CSS animations on the pseudos apply from the first
+   transition frame. --reveal-x/--reveal-y/--reveal-r are set inline on
+   <html> by the hook before startViewTransition. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
 }
 
-::view-transition-old(root) {
-  z-index: 9999;
-}
-
-::view-transition-new(root) {
-  z-index: 1;
-}
-
+/* Light -> dark: the incoming dark snapshot sits on top and grows from the
+   click point; the old light snapshot stays static underneath. */
 .dark::view-transition-old(root) {
   z-index: 1;
 }
 
 .dark::view-transition-new(root) {
   z-index: 9999;
+  animation: rs-theme-reveal-in 400ms ease-in forwards;
+}
+
+/* Dark -> light: the outgoing dark snapshot sits on top and shrinks into the
+   click point, uncovering the new light snapshot underneath. */
+html:not(.dark)::view-transition-old(root) {
+  z-index: 9999;
+  animation: rs-theme-reveal-out 400ms ease-in forwards;
+}
+
+html:not(.dark)::view-transition-new(root) {
+  z-index: 1;
+}
+
+@keyframes rs-theme-reveal-in {
+  from {
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
+
+  to {
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+}
+
+@keyframes rs-theme-reveal-out {
+  from {
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+
+  to {
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
 }

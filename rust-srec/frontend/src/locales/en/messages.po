@@ -246,7 +246,7 @@ msgstr "Accept Invalid Certs (Default: Off)"
 msgid "Account Not Found"
 msgstr "Account Not Found"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:494
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:492
 msgid "Action"
 msgstr "Action"
 
@@ -415,11 +415,11 @@ msgstr "Adjust rate based on target duration"
 msgid "Adjust sampling rate based on danmu traffic volume."
 msgstr "Adjust sampling rate based on danmu traffic volume."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:284
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:282
 msgid "Adjust sidebar style and behavior."
 msgstr "Adjust sidebar style and behavior."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:256
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:254
 msgid "Adjust the roundness of UI elements."
 msgstr "Adjust the roundness of UI elements."
 
@@ -881,7 +881,7 @@ msgstr "Blocked"
 msgid "Blocked by browser"
 msgstr "Blocked by browser"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:255
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:253
 msgid "Border Radius"
 msgstr "Border Radius"
 
@@ -898,7 +898,7 @@ msgstr "Bot Token"
 msgid "both directions at 10 MiB/s"
 msgstr "both directions at 10 MiB/s"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:237
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:235
 msgid "Brand Colors"
 msgstr "Brand Colors"
 
@@ -1158,7 +1158,7 @@ msgstr "Cleanup"
 
 #: src/components/logging/log-viewer.tsx:407
 #: src/components/notifications/desktop-channel-dialog.tsx:181
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:229
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:227
 msgid "Clear"
 msgstr "Clear"
 
@@ -1205,7 +1205,7 @@ msgstr "Close"
 msgid "Closest to bitrate"
 msgstr "Closest to bitrate"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:325
 msgid "Collapsible"
 msgstr "Collapsible"
 
@@ -1767,7 +1767,7 @@ msgstr "Custom Header"
 msgid "Custom Headers"
 msgstr "Custom Headers"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:218
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:216
 msgid "Custom imported theme is active."
 msgstr "Custom imported theme is active."
 
@@ -1917,7 +1917,7 @@ msgstr "default"
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:309
 msgid "Default"
 msgstr "Default"
 
@@ -3268,7 +3268,7 @@ msgstr "Filtering & Behavior"
 msgid "Filters"
 msgstr "Filters"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:238
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:236
 msgid "Fine tune brand and surface colors."
 msgstr "Fine tune brand and surface colors."
 
@@ -3296,7 +3296,7 @@ msgstr "Fix HLS Discontinuities"
 msgid "Fixed Interval"
 msgstr "Fixed Interval"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:313
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
 msgid "Floating"
 msgstr "Floating"
 
@@ -3756,7 +3756,7 @@ msgstr "i"
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:332
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:330
 msgid "Icon"
 msgstr "Icon"
 
@@ -3808,7 +3808,7 @@ msgstr "Ignored when \"Upload All Files\" is enabled."
 msgid "Immersive Mode"
 msgstr "Immersive Mode"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:178
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:176
 msgid "Import"
 msgstr "Import"
 
@@ -3883,7 +3883,7 @@ msgstr "inline"
 msgid "Inline: {stepName}"
 msgstr "Inline: {stepName}"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:508
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:506
 msgid "Input"
 msgstr "Input"
 
@@ -3903,7 +3903,7 @@ msgstr "Input Path"
 msgid "Input Paths (comma separated)"
 msgstr "Input Paths (comma separated)"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:315
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:313
 msgid "Inset"
 msgstr "Inset"
 
@@ -4112,7 +4112,7 @@ msgstr "Launch Pipeline"
 msgid "Leave empty for stream copy"
 msgstr "Leave empty for stream copy"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:376
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:374
 msgid "Left"
 msgstr "Left"
 
@@ -4177,7 +4177,7 @@ msgstr "Live Polling"
 msgid "Live polling notifications enabled"
 msgstr "Live polling notifications enabled"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:415
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:413
 msgid "Live Preview"
 msgstr "Live Preview"
 
@@ -5017,7 +5017,7 @@ msgid "No workflows yet"
 msgstr "No workflows yet"
 
 #: src/components/notifications/forms/webhook-form.tsx:246
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:333
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:466
 msgid "None"
 msgstr "None"
@@ -5153,7 +5153,7 @@ msgstr "NVENC HEVC High Quality"
 msgid "OAuth Token"
 msgstr "OAuth Token"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:329
 msgid "Off Canvas"
 msgstr "Off Canvas"
 
@@ -5199,7 +5199,7 @@ msgstr "Offload Decryption (Default: On)"
 msgid "Offset Consistency Check"
 msgstr "Offset Consistency Check"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:484
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:482
 msgid "OK"
 msgstr "OK"
 
@@ -5615,7 +5615,7 @@ msgstr "Permission required"
 msgid "Phone & Code (2FA optional)"
 msgstr "Phone & Code (2FA optional)"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:161
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:159
 msgid "Pick a preset theme or import a custom one."
 msgstr "Pick a preset theme or import a custom one."
 
@@ -5824,7 +5824,7 @@ msgstr "Pool Idle Timeout (ms)"
 msgid "Port"
 msgstr "Port"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:372
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:370
 msgid "Position"
 msgstr "Position"
 
@@ -5945,11 +5945,11 @@ msgstr "Previous"
 msgid "Previous Title"
 msgstr "Previous Title"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:488
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:486
 msgid "Primary"
 msgstr "Primary"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:515
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:513
 msgid "Primary Action"
 msgstr "Primary Action"
 
@@ -6116,7 +6116,7 @@ msgstr "Quick Share"
 msgid "RAM utilization"
 msgstr "RAM utilization"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:194
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:192
 msgid "Random"
 msgstr "Random"
 
@@ -6486,7 +6486,7 @@ msgstr "Reusable processor configurations for pipeline steps"
 msgid "Review recorded streams and manage archives"
 msgstr "Review recorded streams and manage archives"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:377
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:375
 msgid "Right"
 msgstr "Right"
 
@@ -6498,7 +6498,7 @@ msgstr "Route traffic through an intermediate server"
 msgid "Rows per page"
 msgstr "Rows per page"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:497
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:495
 msgid "Run"
 msgstr "Run"
 
@@ -6725,8 +6725,8 @@ msgstr "Search workflows..."
 msgid "Second (00-59)"
 msgstr "Second (00-59)"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:501
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:518
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:499
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:516
 msgid "Secondary"
 msgstr "Secondary"
 
@@ -7024,7 +7024,7 @@ msgstr "Settings have been optimized for this platform."
 msgid "Settings updated successfully"
 msgstr "Settings updated successfully"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:168
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:166
 msgid "Shadcn UI Theme Presets"
 msgstr "Shadcn UI Theme Presets"
 
@@ -7047,7 +7047,7 @@ msgstr "Show password"
 msgid "Shows notifications while the application tab is open by polling recent events."
 msgstr "Shows notifications while the application tab is open by polling recent events."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:283
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:281
 msgid "Sidebar Layout"
 msgstr "Sidebar Layout"
 
@@ -7219,7 +7219,7 @@ msgstr "Started"
 msgid "Starting tdl process..."
 msgstr "Starting tdl process..."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:481
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:479
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:497
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:437
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:148
@@ -7455,8 +7455,8 @@ msgstr "Suppress redundant headers to reduce player micro-stutter"
 msgid "Switch language"
 msgstr "Switch language"
 
-#: src/components/sidebar/mode-toggle.tsx:36
-#: src/components/sidebar/mode-toggle.tsx:41
+#: src/components/sidebar/mode-toggle.tsx:39
+#: src/components/sidebar/mode-toggle.tsx:44
 msgid "Switch Theme"
 msgstr "Switch Theme"
 
@@ -7662,7 +7662,7 @@ msgstr "Theme"
 msgid "Theme Mode"
 msgstr "Theme Mode"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:159
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:157
 msgid "Theme Preset"
 msgstr "Theme Preset"
 
@@ -8092,7 +8092,7 @@ msgstr "Twitch Proxy Playlist Exclude"
 msgid "Type"
 msgstr "Type"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:510
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:508
 msgid "Type something..."
 msgstr "Type something..."
 
@@ -8321,7 +8321,7 @@ msgstr "Validation service unavailable"
 msgid "Value"
 msgstr "Value"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:290
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:288
 msgid "Variant"
 msgstr "Variant"
 

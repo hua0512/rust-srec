@@ -246,7 +246,7 @@ msgstr "接受无效证书（默认：关闭）"
 msgid "Account Not Found"
 msgstr "账号不存在"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:494
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:492
 msgid "Action"
 msgstr "操作"
 
@@ -415,11 +415,11 @@ msgstr "根据目标时长调整速率"
 msgid "Adjust sampling rate based on danmu traffic volume."
 msgstr "根据弹幕流量动态调整采样率。"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:284
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:282
 msgid "Adjust sidebar style and behavior."
 msgstr "调整侧边栏样式和行为。"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:256
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:254
 msgid "Adjust the roundness of UI elements."
 msgstr "调整 UI 元素的圆角程度。"
 
@@ -881,7 +881,7 @@ msgstr "已阻止"
 msgid "Blocked by browser"
 msgstr "被浏览器阻止"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:255
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:253
 msgid "Border Radius"
 msgstr "圆角半径"
 
@@ -898,7 +898,7 @@ msgstr "机器人令牌"
 msgid "both directions at 10 MiB/s"
 msgstr "双向均为 10 MiB/s"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:237
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:235
 msgid "Brand Colors"
 msgstr "品牌颜色"
 
@@ -1158,7 +1158,7 @@ msgstr "清理"
 
 #: src/components/logging/log-viewer.tsx:407
 #: src/components/notifications/desktop-channel-dialog.tsx:181
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:229
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:227
 msgid "Clear"
 msgstr "清空"
 
@@ -1205,7 +1205,7 @@ msgstr "关闭"
 msgid "Closest to bitrate"
 msgstr "最接近目标码率"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:327
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:325
 msgid "Collapsible"
 msgstr "折叠方式"
 
@@ -1767,7 +1767,7 @@ msgstr "自定义 Header"
 msgid "Custom Headers"
 msgstr "自定义请求头"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:218
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:216
 msgid "Custom imported theme is active."
 msgstr "自定义导入主题已激活。"
 
@@ -1917,7 +1917,7 @@ msgstr "默认"
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:131
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:84
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:95
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:309
 msgid "Default"
 msgstr "默认"
 
@@ -3268,7 +3268,7 @@ msgstr "过滤与行为"
 msgid "Filters"
 msgstr "过滤器"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:238
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:236
 msgid "Fine tune brand and surface colors."
 msgstr "微调品牌和表面颜色。"
 
@@ -3296,7 +3296,7 @@ msgstr "修复 HLS 不连续性"
 msgid "Fixed Interval"
 msgstr "固定间隔"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:313
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:311
 msgid "Floating"
 msgstr "悬浮"
 
@@ -3756,7 +3756,7 @@ msgstr "i"
 msgid "IANA Timezone (e.g. Asia/Shanghai, UTC)."
 msgstr "IANA 时区（例如 Asia/Shanghai、UTC）。"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:332
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:330
 msgid "Icon"
 msgstr "图标"
 
@@ -3808,7 +3808,7 @@ msgstr "当“上传所有文件”启用时忽略。"
 msgid "Immersive Mode"
 msgstr "沉浸模式"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:178
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:176
 msgid "Import"
 msgstr "导入"
 
@@ -3883,7 +3883,7 @@ msgstr "内联"
 msgid "Inline: {stepName}"
 msgstr "内联：{stepName}"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:508
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:506
 msgid "Input"
 msgstr "输入"
 
@@ -3903,7 +3903,7 @@ msgstr "输入路径"
 msgid "Input Paths (comma separated)"
 msgstr "输入路径（逗号分隔）"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:315
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:313
 msgid "Inset"
 msgstr "嵌入"
 
@@ -4112,7 +4112,7 @@ msgstr "启动处理流程"
 msgid "Leave empty for stream copy"
 msgstr "留空以进行流复制"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:376
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:374
 msgid "Left"
 msgstr "左侧"
 
@@ -4177,7 +4177,7 @@ msgstr "实时轮询"
 msgid "Live polling notifications enabled"
 msgstr "实时轮询通知已启用"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:415
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:413
 msgid "Live Preview"
 msgstr "实时预览"
 
@@ -5017,7 +5017,7 @@ msgid "No workflows yet"
 msgstr "暂无工作流"
 
 #: src/components/notifications/forms/webhook-form.tsx:246
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:333
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:466
 msgid "None"
 msgstr "无"
@@ -5153,7 +5153,7 @@ msgstr "NVENC HEVC 高质量"
 msgid "OAuth Token"
 msgstr "OAuth 令牌"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:331
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:329
 msgid "Off Canvas"
 msgstr "侧滑"
 
@@ -5199,7 +5199,7 @@ msgstr "解密下放到线程池（默认：开）"
 msgid "Offset Consistency Check"
 msgstr "偏移一致性检查"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:484
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:482
 msgid "OK"
 msgstr "正常"
 
@@ -5615,7 +5615,7 @@ msgstr "需要权限"
 msgid "Phone & Code (2FA optional)"
 msgstr "手机号和验证码（可选两步验证）"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:161
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:159
 msgid "Pick a preset theme or import a custom one."
 msgstr "选择预设主题或导入自定义主题。"
 
@@ -5824,7 +5824,7 @@ msgstr "连接池空闲超时（毫秒）"
 msgid "Port"
 msgstr "端口"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:372
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:370
 msgid "Position"
 msgstr "位置"
 
@@ -5945,11 +5945,11 @@ msgstr "上一页"
 msgid "Previous Title"
 msgstr "上一个标题"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:488
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:486
 msgid "Primary"
 msgstr "主要"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:515
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:513
 msgid "Primary Action"
 msgstr "主要操作"
 
@@ -6116,7 +6116,7 @@ msgstr "快速分享"
 msgid "RAM utilization"
 msgstr "内存使用率"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:194
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:192
 msgid "Random"
 msgstr "随机"
 
@@ -6486,7 +6486,7 @@ msgstr "处理管道步骤可复用的处理器配置"
 msgid "Review recorded streams and manage archives"
 msgstr "查看录制内容并管理归档"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:377
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:375
 msgid "Right"
 msgstr "右侧"
 
@@ -6498,7 +6498,7 @@ msgstr "通过中间服务器转发流量"
 msgid "Rows per page"
 msgstr "每页行数"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:497
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:495
 msgid "Run"
 msgstr "运行"
 
@@ -6725,8 +6725,8 @@ msgstr "搜索工作流..."
 msgid "Second (00-59)"
 msgstr "秒 (00-59)"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:501
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:518
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:499
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:516
 msgid "Secondary"
 msgstr "次要"
 
@@ -7024,7 +7024,7 @@ msgstr "设置已针对该平台优化。"
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:168
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:166
 msgid "Shadcn UI Theme Presets"
 msgstr "Shadcn UI 主题预设"
 
@@ -7047,7 +7047,7 @@ msgstr "显示密码"
 msgid "Shows notifications while the application tab is open by polling recent events."
 msgstr "在应用标签页打开时，通过轮询最近事件来显示通知。"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:283
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:281
 msgid "Sidebar Layout"
 msgstr "侧边栏布局"
 
@@ -7219,7 +7219,7 @@ msgstr "已开始"
 msgid "Starting tdl process..."
 msgstr "正在启动 tdl 进程..."
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:481
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:479
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:497
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:437
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:148
@@ -7455,8 +7455,8 @@ msgstr "抑制冗余头部以减少播放器微卡顿"
 msgid "Switch language"
 msgstr "切换语言"
 
-#: src/components/sidebar/mode-toggle.tsx:36
-#: src/components/sidebar/mode-toggle.tsx:41
+#: src/components/sidebar/mode-toggle.tsx:39
+#: src/components/sidebar/mode-toggle.tsx:44
 msgid "Switch Theme"
 msgstr "切换主题"
 
@@ -7662,7 +7662,7 @@ msgstr "主题"
 msgid "Theme Mode"
 msgstr "主题模式"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:159
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:157
 msgid "Theme Preset"
 msgstr "主题预设"
 
@@ -8092,7 +8092,7 @@ msgstr "Twitch 代理播放列表排除"
 msgid "Type"
 msgstr "类型"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:510
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:508
 msgid "Type something..."
 msgstr "输入内容..."
 
@@ -8321,7 +8321,7 @@ msgstr "校验服务不可用"
 msgid "Value"
 msgstr "值"
 
-#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:290
+#: src/routes/_authed/_dashboard/config/theme.lazy.tsx:288
 msgid "Variant"
 msgstr "样式"
 

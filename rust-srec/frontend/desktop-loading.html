@@ -22,17 +22,19 @@
         --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
       }
 
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg-core: #09090b;
-          --bg-surface: #18181b;
-          --border-subtle: #27272a;
-          --text-primary: #f4f4f5;
-          --text-secondary: #a1a1aa;
-          --accent-glow: rgba(59, 130, 246, 0.4);
-          /* Current logo is white/light, so we keep it as is or brighten it for dark mode */
-          --logo-filter: invert(1) brightness(1.2);
-        }
+      /* Dark palette keyed off the html.dark class set by the pre-paint
+         script (vite.desktop.config.ts themePrePaint): the splash follows the
+         saved mode in localStorage['theme'], not just the OS scheme, so it
+         matches the main window's theme. */
+      html.dark {
+        --bg-core: #09090b;
+        --bg-surface: #18181b;
+        --border-subtle: #27272a;
+        --text-primary: #f4f4f5;
+        --text-secondary: #a1a1aa;
+        --accent-glow: rgba(59, 130, 246, 0.4);
+        /* Current logo is white/light, so we keep it as is or brighten it for dark mode */
+        --logo-filter: invert(1) brightness(1.2);
       }
 
       * {
