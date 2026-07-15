@@ -8,7 +8,9 @@ use tracing::{debug, warn};
 use crate::api::error::ApiResult;
 use crate::api::models::{ParseUrlRequest, ParseUrlResponse};
 use crate::api::server::AppState;
-use crate::credentials::{CredentialScope, CredentialSource};
+use crate::credentials::{
+    CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
+};
 use crate::domain::ProxyConfig;
 use crate::utils::json::{self, JsonContext};
 
@@ -18,6 +20,12 @@ pub fn router() -> Router<AppState> {
         .route("/", post(parse_url))
         .route("/batch", post(parse_url_batch))
         .route("/resolve", post(resolve_url))
+}
+
+#[derive(Default)]
+struct ResolvedExtractorConfig {
+    cookies: Option<String>,
+    platform_extras: Option<serde_json::Value>,
 }
 
 #[utoipa::path(
@@ -34,10 +42,17 @@ pub async fn parse_url(
     State(state): State<AppState>,
     Json(request): Json<ParseUrlRequest>,
 ) -> ApiResult<Json<ParseUrlResponse>> {
-    let cookies = resolve_cookies_for_url(&state, &request.url, request.cookies.clone()).await;
+    let extractor_config =
+        resolve_extractor_config_for_url(&state, &request.url, request.cookies.clone()).await;
     let proxy_config = resolve_proxy_config_for_url(&state, &request.url).await;
     let extractor_factory = extractor_factory_for_proxy(&proxy_config);
-    let response = process_parse_request(&extractor_factory, request.url, cookies).await;
+    let response = process_parse_request(
+        &extractor_factory,
+        request.url,
+        extractor_config.cookies,
+        extractor_config.platform_extras,
+    )
+    .await;
     Ok(Json(response))
 }
 
@@ -57,132 +72,201 @@ pub async fn parse_url_batch(
 ) -> ApiResult<Json<Vec<ParseUrlResponse>>> {
     let mut responses = Vec::new();
     for request in requests {
-        let cookies = resolve_cookies_for_url(&state, &request.url, request.cookies.clone()).await;
+        let extractor_config =
+            resolve_extractor_config_for_url(&state, &request.url, request.cookies.clone()).await;
         let proxy_config = resolve_proxy_config_for_url(&state, &request.url).await;
         let extractor_factory = extractor_factory_for_proxy(&proxy_config);
-        responses.push(process_parse_request(&extractor_factory, request.url, cookies).await);
+        responses.push(
+            process_parse_request(
+                &extractor_factory,
+                request.url,
+                extractor_config.cookies,
+                extractor_config.platform_extras,
+            )
+            .await,
+        );
     }
     Ok(Json(responses))
 }
 
-/// Resolve cookies for a URL.
+/// Resolve authentication and platform-specific extractor configuration for a URL.
 ///
-/// Priority order:
-/// 1. Explicitly provided cookies in the request
-/// 2. Streamer config cookies (if a matching streamer exists for this URL)
-/// 3. Platform config cookies (detected from the URL)
-async fn resolve_cookies_for_url(
+/// Explicit request cookies take precedence. Streamer configuration is used
+/// when the URL is already registered; otherwise the matching platform
+/// configuration supplies cookies, extractor extras, and re-login material.
+async fn resolve_extractor_config_for_url(
     state: &AppState,
     url: &str,
     explicit_cookies: Option<String>,
-) -> Option<String> {
-    // If cookies are explicitly provided, use them
-    if explicit_cookies.is_some() {
-        return explicit_cookies;
-    }
+) -> ResolvedExtractorConfig {
+    let has_explicit_cookies = explicit_cookies.is_some();
+    let mut resolved = ResolvedExtractorConfig {
+        cookies: explicit_cookies,
+        platform_extras: None,
+    };
 
-    let config_service = state.config_service.as_ref()?;
+    let Some(config_service) = state.config_service.as_ref() else {
+        return resolved;
+    };
     let credential_service = state.credential_service.as_ref();
 
-    // Try to find a matching streamer by URL
     if let Some(streamer_manager) = state.streamer_manager.as_ref()
         && let Some(streamer) = streamer_manager.get_streamer_by_url(url)
     {
         match config_service.get_context_for_streamer(&streamer.id).await {
             Ok(context) => {
                 let config = &context.config;
-                let mut cookies = config.cookies.clone();
+                resolved.platform_extras = config.platform_extras.clone();
+                if !has_explicit_cookies {
+                    resolved.cookies = config.cookies.clone();
+                }
 
-                if let Some(credential_service) = credential_service
+                if !has_explicit_cookies
+                    && let Some(credential_service) = credential_service
                     && let Some(source) = context.credential_source.as_ref()
-                    && let Ok(Some(new_cookies)) =
-                        credential_service.check_and_refresh_source(source).await
                 {
-                    cookies = Some(new_cookies);
-                    match &source.scope {
-                        CredentialScope::Streamer { .. } => {
-                            config_service.invalidate_streamer(&streamer.id);
+                    match credential_service.check_and_refresh_source(source).await {
+                        Ok(Some(new_cookies)) => {
+                            resolved.cookies = Some(new_cookies);
+                            match &source.scope {
+                                CredentialScope::Streamer { .. } => {
+                                    config_service.invalidate_streamer(&streamer.id);
+                                }
+                                CredentialScope::Template { template_id, .. } => {
+                                    if let Err(error) =
+                                        config_service.invalidate_template(template_id).await
+                                    {
+                                        warn!(
+                                            %error,
+                                            "Failed to invalidate template config after credential refresh"
+                                        );
+                                    }
+                                }
+                                CredentialScope::Platform { platform_id, .. } => {
+                                    if let Err(error) =
+                                        config_service.invalidate_platform(platform_id).await
+                                    {
+                                        warn!(
+                                            %error,
+                                            "Failed to invalidate platform config after credential refresh"
+                                        );
+                                    }
+                                }
+                            }
                         }
-                        CredentialScope::Template { template_id, .. } => {
-                            let _ = config_service.invalidate_template(template_id).await;
-                        }
-                        CredentialScope::Platform { platform_id, .. } => {
-                            let _ = config_service.invalidate_platform(platform_id).await;
+                        Ok(None) => {}
+                        Err(error) => {
+                            warn!(
+                                %error,
+                                streamer_id = %streamer.id,
+                                "Failed to refresh streamer credentials while parsing URL"
+                            );
                         }
                     }
                 }
 
-                if cookies.is_some() {
+                if resolved.cookies.is_some() {
                     debug!(
                         "Using cookies from streamer config for URL: {} (streamer: {})",
                         url, streamer.name
                     );
-                    return cookies;
                 }
+                return resolved;
             }
-            Err(e) => {
-                warn!("Failed to get config for streamer {}: {}", streamer.id, e);
+            Err(error) => {
+                warn!(
+                    %error,
+                    streamer_id = %streamer.id,
+                    "Failed to get streamer config while parsing URL"
+                );
             }
         }
     }
 
-    // Fallback: Try to detect platform from URL and use platform config cookies
     use crate::domain::value_objects::StreamerUrl;
 
     if let Ok(streamer_url) = StreamerUrl::new(url)
         && let Some(platform_name) = streamer_url.platform()
+        && let Ok(platform_configs) = config_service.list_platform_configs().await
+        && let Some(platform_config) = platform_configs
+            .into_iter()
+            .find(|config| config.platform_name.eq_ignore_ascii_case(platform_name))
     {
-        // Find a matching platform config
-        if let Ok(platform_configs) = config_service.list_platform_configs().await
-            && let Some(platform_config) = platform_configs
-                .into_iter()
-                .find(|c| c.platform_name.eq_ignore_ascii_case(platform_name))
-            && platform_config.cookies.is_some()
-        {
-            let mut cookies = platform_config.cookies.clone();
+        if !has_explicit_cookies {
+            resolved.cookies = platform_config
+                .cookies
+                .clone()
+                .filter(|value| !value.trim().is_empty());
+        }
 
-            if let Some(credential_service) = credential_service {
-                let refresh_token = platform_config
-                    .platform_specific_config
-                    .as_deref()
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-                    .and_then(|v| {
-                        v.get("refresh_token")
-                            .and_then(|t| t.as_str())
-                            .map(String::from)
-                    });
+        let platform_specific = platform_config
+            .platform_specific_config
+            .as_deref()
+            .and_then(|config| serde_json::from_str::<serde_json::Value>(config).ok());
+        resolved.platform_extras = platform_specific.clone().map(extractor_platform_extras);
 
-                if let Some(ref existing) = cookies {
-                    let source = CredentialSource::new(
-                        CredentialScope::Platform {
-                            platform_id: platform_config.id.clone(),
-                            platform_name: platform_config.platform_name.clone(),
-                        },
-                        existing.clone(),
-                        refresh_token,
-                        platform_config.platform_name.clone(),
-                    );
+        if !has_explicit_cookies && let Some(credential_service) = credential_service {
+            let refresh_token = platform_specific
+                .as_ref()
+                .and_then(|config| config.get("refresh_token"))
+                .and_then(|token| token.as_str())
+                .map(String::from);
+            let access_token = platform_specific
+                .as_ref()
+                .and_then(|config| config.get("access_token"))
+                .and_then(|token| token.as_str())
+                .map(String::from);
+            let reauth_extra =
+                platform_reauth_extra(&platform_config.platform_name, platform_specific.as_ref());
 
-                    if let Ok(Some(new_cookies)) =
-                        credential_service.check_and_refresh_source(&source).await
-                    {
-                        cookies = Some(new_cookies);
-                        let _ = config_service
+            if resolved.cookies.is_some() || reauth_extra.is_some() {
+                let source = CredentialSource::new(
+                    CredentialScope::Platform {
+                        platform_id: platform_config.id.clone(),
+                        platform_name: platform_config.platform_name.clone(),
+                    },
+                    resolved.cookies.clone().unwrap_or_default(),
+                    refresh_token,
+                    platform_config.platform_name.clone(),
+                )
+                .with_access_token(access_token)
+                .with_reauth_extra(reauth_extra);
+
+                match credential_service.check_and_refresh_source(&source).await {
+                    Ok(Some(new_cookies)) => {
+                        resolved.cookies = Some(new_cookies);
+                        if let Err(error) = config_service
                             .invalidate_platform(&platform_config.id)
-                            .await;
+                            .await
+                        {
+                            warn!(
+                                %error,
+                                platform_id = %platform_config.id,
+                                "Failed to invalidate platform config after credential refresh"
+                            );
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        warn!(
+                            %error,
+                            platform = %platform_config.platform_name,
+                            "Failed to refresh platform credentials while parsing URL"
+                        );
                     }
                 }
             }
+        }
 
+        if resolved.cookies.is_some() {
             debug!(
                 "Using cookies from platform config for URL: {} (platform: {})",
                 url, platform_name
             );
-            return cookies;
         }
     }
 
-    None
+    resolved
 }
 
 #[utoipa::path(
@@ -222,8 +306,14 @@ pub async fn resolve_url(
 
     let proxy_config = resolve_proxy_config_for_url(&state, &request.url).await;
     let extractor_factory = extractor_factory_for_proxy(&proxy_config);
+    let extractor_config =
+        resolve_extractor_config_for_url(&state, &request.url, request.cookies.clone()).await;
 
-    let extractor = match extractor_factory.create_extractor(&request.url, request.cookies, None) {
+    let extractor = match extractor_factory.create_extractor(
+        &request.url,
+        extractor_config.cookies,
+        extractor_config.platform_extras,
+    ) {
         Ok(ext) => ext,
         Err(e) => {
             return Ok(Json(crate::api::models::ResolveUrlResponse {
@@ -261,6 +351,7 @@ async fn process_parse_request(
     extractor_factory: &ExtractorFactory,
     url: String,
     cookies: Option<String>,
+    platform_extras: Option<serde_json::Value>,
 ) -> ParseUrlResponse {
     // Validate URL
     if url.is_empty() {
@@ -275,7 +366,8 @@ async fn process_parse_request(
     debug!("Parsing URL: {}", url);
 
     // Create extractor for the URL
-    let extractor = match extractor_factory.create_extractor(&url, cookies.clone(), None) {
+    let extractor = match extractor_factory.create_extractor(&url, cookies.clone(), platform_extras)
+    {
         Ok(ext) => ext,
         Err(platforms_parser::extractor::error::ExtractorError::UnsupportedExtractor) => {
             warn!("Unsupported platform for URL: {}", url);

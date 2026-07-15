@@ -12,6 +12,10 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
 ## Platforms
 
+- **New platform: SOOP**
+
+  You can add SOOP rooms (formerly AfreecaTV, `play.sooplive.co.kr` / `play.sooplive.com`) with native multi-quality HLS recording. Password-protected rooms and login-required broadcasts are supported via platform settings or cookies. When you configure a SOOP account, the app validates and renews session cookies automatically so later checks reuse the login. Live chat plus gifts can be recorded when danmaku is enabled.
+
 - **New platform: Bigo Live**
 
   You can add Bigo Live rooms (`bigo.tv`) as streamers with native HLS recording. Password-protected rooms are supported via platform settings or a `?pwd=` URL parameter, and live chat plus gifts can be recorded when danmaku is enabled. Website-style integrity token minting is on by default for better API parity. The public stream is a single mid-quality portrait feed (typically around 480p–540p); higher browser-only qualities are not available on this path.

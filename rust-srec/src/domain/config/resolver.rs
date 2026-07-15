@@ -7,7 +7,9 @@
 use tracing::debug;
 
 use crate::Error;
-use crate::credentials::{CredentialScope, CredentialSource};
+use crate::credentials::{
+    CredentialScope, CredentialSource, extractor_platform_extras, platform_reauth_extra,
+};
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::config::ConfigRepository;
 use crate::domain::config::ResolvedStreamerContext;
@@ -185,9 +187,12 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 .and_then(|t| t.as_str())
                 .map(String::from)
         });
+        // Capture re-login material before stripping credential fields for extractors.
+        let reauth_extra =
+            platform_reauth_extra(&platform_config.platform_name, platform_specific.as_ref());
         // `platform_specific_config` can also contain credential metadata (e.g. refresh_token),
         // but extractor `platform_extras` must not carry credentials.
-        let platform_extras = platform_specific.map(strip_credential_fields_from_platform_extras);
+        let platform_extras = platform_specific.map(extractor_platform_extras);
         let platform_pipeline: Option<DagPipelineDefinition> = json::parse_optional(
             platform_config.pipeline.as_deref(),
             JsonContext::StreamerConfig {
@@ -372,7 +377,7 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                             .remove("paired_segment_pipeline")
                             .and_then(|v| serde_json::from_value(v).ok());
                     }
-                    strip_credential_fields_from_platform_extras(entry)
+                    extractor_platform_extras(entry)
                 });
 
             let template_credential_candidate = if credential_source.is_none() {
@@ -483,6 +488,23 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             ));
         }
 
+        // SOOP: username/password without cookies still produce a credential
+        // source so the manager can mint and persist session cookies.
+        if credential_source.is_none() && reauth_extra.is_some() {
+            credential_source = Some(CredentialSource::new(
+                CredentialScope::Platform {
+                    platform_id: streamer.platform_config_id.clone(),
+                    platform_name: platform_name.clone(),
+                },
+                String::new(),
+                None,
+                platform_name.clone(),
+            ));
+        }
+        if let Some(source) = credential_source.as_mut() {
+            source.reauth_extra = reauth_extra;
+        }
+
         // Layer 4: Streamer-specific config
         builder = builder.with_streamer(streamer.streamer_specific_config.as_ref());
 
@@ -491,18 +513,6 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             credential_source,
         })
     }
-}
-
-fn strip_credential_fields_from_platform_extras(
-    mut extras: serde_json::Value,
-) -> serde_json::Value {
-    if let serde_json::Value::Object(ref mut map) = extras {
-        // These keys belong to the credentials subsystem, not extractor config.
-        map.remove("refresh_token");
-        map.remove("last_cookie_check_date");
-        map.remove("last_cookie_check_result");
-    }
-    extras
 }
 
 #[cfg(test)]

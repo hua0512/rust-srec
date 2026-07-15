@@ -19,6 +19,7 @@ rust-srec 支持 13 个直播平台，自动检测并录制直播流。
 | [TikTok](./others.md#tiktok) | `tiktok.com/@{user}/live` | HLS | ❌ |
 | [Twitcasting](./others.md#twitcasting) | `twitcasting.tv/{user}` | HLS | ✅ |
 | [Picarto](./others.md#picarto) | `picarto.tv/{user}` | HLS/MP4 | ❌ |
+| [SOOP](./soop.md) | `play.sooplive.co.kr/{channel}` | HLS | ✅ |
 
 ## 通用配置
 

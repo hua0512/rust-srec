@@ -79,6 +79,15 @@ export const TwitcastingConfigSchema = z
   })
   .strict();
 
+// SOOP platform-specific configuration
+export const SoopConfigSchema = z
+  .object({
+    username: z.string().nullable().optional(),
+    password: z.string().nullable().optional(),
+    stream_password: z.string().nullable().optional(),
+  })
+  .strict();
+
 // Bigo Live platform-specific configuration
 export const BigoConfigSchema = z
   .object({
@@ -96,6 +105,7 @@ export const AllPlatformConfigsSchema = z.union([
   TwitchConfigSchema,
   TikTokConfigSchema,
   TwitcastingConfigSchema,
+  SoopConfigSchema,
   BigoConfigSchema,
   z.record(z.string(), z.any()), // Fallback for other platforms
 ]);

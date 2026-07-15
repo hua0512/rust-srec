@@ -8,6 +8,7 @@ mod hls_downloader;
 mod metrics;
 mod playlist;
 mod segment_utils;
+mod soop_processor;
 mod twitch_processor;
 
 // Re-exports for easier access

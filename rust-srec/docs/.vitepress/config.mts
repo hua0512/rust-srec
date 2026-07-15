@@ -74,6 +74,7 @@ export default defineConfig({
                                 { text: 'Douyu', link: '/en/platforms/douyu' },
                                 { text: 'Huya', link: '/en/platforms/huya' },
                                 { text: 'Twitch', link: '/en/platforms/twitch' },
+                                { text: 'SOOP', link: '/en/platforms/soop' },
                                 { text: 'Bigo Live', link: '/en/platforms/bigo' },
                                 { text: 'Other Platforms', link: '/en/platforms/others' }
                             ]
@@ -163,6 +164,7 @@ export default defineConfig({
                                 { text: '斗鱼', link: '/zh/platforms/douyu' },
                                 { text: '虎牙', link: '/zh/platforms/huya' },
                                 { text: 'Twitch', link: '/zh/platforms/twitch' },
+                                { text: 'SOOP', link: '/zh/platforms/soop' },
                                 { text: 'Bigo Live', link: '/zh/platforms/bigo' },
                                 { text: '其他平台', link: '/zh/platforms/others' }
                             ]

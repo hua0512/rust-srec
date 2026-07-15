@@ -114,7 +114,7 @@ msgid "{0} at {1}"
 msgstr "{1} 时为 {0}"
 
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:105
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:109
 msgid "{0} Configuration"
 msgstr "{0} 配置"
 
@@ -668,6 +668,7 @@ msgstr "音频设置"
 msgid "Auth Type"
 msgstr "认证类型"
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:25
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:29
 #: src/components/config/shared/network-settings-card.tsx:162
 #: src/components/notifications/forms/webhook-form.tsx:200
@@ -1933,6 +1934,10 @@ msgstr "默认引擎"
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时可适当调高。"
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:126
+msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
+msgstr "密码锁房的默认密码（可在主播 URL 上用 ?pwd= 覆盖）。"
+
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:52
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
@@ -2740,7 +2745,7 @@ msgstr "退出沉浸模式"
 msgid "Experimental"
 msgstr "实验性"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:247
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:251
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
@@ -3354,7 +3359,7 @@ msgstr "强制请求可用的最高原画质量（直连流）。"
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:136
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:140
 msgid "Form"
 msgstr "表单"
 
@@ -4024,7 +4029,7 @@ msgstr "处理任务"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:152
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:156
 msgid "JSON"
 msgstr "JSON"
 
@@ -4330,7 +4335,7 @@ msgstr "维护"
 msgid "Manage credentials and session cookies."
 msgstr "管理凭据和会话 Cookie。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:114
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:118
 msgid "Manage specialized extraction and identification options."
 msgstr "管理专门的提取和识别选项。"
 
@@ -4967,7 +4972,7 @@ msgstr "未找到最近的录制会话。"
 msgid "No refresh needed or not supported"
 msgstr "无需刷新或不支持"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:165
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:169
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
@@ -5499,6 +5504,7 @@ msgstr "解析中..."
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:70
 #: src/components/config/shared/proxy-settings-card.tsx:197
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
@@ -5737,7 +5743,7 @@ msgstr "平台覆盖设置"
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:110
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:114
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
@@ -6133,7 +6139,7 @@ msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 
 msgid "Ratio"
 msgstr "比例"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:227
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:231
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
@@ -7118,6 +7124,11 @@ msgstr "smtp.gmail.com"
 msgid "Something went wrong!"
 msgstr "发生错误！"
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:84
+msgid "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer cookies for permanently restricted channels."
+msgstr "用于观看需要登录（如 19+）直播的 SOOP 账号。长期受限频道建议优先使用 Cookie。"
+
 #: src/components/player/stream-info-card.tsx:126
 msgid "Source"
 msgstr "来源"
@@ -7281,6 +7292,8 @@ msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:100
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:112
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:42
 msgid "Stream Password"
 msgstr "直播密码"
@@ -7437,7 +7450,7 @@ msgstr "成功删除 {0} 个会话"
 msgid "Supported"
 msgstr "支持"
 
-#: src/components/config/platforms/supported-platforms.tsx:28
+#: src/components/config/platforms/supported-platforms.tsx:29
 msgid "Supported Platforms"
 msgstr "支持的平台"
 
@@ -8279,6 +8292,7 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "已被用户停用"
 
+#: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:38
 #: src/components/config/shared/proxy-settings-card.tsx:179
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91

@@ -178,8 +178,9 @@ pub async fn start_with_events(
         }
     };
     let is_twitch = TwitchPlaylistProcessor::is_twitch_playlist(&base_url);
-    let planner_ctx = PlannerContext::new(policy, is_twitch);
-    debug!(twitch = is_twitch, "planner context built");
+    let is_soop = super::soop_processor::is_soop_playlist(base_url.as_str());
+    let planner_ctx = PlannerContext::new(policy, is_twitch, is_soop);
+    debug!(twitch = is_twitch, soop = is_soop, "planner context built");
 
     // --- Channels ---
     let (client_event_tx, client_event_rx) = mpsc::channel(32);

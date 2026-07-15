@@ -11,7 +11,7 @@ use crate::database::repositories::config::ConfigRepository;
 use crate::domain::streamer::Streamer;
 use crate::streamer::StreamerMetadata;
 
-use super::types::{CredentialScope, CredentialSource};
+use super::types::{CredentialScope, CredentialSource, platform_reauth_extra};
 
 /// Resolves credential source for a given streamer.
 ///
@@ -50,6 +50,11 @@ impl<R: ConfigRepository> CredentialResolver<R> {
             .get_platform_config(&streamer.platform_config_id)
             .await?;
         let platform_name = platform.platform_name.clone();
+        let platform_specific = platform
+            .platform_specific_config
+            .as_deref()
+            .and_then(|config| serde_json::from_str(config).ok());
+        let reauth_extra = platform_reauth_extra(&platform_name, platform_specific.as_ref());
 
         debug!(platform_name = %platform_name, "Resolving credentials");
 
@@ -78,7 +83,8 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                     refresh_token,
                     platform_name,
                 )
-                .with_access_token(access_token),
+                .with_access_token(access_token)
+                .with_reauth_extra(reauth_extra),
             ));
         }
 
@@ -109,7 +115,8 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                         refresh_token,
                         platform_name,
                     )
-                    .with_access_token(access_token),
+                    .with_access_token(access_token)
+                    .with_reauth_extra(reauth_extra.clone()),
                 ));
             }
         }
@@ -135,7 +142,26 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                     refresh_token,
                     platform.platform_name,
                 )
-                .with_access_token(access_token),
+                .with_access_token(access_token)
+                .with_reauth_extra(reauth_extra),
+            ));
+        }
+
+        // SOOP (and similar): username/password without cookies still yield a
+        // credential source so the manager can mint session cookies via re-login.
+        if reauth_extra.is_some() {
+            debug!("Found SOOP re-login credentials without session cookies");
+            return Ok(Some(
+                CredentialSource::new(
+                    CredentialScope::Platform {
+                        platform_id: streamer.platform_config_id.clone(),
+                        platform_name: platform.platform_name.clone(),
+                    },
+                    String::new(),
+                    None,
+                    platform.platform_name,
+                )
+                .with_reauth_extra(reauth_extra),
             ));
         }
 
@@ -158,6 +184,11 @@ impl<R: ConfigRepository> CredentialResolver<R> {
             .get_platform_config(&metadata.platform_config_id)
             .await?;
         let platform_name = platform.platform_name.clone();
+        let platform_specific = platform
+            .platform_specific_config
+            .as_deref()
+            .and_then(|config| serde_json::from_str(config).ok());
+        let reauth_extra = platform_reauth_extra(&platform_name, platform_specific.as_ref());
 
         debug!(platform_name = %platform_name, "Resolving credentials for metadata");
 
@@ -187,7 +218,8 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                     refresh_token,
                     platform_name,
                 )
-                .with_access_token(access_token),
+                .with_access_token(access_token)
+                .with_reauth_extra(reauth_extra),
             ));
         }
 
@@ -217,7 +249,8 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                         refresh_token,
                         platform_name,
                     )
-                    .with_access_token(access_token),
+                    .with_access_token(access_token)
+                    .with_reauth_extra(reauth_extra.clone()),
                 ));
             }
         }
@@ -242,7 +275,24 @@ impl<R: ConfigRepository> CredentialResolver<R> {
                     refresh_token,
                     platform.platform_name,
                 )
-                .with_access_token(access_token),
+                .with_access_token(access_token)
+                .with_reauth_extra(reauth_extra),
+            ));
+        }
+
+        if reauth_extra.is_some() {
+            debug!("Found SOOP re-login credentials without session cookies");
+            return Ok(Some(
+                CredentialSource::new(
+                    CredentialScope::Platform {
+                        platform_id: metadata.platform_config_id.clone(),
+                        platform_name: platform.platform_name.clone(),
+                    },
+                    String::new(),
+                    None,
+                    platform.platform_name,
+                )
+                .with_reauth_extra(reauth_extra),
             ));
         }
 
