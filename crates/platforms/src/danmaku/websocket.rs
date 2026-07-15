@@ -172,21 +172,81 @@ fn connector_for_url(url: &str) -> Connector {
     rustls_connector()
 }
 
-/// Protocol definitions for a specific platform.
-pub trait DanmuProtocol: Send + Sync + 'static {
-    /// Platform name (e.g., "huya", "bilibili")
+/// Creates isolated protocol state for WebSocket danmaku connections.
+///
+/// Factories are shared by the provider and must not reuse connection state. Each call to
+/// [`create_protocol`](Self::create_protocol) must return a fresh protocol instance that can
+/// be moved into one connection task.
+pub trait DanmuProtocolFactory: Send + Sync + 'static {
+    /// Task-owned protocol created by this factory.
+    type Protocol: DanmuProtocol;
+
+    /// Returns the platform identifier used by the provider registry.
     fn platform(&self) -> &str;
 
-    /// Check if the URL is supported
+    /// Returns whether `url` belongs to this platform.
     fn supports_url(&self, url: &str) -> bool;
 
-    /// Extract room ID from URL
+    /// Extracts the platform room identifier from `url`.
     fn extract_room_id(&self, url: &str) -> Option<String>;
 
-    /// Get the WebSocket URL for the room
-    fn websocket_url(&self, room_id: &str) -> impl Future<Output = Result<String>> + Send;
+    /// Creates fresh state for one connection or reconnect attempt.
+    fn create_protocol(&self) -> Self::Protocol;
+}
 
-    /// Get custom headers for the WebSocket connection
+/// Output produced while decoding one WebSocket frame.
+///
+/// Protocol responses are written to the socket before decoded danmaku items are
+/// published, preserving the ordering of acknowledgements and authentication steps.
+#[derive(Debug, Default)]
+#[must_use]
+pub struct DanmuProtocolOutput {
+    items: Vec<DanmuItem>,
+    outbound: Vec<Message>,
+}
+
+impl DanmuProtocolOutput {
+    /// Creates output containing decoded `items` and outbound WebSocket frames.
+    pub fn new(items: Vec<DanmuItem>, outbound: Vec<Message>) -> Self {
+        Self { items, outbound }
+    }
+
+    /// Creates output containing only decoded danmaku items.
+    pub fn items(items: Vec<DanmuItem>) -> Self {
+        Self::new(items, Vec::new())
+    }
+
+    /// Creates output containing only outbound WebSocket frames.
+    pub fn outbound(outbound: Vec<Message>) -> Self {
+        Self::new(Vec::new(), outbound)
+    }
+
+    /// Separates decoded items from outbound WebSocket frames.
+    pub fn into_parts(self) -> (Vec<DanmuItem>, Vec<Message>) {
+        (self.items, self.outbound)
+    }
+}
+
+impl From<Vec<DanmuItem>> for DanmuProtocolOutput {
+    fn from(items: Vec<DanmuItem>) -> Self {
+        Self::items(items)
+    }
+}
+
+/// Task-owned state machine for one WebSocket connection attempt.
+///
+/// The connection runner calls every method serially from one Tokio task. Implementations
+/// can therefore use ordinary mutable fields and do not need locks or atomics for
+/// connection-local state.
+pub trait DanmuProtocol: Send + 'static {
+    /// Resolves the WebSocket URL for `room_id` and updates connection state as needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when endpoint discovery or session initialization fails.
+    fn websocket_url(&mut self, room_id: &str) -> impl Future<Output = Result<String>> + Send;
+
+    /// Returns custom headers for the WebSocket upgrade.
     fn headers(&self, _room_id: &str) -> HeaderMap {
         HeaderMap::new()
     }
@@ -226,9 +286,13 @@ pub trait DanmuProtocol: Send + Sync + 'static {
     ) {
     }
 
-    /// Generate handshake messages to send upon connection
+    /// Generates handshake messages to send after the WebSocket upgrade.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when authentication or room-join messages cannot be built.
     fn handshake_messages(
-        &self,
+        &mut self,
         _room_id: &str,
     ) -> impl Future<Output = Result<Vec<Message>>> + Send {
         async { Ok(vec![]) }
@@ -244,14 +308,21 @@ pub trait DanmuProtocol: Send + Sync + 'static {
         Duration::from_secs(30)
     }
 
-    /// Decode a WebSocket message into a list of danmu items (messages or control events).
-    /// `room_id` is provided so protocols can use it for responses that need the room context
+    /// Decodes one WebSocket frame and advances the connection state machine.
+    ///
+    /// The returned [`DanmuProtocolOutput`] may contain danmaku items, protocol responses,
+    /// or both. `room_id` is available for protocols whose responses require room context.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the frame is invalid for the current protocol state or a
+    /// required response cannot be constructed. The connection runner reconnects after
+    /// such an error.
     fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         room_id: &str,
-        tx: &mpsc::Sender<Message>,
-    ) -> impl Future<Output = Result<Vec<DanmuItem>>> + Send;
+    ) -> impl Future<Output = Result<DanmuProtocolOutput>> + Send;
 }
 
 /// Internal state for a WebSocket connection
@@ -293,10 +364,9 @@ impl Drop for WsConnectionState {
     }
 }
 
-/// A generic WebSocket-based Danmu Provider.
-pub struct WebSocketDanmuProvider<P> {
-    /// Protocol implementation
-    protocol: P,
+/// WebSocket danmaku provider backed by a shared protocol factory.
+pub struct WebSocketDanmuProvider<F: DanmuProtocolFactory> {
+    factory: Arc<F>,
     /// Settings
     config: WebSocketProviderConfig,
     /// Active connections
@@ -321,10 +391,11 @@ impl Default for WebSocketProviderConfig {
     }
 }
 
-impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
-    pub fn with_protocol(protocol: P, config: Option<WebSocketProviderConfig>) -> Self {
+impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
+    /// Creates a provider that uses `factory` for every connection attempt.
+    pub fn with_factory(factory: F, config: Option<WebSocketProviderConfig>) -> Self {
         Self {
-            protocol,
+            factory: Arc::new(factory),
             config: config.unwrap_or_default(),
             connections: RwLock::new(HashMap::new()),
             connection_semaphore: Arc::new(Semaphore::new(MAX_ACTIVE_CONNECTIONS)),
@@ -346,10 +417,9 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
         let reconnect_count = Arc::new(AtomicU32::new(0));
         let (message_tx, message_rx) = mpsc::channel(100);
         let message_rx = Arc::new(Mutex::new(message_rx));
-        let (response_tx, mut response_rx) = mpsc::channel::<Message>(100);
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
 
-        let mut protocol = self.protocol.clone();
+        let factory = Arc::clone(&self.factory);
         let ws_config = config.websocket.unwrap_or(self.config);
         let room_id_owned = room_id.to_string();
         let cookies = config.cookies;
@@ -359,7 +429,10 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
 
         // Spawn main management task
         let handle = tokio::spawn(async move {
-            let mut current_stream: Option<WebSocketStream<MaybeTlsStream<TcpStream>>> = None;
+            let mut current_connection: Option<(
+                WebSocketStream<MaybeTlsStream<TcpStream>>,
+                F::Protocol,
+            )> = None;
             let mut attempt = 0;
             let mut delay = ws_config.base_reconnect_delay_ms;
 
@@ -370,7 +443,8 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                 }
 
                 // Connect if not connected
-                if current_stream.is_none() {
+                if current_connection.is_none() {
+                    let mut protocol = factory.create_protocol();
                     // Compute cookies and let the protocol derive per-connection state (e.g. uid)
                     // before resolving the final WebSocket URL.
                     let protocol_cookies = protocol.cookies();
@@ -482,27 +556,29 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
 
                                     // Handshake
                                     let mut handshake_ok = true;
-                                    if let Ok(msgs) =
-                                        protocol.handshake_messages(&room_id_owned).await
-                                    {
-                                        for msg in msgs {
-                                            if let Err(e) = ws_stream.send(msg).await {
-                                                error!("Handshake failed: {}", e);
-                                                handshake_ok = false;
-                                                break;
+                                    match protocol.handshake_messages(&room_id_owned).await {
+                                        Ok(msgs) => {
+                                            for msg in msgs {
+                                                if let Err(e) = ws_stream.send(msg).await {
+                                                    error!("Handshake failed: {}", e);
+                                                    handshake_ok = false;
+                                                    break;
+                                                }
                                             }
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to build handshake: {}", e);
+                                            handshake_ok = false;
                                         }
                                     }
 
-                                    if !handshake_ok {
-                                        continue; // Retry connection
+                                    if handshake_ok {
+                                        is_connected_clone.store(true, Ordering::SeqCst);
+                                        reconnect_count_clone.store(0, Ordering::SeqCst);
+                                        attempt = 0;
+                                        delay = ws_config.base_reconnect_delay_ms;
+                                        current_connection = Some((ws_stream, protocol));
                                     }
-
-                                    is_connected_clone.store(true, Ordering::SeqCst);
-                                    reconnect_count_clone.store(0, Ordering::SeqCst);
-                                    attempt = 0;
-                                    delay = ws_config.base_reconnect_delay_ms;
-                                    current_stream = Some(ws_stream);
                                 }
                                 Err(e) => {
                                     warn!("Connection failed: {}", e);
@@ -514,7 +590,7 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                         }
                     }
 
-                    if current_stream.is_none() {
+                    if current_connection.is_none() {
                         if attempt >= ws_config.max_reconnect_attempts {
                             error!("Max reconnect attempts reached for {}", room_id_owned);
                             break;
@@ -533,13 +609,11 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                 }
 
                 // Main loop: read/write/heartbeat
-                if let Some(mut stream) = current_stream.take() {
+                if let Some((mut stream, mut protocol)) = current_connection.take() {
                     let heartbeat_enabled = protocol.heartbeat_message().is_some();
                     let heartbeat_interval = protocol.heartbeat_interval();
                     let mut heartbeat_timer = tokio::time::interval(heartbeat_interval);
                     heartbeat_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-                    let response_tx_clone = response_tx.clone();
-
                     loop {
                         tokio::select! {
                              // Heartbeat (only if enabled)
@@ -553,28 +627,37 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
                                 }
                             }
 
-                            // Response messages from protocol
-                            Some(msg) = response_rx.recv() => {
-                                if let Err(e) = stream.send(msg).await {
-                                    error!("Failed to send response message: {}", e);
-                                    break; // Reconnect
-                                }
-                            }
-
                             // Read message
                             msg_opt = stream.next() => {
                                 match msg_opt {
                                     Some(Ok(msg)) => {
-                                        match protocol.decode_message(&msg, &room_id_owned, &response_tx_clone).await {
-                                            Ok(messages) => {
-                                                for item in messages {
+                                        match protocol.decode_message(&msg, &room_id_owned).await {
+                                            Ok(output) => {
+                                                let (items, outbound) = output.into_parts();
+                                                let mut response_failed = false;
+                                                for response in outbound {
+                                                    if let Err(e) = stream.send(response).await {
+                                                        error!("Failed to send protocol response: {}", e);
+                                                        response_failed = true;
+                                                        break;
+                                                    }
+                                                }
+                                                if response_failed {
+                                                    break;
+                                                }
+                                                for item in items {
                                                     if message_tx.send(item).await.is_err() {
-                                                        break; // Channel closed
+                                                        return;
                                                     }
                                                 }
                                             }
                                             Err(e) => {
                                                 warn!("Failed to decode message: {}", e);
+                                                tokio::select! {
+                                                    _ = tokio::time::sleep(Duration::from_millis(ws_config.base_reconnect_delay_ms)) => {}
+                                                    _ = shutdown_rx.recv() => return,
+                                                }
+                                                break;
                                             }
                                         }
                                     }
@@ -615,9 +698,9 @@ impl<P: DanmuProtocol + Clone> WebSocketDanmuProvider<P> {
 }
 
 #[async_trait]
-impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
+impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
     fn platform(&self) -> &str {
-        self.protocol.platform()
+        self.factory.platform()
     }
 
     async fn connect(&self, room_id: &str, config: ConnectionConfig) -> Result<DanmuConnection> {
@@ -705,11 +788,11 @@ impl<P: DanmuProtocol + Clone> DanmuProvider for WebSocketDanmuProvider<P> {
     }
 
     fn supports_url(&self, url: &str) -> bool {
-        self.protocol.supports_url(url)
+        self.factory.supports_url(url)
     }
 
     fn extract_room_id(&self, url: &str) -> Option<String> {
-        self.protocol.extract_room_id(url)
+        self.factory.extract_room_id(url)
     }
 }
 

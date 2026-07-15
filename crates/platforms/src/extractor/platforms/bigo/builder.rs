@@ -127,9 +127,7 @@ impl Bigo {
         let artist_url = data.avatar.clone().filter(|s| !s.is_empty());
 
         if !data.is_online() {
-            // Protected offline-looking response without pwd is still PrivateContent
-            // when the API marks passRoom and we have no password.
-            if data.pass_room.unwrap_or(false) && self.resolve_password().is_none() {
+            if data.pass_room.unwrap_or(false) {
                 return Err(ExtractorError::PrivateContent);
             }
 
@@ -292,6 +290,64 @@ mod tests {
             Some(serde_json::json!({"mint_token": false})),
         );
         assert!(!b.mint_token);
+    }
+
+    #[test]
+    fn locked_offline_response_is_private_with_or_without_password() {
+        let client = crate::extractor::default::default_client();
+        let locked_data = || StudioData {
+            alive: Some(0),
+            pass_room: Some(true),
+            room_id: Some("0".to_string()),
+            hls_src: Some(String::new()),
+            ..StudioData::default()
+        };
+
+        let without_password = Bigo::new(
+            "https://www.bigo.tv/1".to_string(),
+            client.clone(),
+            None,
+            None,
+        );
+        assert!(matches!(
+            without_password.media_from_data(locked_data(), "1"),
+            Err(ExtractorError::PrivateContent)
+        ));
+
+        let with_password = Bigo::new(
+            "https://www.bigo.tv/1".to_string(),
+            client,
+            None,
+            Some(serde_json::json!({"stream_password": "wrong"})),
+        );
+        assert!(matches!(
+            with_password.media_from_data(locked_data(), "1"),
+            Err(ExtractorError::PrivateContent)
+        ));
+    }
+
+    #[test]
+    fn public_offline_response_remains_offline() {
+        let bigo = Bigo::new(
+            "https://www.bigo.tv/1".to_string(),
+            crate::extractor::default::default_client(),
+            None,
+            None,
+        );
+        let media = bigo
+            .media_from_data(
+                StudioData {
+                    alive: Some(0),
+                    pass_room: Some(false),
+                    room_id: Some("0".to_string()),
+                    hls_src: Some(String::new()),
+                    ..StudioData::default()
+                },
+                "1",
+            )
+            .expect("public offline room should remain a normal offline result");
+
+        assert!(!media.is_live);
     }
 
     /// Live integration: mint token + studio API + HLS URL.

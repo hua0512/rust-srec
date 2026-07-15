@@ -10,13 +10,14 @@ use rustc_hash::FxHashMap;
 use std::io::Read;
 use std::time::Duration;
 
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::ws_headers_origin_ua;
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::douyin::apis::LIVE_DOUYIN_URL;
@@ -273,7 +274,9 @@ impl DouyinDanmuProtocol {
     }
 }
 
-impl DanmuProtocol for DouyinDanmuProtocol {
+impl DanmuProtocolFactory for DouyinDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "douyin"
     }
@@ -286,7 +289,13 @@ impl DanmuProtocol for DouyinDanmuProtocol {
         capture_group_1_owned(&URL_REGEX, url)
     }
 
-    async fn websocket_url(&self, room_id: &str) -> Result<String> {
+    fn create_protocol(&self) -> Self::Protocol {
+        self.clone()
+    }
+}
+
+impl DanmuProtocol for DouyinDanmuProtocol {
+    async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
         // Generate a unique user ID for this session
         let user_id = Self::generate_user_unique_id();
         Self::build_websocket_url(room_id, &user_id)
@@ -307,7 +316,7 @@ impl DanmuProtocol for DouyinDanmuProtocol {
         }
     }
 
-    async fn handshake_messages(&self, _room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, _room_id: &str) -> Result<Vec<Message>> {
         // Douyin doesn't require explicit handshake messages after connection
         // The connection parameters in the URL handle authentication
         Ok(vec![])
@@ -322,30 +331,32 @@ impl DanmuProtocol for DouyinDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         _room_id: &str,
-        tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         match message {
             Message::Binary(data) => {
                 let (response, log_id) = Self::decode_push_frame(data)?;
 
-                if response.need_ack {
+                let outbound = if response.need_ack {
                     let ack_packet =
                         Self::create_ack_packet(log_id, response.internal_ext.encode_to_vec())?;
-                    tx.send(Message::Binary(ack_packet)).await.map_err(|e| {
-                        DanmakuError::connection(format!("Failed to send ack packet: {}", e))
-                    })?;
-                }
+                    vec![Message::Binary(ack_packet)]
+                } else {
+                    Vec::new()
+                };
 
-                Ok(Self::parse_response_messages(&response.messages))
+                Ok(DanmuProtocolOutput::new(
+                    Self::parse_response_messages(&response.messages),
+                    outbound,
+                ))
             }
             Message::Text(text) => {
                 debug!("Received text message: {}", text);
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
-            _ => Ok(vec![]),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
@@ -355,7 +366,7 @@ pub type DouyinDanmuProvider = WebSocketDanmuProvider<DouyinDanmuProtocol>;
 
 /// Creates a new Douyin danmu provider.
 pub fn create_douyin_danmu_provider() -> DouyinDanmuProvider {
-    WebSocketDanmuProvider::with_protocol(DouyinDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(DouyinDanmuProtocol::default(), None)
 }
 
 #[cfg(test)]
@@ -424,7 +435,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Ignore by default as it requires JS engine which is slow
     async fn test_websocket_url_generation() {
-        let protocol = DouyinDanmuProtocol::default();
+        let mut protocol = DouyinDanmuProtocol::default();
         let room_id = "123456789";
 
         let result = protocol.websocket_url(room_id).await;
@@ -450,7 +461,7 @@ mod tests {
             .try_init()
             .unwrap();
 
-        let protocol = DouyinDanmuProtocol::default();
+        let mut protocol = DouyinDanmuProtocol::default();
         let room_id = "7592278867031231283";
         // Generate WebSocket URL
         let ws_url = protocol

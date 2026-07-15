@@ -6,13 +6,14 @@
 use bytes::Bytes;
 use chrono::Utc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::ws_headers_origin_referer_ua;
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::douyu::stt;
@@ -107,7 +108,9 @@ impl DouyuDanmuProtocol {
     }
 }
 
-impl DanmuProtocol for DouyuDanmuProtocol {
+impl DanmuProtocolFactory for DouyuDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "douyu"
     }
@@ -120,7 +123,13 @@ impl DanmuProtocol for DouyuDanmuProtocol {
         capture_group_1_owned(&URL_REGEX, url)
     }
 
-    async fn websocket_url(&self, _room_id: &str) -> Result<String> {
+    fn create_protocol(&self) -> Self::Protocol {
+        self.clone()
+    }
+}
+
+impl DanmuProtocol for DouyuDanmuProtocol {
+    async fn websocket_url(&mut self, _room_id: &str) -> Result<String> {
         Ok(DOUYU_WS_URL.to_string())
     }
 
@@ -132,7 +141,7 @@ impl DanmuProtocol for DouyuDanmuProtocol {
         self.cookies.clone()
     }
 
-    async fn handshake_messages(&self, room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
         // Create login and join group messages
         let login_msg = create_login_message(room_id);
         let join_group_msg = create_join_group_message(room_id, DEFAULT_GROUP_ID);
@@ -159,11 +168,10 @@ impl DanmuProtocol for DouyuDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         _room_id: &str,
-        _tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         match message {
             Message::Binary(data) => {
                 let packets = parse_packets(data);
@@ -199,25 +207,25 @@ impl DanmuProtocol for DouyuDanmuProtocol {
                     }
                 }
 
-                Ok(items)
+                Ok(items.into())
             }
             Message::Text(text) => {
                 debug!("Received text message: {}", text);
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             Message::Ping(_) => {
                 debug!("Received ping");
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             Message::Pong(_) => {
                 debug!("Received pong");
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             Message::Close(frame) => {
                 debug!("Received close frame: {:?}", frame);
                 Err(DanmakuError::connection("Connection closed by server"))
             }
-            _ => Ok(vec![]),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
@@ -227,7 +235,7 @@ pub type DouyuDanmuProvider = WebSocketDanmuProvider<DouyuDanmuProtocol>;
 
 /// Creates a new Douyu danmu provider.
 pub fn create_douyu_danmu_provider() -> DouyuDanmuProvider {
-    WebSocketDanmuProvider::with_protocol(DouyuDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(DouyuDanmuProtocol::default(), None)
 }
 
 #[cfg(test)]
@@ -291,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handshake_messages() {
-        let protocol = DouyuDanmuProtocol::default();
+        let mut protocol = DouyuDanmuProtocol::default();
         let messages = protocol.handshake_messages("123456").await.unwrap();
 
         assert_eq!(messages.len(), 2); // Login + JoinGroup
@@ -308,7 +316,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_websocket_url() {
-        let protocol = DouyuDanmuProtocol::default();
+        let mut protocol = DouyuDanmuProtocol::default();
         let url = protocol.websocket_url("123456").await.unwrap();
 
         assert!(url.starts_with("wss://"));

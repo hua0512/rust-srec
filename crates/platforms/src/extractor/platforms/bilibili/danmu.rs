@@ -12,13 +12,14 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Read;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::ws_headers_origin_referer_ua;
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::{DEFAULT_UA, default_client};
 use chrono::{TimeZone, Utc};
@@ -592,7 +593,9 @@ impl BilibiliDanmuProtocol {
     }
 }
 
-impl DanmuProtocol for BilibiliDanmuProtocol {
+impl DanmuProtocolFactory for BilibiliDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "bilibili"
     }
@@ -605,7 +608,18 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
         capture_group_1_owned(&URL_REGEX, url)
     }
 
-    async fn websocket_url(&self, room_id: &str) -> Result<String> {
+    fn create_protocol(&self) -> Self::Protocol {
+        Self {
+            client: self.client.clone(),
+            cookies: self.cookies.clone(),
+            uid: None,
+            connection_cookies: None,
+        }
+    }
+}
+
+impl DanmuProtocol for BilibiliDanmuProtocol {
+    async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
         // First get real room ID
         let real_room_id = self.get_real_room_id(room_id).await?;
 
@@ -651,7 +665,7 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
         self.connection_cookies = cookies.map(ToString::to_string);
     }
 
-    async fn handshake_messages(&self, room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
         // Get real room ID and danmu info
         let real_room_id = self.get_real_room_id(room_id).await?;
         let (_ws_url, token) = self.get_danmu_info(real_room_id).await?;
@@ -671,11 +685,10 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         _room_id: &str,
-        _tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         match message {
             Message::Binary(data) => {
                 let packets = Self::decode_packets(data);
@@ -700,9 +713,9 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
                     }
                 }
 
-                Ok(items)
+                Ok(items.into())
             }
-            _ => Ok(vec![]),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
@@ -748,7 +761,7 @@ pub type BilibiliDanmuProvider = WebSocketDanmuProvider<BilibiliDanmuProtocol>;
 
 /// Create a new Bilibili danmu provider.
 pub fn create_bilibili_danmu_provider() -> BilibiliDanmuProvider {
-    WebSocketDanmuProvider::with_protocol(BilibiliDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(BilibiliDanmuProtocol::default(), None)
 }
 
 #[cfg(test)]

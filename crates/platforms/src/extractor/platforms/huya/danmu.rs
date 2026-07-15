@@ -15,7 +15,9 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::platforms::huya::huya_uri;
 use crate::extractor::platforms::huya::{HuyaSourceType, HuyaWsCmd};
@@ -65,7 +67,9 @@ impl HuyaDanmuProtocol {
     }
 }
 
-impl DanmuProtocol for HuyaDanmuProtocol {
+impl DanmuProtocolFactory for HuyaDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "huya"
     }
@@ -78,7 +82,13 @@ impl DanmuProtocol for HuyaDanmuProtocol {
         capture_group_1_owned(&URL_REGEX, url)
     }
 
-    async fn websocket_url(&self, _room_id: &str) -> Result<String> {
+    fn create_protocol(&self) -> Self::Protocol {
+        self.clone()
+    }
+}
+
+impl DanmuProtocol for HuyaDanmuProtocol {
+    async fn websocket_url(&mut self, _room_id: &str) -> Result<String> {
         Ok(HUYA_WS_URL.to_string())
     }
 
@@ -86,7 +96,7 @@ impl DanmuProtocol for HuyaDanmuProtocol {
         self.cookies.clone()
     }
 
-    async fn handshake_messages(&self, room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
         let room_id_num: i64 = room_id
             .parse()
             .map_err(|_| DanmakuError::connection("Invalid room ID".to_string()))?;
@@ -119,14 +129,13 @@ impl DanmuProtocol for HuyaDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         room_id: &str,
-        tx: &tokio::sync::mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         match message {
-            Message::Binary(data) => self.parse_socket_command(data, room_id, tx).await,
-            _ => Ok(vec![]),
+            Message::Binary(data) => self.parse_socket_command(data, room_id),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
@@ -135,7 +144,7 @@ impl DanmuProtocol for HuyaDanmuProtocol {
 pub type HuyaDanmuProvider = WebSocketDanmuProvider<HuyaDanmuProtocol>;
 
 pub fn create_huya_danmu_provider() -> HuyaDanmuProvider {
-    HuyaDanmuProvider::with_protocol(HuyaDanmuProtocol::default(), None)
+    HuyaDanmuProvider::with_factory(HuyaDanmuProtocol::default(), None)
 }
 
 // Static helper methods for TARS encoding/decoding
@@ -237,14 +246,9 @@ impl HuyaDanmuProtocol {
     }
 
     /// Parse incoming WebSocket command and handle protocol-level responses
-    async fn parse_socket_command(
-        &self,
-        data: &[u8],
-        room_id: &str,
-        tx: &tokio::sync::mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    fn parse_socket_command(&self, data: &[u8], room_id: &str) -> Result<DanmuProtocolOutput> {
         if data.len() < 4 {
-            return Ok(vec![]);
+            return Ok(DanmuProtocolOutput::default());
         }
 
         // First, decode the WebSocketCommand wrapper (naked struct)
@@ -252,7 +256,7 @@ impl HuyaDanmuProtocol {
             Ok(v) => v,
             Err(e) => {
                 debug!("Failed to decode TARS value from socket command: {}", e);
-                return Ok(vec![]);
+                return Ok(DanmuProtocolOutput::default());
             }
         };
 
@@ -260,7 +264,7 @@ impl HuyaDanmuProtocol {
             Ok(cmd) => cmd,
             Err(e) => {
                 debug!("Failed to convert TARS value to WebSocketCommand: {}", e);
-                return Ok(vec![]);
+                return Ok(DanmuProtocolOutput::default());
             }
         };
 
@@ -270,14 +274,14 @@ impl HuyaDanmuProtocol {
             // HeartbeatRsp (2) - just acknowledge
             2 => {
                 debug!("Received heartbeat response");
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             // RegisterRsp (4) - check if it's doLaunch response, then send join group packet
             4 => {
                 let inner_data = socket_cmd.data();
                 if inner_data.is_empty() {
                     debug!("Received empty RegisterRsp");
-                    return Ok(vec![]);
+                    return Ok(DanmuProtocolOutput::default());
                 }
 
                 // Decode the inner TARS message to check func_name
@@ -286,56 +290,56 @@ impl HuyaDanmuProtocol {
                     Ok(Some(msg)) => msg,
                     Ok(None) => {
                         debug!("No TARS message in RegisterRsp");
-                        return Ok(vec![]);
+                        return Ok(DanmuProtocolOutput::default());
                     }
                     Err(e) => {
                         debug!("Failed to decode RegisterRsp inner message: {}", e);
-                        return Ok(vec![]);
+                        return Ok(DanmuProtocolOutput::default());
                     }
                 };
 
                 // Only send join group packet for doLaunch response
                 if message.header.func_name == "doLaunch" {
                     debug!("Received doLaunch response, sending join group packet");
-                    if let Ok(presenter_uid) = room_id.parse::<i64>() {
+                    let outbound = if let Ok(presenter_uid) = room_id.parse::<i64>() {
                         match Self::create_create_join_group_packet(presenter_uid) {
                             Ok(packet) => {
-                                if let Err(e) = tx.send(Message::Binary(packet)).await {
-                                    debug!("Failed to send join group packet: {}", e);
-                                } else {
-                                    debug!(
-                                        "Sent join group packet for presenter_uid: {}",
-                                        presenter_uid
-                                    );
-                                }
+                                debug!(
+                                    "Queued join group packet for presenter_uid: {}",
+                                    presenter_uid
+                                );
+                                vec![Message::Binary(packet)]
                             }
                             Err(e) => {
                                 debug!("Failed to create join group packet: {}", e);
+                                Vec::new()
                             }
                         }
                     } else {
                         debug!("Invalid room_id for join group: {}", room_id);
-                    }
+                        Vec::new()
+                    };
+                    return Ok(DanmuProtocolOutput::outbound(outbound));
                 } else {
                     debug!(
                         "Received RegisterRsp with func_name: {}",
                         message.header.func_name
                     );
                 }
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             // WupRsp (7) - Push messages in WsPushMessage format
             7 => {
                 let inner_data = socket_cmd.data();
                 if inner_data.is_empty() {
-                    return Ok(vec![]);
+                    return Ok(DanmuProtocolOutput::default());
                 }
 
                 let push_msg_val = match decode_tars_struct(Bytes::copy_from_slice(inner_data)) {
                     Ok(v) => v,
                     Err(e) => {
                         debug!("Failed to decode WsPushMessage TARS: {}", e);
-                        return Ok(vec![]);
+                        return Ok(DanmuProtocolOutput::default());
                     }
                 };
 
@@ -343,7 +347,7 @@ impl HuyaDanmuProtocol {
                     Ok(push_msg) => {
                         // we only want 1400 uri (danmu messages)
                         if push_msg.i_uri != huya_uri::MESSAGE_NOTICE as i64 {
-                            return Ok(vec![]);
+                            return Ok(DanmuProtocolOutput::default());
                         }
 
                         // Parse the inner s_msg data as MessageNotice
@@ -353,7 +357,7 @@ impl HuyaDanmuProtocol {
                                     Ok(v) => v,
                                     Err(e) => {
                                         debug!("Failed to decode MessageNotice TARS: {}", e);
-                                        return Ok(vec![]);
+                                        return Ok(DanmuProtocolOutput::default());
                                     }
                                 };
 
@@ -373,7 +377,7 @@ impl HuyaDanmuProtocol {
                                         if color != -1 && color != 0 {
                                             danmu = danmu.with_color(format!("#{:06X}", color));
                                         }
-                                        return Ok(vec![DanmuItem::Message(danmu)]);
+                                        return Ok(vec![DanmuItem::Message(danmu)].into());
                                     }
                                 }
                                 Err(e) => {
@@ -381,21 +385,21 @@ impl HuyaDanmuProtocol {
                                 }
                             }
                         }
-                        Ok(vec![])
+                        Ok(DanmuProtocolOutput::default())
                     }
                     Err(e) => {
                         debug!("Failed to convert to WsPushMessage: {}", e);
-                        Ok(vec![])
+                        Ok(DanmuProtocolOutput::default())
                     }
                 }
             }
             // RegisterGroupRsp (17) - acknowledgment of group registration
             17 => {
                 debug!("Successfully registered to group");
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             // Other types
-            _ => Ok(vec![]),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
@@ -518,7 +522,7 @@ mod tests {
         use tokio_tungstenite::connect_async;
 
         let room_id = "660000";
-        let protocol = HuyaDanmuProtocol::default();
+        let mut protocol = HuyaDanmuProtocol::default();
 
         // Connect directly to verify the flow
         let ws_url = protocol.websocket_url(room_id).await.unwrap();
@@ -536,21 +540,12 @@ mod tests {
         }
         println!("Sent handshake messages");
 
-        // Create a channel for responses
-        let (tx, mut rx) = tokio::sync::mpsc::channel(10);
-
         // Receive a few messages and verify WebSocketCommand decoding
         let mut response_count = 0;
         let start = std::time::Instant::now();
 
         while start.elapsed() < Duration::from_secs(10) && response_count < 20 {
             tokio::select! {
-                Some(response_msg) = rx.recv() => {
-                    // Send any response messages back
-                    if let Err(e) = ws_stream.send(response_msg).await {
-                        println!("Failed to send response: {}", e);
-                    }
-                }
                 msg_result = ws_stream.next() => {
                     match msg_result {
                         Some(Ok(Message::Binary(data))) => {
@@ -560,8 +555,12 @@ mod tests {
                                     response_count += 1;
 
                                     // Parse through our protocol
-                                    match protocol.parse_socket_command(&data, room_id, &tx).await {
-                                        Ok(items) => {
+                                    match protocol.parse_socket_command(&data, room_id) {
+                                        Ok(output) => {
+                                            let (items, outbound) = output.into_parts();
+                                            for response in outbound {
+                                                ws_stream.send(response).await.expect("Failed to send response");
+                                            }
                                             for item in items {
                                                 match item {
                                                     crate::danmaku::DanmuItem::Message(danmu) => {

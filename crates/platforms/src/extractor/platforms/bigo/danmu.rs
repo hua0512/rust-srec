@@ -8,23 +8,21 @@
 //! 5. Ping 791 every ~10s
 
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use md5::{Digest, Md5};
-use parking_lot::RwLock;
 use reqwest::Client;
 use serde_json::{Value, json};
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::http::HeaderMap;
 use tokio_tungstenite::tungstenite::protocol::Message;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::ws_headers_origin_ua;
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::digest_to_hex;
 use crate::extractor::default::{DEFAULT_UA, default_client};
@@ -56,24 +54,30 @@ struct GuestSession {
     uid_token: String,
 }
 
-/// Bigo danmu protocol state (guest session + password).
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum BigoConnectionPhase {
+    #[default]
+    AwaitingChallenge,
+    AwaitingLogin,
+    AwaitingEnter,
+    Joined,
+}
+
+/// Task-owned Bigo guest session and handshake state.
 pub struct BigoDanmuProtocol {
     client: Client,
-    session: Arc<RwLock<Option<GuestSession>>>,
-    room_password: Arc<RwLock<Option<String>>>,
-    login_sent: Arc<AtomicBool>,
-    enter_sent: Arc<AtomicBool>,
+    session: Option<GuestSession>,
+    room_password: Option<String>,
+    phase: BigoConnectionPhase,
 }
 
 impl Default for BigoDanmuProtocol {
     fn default() -> Self {
         Self {
             client: default_client(),
-            session: Arc::new(RwLock::new(None)),
-            room_password: Arc::new(RwLock::new(None)),
-            login_sent: Arc::new(AtomicBool::new(false)),
-            enter_sent: Arc::new(AtomicBool::new(false)),
+            session: None,
+            room_password: None,
+            phase: BigoConnectionPhase::default(),
         }
     }
 }
@@ -371,7 +375,9 @@ impl BigoDanmuProtocol {
 // rand::RngExt is used in fetch_guest
 use rand::RngExt;
 
-impl DanmuProtocol for BigoDanmuProtocol {
+impl DanmuProtocolFactory for BigoDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "bigo"
     }
@@ -385,6 +391,17 @@ impl DanmuProtocol for BigoDanmuProtocol {
         capture_group_1_owned(&URL_REGEX, url)
     }
 
+    fn create_protocol(&self) -> Self::Protocol {
+        Self {
+            client: self.client.clone(),
+            session: None,
+            room_password: None,
+            phase: BigoConnectionPhase::default(),
+        }
+    }
+}
+
+impl DanmuProtocol for BigoDanmuProtocol {
     fn configure_connection(
         &mut self,
         _cookies: Option<&str>,
@@ -396,22 +413,21 @@ impl DanmuProtocol for BigoDanmuProtocol {
                 .or_else(|| e.get("password"))
                 .cloned()
                 .filter(|s| !s.is_empty());
-            *self.room_password.write() = pwd;
+            self.room_password = pwd;
         }
-        self.login_sent.store(false, Ordering::SeqCst);
-        self.enter_sent.store(false, Ordering::SeqCst);
+        self.session = None;
+        self.phase = BigoConnectionPhase::AwaitingChallenge;
     }
 
-    async fn websocket_url(&self, _room_id: &str) -> Result<String> {
+    async fn websocket_url(&mut self, _room_id: &str) -> Result<String> {
         let guest = self.fetch_guest().await?;
         debug!(
             user_id = %guest.user_id,
             device_id = %guest.device_id,
             "bigo guest session ready"
         );
-        *self.session.write() = Some(guest);
-        self.login_sent.store(false, Ordering::SeqCst);
-        self.enter_sent.store(false, Ordering::SeqCst);
+        self.session = Some(guest);
+        self.phase = BigoConnectionPhase::AwaitingChallenge;
         Ok(WSS_URL.to_string())
     }
 
@@ -423,7 +439,7 @@ impl DanmuProtocol for BigoDanmuProtocol {
         false
     }
 
-    async fn handshake_messages(&self, _room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, _room_id: &str) -> Result<Vec<Message>> {
         // Challenge-driven; optional delayed login if server never challenges.
         // We intentionally return empty here — login is sent on challenge or
         // would need a timer outside the trait. Python waits 2s without challenge;
@@ -440,42 +456,45 @@ impl DanmuProtocol for BigoDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         room_id: &str,
-        tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         let text = match message {
             Message::Text(t) => t.as_str(),
             Message::Binary(b) => match std::str::from_utf8(b) {
                 Ok(s) => s,
-                Err(_) => return Ok(vec![]),
+                Err(_) => return Ok(DanmuProtocolOutput::default()),
             },
-            Message::Ping(_) | Message::Pong(_) => return Ok(vec![]),
+            Message::Ping(_) | Message::Pong(_) => {
+                return Ok(DanmuProtocolOutput::default());
+            }
             Message::Close(frame) => {
                 debug!(?frame, "bigo ws close");
                 return Err(DanmakuError::connection("Connection closed by server"));
             }
-            _ => return Ok(vec![]),
+            _ => return Ok(DanmuProtocolOutput::default()),
         };
 
         let Some((eid, data)) = Self::parse_frame(text) else {
             debug!(%text, "bigo unparseable frame");
-            return Ok(vec![]);
+            return Ok(DanmuProtocolOutput::default());
         };
 
         match eid {
             EID_CHALLENGE => {
                 if let Some(challenge) = data.get("challenge").and_then(|c| c.as_str()) {
-                    let _ = tx.send(Self::challenge_response(challenge)).await;
-                    if !self.login_sent.swap(true, Ordering::SeqCst) {
-                        let session = self.session.read().clone();
-                        if let Some(session) = session {
-                            let _ = tx.send(Self::login_message(&session)).await;
-                        }
+                    let mut outbound = vec![Self::challenge_response(challenge)];
+                    if self.phase == BigoConnectionPhase::AwaitingChallenge {
+                        let session = self.session.as_ref().ok_or_else(|| {
+                            DanmakuError::protocol("Bigo challenge received without guest session")
+                        })?;
+                        outbound.push(Self::login_message(session));
+                        self.phase = BigoConnectionPhase::AwaitingLogin;
                     }
+                    return Ok(DanmuProtocolOutput::outbound(outbound));
                 }
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             EID_LOGIN_RES => {
                 let res = data
@@ -488,24 +507,30 @@ impl DanmuProtocol for BigoDanmuProtocol {
                     .unwrap_or_default();
                 if res == "200" {
                     debug!("bigo login ok");
-                    if !self.enter_sent.swap(true, Ordering::SeqCst) {
-                        let session = self.session.read().clone();
+                    if self.phase == BigoConnectionPhase::AwaitingLogin {
+                        let session = self.session.as_ref().ok_or_else(|| {
+                            DanmakuError::protocol("Bigo login succeeded without guest session")
+                        })?;
                         let secret = self
                             .room_password
-                            .read()
-                            .clone()
+                            .as_deref()
                             .filter(|s| !s.is_empty())
-                            .unwrap_or_else(|| "0".to_string());
-                        if let Some(session) = session {
-                            let _ = tx
-                                .send(Self::enter_message(&session, room_id, &secret))
-                                .await;
-                        }
+                            .unwrap_or("0");
+                        let enter = Self::enter_message(session, room_id, secret);
+                        self.phase = BigoConnectionPhase::AwaitingEnter;
+                        return Ok(DanmuProtocolOutput::outbound(vec![enter]));
+                    }
+                    if self.phase == BigoConnectionPhase::AwaitingChallenge {
+                        return Err(DanmakuError::protocol(
+                            "Bigo login response received before login request",
+                        ));
                     }
                 } else {
-                    warn!(%res, "bigo login failed");
+                    return Err(DanmakuError::connection(format!(
+                        "Bigo login rejected: res={res}"
+                    )));
                 }
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             EID_ENTER_RES => {
                 let code = data
@@ -517,17 +542,27 @@ impl DanmuProtocol for BigoDanmuProtocol {
                     })
                     .unwrap_or_default();
                 if code == "200" {
+                    if self.phase == BigoConnectionPhase::AwaitingChallenge
+                        || self.phase == BigoConnectionPhase::AwaitingLogin
+                    {
+                        return Err(DanmakuError::protocol(
+                            "Bigo enter response received before enter request",
+                        ));
+                    }
+                    self.phase = BigoConnectionPhase::Joined;
                     debug!(%room_id, "bigo enter room ok");
                 } else {
-                    warn!(%code, %room_id, "bigo enter room failed");
+                    return Err(DanmakuError::connection(format!(
+                        "Bigo enter room rejected: room_id={room_id} resCode={code}"
+                    )));
                 }
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
-            EID_NORMAL_TEXT => Ok(Self::normal_text_to_items(&data)),
-            EID_PING => Ok(vec![]),
+            EID_NORMAL_TEXT => Ok(Self::normal_text_to_items(&data).into()),
+            EID_PING => Ok(DanmuProtocolOutput::default()),
             _ => {
                 debug!(eid, "bigo ignored frame");
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
         }
     }
@@ -538,7 +573,7 @@ pub type BigoDanmuProvider = WebSocketDanmuProvider<BigoDanmuProtocol>;
 
 /// Creates a new Bigo danmu provider.
 pub fn create_bigo_danmu_provider() -> BigoDanmuProvider {
-    WebSocketDanmuProvider::with_protocol(BigoDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(BigoDanmuProtocol::default(), None)
 }
 
 #[cfg(test)]
@@ -617,6 +652,106 @@ mod tests {
         } else {
             panic!("expected gift");
         }
+    }
+
+    #[test]
+    fn factory_protocol_state_is_connection_local() {
+        let base = BigoDanmuProtocol::default();
+        let mut first = base.create_protocol();
+        let mut second = base.create_protocol();
+
+        let first_extras = HashMap::from([("stream_password".to_string(), "first".to_string())]);
+        let second_extras = HashMap::from([("stream_password".to_string(), "second".to_string())]);
+        first.configure_connection(None, Some(&first_extras));
+        second.configure_connection(None, Some(&second_extras));
+
+        first.session = Some(GuestSession {
+            device_id: "device-first".to_string(),
+            user_id: "user-first".to_string(),
+            uid_token: "token-first".to_string(),
+        });
+        second.session = Some(GuestSession {
+            device_id: "device-second".to_string(),
+            user_id: "user-second".to_string(),
+            uid_token: "token-second".to_string(),
+        });
+        first.phase = BigoConnectionPhase::Joined;
+
+        assert_eq!(first.room_password.as_deref(), Some("first"));
+        assert_eq!(second.room_password.as_deref(), Some("second"));
+        assert_eq!(
+            first.session.as_ref().map(|s| s.user_id.as_str()),
+            Some("user-first")
+        );
+        assert_eq!(
+            second.session.as_ref().map(|s| s.user_id.as_str()),
+            Some("user-second")
+        );
+        assert_eq!(first.phase, BigoConnectionPhase::Joined);
+        assert_eq!(second.phase, BigoConnectionPhase::AwaitingChallenge);
+        assert!(base.session.is_none());
+        assert!(base.room_password.is_none());
+    }
+
+    #[tokio::test]
+    async fn handshake_advances_state_and_returns_outbound_frames() {
+        let mut protocol = BigoDanmuProtocol {
+            session: Some(GuestSession {
+                device_id: "device".to_string(),
+                user_id: "user".to_string(),
+                uid_token: "token".to_string(),
+            }),
+            ..BigoDanmuProtocol::default()
+        };
+
+        let challenge = BigoDanmuProtocol::pack(EID_CHALLENGE, &json!({"challenge": "abcdefgh"}));
+        let (_, challenge_outbound) = protocol
+            .decode_message(&challenge, "room-1")
+            .await
+            .expect("challenge decode")
+            .into_parts();
+        assert_eq!(challenge_outbound.len(), 2);
+        assert_eq!(protocol.phase, BigoConnectionPhase::AwaitingLogin);
+
+        let login = BigoDanmuProtocol::pack(EID_LOGIN_RES, &json!({"res": "200"}));
+        let (_, login_outbound) = protocol
+            .decode_message(&login, "room-1")
+            .await
+            .expect("login decode")
+            .into_parts();
+        assert_eq!(login_outbound.len(), 1);
+        assert_eq!(protocol.phase, BigoConnectionPhase::AwaitingEnter);
+
+        let enter = BigoDanmuProtocol::pack(EID_ENTER_RES, &json!({"resCode": "200"}));
+        let output = protocol
+            .decode_message(&enter, "room-1")
+            .await
+            .expect("enter decode");
+        assert!(output.into_parts().0.is_empty());
+        assert_eq!(protocol.phase, BigoConnectionPhase::Joined);
+    }
+
+    #[tokio::test]
+    async fn rejected_login_and_enter_are_connection_errors() {
+        let mut protocol = BigoDanmuProtocol::default();
+
+        let login = BigoDanmuProtocol::pack(EID_LOGIN_RES, &json!({"res": "403"}));
+        let login_error = protocol
+            .decode_message(&login, "room-1")
+            .await
+            .expect_err("rejected login must fail the connection");
+        assert!(
+            matches!(login_error, DanmakuError::Connection(message) if message.contains("login rejected"))
+        );
+
+        let enter = BigoDanmuProtocol::pack(EID_ENTER_RES, &json!({"resCode": "401"}));
+        let enter_error = protocol
+            .decode_message(&enter, "room-1")
+            .await
+            .expect_err("rejected room entry must fail the connection");
+        assert!(
+            matches!(enter_error, DanmakuError::Connection(message) if message.contains("enter room rejected"))
+        );
     }
 
     /// Live integration: guest login → enter studio roomId → receive frames.
