@@ -114,7 +114,7 @@ msgid "{0} at {1}"
 msgstr "{0} at {1}"
 
 #. placeholder {0}: platformName.charAt(0).toUpperCase() + platformName.slice(1)
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:101
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:105
 msgid "{0} Configuration"
 msgstr "{0} Configuration"
 
@@ -511,6 +511,10 @@ msgstr "API protocol to use for live stream extraction. WUP is the standard prot
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:139
 msgid "API Request Retries"
 msgstr "API Request Retries"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:67
+msgid "API Settings"
+msgstr "API Settings"
 
 #: src/components/notifications/forms/gotify-form.tsx:56
 msgid "App Token"
@@ -1929,6 +1933,10 @@ msgstr "Default Engine"
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:52
+msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
+msgstr "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
+
 #: src/components/config/global/pipeline-config-card.tsx:145
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "Default pipeline flow. Configure the sequence of processors for new jobs."
@@ -2732,7 +2740,7 @@ msgstr "Exit Immersive"
 msgid "Experimental"
 msgstr "Experimental"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:243
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:247
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "Expert mode: Edit the raw platform-specific configuration directly."
 
@@ -3346,7 +3354,7 @@ msgstr "Force requesting the highest origin quality available (Direct stream)."
 msgid "Force specific output format."
 msgstr "Force specific output format."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:132
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:136
 msgid "Form"
 msgstr "Form"
 
@@ -4016,7 +4024,7 @@ msgstr "Jobs"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "Jobs will appear here when recordings are processed."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:148
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:152
 msgid "JSON"
 msgstr "JSON"
 
@@ -4322,7 +4330,7 @@ msgstr "Maintenance"
 msgid "Manage credentials and session cookies."
 msgstr "Manage credentials and session cookies."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:110
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:114
 msgid "Manage specialized extraction and identification options."
 msgstr "Manage specialized extraction and identification options."
 
@@ -4590,6 +4598,10 @@ msgstr "Min size to keep."
 #: src/components/notifications/forms/webhook-form.tsx:144
 msgid "Minimum Priority"
 msgstr "Minimum Priority"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:79
+msgid "Mint Integrity Token"
+msgstr "Mint Integrity Token"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:204
 msgid "Minute (00-59)"
@@ -4955,7 +4967,7 @@ msgstr "No recent sessions found."
 msgid "No refresh needed or not supported"
 msgstr "No refresh needed or not supported"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:161
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:165
 msgid "No specialized options available for this platform."
 msgstr "No specialized options available for this platform."
 
@@ -5725,7 +5737,7 @@ msgstr "Platform Override Settings"
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:106
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:110
 msgid "Platform Specific Configuration"
 msgstr "Platform Specific Configuration"
 
@@ -6015,6 +6027,7 @@ msgstr "Progress"
 msgid "Progress:"
 msgstr "Progress:"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:26
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:29
 msgid "Protection Settings"
 msgstr "Protection Settings"
@@ -6120,7 +6133,7 @@ msgstr "Rate-limits API calls to the remote. Useful when a provider returns 429 
 msgid "Ratio"
 msgstr "Ratio"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:223
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:227
 msgid "Raw JSON Editor"
 msgstr "Raw JSON Editor"
 
@@ -6883,6 +6896,10 @@ msgstr "Selected stream"
 msgid "Send"
 msgstr "Send"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:82
+msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
+msgstr "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
+
 #: src/components/pipeline/presets/processors/tdl-login-dialog.tsx:647
 msgid "Sensitive"
 msgstr "Sensitive"
@@ -7263,6 +7280,7 @@ msgstr "Stream Options"
 msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:39
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:42
 msgid "Stream Password"
 msgstr "Stream Password"
@@ -7419,7 +7437,7 @@ msgstr "Successfully deleted {0} sessions"
 msgid "Supported"
 msgstr "Supported"
 
-#: src/components/config/platforms/supported-platforms.tsx:27
+#: src/components/config/platforms/supported-platforms.tsx:28
 msgid "Supported Platforms"
 msgstr "Supported Platforms"
 

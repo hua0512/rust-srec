@@ -104,6 +104,17 @@ pub struct TwitcastingConfig {
     pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
+/// Bigo Live platform-specific configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BigoConfig {
+    /// Password for password-protected rooms
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_password: Option<String>,
+    /// Mint integrity token for studio API (default: true when None)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mint_token: Option<bool>,
+}
+
 /// Merge two JSON objects, with overlay taking precedence.
 ///
 /// This function performs a shallow merge of JSON objects. For nested objects,
@@ -223,5 +234,16 @@ mod tests {
         assert_eq!(config.cdn, Some("hw-h5".to_string()));
         assert_eq!(config.rate, Some(0));
         assert_eq!(config.request_retries, Some(5));
+    }
+
+    #[test]
+    fn test_bigo_config_deserialize() {
+        let json = json!({
+            "stream_password": "secret",
+            "mint_token": false
+        });
+        let config: BigoConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(config.stream_password.as_deref(), Some("secret"));
+        assert_eq!(config.mint_token, Some(false));
     }
 }

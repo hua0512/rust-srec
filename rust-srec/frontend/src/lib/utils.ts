@@ -23,6 +23,7 @@ export function getPlatformFromUrl(url: string) {
   if (url.includes('xhslink.com')) return 'redbook';
   if (url.includes('twitcasting.tv')) return 'twitcasting';
   if (url.includes('weibo.com')) return 'weibo';
+  if (url.includes('bigo.tv')) return 'bigo';
   return 'other';
 }
 

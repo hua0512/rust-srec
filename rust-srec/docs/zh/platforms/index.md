@@ -1,6 +1,6 @@
 # 支持的平台
 
-rust-srec 支持 12 个直播平台，自动检测并录制直播流。
+rust-srec 支持 13 个直播平台，自动检测并录制直播流。
 
 ## 平台列表
 
@@ -10,6 +10,7 @@ rust-srec 支持 12 个直播平台，自动检测并录制直播流。
 | [抖音](./douyin.md) | `live.douyin.com/{room_id}` | FLV/HLS | ✅ |
 | [斗鱼](./douyu.md) | `douyu.com/{room_id}` | FLV | ✅ |
 | [虎牙](./huya.md) | `huya.com/{room_id}` | FLV/HLS | ✅ |
+| [Bigo Live](./bigo.md) | `bigo.tv/{id}` | HLS | ✅ |
 | [AcFun](./others.md#acfun) | `acfun.cn/live/{room_id}` | HLS | ❌ |
 | [PandaTV](./others.md#pandatv) | `pandalive.co.kr/play/{id}` | HLS | ❌ |
 | [小红书](./others.md#redbook-小红书) | `xhslink.com/m/{id}` | HLS | ❌ |

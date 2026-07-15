@@ -1,4 +1,5 @@
 pub mod acfun;
+pub mod bigo;
 pub mod bilibili;
 pub mod douyin;
 pub mod douyu;
