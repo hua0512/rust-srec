@@ -8,7 +8,12 @@ import { nitro } from 'nitro/vite';
 import { lingui } from '@lingui/vite-plugin';
 import oxlintPlugin from 'vite-plugin-oxlint';
 
+import { computeThemeCacheId } from './theme-cache-id';
+
 export default defineConfig(() => ({
+  define: {
+    __THEME_CACHE_ID__: JSON.stringify(computeThemeCacheId()),
+  },
   plugins: [
     lingui(),
     devtools(),

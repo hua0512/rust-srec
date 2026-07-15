@@ -117,13 +117,43 @@ async function bootstrap() {
   }
 
   const router = getRouter(i18n);
+
+  // Resolved by NotifyFirstCommit's effect after React's first commit.
+  // Effects fire even while the window is hidden, unlike animation frames.
+  let signalFirstCommit!: () => void;
+  const firstCommit = new Promise<void>((resolve) => {
+    signalFirstCommit = resolve;
+  });
+  function NotifyFirstCommit() {
+    React.useEffect(() => {
+      signalFirstCommit();
+    }, []);
+    return null;
+  }
+
   createRoot(rootEl).render(
     <React.StrictMode>
+      <NotifyFirstCommit />
       <RouterProvider router={router} />
     </React.StrictMode>,
   );
 
-  // Tell the native host we're ready to show the main window.
+  await firstCommit;
+
+  // Best-effort wait for a presented frame on top of the commit. The main
+  // window is created hidden and only shown by lib.rs on
+  // 'rust-srec://frontend-ready', and hidden webviews may suspend
+  // requestAnimationFrame entirely — so bound the wait instead of trusting it
+  // (an unbounded wait would ride lib.rs's 6s show-anyway fallback on every
+  // launch). The pre-paint script in index.desktop.html already guarantees
+  // the revealed frame is themed either way.
+  await Promise.race([
+    new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    ),
+    new Promise<void>((resolve) => setTimeout(resolve, 120)),
+  ]);
+
   await notifyFrontendReady();
 
   // Load the catalog after the shell is visible.
