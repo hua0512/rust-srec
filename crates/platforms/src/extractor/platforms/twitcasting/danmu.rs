@@ -11,13 +11,14 @@ use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::Deserialize;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::{debug, warn};
 
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::ws_headers_origin_referer;
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::default::default_client;
 use tokio_tungstenite::tungstenite::http::HeaderMap;
@@ -102,8 +103,6 @@ pub struct TwitcastingDanmuProtocol {
     cookies: Option<String>,
     /// Optional password for password-protected streams
     password: Option<String>,
-    /// Cached WebSocket URL (set after websocket_url is called)
-    cached_ws_url: std::sync::Arc<parking_lot::RwLock<Option<String>>>,
 }
 
 impl Default for TwitcastingDanmuProtocol {
@@ -112,7 +111,6 @@ impl Default for TwitcastingDanmuProtocol {
             client: default_client(),
             cookies: None,
             password: None,
-            cached_ws_url: std::sync::Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 }
@@ -129,7 +127,6 @@ impl TwitcastingDanmuProtocol {
             client: default_client(),
             cookies: Some(cookies.into()),
             password: None,
-            cached_ws_url: std::sync::Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 
@@ -139,7 +136,6 @@ impl TwitcastingDanmuProtocol {
             client: default_client(),
             cookies: None,
             password: Some(password.into()),
-            cached_ws_url: std::sync::Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 
@@ -149,7 +145,6 @@ impl TwitcastingDanmuProtocol {
             client: default_client(),
             cookies: Some(cookies.into()),
             password: Some(password.into()),
-            cached_ws_url: std::sync::Arc::new(parking_lot::RwLock::new(None)),
         }
     }
 
@@ -345,7 +340,9 @@ impl TwitcastingDanmuProtocol {
     }
 }
 
-impl DanmuProtocol for TwitcastingDanmuProtocol {
+impl DanmuProtocolFactory for TwitcastingDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "twitcasting"
     }
@@ -358,7 +355,13 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
         capture_group_1_owned(&URL_REGEX, url)
     }
 
-    async fn websocket_url(&self, room_id: &str) -> Result<String> {
+    fn create_protocol(&self) -> Self::Protocol {
+        self.clone()
+    }
+}
+
+impl DanmuProtocol for TwitcastingDanmuProtocol {
+    async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
         // First get the movie ID from streamserver.php
         let movie_id = self.get_movie_id(room_id).await?;
         debug!("TwitCasting movie ID: {}", movie_id);
@@ -366,9 +369,6 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
         // Then get the WebSocket URL
         let ws_url = self.get_event_pubsub_url(&movie_id).await?;
         debug!("TwitCasting WebSocket URL: {}", ws_url);
-
-        // Cache the URL
-        *self.cached_ws_url.write() = Some(ws_url.clone());
 
         Ok(ws_url)
     }
@@ -381,7 +381,7 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
         ws_headers_origin_referer("https://twitcasting.tv", "https://twitcasting.tv")
     }
 
-    async fn handshake_messages(&self, _room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, _room_id: &str) -> Result<Vec<Message>> {
         // TwitCasting doesn't require explicit handshake - connection is sufficient
         Ok(vec![])
     }
@@ -396,11 +396,10 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         _room_id: &str,
-        tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         match message {
             Message::Text(text) => {
                 let mut items = Vec::new();
@@ -419,24 +418,24 @@ impl DanmuProtocol for TwitcastingDanmuProtocol {
                     items.extend(parsed.into_iter().map(DanmuItem::Message));
                 }
 
-                Ok(items)
+                Ok(items.into())
             }
             Message::Binary(data) => {
                 // Try to parse binary as text
                 if let Ok(text) = String::from_utf8(data.to_vec()) {
-                    return Ok(Self::parse_comments(&text)
-                        .into_iter()
-                        .map(DanmuItem::Message)
-                        .collect());
+                    return Ok(DanmuProtocolOutput::items(
+                        Self::parse_comments(&text)
+                            .into_iter()
+                            .map(DanmuItem::Message)
+                            .collect(),
+                    ));
                 }
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
-            Message::Ping(data) => {
-                // Respond to WebSocket-level PING
-                let _ = tx.send(Message::Pong(data.clone())).await;
-                Ok(vec![])
-            }
-            _ => Ok(vec![]),
+            Message::Ping(data) => Ok(DanmuProtocolOutput::outbound(vec![Message::Pong(
+                data.clone(),
+            )])),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
@@ -446,7 +445,7 @@ pub type TwitcastingDanmuProvider = WebSocketDanmuProvider<TwitcastingDanmuProto
 
 /// Creates a new TwitCasting danmu provider.
 pub fn create_twitcasting_danmu_provider() -> TwitcastingDanmuProvider {
-    WebSocketDanmuProvider::with_protocol(TwitcastingDanmuProtocol::default(), None)
+    WebSocketDanmuProvider::with_factory(TwitcastingDanmuProtocol::default(), None)
 }
 
 #[cfg(test)]
@@ -526,6 +525,20 @@ mod tests {
 
         let result = TwitcastingDanmuProtocol::parse_comments(json);
         assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn websocket_ping_returns_pong_as_outbound_protocol_frame() {
+        let mut protocol = TwitcastingDanmuProtocol::default();
+        let payload = bytes::Bytes::from_static(b"ping");
+        let output = protocol
+            .decode_message(&Message::Ping(payload.clone()), "user")
+            .await
+            .expect("decode ping");
+        let (items, outbound) = output.into_parts();
+
+        assert!(items.is_empty());
+        assert_eq!(outbound, vec![Message::Pong(payload)]);
     }
 
     /// Real integration test - connects to an actual TwitCasting stream

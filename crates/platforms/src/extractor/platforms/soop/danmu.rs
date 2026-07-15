@@ -9,14 +9,15 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use chrono::Utc;
-use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::http::{HeaderMap, HeaderValue, header};
 use tokio_tungstenite::tungstenite::protocol::Message;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::ws_headers_origin_ua;
-use crate::danmaku::websocket::{DanmuProtocol, WebSocketDanmuProvider};
+use crate::danmaku::websocket::{
+    DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
+};
 use crate::danmaku::{DanmuItem, DanmuMessage};
 use crate::extractor::default::DEFAULT_UA;
 use crate::extractor::platforms::soop::URL_REGEX;
@@ -249,7 +250,9 @@ impl SoopDanmuProtocol {
     }
 }
 
-impl DanmuProtocol for SoopDanmuProtocol {
+impl DanmuProtocolFactory for SoopDanmuProtocol {
+    type Protocol = Self;
+
     fn platform(&self) -> &str {
         "soop"
     }
@@ -262,7 +265,16 @@ impl DanmuProtocol for SoopDanmuProtocol {
         capture_group_1_owned(&URL_REGEX, url)
     }
 
-    async fn websocket_url(&self, room_id: &str) -> Result<String> {
+    fn create_protocol(&self) -> Self::Protocol {
+        Self {
+            session: ChatSession::default(),
+            cookies: self.cookies.clone(),
+        }
+    }
+}
+
+impl DanmuProtocol for SoopDanmuProtocol {
+    async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
         let session = self.session.clone();
         let bjid = if session.bjid.is_empty() {
             room_id.to_string()
@@ -348,7 +360,7 @@ impl DanmuProtocol for SoopDanmuProtocol {
         }
     }
 
-    async fn handshake_messages(&self, _room_id: &str) -> Result<Vec<Message>> {
+    async fn handshake_messages(&mut self, _room_id: &str) -> Result<Vec<Message>> {
         // Guest login: empty ticket, empty password, flag 16.
         let login = Self::make_packet(SVC_LOGIN, &["", "", "16"]);
         Ok(vec![Message::Binary(login)])
@@ -363,15 +375,15 @@ impl DanmuProtocol for SoopDanmuProtocol {
     }
 
     async fn decode_message(
-        &self,
+        &mut self,
         message: &Message,
         room_id: &str,
-        tx: &mpsc::Sender<Message>,
-    ) -> Result<Vec<DanmuItem>> {
+    ) -> Result<DanmuProtocolOutput> {
         match message {
             Message::Binary(data) => {
                 let packets = Self::parse_packets(data);
                 let mut items = Vec::new();
+                let mut outbound = Vec::new();
 
                 for (svc, fields) in packets {
                     match svc {
@@ -400,15 +412,12 @@ impl DanmuProtocol for SoopDanmuProtocol {
                                     mode.as_str(),
                                 ],
                             );
-                            if let Err(e) = tx.send(Message::Binary(join)).await {
-                                warn!(error = %e, "failed to send SOOP JOINCH");
-                            } else {
-                                debug!(
-                                    chatno = %session.chatno,
-                                    room_id,
-                                    "SOOP JOINCH sent after LOGIN"
-                                );
-                            }
+                            outbound.push(Message::Binary(join));
+                            debug!(
+                                chatno = %session.chatno,
+                                room_id,
+                                "SOOP JOINCH queued after LOGIN"
+                            );
                         }
                         SVC_JOINCH => {
                             if Self::is_join_failure(&fields) {
@@ -436,23 +445,23 @@ impl DanmuProtocol for SoopDanmuProtocol {
                     }
                 }
 
-                Ok(items)
+                Ok(DanmuProtocolOutput::new(items, outbound))
             }
             Message::Text(text) => {
                 debug!(%text, "SOOP unexpected text frame");
-                Ok(vec![])
+                Ok(DanmuProtocolOutput::default())
             }
             Message::Close(frame) => Err(DanmakuError::connection(format!(
                 "SOOP chat closed: {frame:?}"
             ))),
-            _ => Ok(vec![]),
+            _ => Ok(DanmuProtocolOutput::default()),
         }
     }
 }
 
 /// Create a SOOP guest danmu provider.
 pub fn create_soop_danmu_provider() -> WebSocketDanmuProvider<SoopDanmuProtocol> {
-    WebSocketDanmuProvider::with_protocol(SoopDanmuProtocol::new(), None)
+    WebSocketDanmuProvider::with_factory(SoopDanmuProtocol::new(), None)
 }
 
 #[cfg(test)]
@@ -514,10 +523,10 @@ mod tests {
     }
 
     #[test]
-    fn cloned_protocols_keep_connection_state_isolated() {
+    fn factory_protocols_keep_connection_state_isolated() {
         let base = SoopDanmuProtocol::new();
-        let mut first = base.clone();
-        let mut second = base.clone();
+        let mut first = base.create_protocol();
+        let mut second = base.create_protocol();
 
         let mut first_extras = HashMap::new();
         first_extras.insert("chatno".into(), "1001".into());
@@ -537,11 +546,10 @@ mod tests {
 
     #[tokio::test]
     async fn login_without_chatno_errors() {
-        let p = SoopDanmuProtocol::new();
+        let mut p = SoopDanmuProtocol::new();
         let login = SoopDanmuProtocol::make_packet(SVC_LOGIN, &["", "", "16"]);
-        let (tx, _rx) = mpsc::channel(4);
         let err = p
-            .decode_message(&Message::Binary(login), "bjid", &tx)
+            .decode_message(&Message::Binary(login), "bjid")
             .await
             .expect_err("must require chatno");
         assert!(err.to_string().contains("chatno"));
@@ -559,13 +567,13 @@ mod tests {
         p.configure_connection(None, Some(&extras));
 
         let login = SoopDanmuProtocol::make_packet(SVC_LOGIN, &["", "", "16"]);
-        let (tx, mut rx) = mpsc::channel(4);
-        let items = p
-            .decode_message(&Message::Binary(login), "example", &tx)
+        let output = p
+            .decode_message(&Message::Binary(login), "example")
             .await
             .expect("decode");
+        let (items, mut outbound) = output.into_parts();
         assert!(items.is_empty());
-        let join = rx.try_recv().expect("JOIN packet");
+        let join = outbound.pop().expect("JOIN packet");
         let Message::Binary(data) = join else {
             panic!("expected binary JOIN");
         };
