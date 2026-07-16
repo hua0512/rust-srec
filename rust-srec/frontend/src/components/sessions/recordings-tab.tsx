@@ -42,10 +42,12 @@ interface RecordingsTabProps {
   onPlay: (output: MediaOutput) => void;
 }
 
-type SplitReasonRecord = {
+export type SplitReasonRecord = {
   code?: string | null;
   details?: unknown;
 };
+
+export type TimelineBoundaryKind = 'break' | 'discontinuity' | 'lossless_split';
 
 /** Intermediate shape used during grouping (mutable, optional fields). */
 interface TimelineGroupBuilder {
@@ -60,7 +62,7 @@ interface TimelineGroupBuilder {
 }
 
 /** Finalized group with all fields resolved — no optional timestamps. */
-interface TimelineGroup {
+export interface TimelineGroup {
   id: string;
   baseName: string;
   startTimeMs: number;
@@ -69,7 +71,7 @@ interface TimelineGroup {
   sizeBytes: number;
   outputs: MediaOutput[];
   splitReason?: SplitReasonRecord;
-  hasBreakBefore: boolean;
+  boundaryReasonBefore?: SplitReasonRecord;
   gapSecsBefore: number;
 }
 
@@ -85,8 +87,7 @@ const SplitReasonBadge = memo(function SplitReasonBadge({
   isSegmentsLoading?: boolean;
 }) {
   const { i18n } = useLingui();
-  if (isSegmentsLoading || !splitReason || splitReason.code === 'discontinuity')
-    return null;
+  if (isSegmentsLoading || !splitReason) return null;
   const formattedReason = formatSplitReason(i18n, splitReason);
   if (!formattedReason) return null;
 
@@ -204,6 +205,10 @@ const TimelineNode = memo(function TimelineNode({
 }) {
   const { i18n } = useLingui();
   const delay = Math.min(index * 0.05, MAX_STAGGER_DELAY);
+  const boundaryKind = classifyTimelineBoundary(
+    group.boundaryReasonBefore,
+    group.gapSecsBefore,
+  );
 
   return (
     <motion.div
@@ -218,7 +223,7 @@ const TimelineNode = memo(function TimelineNode({
       {/* Break or Split indicator */}
       {index > 0 && (
         <div className="absolute -top-6 -left-[38px] flex items-center gap-2 bg-card rounded-md">
-          {group.hasBreakBefore ? (
+          {boundaryKind === 'break' ? (
             <Badge
               variant="destructive"
               className="h-5 px-1.5 gap-1 font-mono text-[10px]"
@@ -228,6 +233,14 @@ const TimelineNode = memo(function TimelineNode({
               {group.gapSecsBefore > 0
                 ? `(${formatDuration(group.gapSecsBefore)})`
                 : ''}
+            </Badge>
+          ) : boundaryKind === 'discontinuity' ? (
+            <Badge
+              variant="destructive"
+              className="h-5 px-1.5 gap-1 font-mono text-[10px]"
+            >
+              <Unlink className="h-3 w-3" />
+              <Trans>Discontinuity</Trans>
             </Badge>
           ) : (
             <Badge
@@ -239,7 +252,11 @@ const TimelineNode = memo(function TimelineNode({
             </Badge>
           )}
           <SplitReasonBadge
-            splitReason={group.splitReason}
+            splitReason={
+              boundaryKind === 'discontinuity'
+                ? undefined
+                : group.boundaryReasonBefore
+            }
             isSegmentsLoading={isSegmentsLoading}
           />
         </div>
@@ -308,6 +325,130 @@ const TimelineNode = memo(function TimelineNode({
 
 // --- Main component ---
 
+export function classifyTimelineBoundary(
+  reason: SplitReasonRecord | undefined,
+  gapSecs: number,
+): TimelineBoundaryKind {
+  if (gapSecs > 5) return 'break';
+  if (reason?.code === 'discontinuity') return 'discontinuity';
+  return 'lossless_split';
+}
+
+export function buildTimelineGroups(
+  outputs: MediaOutput[],
+  segments?: SessionSegment[],
+): TimelineGroup[] {
+  interface SegmentInfo {
+    splitReason: SplitReasonRecord;
+    durationSecs?: number;
+    startedAtMs: number;
+    completedAtMs?: number;
+  }
+  const segmentInfoByPath = new Map<string, SegmentInfo>();
+  for (const s of segments || []) {
+    if (!isNonEmptyString(s.file_path) || !s.created_at) continue;
+    const info: SegmentInfo = {
+      splitReason: {
+        code: s.split_reason_code,
+        details: s.split_reason_details,
+      },
+      durationSecs: s.duration_secs || undefined,
+      startedAtMs: new Date(s.created_at).getTime(),
+      completedAtMs: s.completed_at
+        ? new Date(s.completed_at).getTime()
+        : undefined,
+    };
+    const fileName = s.file_path.split('/').pop();
+    for (const key of [s.file_path, fileName]) {
+      if (!isNonEmptyString(key) || segmentInfoByPath.has(key)) continue;
+      segmentInfoByPath.set(key, info);
+    }
+  }
+
+  const groupsMap = new Map<string, TimelineGroupBuilder>();
+  for (const output of outputs) {
+    const lastDot = output.file_path.lastIndexOf('.');
+    const lastSlash = output.file_path.lastIndexOf('/');
+    const isExtension = lastDot > lastSlash;
+    const basePath = isExtension
+      ? output.file_path.substring(0, lastDot)
+      : output.file_path;
+    const baseName = basePath.split('/').pop() || 'Unknown';
+
+    const fileName = output.file_path.split('/').pop();
+    const segInfo =
+      segmentInfoByPath.get(output.file_path) ??
+      (isNonEmptyString(fileName)
+        ? segmentInfoByPath.get(fileName)
+        : undefined);
+
+    let group = groupsMap.get(basePath);
+    if (!group) {
+      group = {
+        id: basePath,
+        baseName,
+        endTimeMs: new Date(output.created_at).getTime(),
+        durationSecs: null,
+        sizeBytes: 0,
+        outputs: [],
+      };
+      groupsMap.set(basePath, group);
+    } else {
+      const outTs = new Date(output.created_at).getTime();
+      if (outTs > group.endTimeMs) {
+        group.endTimeMs = outTs;
+      }
+    }
+
+    if (
+      segInfo?.startedAtMs &&
+      (!group.startTimeMs || segInfo.startedAtMs < group.startTimeMs)
+    ) {
+      group.startTimeMs = segInfo.startedAtMs;
+    }
+    if (segInfo?.completedAtMs) {
+      group.endTimeMs = Math.max(group.endTimeMs, segInfo.completedAtMs);
+    }
+
+    const effectiveDur = segInfo?.durationSecs ?? output.duration_secs ?? null;
+    if (
+      effectiveDur &&
+      (!group.durationSecs || effectiveDur > group.durationSecs)
+    ) {
+      group.durationSecs = effectiveDur;
+    }
+
+    group.sizeBytes += output.file_size_bytes;
+    group.outputs.push(output);
+
+    if (!group.splitReason && segInfo?.splitReason) {
+      group.splitReason = segInfo.splitReason;
+    }
+  }
+
+  const finalized: TimelineGroup[] = Array.from(groupsMap.values()).map(
+    (group) => ({
+      ...group,
+      startTimeMs: group.startTimeMs ?? group.endTimeMs,
+      gapSecsBefore: 0,
+    }),
+  );
+
+  finalized.sort((a, b) => a.startTimeMs - b.startTimeMs);
+
+  for (let i = 1; i < finalized.length; i++) {
+    const current = finalized[i];
+    const previous = finalized[i - 1];
+    current.gapSecsBefore = Math.max(
+      0,
+      (current.startTimeMs - previous.endTimeMs) / 1000,
+    );
+    current.boundaryReasonBefore = previous.splitReason;
+  }
+
+  return finalized;
+}
+
 export function RecordingsTab({
   isLoading,
   outputs,
@@ -316,122 +457,10 @@ export function RecordingsTab({
   onDownload,
   onPlay,
 }: RecordingsTabProps) {
-  const timelineGroups = useMemo(() => {
-    interface SegmentInfo {
-      splitReason: SplitReasonRecord;
-      durationSecs?: number;
-      startedAtMs: number;
-      completedAtMs?: number;
-    }
-    const segmentInfoByPath = new Map<string, SegmentInfo>();
-    for (const s of segments || []) {
-      if (!isNonEmptyString(s.file_path) || !s.created_at) continue;
-      const info: SegmentInfo = {
-        splitReason: {
-          code: s.split_reason_code,
-          details: s.split_reason_details,
-        },
-        durationSecs: s.duration_secs || undefined,
-        startedAtMs: new Date(s.created_at).getTime(),
-        completedAtMs: s.completed_at
-          ? new Date(s.completed_at).getTime()
-          : undefined,
-      };
-      const fileName = s.file_path.split('/').pop();
-      for (const key of [s.file_path, fileName]) {
-        if (!isNonEmptyString(key) || segmentInfoByPath.has(key)) continue;
-        segmentInfoByPath.set(key, info);
-      }
-    }
-
-    const groupsMap = new Map<string, TimelineGroupBuilder>();
-    for (const output of outputs) {
-      const lastDot = output.file_path.lastIndexOf('.');
-      const lastSlash = output.file_path.lastIndexOf('/');
-      const isExtension = lastDot > lastSlash;
-      const basePath = isExtension
-        ? output.file_path.substring(0, lastDot)
-        : output.file_path;
-      const baseName = basePath.split('/').pop() || 'Unknown';
-
-      const fileName = output.file_path.split('/').pop();
-      const segInfo =
-        segmentInfoByPath.get(output.file_path) ??
-        (isNonEmptyString(fileName)
-          ? segmentInfoByPath.get(fileName)
-          : undefined);
-
-      let group = groupsMap.get(basePath);
-      if (!group) {
-        group = {
-          id: basePath,
-          baseName,
-          endTimeMs: new Date(output.created_at).getTime(),
-          durationSecs: null,
-          sizeBytes: 0,
-          outputs: [],
-        };
-        groupsMap.set(basePath, group);
-      } else {
-        const outTs = new Date(output.created_at).getTime();
-        if (outTs > group.endTimeMs) {
-          group.endTimeMs = outTs;
-        }
-      }
-
-      if (
-        segInfo?.startedAtMs &&
-        (!group.startTimeMs || segInfo.startedAtMs < group.startTimeMs)
-      ) {
-        group.startTimeMs = segInfo.startedAtMs;
-      }
-      if (segInfo?.completedAtMs) {
-        group.endTimeMs = Math.max(group.endTimeMs, segInfo.completedAtMs);
-      }
-
-      const effectiveDur =
-        segInfo?.durationSecs ?? output.duration_secs ?? null;
-      if (
-        effectiveDur &&
-        (!group.durationSecs || effectiveDur > group.durationSecs)
-      ) {
-        group.durationSecs = effectiveDur;
-      }
-
-      group.sizeBytes += output.file_size_bytes;
-      group.outputs.push(output);
-
-      if (!group.splitReason && segInfo?.splitReason) {
-        group.splitReason = segInfo.splitReason;
-      }
-    }
-
-    // Finalize: resolve optional startTimeMs, compute gaps
-    const builders = Array.from(groupsMap.values());
-    const finalized: TimelineGroup[] = builders.map((b) => ({
-      ...b,
-      startTimeMs: b.startTimeMs ?? b.endTimeMs,
-      hasBreakBefore: false,
-      gapSecsBefore: 0,
-    }));
-
-    finalized.sort((a, b) => a.startTimeMs - b.startTimeMs);
-
-    for (let i = 1; i < finalized.length; i++) {
-      const current = finalized[i];
-      const prev = finalized[i - 1];
-      const gapSecs = Math.max(
-        0,
-        (current.startTimeMs - prev.endTimeMs) / 1000,
-      );
-
-      current.gapSecsBefore = gapSecs;
-      current.hasBreakBefore =
-        prev.splitReason?.code === 'discontinuity' || gapSecs > 5;
-    }
-
-    return finalized;
-  }, [outputs, segments]);
+  const timelineGroups = useMemo(
+    () => buildTimelineGroups(outputs, segments),
+    [outputs, segments],
+  );
 
   return (
     <motion.div

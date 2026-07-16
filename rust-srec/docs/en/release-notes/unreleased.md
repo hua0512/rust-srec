@@ -48,6 +48,12 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
   A missing style definition left the text on some destructive confirmation buttons (template, notification channel, and workflow deletion) rendering in the wrong color. They now use the theme's destructive foreground color.
 
+## Recording timeline
+
+- **HLS discontinuities are labeled accurately**
+
+  The media timeline now distinguishes an HLS playlist discontinuity from an actual recording gap. A time-continuous `#EXT-X-DISCONTINUITY` boundary is labeled as a discontinuity instead of a break, split reasons appear on the boundary they caused, and long sessions load all paginated media outputs and segment metadata instead of showing only the most recent page.
+
 ## HLS recording engine
 
 - **Rebuilt HLS engine for more predictable recording**
