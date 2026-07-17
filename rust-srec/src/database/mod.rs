@@ -216,6 +216,25 @@ pub async fn init_write_pool(database_url: &str) -> Result<WritePool, sqlx::Erro
 
 pub async fn run_migrations(pool: &DbPool) -> Result<(), sqlx::Error> {
     tracing::info!("Running database migrations...");
+
+    // auto_vacuum must be selected before the first table is created. Existing
+    // databases are converted by the guarded maintenance-window VACUUM path.
+    {
+        let mut connection = pool.acquire().await?;
+        let (table_count,): (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM sqlite_schema \
+             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+        )
+        .fetch_one(&mut *connection)
+        .await?;
+        if table_count == 0 {
+            sqlx::query("PRAGMA auto_vacuum = INCREMENTAL")
+                .execute(&mut *connection)
+                .await?;
+            sqlx::query("VACUUM").execute(&mut *connection).await?;
+        }
+    }
+
     sqlx::migrate!("./migrations").run(pool).await?;
     tracing::info!("Database migrations completed");
     Ok(())

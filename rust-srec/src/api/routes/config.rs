@@ -10,7 +10,7 @@ use tracing::debug;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{GlobalConfigResponse, PlatformConfigResponse, UpdateGlobalConfigRequest};
 use crate::api::server::AppState;
-use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel};
+use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel, RetentionDays};
 
 /// Helper trait for apply_updates macro to handle Option wrapping/unwrapping
 trait ApplyUpdate<Source> {
@@ -65,6 +65,25 @@ macro_rules! apply_updates {
     (@val $val:ident,) => { $val };
 }
 
+pub(super) fn validate_retention_days(field: &'static str, days: i64) -> ApiResult<()> {
+    RetentionDays::try_from(days)
+        .map(|_| ())
+        .map_err(|_| ApiError::bad_request(format!("{field} must be between 0 and {}", i32::MAX)))
+}
+
+fn validate_optional_retention_days(
+    field: &'static str,
+    value: Option<&serde_json::Value>,
+) -> ApiResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let Some(days) = value.as_i64() else {
+        return Err(ApiError::bad_request(format!("{field} must be an integer")));
+    };
+    validate_retention_days(field, days)
+}
+
 /// Create the config router.
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -76,8 +95,24 @@ pub fn router() -> Router<AppState> {
 }
 
 /// Map GlobalConfigDbModel to GlobalConfigResponse.
-fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigResponse {
-    GlobalConfigResponse {
+fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<GlobalConfigResponse> {
+    let job_history_retention_days = RetentionDays::try_from(config.job_history_retention_days)
+        .map_err(|error| {
+            ApiError::internal(format!(
+                "Invalid job_history_retention_days in database: {error}"
+            ))
+        })?
+        .as_u32();
+    let notification_event_log_retention_days =
+        RetentionDays::try_from(config.notification_event_log_retention_days)
+            .map_err(|error| {
+                ApiError::internal(format!(
+                    "Invalid notification_event_log_retention_days in database: {error}"
+                ))
+            })?
+            .as_u32();
+
+    Ok(GlobalConfigResponse {
         output_folder: config.output_folder,
         output_filename_template: config.output_filename_template,
         output_file_format: config.output_file_format,
@@ -94,8 +129,8 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         offline_check_count: config.offline_check_count as u32,
         default_download_engine: config.default_download_engine,
         record_danmu: config.record_danmu,
-        job_history_retention_days: config.job_history_retention_days as u32,
-        notification_event_log_retention_days: config.notification_event_log_retention_days as u32,
+        job_history_retention_days,
+        notification_event_log_retention_days,
         pipeline: config.pipeline,
         session_complete_pipeline: config.session_complete_pipeline,
         paired_segment_pipeline: config.paired_segment_pipeline,
@@ -107,7 +142,7 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> GlobalConfigRes
         pipeline_execute_timeout_secs: config.pipeline_execute_timeout_secs.max(0) as u64,
         queue_freshness_threshold_ms: config.queue_freshness_threshold_ms.max(0) as u64,
         gpu_health_probe_interval_secs: config.gpu_health_probe_interval_secs.max(0) as u64,
-    }
+    })
 }
 
 /// Map PlatformConfigDbModel to PlatformConfigResponse.
@@ -183,7 +218,7 @@ pub async fn get_global_config(
         .await
         .map_err(|e| ApiError::internal(format!("Failed to get global config: {}", e)))?;
 
-    Ok(Json(map_global_config_to_response(config)))
+    Ok(Json(map_global_config_to_response(config)?))
 }
 
 #[utoipa::path(
@@ -200,6 +235,15 @@ pub async fn update_global_config(
     State(state): State<AppState>,
     Json(request): Json<UpdateGlobalConfigRequest>,
 ) -> ApiResult<Json<GlobalConfigResponse>> {
+    validate_optional_retention_days(
+        "job_history_retention_days",
+        request.job_history_retention_days.as_ref(),
+    )?;
+    validate_optional_retention_days(
+        "notification_event_log_retention_days",
+        request.notification_event_log_retention_days.as_ref(),
+    )?;
+
     let config_service = state
         .config_service
         .as_ref()
@@ -289,7 +333,7 @@ pub async fn update_global_config(
         "Global configuration updated successfully via API"
     );
 
-    Ok(Json(map_global_config_to_response(config)))
+    Ok(Json(map_global_config_to_response(config)?))
 }
 
 #[utoipa::path(
@@ -441,7 +485,28 @@ pub async fn replace_platform_config(
 #[cfg(test)]
 mod tests {
 
+    use axum::http::StatusCode;
+
+    use super::{validate_optional_retention_days, validate_retention_days};
     use crate::api::models::GlobalConfigResponse;
+
+    #[test]
+    fn retention_validation_accepts_zero_and_positive_integers() {
+        assert!(validate_retention_days("retention", 0).is_ok());
+        assert!(validate_retention_days("retention", 30).is_ok());
+    }
+
+    #[test]
+    fn retention_validation_rejects_negative_or_non_integer_values() {
+        let error = validate_retention_days("retention", -1)
+            .expect_err("negative retention must be rejected");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+
+        let value = serde_json::json!(1.5);
+        let error = validate_optional_retention_days("retention", Some(&value))
+            .expect_err("fractional retention must be rejected");
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+    }
 
     #[test]
     fn test_global_config_response_serialization() {

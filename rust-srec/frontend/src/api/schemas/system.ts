@@ -23,8 +23,8 @@ export const GlobalConfigSchema = z.object({
   default_download_engine: z.string(),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
-  job_history_retention_days: z.number(),
-  notification_event_log_retention_days: z.number(),
+  job_history_retention_days: z.number().int().min(0),
+  notification_event_log_retention_days: z.number().int().min(0),
   log_filter_directive: z.string(),
   auto_thumbnail: z.boolean().default(true),
 
@@ -98,8 +98,8 @@ export const GlobalConfigFormSchema = z.object({
   default_download_engine: z.string(),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
-  job_history_retention_days: z.number(),
-  notification_event_log_retention_days: z.number(),
+  job_history_retention_days: z.number().int().min(0),
+  notification_event_log_retention_days: z.number().int().min(0),
   log_filter_directive: z.string(),
   auto_thumbnail: z.boolean().default(true),
 
@@ -134,8 +134,8 @@ export const GlobalConfigWriteSchema = z.object({
   default_download_engine: z.string(),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
-  job_history_retention_days: z.number(),
-  notification_event_log_retention_days: z.number(),
+  job_history_retention_days: z.number().int().min(0),
+  notification_event_log_retention_days: z.number().int().min(0),
   log_filter_directive: z.string(),
   auto_thumbnail: z.boolean().default(true),
 

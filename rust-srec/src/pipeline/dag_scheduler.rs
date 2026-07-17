@@ -1018,19 +1018,7 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn cleanup_old_jobs(&self, _retention_days: i32) -> Result<i32> {
-            unimplemented!("not needed for these tests")
-        }
-
         async fn delete_job(&self, _id: &str) -> Result<()> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn purge_jobs_older_than(&self, _days: u32, _batch_size: u32) -> Result<u64> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn get_purgeable_jobs(&self, _days: u32, _limit: u32) -> Result<Vec<String>> {
             unimplemented!("not needed for these tests")
         }
 

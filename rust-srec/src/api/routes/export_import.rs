@@ -23,6 +23,8 @@ use crate::database::models::{
 };
 use crate::database::models::{JobPreset, PipelinePreset};
 
+use super::config::validate_retention_days;
+
 /// Current schema version for exports.
 const EXPORT_SCHEMA_VERSION: &str = "0.1.6";
 
@@ -864,6 +866,14 @@ pub async fn import_config(
             config.version
         )));
     }
+    validate_retention_days(
+        "job_history_retention_days",
+        i64::from(config.global_config.job_history_retention_days),
+    )?;
+    validate_retention_days(
+        "notification_event_log_retention_days",
+        i64::from(config.global_config.notification_event_log_retention_days),
+    )?;
 
     let config_service = state
         .config_service
@@ -1986,10 +1996,6 @@ mod tests {
                     .await
                     .push(user_id.to_string());
                 Ok(())
-            }
-
-            async fn cleanup_expired(&self) -> crate::Result<u64> {
-                Ok(0)
             }
 
             async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {

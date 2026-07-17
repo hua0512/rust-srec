@@ -5,9 +5,27 @@ use chrono::Utc;
 use sqlx::SqlitePool;
 
 use crate::database::models::{
-    EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
+    EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, RetentionDays,
+    TemplateConfigDbModel,
 };
 use crate::{Error, Result};
+
+fn validate_global_retention(config: &GlobalConfigDbModel) -> Result<()> {
+    for (field, days) in [
+        (
+            "job_history_retention_days",
+            config.job_history_retention_days,
+        ),
+        (
+            "notification_event_log_retention_days",
+            config.notification_event_log_retention_days,
+        ),
+    ] {
+        RetentionDays::try_from(days)
+            .map_err(|error| Error::config(format!("{field}: {error}")))?;
+    }
+    Ok(())
+}
 
 /// Configuration repository trait.
 #[async_trait]
@@ -72,6 +90,7 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn update_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
+        validate_global_retention(config)?;
         sqlx::query(
             r#"
             UPDATE global_config SET
@@ -141,6 +160,7 @@ impl ConfigRepository for SqlxConfigRepository {
     }
 
     async fn create_global_config(&self, config: &GlobalConfigDbModel) -> Result<()> {
+        validate_global_retention(config)?;
         sqlx::query(
             r#"
             INSERT INTO global_config (
@@ -530,5 +550,16 @@ impl ConfigRepository for SqlxConfigRepository {
 
 #[cfg(test)]
 mod tests {
-    // Integration tests would go here with a test database
+    use super::*;
+
+    #[test]
+    fn global_retention_validation_rejects_negative_values() {
+        let config = GlobalConfigDbModel {
+            job_history_retention_days: -1,
+            ..GlobalConfigDbModel::default()
+        };
+
+        let error = validate_global_retention(&config).expect_err("negative retention");
+        assert!(error.to_string().contains("job_history_retention_days"));
+    }
 }

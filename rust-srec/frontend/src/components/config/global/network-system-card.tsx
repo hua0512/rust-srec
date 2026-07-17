@@ -176,7 +176,7 @@ export const NetworkSystemCard = memo(() => {
               <FormItem>
                 <FormLabel className="flex items-center gap-1.5">
                   <History className="h-3.5 w-3.5 text-violet-500/80" />
-                  <Trans>Retention Period</Trans>
+                  <Trans>Pipeline History Retention</Trans>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <CircleHelp className="h-3.5 w-3.5 text-muted-foreground/40 cursor-help hover:text-muted-foreground transition-colors" />
@@ -184,13 +184,14 @@ export const NetworkSystemCard = memo(() => {
                     <TooltipContent className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden">
                       <StatusInfoTooltip
                         icon={<History className="w-4 h-4" />}
-                        title={<Trans>History Retention</Trans>}
+                        title={<Trans>Pipeline History Retention</Trans>}
                         theme="violet"
                       >
                         <p className="text-xs leading-relaxed text-muted-foreground">
                           <Trans>
-                            Number of days to keep the history of completed,
-                            failed, or interrupted jobs in the database.
+                            Number of days to keep completed, failed, or
+                            cancelled jobs and workflow executions. Set to 0 to
+                            retain them indefinitely.
                           </Trans>
                         </p>
                       </StatusInfoTooltip>
@@ -230,9 +231,8 @@ export const NetworkSystemCard = memo(() => {
                       >
                         <p className="text-xs leading-relaxed text-muted-foreground">
                           <Trans>
-                            Number of days to keep the notification event log in
-                            the database. This affects the Notifications →
-                            Events page.
+                            Number of days to keep the notification event log.
+                            Set to 0 to retain events indefinitely.
                           </Trans>
                         </p>
                       </StatusInfoTooltip>

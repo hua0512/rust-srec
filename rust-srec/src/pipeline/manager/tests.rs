@@ -456,19 +456,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn cleanup_old_jobs(&self, _retention_days: i32) -> Result<i32> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn delete_job(&self, _id: &str) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn purge_jobs_older_than(&self, _days: u32, _batch_size: u32) -> Result<u64> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn get_purgeable_jobs(&self, _days: u32, _limit: u32) -> Result<Vec<String>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -905,10 +893,6 @@ fn test_pipeline_manager_config_default() {
     assert!(!config.throttle.enabled);
     assert_eq!(config.throttle.critical_threshold, 500);
     assert_eq!(config.throttle.warning_threshold, 100);
-    // Verify purge config defaults
-    assert_eq!(config.purge.retention_days, 30);
-    assert_eq!(config.purge.batch_size, 100);
-    assert!(config.purge.time_window.is_some());
 }
 
 #[test]
@@ -957,8 +941,7 @@ async fn test_retry_job_resets_failed_dag_when_job_is_dag_step() {
     let job_id = job.id.clone();
     job_repo.insert(job);
 
-    let mut config = PipelineManagerConfig::default();
-    config.purge.retention_days = 0;
+    let config = PipelineManagerConfig::default();
 
     let manager: PipelineManager =
         PipelineManager::with_repository(config, job_repo).with_dag_repository(dag_repo.clone());
@@ -1014,8 +997,7 @@ async fn test_retry_job_resets_cancelled_dag_when_job_is_dag_step() {
     let job_id = job.id.clone();
     job_repo.insert(job);
 
-    let mut config = PipelineManagerConfig::default();
-    config.purge.retention_days = 0;
+    let config = PipelineManagerConfig::default();
 
     let manager: PipelineManager =
         PipelineManager::with_repository(config, job_repo).with_dag_repository(dag_repo.clone());

@@ -63,18 +63,7 @@ pub trait JobRepository: Send + Sync {
     ) -> Result<u64>;
     /// Reset processing jobs to pending (for recovery on startup).
     async fn reset_processing_jobs(&self) -> Result<i32>;
-    async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32>;
     async fn delete_job(&self, id: &str) -> Result<()>;
-
-    // Purge methods
-    /// Purge completed/failed jobs older than the specified number of days.
-    /// Deletes jobs in batches to avoid long-running transactions.
-    /// Returns the number of jobs deleted.
-    async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64>;
-
-    /// Get IDs of jobs that are eligible for purging.
-    /// Returns job IDs for completed/failed jobs older than the specified days.
-    async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>>;
 
     // Execution logs
     async fn add_execution_log(&self, log: &JobExecutionLogDbModel) -> Result<()>;
@@ -627,41 +616,6 @@ impl JobRepository for SqlxJobRepository {
         .await
     }
 
-    async fn cleanup_old_jobs(&self, retention_days: i32) -> Result<i32> {
-        retry_on_sqlite_busy("cleanup_old_jobs", || async {
-            // First delete execution logs for old completed/failed jobs
-            let cutoff_ms = crate::database::time::now_ms()
-                - chrono::Duration::days(retention_days as i64).num_milliseconds();
-
-            sqlx::query(
-                r#"
-                DELETE FROM job_execution_logs 
-                WHERE job_id IN (
-                    SELECT id FROM job 
-                    WHERE status IN (?, ?)
-                    AND updated_at < ?
-                )
-                "#,
-            )
-            .bind(JobStatus::Completed.as_str())
-            .bind(JobStatus::Failed.as_str())
-            .bind(cutoff_ms)
-            .execute(&self.write_pool)
-            .await?;
-
-            // Then delete the jobs
-            let result = sqlx::query("DELETE FROM job WHERE status IN (?, ?) AND updated_at < ?")
-                .bind(JobStatus::Completed.as_str())
-                .bind(JobStatus::Failed.as_str())
-                .bind(cutoff_ms)
-                .execute(&self.write_pool)
-                .await?;
-
-            Ok(result.rows_affected() as i32)
-        })
-        .await
-    }
-
     async fn delete_job(&self, id: &str) -> Result<()> {
         retry_on_sqlite_busy("delete_job", || async {
             // Execution logs are deleted via CASCADE
@@ -1132,129 +1086,6 @@ impl JobRepository for SqlxJobRepository {
             Ok(result.rows_affected())
         })
         .await
-    }
-
-    /// Purge completed/failed jobs older than the specified number of days.
-    /// Deletes jobs in batches to avoid long-running transactions.
-    /// Returns the number of jobs deleted.
-    async fn purge_jobs_older_than(&self, days: u32, batch_size: u32) -> Result<u64> {
-        let cutoff_ms = crate::database::time::now_ms()
-            - chrono::Duration::days(days as i64).num_milliseconds();
-
-        let mut total_deleted: u64 = 0;
-
-        loop {
-            let purge_statuses = [JobStatus::Completed, JobStatus::Failed];
-            let mut builder =
-                sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT id FROM job WHERE status IN (");
-            {
-                let mut separated = builder.separated(", ");
-                for status in &purge_statuses {
-                    separated.push_bind(status.as_str());
-                }
-            }
-            builder.push(") AND (completed_at < ");
-            builder.push_bind(cutoff_ms);
-            builder.push(" OR (completed_at IS NULL AND updated_at < ");
-            builder.push_bind(cutoff_ms);
-            builder.push(")) LIMIT ");
-            builder.push_bind(batch_size as i64);
-
-            let job_ids: Vec<String> = builder
-                .build_query_scalar()
-                .persistent(false)
-                .fetch_all(&self.pool)
-                .await?;
-
-            if job_ids.is_empty() {
-                break;
-            }
-
-            let batch_count = job_ids.len() as u64;
-
-            const MAX_IDS_PER_IN: usize = 900;
-
-            retry_on_sqlite_busy("purge_jobs_older_than_delete_execution_logs", || async {
-                for chunk in job_ids.chunks(MAX_IDS_PER_IN) {
-                    let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-                        "DELETE FROM job_execution_logs WHERE job_id IN (",
-                    );
-                    let mut separated = builder.separated(", ");
-                    for id in chunk {
-                        separated.push_bind(id);
-                    }
-                    separated.push_unseparated(")");
-
-                    builder
-                        .build()
-                        .persistent(false)
-                        .execute(&self.write_pool)
-                        .await?;
-                }
-                Ok(())
-            })
-            .await?;
-
-            retry_on_sqlite_busy("purge_jobs_older_than_delete_jobs", || async {
-                for chunk in job_ids.chunks(MAX_IDS_PER_IN) {
-                    let mut builder =
-                        sqlx::QueryBuilder::<sqlx::Sqlite>::new("DELETE FROM job WHERE id IN (");
-                    let mut separated = builder.separated(", ");
-                    for id in chunk {
-                        separated.push_bind(id);
-                    }
-                    separated.push_unseparated(")");
-
-                    builder
-                        .build()
-                        .persistent(false)
-                        .execute(&self.write_pool)
-                        .await?;
-                }
-                Ok(())
-            })
-            .await?;
-
-            total_deleted += batch_count;
-
-            // If we deleted less than batch_size, we're done
-            if batch_count < batch_size as u64 {
-                break;
-            }
-        }
-
-        Ok(total_deleted)
-    }
-
-    /// Get IDs of jobs that are eligible for purging.
-    /// Returns job IDs for completed/failed jobs older than the specified days.
-    async fn get_purgeable_jobs(&self, days: u32, limit: u32) -> Result<Vec<String>> {
-        let cutoff_ms = crate::database::time::now_ms()
-            - chrono::Duration::days(days as i64).num_milliseconds();
-
-        let purge_statuses = [JobStatus::Completed, JobStatus::Failed];
-        let mut builder =
-            sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT id FROM job WHERE status IN (");
-        {
-            let mut separated = builder.separated(", ");
-            for status in &purge_statuses {
-                separated.push_bind(status.as_str());
-            }
-        }
-        builder.push(") AND (completed_at < ");
-        builder.push_bind(cutoff_ms);
-        builder.push(" OR (completed_at IS NULL AND updated_at < ");
-        builder.push_bind(cutoff_ms);
-        builder.push(")) ORDER BY completed_at ASC, updated_at ASC LIMIT ");
-        builder.push_bind(limit as i64);
-
-        let job_ids: Vec<String> = builder
-            .build_query_scalar()
-            .persistent(false)
-            .fetch_all(&self.pool)
-            .await?;
-
-        Ok(job_ids)
     }
 }
 

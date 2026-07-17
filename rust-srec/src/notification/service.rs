@@ -2347,10 +2347,6 @@ mod tests {
             unimplemented!()
         }
 
-        async fn cleanup_old_dead_letters(&self, _retention_days: i32) -> Result<i32> {
-            unimplemented!()
-        }
-
         async fn add_event_log(&self, _entry: &NotificationEventLogDbModel) -> Result<()> {
             Ok(())
         }
