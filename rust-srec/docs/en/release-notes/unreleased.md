@@ -167,3 +167,13 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 - **Disabling a streamer can no longer be undone by an in-flight status check**
 
   Disabling a streamer while one of its status checks was still in flight could let that check re-mark the streamer as live, create a recording session, and start a download after the disable. Session creation now re-checks the streamer's state at the database serialization point, so a disable that has been saved always wins — the late check is discarded instead of overriding user intent.
+
+## Database maintenance
+
+- **Unified, more thorough automatic cleanup**
+
+  Database housekeeping now runs through a single scheduler that keeps the application database from growing without bound. Alongside old pipeline history, it clears completed, failed, or cancelled workflow executions, expired login tokens, old notification log entries, and empty recording sessions that never captured any data. Lightweight cleanup runs at startup and every 30 minutes, while heavier database compaction stays within the configured maintenance window, and each pass does a bounded amount of work so even a large backlog is cleared gradually instead of in one long, heavy sweep. Recent or still-active pipeline data and sessions are preserved, and freed disk space is reclaimed incrementally over time.
+
+- **Retention of 0 now means "keep forever"**
+
+  The **Pipeline History Retention** and **Notification Log Retention** settings now treat `0` as "retain indefinitely." Any positive value is the number of days to keep that history; `0` keeps it until you remove it yourself.
