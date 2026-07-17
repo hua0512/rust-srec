@@ -26,7 +26,7 @@ use crate::database::models::{JobPreset, PipelinePreset};
 use super::config::validate_retention_days;
 
 /// Current schema version for exports.
-const EXPORT_SCHEMA_VERSION: &str = "0.1.6";
+const EXPORT_SCHEMA_VERSION: &str = "0.1.7";
 
 fn schema_version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
     fn parse_segment(segment: &str) -> Option<u32> {
