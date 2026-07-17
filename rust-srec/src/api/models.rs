@@ -207,6 +207,10 @@ pub struct StreamerResponse {
 pub struct StreamerFilterParams {
     /// Filter by platform
     pub platform: Option<String>,
+    /// Filter by configuration template
+    pub template: Option<String>,
+    /// Filter by whether no configuration template is assigned
+    pub template_unassigned: Option<bool>,
     /// Filter by state (comma-separated for multiple)
     pub state: Option<String>,
     /// Filter by priority
