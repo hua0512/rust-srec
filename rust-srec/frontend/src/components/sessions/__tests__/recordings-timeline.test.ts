@@ -5,7 +5,11 @@ import {
   classifyTimelineBoundary,
 } from '../recordings-tab';
 
-function output(filePath: string, createdAt: string): MediaOutput {
+function output(
+  filePath: string,
+  createdAt: string,
+  format = 'VIDEO',
+): MediaOutput {
   return {
     id: filePath,
     session_id: 'session-1',
@@ -13,7 +17,7 @@ function output(filePath: string, createdAt: string): MediaOutput {
     file_path: filePath,
     file_size_bytes: 100,
     duration_secs: 60,
-    format: 'VIDEO',
+    format,
     created_at: createdAt,
   };
 }
@@ -86,5 +90,52 @@ describe('recordings timeline boundaries', () => {
     expect(classifyTimelineBoundary({ code: 'size_limit' }, 0)).toBe(
       'lossless_split',
     );
+  });
+
+  it('groups historical Windows verbatim and regular drive paths', () => {
+    const verbatimStem = String.raw`\\?\G:\recordings\stream`;
+    const regularStem = String.raw`G:\recordings\stream`;
+    const outputs = [
+      output(`${verbatimStem}.flv`, '2026-01-01T00:01:00Z'),
+      output(`${verbatimStem}.jpg`, '2026-01-01T00:00:01Z', 'THUMBNAIL'),
+      output(`${regularStem}.xml`, '2026-01-01T00:00:59Z', 'DANMU_XML'),
+    ];
+    const segments = [
+      segment(
+        `${verbatimStem}.flv`,
+        0,
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:01:00Z',
+        'size_limit',
+      ),
+    ];
+
+    const groups = buildTimelineGroups(outputs, segments);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].id).toBe('G:/recordings/stream');
+    expect(groups[0].baseName).toBe('stream');
+    expect(groups[0].outputs).toHaveLength(3);
+    expect(groups[0].splitReason?.code).toBe('size_limit');
+  });
+
+  it('groups historical Windows verbatim and regular UNC paths', () => {
+    const outputs = [
+      output(
+        String.raw`\\?\UNC\server\share\stream.flv`,
+        '2026-01-01T00:01:00Z',
+      ),
+      output(
+        String.raw`\\server\share\stream.xml`,
+        '2026-01-01T00:00:59Z',
+        'DANMU_XML',
+      ),
+    ];
+
+    const groups = buildTimelineGroups(outputs);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].id).toBe('//server/share/stream');
+    expect(groups[0].outputs).toHaveLength(2);
   });
 });

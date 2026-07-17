@@ -38,6 +38,26 @@ fn parse_engine_config<T: DeserializeOwned>(engine: &'static str, raw: &str) -> 
         .map_err(|e| crate::Error::Other(format!("Failed to parse {} config: {}", engine, e)))
 }
 
+fn resolve_segment_path(path: &std::path::Path) -> String {
+    let resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        match std::env::current_dir() {
+            Ok(current_dir) => current_dir.join(path),
+            Err(error) => {
+                warn!(
+                    path = %path.display(),
+                    error = %error,
+                    "Failed to resolve relative segment path; preserving engine path"
+                );
+                path.to_path_buf()
+            }
+        }
+    };
+
+    resolved.to_string_lossy().into_owned()
+}
+
 /// Walk the `std::error::Error::source()` chain of `err` and return the
 /// first `std::io::Error` found, if any. Used by `prepare_output_dir` to
 /// hand the output-root write gate the raw `io::Error` so it can classify
@@ -1527,6 +1547,9 @@ impl DownloadManager {
             // orphan is ignored by the pipeline coordinator's
             // `session_complete_triggered` gate.
             let mut engine_to_session: HashMap<u32, u32> = HashMap::new();
+            // Danmu derives its sibling path from SegmentStarted, so completion must reuse
+            // the same resolved representation.
+            let mut engine_segment_paths: HashMap<u32, String> = HashMap::new();
 
             while let Some(event) = segment_rx.recv().await {
                 match event {
@@ -1542,11 +1565,9 @@ impl DownloadManager {
                             split_reason_details_json,
                             ..
                         } = info;
-                        // Normalize path
-                        let normalized_path = tokio::fs::canonicalize(&path)
-                            .await
-                            .unwrap_or_else(|_| path.clone());
-                        let segment_path = normalized_path.to_string_lossy().to_string();
+                        let segment_path = engine_segment_paths
+                            .remove(&index)
+                            .unwrap_or_else(|| resolve_segment_path(&path));
                         // Prefer started_at from SegmentInfo (shared between start/complete callbacks),
                         // fall back to the active_downloads lookup for backward compat.
                         let started_at = info_started_at.or_else(|| {
@@ -1596,7 +1617,7 @@ impl DownloadManager {
                         }
                         debug!(
                             download_id = %download_id_clone,
-                            path = %normalized_path.display(),
+                            path = %path.display(),
                             "Segment completed"
                         );
                     }
@@ -1751,7 +1772,8 @@ impl DownloadManager {
                         sequence,
                         started_at,
                     } => {
-                        let segment_path = path.to_string_lossy().to_string();
+                        let segment_path = resolve_segment_path(&path);
+                        engine_segment_paths.insert(sequence, segment_path.clone());
                         let segment_index =
                             *engine_to_session.entry(sequence).or_insert_with(|| {
                                 Self::allocate_next_session_segment_index(
@@ -2639,6 +2661,16 @@ mod tests {
         assert!(!manager.available_engines().is_empty());
     }
 
+    #[test]
+    fn relative_segment_paths_are_resolved_without_canonicalizing() {
+        let relative = std::path::Path::new("recordings").join("segment.flv");
+        let expected = std::env::current_dir()
+            .expect("current directory")
+            .join(&relative);
+
+        assert_eq!(resolve_segment_path(&relative), expected.to_string_lossy());
+    }
+
     /// `emit_rejected` must reach subscribers exactly like a
     /// preflight-emitted rejection: the session lifecycle relies on the
     /// `Rejected` terminal to close the session and the scheduler relies on
@@ -2767,6 +2799,72 @@ mod tests {
         assert_eq!(*started_index, 0);
         assert_eq!(completed_index, started_index);
         wait_for_download_terminal(&mut events).await;
+    }
+
+    #[tokio::test]
+    async fn segment_completion_preserves_engine_reported_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let nested = temp.path().join("nested");
+        tokio::fs::create_dir_all(&nested)
+            .await
+            .expect("create nested directory");
+        tokio::fs::write(temp.path().join("segment.flv"), b"segment")
+            .await
+            .expect("create segment");
+
+        let manager = DownloadManager::new();
+        let mut events = manager.subscribe();
+        let segment_path = nested.join("..").join("segment.flv");
+        let expected_path = segment_path.to_string_lossy().to_string();
+
+        start_scripted_download(
+            &manager,
+            test_download_config(temp.path().to_path_buf(), "session-path-identity"),
+            vec![
+                SegmentEvent::SegmentStarted {
+                    path: segment_path.clone(),
+                    sequence: 0,
+                    started_at: Utc::now(),
+                },
+                completed_segment(segment_path, 0),
+            ],
+        )
+        .await
+        .expect("download should start");
+
+        let segment_events = collect_segment_progress_events(&mut events, 2).await;
+        let DownloadProgressEvent::SegmentStarted {
+            segment_path: started_path,
+            ..
+        } = &segment_events[0]
+        else {
+            panic!("expected segment started event first");
+        };
+        let DownloadProgressEvent::SegmentCompleted {
+            segment_path: completed_path,
+            ..
+        } = &segment_events[1]
+        else {
+            panic!("expected segment completed event second");
+        };
+
+        assert_eq!(started_path, &expected_path);
+        assert_eq!(completed_path, &expected_path);
+
+        loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed out waiting for terminal event")
+                .expect("download event channel closed");
+            if let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
+                file_path,
+                ..
+            }) = event
+            {
+                assert_eq!(file_path.as_deref(), Some(expected_path.as_str()));
+                break;
+            }
+        }
     }
 
     /// Trailing `SegmentCompleted` flushed after `stop_download_with_reason`

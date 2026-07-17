@@ -33,6 +33,20 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function normalizeTimelinePath(path: string): string {
+  const normalized = path.replaceAll('\\', '/');
+  const normalizedLower = normalized.toLowerCase();
+
+  if (normalizedLower.startsWith('//?/unc/')) {
+    return `//${normalized.slice('//?/UNC/'.length)}`;
+  }
+  if (/^\/\/\?\/[a-z]:($|\/)/i.test(normalized)) {
+    return normalized.slice('//?/'.length);
+  }
+
+  return normalized;
+}
+
 interface RecordingsTabProps {
   isLoading: boolean;
   outputs: MediaOutput[];
@@ -347,6 +361,7 @@ export function buildTimelineGroups(
   const segmentInfoByPath = new Map<string, SegmentInfo>();
   for (const s of segments || []) {
     if (!isNonEmptyString(s.file_path) || !s.created_at) continue;
+    const normalizedPath = normalizeTimelinePath(s.file_path);
     const info: SegmentInfo = {
       splitReason: {
         code: s.split_reason_code,
@@ -358,8 +373,8 @@ export function buildTimelineGroups(
         ? new Date(s.completed_at).getTime()
         : undefined,
     };
-    const fileName = s.file_path.split('/').pop();
-    for (const key of [s.file_path, fileName]) {
+    const fileName = normalizedPath.split('/').pop();
+    for (const key of [normalizedPath, fileName]) {
       if (!isNonEmptyString(key) || segmentInfoByPath.has(key)) continue;
       segmentInfoByPath.set(key, info);
     }
@@ -367,17 +382,18 @@ export function buildTimelineGroups(
 
   const groupsMap = new Map<string, TimelineGroupBuilder>();
   for (const output of outputs) {
-    const lastDot = output.file_path.lastIndexOf('.');
-    const lastSlash = output.file_path.lastIndexOf('/');
+    const normalizedPath = normalizeTimelinePath(output.file_path);
+    const lastDot = normalizedPath.lastIndexOf('.');
+    const lastSlash = normalizedPath.lastIndexOf('/');
     const isExtension = lastDot > lastSlash;
     const basePath = isExtension
-      ? output.file_path.substring(0, lastDot)
-      : output.file_path;
+      ? normalizedPath.substring(0, lastDot)
+      : normalizedPath;
     const baseName = basePath.split('/').pop() || 'Unknown';
 
-    const fileName = output.file_path.split('/').pop();
+    const fileName = normalizedPath.split('/').pop();
     const segInfo =
-      segmentInfoByPath.get(output.file_path) ??
+      segmentInfoByPath.get(normalizedPath) ??
       (isNonEmptyString(fileName)
         ? segmentInfoByPath.get(fileName)
         : undefined);
