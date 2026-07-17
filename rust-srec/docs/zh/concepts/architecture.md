@@ -8,77 +8,83 @@
 
 系统以 Tokio 为运行时，由 `ServiceContainer` 统一初始化并管理各类长期运行的服务。
 
-![系统架构概览](/architecture-overview.svg)
-
 ## 高层拓扑
 
 ```mermaid
 flowchart TB
-  subgraph Client["客户端"]
-    FE[Web UI]
-    EXT[外部 API 客户端 / 自动化]
+  subgraph Clients["客户端"]
+    FE["Web UI"]
+    EXT["外部 API 客户端与自动化"]
   end
 
-  subgraph API["控制面"]
-    AX[Axum API Server]
-    DOCS[Swagger UI / OpenAPI]
-    AUTH[JWT 鉴权（可选）]
+  subgraph Control["HTTP 控制面"]
+    API["Axum API<br/>AppState / 可选 JWT / OpenAPI"]
   end
 
-  subgraph Runtime["运行时（ServiceContainer）"]
-    CFG[ConfigService\n合并 + 缓存 + 热更新]
-    SM[StreamerManager\n内存态 + DB 写穿]
-    SCH[Scheduler\nActor 模型]
-    MON[StreamMonitor\n探测 + 过滤 + Outbox]
-    DL[DownloadManager\n并发 + 重试 + 引擎]
-    DM[DanmuService\nWebSocket 采集]
-    PL[PipelineManager\n队列 + DAG + Worker]
-    NOTI[NotificationService\n监控/下载/管道事件]
-    HEALTH[HealthChecker + 维护任务]
+  subgraph Runtime["由 ServiceContainer 管理的 Tokio 运行时"]
+    CFG["ConfigService<br/>StreamerManager"]
+    SCH["Scheduler Actor"]
+    MON["StreamMonitor<br/>过滤 / Outbox"]
+    SESS["SessionLifecycle"]
+    DL["DownloadManager<br/>队列 / 引擎"]
+    DM["DanmuService"]
+    PL["PipelineManager<br/>DAG / Worker"]
+    NOTI["NotificationService"]
+    OPS["健康检查 / 指标 / 维护"]
   end
 
-  subgraph Exec["执行层"]
-    ENGINES[下载引擎\nffmpeg / streamlink / mesio]
-    WCPU[CPU WorkerPool]
-    WIO[IO WorkerPool]
+  subgraph Sources["直播平台"]
+    SRC["状态 API / 媒体流 / 聊天 WebSocket"]
   end
 
   subgraph Storage["持久化"]
-    DB[(SQLite)]
-    FS[(文件系统\noutput/logs/data)]
-    CACHE[(内存缓存)]
+    DB[("SQLite<br/>配置 / 会话 / 作业 / 通知")]
+    FS["文件系统<br/>录制 / 弹幕 / 日志"]
   end
 
-  FE -->|REST| AX
-  EXT -->|REST| AX
-  AX --> AUTH
-  AX --> DOCS
+  FE -->|"HTTP / WebSocket"| API
+  EXT -->|"HTTP / WebSocket"| API
+  API -->|"服务与仓储句柄"| Runtime
 
-  AX --> Runtime
+  CFG -->|"配置事件"| SCH
+  SCH -->|"定时探测"| MON
+  MON -->|"会话命令"| SESS
+  MON -->|"已提交的直播事件"| DL
+  DL -->|"成功启动后开启"| DM
+  DL -->|"视频分段事件"| PL
+  DM -->|"弹幕分段事件"| PL
+  SESS -->|"会话转换事件"| PL
+  SESS -.->|"滞后恢复"| DL
+  DL -.->|"下载终止结果"| SESS
+  DL -.->|"下载反馈"| SCH
 
-  CFG <--> DB
-  CFG <--> CACHE
-  SM <--> DB
+  MON -.->|"监控事件"| NOTI
+  DL -.->|"下载事件"| NOTI
+  SESS -.->|"会话事件"| NOTI
+  PL -.->|"作业事件"| NOTI
 
-  SCH --> MON
-  MON --> DL
-  MON --> DM
+  SRC -->|"状态数据"| MON
+  SRC -->|"媒体数据"| DL
+  SRC -->|"聊天数据"| DM
 
-  DL --> ENGINES
-  ENGINES --> FS
-
-  DL --> PL
-  DM --> PL
-  PL --> WCPU
-  PL --> WIO
-  WCPU --> FS
-  WIO --> FS
-  PL <--> DB
-
-  NOTI --> DB
-  HEALTH --> DB
-  HEALTH --> FS
+  DM --> FS
+  DL --> FS
+  PL --> FS
+  Runtime <--> DB
+  OPS --> DB
+  OPS --> FS
 ```
+
+运行时服务之间的箭头表示逻辑事件路径。`ServiceContainer` 通过广播订阅、有界队列和处理
+任务完成这些接线，而不是让服务彼此直接耦合。
+
+该拓扑中有三个重要的职责边界：
+
+- `ServiceContainer` 是组合根与事件接线层，并不持有领域状态的所有权。
+- `StreamMonitor` 负责探测与过滤平台状态；`SessionLifecycle` 独占内存中的会话状态机以及
+  持久化启动/结束决策。
+- 直播事件会先进入下载启动流程；只有下载管理器的 `start_with_slot` 返回真实下载 ID 后，
+  才会开始弹幕采集。
 
 ## 运行时根：`ServiceContainer`
 
@@ -125,24 +131,34 @@ Scheduler 采用 supervisor + actor 的结构：
 Actor 会调用 `StreamMonitor` 做真实状态探测；Scheduler 同时订阅配置事件，动态创建/移除
 actor。
 
-### `StreamMonitor`（探测 + 过滤 + 会话 + Outbox）
+### `StreamMonitor`（探测 + 过滤 + Outbox）
 
 `StreamMonitor` 是数据面的探测器，负责：
 
 - 根据 URL/平台解析直播状态（含过滤：时间/关键词/分类等）
-- 以事务方式创建/结束 session，并更新 streamer state
+- 将会话变更委托给 `SessionLifecycle`
 - 通过 **DB-backed Outbox** 机制发出 `MonitorEvent`
 
 **Outbox 模式**：将“状态/会话变更”与“事件写入 outbox”放在同一 DB 事务里，然后由后台
 任务定期/通知触发，把 outbox flush 到 Tokio `broadcast` 事件流，从而降低
 “状态已变更但事件丢失”的风险。
 
+### `SessionLifecycle`（会话状态的唯一所有者）
+
+`SessionLifecycle` 负责录制状态机，包括滞后窗口（hysteresis）和终止原因分类。新的会话
+启动和持久化结束会先提交各自所需的数据库变更，再广播 `Started` 或 `Ended`。滞后阶段的
+`Ending` 与 `Resumed` 属于内存状态转换，其审计写入是 best-effort；在生命周期真正进入
+`Ended` 前，session 的 `end_time` 保持为空。下载终止事件会回流至此服务。`Ended` 会驱动
+会话完成管道、弹幕清理与下载状态清理；恢复后的 `Started` 会重启同一会话。
+
 ### `DownloadManager`（下载调度 + 引擎抽象）
 
 DownloadManager 负责：
 
 - 并发控制（含高优先级额外并发槽位）
-- 重试与熔断（按引擎类型与配置 key 维度隔离）
+- 失败分类与熔断器（按引擎类型、配置以及可选的主播范围隔离）
+- 失败/拒绝事件与 retry-after 提示；由 Scheduler Actor 决定何时重新探测并再次进入下载
+  启动流程
 - 引擎抽象：
   - 外部进程：`ffmpeg`、`streamlink`
   - 内置 Rust 引擎：`mesio`
@@ -179,8 +195,9 @@ PipelineManager 是后处理引擎：
 
 ### `NotificationService`（事件分发）
 
-NotificationService 订阅监控/下载/管道事件，并分发到 Discord / Email / Webhook 等通道，
-包含重试、熔断与 dead-letter 持久化。
+NotificationService 订阅监控/下载/会话/管道事件，并分发到 Discord / Email / Gotify /
+Telegram / Webhook 通道，包含重试、熔断与 dead-letter 持久化。可选的浏览器 Web Push
+由 `WebPushService` 处理。
 
 参见：[通知](./notifications.md)
 
@@ -191,31 +208,52 @@ NotificationService 订阅监控/下载/管道事件，并分发到 Discord / Em
 ```mermaid
 sequenceDiagram
   autonumber
-  participant SCH as Scheduler（actors）
+  participant SCH as Scheduler actors
   participant MON as StreamMonitor
-  participant SM as StreamerManager
+  participant SESS as SessionLifecycle
   participant DB as SQLite
+  participant SC as ServiceContainer handlers
   participant DL as DownloadManager
-  participant ENG as Engine（ffmpeg/streamlink/mesio）
+  participant ENG as Selected download engine
   participant DM as DanmuService
   participant PL as PipelineManager
   participant NOTI as NotificationService
 
-  SCH->>MON: 检查直播状态（含过滤）
-  MON->>DB: 事务：session/state + outbox event
-  MON->>SM: 同步运行时元数据（写穿/回填）
-  MON-->>DL: MonitorEvent::StreamerLive（outbox flush）
-  MON-->>DM: MonitorEvent::StreamerLive（outbox flush）
-  MON-->>NOTI: MonitorEvent::*（outbox flush）
+  SCH->>MON: 探测平台状态并应用过滤器
+  MON->>SESS: 应用探测到的会话状态
+  SESS->>DB: 事务写入会话、主播状态、审计与 Outbox
+  DB-->>SESS: 提交
+  SESS-->>SC: SessionTransition::Started
+  MON-->>SC: 通过 Outbox 刷新的已提交 MonitorEvent
 
-  DL->>ENG: 启动下载（选择引擎）
-  ENG-->>DL: segment started/completed
-  DL-->>PL: DownloadManagerEvent::SegmentCompleted
-  DM-->>PL: DanmuEvent::SegmentCompleted
+  SC->>DL: 预检、排队并调用 start_with_slot
+  DL->>ENG: 生成选定引擎任务
+  DL-->>SC: 返回已注册的下载 ID
+  SC->>DM: start_with_slot 成功后开始采集
+  ENG-->>DL: 分段开始或完成
+  DL-->>SC: DownloadManagerEvent
+  DM-->>SC: DanmuEvent
+  SC->>PL: 处理分段事件并将 DAG 任务入队
 
-  PL->>PL: 入队任务 / 执行 DAG
-  PL-->>NOTI: PipelineEvent::*（任务状态）
-  DL-->>NOTI: DownloadManagerEvent::*（下载状态）
+  SC->>SESS: 应用下载终止结果
+  alt 权威结束信号
+    SESS->>DB: 提交持久化会话结束
+    SESS-->>SC: SessionTransition::Ended
+    SC->>PL: 处理 Ended 转换
+  else 模糊或可恢复结果
+    SESS-->>SC: SessionTransition::Ending
+    Note over SESS: 滞后审计写入是 best-effort
+    alt 窗口内再次探测到直播
+      SESS-->>SC: Resumed 与 Started
+      SC->>DL: 为同一会话重启下载
+    else 窗口到期或确认下播
+      SESS->>DB: 提交持久化会话结束
+      SESS-->>SC: SessionTransition::Ended
+      SC->>PL: 处理 Ended 转换
+    end
+  end
+  SC-->>NOTI: 监控、下载与会话事件
+  PL-->>NOTI: PipelineEvent
 ```
 
 ### API 请求流（控制面）
@@ -225,19 +263,25 @@ sequenceDiagram
   autonumber
   participant C as Client
   participant A as Axum API
-  participant J as JWT middleware（可选）
-  participant S as ServiceContainer state
-  participant R as Repository（SQLite）
+  participant J as Optional JWT middleware
+  participant S as AppState services
+  participant R as SQLite repository
 
   C->>A: HTTP request
-  A->>J: 校验 token（如启用）
-  J-->>A: claims
-  A->>S: 从 AppState 获取服务实例
+  opt 已配置 JWT 且路由受保护
+    A->>J: 校验 token
+    J-->>A: claims
+  end
+  A->>S: 通过 AppState 分发
   S->>R: 读写领域数据
   R-->>S: result
   S-->>A: response
   A-->>C: JSON response
 ```
+
+配置 JWT 后，大多数受保护路由使用 JWT 中间件。完整健康检查与就绪检查会在处理器内部
+校验 bearer token；未配置 JWT 鉴权时也会返回 `401`。liveness 路由保持公开。WebSocket、
+媒体与流代理路由使用各自文档中说明的查询参数鉴权路径。
 
 ## 事件驱动通信
 
@@ -245,10 +289,11 @@ sequenceDiagram
 
 | 事件流 | 发布者 | 典型消费者 | 备注 |
 |---|---|---|---|
-| `ConfigUpdateEvent` | `ConfigService` | `Scheduler`、`DownloadManager`、`PipelineManager`、`ServiceContainer` | 配置热更新与资源清理 |
+| `ConfigUpdateEvent` | `ConfigService`、`StreamerManager` | `Scheduler`、`ServiceContainer` | 驱动 Actor 变更、运行时重配置与资源清理 |
 | `MonitorEvent` | `StreamMonitor` | `ServiceContainer`、`NotificationService` | 通过 DB outbox 发出，提高一致性 |
-| `DownloadManagerEvent` | `DownloadManager` | `PipelineManager`、`Scheduler`、`NotificationService` | 分段边界是管道触发核心 |
-| `DanmuEvent` | `DanmuService` | `PipelineManager` | 用于 paired/session 协调 |
+| `DownloadManagerEvent` | `DownloadManager` | `Scheduler`、`NotificationService`、`ServiceContainer` 处理器 | 处理器将分段交给 `PipelineManager`，将终止结果交给 `SessionLifecycle` |
+| `SessionTransition` | `SessionLifecycle` | `ServiceContainer` 处理器、`NotificationService` | `Ended` 驱动清理与会话管道；恢复后的 `Started` 重启同一会话 |
+| `DanmuEvent` | `DanmuService` | `ServiceContainer` 处理器 | 处理器将分段配对交给 `PipelineManager`，将终止信号交给下载/会话处理 |
 | `PipelineEvent` | `PipelineManager` | `NotificationService` | 作业生命周期与可观测性 |
 
 ::: tip 关于限流/节流
@@ -282,7 +327,8 @@ Healthy ◄───────────────────────
 - 日志：使用 `tracing`，支持动态调整过滤器并带日志保留清理
 - 健康检查：
   - `GET /api/health/live`（无鉴权，适合作为容器 liveness）
-  - `GET /api/health` 与 `GET /api/health/ready`（启用 JWT 时需要鉴权）
+  - `GET /api/health` 与 `GET /api/health/ready` 需要有效 bearer token；未配置 JWT 鉴权时
+    返回 `401`
 - 退出：
   - `ServiceContainer` 持有 `CancellationToken` 并向后台任务传播
-  - 收到 `SIGINT`/`SIGTERM` 后执行优雅退出流程
+  - 所有支持的平台都通过 `SIGINT` 触发优雅退出；Unix 还会处理 `SIGTERM`

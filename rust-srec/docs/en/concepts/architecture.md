@@ -8,77 +8,84 @@
 
 It is implemented as a set of long-running Tokio services managed by the runtime `ServiceContainer`.
 
-![System Architecture Overview](/architecture-overview.svg)
-
 ## High-level topology
 
 ```mermaid
 flowchart TB
-  subgraph Client["Clients"]
-    FE[Web UI]
-    EXT[External API clients / automation]
+  subgraph Clients["Clients"]
+    FE["Web UI"]
+    EXT["External API clients and automation"]
   end
 
-  subgraph API["Control Plane"]
-    AX[Axum API Server]
-    DOCS[Swagger UI / OpenAPI]
-    AUTH[JWT auth (optional)]
+  subgraph Control["HTTP control plane"]
+    API["Axum API<br/>AppState / optional JWT / OpenAPI"]
   end
 
-  subgraph Runtime["Runtime (ServiceContainer)"]
-    CFG[ConfigService\n(merge + cache + hot reload)]
-    SM[StreamerManager\n(in-memory + DB write-through)]
-    SCH[Scheduler\n(actor model)]
-    MON[StreamMonitor\n(detect + filters + outbox)]
-    DL[DownloadManager\n(concurrency + retry + engines)]
-    DM[DanmuService\n(websocket capture)]
-    PL[PipelineManager\n(job queue + DAG + workers)]
-    NOTI[NotificationService\n(monitor/download/pipeline)]
-    HEALTH[HealthChecker + maintenance]
+  subgraph Runtime["ServiceContainer-managed Tokio runtime"]
+    CFG["ConfigService<br/>StreamerManager"]
+    SCH["Scheduler actors"]
+    MON["StreamMonitor<br/>filters / outbox"]
+    SESS["SessionLifecycle"]
+    DL["DownloadManager<br/>queue / engines"]
+    DM["DanmuService"]
+    PL["PipelineManager<br/>DAG / workers"]
+    NOTI["NotificationService"]
+    OPS["Health / metrics / maintenance"]
   end
 
-  subgraph Exec["Execution"]
-    ENGINES[Download engines\n(ffmpeg / streamlink / mesio)]
-    WCPU[CPU worker pool]
-    WIO[IO worker pool]
+  subgraph Sources["Streaming platforms"]
+    SRC["Status APIs / media streams / chat WebSockets"]
   end
 
   subgraph Storage["Persistence"]
-    DB[(SQLite)]
-    FS[(Filesystem\noutput/logs/data)]
-    CACHE[(In-memory caches)]
+    DB[("SQLite<br/>config / sessions / jobs / notifications")]
+    FS["Filesystem<br/>recordings / danmu / logs"]
   end
 
-  FE -->|REST| AX
-  EXT -->|REST| AX
-  AX --> AUTH
-  AX --> DOCS
+  FE -->|"HTTP / WebSocket"| API
+  EXT -->|"HTTP / WebSocket"| API
+  API -->|"service and repository handles"| Runtime
 
-  AX --> Runtime
+  CFG -->|"config events"| SCH
+  SCH -->|"scheduled checks"| MON
+  MON -->|"session commands"| SESS
+  MON -->|"committed live event"| DL
+  DL -->|"successful start enables"| DM
+  DL -->|"video segment events"| PL
+  DM -->|"danmu segment events"| PL
+  SESS -->|"session transitions"| PL
+  SESS -.->|"hysteresis resume"| DL
+  DL -.->|"terminal outcomes"| SESS
+  DL -.->|"download feedback"| SCH
 
-  CFG <--> DB
-  CFG <--> CACHE
-  SM <--> DB
+  MON -.->|"monitor events"| NOTI
+  DL -.->|"download events"| NOTI
+  SESS -.->|"session events"| NOTI
+  PL -.->|"job events"| NOTI
 
-  SCH --> MON
-  MON --> DL
-  MON --> DM
+  SRC -->|"status data"| MON
+  SRC -->|"media data"| DL
+  SRC -->|"chat data"| DM
 
-  DL --> ENGINES
-  ENGINES --> FS
-
-  DL --> PL
-  DM --> PL
-  PL --> WCPU
-  PL --> WIO
-  WCPU --> FS
-  WIO --> FS
-  PL <--> DB
-
-  NOTI --> DB
-  HEALTH --> DB
-  HEALTH --> FS
+  DM --> FS
+  DL --> FS
+  PL --> FS
+  Runtime <--> DB
+  OPS --> DB
+  OPS --> FS
 ```
+
+Arrows between runtime services show logical event routes. `ServiceContainer` implements that
+wiring with broadcast subscriptions, bounded queues, and handler tasks rather than direct service
+coupling.
+
+Three ownership boundaries are important in this topology:
+
+- `ServiceContainer` is the composition root and event-wiring layer, not the owner of domain state.
+- `StreamMonitor` detects and filters platform status; `SessionLifecycle` exclusively owns the
+  in-memory session state machine and durable start/end decisions.
+- A live event starts the download path first. Danmu collection starts only after the download
+  manager's `start_with_slot` call returns a real download ID.
 
 ## Runtime root: `ServiceContainer`
 
@@ -126,25 +133,37 @@ The scheduler is a supervisor that manages self-scheduling actors:
 Actors call into `StreamMonitor` for real status checks; the scheduler also reacts to configuration
 events to spawn/stop actors dynamically.
 
-### `StreamMonitor` (detect + filter + sessions + outbox)
+### `StreamMonitor` (detect + filter + outbox)
 
 `StreamMonitor` is the data-plane detector. It:
 
 - Resolves platform information and checks live status
 - Applies filters (time/keyword/category, etc.)
-- Creates/ends sessions and updates streamer state transactionally
+- Delegates session changes to `SessionLifecycle`
 - Emits `MonitorEvent` **via a DB-backed outbox** for consistency
 
 **Outbox pattern:** Monitor events are written in the same DB transaction as state/session updates,
 then a background task flushes the outbox to a Tokio `broadcast` channel. This reduces the chance of
 “state changed but event lost” during crashes or restarts.
 
+### `SessionLifecycle` (single owner of session state)
+
+`SessionLifecycle` owns the recording state machine, including hysteresis and terminal-cause
+classification. Fresh starts and durable ends commit their required database changes before
+broadcasting `Started` or `Ended`. Hysteresis `Ending` and `Resumed` are in-memory transitions: their
+audit rows are best-effort, and the session `end_time` remains unset until the lifecycle reaches
+`Ended`. Download terminal events feed back into this service. `Ended` drives session-complete
+pipelines, danmu cleanup, and download bookkeeping; a resumed `Started` restarts the same session.
+
 ### `DownloadManager` (downloads + engine abstraction)
 
 The download manager owns:
 
 - Concurrency limits (including extra slots for high priority downloads)
-- Retry and circuit breaker logic per engine/config key
+- Failure classification and circuit breakers keyed by engine type, configuration, and optional
+  streamer scope
+- Failure/rejection events and retry-after hints; scheduler actors decide when to check again and
+  re-enter the download-start path
 - Engine abstraction:
   - External processes: `ffmpeg`, `streamlink`
   - In-process Rust engine: `mesio`
@@ -181,8 +200,9 @@ See also: [DAG Pipeline](./pipeline.md)
 
 ### `NotificationService` (event fan-out)
 
-Notifications subscribe to monitor/download/pipeline events and deliver them to configured channels
-(Discord / Email / Webhook), with retry, circuit breakers, and dead-letter persistence.
+Notifications subscribe to monitor/download/session/pipeline events and deliver them to configured
+channels (Discord / Email / Gotify / Telegram / Webhook), with retry, circuit breakers, and
+dead-letter persistence. Optional browser Web Push delivery is handled by `WebPushService`.
 
 See also: [Notifications](./notifications.md)
 
@@ -193,31 +213,52 @@ See also: [Notifications](./notifications.md)
 ```mermaid
 sequenceDiagram
   autonumber
-  participant SCH as Scheduler (actors)
+  participant SCH as Scheduler actors
   participant MON as StreamMonitor
-  participant SM as StreamerManager
+  participant SESS as SessionLifecycle
   participant DB as SQLite
+  participant SC as ServiceContainer handlers
   participant DL as DownloadManager
-  participant ENG as Engine (ffmpeg/streamlink/mesio)
+  participant ENG as Selected download engine
   participant DM as DanmuService
   participant PL as PipelineManager
   participant NOTI as NotificationService
 
-  SCH->>MON: check streamer status (+ filters)
-  MON->>DB: txn: session/state + outbox event
-  MON->>SM: sync runtime metadata (write-through / reload)
-  MON-->>DL: MonitorEvent::StreamerLive (via outbox flush)
-  MON-->>DM: MonitorEvent::StreamerLive (via outbox flush)
-  MON-->>NOTI: MonitorEvent::* (via outbox flush)
+  SCH->>MON: check platform status and apply filters
+  MON->>SESS: apply detected session state
+  SESS->>DB: transaction for session, streamer state, audit, and outbox
+  DB-->>SESS: commit
+  SESS-->>SC: SessionTransition::Started
+  MON-->>SC: committed MonitorEvent via outbox flush
 
-  DL->>ENG: start download (selected engine)
-  ENG-->>DL: segment started/completed
-  DL-->>PL: DownloadManagerEvent::SegmentCompleted
-  DM-->>PL: DanmuEvent::SegmentCompleted
+  SC->>DL: preflight, queue, and call start_with_slot
+  DL->>ENG: spawn selected engine
+  DL-->>SC: return registered download ID
+  SC->>DM: start collection after start_with_slot succeeds
+  ENG-->>DL: segment started or completed
+  DL-->>SC: DownloadManagerEvent
+  DM-->>SC: DanmuEvent
+  SC->>PL: handle segment events and enqueue DAG jobs
 
-  PL->>PL: enqueue jobs / run DAG
-  PL-->>NOTI: PipelineEvent::* (job status)
-  DL-->>NOTI: DownloadManagerEvent::* (download status)
+  SC->>SESS: apply download terminal outcome
+  alt authoritative end
+    SESS->>DB: commit durable session end
+    SESS-->>SC: SessionTransition::Ended
+    SC->>PL: handle Ended transition
+  else ambiguous or recoverable outcome
+    SESS-->>SC: SessionTransition::Ending
+    Note over SESS: Hysteresis audit is best-effort
+    alt live status returns within the window
+      SESS-->>SC: Resumed and Started
+      SC->>DL: restart download for the same session
+    else window expires or offline is confirmed
+      SESS->>DB: commit durable session end
+      SESS-->>SC: SessionTransition::Ended
+      SC->>PL: handle Ended transition
+    end
+  end
+  SC-->>NOTI: monitor, download, and session events
+  PL-->>NOTI: PipelineEvent
 ```
 
 ### API request flow (control plane)
@@ -227,19 +268,26 @@ sequenceDiagram
   autonumber
   participant C as Client
   participant A as Axum API
-  participant J as JWT middleware (optional)
-  participant S as ServiceContainer state
-  participant R as Repository (SQLite)
+  participant J as Optional JWT middleware
+  participant S as AppState services
+  participant R as SQLite repository
 
   C->>A: HTTP request
-  A->>J: validate token (if enabled)
-  J-->>A: claims
-  A->>S: access services via AppState
+  opt JWT is configured and the route is protected
+    A->>J: validate token
+    J-->>A: claims
+  end
+  A->>S: dispatch through AppState
   S->>R: read/write domain data
   R-->>S: result
   S-->>A: response
   A-->>C: JSON response
 ```
+
+Most protected routes use JWT middleware when JWT is configured. The full health and readiness
+handlers validate bearer tokens themselves and return `401` when JWT authentication is not
+configured; liveness remains public. WebSocket, media, and stream-proxy routes use their documented
+query-parameter authentication paths.
 
 ## Event-driven communication
 
@@ -247,10 +295,11 @@ Most cross-service coordination happens via Tokio `broadcast` channels.
 
 | Stream | Publisher | Typical consumers | Notes |
 |---|---|---|---|
-| `ConfigUpdateEvent` | `ConfigService` | `Scheduler`, `DownloadManager`, `PipelineManager`, `ServiceContainer` | Drives hot reload and cleanup when streamers become inactive |
+| `ConfigUpdateEvent` | `ConfigService`, `StreamerManager` | `Scheduler`, `ServiceContainer` | Drives actor changes, runtime reconfiguration, and cleanup |
 | `MonitorEvent` | `StreamMonitor` | `ServiceContainer`, `NotificationService` | Emitted through the DB outbox (best-effort delivery under restarts) |
-| `DownloadManagerEvent` | `DownloadManager` | `PipelineManager`, `Scheduler`, `NotificationService` | Segment boundaries are the main trigger for pipelines |
-| `DanmuEvent` | `DanmuService` | `PipelineManager` | Used for paired-segment and session-complete coordination |
+| `DownloadManagerEvent` | `DownloadManager` | `Scheduler`, `NotificationService`, `ServiceContainer` handlers | Handlers feed segments to `PipelineManager` and terminal outcomes to `SessionLifecycle` |
+| `SessionTransition` | `SessionLifecycle` | `ServiceContainer` handlers, `NotificationService` | `Ended` drives cleanup and session pipelines; resumed `Started` restarts the same session |
+| `DanmuEvent` | `DanmuService` | `ServiceContainer` handlers | Handlers feed segment pairing to `PipelineManager` and terminal signals to download/session handling |
 | `PipelineEvent` | `PipelineManager` | `NotificationService` | Job lifecycle events for observability |
 
 ::: tip About throttling
@@ -284,7 +333,9 @@ Exposed in `/health` as a single aggregated `output-root` component listing each
 - Logging uses `tracing` with a reloadable filter and log retention cleanup
 - Health endpoints:
   - `GET /api/health/live` (no auth; suitable for container liveness)
-  - `GET /api/health` and `GET /api/health/ready` (require auth when JWT is configured)
+  - `GET /api/health` and `GET /api/health/ready` require a valid bearer token and return `401` when
+    JWT authentication is not configured
 - Shutdown:
   - The `ServiceContainer` holds a `CancellationToken` and propagates it to background tasks
-  - `SIGINT`/`SIGTERM` triggers a graceful shutdown sequence
+  - `SIGINT` triggers graceful shutdown on all supported platforms; `SIGTERM` is additionally
+    handled on Unix
