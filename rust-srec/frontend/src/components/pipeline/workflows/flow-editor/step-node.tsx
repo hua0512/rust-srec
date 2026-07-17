@@ -8,6 +8,7 @@ import {
   Zap,
   Box,
   AlertTriangle,
+  Replace,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -25,6 +26,7 @@ export type StepNodeData = {
   id: string;
   onEdit?: (id: string) => void;
   onRemove?: (id: string) => void;
+  onReplace?: (id: string) => void;
   hasDeleteWarning?: boolean;
 };
 
@@ -32,7 +34,7 @@ export type StepNode = Node<StepNodeData, 'stepNode'>;
 
 export function StepNode({ data }: NodeProps<StepNode>) {
   const { i18n } = useLingui();
-  const { step, id, onEdit, onRemove, hasDeleteWarning } = data;
+  const { step, id, onEdit, onRemove, onReplace, hasDeleteWarning } = data;
 
   console.log('StepNode render:', { id, stepType: step.type });
 
@@ -82,6 +84,21 @@ export function StepNode({ data }: NodeProps<StepNode>) {
           )}
         </div>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onReplace && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 hover:bg-muted/50 text-foreground/70 hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReplace(id);
+              }}
+              title={i18n._(msg`Replace Step`)}
+            >
+              <Replace className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"

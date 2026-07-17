@@ -46,20 +46,32 @@ interface StepLibraryProps {
   onAddStep: (step: PipelineStep) => void;
   currentSteps: string[];
   trigger?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  selectionMode?: 'add' | 'replace';
 }
 
 export const StepLibrary = memo(function StepLibrary({
   onAddStep,
   currentSteps,
   trigger,
+  open,
+  onOpenChange,
+  selectionMode = 'add',
 }: StepLibraryProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('presets');
 
   const { i18n } = useLingui();
+  const isOpen = open ?? internalOpen;
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (open === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
 
   const { ref: presetsRef, inView: presetsInView } = useInView();
   const { ref: workflowsRef, inView: workflowsInView } = useInView();
@@ -196,7 +208,7 @@ export const StepLibrary = memo(function StepLibrary({
   };
 
   return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+    <Sheet open={isOpen} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>
         {trigger ? (
           trigger
@@ -246,12 +258,22 @@ export const StepLibrary = memo(function StepLibrary({
           <SheetHeader className="px-6 py-6 border-b border-border/40 space-y-4 bg-muted/5">
             <div className="space-y-1">
               <SheetTitle className="text-2xl font-bold tracking-tight">
-                <Trans>Add Pipeline Step</Trans>
+                {selectionMode === 'replace' ? (
+                  <Trans>Replace Pipeline Step</Trans>
+                ) : (
+                  <Trans>Add Pipeline Step</Trans>
+                )}
               </SheetTitle>
               <SheetDescription className="text-base">
-                <Trans>
-                  Select a processing job or workflow to add to your pipeline.
-                </Trans>
+                {selectionMode === 'replace' ? (
+                  <Trans>
+                    Select a processing job or workflow to use in this node.
+                  </Trans>
+                ) : (
+                  <Trans>
+                    Select a processing job or workflow to add to your pipeline.
+                  </Trans>
+                )}
               </SheetDescription>
             </div>
 
