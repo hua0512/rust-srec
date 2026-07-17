@@ -181,6 +181,57 @@ pub struct UpdatePriorityRequest {
     pub priority: Priority,
 }
 
+/// Mutation applied to every streamer in a batch request.
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BatchStreamerAction {
+    /// Enable or disable monitoring.
+    SetEnabled { enabled: bool },
+    /// Assign a template, or clear it with `null`.
+    SetTemplate { template_id: Option<String> },
+    /// Set the scheduling priority.
+    SetPriority { priority: Priority },
+    /// Delete the streamer.
+    Delete,
+}
+
+/// Request to mutate multiple streamers.
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct BatchStreamerRequest {
+    /// Unique streamer IDs to process.
+    pub ids: Vec<String>,
+    /// Mutation applied to each streamer.
+    pub action: BatchStreamerAction,
+}
+
+/// Result of a batch mutation for one streamer.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct BatchStreamerItemResult {
+    /// Streamer ID supplied in the request.
+    pub id: String,
+    /// Whether the mutation succeeded.
+    pub success: bool,
+    /// Stable error code when the mutation failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// Human-readable error when the mutation failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Summary of a batch streamer mutation.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct BatchStreamerResponse {
+    /// Number of unique streamers requested.
+    pub requested: usize,
+    /// Number of successful mutations.
+    pub succeeded: usize,
+    /// Number of failed mutations.
+    pub failed: usize,
+    /// Per-streamer mutation results.
+    pub results: Vec<BatchStreamerItemResult>,
+}
+
 /// Streamer response.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct StreamerResponse {

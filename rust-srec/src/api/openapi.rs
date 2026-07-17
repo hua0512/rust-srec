@@ -107,6 +107,7 @@ pub struct MessageResponse {
         // Streamer endpoints
         crate::api::routes::streamers::create_streamer,
         crate::api::routes::streamers::list_streamers,
+        crate::api::routes::streamers::batch_streamers,
         crate::api::routes::streamers::get_streamer,
         crate::api::routes::streamers::update_streamer,
         crate::api::routes::streamers::delete_streamer,

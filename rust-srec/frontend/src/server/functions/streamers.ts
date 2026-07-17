@@ -6,9 +6,12 @@ import {
   UpdateStreamerSchema,
   ExtractMetadataResponseSchema,
   PrioritySchema,
+  BatchStreamerRequestSchema,
+  BatchStreamerResponseSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
 import { removeEmpty } from '@/lib/format';
+import type { BatchStreamerAction } from '@/api/schemas';
 
 export const listStreamers = createServerFn({ method: 'GET' })
   .inputValidator(
@@ -55,6 +58,18 @@ export const listStreamers = createServerFn({ method: 'GET' })
       offset: z.number(),
     });
     return PaginatedStreamerSchema.parse(json);
+  });
+
+export const batchUpdateStreamers = createServerFn({ method: 'POST' })
+  .inputValidator((data: { ids: string[]; action: BatchStreamerAction }) =>
+    BatchStreamerRequestSchema.parse(data),
+  )
+  .handler(async ({ data }) => {
+    const json = await fetchBackend('/streamers/batch', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return BatchStreamerResponseSchema.parse(json);
   });
 
 export const getStreamer = createServerFn({ method: 'GET' })

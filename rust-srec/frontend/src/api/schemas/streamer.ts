@@ -207,6 +207,45 @@ export const CreateStreamerSchema = z.object({
 
 export const UpdateStreamerSchema = CreateStreamerSchema.partial();
 
+export const BatchStreamerActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('set_enabled'), enabled: z.boolean() }),
+  z.object({
+    type: z.literal('set_template'),
+    template_id: z.string().nullable(),
+  }),
+  z.object({
+    type: z.literal('set_priority'),
+    priority: z.enum(['HIGH', 'NORMAL', 'LOW']),
+  }),
+  z.object({ type: z.literal('delete') }),
+]);
+
+export type BatchStreamerAction = z.infer<typeof BatchStreamerActionSchema>;
+
+export const BatchStreamerRequestSchema = z
+  .object({
+    ids: z.array(z.string().min(1)).min(1).max(100),
+    action: BatchStreamerActionSchema,
+  })
+  .refine((data) => new Set(data.ids).size === data.ids.length, {
+    message: 'Streamer IDs must be unique',
+    path: ['ids'],
+  });
+
+export const BatchStreamerResponseSchema = z.object({
+  requested: z.number(),
+  succeeded: z.number(),
+  failed: z.number(),
+  results: z.array(
+    z.object({
+      id: z.string(),
+      success: z.boolean(),
+      code: z.string().optional(),
+      error: z.string().optional(),
+    }),
+  ),
+});
+
 // Form schema without preprocessors for proper type inference with react-hook-form
 export const StreamerFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),

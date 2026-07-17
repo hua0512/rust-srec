@@ -1,5 +1,7 @@
 //! Streamer management routes.
 
+use std::collections::HashSet;
+
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -8,6 +10,7 @@ use axum::{
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
+    BatchStreamerAction, BatchStreamerItemResult, BatchStreamerRequest, BatchStreamerResponse,
     CreateStreamerRequest, ExtractMetadataRequest, ExtractMetadataResponse, PaginatedResponse,
     PaginationParams, PlatformConfigResponse, StreamerCheckHistoryEntry,
     StreamerCheckHistoryResponse, StreamerFilterParams, StreamerResponse, UpdatePriorityRequest,
@@ -15,7 +18,7 @@ use crate::api::models::{
 };
 use crate::api::server::AppState;
 use crate::domain::streamer::StreamerState;
-use crate::streamer::StreamerMetadata;
+use crate::streamer::{StreamerMetadata, manager::StreamerUpdateParams};
 use crate::utils::json::{self, JsonContext};
 
 /// Create the streamers router.
@@ -23,6 +26,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", post(create_streamer))
         .route("/", get(list_streamers))
+        .route("/batch", post(batch_streamers))
         .route("/{id}", get(get_streamer))
         .route("/{id}", put(update_streamer))
         .route("/{id}", delete(delete_streamer))
@@ -30,6 +34,45 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/priority", patch(update_priority))
         .route("/{id}/check-history", get(get_check_history))
         .route("/extract-metadata", post(extract_metadata))
+}
+
+const MAX_BATCH_SIZE: usize = 100;
+
+fn validate_batch_ids(ids: &[String]) -> ApiResult<()> {
+    if ids.is_empty() {
+        return Err(ApiError::validation("At least one streamer ID is required"));
+    }
+    if ids.len() > MAX_BATCH_SIZE {
+        return Err(ApiError::validation(format!(
+            "A batch may contain at most {MAX_BATCH_SIZE} streamer IDs"
+        )));
+    }
+    if ids.iter().any(|id| id.trim().is_empty()) {
+        return Err(ApiError::validation("Streamer IDs cannot be empty"));
+    }
+
+    let unique_ids: HashSet<&str> = ids.iter().map(String::as_str).collect();
+    if unique_ids.len() != ids.len() {
+        return Err(ApiError::validation(
+            "Streamer IDs must be unique within a batch",
+        ));
+    }
+
+    Ok(())
+}
+
+fn state_for_enabled(current: Option<StreamerState>, enabled: bool) -> Option<StreamerState> {
+    if !enabled {
+        return Some(StreamerState::Disabled);
+    }
+
+    match current {
+        Some(state) if state == StreamerState::Disabled || state.is_error() => state
+            .can_transition_to(StreamerState::NotLive)
+            .then_some(StreamerState::NotLive),
+        Some(_) => None,
+        None => Some(StreamerState::NotLive),
+    }
 }
 
 /// Convert StreamerMetadata to StreamerResponse.
@@ -300,6 +343,150 @@ pub async fn list_streamers(
     Ok(Json(response))
 }
 
+/// Apply one mutation to multiple streamers.
+///
+/// Valid requests are processed independently in request order. The response
+/// reports failures per streamer so successful cache updates and lifecycle
+/// events are not rolled back when another item fails.
+///
+/// # Errors
+///
+/// Returns a validation error when IDs are empty, duplicated, or exceed the
+/// batch limit. Assigning an unknown template returns a not-found error before
+/// any streamer is mutated.
+#[utoipa::path(
+    post,
+    path = "/api/streamers/batch",
+    tag = "streamers",
+    request_body = BatchStreamerRequest,
+    responses(
+        (status = 200, description = "Batch mutation results", body = BatchStreamerResponse),
+        (status = 404, description = "Template not found", body = crate::api::error::ApiErrorResponse),
+        (status = 422, description = "Invalid batch request", body = crate::api::error::ApiErrorResponse)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn batch_streamers(
+    State(state): State<AppState>,
+    Json(request): Json<BatchStreamerRequest>,
+) -> ApiResult<Json<BatchStreamerResponse>> {
+    validate_batch_ids(&request.ids)?;
+
+    let streamer_manager = state
+        .streamer_manager
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+
+    if let BatchStreamerAction::SetTemplate {
+        template_id: Some(template_id),
+    } = &request.action
+    {
+        let config_service = state
+            .config_service
+            .as_ref()
+            .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+        config_service
+            .get_template_config(template_id)
+            .await
+            .map_err(ApiError::from)?;
+    }
+
+    let requested = request.ids.len();
+    let mut results = Vec::with_capacity(requested);
+
+    for id in request.ids {
+        let result: crate::Result<()> = async {
+            match &request.action {
+                BatchStreamerAction::SetEnabled { enabled } => {
+                    let current = streamer_manager
+                        .get_streamer(&id)
+                        .ok_or_else(|| crate::Error::not_found("Streamer", &id))?;
+                    if let Some(new_state) = state_for_enabled(Some(current.state), *enabled)
+                        && new_state != current.state
+                    {
+                        streamer_manager
+                            .partial_update_streamer(StreamerUpdateParams {
+                                id: id.clone(),
+                                name: None,
+                                url: None,
+                                template_config_id: None,
+                                priority: None,
+                                state: Some(new_state),
+                                streamer_specific_config: None,
+                            })
+                            .await?;
+                    }
+                }
+                BatchStreamerAction::SetTemplate { template_id } => {
+                    streamer_manager
+                        .partial_update_streamer(StreamerUpdateParams {
+                            id: id.clone(),
+                            name: None,
+                            url: None,
+                            template_config_id: Some(template_id.clone()),
+                            priority: None,
+                            state: None,
+                            streamer_specific_config: None,
+                        })
+                        .await?;
+                }
+                BatchStreamerAction::SetPriority { priority } => {
+                    streamer_manager
+                        .partial_update_streamer(StreamerUpdateParams {
+                            id: id.clone(),
+                            name: None,
+                            url: None,
+                            template_config_id: None,
+                            priority: Some(*priority),
+                            state: None,
+                            streamer_specific_config: None,
+                        })
+                        .await?;
+                }
+                BatchStreamerAction::Delete => {
+                    if streamer_manager.get_streamer(&id).is_none() {
+                        return Err(crate::Error::not_found("Streamer", &id));
+                    }
+                    streamer_manager.delete_streamer(&id).await?;
+                }
+            }
+            Ok(())
+        }
+        .await;
+
+        match result {
+            Ok(()) => results.push(BatchStreamerItemResult {
+                id,
+                success: true,
+                code: None,
+                error: None,
+            }),
+            Err(error) => {
+                let api_error = ApiError::from(error);
+                tracing::warn!(
+                    streamer_id = %id,
+                    error_code = %api_error.code,
+                    "Batch streamer mutation failed"
+                );
+                results.push(BatchStreamerItemResult {
+                    id,
+                    success: false,
+                    code: Some(api_error.code),
+                    error: Some(api_error.message),
+                });
+            }
+        }
+    }
+
+    let succeeded = results.iter().filter(|result| result.success).count();
+    Ok(Json(BatchStreamerResponse {
+        requested,
+        succeeded,
+        failed: requested - succeeded,
+        results,
+    }))
+}
+
 #[utoipa::path(
     get,
     path = "/api/streamers/{id}",
@@ -362,9 +549,7 @@ pub async fn update_streamer(
         ));
     }
 
-    // Convert enabled flag to state if provided
-    let current_metadata = streamer_manager.get_streamer(&id);
-    let current_state = current_metadata.as_ref().map(|m| m.state);
+    let current_state = streamer_manager.get_streamer(&id).map(|m| m.state);
 
     tracing::debug!(
         streamer_id = %id,
@@ -373,55 +558,9 @@ pub async fn update_streamer(
         "Processing update_streamer state transition"
     );
 
-    let new_state = match request.enabled {
-        Some(true) => {
-            // User wants to enable the streamer
-            // Only transition to NotLive if:
-            // 1. Currently Disabled (manual disable)
-            // 2. In an error state that can be recovered (FatalError, Error, TemporalDisabled, etc.)
-            // Otherwise preserve current state (e.g., Live, NotLive, InspectingLive)
-            match current_metadata {
-                Some(metadata) => {
-                    let current = metadata.state;
-                    if current == StreamerState::Disabled || current.is_error() {
-                        // Disabled or error state: transition to NotLive to restart monitoring
-                        if current.can_transition_to(StreamerState::NotLive) {
-                            tracing::debug!(
-                                streamer_id = %id,
-                                from = ?current,
-                                to = "NotLive",
-                                "Transitioning from disabled/error state"
-                            );
-                            Some(StreamerState::NotLive)
-                        } else {
-                            tracing::debug!(
-                                streamer_id = %id,
-                                current = ?current,
-                                "Invalid transition, preserving current state"
-                            );
-                            None // Invalid transition, preserve current
-                        }
-                    } else {
-                        tracing::debug!(
-                            streamer_id = %id,
-                            current = ?current,
-                            "Active state, preserving current state"
-                        );
-                        None // Active state (Live, NotLive, etc.): preserve current
-                    }
-                }
-                None => {
-                    tracing::debug!(streamer_id = %id, "Streamer not found, using NotLive fallback");
-                    Some(StreamerState::NotLive) // Fallback for new streamers
-                }
-            }
-        }
-        Some(false) => {
-            tracing::debug!(streamer_id = %id, "Disabling streamer");
-            Some(StreamerState::Disabled)
-        }
-        None => None,
-    };
+    let new_state = request
+        .enabled
+        .and_then(|enabled| state_for_enabled(current_state, enabled));
 
     tracing::debug!(
         streamer_id = %id,
@@ -436,7 +575,7 @@ pub async fn update_streamer(
 
     // Use partial_update_streamer for atomic update
     let metadata = streamer_manager
-        .partial_update_streamer(crate::streamer::manager::StreamerUpdateParams {
+        .partial_update_streamer(StreamerUpdateParams {
             id: id.clone(),
             name: request.name,
             url: request.url,
@@ -666,6 +805,54 @@ mod tests {
 
         let response = metadata_to_response(&metadata);
         assert!(!response.enabled);
+    }
+
+    #[test]
+    fn test_validate_batch_ids() {
+        assert!(validate_batch_ids(&["streamer-1".to_string()]).is_ok());
+        assert!(validate_batch_ids(&[]).is_err());
+        assert!(validate_batch_ids(&["".to_string()]).is_err());
+        assert!(validate_batch_ids(&["streamer-1".to_string(), "streamer-1".to_string()]).is_err());
+
+        let oversized = (0..=MAX_BATCH_SIZE)
+            .map(|index| format!("streamer-{index}"))
+            .collect::<Vec<_>>();
+        assert!(validate_batch_ids(&oversized).is_err());
+    }
+
+    #[test]
+    fn test_state_for_enabled_matches_single_update_semantics() {
+        assert_eq!(
+            state_for_enabled(Some(StreamerState::Disabled), true),
+            Some(StreamerState::NotLive)
+        );
+        assert_eq!(
+            state_for_enabled(Some(StreamerState::FatalError), true),
+            Some(StreamerState::NotLive)
+        );
+        assert_eq!(state_for_enabled(Some(StreamerState::Live), true), None);
+        assert_eq!(
+            state_for_enabled(Some(StreamerState::Live), false),
+            Some(StreamerState::Disabled)
+        );
+        assert_eq!(state_for_enabled(None, true), Some(StreamerState::NotLive));
+    }
+
+    #[test]
+    fn test_batch_action_deserialization() {
+        let request: BatchStreamerRequest = serde_json::from_value(serde_json::json!({
+            "ids": ["streamer-1"],
+            "action": {
+                "type": "set_template",
+                "template_id": null
+            }
+        }))
+        .expect("batch request should deserialize");
+
+        assert!(matches!(
+            request.action,
+            BatchStreamerAction::SetTemplate { template_id: None }
+        ));
     }
 }
 
