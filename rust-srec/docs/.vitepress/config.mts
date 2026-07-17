@@ -1,228 +1,242 @@
-import { defineConfig } from 'vitepress'
-import { vitepressMermaidPreview } from 'vitepress-mermaid-preview'
+import { defineConfig } from "vitepress";
+import { vitepressMermaidPreview } from "vitepress-mermaid-preview";
 
 export default defineConfig({
-    title: 'Rust-Srec',
-    description: 'Automatic Online Streaming Recorder',
+  title: "Rust-Srec",
+  description: "Automatic Online Streaming Recorder",
 
-    // Ignore dead links for external URLs and runtime-generated paths
-    ignoreDeadLinks: [
-        /^\/api\/docs/,
-        /^http:\/\/localhost/,
-        '/docker-compose.example.yml',
-        '/docker-compose.gpu.yml',
-        '/env.example',
-        '/env.zh.example',
-    ],
+  // Ignore dead links for external URLs and runtime-generated paths
+  ignoreDeadLinks: [
+    /^\/api\/docs/,
+    /^http:\/\/localhost/,
+    "/docker-compose.example.yml",
+    "/docker-compose.gpu.yml",
+    "/env.example",
+    "/env.zh.example",
+  ],
 
-    markdown: {
-        config: (md) => {
-            md.use(vitepressMermaidPreview)
-        }
+  markdown: {
+    config: (md) => {
+      md.use(vitepressMermaidPreview);
     },
+  },
 
-    head: [
-        ['link', { rel: 'icon', type: 'image/svg+xml', href: '/stream-rec.svg' }],
-        ['meta', { name: 'theme-color', content: '#e44d26' }],
-        ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
-        ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
-        ['link', { href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap', rel: 'stylesheet' }]
+  head: [
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/stream-rec.svg" }],
+    ["meta", { name: "theme-color", content: "#e44d26" }],
+    ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
+    [
+      "link",
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" },
     ],
+    [
+      "link",
+      {
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
+        rel: "stylesheet",
+      },
+    ],
+  ],
 
-    locales: {
-        en: {
-            label: 'English',
-            lang: 'en',
-            link: '/en/',
-            themeConfig: {
-                editLink: {
-                    pattern: 'https://github.com/hua0512/rust-srec/edit/main/rust-srec/docs/:path',
-                    text: 'Edit this page on GitHub'
-                },
-                lastUpdated: {
-                    text: 'Last Updated',
-                    formatOptions: {
-                        dateStyle: 'medium',
-                        timeStyle: 'short'
-                    }
-                },
-                nav: [
-                    { text: 'Home', link: '/en/' },
-                    { text: 'Getting Started', link: '/en/getting-started/' },
-                    { text: 'API', link: '/en/api/' },
-                    { text: 'Release Notes', link: '/en/release-notes/' },
-                    { text: 'Donate', link: '/en/donate' }
-                ],
-                sidebar: {
-                    '/en/': [
-                        {
-                            text: 'Getting Started',
-                            items: [
-                                { text: 'Introduction', link: '/en/getting-started/' },
-                                { text: 'Installation', link: '/en/getting-started/installation' },
-                                { text: 'Docker', link: '/en/getting-started/docker' },
-                                { text: 'Configuration', link: '/en/getting-started/configuration' },
-                                { text: 'FAQ', link: '/en/getting-started/faq' }
-                            ]
-                        },
-                        {
-                            text: 'Platforms',
-                            items: [
-                                { text: 'Overview', link: '/en/platforms/' },
-                                { text: 'Bilibili', link: '/en/platforms/bilibili' },
-                                { text: 'Douyin', link: '/en/platforms/douyin' },
-                                { text: 'Douyu', link: '/en/platforms/douyu' },
-                                { text: 'Huya', link: '/en/platforms/huya' },
-                                { text: 'Twitch', link: '/en/platforms/twitch' },
-                                { text: 'SOOP', link: '/en/platforms/soop' },
-                                { text: 'Bigo Live', link: '/en/platforms/bigo' },
-                                { text: 'Other Platforms', link: '/en/platforms/others' }
-                            ]
-                        },
-                        {
-                            text: 'API Reference',
-                            items: [
-                                { text: 'Overview', link: '/en/api/' },
-                            ]
-                        },
-                        {
-                            text: 'Concepts',
-                            items: [
-                                { text: 'Architecture', link: '/en/concepts/architecture' },
-                                {
-                                    text: 'Engines',
-                                    link: '/en/concepts/engines',
-                                    collapsed: false,
-                                    items: [
-                                        { text: 'Mesio Engine', link: '/en/concepts/mesio' }
-                                    ]
-                                },
-                                { text: 'Configuration Layers', link: '/en/concepts/configuration' },
-                                { text: 'DAG Pipeline', link: '/en/concepts/pipeline' },
-                                { text: 'Notification System', link: '/en/concepts/notifications' }
-                            ]
-                        },
-                        {
-                            text: 'Release Notes',
-                            items: [
-                                { text: 'v0.3.2', link: '/en/release-notes/v0.3.2' },
-
-                                { text: 'v0.3.1', link: '/en/release-notes/v0.3.1' },
-
-                                { text: 'v0.3.0', link: '/en/release-notes/v0.3.0' },
-
-                                { text: 'Overview', link: '/en/release-notes/' },
-                                { text: 'Unreleased', link: '/en/release-notes/unreleased' },
-                                { text: 'v0.2.1', link: '/en/release-notes/v0.2.1' }
-                            ]
-                        }
-                    ]
-                }
-            }
+  locales: {
+    en: {
+      label: "English",
+      lang: "en",
+      link: "/en/",
+      themeConfig: {
+        editLink: {
+          pattern:
+            "https://github.com/hua0512/rust-srec/edit/main/rust-srec/docs/:path",
+          text: "Edit this page on GitHub",
         },
-        zh: {
-            label: '简体中文',
-            lang: 'zh-CN',
-            link: '/zh/',
-            themeConfig: {
-                editLink: {
-                    pattern: 'https://github.com/hua0512/rust-srec/edit/main/rust-srec/docs/:path',
-                    text: '在 GitHub 上编辑此页'
-                },
-                lastUpdated: {
-                    text: '最后更新于',
-                    formatOptions: {
-                        dateStyle: 'medium',
-                        timeStyle: 'short'
-                    }
-                },
-                nav: [
-                    { text: '首页', link: '/zh/' },
-                    { text: '快速开始', link: '/zh/getting-started/' },
-                    { text: 'API', link: '/zh/api/' },
-                    { text: '更新日志', link: '/zh/release-notes/' },
-                    { text: '捐赠', link: '/zh/donate' }
-                ],
-                sidebar: {
-                    '/zh/': [
-                        {
-                            text: '快速开始',
-                            items: [
-                                { text: '介绍', link: '/zh/getting-started/' },
-                                { text: '安装', link: '/zh/getting-started/installation' },
-                                { text: 'Docker 部署', link: '/zh/getting-started/docker' },
-                                { text: '配置', link: '/zh/getting-started/configuration' },
-                                { text: '常见问题', link: '/zh/getting-started/faq' }
-                            ]
-                        },
-                        {
-                            text: '平台支持',
-                            items: [
-                                { text: '概述', link: '/zh/platforms/' },
-                                { text: 'Bilibili', link: '/zh/platforms/bilibili' },
-                                { text: '抖音', link: '/zh/platforms/douyin' },
-                                { text: '斗鱼', link: '/zh/platforms/douyu' },
-                                { text: '虎牙', link: '/zh/platforms/huya' },
-                                { text: 'Twitch', link: '/zh/platforms/twitch' },
-                                { text: 'SOOP', link: '/zh/platforms/soop' },
-                                { text: 'Bigo Live', link: '/zh/platforms/bigo' },
-                                { text: '其他平台', link: '/zh/platforms/others' }
-                            ]
-                        },
-                        {
-                            text: 'API 参考',
-                            items: [
-                                { text: '概述', link: '/zh/api/' },
-                            ]
-                        },
-                        {
-                            text: '核心概念',
-                            items: [
-                                { text: '系统架构', link: '/zh/concepts/architecture' },
-                                {
-                                    text: '下载引擎',
-                                    link: '/zh/concepts/engines',
-                                    collapsed: false,
-                                    items: [
-                                        { text: 'Mesio 引擎', link: '/zh/concepts/mesio' }
-                                    ]
-                                },
-                                { text: '配置层级', link: '/zh/concepts/configuration' },
-                                { text: 'DAG 管道', link: '/zh/concepts/pipeline' },
-                                { text: '通知系统', link: '/zh/concepts/notifications' }
-                            ]
-                        },
-                        {
-                            text: '更新日志',
-                            items: [
-                                { text: 'v0.3.2', link: '/zh/release-notes/v0.3.2' },
-
-                                { text: 'v0.3.1', link: '/zh/release-notes/v0.3.1' },
-
-                                { text: 'v0.3.0', link: '/zh/release-notes/v0.3.0' },
-
-                                { text: '概览', link: '/zh/release-notes/' },
-                                { text: '未发布', link: '/zh/release-notes/unreleased' },
-                                { text: 'v0.2.1', link: '/zh/release-notes/v0.2.1' }
-                            ]
-                        }
-                    ]
-                }
-            }
-        }
-    },
-
-    themeConfig: {
-        logo: '/stream-rec-color.svg',
-        socialLinks: [
-            { icon: 'github', link: 'https://github.com/hua0512/rust-srec' }
+        lastUpdated: {
+          text: "Last Updated",
+          formatOptions: {
+            dateStyle: "medium",
+            timeStyle: "short",
+          },
+        },
+        nav: [
+          { text: "Home", link: "/en/" },
+          { text: "Getting Started", link: "/en/getting-started/" },
+          { text: "API", link: "/en/api/" },
+          { text: "Release Notes", link: "/en/release-notes/" },
+          { text: "Donate", link: "/en/donate" },
         ],
-        search: {
-            provider: 'local'
+        sidebar: {
+          "/en/": [
+            {
+              text: "Getting Started",
+              items: [
+                { text: "Introduction", link: "/en/getting-started/" },
+                {
+                  text: "Installation",
+                  link: "/en/getting-started/installation",
+                },
+                { text: "Docker", link: "/en/getting-started/docker" },
+                {
+                  text: "Configuration",
+                  link: "/en/getting-started/configuration",
+                },
+                { text: "FAQ", link: "/en/getting-started/faq" },
+              ],
+            },
+            {
+              text: "Platforms",
+              items: [
+                { text: "Overview", link: "/en/platforms/" },
+                { text: "Bilibili", link: "/en/platforms/bilibili" },
+                { text: "Douyin", link: "/en/platforms/douyin" },
+                { text: "Douyu", link: "/en/platforms/douyu" },
+                { text: "Huya", link: "/en/platforms/huya" },
+                { text: "Twitch", link: "/en/platforms/twitch" },
+                { text: "SOOP", link: "/en/platforms/soop" },
+                { text: "Bigo Live", link: "/en/platforms/bigo" },
+                { text: "Other Platforms", link: "/en/platforms/others" },
+              ],
+            },
+            {
+              text: "API Reference",
+              items: [{ text: "Overview", link: "/en/api/" }],
+            },
+            {
+              text: "Concepts",
+              items: [
+                { text: "Architecture", link: "/en/concepts/architecture" },
+                {
+                  text: "Engines",
+                  link: "/en/concepts/engines",
+                  collapsed: false,
+                  items: [{ text: "Mesio Engine", link: "/en/concepts/mesio" }],
+                },
+                {
+                  text: "Configuration Layers",
+                  link: "/en/concepts/configuration",
+                },
+                { text: "DAG Pipeline", link: "/en/concepts/pipeline" },
+                {
+                  text: "Notification System",
+                  link: "/en/concepts/notifications",
+                },
+              ],
+            },
+            {
+              text: "Release Notes",
+              items: [
+                { text: "Overview", link: "/en/release-notes/" },
+                { text: "Unreleased", link: "/en/release-notes/unreleased" },
+                { text: "v0.3.2", link: "/en/release-notes/v0.3.2" },
+
+                { text: "v0.3.1", link: "/en/release-notes/v0.3.1" },
+
+                { text: "v0.3.0", link: "/en/release-notes/v0.3.0" },
+
+                { text: "v0.2.1", link: "/en/release-notes/v0.2.1" },
+              ],
+            },
+          ],
         },
-        footer: {
-            message: 'Released under the MIT License.',
-            copyright: 'Copyright © 2024-present hua0512'
-        }
-    }
-})
+      },
+    },
+    zh: {
+      label: "简体中文",
+      lang: "zh-CN",
+      link: "/zh/",
+      themeConfig: {
+        editLink: {
+          pattern:
+            "https://github.com/hua0512/rust-srec/edit/main/rust-srec/docs/:path",
+          text: "在 GitHub 上编辑此页",
+        },
+        lastUpdated: {
+          text: "最后更新于",
+          formatOptions: {
+            dateStyle: "medium",
+            timeStyle: "short",
+          },
+        },
+        nav: [
+          { text: "首页", link: "/zh/" },
+          { text: "快速开始", link: "/zh/getting-started/" },
+          { text: "API", link: "/zh/api/" },
+          { text: "更新日志", link: "/zh/release-notes/" },
+          { text: "捐赠", link: "/zh/donate" },
+        ],
+        sidebar: {
+          "/zh/": [
+            {
+              text: "快速开始",
+              items: [
+                { text: "介绍", link: "/zh/getting-started/" },
+                { text: "安装", link: "/zh/getting-started/installation" },
+                { text: "Docker 部署", link: "/zh/getting-started/docker" },
+                { text: "配置", link: "/zh/getting-started/configuration" },
+                { text: "常见问题", link: "/zh/getting-started/faq" },
+              ],
+            },
+            {
+              text: "平台支持",
+              items: [
+                { text: "概述", link: "/zh/platforms/" },
+                { text: "Bilibili", link: "/zh/platforms/bilibili" },
+                { text: "抖音", link: "/zh/platforms/douyin" },
+                { text: "斗鱼", link: "/zh/platforms/douyu" },
+                { text: "虎牙", link: "/zh/platforms/huya" },
+                { text: "Twitch", link: "/zh/platforms/twitch" },
+                { text: "SOOP", link: "/zh/platforms/soop" },
+                { text: "Bigo Live", link: "/zh/platforms/bigo" },
+                { text: "其他平台", link: "/zh/platforms/others" },
+              ],
+            },
+            {
+              text: "API 参考",
+              items: [{ text: "概述", link: "/zh/api/" }],
+            },
+            {
+              text: "核心概念",
+              items: [
+                { text: "系统架构", link: "/zh/concepts/architecture" },
+                {
+                  text: "下载引擎",
+                  link: "/zh/concepts/engines",
+                  collapsed: false,
+                  items: [{ text: "Mesio 引擎", link: "/zh/concepts/mesio" }],
+                },
+                { text: "配置层级", link: "/zh/concepts/configuration" },
+                { text: "DAG 管道", link: "/zh/concepts/pipeline" },
+                { text: "通知系统", link: "/zh/concepts/notifications" },
+              ],
+            },
+            {
+              text: "更新日志",
+              items: [
+                { text: "概览", link: "/zh/release-notes/" },
+                { text: "未发布", link: "/zh/release-notes/unreleased" },
+                { text: "v0.3.2", link: "/zh/release-notes/v0.3.2" },
+
+                { text: "v0.3.1", link: "/zh/release-notes/v0.3.1" },
+
+                { text: "v0.3.0", link: "/zh/release-notes/v0.3.0" },
+                { text: "v0.2.1", link: "/zh/release-notes/v0.2.1" },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  },
+
+  themeConfig: {
+    logo: "/stream-rec-color.svg",
+    socialLinks: [
+      { icon: "github", link: "https://github.com/hua0512/rust-srec" },
+    ],
+    search: {
+      provider: "local",
+    },
+    footer: {
+      message: "Released under the MIT License.",
+      copyright: "Copyright © 2024-present hua0512",
+    },
+  },
+});
