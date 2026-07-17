@@ -13,6 +13,7 @@ import {
   checkStreamer,
   updateStreamer,
   listPlatformConfigs,
+  listTemplates,
 } from '@/server/functions';
 
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,9 @@ import {
   AlertTriangle,
   Ban,
   Radio,
+  LayoutTemplate,
+  ListFilter,
+  RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
@@ -53,12 +57,29 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/streamers/')({
   component: StreamersPage,
 });
 
 const PAGE_SIZES = [12, 24, 48, 96];
+
+type PriorityFilter = 'all' | 'HIGH' | 'NORMAL' | 'LOW';
+type SortOption =
+  | 'default'
+  | 'name-asc'
+  | 'name-desc'
+  | 'priority-desc'
+  | 'priority-asc'
+  | 'state-asc'
+  | 'updated-desc';
 
 function StreamersPage() {
   const { i18n } = useLingui();
@@ -80,7 +101,26 @@ function StreamersPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [platformFilter, setPlatformFilter] = useState('all');
+  const [templateFilter, setTemplateFilter] = useState('all');
   const [stateFilter, setStateFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
+  const [exceptionalStates, setExceptionalStates] = useState<string[]>([]);
+  const [sortOption, setSortOption] = useState<SortOption>('default');
+
+  const exceptionalStateOptions = [
+    { value: 'OUT_OF_SPACE', label: i18n._(msg`Out of space`) },
+    { value: 'FATAL_ERROR', label: i18n._(msg`Fatal error`) },
+    { value: 'NOT_FOUND', label: i18n._(msg`Not found`) },
+    {
+      value: 'TEMPORAL_DISABLED',
+      label: i18n._(msg`Temporarily disabled`),
+    },
+  ];
+
+  const activeSecondaryFilterCount =
+    Number(priorityFilter !== 'all') +
+    Number(exceptionalStates.length > 0) +
+    Number(sortOption !== 'default');
 
   // Debounce search
   useEffect(() => {
@@ -94,6 +134,7 @@ function StreamersPage() {
   // Handlers
   const handleStateChange = useCallback((value: string) => {
     setStateFilter(value);
+    setExceptionalStates([]);
     setPage(1);
   }, []);
 
@@ -102,10 +143,43 @@ function StreamersPage() {
     setPage(1);
   }, []);
 
+  const handleTemplateChange = useCallback((value: string) => {
+    setTemplateFilter(value);
+    setPage(1);
+  }, []);
+
+  const handleExceptionalStateChange = useCallback(
+    (value: string, checked: boolean) => {
+      setExceptionalStates((current) =>
+        checked
+          ? current.includes(value)
+            ? current
+            : [...current, value]
+          : current.filter((state) => state !== value),
+      );
+      setStateFilter('all');
+      setPage(1);
+    },
+    [],
+  );
+
+  const clearSecondaryFilters = useCallback(() => {
+    setPriorityFilter('all');
+    setExceptionalStates([]);
+    setSortOption('default');
+    setPage(1);
+  }, []);
+
   // Fetch Platforms
   const { data: platforms = [] } = useQuery({
     queryKey: ['platforms'],
     queryFn: () => listPlatformConfigs(),
+    staleTime: 60000,
+  });
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ['templates'],
+    queryFn: () => listTemplates(),
     staleTime: 60000,
   });
 
@@ -122,18 +196,44 @@ function StreamersPage() {
       pageSize,
       debouncedSearch,
       platformFilter,
+      templateFilter,
       stateFilter,
+      priorityFilter,
+      exceptionalStates,
+      sortOption,
     ],
     queryFn: async () => {
       const platform = platformFilter === 'all' ? undefined : platformFilter;
-      const state = stateFilter === 'all' ? undefined : stateFilter;
+      const template =
+        templateFilter === 'all' || templateFilter === '__unassigned__'
+          ? undefined
+          : templateFilter;
+      const state =
+        exceptionalStates.length > 0
+          ? exceptionalStates.join(',')
+          : stateFilter === 'all'
+            ? undefined
+            : stateFilter;
+      const priority = priorityFilter === 'all' ? undefined : priorityFilter;
+      const [sortBy, sortDir] =
+        sortOption === 'default'
+          ? [undefined, undefined]
+          : (sortOption.split('-') as [
+              'name' | 'priority' | 'state' | 'updated',
+              'asc' | 'desc',
+            ]);
       return listStreamers({
         data: {
           page,
           limit: pageSize,
           search: debouncedSearch,
           platform,
+          template,
+          templateUnassigned: templateFilter === '__unassigned__',
           state,
+          priority,
+          sortBy: sortBy === 'updated' ? 'updated_at' : sortBy,
+          sortDir,
         },
       });
     },
@@ -242,11 +342,56 @@ function StreamersPage() {
               />
             </div>
 
-            {/* Platform Select */}
+            <Badge
+              variant="secondary"
+              className="h-9 px-3 text-sm whitespace-nowrap"
+            >
+              {totalCount} <Trans>total</Trans>
+            </Badge>
+          </>
+        }
+      >
+        <div className="flex w-full flex-col gap-1 rounded-2xl border border-border/60 bg-muted/30 p-1 shadow-xs sm:inline-flex sm:w-auto sm:flex-row sm:items-center sm:gap-0.5 sm:rounded-full">
+          <nav className="grid w-full grid-cols-5 gap-0.5 sm:flex sm:w-auto sm:items-center">
+            {STATE_FILTERS.map((filter) => {
+              const Icon = filter.icon;
+              const isActive =
+                exceptionalStates.length === 0 && stateFilter === filter.value;
+              return (
+                <button
+                  key={filter.value}
+                  onClick={() => handleStateChange(filter.value)}
+                  aria-pressed={isActive}
+                  className={`flex h-8 min-w-0 items-center justify-center gap-2 rounded-full px-1.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm ${
+                    isActive
+                      ? 'bg-background text-primary shadow-xs ring-1 ring-border/50'
+                      : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="hidden h-3.5 w-3.5 shrink-0 sm:block" />
+                  <span className="truncate">{filter.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-1 sm:contents">
             <Select value={platformFilter} onValueChange={handlePlatformChange}>
-              <SelectTrigger className="w-[200px] h-9 bg-background/50 border-input/60 hover:bg-accent/50 transition-colors">
-                <div className="flex items-center gap-2 truncate">
-                  <Radio className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <SelectTrigger
+                className={`h-8 w-full rounded-full border-0 px-2.5 shadow-none transition-colors hover:bg-background/60 focus-visible:ring-2 sm:w-40 ${
+                  platformFilter === 'all'
+                    ? 'text-muted-foreground dark:bg-transparent'
+                    : 'bg-background text-foreground shadow-xs dark:bg-background'
+                }`}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <Radio
+                    className={`h-3.5 w-3.5 shrink-0 ${
+                      platformFilter === 'all'
+                        ? 'text-muted-foreground'
+                        : 'text-primary'
+                    }`}
+                  />
                   <span className="truncate">
                     <SelectValue placeholder={i18n._(msg`Platform`)} />
                   </span>
@@ -264,35 +409,201 @@ function StreamersPage() {
               </SelectContent>
             </Select>
 
-            <Badge
-              variant="secondary"
-              className="h-9 px-3 text-sm whitespace-nowrap"
-            >
-              {totalCount} <Trans>total</Trans>
-            </Badge>
-          </>
-        }
-      >
-        <nav className="flex items-center gap-1">
-          {STATE_FILTERS.map((filter) => {
-            const Icon = filter.icon;
-            const isActive = stateFilter === filter.value;
-            return (
-              <button
-                key={filter.value}
-                onClick={() => handleStateChange(filter.value)}
-                className={`relative px-3 py-1.5 text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-2 ${
-                  isActive
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            <Select value={templateFilter} onValueChange={handleTemplateChange}>
+              <SelectTrigger
+                className={`h-8 w-full rounded-full border-0 px-2.5 shadow-none transition-colors hover:bg-background/60 focus-visible:ring-2 sm:w-40 ${
+                  templateFilter === 'all'
+                    ? 'text-muted-foreground dark:bg-transparent'
+                    : 'bg-background text-foreground shadow-xs dark:bg-background'
                 }`}
               >
-                <Icon className="h-3.5 w-3.5" />
-                <span className="relative z-10">{filter.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+                <div className="flex min-w-0 items-center gap-2">
+                  <LayoutTemplate
+                    className={`h-3.5 w-3.5 shrink-0 ${
+                      templateFilter === 'all'
+                        ? 'text-muted-foreground'
+                        : 'text-primary'
+                    }`}
+                  />
+                  <span className="truncate">
+                    <SelectValue placeholder={i18n._(msg`Template`)} />
+                  </span>
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <Trans>All Templates</Trans>
+                </SelectItem>
+                <SelectItem value="__unassigned__">
+                  <Trans>No template assigned</Trans>
+                </SelectItem>
+                {templates.map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={i18n._(msg`More filters`)}
+                  className={`h-8 rounded-full px-2.5 ${
+                    activeSecondaryFilterCount > 0
+                      ? 'bg-background text-primary shadow-xs ring-1 ring-border/50'
+                      : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
+                  }`}
+                >
+                  <ListFilter className="h-3.5 w-3.5" />
+                  <span className="hidden md:inline">
+                    <Trans>Filters</Trans>
+                  </span>
+                  {activeSecondaryFilterCount > 0 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                      {activeSecondaryFilterCount}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                className="w-[calc(100vw-2rem)] rounded-2xl p-0 sm:w-80"
+              >
+                <div className="flex items-center justify-between border-b px-4 py-3">
+                  <div>
+                    <p className="font-semibold">
+                      <Trans>More filters</Trans>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      <Trans>Refine and sort streamers</Trans>
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={activeSecondaryFilterCount === 0}
+                    onClick={clearSecondaryFilters}
+                    className="rounded-full text-muted-foreground"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <Trans>Clear</Trans>
+                  </Button>
+                </div>
+
+                <div className="space-y-5 p-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>
+                        <Trans>Priority</Trans>
+                      </Label>
+                      <Select
+                        value={priorityFilter}
+                        onValueChange={(value) => {
+                          setPriorityFilter(value as PriorityFilter);
+                          setPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="w-full rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">
+                            <Trans>Any priority</Trans>
+                          </SelectItem>
+                          <SelectItem value="HIGH">
+                            <Trans>High</Trans>
+                          </SelectItem>
+                          <SelectItem value="NORMAL">
+                            <Trans>Normal</Trans>
+                          </SelectItem>
+                          <SelectItem value="LOW">
+                            <Trans>Low</Trans>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>
+                        <Trans>Sort by</Trans>
+                      </Label>
+                      <Select
+                        value={sortOption}
+                        onValueChange={(value) => {
+                          setSortOption(value as SortOption);
+                          setPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="w-full rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">
+                            <Trans>Default</Trans>
+                          </SelectItem>
+                          <SelectItem value="updated-desc">
+                            <Trans>Recently updated</Trans>
+                          </SelectItem>
+                          <SelectItem value="name-asc">
+                            <Trans>Name A-Z</Trans>
+                          </SelectItem>
+                          <SelectItem value="name-desc">
+                            <Trans>Name Z-A</Trans>
+                          </SelectItem>
+                          <SelectItem value="priority-desc">
+                            <Trans>Priority high-low</Trans>
+                          </SelectItem>
+                          <SelectItem value="priority-asc">
+                            <Trans>Priority low-high</Trans>
+                          </SelectItem>
+                          <SelectItem value="state-asc">
+                            <Trans>State</Trans>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 border-t pt-4">
+                    <Label>
+                      <Trans>Exceptional states</Trans>
+                    </Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {exceptionalStateOptions.map((option) => {
+                        const checked = exceptionalStates.includes(
+                          option.value,
+                        );
+                        const id = `exception-state-${option.value}`;
+                        return (
+                          <Label
+                            key={option.value}
+                            htmlFor={id}
+                            className="cursor-pointer font-normal"
+                          >
+                            <Checkbox
+                              id={id}
+                              checked={checked}
+                              onCheckedChange={(nextChecked) =>
+                                handleExceptionalStateChange(
+                                  option.value,
+                                  nextChecked === true,
+                                )
+                              }
+                            />
+                            <span className="truncate">{option.label}</span>
+                          </Label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
       </DashboardHeader>
 
       {/* Content Content */}

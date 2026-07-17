@@ -166,6 +166,12 @@ pub async fn list_streamers(
     if let Some(platform) = &filters.platform {
         streamers.retain(|s| &s.platform_config_id == platform);
     }
+    if let Some(template) = &filters.template {
+        streamers.retain(|s| s.template_config_id.as_ref() == Some(template));
+    }
+    if filters.template_unassigned == Some(true) {
+        streamers.retain(|s| s.template_config_id.is_none());
+    }
     if let Some(state_str) = &filters.state
         && !state_str.is_empty()
     {
@@ -232,6 +238,16 @@ pub async fn list_streamers(
                 ordering
                     .then_with(|| a.name.cmp(&b.name))
                     .then_with(|| a.id.cmp(&b.id))
+            });
+        }
+        Some("updated_at") => {
+            streamers.sort_by(|a, b| {
+                let ordering = if desc {
+                    b.updated_at.cmp(&a.updated_at)
+                } else {
+                    a.updated_at.cmp(&b.updated_at)
+                };
+                ordering.then_with(|| a.id.cmp(&b.id))
             });
         }
         _ => {

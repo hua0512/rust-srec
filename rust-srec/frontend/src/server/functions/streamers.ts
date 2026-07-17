@@ -18,7 +18,12 @@ export const listStreamers = createServerFn({ method: 'GET' })
         limit?: number;
         search?: string;
         platform?: string;
+        template?: string;
+        templateUnassigned?: boolean;
         state?: string;
+        priority?: 'HIGH' | 'NORMAL' | 'LOW';
+        sortBy?: 'name' | 'priority' | 'state' | 'updated_at';
+        sortDir?: 'asc' | 'desc';
       } = {},
     ) => d,
   )
@@ -34,7 +39,12 @@ export const listStreamers = createServerFn({ method: 'GET' })
     params.set('limit', limit.toString());
     if (data.search) params.set('search', data.search);
     if (data.platform) params.set('platform', data.platform);
+    if (data.template) params.set('template', data.template);
+    if (data.templateUnassigned) params.set('template_unassigned', 'true');
     if (data.state) params.set('state', data.state);
+    if (data.priority) params.set('priority', data.priority);
+    if (data.sortBy) params.set('sort_by', data.sortBy);
+    if (data.sortDir) params.set('sort_dir', data.sortDir);
 
     const json = await fetchBackend(`/streamers?${params.toString()}`);
 
