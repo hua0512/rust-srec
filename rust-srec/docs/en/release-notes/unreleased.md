@@ -110,6 +110,16 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
   Douyu error codes `-3`, `-4`, and `-5` are now handled as unavailable or offline stream states. This reduces false hard failures when a room closes, the streamer goes offline during extraction, or Douyu returns a temporary unavailable response.
 
+## Streamers
+
+- **Filter and sort the streamer list**
+
+  The streamers page has a redesigned filter toolbar for working through large lists. You can filter by assigned template — including streamers with no template — by priority, and by operational state (for example, showing only streamers currently in an error state), and sort the list by name, priority, state, or most recently updated. Filtering and sorting run on the server, so pagination and totals stay accurate across large collections. The toolbar stays compact on desktop and switches to a responsive layout on mobile.
+
+- **Bulk actions for multiple streamers**
+
+  You can now select several streamers and act on them at once. Enter selection mode to pick streamers with the mouse or keyboard, or select the entire current page in one click, then enable, disable, assign a template, set priority (high, normal, or low), or delete the selected streamers in a single action. Each streamer is processed independently: if some fail, the rest still complete, every failure is reported per streamer, and the streamers that failed stay selected so you can retry without starting the selection over.
+
 ## Pipeline DAG editor
 
 - **Replace a step without rebuilding its connections**
