@@ -374,7 +374,7 @@ msgstr "Add Override"
 msgid "Add parameter"
 msgstr "Add parameter"
 
-#: src/components/pipeline/workflows/step-library.tsx:249
+#: src/components/pipeline/workflows/step-library.tsx:264
 msgid "Add Pipeline Step"
 msgstr "Add Pipeline Step"
 
@@ -386,7 +386,7 @@ msgstr "Add randomness to retry delays to prevent thundering herd."
 msgid "Add rclone argument"
 msgstr "Add rclone argument"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:111
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:148
 msgid "Add Step"
 msgstr "Add Step"
 
@@ -450,7 +450,7 @@ msgid "Advanced Settings"
 msgstr "Advanced Settings"
 
 #. placeholder {0}: dagStep.depends_on.join(', ')
-#: src/components/pipeline/workflows/steps-list.tsx:178
+#: src/components/pipeline/workflows/steps-list.tsx:187
 msgid "AFTER: {0}"
 msgstr "AFTER: {0}"
 
@@ -464,7 +464,7 @@ msgstr "Alerts when disk space is running low."
 
 #: src/components/notifications/browser-channel-dialog.tsx:159
 #: src/components/notifications/desktop-channel-dialog.tsx:53
-#: src/components/pipeline/workflows/step-library.tsx:291
+#: src/components/pipeline/workflows/step-library.tsx:313
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:159
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:339
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:102
@@ -687,7 +687,7 @@ msgstr "Auto (Default)"
 msgid "Auto (QR → Phone & Code → Desktop)"
 msgstr "Auto (QR → Phone & Code → Desktop)"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:279
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:284
 msgid "Auto Layout"
 msgstr "Auto Layout"
 
@@ -903,7 +903,7 @@ msgstr "both directions at 10 MiB/s"
 msgid "Brand Colors"
 msgstr "Brand Colors"
 
-#: src/components/sessions/recordings-tab.tsx:227
+#: src/components/sessions/recordings-tab.tsx:232
 msgid "Break"
 msgstr "Break"
 
@@ -1163,7 +1163,7 @@ msgstr "Cleanup"
 msgid "Clear"
 msgstr "Clear"
 
-#: src/components/pipeline/workflows/step-library.tsx:593
+#: src/components/pipeline/workflows/step-library.tsx:615
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "Click to add. You can reorder steps in the editor."
 
@@ -1324,7 +1324,7 @@ msgstr "Config Path (Optional)"
 #: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
 #: src/components/pipeline/workflows/step-config-dialog.tsx:395
-#: src/components/pipeline/workflows/workflow-editor.tsx:299
+#: src/components/pipeline/workflows/workflow-editor.tsx:303
 #: src/lib/menu-list.ts:119
 msgid "Configuration"
 msgstr "Configuration"
@@ -1386,7 +1386,7 @@ msgstr "Configure recording rules for this streamer."
 msgid "Configure Settings"
 msgstr "Configure Settings"
 
-#: src/components/pipeline/workflows/steps-list.tsx:197
+#: src/components/pipeline/workflows/steps-list.tsx:221
 msgid "Configure Step"
 msgstr "Configure Step"
 
@@ -1744,7 +1744,7 @@ msgstr "Current Password"
 msgid "Custom"
 msgstr "Custom"
 
-#: src/components/pipeline/workflows/steps-list.tsx:125
+#: src/components/pipeline/workflows/steps-list.tsx:134
 msgid "Custom Config"
 msgstr "Custom Config"
 
@@ -2084,12 +2084,12 @@ msgstr "Delivery Policy"
 msgid "Depends On (Ancestors)"
 msgstr "Depends On (Ancestors)"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:334
+#: src/components/pipeline/workflows/workflow-editor.tsx:338
 msgid "Describe what this workflow does..."
 msgstr "Describe what this workflow does..."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:279
-#: src/components/pipeline/workflows/workflow-editor.tsx:329
+#: src/components/pipeline/workflows/workflow-editor.tsx:333
 msgid "Description"
 msgstr "Description"
 
@@ -2101,7 +2101,7 @@ msgstr "Description is managed by the system"
 msgid "Deselect All"
 msgstr "Deselect All"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:245
+#: src/components/pipeline/workflows/workflow-editor.tsx:249
 msgid "Design your automation pipeline step by step"
 msgstr "Design your automation pipeline step by step"
 
@@ -2168,6 +2168,7 @@ msgstr "Disabled"
 msgid "Disconnected"
 msgstr "Disconnected"
 
+#: src/components/sessions/recordings-tab.tsx:243
 #: src/lib/split-reason.ts:51
 msgid "Discontinuity"
 msgstr "Discontinuity"
@@ -2208,7 +2209,7 @@ msgstr "Douyu UHD rate"
 msgid "Down"
 msgstr "Down"
 
-#: src/components/sessions/recordings-tab.tsx:158
+#: src/components/sessions/recordings-tab.tsx:159
 #: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "Download"
@@ -2272,7 +2273,7 @@ msgstr "Downloading {0}"
 msgid "Downloading..."
 msgstr "Downloading..."
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:292
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:297
 msgid "Drag from edge to link steps"
 msgstr "Drag from edge to link steps"
 
@@ -2394,7 +2395,7 @@ msgstr "e.g. up -c @channel -p {input}"
 msgid "e.g., process-video"
 msgstr "e.g., process-video"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:313
+#: src/components/pipeline/workflows/workflow-editor.tsx:317
 msgid "e.g., Standard Processing"
 msgstr "e.g., Standard Processing"
 
@@ -2627,7 +2628,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:187
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:234
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -2757,7 +2758,7 @@ msgstr "Explicit TTWID cookie value to use for all requests."
 msgid "Explore"
 msgstr "Explore"
 
-#: src/components/pipeline/workflows/step-library.tsx:221
+#: src/components/pipeline/workflows/step-library.tsx:233
 msgid "Explore matching automation steps to enhance your pipeline workflow."
 msgstr "Explore matching automation steps to enhance your pipeline workflow."
 
@@ -3212,7 +3213,7 @@ msgstr "Filename Template"
 msgid "files"
 msgstr "files"
 
-#: src/components/sessions/recordings-tab.tsx:450
+#: src/components/sessions/recordings-tab.tsx:479
 msgid "Files"
 msgstr "Files"
 
@@ -3486,7 +3487,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:200
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:195
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:242
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -3536,9 +3537,9 @@ msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail gene
 msgid "Graceful Stop Timeout"
 msgstr "Graceful Stop Timeout"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:86
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:89
-#: src/components/pipeline/workflows/workflow-editor.tsx:382
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:117
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:120
+#: src/components/pipeline/workflows/workflow-editor.tsx:392
 msgid "Graph"
 msgstr "Graph"
 
@@ -3880,11 +3881,11 @@ msgstr "Initial Delay (ms)"
 msgid "Initial Fetch Timeout (ms)"
 msgstr "Initial Fetch Timeout (ms)"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:139
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:156
 msgid "inline"
 msgstr "inline"
 
-#: src/components/pipeline/workflows/steps-list.tsx:149
+#: src/components/pipeline/workflows/steps-list.tsx:158
 msgid "Inline: {stepName}"
 msgstr "Inline: {stepName}"
 
@@ -4006,7 +4007,7 @@ msgstr "Job limits and engine settings."
 msgid "Job not found"
 msgstr "Job not found"
 
-#: src/components/pipeline/workflows/step-library.tsx:260
+#: src/components/pipeline/workflows/step-library.tsx:282
 msgid "Job Presets"
 msgstr "Job Presets"
 
@@ -4021,7 +4022,7 @@ msgstr "Job Timeouts"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:273
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:320
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -4141,9 +4142,9 @@ msgstr "Limits & Validation"
 msgid "Limits each individual file's transfer rate rather than the overall total."
 msgstr "Limits each individual file's transfer rate rather than the overall total."
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:77
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:80
-#: src/components/pipeline/workflows/workflow-editor.tsx:376
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:108
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:111
+#: src/components/pipeline/workflows/workflow-editor.tsx:386
 msgid "List"
 msgstr "List"
 
@@ -4203,8 +4204,8 @@ msgstr "Loading editor components..."
 msgid "Loading logs..."
 msgstr "Loading logs..."
 
-#: src/components/pipeline/workflows/step-library.tsx:443
-#: src/components/pipeline/workflows/step-library.tsx:581
+#: src/components/pipeline/workflows/step-library.tsx:465
+#: src/components/pipeline/workflows/step-library.tsx:603
 msgid "Loading more..."
 msgstr "Loading more..."
 
@@ -4220,11 +4221,11 @@ msgstr "Loading pipeline editor..."
 msgid "Loading preset details..."
 msgstr "Loading preset details..."
 
-#: src/components/pipeline/workflows/step-library.tsx:321
+#: src/components/pipeline/workflows/step-library.tsx:343
 msgid "Loading presets..."
 msgstr "Loading presets..."
 
-#: src/components/pipeline/workflows/step-library.tsx:461
+#: src/components/pipeline/workflows/step-library.tsx:483
 msgid "Loading workflows..."
 msgstr "Loading workflows..."
 
@@ -4302,7 +4303,7 @@ msgstr "Logs downloaded successfully"
 msgid "Loop Protection"
 msgstr "Loop Protection"
 
-#: src/components/sessions/recordings-tab.tsx:238
+#: src/components/sessions/recordings-tab.tsx:251
 msgid "Lossless Split"
 msgstr "Lossless Split"
 
@@ -4526,7 +4527,7 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/components/sessions/recordings-tab.tsx:446
+#: src/components/sessions/recordings-tab.tsx:475
 msgid "Media Timeline"
 msgstr "Media Timeline"
 
@@ -4699,7 +4700,7 @@ msgstr "My Channel"
 
 #: src/components/notifications/channel-form.tsx:309
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
-#: src/components/pipeline/workflows/workflow-editor.tsx:309
+#: src/components/pipeline/workflows/workflow-editor.tsx:313
 #: src/components/streamers/config/streamer-general-settings.tsx:92
 #: src/components/streamers/edit/streamer-meta-form.tsx:140
 msgid "Name"
@@ -4825,7 +4826,7 @@ msgid "No environment variables defined"
 msgstr "No environment variables defined"
 
 #. placeholder {0}: result.max_depth
-#: src/components/pipeline/workflows/workflow-editor.tsx:185
+#: src/components/pipeline/workflows/workflow-editor.tsx:189
 msgid "No errors found. Max depth: {0}"
 msgstr "No errors found. Max depth: {0}"
 
@@ -4878,7 +4879,7 @@ msgstr "No logs to display"
 msgid "No matching events found"
 msgstr "No matching events found"
 
-#: src/components/sessions/recordings-tab.tsx:463
+#: src/components/sessions/recordings-tab.tsx:492
 msgid "No media outputs generated yet."
 msgstr "No media outputs generated yet."
 
@@ -4951,7 +4952,7 @@ msgstr "No playable stream found in response"
 msgid "No playable streams found"
 msgstr "No playable streams found"
 
-#: src/components/pipeline/workflows/step-library.tsx:426
+#: src/components/pipeline/workflows/step-library.tsx:448
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:364
 msgid "No presets found"
 msgstr "No presets found"
@@ -4976,7 +4977,7 @@ msgstr "No refresh needed or not supported"
 msgid "No specialized options available for this platform."
 msgstr "No specialized options available for this platform."
 
-#: src/components/pipeline/workflows/steps-list.tsx:231
+#: src/components/pipeline/workflows/steps-list.tsx:255
 msgid "No Steps Added"
 msgstr "No Steps Added"
 
@@ -5012,7 +5013,7 @@ msgstr "No title changes or lifecycle events were recorded for this session."
 msgid "No word data"
 msgstr "No word data"
 
-#: src/components/pipeline/workflows/step-library.tsx:564
+#: src/components/pipeline/workflows/step-library.tsx:586
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:249
 msgid "No workflows found"
 msgstr "No workflows found"
@@ -5410,7 +5411,7 @@ msgstr "Override how aggressively the scheduler confirms a stream has ended."
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:242
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:289
 msgid "Overview"
 msgstr "Overview"
 
@@ -5653,11 +5654,11 @@ msgstr "Pipeline has failed jobs. Click to view details."
 msgid "Pipeline is already completed or cancelled"
 msgstr "Pipeline is already completed or cancelled"
 
-#: src/components/pipeline/workflows/steps-list.tsx:234
+#: src/components/pipeline/workflows/steps-list.tsx:258
 msgid "Pipeline is empty."
 msgstr "Pipeline is empty."
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:183
+#: src/components/pipeline/workflows/workflow-editor.tsx:187
 msgid "Pipeline is valid"
 msgstr "Pipeline is valid"
 
@@ -5678,7 +5679,7 @@ msgstr "Pipeline Jobs"
 msgid "Pipeline Manager"
 msgstr "Pipeline Manager"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:169
+#: src/components/pipeline/workflows/workflow-editor.tsx:173
 msgid "Pipeline must have at least one step"
 msgstr "Pipeline must have at least one step"
 
@@ -5694,8 +5695,8 @@ msgstr "Pipeline name is required"
 msgid "Pipeline Statistics"
 msgstr "Pipeline Statistics"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:64
-#: src/components/pipeline/workflows/workflow-editor.tsx:363
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:95
+#: src/components/pipeline/workflows/workflow-editor.tsx:373
 msgid "Pipeline Structure"
 msgstr "Pipeline Structure"
 
@@ -5763,7 +5764,7 @@ msgstr "platforms"
 msgid "Platforms"
 msgstr "Platforms"
 
-#: src/components/sessions/recordings-tab.tsx:184
+#: src/components/sessions/recordings-tab.tsx:185
 msgid "Play"
 msgstr "Play"
 
@@ -5878,7 +5879,7 @@ msgstr "Preferred Quality (QN)"
 msgid "Preserve Paths"
 msgstr "Preserve Paths"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:141
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:158
 msgid "preset"
 msgstr "preset"
 
@@ -5923,7 +5924,7 @@ msgstr "presets"
 msgid "Presets"
 msgstr "Presets"
 
-#: src/components/pipeline/workflows/step-library.tsx:230
+#: src/components/pipeline/workflows/step-library.tsx:242
 msgid "Presets Available"
 msgstr "Presets Available"
 
@@ -6246,7 +6247,7 @@ msgstr "Recording started"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:308
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -6360,6 +6361,15 @@ msgstr "Replace output files"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:229
 msgid "Replace output files if they already exist"
 msgstr "Replace output files if they already exist"
+
+#: src/components/pipeline/workflows/step-library.tsx:262
+msgid "Replace Pipeline Step"
+msgstr "Replace Pipeline Step"
+
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:97
+#: src/components/pipeline/workflows/steps-list.tsx:206
+msgid "Replace Step"
+msgstr "Replace Step"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:127
 msgid "Request AAC audio without a video track."
@@ -6619,14 +6629,14 @@ msgstr "Save Changes"
 msgid "Save settings to a JSON file"
 msgstr "Save settings to a JSON file"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:274
+#: src/components/pipeline/workflows/workflow-editor.tsx:278
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
 #: src/components/config/platforms/platform-editor.tsx:157
 #: src/components/config/templates/template-editor.tsx:209
 #: src/components/filters/FilterDialog.tsx:257
-#: src/components/pipeline/workflows/workflow-editor.tsx:272
+#: src/components/pipeline/workflows/workflow-editor.tsx:276
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
 #: src/routes/_authed/_dashboard/config/global.lazy.tsx:90
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
@@ -6675,7 +6685,7 @@ msgstr "Script"
 msgid "SD / Low"
 msgstr "SD / Low"
 
-#: src/components/pipeline/workflows/step-library.tsx:270
+#: src/components/pipeline/workflows/step-library.tsx:292
 msgid "Search by name or description..."
 msgstr "Search by name or description..."
 
@@ -6757,7 +6767,7 @@ msgstr "Segment Timeout (ms)"
 msgid "Segment TTL (ms)"
 msgstr "Segment TTL (ms)"
 
-#: src/components/sessions/recordings-tab.tsx:449
+#: src/components/sessions/recordings-tab.tsx:478
 #: src/components/streamers/edit/active-download-card.tsx:164
 msgid "Segments"
 msgstr "Segments"
@@ -6774,9 +6784,13 @@ msgstr "Select a format"
 msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 msgstr "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 
-#: src/components/pipeline/workflows/step-library.tsx:252
+#: src/components/pipeline/workflows/step-library.tsx:273
 msgid "Select a processing job or workflow to add to your pipeline."
 msgstr "Select a processing job or workflow to add to your pipeline."
+
+#: src/components/pipeline/workflows/step-library.tsx:269
+msgid "Select a processing job or workflow to use in this node."
+msgstr "Select a processing job or workflow to use in this node."
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:271
 msgid "Select a session"
@@ -6979,7 +6993,7 @@ msgstr "Session is not running"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:190
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:237
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -7175,7 +7189,7 @@ msgstr "Split on any raw header change. Safe but may cause extra files."
 msgid "Split only on codec configuration changes. Reduces false splits."
 msgstr "Split only on codec configuration changes. Reduces false splits."
 
-#: src/components/sessions/recordings-tab.tsx:110
+#: src/components/sessions/recordings-tab.tsx:111
 msgid "Split Reason"
 msgstr "Split Reason"
 
@@ -7250,7 +7264,7 @@ msgstr "Step Configuration"
 msgid "Step Identifier (Unique)"
 msgstr "Step Identifier (Unique)"
 
-#: src/components/pipeline/workflows/step-library.tsx:213
+#: src/components/pipeline/workflows/step-library.tsx:225
 msgid "Step Library"
 msgstr "Step Library"
 
@@ -7687,8 +7701,8 @@ msgstr "These settings only apply to the desktop app. The server will still deli
 msgid "These timeouts are applied when the pipeline worker pools start. Changes require a restart to take effect."
 msgstr "These timeouts are applied when the pipeline worker pools start. Changes require a restart to take effect."
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:77
-#: src/components/pipeline/workflows/steps-list.tsx:156
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:79
+#: src/components/pipeline/workflows/steps-list.tsx:165
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 
@@ -7812,7 +7826,7 @@ msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:331
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:295
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -8050,8 +8064,8 @@ msgstr "Try adjusting the date range"
 msgid "Try adjusting your filters or limit"
 msgstr "Try adjusting your filters or limit"
 
-#: src/components/pipeline/workflows/step-library.tsx:429
-#: src/components/pipeline/workflows/step-library.tsx:567
+#: src/components/pipeline/workflows/step-library.tsx:451
+#: src/components/pipeline/workflows/step-library.tsx:589
 msgid "Try adjusting your search or filters"
 msgstr "Try adjusting your search or filters"
 
@@ -8315,15 +8329,15 @@ msgstr "Users"
 msgid "UTC"
 msgstr "UTC"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:263
+#: src/components/pipeline/workflows/workflow-editor.tsx:267
 msgid "Validate"
 msgstr "Validate"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:190
+#: src/components/pipeline/workflows/workflow-editor.tsx:194
 msgid "Validation Failed"
 msgstr "Validation Failed"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:216
+#: src/components/pipeline/workflows/workflow-editor.tsx:220
 msgid "Validation service unavailable"
 msgstr "Validation service unavailable"
 
@@ -8404,7 +8418,7 @@ msgstr "View All"
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 
-#: src/components/sessions/recordings-tab.tsx:171
+#: src/components/sessions/recordings-tab.tsx:172
 msgid "View Danmu"
 msgstr "View Danmu"
 
@@ -8534,7 +8548,7 @@ msgstr "Width in pixels (keeps aspect ratio)"
 msgid "Windows Console Error"
 msgstr "Windows Console Error"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:143
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:160
 msgid "workflow"
 msgstr "workflow"
 
@@ -8563,7 +8577,7 @@ msgid "workflows"
 msgstr "workflows"
 
 #: src/components/layout/site-header.tsx:51
-#: src/components/pipeline/workflows/step-library.tsx:263
+#: src/components/pipeline/workflows/step-library.tsx:285
 #: src/components/sidebar/navbar.tsx:45
 #: src/lib/menu-list.ts:80
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:160

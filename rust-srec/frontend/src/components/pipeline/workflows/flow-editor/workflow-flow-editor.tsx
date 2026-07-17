@@ -28,6 +28,7 @@ import {
   usePresetProcessorMap,
   getDeleteAfterTransformStepIds,
 } from '../delete-warning';
+import { removeStep } from '../step-operations';
 
 const nodeTypes = {
   stepNode: StepNode,
@@ -47,6 +48,7 @@ interface WorkflowFlowEditorProps {
   onUpdateSteps: (steps: DagStepDefinition[]) => void;
   onEditStep?: (id: string) => void;
   onRemoveStep?: (id: string) => void;
+  onReplaceStep?: (id: string) => void;
 }
 
 const WorkflowFlowEditorInner = memo(
@@ -55,6 +57,7 @@ const WorkflowFlowEditorInner = memo(
     onUpdateSteps,
     onEditStep,
     onRemoveStep,
+    onReplaceStep,
   }: WorkflowFlowEditorProps) => {
     const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -76,7 +79,7 @@ const WorkflowFlowEditorInner = memo(
         if (onRemoveStep) {
           onRemoveStep(id);
         } else {
-          onUpdateSteps(steps.filter((st) => st.id !== id));
+          onUpdateSteps(removeStep(steps, id));
         }
       },
       [steps, onUpdateSteps, onRemoveStep],
@@ -109,6 +112,7 @@ const WorkflowFlowEditorInner = memo(
             id: s.id,
             onEdit: onEditStep,
             onRemove: handleRemoveStep,
+            onReplace: onReplaceStep,
             hasDeleteWarning: warnedStepIds.has(s.id),
           };
 
@@ -143,6 +147,7 @@ const WorkflowFlowEditorInner = memo(
     }, [
       steps,
       onEditStep,
+      onReplaceStep,
       handleRemoveStep,
       setNodes,
       setEdges,
@@ -242,7 +247,7 @@ const WorkflowFlowEditorInner = memo(
     }, [nodes, edges, setNodes, setEdges]);
 
     return (
-      <GraphViewport className="h-full min-h-[600px]">
+      <GraphViewport className="h-full min-h-0">
         <ReactFlow
           nodes={nodes}
           edges={edges}

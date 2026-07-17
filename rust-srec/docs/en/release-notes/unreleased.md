@@ -110,6 +110,20 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
   Douyu error codes `-3`, `-4`, and `-5` are now handled as unavailable or offline stream states. This reduces false hard failures when a room closes, the streamer goes offline during extraction, or Douyu returns a temporary unavailable response.
 
+## Pipeline DAG editor
+
+- **Replace a step without rebuilding its connections**
+
+  Pipeline DAG steps now have a **Replace Step** action in both list and graph views. Selecting a different job preset or sub-workflow changes the processing step while preserving the node ID and its incoming and outgoing dependencies.
+
+- **Deleting steps no longer leaves broken dependencies**
+
+  Removing a step from a DAG now reconnects its successors to its predecessors instead of leaving references to the deleted node. Newly added steps also receive collision-free IDs after delete-and-add edits, preventing duplicate nodes and ambiguous graph connections.
+
+- **Long step lists remain accessible**
+
+  Pipeline configuration editors now scroll long lists of DAG steps within the editor instead of clipping steps below the visible area. Graph view also respects the same bounded editor height.
+
 ## Pipeline uploads
 
 - **Session-start date anchors for upload destinations**

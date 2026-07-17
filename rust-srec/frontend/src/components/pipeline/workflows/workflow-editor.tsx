@@ -44,6 +44,7 @@ import {
 } from '@/api/schemas';
 import { WorkflowFlowEditor } from './flow-editor/workflow-flow-editor';
 import { StepConfigDialog } from './step-config-dialog';
+import { createStepId, removeStep, replaceStep } from './step-operations';
 
 const workflowSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -73,6 +74,8 @@ export function WorkflowEditor({
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isValidating, setIsValidating] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [replacingStepId, setReplacingStepId] = useState<string | null>(null);
 
   const initialSteps = initialData?.dag?.steps || [];
 
@@ -89,12 +92,8 @@ export function WorkflowEditor({
 
   const handleAddStep = (pipelineStep: PipelineStep) => {
     const currentSteps = form.getValues('steps');
-    const stepName =
-      pipelineStep.type === 'inline'
-        ? pipelineStep.processor
-        : pipelineStep.name;
     const newStep: DagStepDefinition = {
-      id: `${stepName}-${currentSteps.length}`,
+      id: createStepId(pipelineStep, currentSteps),
       step: pipelineStep,
       depends_on:
         currentSteps.length > 0
@@ -104,6 +103,27 @@ export function WorkflowEditor({
     form.setValue('steps', [...currentSteps, newStep], {
       shouldDirty: true,
     });
+  };
+
+  const handleSelectStep = (pipelineStep: PipelineStep) => {
+    if (replacingStepId === null) {
+      handleAddStep(pipelineStep);
+      return;
+    }
+
+    const currentSteps = form.getValues('steps');
+    const replacementIndex = currentSteps.findIndex(
+      (step) => step.id === replacingStepId,
+    );
+    if (replacementIndex === -1) return;
+
+    form.setValue(
+      'steps',
+      replaceStep(currentSteps, replacementIndex, pipelineStep),
+      { shouldDirty: true },
+    );
+    setLibraryOpen(false);
+    setReplacingStepId(null);
   };
 
   const handleRemoveStep = (index: number) => {
@@ -119,30 +139,14 @@ export function WorkflowEditor({
   };
 
   const performRemoveStep = (id: string, currentSteps: DagStepDefinition[]) => {
-    const removedStep = currentSteps.find((s) => s.id === id);
-    if (!removedStep) return;
+    form.setValue('steps', removeStep(currentSteps, id), {
+      shouldDirty: true,
+    });
+  };
 
-    // Implementation of bridging logic:
-    // When a step is removed, its successors will now depend on its predecessors
-    const predecessors = removedStep.depends_on || [];
-
-    const updatedSteps = currentSteps
-      .filter((s) => s.id !== id)
-      .map((s) => {
-        if (s.depends_on?.includes(id)) {
-          // Remove the deleted step from dependencies and add its own predecessors
-          const newDependsOn = [
-            ...new Set([
-              ...s.depends_on.filter((depId) => depId !== id),
-              ...predecessors,
-            ]),
-          ];
-          return { ...s, depends_on: newDependsOn };
-        }
-        return s;
-      });
-
-    form.setValue('steps', updatedSteps, { shouldDirty: true });
+  const handleReplaceStep = (id: string) => {
+    setReplacingStepId(id);
+    setLibraryOpen(true);
   };
 
   const handleReorder = (newOrder: DagStepDefinition[]) => {
@@ -345,10 +349,16 @@ export function WorkflowEditor({
               </motion.div>
 
               <StepLibrary
-                onAddStep={handleAddStep}
+                onAddStep={handleSelectStep}
                 currentSteps={steps.map((s) =>
                   s.step.type === 'inline' ? s.step.processor : s.step.name,
                 )}
+                open={libraryOpen}
+                onOpenChange={(open) => {
+                  setLibraryOpen(open);
+                  if (!open) setReplacingStepId(null);
+                }}
+                selectionMode={replacingStepId === null ? 'add' : 'replace'}
               />
             </div>
 
@@ -395,6 +405,10 @@ export function WorkflowEditor({
                     onRemove={handleRemoveStep}
                     onUpdate={handleUpdateStep}
                     onEdit={setEditingIndex}
+                    onReplace={(index) => {
+                      const step = steps[index];
+                      if (step) handleReplaceStep(step.id);
+                    }}
                   />
                 </div>
               ) : (
@@ -404,6 +418,7 @@ export function WorkflowEditor({
                     onUpdateSteps={handleReorder}
                     onEditStep={handleEditStepById}
                     onRemoveStep={handleRemoveStepById}
+                    onReplaceStep={handleReplaceStep}
                   />
                 </div>
               )}

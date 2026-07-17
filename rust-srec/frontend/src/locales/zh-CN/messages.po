@@ -374,7 +374,7 @@ msgstr "添加覆盖项"
 msgid "Add parameter"
 msgstr "添加参数"
 
-#: src/components/pipeline/workflows/step-library.tsx:249
+#: src/components/pipeline/workflows/step-library.tsx:264
 msgid "Add Pipeline Step"
 msgstr "添加处理管道步骤"
 
@@ -386,7 +386,7 @@ msgstr "为重试延迟添加随机性，避免“惊群”。"
 msgid "Add rclone argument"
 msgstr "添加 rclone 参数"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:111
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:148
 msgid "Add Step"
 msgstr "添加步骤"
 
@@ -450,7 +450,7 @@ msgid "Advanced Settings"
 msgstr "高级设置"
 
 #. placeholder {0}: dagStep.depends_on.join(', ')
-#: src/components/pipeline/workflows/steps-list.tsx:178
+#: src/components/pipeline/workflows/steps-list.tsx:187
 msgid "AFTER: {0}"
 msgstr "在: {0} 之后"
 
@@ -464,7 +464,7 @@ msgstr "磁盘空间不足时发出警报。"
 
 #: src/components/notifications/browser-channel-dialog.tsx:159
 #: src/components/notifications/desktop-channel-dialog.tsx:53
-#: src/components/pipeline/workflows/step-library.tsx:291
+#: src/components/pipeline/workflows/step-library.tsx:313
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:159
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:339
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:102
@@ -687,7 +687,7 @@ msgstr "自动（默认）"
 msgid "Auto (QR → Phone & Code → Desktop)"
 msgstr "自动 (二维码 → 手机号和验证码 → 桌面)"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:279
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:284
 msgid "Auto Layout"
 msgstr "自动布局"
 
@@ -903,7 +903,7 @@ msgstr "双向均为 10 MiB/s"
 msgid "Brand Colors"
 msgstr "品牌颜色"
 
-#: src/components/sessions/recordings-tab.tsx:227
+#: src/components/sessions/recordings-tab.tsx:232
 msgid "Break"
 msgstr "中断"
 
@@ -1163,7 +1163,7 @@ msgstr "清理"
 msgid "Clear"
 msgstr "清空"
 
-#: src/components/pipeline/workflows/step-library.tsx:593
+#: src/components/pipeline/workflows/step-library.tsx:615
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "点击添加。你可以在编辑器中重新排序步骤。"
 
@@ -1324,7 +1324,7 @@ msgstr "配置路径（可选）"
 #: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:46
 #: src/components/pipeline/workflows/step-config-dialog.tsx:395
-#: src/components/pipeline/workflows/workflow-editor.tsx:299
+#: src/components/pipeline/workflows/workflow-editor.tsx:303
 #: src/lib/menu-list.ts:119
 msgid "Configuration"
 msgstr "配置"
@@ -1386,7 +1386,7 @@ msgstr "配置此主播的录制规则。"
 msgid "Configure Settings"
 msgstr "配置设置"
 
-#: src/components/pipeline/workflows/steps-list.tsx:197
+#: src/components/pipeline/workflows/steps-list.tsx:221
 msgid "Configure Step"
 msgstr "配置步骤"
 
@@ -1744,7 +1744,7 @@ msgstr "当前密码"
 msgid "Custom"
 msgstr "自定义"
 
-#: src/components/pipeline/workflows/steps-list.tsx:125
+#: src/components/pipeline/workflows/steps-list.tsx:134
 msgid "Custom Config"
 msgstr "自定义配置"
 
@@ -2084,12 +2084,12 @@ msgstr "投递策略"
 msgid "Depends On (Ancestors)"
 msgstr "依赖于（前辈节点）"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:334
+#: src/components/pipeline/workflows/workflow-editor.tsx:338
 msgid "Describe what this workflow does..."
 msgstr "描述此工作流的用途..."
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:279
-#: src/components/pipeline/workflows/workflow-editor.tsx:329
+#: src/components/pipeline/workflows/workflow-editor.tsx:333
 msgid "Description"
 msgstr "描述"
 
@@ -2101,7 +2101,7 @@ msgstr "描述由系统管理"
 msgid "Deselect All"
 msgstr "取消全选"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:245
+#: src/components/pipeline/workflows/workflow-editor.tsx:249
 msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
@@ -2168,6 +2168,7 @@ msgstr "已禁用"
 msgid "Disconnected"
 msgstr "已断开"
 
+#: src/components/sessions/recordings-tab.tsx:243
 #: src/lib/split-reason.ts:51
 msgid "Discontinuity"
 msgstr "不连续"
@@ -2208,7 +2209,7 @@ msgstr "斗鱼超清画质值"
 msgid "Down"
 msgstr "不可用"
 
-#: src/components/sessions/recordings-tab.tsx:158
+#: src/components/sessions/recordings-tab.tsx:159
 #: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "下载"
@@ -2272,7 +2273,7 @@ msgstr "正在下载 {0}"
 msgid "Downloading..."
 msgstr "下载中..."
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:292
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:297
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
 
@@ -2394,7 +2395,7 @@ msgstr "例如 up -c @channel -p {input}"
 msgid "e.g., process-video"
 msgstr "例如：process-video"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:313
+#: src/components/pipeline/workflows/workflow-editor.tsx:317
 msgid "e.g., Standard Processing"
 msgstr "例如：标准处理"
 
@@ -2627,7 +2628,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:187
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:234
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -2757,7 +2758,7 @@ msgstr "用于所有请求的显式 TTWID Cookie 值。"
 msgid "Explore"
 msgstr "浏览"
 
-#: src/components/pipeline/workflows/step-library.tsx:221
+#: src/components/pipeline/workflows/step-library.tsx:233
 msgid "Explore matching automation steps to enhance your pipeline workflow."
 msgstr "探索匹配的自动化步骤以增强你的处理管道工作流。"
 
@@ -3212,7 +3213,7 @@ msgstr "文件名模板"
 msgid "files"
 msgstr "文件"
 
-#: src/components/sessions/recordings-tab.tsx:450
+#: src/components/sessions/recordings-tab.tsx:479
 msgid "Files"
 msgstr "文件"
 
@@ -3486,7 +3487,7 @@ msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:200
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:195
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:242
 msgid "Go Back"
 msgstr "返回"
 
@@ -3536,9 +3537,9 @@ msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 msgid "Graceful Stop Timeout"
 msgstr "优雅停止超时"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:86
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:89
-#: src/components/pipeline/workflows/workflow-editor.tsx:382
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:117
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:120
+#: src/components/pipeline/workflows/workflow-editor.tsx:392
 msgid "Graph"
 msgstr "图表"
 
@@ -3880,11 +3881,11 @@ msgstr "初始延迟（ms）"
 msgid "Initial Fetch Timeout (ms)"
 msgstr "初始获取超时（ms）"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:139
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:156
 msgid "inline"
 msgstr "内联"
 
-#: src/components/pipeline/workflows/steps-list.tsx:149
+#: src/components/pipeline/workflows/steps-list.tsx:158
 msgid "Inline: {stepName}"
 msgstr "内联：{stepName}"
 
@@ -4006,7 +4007,7 @@ msgstr "任务限制与引擎设置。"
 msgid "Job not found"
 msgstr "未找到处理任务"
 
-#: src/components/pipeline/workflows/step-library.tsx:260
+#: src/components/pipeline/workflows/step-library.tsx:282
 msgid "Job Presets"
 msgstr "任务预设"
 
@@ -4021,7 +4022,7 @@ msgstr "任务超时"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:273
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:320
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -4141,9 +4142,9 @@ msgstr "限制与校验"
 msgid "Limits each individual file's transfer rate rather than the overall total."
 msgstr "限制单个文件的传输速率，而非整体总量。"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:77
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:80
-#: src/components/pipeline/workflows/workflow-editor.tsx:376
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:108
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:111
+#: src/components/pipeline/workflows/workflow-editor.tsx:386
 msgid "List"
 msgstr "列表"
 
@@ -4203,8 +4204,8 @@ msgstr "正在加载编辑器组件..."
 msgid "Loading logs..."
 msgstr "正在加载日志..."
 
-#: src/components/pipeline/workflows/step-library.tsx:443
-#: src/components/pipeline/workflows/step-library.tsx:581
+#: src/components/pipeline/workflows/step-library.tsx:465
+#: src/components/pipeline/workflows/step-library.tsx:603
 msgid "Loading more..."
 msgstr "正在加载更多..."
 
@@ -4220,11 +4221,11 @@ msgstr "正在加载处理管道编辑器..."
 msgid "Loading preset details..."
 msgstr "正在加载预设详情..."
 
-#: src/components/pipeline/workflows/step-library.tsx:321
+#: src/components/pipeline/workflows/step-library.tsx:343
 msgid "Loading presets..."
 msgstr "正在加载预设..."
 
-#: src/components/pipeline/workflows/step-library.tsx:461
+#: src/components/pipeline/workflows/step-library.tsx:483
 msgid "Loading workflows..."
 msgstr "正在加载工作流..."
 
@@ -4302,7 +4303,7 @@ msgstr "日志下载成功"
 msgid "Loop Protection"
 msgstr "循环保护"
 
-#: src/components/sessions/recordings-tab.tsx:238
+#: src/components/sessions/recordings-tab.tsx:251
 msgid "Lossless Split"
 msgstr "无损分割"
 
@@ -4526,7 +4527,7 @@ msgstr "媒体文件"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
-#: src/components/sessions/recordings-tab.tsx:446
+#: src/components/sessions/recordings-tab.tsx:475
 msgid "Media Timeline"
 msgstr "媒体时间线"
 
@@ -4699,7 +4700,7 @@ msgstr "我的渠道"
 
 #: src/components/notifications/channel-form.tsx:309
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:215
-#: src/components/pipeline/workflows/workflow-editor.tsx:309
+#: src/components/pipeline/workflows/workflow-editor.tsx:313
 #: src/components/streamers/config/streamer-general-settings.tsx:92
 #: src/components/streamers/edit/streamer-meta-form.tsx:140
 msgid "Name"
@@ -4825,7 +4826,7 @@ msgid "No environment variables defined"
 msgstr "未定义环境变量"
 
 #. placeholder {0}: result.max_depth
-#: src/components/pipeline/workflows/workflow-editor.tsx:185
+#: src/components/pipeline/workflows/workflow-editor.tsx:189
 msgid "No errors found. Max depth: {0}"
 msgstr "未发现错误。最大深度：{0}"
 
@@ -4878,7 +4879,7 @@ msgstr "暂无日志可显示"
 msgid "No matching events found"
 msgstr "未找到匹配的事件"
 
-#: src/components/sessions/recordings-tab.tsx:463
+#: src/components/sessions/recordings-tab.tsx:492
 msgid "No media outputs generated yet."
 msgstr "尚未生成媒体输出。"
 
@@ -4951,7 +4952,7 @@ msgstr "响应中未找到可播放的流"
 msgid "No playable streams found"
 msgstr "未找到可播放的流"
 
-#: src/components/pipeline/workflows/step-library.tsx:426
+#: src/components/pipeline/workflows/step-library.tsx:448
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:364
 msgid "No presets found"
 msgstr "未找到预设"
@@ -4976,7 +4977,7 @@ msgstr "无需刷新或不支持"
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
-#: src/components/pipeline/workflows/steps-list.tsx:231
+#: src/components/pipeline/workflows/steps-list.tsx:255
 msgid "No Steps Added"
 msgstr "未添加步骤"
 
@@ -5012,7 +5013,7 @@ msgstr "此会话未记录任何标题变更或生命周期事件。"
 msgid "No word data"
 msgstr "暂无词频数据"
 
-#: src/components/pipeline/workflows/step-library.tsx:564
+#: src/components/pipeline/workflows/step-library.tsx:586
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:249
 msgid "No workflows found"
 msgstr "未找到工作流"
@@ -5410,7 +5411,7 @@ msgstr "覆盖调度器确认直播结束的激进程度。"
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:242
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:289
 msgid "Overview"
 msgstr "概览"
 
@@ -5653,11 +5654,11 @@ msgstr "处理管道中有失败的处理任务。点击查看详情。"
 msgid "Pipeline is already completed or cancelled"
 msgstr "该处理管道已结束或已取消"
 
-#: src/components/pipeline/workflows/steps-list.tsx:234
+#: src/components/pipeline/workflows/steps-list.tsx:258
 msgid "Pipeline is empty."
 msgstr "处理管道为空。"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:183
+#: src/components/pipeline/workflows/workflow-editor.tsx:187
 msgid "Pipeline is valid"
 msgstr "处理管道有效"
 
@@ -5678,7 +5679,7 @@ msgstr "处理任务"
 msgid "Pipeline Manager"
 msgstr "处理管道管理器"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:169
+#: src/components/pipeline/workflows/workflow-editor.tsx:173
 msgid "Pipeline must have at least one step"
 msgstr "处理管道必须至少包含一个步骤"
 
@@ -5694,8 +5695,8 @@ msgstr "处理管道名称是必填项"
 msgid "Pipeline Statistics"
 msgstr "处理管道统计"
 
-#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:64
-#: src/components/pipeline/workflows/workflow-editor.tsx:363
+#: src/components/pipeline/workflows/pipeline-workflow-editor.tsx:95
+#: src/components/pipeline/workflows/workflow-editor.tsx:373
 msgid "Pipeline Structure"
 msgstr "处理管道结构"
 
@@ -5763,7 +5764,7 @@ msgstr "平台"
 msgid "Platforms"
 msgstr "平台"
 
-#: src/components/sessions/recordings-tab.tsx:184
+#: src/components/sessions/recordings-tab.tsx:185
 msgid "Play"
 msgstr "播放"
 
@@ -5878,7 +5879,7 @@ msgstr "首选画质 (QN)"
 msgid "Preserve Paths"
 msgstr "保留路径"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:141
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:158
 msgid "preset"
 msgstr "预设"
 
@@ -5923,7 +5924,7 @@ msgstr "预设"
 msgid "Presets"
 msgstr "预设"
 
-#: src/components/pipeline/workflows/step-library.tsx:230
+#: src/components/pipeline/workflows/step-library.tsx:242
 msgid "Presets Available"
 msgstr "可用预设"
 
@@ -6246,7 +6247,7 @@ msgstr "录制已开始"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:308
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -6360,6 +6361,15 @@ msgstr "替换输出文件"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:229
 msgid "Replace output files if they already exist"
 msgstr "若输出文件已存在则替换"
+
+#: src/components/pipeline/workflows/step-library.tsx:262
+msgid "Replace Pipeline Step"
+msgstr "替换管道步骤"
+
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:97
+#: src/components/pipeline/workflows/steps-list.tsx:206
+msgid "Replace Step"
+msgstr "替换步骤"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:127
 msgid "Request AAC audio without a video track."
@@ -6619,14 +6629,14 @@ msgstr "保存更改"
 msgid "Save settings to a JSON file"
 msgstr "将设置保存为 JSON 文件"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:274
+#: src/components/pipeline/workflows/workflow-editor.tsx:278
 msgid "Save Workflow"
 msgstr "保存工作流"
 
 #: src/components/config/platforms/platform-editor.tsx:157
 #: src/components/config/templates/template-editor.tsx:209
 #: src/components/filters/FilterDialog.tsx:257
-#: src/components/pipeline/workflows/workflow-editor.tsx:272
+#: src/components/pipeline/workflows/workflow-editor.tsx:276
 #: src/components/streamers/edit/streamer-save-fab.tsx:48
 #: src/routes/_authed/_dashboard/config/global.lazy.tsx:90
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:379
@@ -6675,7 +6685,7 @@ msgstr "脚本"
 msgid "SD / Low"
 msgstr "标清 / 低清"
 
-#: src/components/pipeline/workflows/step-library.tsx:270
+#: src/components/pipeline/workflows/step-library.tsx:292
 msgid "Search by name or description..."
 msgstr "按名称或描述搜索..."
 
@@ -6757,7 +6767,7 @@ msgstr "分段超时（毫秒）"
 msgid "Segment TTL (ms)"
 msgstr "分段 TTL（毫秒）"
 
-#: src/components/sessions/recordings-tab.tsx:449
+#: src/components/sessions/recordings-tab.tsx:478
 #: src/components/streamers/edit/active-download-card.tsx:164
 msgid "Segments"
 msgstr "分段"
@@ -6774,9 +6784,13 @@ msgstr "选择格式"
 msgid "Select a preset or type a Douyu rate. Audio only requests AAC without video."
 msgstr "选择预设或输入斗鱼画质值。仅音频会请求不含视频的 AAC。"
 
-#: src/components/pipeline/workflows/step-library.tsx:252
+#: src/components/pipeline/workflows/step-library.tsx:273
 msgid "Select a processing job or workflow to add to your pipeline."
 msgstr "选择要添加到处理管道的处理任务或工作流。"
+
+#: src/components/pipeline/workflows/step-library.tsx:269
+msgid "Select a processing job or workflow to use in this node."
+msgstr "选择要在此节点中使用的处理任务或工作流。"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:271
 msgid "Select a session"
@@ -6979,7 +6993,7 @@ msgstr "会话未运行"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:190
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:237
 msgid "Session not found"
 msgstr "未找到录制会话"
 
@@ -7175,7 +7189,7 @@ msgstr "在任意原始头变更时分割。安全但可能产生额外文件。
 msgid "Split only on codec configuration changes. Reduces false splits."
 msgstr "仅在编解码器配置变更时分割。减少误分割。"
 
-#: src/components/sessions/recordings-tab.tsx:110
+#: src/components/sessions/recordings-tab.tsx:111
 msgid "Split Reason"
 msgstr "分割原因"
 
@@ -7250,7 +7264,7 @@ msgstr "步骤配置"
 msgid "Step Identifier (Unique)"
 msgstr "步骤标识符（唯一）"
 
-#: src/components/pipeline/workflows/step-library.tsx:213
+#: src/components/pipeline/workflows/step-library.tsx:225
 msgid "Step Library"
 msgstr "步骤库"
 
@@ -7687,8 +7701,8 @@ msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道
 msgid "These timeouts are applied when the pipeline worker pools start. Changes require a restart to take effect."
 msgstr "这些超时设置在管道工作线程池启动时应用。更改需要重启才能生效。"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:77
-#: src/components/pipeline/workflows/steps-list.tsx:156
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:79
+#: src/components/pipeline/workflows/steps-list.tsx:165
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤删除的是转码后的结果文件，而不是原始录制文件。请改为在转码步骤上启用“成功后移除输入”。"
 
@@ -7812,7 +7826,7 @@ msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
 #: src/components/sessions/danmu-stats-panel.tsx:331
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:295
 msgid "Timeline"
 msgstr "时间线"
 
@@ -8050,8 +8064,8 @@ msgstr "尝试调整日期范围"
 msgid "Try adjusting your filters or limit"
 msgstr "尝试调整过滤器或限制"
 
-#: src/components/pipeline/workflows/step-library.tsx:429
-#: src/components/pipeline/workflows/step-library.tsx:567
+#: src/components/pipeline/workflows/step-library.tsx:451
+#: src/components/pipeline/workflows/step-library.tsx:589
 msgid "Try adjusting your search or filters"
 msgstr "尝试调整搜索或过滤器"
 
@@ -8315,15 +8329,15 @@ msgstr "用户"
 msgid "UTC"
 msgstr "UTC"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:263
+#: src/components/pipeline/workflows/workflow-editor.tsx:267
 msgid "Validate"
 msgstr "校验"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:190
+#: src/components/pipeline/workflows/workflow-editor.tsx:194
 msgid "Validation Failed"
 msgstr "校验失败"
 
-#: src/components/pipeline/workflows/workflow-editor.tsx:216
+#: src/components/pipeline/workflows/workflow-editor.tsx:220
 msgid "Validation service unavailable"
 msgstr "校验服务不可用"
 
@@ -8404,7 +8418,7 @@ msgstr "查看全部"
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "实时查看应用日志。日志仅保留最近 {MAX_LOG_ENTRIES} 条。"
 
-#: src/components/sessions/recordings-tab.tsx:171
+#: src/components/sessions/recordings-tab.tsx:172
 msgid "View Danmu"
 msgstr "查看弹幕"
 
@@ -8534,7 +8548,7 @@ msgstr "宽度（像素，保持宽高比）"
 msgid "Windows Console Error"
 msgstr "Windows 控制台错误"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:143
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:160
 msgid "workflow"
 msgstr "工作流"
 
@@ -8563,7 +8577,7 @@ msgid "workflows"
 msgstr "工作流"
 
 #: src/components/layout/site-header.tsx:51
-#: src/components/pipeline/workflows/step-library.tsx:263
+#: src/components/pipeline/workflows/step-library.tsx:285
 #: src/components/sidebar/navbar.tsx:45
 #: src/lib/menu-list.ts:80
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:160
