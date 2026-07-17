@@ -14,7 +14,9 @@ import {
   updateStreamer,
   listPlatformConfigs,
   listTemplates,
+  batchUpdateStreamers,
 } from '@/server/functions';
+import type { BatchStreamerAction } from '@/api/schemas';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -30,6 +32,7 @@ import {
   LayoutTemplate,
   ListFilter,
   RotateCcw,
+  ListChecks,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
@@ -64,6 +67,7 @@ import {
 } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { StreamerBatchActionBar } from '@/components/streamers/streamer-batch-action-bar';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/streamers/')({
   component: StreamersPage,
@@ -106,6 +110,8 @@ function StreamersPage() {
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
   const [exceptionalStates, setExceptionalStates] = useState<string[]>([]);
   const [sortOption, setSortOption] = useState<SortOption>('default');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const exceptionalStateOptions = [
     { value: 'OUT_OF_SPACE', label: i18n._(msg`Out of space`) },
@@ -244,6 +250,25 @@ function StreamersPage() {
   const streamers = streamersData?.items || [];
   const totalCount = streamersData?.total || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
+  const allPageSelected =
+    streamers.length > 0 &&
+    streamers.every((streamer) => selectedIds.has(streamer.id));
+
+  const selectionScope = [
+    page,
+    pageSize,
+    debouncedSearch,
+    platformFilter,
+    templateFilter,
+    stateFilter,
+    priorityFilter,
+    exceptionalStates.join(','),
+    sortOption,
+  ].join('|');
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [selectionScope]);
 
   // Page overflow protection: reset to last valid page when filters reduce results
   useEffect(() => {
@@ -305,6 +330,77 @@ function StreamersPage() {
     onError: (error: any) =>
       toast.error(error.message || i18n._(msg`Failed to update streamer`)),
   });
+
+  const batchMutation = useMutation({
+    mutationFn: ({
+      ids,
+      action,
+    }: {
+      ids: string[];
+      action: BatchStreamerAction;
+    }) => batchUpdateStreamers({ data: { ids, action } }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
+
+      if (result.failed === 0) {
+        toast.success(
+          i18n._(msg`Successfully processed ${result.succeeded} streamers`),
+        );
+        setSelectedIds(new Set());
+        setSelectionMode(false);
+        return;
+      }
+
+      const failedResults = result.results.filter((item) => !item.success);
+      setSelectedIds(new Set(failedResults.map((item) => item.id)));
+      toast.warning(
+        i18n._(
+          msg`Processed ${result.succeeded} streamers; ${result.failed} failed`,
+        ),
+        {
+          description: failedResults
+            .slice(0, 3)
+            .map((item) => item.error)
+            .filter(Boolean)
+            .join('; '),
+        },
+      );
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : i18n._(msg`Failed to process selected streamers`),
+      );
+    },
+  });
+
+  const handleSelectionChange = useCallback((id: string, selected: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (selected) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionMode((current) => {
+      if (current) setSelectedIds(new Set());
+      return !current;
+    });
+  }, []);
+
+  const handleBatchAction = useCallback(
+    (action: BatchStreamerAction) => {
+      if (selectedIds.size === 0 || batchMutation.isPending) return;
+      batchMutation.mutate({ ids: Array.from(selectedIds), action });
+    },
+    [selectedIds, batchMutation],
+  );
 
   const handleDelete = (id: string) => {
     if (confirm(i18n._(msg`Are you sure you want to delete this streamer?`))) {
@@ -375,7 +471,7 @@ function StreamersPage() {
             })}
           </nav>
 
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-1 sm:contents">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] gap-1 sm:contents">
             <Select value={platformFilter} onValueChange={handlePlatformChange}>
               <SelectTrigger
                 className={`h-8 w-full rounded-full border-0 px-2.5 shadow-none transition-colors hover:bg-background/60 focus-visible:ring-2 sm:w-40 ${
@@ -602,6 +698,29 @@ function StreamersPage() {
                 </div>
               </PopoverContent>
             </Popover>
+
+            <div
+              className="h-5 w-px shrink-0 self-center bg-border"
+              aria-hidden="true"
+            />
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleSelectionMode}
+              aria-pressed={selectionMode}
+              aria-label={i18n._(msg`Select streamers`)}
+              className={`h-8 rounded-full px-2.5 ${
+                selectionMode
+                  ? 'bg-background text-primary shadow-xs ring-1 ring-border/50'
+                  : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
+              }`}
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">
+                <Trans>Select</Trans>
+              </span>
+            </Button>
           </div>
         </div>
       </DashboardHeader>
@@ -646,6 +765,9 @@ function StreamersPage() {
                 <motion.div key={streamer.id} variants={itemVariants}>
                   <StreamerCard
                     streamer={streamer}
+                    selectionMode={selectionMode}
+                    isSelected={selectedIds.has(streamer.id)}
+                    onSelectionChange={handleSelectionChange}
                     onDelete={handleDelete}
                     onToggle={(id, enabled) =>
                       toggleMutation.mutate({ id, enabled })
@@ -769,23 +891,45 @@ function StreamersPage() {
           </div>
         )}
 
-        {/* FAB */}
-        <motion.div
-          className="fixed bottom-8 right-8 z-50"
-          initial={{ scale: 0.93, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-        >
-          <Button
-            onClick={() => navigate({ to: '/streamers/new' })}
-            size="icon"
-            className="h-14 w-14 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0"
-          >
-            <Plus className="h-6 w-6" />
-          </Button>
-        </motion.div>
+        <AnimatePresence>
+          {!selectionMode && (
+            <motion.div
+              className="fixed bottom-8 right-8 z-50"
+              initial={{ scale: 0.93, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.93, opacity: 0 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Button
+                onClick={() => navigate({ to: '/streamers/new' })}
+                size="icon"
+                className="h-14 w-14 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0"
+              >
+                <Plus className="h-6 w-6" />
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {selectionMode && (
+          <StreamerBatchActionBar
+            selectedCount={selectedIds.size}
+            pageCount={streamers.length}
+            allPageSelected={allPageSelected}
+            templates={templates}
+            isPending={batchMutation.isPending}
+            onSelectPage={() =>
+              setSelectedIds(new Set(streamers.map((streamer) => streamer.id)))
+            }
+            onClearSelection={() => setSelectedIds(new Set())}
+            onAction={handleBatchAction}
+            onExit={toggleSelectionMode}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
