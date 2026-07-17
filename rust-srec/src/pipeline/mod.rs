@@ -15,7 +15,6 @@ mod job_queue;
 mod manager;
 mod processors;
 mod progress;
-mod purge;
 mod throttle;
 mod worker_pool;
 
@@ -39,6 +38,5 @@ pub use processors::{
     RemuxProcessor, ThumbnailProcessor,
 };
 pub use progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
-pub use purge::{JobPurgeService, PurgeConfig};
 pub use throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 pub use worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};

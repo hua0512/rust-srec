@@ -674,6 +674,8 @@ pub struct ServiceContainer {
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
     /// Handle to the scheduler background task for graceful shutdown.
     scheduler_task_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Handle to the database maintenance task for graceful shutdown.
+    maintenance_task_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 /// Wire the streamer-check-history pipeline:
@@ -971,14 +973,8 @@ impl ServiceContainer {
         // Create health checker
         let health_checker = Arc::new(HealthChecker::new());
 
-        // Create database maintenance scheduler (retention settings are user-configurable via global config)
-        let maintenance_config = MaintenanceConfig {
-            job_retention_days: global_config.job_history_retention_days.max(0),
-            notification_event_log_retention_days: global_config
-                .notification_event_log_retention_days
-                .max(0),
-            ..Default::default()
-        };
+        // Retention values are loaded from global_config on every sweep.
+        let maintenance_config = MaintenanceConfig::default();
         let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
             pool.clone(),
             write_pool.clone(),
@@ -1046,6 +1042,7 @@ impl ServiceContainer {
             logging_config: std::sync::OnceLock::new(),
             discarded_segment_keys: Arc::new(DashMap::new()),
             scheduler_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
+            maintenance_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
         })
     }
 
@@ -1310,15 +1307,9 @@ impl ServiceContainer {
         let health_checker = Arc::new(HealthChecker::new());
         let health_checker_ms = health_checker_start.elapsed().as_millis();
 
-        // Create database maintenance scheduler (retention settings are user-configurable via global config)
+        // Retention values are loaded from global_config on every sweep.
         let maintenance_scheduler_start = Instant::now();
-        let maintenance_config = MaintenanceConfig {
-            job_retention_days: global_config.job_history_retention_days.max(0),
-            notification_event_log_retention_days: global_config
-                .notification_event_log_retention_days
-                .max(0),
-            ..Default::default()
-        };
+        let maintenance_config = MaintenanceConfig::default();
         let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
             pool.clone(),
             write_pool.clone(),
@@ -1417,6 +1408,7 @@ impl ServiceContainer {
             logging_config: std::sync::OnceLock::new(),
             discarded_segment_keys: Arc::new(DashMap::new()),
             scheduler_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
+            maintenance_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
         })
     }
 
@@ -1492,17 +1484,6 @@ impl ServiceContainer {
         // restarts the download. See `setup_resume_download_subscriber`.
         self.setup_resume_download_subscriber();
 
-        // Spawn the empty-session janitor. Periodically DELETEs ended
-        // sessions whose `total_size_bytes == 0` (transient connection
-        // blips that produced only sub-threshold files, deleted by the
-        // small-segment guard). CASCADE removes `session_events` /
-        // `danmu_statistics` children. See `session_janitor` module docs.
-        crate::services::SessionJanitor::new(
-            self.pool.clone(),
-            self.cancellation_token.child_token(),
-        )
-        .spawn();
-
         // Wire monitor events to download manager and danmu service
         self.setup_monitor_event_subscriptions();
 
@@ -1536,9 +1517,14 @@ impl ServiceContainer {
         // wedge startup.
         self.run_output_root_startup_probe().await;
 
-        // Start database maintenance scheduler
+        // Start the single database maintenance task. It performs an immediate
+        // retention sweep before waiting for its periodic cadence.
         let maintenance_start = Instant::now();
-        self.maintenance_scheduler.clone().start();
+        let maintenance_handle = self
+            .maintenance_scheduler
+            .clone()
+            .start(self.cancellation_token.child_token());
+        *self.maintenance_task_handle.lock().await = Some(maintenance_handle);
         let maintenance_start_ms = maintenance_start.elapsed().as_millis();
         info!("Database maintenance scheduler started");
 
@@ -3735,10 +3721,14 @@ impl ServiceContainer {
         // Signal all background tasks to stop
         self.cancellation_token.cancel();
 
-        // Stop database maintenance scheduler
         info!("Stopping maintenance scheduler...");
-        self.maintenance_scheduler.stop();
-        info!("Maintenance scheduler stopped");
+        if let Some(handle) = self.maintenance_task_handle.lock().await.take() {
+            match tokio::time::timeout(timeout, handle).await {
+                Ok(Ok(())) => info!("Maintenance scheduler stopped gracefully"),
+                Ok(Err(error)) => warn!(error = %error, "Maintenance scheduler task panicked"),
+                Err(_) => warn!("Maintenance scheduler shutdown timed out"),
+            }
+        }
 
         // Stop notification service
         info!("Stopping notification service...");

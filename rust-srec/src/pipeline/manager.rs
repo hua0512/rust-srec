@@ -23,7 +23,6 @@ use super::processors::{
     Processor, RcloneProcessor, RemuxProcessor, TdlUploadProcessor, ThumbnailProcessor,
 };
 use super::progress::JobProgressSnapshot;
-use super::purge::{JobPurgeService, PurgeConfig};
 use super::throttle::{DownloadLimitAdjuster, ThrottleConfig, ThrottleController, ThrottleEvent};
 use super::worker_pool::{WorkerPool, WorkerPoolConfig, WorkerType};
 use crate::Error;
@@ -130,10 +129,6 @@ pub struct PipelineManagerConfig {
     /// Throttle controller configuration.
     #[serde(default)]
     pub throttle: ThrottleConfig,
-    /// Job purge service configuration.
-    #[serde(default)]
-    pub purge: PurgeConfig,
-
     /// Timeout in seconds for the `execute` processor.
     ///
     /// This is enforced inside the processor (in addition to worker pool timeouts).
@@ -159,7 +154,6 @@ impl Default for PipelineManagerConfig {
             },
 
             throttle: ThrottleConfig::default(),
-            purge: PurgeConfig::default(),
             execute_timeout_secs: default_execute_timeout_secs(),
         }
     }
@@ -221,8 +215,6 @@ pub struct PipelineManager<
     throttle_controller: Option<Arc<ThrottleController>>,
     /// Download limit adjuster for throttle controller integration.
     download_adjuster: Option<Arc<dyn DownloadLimitAdjuster>>,
-    /// Job purge service for automatic cleanup of old jobs.
-    purge_service: Option<Arc<JobPurgeService>>,
     /// Job preset repository for resolving named pipeline steps.
     preset_repo: Option<Arc<dyn JobPresetRepository>>,
     /// Pipeline preset repository for resolving workflow steps.
@@ -343,7 +335,6 @@ where
             cancellation_token: CancellationToken::new(),
             throttle_controller,
             download_adjuster: None,
-            purge_service: None,
             preset_repo: None,
             pipeline_preset_repo: None,
             config_service: None,
@@ -371,16 +362,6 @@ where
         ));
 
         let execute_timeout_secs = config.execute_timeout_secs;
-
-        // Create purge service if retention is enabled
-        let purge_service = if config.purge.retention_days > 0 {
-            Some(Arc::new(JobPurgeService::new(
-                config.purge.clone(),
-                job_repository.clone(),
-            )))
-        } else {
-            None
-        };
 
         // Create default processors
         let processors: Vec<Arc<dyn Processor>> = vec![
@@ -417,7 +398,6 @@ where
             cancellation_token: CancellationToken::new(),
             throttle_controller,
             download_adjuster: None,
-            purge_service,
             preset_repo: None,
             pipeline_preset_repo: None,
             config_service: None,
@@ -518,11 +498,6 @@ where
             .as_ref()
             .map(|tc| tc.is_throttled())
             .unwrap_or(false)
-    }
-
-    /// Get a reference to the purge service, if enabled.
-    pub fn purge_service(&self) -> Option<&Arc<JobPurgeService>> {
-        self.purge_service.as_ref()
     }
 }
 

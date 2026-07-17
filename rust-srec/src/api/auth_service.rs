@@ -846,9 +846,6 @@ mod tests {
         async fn revoke_all_for_user(&self, _user_id: &str) -> crate::Result<()> {
             Ok(())
         }
-        async fn cleanup_expired(&self) -> crate::Result<u64> {
-            Ok(0)
-        }
         async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
             Ok(0)
         }
@@ -905,10 +902,6 @@ mod tests {
         async fn revoke_all_for_user(&self, _user_id: &str) -> crate::Result<()> {
             self.revoke_all_called.store(true, Ordering::SeqCst);
             Ok(())
-        }
-
-        async fn cleanup_expired(&self) -> crate::Result<u64> {
-            Ok(0)
         }
 
         async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
@@ -1347,9 +1340,6 @@ mod property_tests {
             }
             async fn revoke_all_for_user(&self, _user_id: &str) -> crate::Result<()> {
                 Ok(())
-            }
-            async fn cleanup_expired(&self) -> crate::Result<u64> {
-                Ok(0)
             }
             async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
                 Ok(0)

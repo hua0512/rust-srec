@@ -1,8 +1,84 @@
 //! Configuration database models.
 
+use std::num::NonZeroU32;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+
+const MILLIS_PER_DAY: i64 = 24 * 60 * 60 * 1000;
+
+/// Validated retention duration stored as a number of days.
+///
+/// Zero days means data is retained forever. Positive values produce a
+/// cutoff relative to the start time of a maintenance sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetentionDays {
+    /// Retain data indefinitely.
+    Forever,
+    /// Delete data older than this number of days.
+    Days(NonZeroU32),
+}
+
+impl RetentionDays {
+    /// Returns the persisted numeric representation, where zero means forever.
+    pub fn as_u32(self) -> u32 {
+        match self {
+            Self::Forever => 0,
+            Self::Days(days) => days.get(),
+        }
+    }
+
+    /// Returns the oldest retained timestamp relative to `now_ms`.
+    ///
+    /// [`None`] indicates that retention is disabled and data should be kept
+    /// indefinitely.
+    pub fn cutoff_ms(self, now_ms: i64) -> Option<i64> {
+        match self {
+            Self::Forever => None,
+            Self::Days(days) => {
+                Some(now_ms.saturating_sub(i64::from(days.get()).saturating_mul(MILLIS_PER_DAY)))
+            }
+        }
+    }
+}
+
+/// Error returned when a retention value cannot be represented by [`RetentionDays`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("retention days must be between 0 and 2147483647 (found {value})")]
+pub struct InvalidRetentionDays {
+    value: i64,
+}
+
+impl InvalidRetentionDays {
+    /// Returns the rejected numeric value.
+    pub fn value(self) -> i64 {
+        self.value
+    }
+}
+
+impl TryFrom<i64> for RetentionDays {
+    type Error = InvalidRetentionDays;
+
+    fn try_from(value: i64) -> std::result::Result<Self, Self::Error> {
+        if !(0..=i64::from(i32::MAX)).contains(&value) {
+            return Err(InvalidRetentionDays { value });
+        }
+
+        Ok(match NonZeroU32::new(value as u32) {
+            Some(days) => Self::Days(days),
+            None => Self::Forever,
+        })
+    }
+}
+
+impl TryFrom<i32> for RetentionDays {
+    type Error = InvalidRetentionDays;
+
+    fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
+        Self::try_from(i64::from(value))
+    }
+}
 
 /// Global configuration database model.
 /// A singleton table for application-wide default settings.
@@ -229,6 +305,22 @@ mod tests {
         assert_eq!(config.output_folder, "/app/output");
         assert_eq!(config.max_concurrent_downloads, 6);
         assert!(!config.record_danmu);
+    }
+
+    #[test]
+    fn retention_days_validates_and_calculates_cutoffs() {
+        let forever = RetentionDays::try_from(0_i32).expect("zero retention");
+        assert_eq!(forever, RetentionDays::Forever);
+        assert_eq!(forever.as_u32(), 0);
+        assert_eq!(forever.cutoff_ms(10_000), None);
+
+        let one_day = RetentionDays::try_from(1_i32).expect("one day retention");
+        assert_eq!(one_day.as_u32(), 1);
+        assert_eq!(one_day.cutoff_ms(MILLIS_PER_DAY + 1), Some(1));
+        assert_eq!(
+            RetentionDays::try_from(-1_i32).expect_err("negative retention"),
+            InvalidRetentionDays { value: -1 }
+        );
     }
 
     #[test]

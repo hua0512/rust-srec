@@ -395,7 +395,7 @@ msgstr "Add Step"
 msgid "Add Stream"
 msgstr "Add Stream"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:801
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:806
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
@@ -3549,15 +3549,15 @@ msgstr "Go back"
 msgid "Go Back"
 msgstr "Go Back"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:874
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:879
 msgid "Go to next page"
 msgstr "Go to next page"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:862
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:867
 msgid "Go to page {p}"
 msgstr "Go to page {p}"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:842
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:847
 msgid "Go to previous page"
 msgstr "Go to previous page"
 
@@ -3715,10 +3715,6 @@ msgstr "Highest bitrate"
 #: src/components/streamers/edit/status-check-history.tsx:87
 msgid "History ({slots} pts)"
 msgstr "History ({slots} pts)"
-
-#: src/components/config/global/network-system-card.tsx:187
-msgid "History Retention"
-msgstr "History Retention"
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:63
 msgid "HLS parser"
@@ -5060,7 +5056,7 @@ msgstr "No Steps Added"
 msgid "No steps defined"
 msgstr "No steps defined"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:787
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:792
 msgid "No streamers found"
 msgstr "No streamers found"
 
@@ -5152,7 +5148,7 @@ msgstr "Not supported in this browser"
 msgid "Notification Events"
 msgstr "Notification Events"
 
-#: src/components/config/global/network-system-card.tsx:220
+#: src/components/config/global/network-system-card.tsx:221
 msgid "Notification Log Retention"
 msgstr "Notification Log Retention"
 
@@ -5160,7 +5156,7 @@ msgstr "Notification Log Retention"
 msgid "Notification permission not granted"
 msgstr "Notification permission not granted"
 
-#: src/components/config/global/network-system-card.tsx:228
+#: src/components/config/global/network-system-card.tsx:229
 msgid "Notification Retention"
 msgstr "Notification Retention"
 
@@ -5201,12 +5197,12 @@ msgid "Number of consecutive failed checks required to definitively confirm a st
 msgstr "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 
 #: src/components/config/global/network-system-card.tsx:191
-msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
-msgstr "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
+msgid "Number of days to keep completed, failed, or cancelled jobs and workflow executions. Set to 0 to retain them indefinitely."
+msgstr "Number of days to keep completed, failed, or cancelled jobs and workflow executions. Set to 0 to retain them indefinitely."
 
-#: src/components/config/global/network-system-card.tsx:232
-msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
-msgstr "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
+#: src/components/config/global/network-system-card.tsx:233
+msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
+msgstr "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
@@ -5739,6 +5735,11 @@ msgstr "Pipeline Execution"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:306
 msgid "Pipeline has failed jobs. Click to view details."
 msgstr "Pipeline has failed jobs. Click to view details."
+
+#: src/components/config/global/network-system-card.tsx:179
+#: src/components/config/global/network-system-card.tsx:187
+msgid "Pipeline History Retention"
+msgstr "Pipeline History Retention"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:258
 msgid "Pipeline is already completed or cancelled"
@@ -6566,10 +6567,6 @@ msgstr "RESUMED START"
 msgid "Resuming in"
 msgstr "Resuming in"
 
-#: src/components/config/global/network-system-card.tsx:179
-msgid "Retention Period"
-msgstr "Retention Period"
-
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:65
 msgid "Retries for locked files"
 msgstr "Retries for locked files"
@@ -6624,7 +6621,7 @@ msgstr "Right"
 msgid "Route traffic through an intermediate server"
 msgstr "Route traffic through an intermediate server"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:812
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:817
 msgid "Rows per page"
 msgstr "Rows per page"
 
@@ -6886,7 +6883,7 @@ msgstr "Segment TTL (ms)"
 msgid "Segments"
 msgstr "Segments"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:716
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:721
 msgid "Select"
 msgstr "Select"
 
@@ -6991,7 +6988,7 @@ msgstr "Select priority"
 msgid "Select strategy"
 msgstr "Select strategy"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:707
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:712
 msgid "Select streamers"
 msgstr "Select streamers"
 
@@ -7526,7 +7523,7 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "Streamer Offline"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:836
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:841
 msgid "Streamer pagination"
 msgstr "Streamer pagination"
 
@@ -8225,7 +8222,7 @@ msgstr "Try adjusting your filters or limit"
 msgid "Try adjusting your search or filters"
 msgstr "Try adjusting your search or filters"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:790
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:795
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "Try adjusting your search or filters, or add a new streamer to start monitoring."
 

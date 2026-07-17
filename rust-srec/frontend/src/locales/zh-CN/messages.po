@@ -395,7 +395,7 @@ msgstr "添加步骤"
 msgid "Add Stream"
 msgstr "添加流"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:801
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:806
 msgid "Add Streamer"
 msgstr "添加主播"
 
@@ -3549,15 +3549,15 @@ msgstr "返回"
 msgid "Go Back"
 msgstr "返回"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:874
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:879
 msgid "Go to next page"
 msgstr "下一页"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:862
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:867
 msgid "Go to page {p}"
 msgstr "跳转到第 {p} 页"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:842
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:847
 msgid "Go to previous page"
 msgstr "上一页"
 
@@ -3715,10 +3715,6 @@ msgstr "最高码率"
 #: src/components/streamers/edit/status-check-history.tsx:87
 msgid "History ({slots} pts)"
 msgstr "历史（{slots} 点）"
-
-#: src/components/config/global/network-system-card.tsx:187
-msgid "History Retention"
-msgstr "历史保留"
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:63
 msgid "HLS parser"
@@ -5060,7 +5056,7 @@ msgstr "未添加步骤"
 msgid "No steps defined"
 msgstr "未定义步骤"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:787
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:792
 msgid "No streamers found"
 msgstr "未找到主播"
 
@@ -5152,7 +5148,7 @@ msgstr "此浏览器不支持"
 msgid "Notification Events"
 msgstr "通知事件"
 
-#: src/components/config/global/network-system-card.tsx:220
+#: src/components/config/global/network-system-card.tsx:221
 msgid "Notification Log Retention"
 msgstr "通知日志保留"
 
@@ -5160,7 +5156,7 @@ msgstr "通知日志保留"
 msgid "Notification permission not granted"
 msgstr "未授予通知权限"
 
-#: src/components/config/global/network-system-card.tsx:228
+#: src/components/config/global/network-system-card.tsx:229
 msgid "Notification Retention"
 msgstr "通知保留"
 
@@ -5201,12 +5197,12 @@ msgid "Number of consecutive failed checks required to definitively confirm a st
 msgstr "确认主播离线所需的连续失败检查次数。较高的值可以防止\"假\"离线检测。"
 
 #: src/components/config/global/network-system-card.tsx:191
-msgid "Number of days to keep the history of completed, failed, or interrupted jobs in the database."
-msgstr "在数据库中保留已完成、失败或中断任务历史记录的天数。"
+msgid "Number of days to keep completed, failed, or cancelled jobs and workflow executions. Set to 0 to retain them indefinitely."
+msgstr "在数据库中保留已完成、失败或已取消的任务及工作流执行记录的天数。设置为 0 可无限期保留。"
 
-#: src/components/config/global/network-system-card.tsx:232
-msgid "Number of days to keep the notification event log in the database. This affects the Notifications → Events page."
-msgstr "在数据库中保留通知事件日志的天数。这会影响“通知 → 事件”页面。"
+#: src/components/config/global/network-system-card.tsx:233
+msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
+msgstr "保留通知事件日志的天数。设置为 0 可无限期保留事件。"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
@@ -5739,6 +5735,11 @@ msgstr "处理管道执行"
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:306
 msgid "Pipeline has failed jobs. Click to view details."
 msgstr "处理管道中有失败的处理任务。点击查看详情。"
+
+#: src/components/config/global/network-system-card.tsx:179
+#: src/components/config/global/network-system-card.tsx:187
+msgid "Pipeline History Retention"
+msgstr "流水线历史保留期"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:258
 msgid "Pipeline is already completed or cancelled"
@@ -6566,10 +6567,6 @@ msgstr "恢复启动"
 msgid "Resuming in"
 msgstr "将在…后恢复"
 
-#: src/components/config/global/network-system-card.tsx:179
-msgid "Retention Period"
-msgstr "保留期限"
-
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:65
 msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
@@ -6624,7 +6621,7 @@ msgstr "右侧"
 msgid "Route traffic through an intermediate server"
 msgstr "通过中间服务器转发流量"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:812
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:817
 msgid "Rows per page"
 msgstr "每页行数"
 
@@ -6886,7 +6883,7 @@ msgstr "分段 TTL（毫秒）"
 msgid "Segments"
 msgstr "分段"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:716
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:721
 msgid "Select"
 msgstr "选择"
 
@@ -6991,7 +6988,7 @@ msgstr "选择优先级"
 msgid "Select strategy"
 msgstr "选择策略"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:707
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:712
 msgid "Select streamers"
 msgstr "选择主播"
 
@@ -7526,7 +7523,7 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "主播离线"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:836
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:841
 msgid "Streamer pagination"
 msgstr "主播分页"
 
@@ -8225,7 +8222,7 @@ msgstr "尝试调整过滤器或限制"
 msgid "Try adjusting your search or filters"
 msgstr "尝试调整搜索或过滤器"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:790
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:795
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
