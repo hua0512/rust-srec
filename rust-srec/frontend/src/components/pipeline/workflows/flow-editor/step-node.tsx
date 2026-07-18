@@ -128,16 +128,16 @@ export function StepNode({ data }: NodeProps<StepNode>) {
         <h4 className="text-[14px] font-bold text-foreground truncate tracking-tight uppercase">
           {step.type === 'inline'
             ? (() => {
-              const def = getProcessorDefinition(step.processor);
-              return def ? i18n._(def.label) : step.processor;
-            })()
+                const def = getProcessorDefinition(step.processor);
+                return def ? i18n._(def.label) : step.processor;
+              })()
             : step.type === 'preset'
               ? getJobPresetName({ id: step.name, name: step.name }, i18n)
               : step.type === 'workflow'
                 ? getPipelinePresetName(
-                  { id: step.name, name: step.name },
-                  i18n,
-                )
+                    { id: step.name, name: step.name },
+                    i18n,
+                  )
                 : 'Unknown'}
         </h4>
         <div className="flex items-center justify-between">
