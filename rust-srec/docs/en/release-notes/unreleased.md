@@ -2,11 +2,11 @@
 
 ## `unreleased`
 
-This update rebuilds the **Mesio** HLS recording engine for robustness and unifies how Mesio downloads HLS and FLV streams. Encrypted HLS streams are handled more reliably, memory use stays bounded on busy or encrypted streams, and segment de-duplication now survives playlist refreshes that rotate auth tokens such as Twitch signed URLs. A few Mesio engine settings that no longer affected recording were removed, and existing configurations are migrated automatically.
+This update rebuilds the **Mesio** engine that records HLS streams so recording is steadier and more reliable, and brings HLS and FLV recording onto the same footing. Encrypted streams record more dependably, memory use stays under control on busy or encrypted streams, and the app no longer downloads the same part of a stream twice when a stream refreshes its access links (as Twitch does). A few engine settings that no longer affected recording were removed, and your existing settings are updated for you.
 
-FLV and HLS media processing also uses less CPU, memory, and disk I/O. Media analysis is reused instead of repeated, queues are bounded by bytes for large HLS segments, and FLV metadata is patched in place without shifting the completed file. Modern enhanced-RTMP keyframes and several truncated or malformed-input cases are handled more reliably as well.
+Recording and repair of FLV and HLS files also uses less CPU, memory, and disk. The app analyzes each stream once instead of over and over, keeps memory in check on very large streams, and finalizes recordings without rewriting the whole file at the end. Newer stream formats and a range of cut-off or damaged inputs are handled more gracefully as well.
 
-Douyu extraction also gets a smaller but useful cleanup: audio-only streams can now be selected directly from the quality picker, H.265 streams are identified from Douyu's own CDN metadata, and more "room unavailable" responses are handled as offline states instead of noisy extraction failures.
+Douyu gets a smaller but useful cleanup: you can pick an audio-only stream straight from the quality selector, H.265 (HEVC) streams are detected more accurately, and more "room unavailable" responses are treated as simply offline instead of surfacing as errors.
 
 The dashboard's theme system was rebuilt as well. Dark mode and custom themes now apply before the first frame on both the web and desktop apps — the desktop app no longer flashes white on launch in dark mode — and switching between light and dark is smoother and more predictable.
 
@@ -14,11 +14,11 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
 - **New platform: SOOP**
 
-  You can add SOOP rooms (formerly AfreecaTV, `play.sooplive.co.kr` / `play.sooplive.com`) with native multi-quality HLS recording. Password-protected rooms and login-required broadcasts are supported via platform settings or cookies. When you configure a SOOP account, the app validates and renews session cookies automatically so later checks reuse the login. Live chat plus gifts can be recorded when danmaku is enabled.
+  You can add SOOP rooms (formerly AfreecaTV, `play.sooplive.co.kr` / `play.sooplive.com`) and record them at your choice of quality. Password-protected rooms and login-required broadcasts are supported through platform settings or cookies. When you set up a SOOP account, the app keeps your sign-in valid automatically so later checks reuse it. Live chat and gifts can be recorded when danmaku is enabled.
 
 - **New platform: Bigo Live**
 
-  You can add Bigo Live rooms (`bigo.tv`) as streamers with native HLS recording. Password-protected rooms are supported via platform settings or a `?pwd=` URL parameter, and live chat plus gifts can be recorded when danmaku is enabled. Website-style integrity token minting is on by default for better API parity. The public stream is a single mid-quality portrait feed (typically around 480p–540p); higher browser-only qualities are not available on this path.
+  You can add Bigo Live rooms (`bigo.tv`) as streamers and record them. Password-protected rooms are supported through platform settings or a `?pwd=` parameter in the room URL, and live chat and gifts can be recorded when danmaku is enabled. By default the app talks to Bigo the same way its website does, for better compatibility. The public stream is a single portrait feed at medium quality (typically around 480p–540p); the higher qualities only available in a browser aren't offered here.
 
 ## Desktop app
 
@@ -46,13 +46,13 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
 - **Delete confirmation buttons show the right text color**
 
-  A missing style definition left the text on some destructive confirmation buttons (template, notification channel, and workflow deletion) rendering in the wrong color. They now use the theme's destructive foreground color.
+  The text on some delete-confirmation buttons (for deleting a template, notification channel, or workflow) was showing in the wrong color because of a missing style. It now shows in the correct color from your theme.
 
 ## Recording timeline
 
 - **HLS discontinuities are labeled accurately**
 
-  The media timeline now distinguishes an HLS playlist discontinuity from an actual recording gap. A time-continuous `#EXT-X-DISCONTINUITY` boundary is labeled as a discontinuity instead of a break, split reasons appear on the boundary they caused, and long sessions load all paginated media outputs and segment metadata instead of showing only the most recent page.
+  The media timeline now tells the difference between the stream signaling a break in continuity — for example when its encoding changes mid-broadcast — and an actual gap where part of the recording is missing. The former is now labeled as a discontinuity rather than a break, the reason a recording was split appears at the point where it happened, and long sessions load their full history instead of only the most recent page.
 
 ## Recorded playback
 
@@ -68,43 +68,43 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
 - **Rebuilt HLS engine for more predictable recording**
 
-  The Mesio HLS engine was rebuilt around a single control loop that owns all download state — which segments to fetch, retry deadlines, and completion tracking — instead of spreading it across several cooperating tasks. Recording behavior is now deterministic under load: in-flight downloads, decryption work, and output buffers are each bounded by explicit memory budgets, so a fast or encrypted stream can no longer grow memory without limit.
+  The engine that records HLS streams has been rebuilt for steadier, more predictable recording. It handles heavy load more consistently and keeps memory use in check — including the extra work for encrypted streams — so a fast-moving or encrypted stream can no longer make memory climb without limit.
 
-- **More reliable encrypted (AES-128 / fMP4) HLS**
+- **More reliable encrypted HLS recording**
 
-  Decryption now runs off the main scheduling loop and is memory-gated, so a burst of encrypted segments stays responsive instead of piling up. For fragmented-MP4 streams, the engine guarantees the init segment is written before the media that depends on it, avoiding codec-mismatch corruption, and a terminally failed init is surfaced as a visible gap instead of stalling the recording.
+  Encrypted streams stay responsive even when a burst of encrypted data arrives, instead of bogging down. For streams delivered in fragmented pieces, the app makes sure the setup data each piece needs is written first, avoiding corrupted output — and if that setup data can't be obtained at all, the recording shows a clear gap instead of stalling.
 
-- **Segment de-duplication survives rotating auth tokens**
+- **Streams that rotate their access links no longer re-download data**
 
-  Segments are no longer re-downloaded when a playlist refresh rotates query parameters such as signatures or tokens. For sources with known token schemes (for example Twitch signed URLs), the engine can strip the rotating parameters so the same segment is recognized across refreshes, and a signed URL that expires mid-download is retried transparently against a newer one.
+  When a stream refreshes with new signatures or access tokens in its URLs, parts that were already downloaded are no longer fetched a second time. For streams with known link schemes (for example Twitch signed URLs), the app recognizes the same content across refreshes, and a link that expires mid-download is retried against a fresh one automatically.
 
-- **Skipped segments and gaps are explicit**
+- **Missing data shows up as a clear gap**
 
-  When the live window slides and segments drop out before they can be fetched, the engine emits a clear gap signal instead of silently stalling, so missing data is observable rather than appearing as a frozen recording.
+  When a live stream moves on and drops parts before they can be downloaded, the recording marks a clear gap instead of quietly stalling, so missing data is visible rather than looking like a frozen recording.
 
 ## FLV and HLS media processing
 
 - **Lower processing overhead with bounded memory use**
 
-  FLV codec and keyframe classification and HLS transport-stream analysis are now computed once and reused throughout the repair pipeline. Resolution detection reads only a bounded amount of stream data, processing work is batched, and HLS queues are limited by byte budgets rather than segment counts. Byte accounting remains attached while a batch is being processed, so batching cannot temporarily bypass that limit. If fragmented-MP4 media exhausts its pre-init safety buffer before a delayed init segment arrives, the repair pipeline rotates the output before writing that init. This reduces repeated parsing and prevents a handful of unusually large segments from causing disproportionate memory growth or invalid file ordering.
+  Analyzing and repairing FLV and HLS recordings now happens once and is reused instead of being repeated, and the app reads only as much of each stream as it needs and works in batches. Memory stays capped while it does so, so a handful of unusually large pieces can't make memory balloon. If a fragmented recording is still waiting on its setup data when that cap is reached, the app starts a fresh output file before continuing, so the recording stays valid.
 
-- **FLV metadata is updated in place**
+- **Faster finish for FLV recordings**
 
-  The writer now reserves baseline metadata space when recording starts, including for audio-only streams and recordings without a keyframe index. When keyframe indexing is enabled, the larger index reservation is patched before the writer closes. The repair step no longer shifts or rewrites the rest of a completed FLV file, reducing disk I/O and avoiding a costly end-of-recording pause on large files. The legacy low-latency CLI option remains accepted for compatibility, but metadata updates always use the in-place path.
+  FLV recordings now set aside room for their summary information up front — including audio-only recordings and those without a seek index — and fill it in when recording ends, instead of rewriting the whole file. This cuts disk work and removes a noticeable pause at the end of large recordings. (The old low-latency command-line option is still accepted, but recordings always use the faster in-place method now.)
 
 - **More resilient FLV repair**
 
-  Enhanced-RTMP video keyframes are recognized correctly, complete tags at end-of-file are no longer skipped, empty media payloads are handled safely, and GOP buffering has a hard limit. These changes improve splitting and metadata generation for newer codecs while keeping damaged or unusual streams from growing repair buffers without bound.
+  Newer video formats are recognized correctly, the final moments at the end of a file are no longer dropped, empty pieces of data are handled safely, and internal buffering is capped. Together these improve splitting and summary generation for newer streams while keeping damaged or unusual recordings from using unbounded memory during repair.
 
 ## Mesio downloader
 
 - **Unified HLS and FLV download sessions**
 
-  Mesio's HLS and FLV downloaders now share a single session model, so progress reporting, retry handling, and cancellation behave consistently across both protocols.
+  HLS and FLV recordings now work the same way under the hood, so progress, retries, and stopping a recording behave consistently no matter which one a stream uses.
 
 - **Simplified Mesio engine settings**
 
-  Several Mesio HLS settings that no longer affected recording were removed from the engine settings form, including the **Performance** tab (the batch-scheduler and zero-copy toggles) along with the streaming-threshold and raw-segment-cache fields. Stored configurations are cleaned up automatically by a database migration — no action is required, and the remaining timeout, retry, decryption-key, and gap-skip settings continue to work as before.
+  Several Mesio settings that no longer affected recording were removed from the engine settings form, including the whole **Performance** tab and a few advanced fields that no longer did anything. Your saved settings are updated for you — nothing to do on your end — and the remaining timeout, retry, decryption-key, and gap-skip settings keep working as before.
 
 ## Douyu streams
 
@@ -112,19 +112,19 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
   Douyu's quality setting now includes an **Audio only** option alongside the usual quality presets. You can still type a custom Douyu rate when needed, but common choices such as original quality, HD, low quality, and AAC audio are available from the same control.
 
-- **H.265 detection follows Douyu CDN metadata**
+- **More accurate H.265 detection**
 
-  Douyu stream entries now use the `isH265` value returned by Douyu's CDN list to mark HEVC streams. When a selected CDN supports H.265, the extractor uses Douyu's dedicated `player_1` URL and falls back to the standard stream URL if it is unavailable. There is no separate frontend switch to manage, and audio-only requests continue to use the AAC stream response.
+  Douyu streams are now marked as H.265 (HEVC) based on what Douyu's own servers report, and the app requests the matching stream automatically, falling back to the standard one if it isn't available. There's no separate switch to manage, and audio-only requests still use the AAC audio stream.
 
 - **More unavailable-room responses are treated cleanly**
 
-  Douyu error codes `-3`, `-4`, and `-5` are now handled as unavailable or offline stream states. This reduces false hard failures when a room closes, the streamer goes offline during extraction, or Douyu returns a temporary unavailable response.
+  More of Douyu's "room unavailable" responses are now treated as the room simply being offline. This avoids false errors when a room closes, the streamer goes offline mid-check, or Douyu briefly returns an unavailable response.
 
 ## Streamers
 
 - **Filter and sort the streamer list**
 
-  The streamers page has a redesigned filter toolbar for working through large lists. You can filter by assigned template — including streamers with no template — by priority, and by operational state (for example, showing only streamers currently in an error state), and sort the list by name, priority, state, or most recently updated. Filtering and sorting run on the server, so pagination and totals stay accurate across large collections. The toolbar stays compact on desktop and switches to a responsive layout on mobile.
+  The streamers page has a redesigned filter toolbar for working through large lists. You can filter by assigned template — including streamers with no template — by priority, and by status (for example, showing only streamers currently in an error state), and sort by name, priority, status, or most recently updated. Filtering and sorting apply to your whole list, not just the page you're viewing, so the counts and page numbers stay correct. The toolbar stays compact on desktop and adapts to a mobile layout on smaller screens.
 
 - **Bulk actions for multiple streamers**
 
@@ -134,15 +134,15 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
 - **Replace a step without rebuilding its connections**
 
-  Pipeline DAG steps now have a **Replace Step** action in both list and graph views. Selecting a different job preset or sub-workflow changes the processing step while preserving the node ID and its incoming and outgoing dependencies.
+  Pipeline steps now have a **Replace Step** action in both the list and graph views. Choosing a different job preset or sub-workflow swaps out what that step does while keeping it in the same place, with all its connections to other steps intact.
 
 - **Deleting steps no longer leaves broken dependencies**
 
-  Removing a step from a DAG now reconnects its successors to its predecessors instead of leaving references to the deleted node. Newly added steps also receive collision-free IDs after delete-and-add edits, preventing duplicate nodes and ambiguous graph connections.
+  Removing a step now reconnects the steps after it to the steps before it, instead of leaving connections that point at the deleted step. Steps you add after deleting others get their own unique identifiers too, so you don't end up with duplicate steps or ambiguous connections.
 
 - **Long step lists remain accessible**
 
-  Pipeline configuration editors now scroll long lists of DAG steps within the editor instead of clipping steps below the visible area. Graph view also respects the same bounded editor height.
+  Pipeline editors now scroll long lists of steps within the editor instead of cutting off steps below the visible area, and the graph view stays within the same height.
 
 - **Clearer graph view for branching pipelines**
 
@@ -156,11 +156,11 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
 - **Session-start date anchors for upload destinations**
 
-  Rclone pipeline steps now include a `time_anchor` setting. Keep the default `job_created` behavior, or choose `session_start` so date placeholders such as `%Y/%m/%d` use the live session's start time and a stream crossing midnight stays in one dated remote folder. Copy/move steps can also opt into `job_created` or `session_start` anchoring while preserving their existing execution-time behavior by default.
+  Rclone pipeline steps now include a `time_anchor` setting. Keep the default `job_created` behavior, or choose `session_start` so date placeholders such as `%Y/%m/%d` use the live session's start time — that way a stream crossing midnight stays in one dated remote folder. Copy/move steps can also use `job_created` or `session_start`, while keeping their current behavior (based on when the step runs) by default.
 
 - **Upload destination dates use server local time**
 
-  Time placeholders in upload destination paths now render in the server's local time zone when an explicit reference timestamp is used. They previously rendered in UTC, which could put uploads in a different dated directory than local recording filenames on non-UTC deployments. The time zone offset is taken from the moment being rendered, so recordings around daylight-saving transitions keep the date their filenames carry, and retried uploads land in the same dated folder as the original run.
+  Date placeholders in upload destination paths now use the server's local time zone. They previously used UTC, which could send uploads to a different dated folder than the one in the recording's own filename when the server wasn't set to UTC. The right offset is applied for each date, so recordings around daylight-saving changes keep the date their filenames carry, and a retried upload lands in the same dated folder as the original.
 
 ## Pipeline step forms
 
@@ -176,15 +176,15 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
 - **Recording recovers on its own after repeated download start failures**
 
-  When a stream's CDN briefly rejected downloads (for example Douyu edge nodes returning HTTP 404 while the room was still live), three consecutive failures put the streamer into a short error backoff. A timing race between that backoff and the session-resume path could leave the recording session marked active with no download running — the room kept showing as live with an error, but recording never restarted until monitoring was toggled manually. The download-start gate now reports this refusal the same way other rejected downloads are reported: the session closes cleanly and a status check is scheduled for the moment the backoff expires, so recording resumes automatically once the stream is reachable again.
+  When a stream's server briefly refused downloads (for example returning "not found" errors while the room was still live), three failures in a row would put the streamer into a short cooldown. A timing issue could then leave the room showing as live-with-an-error but with nothing actually recording, until you manually toggled monitoring off and on. Now recording stops cleanly in that case and a fresh check is scheduled for when the cooldown ends, so recording picks back up on its own once the stream is reachable again.
 
 - **Live watchdog restarts downloads that disappeared silently**
 
-  As a safety net for any path that drops a download start without feedback, the periodic live watchdog now recognizes "reported live, but no download activity for five minutes" and re-triggers the download start instead of discarding the check result.
+  As a safety net, a periodic check now notices when a room has shown as live for five minutes with nothing recording, and starts the recording again instead of ignoring it.
 
 - **Disabling a streamer can no longer be undone by an in-flight status check**
 
-  Disabling a streamer while one of its status checks was still in flight could let that check re-mark the streamer as live, create a recording session, and start a download after the disable. Session creation now re-checks the streamer's state at the database serialization point, so a disable that has been saved always wins — the late check is discarded instead of overriding user intent.
+  Disabling a streamer while one of its checks was still running could let that check re-mark it as live and start recording again just after you disabled it. Now, once a disable is saved it always wins — the late check is discarded instead of overriding what you chose.
 
 - **Recordings stay linked to their chat file and timeline**
 
