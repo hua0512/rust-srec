@@ -76,7 +76,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@bufbuild/buf": "^1.71.0",
+    "@bufbuild/buf": "^1.72.0",
     "@bufbuild/protoc-gen-es": "^2.12.1",
     "@lingui/cli": "^6.5.0",
     "@lingui/conf": "^6.5.0",
