@@ -700,7 +700,7 @@ msgstr "自动（默认）"
 msgid "Auto (QR → Phone & Code → Desktop)"
 msgstr "自动 (二维码 → 手机号和验证码 → 桌面)"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:297
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:329
 msgid "Auto Layout"
 msgstr "自动布局"
 
@@ -2310,7 +2310,7 @@ msgstr "正在下载 {0}"
 msgid "Downloading..."
 msgstr "下载中..."
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:310
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:342
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
 

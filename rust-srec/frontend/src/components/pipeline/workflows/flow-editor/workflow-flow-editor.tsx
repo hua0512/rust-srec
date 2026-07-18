@@ -3,17 +3,19 @@ import {
   ReactFlow,
   Background,
   Controls,
-  Connection,
-  Edge,
   useNodesState,
   useEdgesState,
   MarkerType,
   Panel,
   ConnectionMode,
-  Node,
   useReactFlow,
   ReactFlowProvider,
   useNodesInitialized,
+  type Connection,
+  type DefaultEdgeOptions,
+  type Edge,
+  type Node,
+  type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -22,7 +24,7 @@ import { DagStepDefinition } from '@/api/schemas';
 import { StepNode } from './step-node';
 import { Button } from '@/components/ui/button';
 import { LayoutGrid } from 'lucide-react';
-import { getLayoutedElements } from './layout';
+import { getInitialNodePosition, getLayoutedElements } from './layout';
 import { Trans } from '@lingui/react/macro';
 import {
   usePresetProcessorMap,
@@ -34,12 +36,15 @@ const nodeTypes = {
   stepNode: StepNode,
 };
 
-const defaultEdgeOptions = {
-  style: { strokeWidth: 1.5, stroke: 'rgba(59, 130, 246, 0.4)' },
+const edgeColor = 'rgba(59, 130, 246, 0.68)';
+
+const defaultEdgeOptions: DefaultEdgeOptions = {
+  style: { strokeWidth: 1.8, stroke: edgeColor },
   type: 'smoothstep',
+  pathOptions: { borderRadius: 12, offset: 28 },
   markerEnd: {
     type: MarkerType.ArrowClosed,
-    color: 'rgba(59, 130, 246, 0.4)',
+    color: edgeColor,
   },
 };
 
@@ -65,6 +70,7 @@ const WorkflowFlowEditorInner = memo(
     const nodesInitialized = useNodesInitialized();
     const { fitView } = useReactFlow();
     const lastLayoutTopologyRef = useRef<string | null>(null);
+    const hasManualPositionsRef = useRef(false);
 
     const topologyKey = useMemo(
       () =>
@@ -98,6 +104,20 @@ const WorkflowFlowEditorInner = memo(
       [steps, onUpdateSteps, onRemoveStep],
     );
 
+    const handleNodesChange = useCallback(
+      (changes: NodeChange<Node>[]) => {
+        if (
+          changes.some(
+            (change) => change.type === 'position' && change.dragging,
+          )
+        ) {
+          hasManualPositionsRef.current = true;
+        }
+        onNodesChange(changes);
+      },
+      [onNodesChange],
+    );
+
     // Sync from props
     useEffect(() => {
       // 1. Generate Edges from steps (Always fresh)
@@ -115,6 +135,10 @@ const WorkflowFlowEditorInner = memo(
       // when calculating the merge, preventing stale closures.
       setNodes((currentNodes) => {
         const currentNodeMap = new Map(currentNodes.map((n) => [n.id, n]));
+        const stepIds = new Set(steps.map((step) => step.id));
+        const layoutContext = currentNodes.filter((node) =>
+          stepIds.has(node.id),
+        );
 
         const nextNodes = steps.map((s) => {
           const existing = currentNodeMap.get(s.id);
@@ -138,12 +162,14 @@ const WorkflowFlowEditorInner = memo(
           }
 
           // New node
-          return {
+          const newNode: Node = {
             id: s.id,
             type: 'stepNode',
-            position: { x: 0, y: 0 },
+            position: getInitialNodePosition(layoutContext, s.depends_on ?? []),
             data: nodeData,
           };
+          layoutContext.push(newNode);
+          return newNode;
         });
 
         return nextNodes;
@@ -161,6 +187,7 @@ const WorkflowFlowEditorInner = memo(
     ]);
 
     useEffect(() => {
+      const expectedNodeIds = new Set(steps.map((step) => step.id));
       const expectedEdgeIds = new Set(
         steps.flatMap((step) =>
           (step.depends_on ?? []).map(
@@ -171,12 +198,16 @@ const WorkflowFlowEditorInner = memo(
       const graphMatchesTopology =
         nodes.length === steps.length &&
         edges.length === expectedEdgeIds.size &&
-        nodes.every((node) => steps.some((step) => step.id === node.id)) &&
+        nodes.every((node) => expectedNodeIds.has(node.id)) &&
         edges.every((edge) => expectedEdgeIds.has(edge.id));
+      const canAutomaticallyLayout =
+        lastLayoutTopologyRef.current === null ||
+        !hasManualPositionsRef.current;
       const needsLayout =
         nodes.length > 0 &&
         nodesInitialized &&
         graphMatchesTopology &&
+        canAutomaticallyLayout &&
         lastLayoutTopologyRef.current !== topologyKey;
 
       if (needsLayout) {
@@ -249,6 +280,7 @@ const WorkflowFlowEditorInner = memo(
     );
 
     const handleLayout = useCallback(() => {
+      hasManualPositionsRef.current = false;
       const { nodes: layoutedNodes, edges: layoutedEdges } =
         getLayoutedElements(nodes, edges);
       setNodes([...layoutedNodes]);
@@ -264,7 +296,7 @@ const WorkflowFlowEditorInner = memo(
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={onNodesChange}
+          onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onEdgesDelete={onEdgeDelete}

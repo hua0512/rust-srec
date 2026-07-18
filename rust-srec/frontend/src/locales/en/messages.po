@@ -700,7 +700,7 @@ msgstr "Auto (Default)"
 msgid "Auto (QR → Phone & Code → Desktop)"
 msgstr "Auto (QR → Phone & Code → Desktop)"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:297
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:329
 msgid "Auto Layout"
 msgstr "Auto Layout"
 
@@ -2310,7 +2310,7 @@ msgstr "Downloading {0}"
 msgid "Downloading..."
 msgstr "Downloading..."
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:310
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:342
 msgid "Drag from edge to link steps"
 msgstr "Drag from edge to link steps"
 
