@@ -119,7 +119,7 @@ msgid "{0} Configuration"
 msgstr "{0} Configuration"
 
 #. placeholder {0}: newPlayers.length
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:179
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:180
 msgid "{0} stream(s) added successfully"
 msgstr "{0} stream(s) added successfully"
 
@@ -285,7 +285,7 @@ msgstr "Add"
 msgid "Add a module above to configure its log level"
 msgstr "Add a module above to configure its log level"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:381
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:382
 msgid "Add a stream to start your viewing session."
 msgstr "Add a stream to start your viewing session."
 
@@ -390,8 +390,8 @@ msgstr "Add rclone argument"
 msgid "Add Step"
 msgstr "Add Step"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:390
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:422
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:391
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:423
 msgid "Add Stream"
 msgstr "Add Stream"
 
@@ -849,7 +849,7 @@ msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:194
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
 msgid "Batch parse error: {0}"
 msgstr "Batch parse error: {0}"
 
@@ -916,7 +916,7 @@ msgstr "both directions at 10 MiB/s"
 msgid "Brand Colors"
 msgstr "Brand Colors"
 
-#: src/components/sessions/recordings-tab.tsx:232
+#: src/components/sessions/recordings-tab.tsx:246
 msgid "Break"
 msgstr "Break"
 
@@ -2205,7 +2205,7 @@ msgstr "Disabled"
 msgid "Disconnected"
 msgstr "Disconnected"
 
-#: src/components/sessions/recordings-tab.tsx:243
+#: src/components/sessions/recordings-tab.tsx:257
 #: src/lib/split-reason.ts:51
 msgid "Discontinuity"
 msgstr "Discontinuity"
@@ -2246,7 +2246,7 @@ msgstr "Douyu UHD rate"
 msgid "Down"
 msgstr "Down"
 
-#: src/components/sessions/recordings-tab.tsx:159
+#: src/components/sessions/recordings-tab.tsx:173
 #: src/components/streamers/progress-indicator.tsx:110
 msgid "Download"
 msgstr "Download"
@@ -2607,7 +2607,7 @@ msgstr "Engines"
 msgid "Enter a unique name"
 msgstr "Enter a unique name"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:425
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:426
 msgid "Enter a URL to parse and play a stream"
 msgstr "Enter a URL to parse and play a stream"
 
@@ -2671,7 +2671,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:234
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:235
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -2784,8 +2784,8 @@ msgstr "Execution time (default)"
 msgid "Executions"
 msgstr "Executions"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:258
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:321
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:259
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:322
 msgid "Exit Immersive"
 msgstr "Exit Immersive"
 
@@ -3071,7 +3071,7 @@ msgstr "Failed to load templates: {0}"
 msgid "Failed to load workflows: {0}"
 msgstr "Failed to load workflows: {0}"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:119
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:120
 msgid "Failed to parse URL"
 msgstr "Failed to parse URL"
 
@@ -3270,7 +3270,7 @@ msgstr "Filename Template"
 msgid "files"
 msgstr "files"
 
-#: src/components/sessions/recordings-tab.tsx:479
+#: src/components/sessions/recordings-tab.tsx:495
 msgid "Files"
 msgstr "Files"
 
@@ -3545,7 +3545,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:200
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:242
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:243
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -3866,7 +3866,7 @@ msgstr "Ignore streams below this bitrate."
 msgid "Ignored when \"Upload All Files\" is enabled."
 msgstr "Ignored when \"Upload All Files\" is enabled."
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:326
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:327
 msgid "Immersive Mode"
 msgstr "Immersive Mode"
 
@@ -4078,7 +4078,7 @@ msgstr "Job Timeouts"
 #: src/components/layout/site-header.tsx:48
 #: src/components/sidebar/navbar.tsx:42
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:320
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:321
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -4220,8 +4220,8 @@ msgstr "List of allowed file extensions (without dot)."
 msgid "Live"
 msgstr "Live"
 
-#: src/components/player/stream-info-card.tsx:88
-#: src/components/player/stream-info-card.tsx:108
+#: src/components/player/stream-info-card.tsx:89
+#: src/components/player/stream-info-card.tsx:109
 #: src/components/sessions/session-header.tsx:29
 msgid "LIVE"
 msgstr "LIVE"
@@ -4359,7 +4359,7 @@ msgstr "Logs downloaded successfully"
 msgid "Loop Protection"
 msgstr "Loop Protection"
 
-#: src/components/sessions/recordings-tab.tsx:251
+#: src/components/sessions/recordings-tab.tsx:265
 msgid "Lossless Split"
 msgstr "Lossless Split"
 
@@ -4585,7 +4585,7 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/components/sessions/recordings-tab.tsx:475
+#: src/components/sessions/recordings-tab.tsx:491
 msgid "Media Timeline"
 msgstr "Media Timeline"
 
@@ -4950,7 +4950,7 @@ msgstr "No logs to display"
 msgid "No matching events found"
 msgstr "No matching events found"
 
-#: src/components/sessions/recordings-tab.tsx:492
+#: src/components/sessions/recordings-tab.tsx:508
 msgid "No media outputs generated yet."
 msgstr "No media outputs generated yet."
 
@@ -5015,11 +5015,11 @@ msgstr "No platforms configured"
 msgid "No platforms found"
 msgstr "No platforms found"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:116
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:117
 msgid "No playable stream found in response"
 msgstr "No playable stream found in response"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:188
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:189
 msgid "No playable streams found"
 msgstr "No playable streams found"
 
@@ -5497,7 +5497,7 @@ msgstr "Override how aggressively the scheduler confirms a stream has ended."
 msgid "Override output folder."
 msgstr "Override output folder."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:289
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:290
 msgid "Overview"
 msgstr "Overview"
 
@@ -5556,7 +5556,7 @@ msgstr "Paired Segment Pipeline"
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "Parallel integrity checks (e.g. comparing source / destination hashes)."
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:307
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:308
 msgid "Parse and play live streams"
 msgstr "Parse and play live streams"
 
@@ -5565,7 +5565,7 @@ msgid "Parse Batch"
 msgstr "Parse Batch"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:125
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
 msgid "Parse error: {0}"
 msgstr "Parse error: {0}"
 
@@ -5577,7 +5577,7 @@ msgstr "Parse Mode"
 msgid "Parse Stream"
 msgstr "Parse Stream"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:356
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:357
 msgid "Parsing Stream..."
 msgstr "Parsing Stream..."
 
@@ -5855,7 +5855,7 @@ msgstr "platforms"
 msgid "Platforms"
 msgstr "Platforms"
 
-#: src/components/sessions/recordings-tab.tsx:185
+#: src/components/sessions/recordings-tab.tsx:199
 msgid "Play"
 msgstr "Play"
 
@@ -5906,7 +5906,7 @@ msgstr "Please select a JSON file"
 msgid "Please set Telegram Desktop Directory first"
 msgstr "Please set Telegram Desktop Directory first"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:359
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:360
 msgid "Please wait while we resolve the stream URL."
 msgstr "Please wait while we resolve the stream URL."
 
@@ -6181,7 +6181,7 @@ msgid "QR Login"
 msgstr "QR Login"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:57
-#: src/components/player/stream-info-card.tsx:170
+#: src/components/player/stream-info-card.tsx:171
 msgid "Quality"
 msgstr "Quality"
 
@@ -6287,7 +6287,7 @@ msgstr "Read Timeout (ms)"
 msgid "Ready"
 msgstr "Ready"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:378
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:379
 msgid "Ready to Watch"
 msgstr "Ready to Watch"
 
@@ -6358,7 +6358,7 @@ msgstr "Recording started"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:308
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:309
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -6878,7 +6878,7 @@ msgstr "Segment Timeout (ms)"
 msgid "Segment TTL (ms)"
 msgstr "Segment TTL (ms)"
 
-#: src/components/sessions/recordings-tab.tsx:478
+#: src/components/sessions/recordings-tab.tsx:494
 #: src/components/streamers/edit/active-download-card.tsx:164
 msgid "Segments"
 msgstr "Segments"
@@ -7118,7 +7118,7 @@ msgstr "Session is not running"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:237
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:238
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -7252,7 +7252,7 @@ msgstr "Skip after duration"
 msgid "Skip Interactive Games"
 msgstr "Skip Interactive Games"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:184
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:185
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "Skipped {skippedCount} duplicate stream(s)"
 
@@ -7277,7 +7277,7 @@ msgstr "SOOP account used to watch login-required (e.g. 19+) broadcasts. Prefer 
 msgid "Sort by"
 msgstr "Sort by"
 
-#: src/components/player/stream-info-card.tsx:126
+#: src/components/player/stream-info-card.tsx:127
 msgid "Source"
 msgstr "Source"
 
@@ -7323,7 +7323,7 @@ msgstr "Split on any raw header change. Safe but may cause extra files."
 msgid "Split only on codec configuration changes. Reduces false splits."
 msgstr "Split only on codec configuration changes. Reduces false splits."
 
-#: src/components/sessions/recordings-tab.tsx:111
+#: src/components/sessions/recordings-tab.tsx:125
 msgid "Split Reason"
 msgstr "Split Reason"
 
@@ -7434,12 +7434,12 @@ msgstr "Stream Mapping (-map)"
 msgid "Stream monitoring encountered issues"
 msgstr "Stream monitoring encountered issues"
 
-#: src/components/player/stream-info-card.tsx:82
-#: src/components/player/stream-info-card.tsx:102
+#: src/components/player/stream-info-card.tsx:83
+#: src/components/player/stream-info-card.tsx:103
 msgid "Stream Options"
 msgstr "Stream Options"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:114
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:115
 msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
@@ -7450,7 +7450,7 @@ msgstr "Stream parsed successfully"
 msgid "Stream Password"
 msgstr "Stream Password"
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:304
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:305
 msgid "Stream Player"
 msgstr "Stream Player"
 
@@ -7888,7 +7888,7 @@ msgstr "This step is a sub-workflow: <0>{workflowName}</0>."
 msgid "This step is linked to the preset <0>{presetName}</0>."
 msgstr "This step is linked to the preset <0>{presetName}</0>."
 
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:94
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:95
 msgid "This stream is already active"
 msgstr "This stream is already active"
 
@@ -7979,7 +7979,7 @@ msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:331
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:295
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:296
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -8318,8 +8318,8 @@ msgid "Unknown Engine ID: {engineId}"
 msgstr "Unknown Engine ID: {engineId}"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:257
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:125
-#: src/routes/_authed/_dashboard/player/index.lazy.tsx:194
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:126
+#: src/routes/_authed/_dashboard/player/index.lazy.tsx:195
 msgid "Unknown error"
 msgstr "Unknown error"
 
@@ -8571,7 +8571,7 @@ msgstr "View All"
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 msgstr "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES} entries."
 
-#: src/components/sessions/recordings-tab.tsx:172
+#: src/components/sessions/recordings-tab.tsx:186
 msgid "View Danmu"
 msgstr "View Danmu"
 
