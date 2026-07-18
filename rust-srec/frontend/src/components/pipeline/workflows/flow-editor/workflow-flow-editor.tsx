@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, memo, useMemo } from 'react';
+import { useCallback, useEffect, useState, memo, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -64,6 +64,19 @@ const WorkflowFlowEditorInner = memo(
     const [hasLaidOut, setHasLaidOut] = useState(false);
     const nodesInitialized = useNodesInitialized();
     const { fitView } = useReactFlow();
+    const lastLayoutTopologyRef = useRef<string | null>(null);
+
+    const topologyKey = useMemo(
+      () =>
+        steps
+          .map(
+            (step) =>
+              `${step.id}:${[...(step.depends_on ?? [])].sort().join(',')}`,
+          )
+          .sort()
+          .join('|'),
+      [steps],
+    );
 
     // Flag delete nodes wired after a transform step: they would delete the converted artifact
     // produced by that step, not the original recording.
@@ -128,17 +141,10 @@ const WorkflowFlowEditorInner = memo(
           return {
             id: s.id,
             type: 'stepNode',
-            position: { x: 0, y: 0 }, // Will be fixed by layout if it's initial load
+            position: { x: 0, y: 0 },
             data: nodeData,
           };
         });
-
-        // If we haven't performed an initial layout yet and we have nodes, do it now.
-        // Note: We check `currentNodes.length === 0` as a proxy for "first load"
-        // combined with the external `hasLaidOut` ref check would be ideal,
-        // but here we can't easily access the updated 'hasLaidOut' state inside this callback
-        // if we wanted to set it.
-        // Instead, we'll handle the "Auto Layout" transformation here and rely on the effect to stabilize.
 
         return nextNodes;
       });
@@ -154,30 +160,33 @@ const WorkflowFlowEditorInner = memo(
       warnedStepIds,
     ]);
 
-    // Separate effect to handle Auto-Layout logic
-    // We want to re-layout when the structure changes (e.g. loading a preset)
-    // We detect this by checking if we have unlayouted nodes (position 0,0) or if the step count changed significantly
     useEffect(() => {
-      // Only run layout if:
-      // 1. We have nodes
-      // 2. Nodes are initialized (measured by React Flow)
-      // 3. We haven't laid out yet OR nodes are all at 0,0 (new load)
+      const expectedEdgeIds = new Set(
+        steps.flatMap((step) =>
+          (step.depends_on ?? []).map(
+            (dependencyId) => `e-${dependencyId}-${step.id}`,
+          ),
+        ),
+      );
+      const graphMatchesTopology =
+        nodes.length === steps.length &&
+        edges.length === expectedEdgeIds.size &&
+        nodes.every((node) => steps.some((step) => step.id === node.id)) &&
+        edges.every((edge) => expectedEdgeIds.has(edge.id));
       const needsLayout =
         nodes.length > 0 &&
         nodesInitialized &&
-        (!hasLaidOut ||
-          nodes.every((n) => n.position.x === 0 && n.position.y === 0));
+        graphMatchesTopology &&
+        lastLayoutTopologyRef.current !== topologyKey;
 
       if (needsLayout) {
-        console.log('WorkflowFlowEditor: Running auto-layout', {
-          nodeCount: nodes.length,
-        });
         const { nodes: layoutedNodes, edges: layoutedEdges } =
           getLayoutedElements(nodes, edges);
 
         setNodes([...layoutedNodes]);
         setEdges([...layoutedEdges]);
         setHasLaidOut(true);
+        lastLayoutTopologyRef.current = topologyKey;
 
         window.requestAnimationFrame(() => {
           void fitView({ padding: 0.2, duration: 200 });
@@ -187,11 +196,11 @@ const WorkflowFlowEditorInner = memo(
       nodes,
       edges,
       nodesInitialized,
-      hasLaidOut,
       setNodes,
       setEdges,
       fitView,
-      nodes.length,
+      steps,
+      topologyKey,
     ]);
 
     const onConnect = useCallback(
@@ -244,7 +253,11 @@ const WorkflowFlowEditorInner = memo(
         getLayoutedElements(nodes, edges);
       setNodes([...layoutedNodes]);
       setEdges([...layoutedEdges]);
-    }, [nodes, edges, setNodes, setEdges]);
+      lastLayoutTopologyRef.current = topologyKey;
+      window.requestAnimationFrame(() => {
+        void fitView({ padding: 0.2, duration: 200 });
+      });
+    }, [nodes, edges, setNodes, setEdges, topologyKey, fitView]);
 
     return (
       <GraphViewport className="h-full min-h-0">
