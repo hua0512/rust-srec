@@ -56,13 +56,13 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
 ## Recorded playback
 
-- **Seeking recorded streams no longer stalls**
+- **Skipping through a recording no longer freezes the video**
 
-  Seeking through a recorded FLV or MPEG-TS stream in the player — including in fullscreen or maximized view — no longer leaves the picture frozen on a black frame. Playback now lands on a nearby keyframe reliably, and if a seek does stall, the player rebuilds the playback pipeline once on its own and surfaces a visible error only if it still cannot recover. Live playback is unchanged.
+  Jumping to a different point while watching a recording — including in fullscreen or maximized view — no longer leaves the video stuck on a black frame. If a jump does get stuck, the player recovers on its own and only shows an error if it still can't continue. Watching live streams is unaffected.
 
 - **Recorded danmaku shows the right times, names, gifts, and super chats**
 
-  Replaying a recording's danmaku now shows correct timestamps and sender names, and gifts and super chats appear on the timeline alongside chat messages. Large danmaku files are parsed in the background instead of on the main thread, so opening the chat for a long recording no longer freezes the interface. Danmaku imported from standard Bilibili XML files continues to work.
+  Replaying a recording's danmaku now shows the correct times and sender names, and gifts and super chats appear alongside the chat messages. Long chat files now load in the background, so opening the chat for a lengthy recording no longer freezes the page. Danmaku imported from Bilibili XML files still works.
 
 ## HLS recording engine
 
@@ -146,11 +146,11 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
 - **Clearer graph view for branching pipelines**
 
-  The DAG graph view now lays out branching and merging dependencies more clearly. Direct connections no longer overlap the alternate multi-step paths between the same steps, crossing lines are reduced, and edges and arrowheads are stronger so the direction of each dependency is easier to follow. This only affects how the graph is drawn; it does not change how the pipeline runs.
+  The pipeline graph now draws steps that split into or merge from several others more clearly: the connecting lines overlap less, cross each other less often, and have bolder arrows, so it's easier to see which step feeds into which. This only changes how the graph looks, not how the pipeline runs.
 
 - **Manually placed steps keep their position**
 
-  Steps you drag into place in the graph now stay where you put them when you add or remove other steps, instead of snapping back on every change. Newly added steps appear next to the steps they depend on without landing on top of existing nodes, and the **Auto Layout** action re-arranges everything automatically and refits the view whenever you want the computed layout back.
+  Steps you drag into place in the graph now stay where you put them when you add or remove other steps, instead of snapping back on every change. Newly added steps appear next to the steps they connect to without landing on top of others, and the **Auto Layout** button tidies everything back into an automatic arrangement whenever you want it.
 
 ## Pipeline uploads
 
@@ -186,15 +186,15 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
   Disabling a streamer while one of its status checks was still in flight could let that check re-mark the streamer as live, create a recording session, and start a download after the disable. Session creation now re-checks the streamer's state at the database serialization point, so a disable that has been saved always wins — the late check is discarded instead of overriding user intent.
 
-- **Recordings stay matched to their chat and segment data**
+- **Recordings stay linked to their chat file and timeline**
 
-  A recording's file path is now reported consistently from the moment a segment starts through to when it finishes, instead of being rewritten when the segment completes. This keeps each recording paired with its danmaku (chat) file and segment metadata, and stops a symlinked or relative recording directory from resolving to a different path than the one you configured. The media timeline also reads Windows path formats correctly, so recordings match up with their segments on Windows deployments.
+  Each recording now stays reliably linked to its chat (danmaku) file and its entry on the recording timeline. This holds up on Windows and when recordings are saved to linked or shortcut folders — cases where the chat file or timeline entry could previously fail to line up with the recording.
 
 ## Database maintenance
 
 - **Unified, more thorough automatic cleanup**
 
-  Database housekeeping now runs through a single scheduler that keeps the application database from growing without bound. Alongside old pipeline history, it clears completed, failed, or cancelled workflow executions, expired login tokens, old notification log entries, and empty recording sessions that never captured any data. Lightweight cleanup runs at startup and every 30 minutes, while heavier database compaction stays within the configured maintenance window, and each pass does a bounded amount of work so even a large backlog is cleared gradually instead of in one long, heavy sweep. Recent or still-active pipeline data and sessions are preserved, and freed disk space is reclaimed incrementally over time.
+  The app now cleans up its own database automatically so it doesn't keep growing over time. It clears out old pipeline history, finished and cancelled jobs, expired sign-ins, old notification records, and empty recordings that never captured anything. A quick tidy-up runs when the app starts and every half hour, and any heavier work waits for the maintenance window you've set. Cleanup happens in small batches, so even a large backlog is worked through gradually rather than all at once, and disk space is freed up over time. Anything recent or still in use is always kept.
 
 - **Retention of 0 now means "keep forever"**
 
