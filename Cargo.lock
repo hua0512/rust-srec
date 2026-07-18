@@ -5280,7 +5280,7 @@ dependencies = [
 
 [[package]]
 name = "rust-srec"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -5344,7 +5344,7 @@ dependencies = [
 
 [[package]]
 name = "rust-srec-desktop"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "fs2",

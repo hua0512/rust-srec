@@ -4,13 +4,15 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — Mesio HLS reliability and media-processing improvements, unified HLS/FLV download sessions, Douyu updates, and automatic cleanup of unused Mesio settings
+- [`unreleased`](./unreleased.md) — no changes staged yet for the next release
 
 ## Latest release
 
-- [`v0.3.2`](./v0.3.2.md) — pipeline & recording reliability: end-of-session and paired post-processing wait for the files they need, resumed recordings keep consistent segment numbering, **Delete Source** no longer removes a converted video, and a temporary CDN failure no longer flips a live streamer offline
+- [`v0.4.0`](./v0.4.0.md) — two new platforms (SOOP and Bigo Live), a rebuilt Mesio HLS recording engine, streamer bulk actions and list filters, automatic database cleanup, and a flash-free theme system, plus recorded-playback and pipeline-editor fixes
 
 ## Archive
+
+- [`v0.3.2`](./v0.3.2.md) — pipeline & recording reliability: end-of-session and paired post-processing wait for the files they need, resumed recordings keep consistent segment numbering, **Delete Source** no longer removes a converted video, and a temporary CDN failure no longer flips a live streamer offline
 
 - [`v0.3.1`](./v0.3.1.md) — recording-session reliability follow-ups (fewer false endings on transient failures, cleaner schedule-end transitions, quieter out-of-schedule checks) plus GPU health monitoring on the System Health page and a faster, lighter `/api/health`
 
