@@ -1,8 +1,9 @@
 import {
-  formatDanmuOffset,
+  DanmuStreamParser,
   normalizeDanmuTimestamp,
   parseDanmuXml,
-} from './danmu-viewer';
+} from './danmu-parser';
+import { formatDanmuOffset } from './danmu-viewer';
 
 describe('parseDanmuXml', () => {
   it('parses rust-srec timestamps and username attributes', () => {
@@ -70,6 +71,17 @@ describe('parseDanmuXml', () => {
   it('rejects malformed XML and skips malformed messages', () => {
     expect(() => parseDanmuXml('<i><d></i>')).toThrow('Invalid danmu XML');
     expect(parseDanmuXml('<i><d p="invalid" /></i>')).toEqual([]);
+  });
+
+  it('parses XML incrementally across chunk boundaries', () => {
+    const parser = new DanmuStreamParser();
+    parser.write('<i><d p="1,1,25,16777215,1700000001,0,u,1" user="A">Hel');
+    parser.write('lo &amp; wel');
+    parser.write('come</d></i>');
+
+    expect(parser.finish()).toMatchObject([
+      { username: 'A', content: 'Hello & welcome' },
+    ]);
   });
 });
 

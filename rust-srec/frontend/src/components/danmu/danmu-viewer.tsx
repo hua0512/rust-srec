@@ -20,6 +20,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { DanmuComment } from './danmu-parser';
+import type { ParseResponse } from './danmu-parser.worker';
 
 interface DanmuViewerProps {
   url: string;
@@ -27,141 +29,7 @@ interface DanmuViewerProps {
   onClose?: () => void;
 }
 
-export interface DanmuComment {
-  time: number; // Seconds from start
-  mode: number;
-  size: number;
-  color: number;
-  timestampMs: number | null;
-  pool: number;
-  userHash: string;
-  rowId: string;
-  username?: string;
-  content: string;
-}
-
 type FilterMode = 'all' | 'scrolling' | 'top' | 'bottom';
-
-const DEFAULT_FONT_SIZE = 25;
-const DEFAULT_COLOR = 16777215;
-
-function parseNumber(value: string | null): number | null {
-  if (value === null || value.trim() === '') return null;
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-export function normalizeDanmuTimestamp(value: string | null): number | null {
-  const timestamp = parseNumber(value);
-  if (timestamp === null) return null;
-
-  return Math.abs(timestamp) < 100_000_000_000 ? timestamp * 1000 : timestamp;
-}
-
-function parseLegacyIdentity(value: string): {
-  rowId: string;
-  username?: string;
-} {
-  const match = value.match(/^(.*?)\s+user=(.*)$/);
-  if (!match) return { rowId: value };
-
-  return { rowId: match[1], username: match[2] };
-}
-
-function parseStandardComment(element: Element): DanmuComment | null {
-  const parts = element.getAttribute('p')?.split(',');
-  if (!parts || parts.length < 8) return null;
-
-  const time = parseNumber(parts[0]);
-  const mode = parseNumber(parts[1]);
-  const size = parseNumber(parts[2]);
-  const color = parseNumber(parts[3]);
-  const pool = parseNumber(parts[5]);
-  if (
-    time === null ||
-    mode === null ||
-    size === null ||
-    color === null ||
-    pool === null
-  ) {
-    return null;
-  }
-
-  const legacyIdentity = parseLegacyIdentity(parts[7]);
-  return {
-    time,
-    mode,
-    size,
-    color,
-    timestampMs: normalizeDanmuTimestamp(parts[4]),
-    pool,
-    userHash: parts[6],
-    rowId: legacyIdentity.rowId,
-    username: element.getAttribute('user') || legacyIdentity.username,
-    content: element.textContent || '',
-  };
-}
-
-function parseGift(element: Element, index: number): DanmuComment | null {
-  const time = parseNumber(element.getAttribute('ts'));
-  if (time === null) return null;
-
-  const giftName = element.getAttribute('giftname') || 'Gift';
-  const giftCount = element.getAttribute('giftcount');
-  return {
-    time,
-    mode: 1,
-    size: DEFAULT_FONT_SIZE,
-    color: DEFAULT_COLOR,
-    timestampMs: normalizeDanmuTimestamp(element.getAttribute('timestamp')),
-    pool: 0,
-    userHash: element.getAttribute('uid') || '',
-    rowId: `gift-${index}`,
-    username: element.getAttribute('user') || undefined,
-    content: giftCount ? `${giftName} x${giftCount}` : giftName,
-  };
-}
-
-function parseSuperChat(element: Element, index: number): DanmuComment | null {
-  const time = parseNumber(element.getAttribute('ts'));
-  if (time === null) return null;
-
-  return {
-    time,
-    mode: 5,
-    size: DEFAULT_FONT_SIZE,
-    color: DEFAULT_COLOR,
-    timestampMs: normalizeDanmuTimestamp(element.getAttribute('timestamp')),
-    pool: 0,
-    userHash: element.getAttribute('uid') || '',
-    rowId: `sc-${index}`,
-    username: element.getAttribute('user') || undefined,
-    content: element.textContent || '',
-  };
-}
-
-export function parseDanmuXml(text: string): DanmuComment[] {
-  const xmlDoc = new DOMParser().parseFromString(text, 'text/xml');
-  if (xmlDoc.querySelector('parsererror')) {
-    throw new Error('Invalid danmu XML');
-  }
-
-  const comments: DanmuComment[] = [];
-  for (const [index, element] of Array.from(
-    xmlDoc.querySelectorAll('d, gift, sc'),
-  ).entries()) {
-    const comment =
-      element.tagName === 'd'
-        ? parseStandardComment(element)
-        : element.tagName === 'gift'
-          ? parseGift(element, index)
-          : parseSuperChat(element, index);
-    if (comment) comments.push(comment);
-  }
-
-  return comments.sort((a, b) => a.time - b.time);
-}
 
 export function formatDanmuOffset(seconds: number): string {
   return formatDuration(seconds, { nullValue: '0s' });
@@ -175,22 +43,33 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
   useEffect(() => {
-    const fetchAndParseDanmu = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Failed to fetch danmu file');
+    setLoading(true);
+    setError(null);
+    setComments([]);
 
-        const text = await response.text();
-        setComments(parseDanmuXml(text));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setLoading(false);
+    const worker = new Worker(
+      new URL('./danmu-parser.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    worker.addEventListener('message', (event: MessageEvent<ParseResponse>) => {
+      if (event.data.type === 'success') {
+        setComments(event.data.comments);
+      } else {
+        setError(event.data.message);
       }
-    };
+      setLoading(false);
+      worker.terminate();
+    });
+    worker.addEventListener('error', () => {
+      setError('Failed to parse danmu file');
+      setLoading(false);
+      worker.terminate();
+    });
+    worker.postMessage({ type: 'parse', url });
 
-    void fetchAndParseDanmu();
+    return () => {
+      worker.terminate();
+    };
   }, [url]);
 
   const filteredComments = useMemo(() => {
