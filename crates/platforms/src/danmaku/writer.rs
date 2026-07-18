@@ -11,7 +11,7 @@
 //!
 //! Each danmu element has the following structure:
 //! ```xml
-//! <d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id} user={username}">{Text}</d>
+//! <d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id}" user="{username}">{Text}</d>
 //! ```
 //!
 //! Where:
@@ -138,7 +138,7 @@ impl XmlDanmuWriter {
     /// Write a danmu message to the XML file.
     ///
     /// The format follows Bilibili's danmu XML format:
-    /// `<d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id},user={username}">{content}</d>`
+    /// `<d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id}" user="{username}">{content}</d>`
     ///
     /// - `time`: Seconds offset from segment start (3 decimal places)
     /// - `type`: Danmu type (1=scroll right-to-left, 4=bottom, 5=top)

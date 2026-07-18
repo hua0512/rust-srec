@@ -20,6 +20,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { DanmuComment } from './danmu-parser';
+import type { ParseResponse } from './danmu-parser.worker';
 
 interface DanmuViewerProps {
   url: string;
@@ -27,20 +29,11 @@ interface DanmuViewerProps {
   onClose?: () => void;
 }
 
-interface DanmuComment {
-  time: number; // Seconds from start
-  mode: number;
-  size: number;
-  color: number;
-  timestamp: number; // Unix timestamp
-  pool: number;
-  userHash: string;
-  rowId: string;
-  username?: string;
-  content: string;
-}
-
 type FilterMode = 'all' | 'scrolling' | 'top' | 'bottom';
+
+export function formatDanmuOffset(seconds: number): string {
+  return formatDuration(seconds, { nullValue: '0s' });
+}
 
 export function DanmuViewer({ url, title }: DanmuViewerProps) {
   const [comments, setComments] = useState<DanmuComment[]>([]);
@@ -50,65 +43,33 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
   useEffect(() => {
-    const fetchAndParseDanmu = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Failed to fetch danmu file');
+    setLoading(true);
+    setError(null);
+    setComments([]);
 
-        const text = await response.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(text, 'text/xml');
-
-        const dTags = xmlDoc.getElementsByTagName('d');
-        const parsedComments: DanmuComment[] = [];
-
-        for (let i = 0; i < dTags.length; i++) {
-          const d = dTags[i];
-          const p = d.getAttribute('p');
-          if (!p) continue;
-
-          const parts = p.split(',');
-          if (parts.length < 8) continue;
-
-          // Parse rowId and username from the last part
-          const lastPart = parts[7];
-          const spaceIndex = lastPart.indexOf(' ');
-          let rowId = lastPart;
-          let username = '';
-
-          if (spaceIndex !== -1) {
-            rowId = lastPart.substring(0, spaceIndex);
-            const userPart = lastPart.substring(spaceIndex + 1);
-            if (userPart.startsWith('user=')) {
-              username = userPart.substring(5);
-            }
-          }
-
-          parsedComments.push({
-            time: parseFloat(parts[0]),
-            mode: parseInt(parts[1]),
-            size: parseInt(parts[2]),
-            color: parseInt(parts[3]),
-            timestamp: parseInt(parts[4]),
-            pool: parseInt(parts[5]),
-            userHash: parts[6],
-            rowId,
-            username,
-            content: d.textContent || '',
-          });
-        }
-
-        parsedComments.sort((a, b) => a.time - b.time);
-        setComments(parsedComments);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setLoading(false);
+    const worker = new Worker(
+      new URL('./danmu-parser.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    worker.addEventListener('message', (event: MessageEvent<ParseResponse>) => {
+      if (event.data.type === 'success') {
+        setComments(event.data.comments);
+      } else {
+        setError(event.data.message);
       }
-    };
+      setLoading(false);
+      worker.terminate();
+    });
+    worker.addEventListener('error', () => {
+      setError('Failed to parse danmu file');
+      setLoading(false);
+      worker.terminate();
+    });
+    worker.postMessage({ type: 'parse', url });
 
-    void fetchAndParseDanmu();
+    return () => {
+      worker.terminate();
+    };
   }, [url]);
 
   const filteredComments = useMemo(() => {
@@ -309,7 +270,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                       >
                         <div className="w-16 shrink-0 font-mono text-[10px] text-muted-foreground/50 tabular-nums flex items-center gap-1.5 group-hover:text-muted-foreground transition-colors">
                           <Clock className="h-3 w-3 opacity-50" />
-                          {formatDuration(comment.time)}
+                          {formatDanmuOffset(comment.time)}
                         </div>
 
                         <div className="min-w-0 flex-1 flex items-center gap-3">
@@ -334,23 +295,25 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                           </div>
                         </div>
 
-                        <div className="shrink-0 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Badge
-                            variant="secondary"
-                            className="text-[9px] h-5 tabular-nums font-mono px-1.5 bg-muted transition-all"
-                          >
-                            {new Date(comment.timestamp * 1000).toLocaleString(
-                              [],
-                              {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                              },
-                            )}
-                          </Badge>
-                        </div>
+                        {comment.timestampMs !== null && (
+                          <div className="shrink-0 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Badge
+                              variant="secondary"
+                              className="text-[9px] h-5 tabular-nums font-mono px-1.5 bg-muted transition-all"
+                            >
+                              {new Date(comment.timestampMs).toLocaleString(
+                                [],
+                                {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                },
+                              )}
+                            </Badge>
+                          </div>
+                        )}
                       </div>
                     );
                   })
