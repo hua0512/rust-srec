@@ -54,6 +54,12 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
   The media timeline now distinguishes an HLS playlist discontinuity from an actual recording gap. A time-continuous `#EXT-X-DISCONTINUITY` boundary is labeled as a discontinuity instead of a break, split reasons appear on the boundary they caused, and long sessions load all paginated media outputs and segment metadata instead of showing only the most recent page.
 
+## Recorded playback
+
+- **Seeking recorded streams no longer stalls**
+
+  Seeking through a recorded FLV or MPEG-TS stream in the player — including in fullscreen or maximized view — no longer leaves the picture frozen on a black frame. Playback now lands on a nearby keyframe reliably, and if a seek does stall, the player rebuilds the playback pipeline once on its own and surfaces a visible error only if it still cannot recover. Live playback is unchanged.
+
 ## HLS recording engine
 
 - **Rebuilt HLS engine for more predictable recording**
@@ -167,6 +173,10 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 - **Disabling a streamer can no longer be undone by an in-flight status check**
 
   Disabling a streamer while one of its status checks was still in flight could let that check re-mark the streamer as live, create a recording session, and start a download after the disable. Session creation now re-checks the streamer's state at the database serialization point, so a disable that has been saved always wins — the late check is discarded instead of overriding user intent.
+
+- **Recordings stay matched to their chat and segment data**
+
+  A recording's file path is now reported consistently from the moment a segment starts through to when it finishes, instead of being rewritten when the segment completes. This keeps each recording paired with its danmaku (chat) file and segment metadata, and stops a symlinked or relative recording directory from resolving to a different path than the one you configured. The media timeline also reads Windows path formats correctly, so recordings match up with their segments on Windows deployments.
 
 ## Database maintenance
 
