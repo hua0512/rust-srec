@@ -290,7 +290,7 @@ function updateReleaseNotesGuide(templateText, version) {
     .replace(/\.\/zh\/release-notes\/v\d+\.\d+\.\d+\.md/g, `./zh/release-notes/v${version}.md`);
 }
 
-function upsertLatestReleaseIndex(indexText, version, latestLine, archiveHeading) {
+function upsertLatestReleaseIndex(indexText, latestLine, archiveHeading) {
   const latestSectionRe = /(^##\s+Latest release\s*$|^##\s+最新版本\s*$)([\s\S]*?)(^##\s+Archive\s*$|^##\s+历史版本\s*$)/m;
   const match = indexText.match(latestSectionRe);
   if (!match) {
@@ -320,30 +320,54 @@ function upsertLatestReleaseIndex(indexText, version, latestLine, archiveHeading
   return updated;
 }
 
+// Insert a `vX.Y.Z` entry into a localized release-notes sidebar section of
+// `.vitepress/config.mts`. Section keys are double-quoted (`text: "Release Notes"`
+// / `text: "更新日志"`), so match either quote style, and reuse the indentation and
+// quote character of the section's existing `items` entries so the inserted lines
+// match the surrounding formatting. The new version is placed just before the
+// current newest `vX.Y.Z` entry so the list stays in descending order; the whole
+// operation is idempotent once `versionLink` is already present.
 function ensureVersionInSidebar(configText, sectionLabel, overviewText, overviewLink, version, versionLink) {
   const escapedLabel = sectionLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const sectionRe = new RegExp(
-    `text: '${escapedLabel}',\\s+items: \\[(.*?)\\]`,
-    's'
+    `(text:\\s*(['"])${escapedLabel}\\2,\\s*items:\\s*\\[)([\\s\\S]*?)(\\n[ \\t]*\\])`
   );
   const match = configText.match(sectionRe);
   if (!match) {
     die(`Could not find sidebar section '${sectionLabel}' in docs config`);
   }
 
-  let itemsBlock = match[1];
-  if (!itemsBlock.includes(overviewLink)) {
-    itemsBlock = `\n                                { text: '${overviewText}', link: '${overviewLink}' },${itemsBlock}`;
+  const prefix = match[1];
+  const closing = match[4];
+  let itemsBlock = match[3];
+
+  const hasLink = (link) =>
+    itemsBlock.includes(`"${link}"`) || itemsBlock.includes(`'${link}'`);
+
+  // Mirror the indentation and quote character of an existing entry.
+  const sample = itemsBlock.match(/\n([ \t]*)\{ text: (['"])/);
+  const indent = sample ? sample[1] : '                ';
+  const quote = sample ? sample[2] : '"';
+  const entryLine = (text, link) =>
+    `\n${indent}{ text: ${quote}${text}${quote}, link: ${quote}${link}${quote} },`;
+
+  if (!hasLink(overviewLink)) {
+    itemsBlock = `${entryLine(overviewText, overviewLink)}${itemsBlock}`;
   }
 
-  if (!itemsBlock.includes(versionLink)) {
-    itemsBlock = itemsBlock.replace(
-      /^(\s*)/,
-      `$1{ text: 'v${version}', link: '${versionLink}' },\n$1`
-    );
+  if (!hasLink(versionLink)) {
+    const newestVersion = itemsBlock.match(/\n[ \t]*\{ text: (['"])v\d+\.\d+\.\d+\1,/);
+    if (newestVersion) {
+      itemsBlock =
+        itemsBlock.slice(0, newestVersion.index) +
+        entryLine(`v${version}`, versionLink) +
+        itemsBlock.slice(newestVersion.index);
+    } else {
+      itemsBlock = `${itemsBlock}${entryLine(`v${version}`, versionLink)}`;
+    }
   }
 
-  return configText.replace(sectionRe, `text: '${sectionLabel}',\n                            items: [${itemsBlock}]`);
+  return configText.replace(sectionRe, () => `${prefix}${itemsBlock}${closing}`);
 }
 
 function updateDocsForVersion(repoRoot, version, dryRun, fromLatest) {
@@ -384,7 +408,6 @@ function updateDocsForVersion(repoRoot, version, dryRun, fromLatest) {
 
   const enIndex = upsertLatestReleaseIndex(
     readText(enIndexPath),
-    version,
     `- [\`v${version}\`](./v${version}.md) — draft release notes for the next rust-srec release`,
     '## Archive'
   );
@@ -392,7 +415,6 @@ function updateDocsForVersion(repoRoot, version, dryRun, fromLatest) {
 
   const zhIndex = upsertLatestReleaseIndex(
     readText(zhIndexPath),
-    version,
     `- [\`v${version}\`](./v${version}.md) — 新版本发布说明草稿，待补充最终摘要`,
     '## 历史版本'
   );
