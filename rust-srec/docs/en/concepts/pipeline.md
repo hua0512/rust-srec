@@ -9,11 +9,11 @@ A DAG pipeline defines a series of processing steps with dependencies. Steps run
 ```mermaid
 flowchart LR
     subgraph DAG["Example DAG Pipeline"]
-        R[📁 Recording] --> REMUX[🔄 Remux to MP4]
-        R --> THUMB[🖼️ Thumbnail]
-        REMUX --> UPLOAD[☁️ Upload]
+        R[Recording] --> REMUX[Remux to MP4]
+        REMUX --> THUMB[Generate thumbnail]
+        REMUX --> UPLOAD[Upload]
         THUMB --> UPLOAD
-        UPLOAD --> CLEANUP[🗑️ Cleanup]
+        UPLOAD --> CLEANUP[Cleanup]
     end
 ```
 
@@ -46,15 +46,18 @@ Each pipeline step is executed by a specialized processor:
 
 | Processor ID | Function | Core Parameters |
 |--------------|----------|-----------------|
-| `remux` | Changes container format without re-encoding | `format` (mp4, mkv...) |
+| `remux` | Changes container format, optionally re-encoding | `format`, `video_codec`, `audio_codec` |
 | `danmaku_factory` | Danmaku conversion | `output_format` (ass) |
-| `burn_in` | Hard burn subtitles into video | `video_path`, `subtitle_path` |
-| `thumbnail` | Extracts keyframes as thumbnails | `timestamp`, `width`, `height` |
+| `ass_burnin` | Hard-burn subtitles into video | Processor preset configuration |
+| `thumbnail` | Extracts a video frame as an image | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
+| `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate` |
+| `compression` | Transcodes video | Codec and quality settings |
 | `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `args` |
-| `tdl_upload` | Specific upload tool support | `args` |
+| `copy_move` | Copies or moves local files | Destination and operation settings |
+| `tdl` | Telegram upload through tdl | `args` |
 | `metadata` | Writes metadata (nfo, json) | - |
 | `delete` | Automatically cleans up files | - |
-| `execute` | Runs a custom Shell command/script | `command`, `args` |
+| `execute` | Runs a custom Shell command/script | `command`, `scan_output_dir`, `scan_extension` |
 
 ## Presets System
 
@@ -63,10 +66,43 @@ To improve efficiency, the system provides two types of presets:
 - **Job Preset**: A configuration template for a single step (e.g., "1080p Thumbnail Extraction").
 - **Pipeline Preset**: A full DAG workflow definition (e.g., "Bilibili Standard Recording Flow").
 
+## Data Routing
+
+Dependencies control both **when a step can run** and **which file paths it receives**:
+
+1. Every root step (a step with no dependencies) receives the pipeline trigger's original input list.
+2. A non-root step waits for all of its direct dependencies to complete.
+3. Its input list is the merged, de-duplicated output list from those direct dependencies, in `depends_on` order.
+4. Outputs from transitive ancestors are not inherited automatically.
+
+For a chain `A -> B -> C`, step `C` receives only the outputs reported by `B`. It does not also receive the outputs reported by `A`. This prevents replaced, deleted, or unrelated intermediate files from leaking into later steps.
+
+Processor outputs are also significant:
+
+- Transform processors such as `remux` and `compression` output the transformed file.
+- Derivative processors such as `thumbnail` and `audio_extract` output only the generated derivative, not their source file.
+- `rclone` `copy` and `sync` pass their local input paths through; `rclone` `move` produces no local outputs because it consumes the local files.
+- `delete` produces no outputs.
+
+Therefore, a linear `remux -> thumbnail -> rclone` graph sends only the thumbnail to `rclone`. To upload both the remuxed video and its thumbnail, route both producers directly to `rclone`:
+
+```mermaid
+flowchart LR
+    REMUX[Remux] --> THUMB[Thumbnail]
+    REMUX --> RCLONE[Rclone]
+    THUMB --> RCLONE
+```
+
+In this graph, `rclone` still waits for `thumbnail` because both `remux` and `thumbnail` are direct dependencies. The extra `remux -> rclone` edge routes the video; it does not make the upload start early.
+
 ## Advanced Features
 
 ### Parallelism & Dependencies (Fan-in / Fan-out)
-The DAG system supports complex topologies. For instance, you can run `remux` and `thumbnail` in parallel, while the `upload` step waits for both to succeed before starting (fan-in).
+
+- **Fan-out**: One step routes its outputs to multiple downstream steps. Those steps may run concurrently if all their other dependencies and worker capacity allow it.
+- **Fan-in**: One step has multiple direct dependencies. It waits for all of them and receives their merged outputs.
+
+Fan-out describes graph routing, not a guarantee of simultaneous execution.
 
 ### Automatic Cleanup
 A `delete` step removes the files produced by the steps it depends on — not the original recording. This is safe after an `upload` step (rclone copy passes the uploaded files through as its output), so a `delete` with `depends_on: upload` implements "delete the local copy after a successful upload".
@@ -74,7 +110,7 @@ A `delete` step removes the files produced by the steps it depends on — not th
 Do **not** place a `delete` step after a `remux`/transcode step: it would delete the converted result, because that is what the transcode produced. To delete the original source after converting, enable **Remove Input on Success** (`remove_input_on_success`) on the transcode step instead.
 
 ::: tip Performance Tip
-Re-encoding (like `burn_in`) is extremely CPU-intensive. It is recommended to limit the concurrency in the `cpu_pool` to avoid high system load that could impact download stability.
+Re-encoding (like `ass_burnin`) is extremely CPU-intensive. It is recommended to limit the concurrency in the `cpu_pool` to avoid high system load that could impact download stability.
 :::
 
 ## Key Concepts
@@ -87,9 +123,11 @@ Each step performs a single processing task:
 |-----------|-------------|
 | `remux` | Convert to different container (e.g., FLV → MP4) |
 | `thumbnail` | Extract thumbnail image |
-| `upload` | Upload to cloud storage |
-| `delete` | Delete the files produced by the previous step |
-| `preset` | Sub-DAG from preset |
+| `rclone` | Upload to cloud storage |
+| `delete` | Delete files produced by its direct dependencies |
+| `preset` | Run one step from a named job preset |
+| `workflow` | Expand a named pipeline preset as a sub-DAG |
+| `inline` | Run a processor with configuration embedded in the DAG |
 
 ### Dependencies
 
@@ -102,8 +140,8 @@ flowchart LR
     C --> D[Step D]
 ```
 
-- **Fan-out**: Multiple steps run in parallel from one source
-- **Fan-in**: One step waits for multiple dependencies
+- **Fan-out**: One step is a direct dependency of multiple downstream steps
+- **Fan-in**: One step waits for multiple direct dependencies and merges their outputs
 
 ### Execution States
 
@@ -126,23 +164,43 @@ stateDiagram-v2
   "steps": [
     {
       "id": "remux",
-      "step": {"type": "remux", "format": "mp4"}
+      "step": {"type": "preset", "name": "remux"},
+      "depends_on": []
     },
     {
       "id": "thumbnail",
-      "step": {"type": "thumbnail"}
+      "step": {"type": "preset", "name": "thumbnail"},
+      "depends_on": ["remux"]
     },
     {
       "id": "upload",
-      "step": {"type": "upload", "target": "s3"},
+      "step": {"type": "preset", "name": "upload"},
       "depends_on": ["remux", "thumbnail"]
     },
     {
       "id": "cleanup",
-      "step": {"type": "delete"},
+      "step": {"type": "preset", "name": "delete_source"},
       "depends_on": ["upload"]
     }
   ]
+}
+```
+
+A step can also use an inline processor instead of a job preset:
+
+```json
+{
+  "id": "thumbnail",
+  "step": {
+    "type": "inline",
+    "processor": "thumbnail",
+    "config": {
+      "timestamp_secs": 10,
+      "width": 640,
+      "quality": 2
+    }
+  },
+  "depends_on": ["remux"]
 }
 ```
 
