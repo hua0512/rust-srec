@@ -163,6 +163,42 @@ describe('ThemeSettingsSync', () => {
     expect(cache.css).toContain('--primary:oklch(0 0 0)');
   });
 
+  it('collapses duplicate style elements and updates the survivor', () => {
+    // Two elements can exist when the blocking script ran again after
+    // hydration (router-evaluated head() scripts) before it grew its
+    // existence guard. getElementById only updates the first, so a stale
+    // second element later in <head> would win the cascade and freeze the
+    // visible theme.
+    render(<ThemeSettingsSync />);
+    for (const css of [':root{--primary:red;}', ':root{--primary:blue;}']) {
+      const el = document.createElement('style');
+      el.id = USER_THEME_STYLE_ID;
+      el.textContent = css;
+      document.head.appendChild(el);
+    }
+
+    useThemeSettings.getState().setPreset('black');
+
+    const all = document.querySelectorAll(`[id="${USER_THEME_STYLE_ID}"]`);
+    expect(all).toHaveLength(1);
+    expect(all[0].textContent).toContain('--primary:oklch(0 0 0)');
+  });
+
+  it('removes every duplicate style element when settings are pristine', () => {
+    for (const css of [':root{--primary:red;}', ':root{--primary:blue;}']) {
+      const el = document.createElement('style');
+      el.id = USER_THEME_STYLE_ID;
+      el.textContent = css;
+      document.head.appendChild(el);
+    }
+
+    render(<ThemeSettingsSync />);
+
+    expect(
+      document.querySelectorAll(`[id="${USER_THEME_STYLE_ID}"]`),
+    ).toHaveLength(0);
+  });
+
   it('clears the css cache synchronously when settings return to pristine', () => {
     seedPersistedSettings({ preset: 'black' });
     render(<ThemeSettingsSync />);
