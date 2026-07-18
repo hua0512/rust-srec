@@ -34,6 +34,7 @@ import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { getMediaUrl } from '@/lib/url';
+import { resolvePlayerMediaType } from '@/lib/media';
 import { formatDuration } from '@/lib/format';
 import { BackendApiError } from '@/lib/api-error';
 import type { MediaOutput } from '@/api/schemas/system';
@@ -109,7 +110,7 @@ async function listAllSessionSegments(
 function SessionDetailPage() {
   const { sessionId } = Route.useParams();
   const { user } = Route.useRouteContext();
-  const [playingOutput, setPlayingOutput] = useState<any>(null);
+  const [playingOutput, setPlayingOutput] = useState<MediaOutput | null>(null);
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
@@ -424,6 +425,13 @@ function SessionDetailPage() {
                       ) || ''
                     }
                     title={playingOutput.file_path.split('/').pop()}
+                    mediaType={resolvePlayerMediaType(
+                      undefined,
+                      playingOutput.file_path,
+                    )}
+                    isLive={false}
+                    mediaDurationSecs={playingOutput.duration_secs}
+                    mediaFileSizeBytes={playingOutput.file_size_bytes}
                     className="w-full h-full border-0 rounded-none bg-black"
                     contentClassName="min-h-0"
                     defaultWebFullscreen
