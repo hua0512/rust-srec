@@ -60,6 +60,10 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 
   Seeking through a recorded FLV or MPEG-TS stream in the player — including in fullscreen or maximized view — no longer leaves the picture frozen on a black frame. Playback now lands on a nearby keyframe reliably, and if a seek does stall, the player rebuilds the playback pipeline once on its own and surfaces a visible error only if it still cannot recover. Live playback is unchanged.
 
+- **Recorded danmaku shows the right times, names, gifts, and super chats**
+
+  Replaying a recording's danmaku now shows correct timestamps and sender names, and gifts and super chats appear on the timeline alongside chat messages. Large danmaku files are parsed in the background instead of on the main thread, so opening the chat for a long recording no longer freezes the interface. Danmaku imported from standard Bilibili XML files continues to work.
+
 ## HLS recording engine
 
 - **Rebuilt HLS engine for more predictable recording**
@@ -139,6 +143,14 @@ The dashboard's theme system was rebuilt as well. Dark mode and custom themes no
 - **Long step lists remain accessible**
 
   Pipeline configuration editors now scroll long lists of DAG steps within the editor instead of clipping steps below the visible area. Graph view also respects the same bounded editor height.
+
+- **Clearer graph view for branching pipelines**
+
+  The DAG graph view now lays out branching and merging dependencies more clearly. Direct connections no longer overlap the alternate multi-step paths between the same steps, crossing lines are reduced, and edges and arrowheads are stronger so the direction of each dependency is easier to follow. This only affects how the graph is drawn; it does not change how the pipeline runs.
+
+- **Manually placed steps keep their position**
+
+  Steps you drag into place in the graph now stay where you put them when you add or remove other steps, instead of snapping back on every change. Newly added steps appear next to the steps they depend on without landing on top of existing nodes, and the **Auto Layout** action re-arranges everything automatically and refits the view whenever you want the computed layout back.
 
 ## Pipeline uploads
 
