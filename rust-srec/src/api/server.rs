@@ -2,6 +2,7 @@
 
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, Request};
+use axum::http::header;
 use axum::serve::ListenerExt;
 use dashmap::DashMap;
 use std::net::SocketAddr;
@@ -441,7 +442,12 @@ impl ApiServer {
             let cors = CorsLayer::new()
                 .allow_origin(Any)
                 .allow_methods(Any)
-                .allow_headers(Any);
+                .allow_headers(Any)
+                .expose_headers([
+                    header::ACCEPT_RANGES,
+                    header::CONTENT_LENGTH,
+                    header::CONTENT_RANGE,
+                ]);
             router = router.layer(cors);
         }
 

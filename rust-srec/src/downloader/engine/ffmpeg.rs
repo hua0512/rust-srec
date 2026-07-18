@@ -19,6 +19,47 @@ use super::utils::{
 use crate::Result;
 use crate::database::models::engine::FfmpegEngineConfig;
 
+fn is_mp4_family(format: &str) -> bool {
+    matches!(
+        format
+            .trim()
+            .trim_start_matches('.')
+            .to_ascii_lowercase()
+            .as_str(),
+        "mp4" | "mov" | "m4v"
+    )
+}
+
+fn contains_option(args: &[String], name: &str) -> bool {
+    args.iter().any(|arg| {
+        arg == name
+            || arg
+                .strip_prefix(name)
+                .is_some_and(|suffix| suffix.starts_with('='))
+    })
+}
+
+fn append_faststart_option(
+    args: &mut Vec<String>,
+    output_args: &[String],
+    output_format: &str,
+    segment_mode: bool,
+) {
+    if !is_mp4_family(output_format) {
+        return;
+    }
+
+    let (option, value) = if segment_mode {
+        ("-segment_format_options", "movflags=+faststart")
+    } else {
+        ("-movflags", "+faststart")
+    };
+
+    if !contains_option(output_args, option) {
+        args.extend([option.to_string(), value.to_string()]);
+    }
+}
+
 /// FFmpeg-based download engine.
 pub struct FfmpegEngine {
     /// Engine configuration.
@@ -106,8 +147,10 @@ impl FfmpegEngine {
             args.extend(["-fs".to_string(), config.max_segment_size_bytes.to_string()]);
         }
 
+        let segment_mode = config.max_segment_duration_secs > 0;
+
         // Segment options if splitting is enabled
-        if config.max_segment_duration_secs > 0 {
+        if segment_mode {
             args.extend([
                 "-f".to_string(),
                 "segment".to_string(),
@@ -120,13 +163,20 @@ impl FfmpegEngine {
             ]);
         }
 
+        append_faststart_option(
+            &mut args,
+            &self.config.output_args,
+            &config.output_format,
+            segment_mode,
+        );
+
         // Output path
         let output_path = config.output_dir.join(format!(
             "{}.{}",
             config.filename_template, config.output_format
         ));
 
-        if config.max_segment_duration_secs > 0 {
+        if segment_mode {
             // Use segment pattern with strftime enabled by -strftime 1 flag
             // In strftime mode, %d is the segment counter (not day-of-month)
             // TODO : ENSURE USER PATH IS VALID
@@ -604,6 +654,76 @@ impl DownloadEngine for FfmpegEngine {
 mod tests {
     use super::*;
     use crate::downloader::engine::utils::parse_time;
+
+    fn engine_with_output_args(output_args: &[&str]) -> FfmpegEngine {
+        FfmpegEngine {
+            config: FfmpegEngineConfig {
+                output_args: output_args.iter().map(ToString::to_string).collect(),
+                ..Default::default()
+            },
+            version: None,
+        }
+    }
+
+    fn download_config(format: &str, segment_duration_secs: u64) -> DownloadConfig {
+        DownloadConfig::new(
+            "https://example.com/live",
+            "recordings",
+            "streamer-id",
+            "Streamer",
+            "session-id",
+        )
+        .with_filename_template("recording-%Y%m%d-%H%M%S")
+        .with_output_format(format)
+        .with_max_segment_duration(segment_duration_secs)
+    }
+
+    fn has_arg_pair(args: &[String], option: &str, value: &str) -> bool {
+        args.windows(2)
+            .any(|pair| pair[0] == option && pair[1] == value)
+    }
+
+    #[test]
+    fn mp4_output_uses_faststart() {
+        let args = engine_with_output_args(&[]).build_args(&download_config("mp4", 0));
+
+        assert!(has_arg_pair(&args, "-movflags", "+faststart"));
+        assert!(!contains_option(&args, "-segment_format_options"));
+    }
+
+    #[test]
+    fn segmented_mp4_output_passes_faststart_to_the_segment_muxer() {
+        let args = engine_with_output_args(&[]).build_args(&download_config("MP4", 60));
+
+        assert!(has_arg_pair(
+            &args,
+            "-segment_format_options",
+            "movflags=+faststart"
+        ));
+        assert!(!contains_option(&args, "-movflags"));
+    }
+
+    #[test]
+    fn non_mp4_output_does_not_use_faststart() {
+        let args = engine_with_output_args(&[]).build_args(&download_config("mkv", 0));
+
+        assert!(!contains_option(&args, "-movflags"));
+        assert!(!contains_option(&args, "-segment_format_options"));
+    }
+
+    #[test]
+    fn custom_faststart_option_is_not_overridden() {
+        let args = engine_with_output_args(&["-movflags=+frag_keyframe"])
+            .build_args(&download_config("mp4", 0));
+
+        assert_eq!(
+            args.iter()
+                .filter(|arg| arg.starts_with("-movflags"))
+                .count(),
+            1
+        );
+        assert!(!args.iter().any(|arg| arg == "+faststart"));
+    }
 
     #[test]
     fn test_parse_time() {
