@@ -3937,7 +3937,7 @@ msgstr "初始延迟（ms）"
 msgid "Initial Fetch Timeout (ms)"
 msgstr "初始获取超时（ms）"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:156
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:154
 msgid "inline"
 msgstr "内联"
 
@@ -5970,7 +5970,7 @@ msgstr "首选画质 (QN)"
 msgid "Preserve Paths"
 msgstr "保留路径"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:158
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:156
 msgid "preset"
 msgstr "预设"
 
@@ -6481,7 +6481,7 @@ msgstr "若输出文件已存在则替换"
 msgid "Replace Pipeline Step"
 msgstr "替换管道步骤"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:97
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:95
 #: src/components/pipeline/workflows/steps-list.tsx:206
 msgid "Replace Step"
 msgstr "替换步骤"
@@ -7850,7 +7850,7 @@ msgstr "这些设置仅适用于桌面应用。服务器仍将正常发送通道
 msgid "These timeouts are applied when the pipeline worker pools start. Changes require a restart to take effect."
 msgstr "这些超时设置在管道工作线程池启动时应用。更改需要重启才能生效。"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:79
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:77
 #: src/components/pipeline/workflows/steps-list.tsx:165
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "此删除步骤删除的是转码后的结果文件，而不是原始录制文件。请改为在转码步骤上启用“成功后移除输入”。"
@@ -8701,7 +8701,7 @@ msgstr "宽度（像素，保持宽高比）"
 msgid "Windows Console Error"
 msgstr "Windows 控制台错误"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:160
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:158
 msgid "workflow"
 msgstr "工作流"
 

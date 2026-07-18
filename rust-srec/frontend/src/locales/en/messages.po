@@ -3937,7 +3937,7 @@ msgstr "Initial Delay (ms)"
 msgid "Initial Fetch Timeout (ms)"
 msgstr "Initial Fetch Timeout (ms)"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:156
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:154
 msgid "inline"
 msgstr "inline"
 
@@ -5970,7 +5970,7 @@ msgstr "Preferred Quality (QN)"
 msgid "Preserve Paths"
 msgstr "Preserve Paths"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:158
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:156
 msgid "preset"
 msgstr "preset"
 
@@ -6481,7 +6481,7 @@ msgstr "Replace output files if they already exist"
 msgid "Replace Pipeline Step"
 msgstr "Replace Pipeline Step"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:97
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:95
 #: src/components/pipeline/workflows/steps-list.tsx:206
 msgid "Replace Step"
 msgstr "Replace Step"
@@ -7850,7 +7850,7 @@ msgstr "These settings only apply to the desktop app. The server will still deli
 msgid "These timeouts are applied when the pipeline worker pools start. Changes require a restart to take effect."
 msgstr "These timeouts are applied when the pipeline worker pools start. Changes require a restart to take effect."
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:79
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:77
 #: src/components/pipeline/workflows/steps-list.tsx:165
 msgid "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
 msgstr "This Delete step deletes the converted result, not the original recording. Enable \"Remove Input on Success\" on the transcode step instead."
@@ -8701,7 +8701,7 @@ msgstr "Width in pixels (keeps aspect ratio)"
 msgid "Windows Console Error"
 msgstr "Windows Console Error"
 
-#: src/components/pipeline/workflows/flow-editor/step-node.tsx:160
+#: src/components/pipeline/workflows/flow-editor/step-node.tsx:158
 msgid "workflow"
 msgstr "workflow"
 
