@@ -579,6 +579,47 @@ fn autoscale_concurrency_limit(raw: i32) -> usize {
     (cores / 2).max(1)
 }
 
+fn broadcast_error_is_recoverable(
+    subscriber: &'static str,
+    error: tokio::sync::broadcast::error::RecvError,
+) -> bool {
+    match error {
+        tokio::sync::broadcast::error::RecvError::Lagged(skipped) => {
+            warn!(
+                subscriber,
+                skipped, "Broadcast subscriber lagged; continuing from the newest available event"
+            );
+            true
+        }
+        tokio::sync::broadcast::error::RecvError::Closed => {
+            debug!(subscriber, "Broadcast channel closed");
+            false
+        }
+    }
+}
+
+struct ServiceContainerBuildOptions {
+    cache_ttl: Duration,
+    event_capacity: usize,
+    download_config: DownloadManagerConfig,
+    pipeline_config: PipelineManagerConfig,
+    danmu_config: DanmuServiceConfig,
+    api_config: ApiServerConfig,
+}
+
+impl ServiceContainerBuildOptions {
+    fn standard(cache_ttl: Duration, event_capacity: usize) -> Self {
+        Self {
+            cache_ttl,
+            event_capacity,
+            download_config: DownloadManagerConfig::default(),
+            pipeline_config: PipelineManagerConfig::default(),
+            danmu_config: DanmuServiceConfig::default(),
+            api_config: ApiServerConfig::from_env_or_default(),
+        }
+    }
+}
+
 /// Service container holding all application services.
 pub struct ServiceContainer {
     /// Database connection pool (read-heavy).
@@ -728,325 +769,41 @@ fn wire_check_history_pipeline(
 
 impl ServiceContainer {
     /// Create a new service container with the given database pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the persisted global configuration cannot be loaded or initialized.
     pub async fn new(pool: SqlitePool, write_pool: SqlitePool) -> Result<Self> {
         Self::with_config(pool, write_pool, DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY).await
     }
 
-    /// Create a new service container with custom configuration.
+    /// Create a new service container with custom cache and event capacity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the persisted global configuration cannot be loaded or initialized.
     pub async fn with_config(
         pool: SqlitePool,
         write_pool: SqlitePool,
         cache_ttl: Duration,
         event_capacity: usize,
     ) -> Result<Self> {
-        // Apply the backend locale before any `t!` call can run. Reads
-        // `RUST_SREC_LOCALE`; no-op when unset. Must precede anything that
-        // may emit a localized notification string.
-        crate::i18n::init_from_env();
-
-        info!("Initializing service container");
-
-        // Create repositories
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), write_pool.clone()));
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(
-            pool.clone(),
-            write_pool.clone(),
-        ));
-
-        // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
-        let global_config = config_repo.get_global_config().await?;
-
-        // Create shared event broadcaster
-        let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
-
-        // Create additional repositories for StreamMonitor
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), write_pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
-
-        // Create config service with custom cache
-        let cache = ConfigCache::with_ttl(cache_ttl);
-        let config_service = Arc::new(ConfigService::with_cache_and_broadcaster(
-            config_repo.clone(),
-            streamer_repo.clone(),
-            cache,
-            event_broadcaster.clone(),
-        ));
-
-        // Create streamer manager
-        let streamer_manager = Arc::new(StreamerManager::new(
-            streamer_repo.clone(),
-            event_broadcaster.clone(),
-        ));
-
-        // Construct the single-owner session lifecycle service up-front so
-        // the stream monitor can delegate its atomic session+streamer+outbox
-        // writes to it.
-        //
-        // The hysteresis backstop window is derived from the same scheduler
-        // tunables the actor uses for offline confirmation — single source
-        // of truth, no parallel tunable.
-        let hysteresis_config = crate::session::HysteresisConfig::from_scheduler(
-            global_config.offline_check_count as u32,
-            global_config.offline_check_delay_ms as u64,
-        );
-        // Per-streamer resolver: read the cached effective values off the
-        // streamer manager's metadata so platform/template/streamer
-        // overrides take effect at hysteresis-arming time.
-        let sm_for_resolver = streamer_manager.clone();
-        let hysteresis_resolver: crate::session::HysteresisWindowFn =
-            std::sync::Arc::new(move |streamer_id: &str| {
-                sm_for_resolver.get_streamer(streamer_id).map(|m| {
-                    crate::session::HysteresisConfig::from_scheduler(
-                        m.effective_offline_check_count,
-                        m.effective_offline_check_delay_ms,
-                    )
-                })
-            });
-        // Standalone session-event repository for the two best-effort
-        // audit writes (`hysteresis_entered`, `session_resumed`). Atomic-tx
-        // writes for `session_started` / `session_ended` go through the
-        // `SessionLifecycleRepository` directly.
-        let session_event_repo: Arc<dyn crate::database::repositories::SessionEventRepository> =
-            Arc::new(
-                crate::database::repositories::SqlxSessionEventRepository::new(
-                    pool.clone(),
-                    write_pool.clone(),
-                ),
-            );
-        // Classifier window/threshold derived from the same scheduler
-        // tunables — single source of truth alongside the hysteresis
-        // backstop (no parallel knob, no hardcoded 60 s).
-        let offline_classifier = Arc::new(crate::session::OfflineClassifier::from_scheduler(
-            global_config.offline_check_count as u32,
-            global_config.offline_check_delay_ms as u64,
-        ));
-        let session_lifecycle = Arc::new(
-            crate::session::SessionLifecycle::with_config(
-                Arc::new(
-                    crate::database::repositories::SessionLifecycleRepository::new(
-                        write_pool.clone(),
-                    ),
-                ),
-                offline_classifier,
-                crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
-                hysteresis_config,
-            )
-            .with_hysteresis_resolver(hysteresis_resolver)
-            .with_event_repo(session_event_repo.clone()),
-        );
-
-        // Create stream monitor for real status detection
-        let mut stream_monitor = StreamMonitor::new(
-            streamer_manager.clone(),
-            filter_repo,
-            session_repo.clone(),
-            config_service.clone(),
-            write_pool.clone(),
-            session_lifecycle.clone(),
-        );
-
-        // Create notification service with default config (also used for credential events).
-        let notification_repository = Arc::new(SqlxNotificationRepository::new(
-            pool.clone(),
-            write_pool.clone(),
-        ));
-        let web_push_service = WebPushService::from_env(pool.clone(), write_pool.clone())
-            .unwrap_or_else(|e| {
-                warn!(error = %e, "Web push service disabled due to configuration error");
-                None
-            })
-            .map(Arc::new);
-
-        let mut notification_service = NotificationService::with_repository(
-            NotificationServiceConfig::default(),
-            notification_repository.clone(),
-        );
-        if let Some(web_push) = web_push_service.clone() {
-            notification_service = notification_service.with_web_push_service(web_push);
-        }
-        let notification_service = Arc::new(notification_service);
-        notification_service.start_web_push_worker();
-
-        // Build credential refresh service (shared between StreamMonitor + API).
-        let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
-        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone(), write_pool.clone()));
-        let mut credential_service =
-            CredentialRefreshService::new(credential_resolver, credential_store);
-        credential_service.set_notification_service(Arc::clone(&notification_service));
-        match BilibiliCredentialManager::new_lazy() {
-            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
-            Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
-        }
-        match SoopCredentialManager::new_lazy() {
-            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
-            Err(e) => warn!(error = %e, "Failed to init SOOP credential manager; skipping"),
-        }
-        let credential_service = Arc::new(credential_service);
-        stream_monitor.set_credential_service(Arc::clone(&credential_service));
-        let stream_monitor = Arc::new(stream_monitor);
-
-        // Create download manager with default config, overridden by global config.
-        let download_config = DownloadManagerConfig {
-            max_concurrent_downloads: (global_config.max_concurrent_downloads as i64).max(1)
-                as usize,
-            ..Default::default()
-        };
-        let download_manager = Arc::new(
-            DownloadManager::with_config(download_config).with_config_repo(config_repo.clone()),
-        );
-        download_manager
-            .set_queue_freshness_threshold_ms(global_config.queue_freshness_threshold_ms);
-
-        // Build the output-root write gate (#508) now that StreamerManager
-        // and NotificationService are both available. The gate holds a
-        // Weak<NotificationService> so its lifetime stays independent, and
-        // a recovery hook closure that resets affected streamers when a
-        // root transitions back to Healthy. Attach via the late-bind
-        // setter since `download_manager` is already wrapped in Arc.
-        let output_root_gate = OutputRootGate::new(
-            Arc::downgrade(&notification_service),
-            build_output_root_gate_recovery_hook(streamer_manager.clone()),
-            parse_output_roots_env(),
-            Duration::from_secs(DEFAULT_GATE_COOLDOWN_SECS),
-        );
-        download_manager.set_output_root_gate(output_root_gate.clone());
-
-        // Create job repository for pipeline persistence
-        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
-
-        // Create job preset repository
-        let preset_repo = Arc::new(SqliteJobPresetRepository::new(
-            pool.clone().into(),
-            write_pool.clone().into(),
-        ));
-
-        // Create pipeline preset repository
-        let pipeline_preset_repo = Arc::new(SqlitePipelinePresetRepository::new(
-            pool.clone().into(),
-            write_pool.clone().into(),
-        ));
-
-        // Create pipeline manager with job repository for database persistence.
-        // Wire global-config concurrency knobs into CPU/IO worker pool sizes.
-        let mut pipeline_config = PipelineManagerConfig::default();
-        pipeline_config.cpu_pool.max_workers =
-            autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
-        pipeline_config.io_pool.max_workers =
-            autoscale_concurrency_limit(global_config.max_concurrent_io_jobs);
-
-        // Pipeline job timeouts are configured via global config.
-        // NOTE: These are applied at startup; changing them at runtime requires restart.
-        pipeline_config.cpu_pool.job_timeout_secs =
-            global_config.pipeline_cpu_job_timeout_secs.max(1) as u64;
-        pipeline_config.io_pool.job_timeout_secs =
-            global_config.pipeline_io_job_timeout_secs.max(1) as u64;
-        pipeline_config.execute_timeout_secs =
-            global_config.pipeline_execute_timeout_secs.max(1) as u64;
-        let pipeline_manager = Arc::new(
-            PipelineManager::with_repository(pipeline_config, job_repo)
-                .with_session_repository(session_repo.clone())
-                .with_streamer_repository(streamer_repo.clone())
-                .with_preset_repository(preset_repo)
-                .with_pipeline_preset_repository(pipeline_preset_repo)
-                .with_config_service(config_service.clone())
-                .with_dag_repository(Arc::new(SqlxDagRepository::new(
-                    pool.clone(),
-                    write_pool.clone(),
-                ))),
-        );
-
-        // Event broadcaster
-        let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
-
-        // Create danmu service with default config
-        let danmu_service = Arc::new(
-            DanmuService::new(DanmuServiceConfig::default())
-                .with_session_repository(session_repo.clone()),
-        );
-
-        // Create metrics collector
-        let metrics_collector = Arc::new(MetricsCollector::new());
-        if let Some(web_push) = web_push_service.as_ref() {
-            web_push.set_metrics_collector(metrics_collector.clone());
-        }
-
-        // Create health checker
-        let health_checker = Arc::new(HealthChecker::new());
-
-        // Retention values are loaded from global_config on every sweep.
-        let maintenance_config = MaintenanceConfig::default();
-        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
-            pool.clone(),
-            write_pool.clone(),
-            maintenance_config,
-        ));
-
-        // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
-        let cancellation_token = CancellationToken::new();
-
-        let scheduler_config = crate::scheduler::SchedulerConfig {
-            check_interval_ms: global_config.streamer_check_delay_ms as u64,
-            offline_check_interval_ms: global_config.offline_check_delay_ms as u64,
-            offline_check_count: global_config.offline_check_count as u32,
-            supervisor_config: crate::scheduler::actor::SupervisorConfig::default(),
-        };
-
-        // Wire the streamer-check-history pipeline (writer feeds the
-        // monitor-side polling path; broadcaster feeds the WS route loop).
-        let (check_history_writer, check_history_broadcaster) =
-            wire_check_history_pipeline(&pool, &write_pool, &cancellation_token);
-
-        // Create scheduler with StreamMonitor for real status checking
-        let scheduler = Arc::new(tokio::sync::RwLock::new(
-            Scheduler::with_monitor_history_and_config(
-                streamer_manager.clone(),
-                event_broadcaster.clone(),
-                stream_monitor.clone(),
-                Some(check_history_writer),
-                scheduler_config,
-                cancellation_token.child_token(),
-            )
-            .with_config_repo(config_repo.clone()),
-        ));
-
-        info!("Service container initialized");
-
-        Ok(Self {
+        Self::build(
             pool,
             write_pool,
-            config_service,
-            streamer_manager,
-            event_broadcaster,
-            download_manager,
-            session_repository: session_repo,
-            output_root_gate,
-            gpu_health_monitor: std::sync::OnceLock::new(),
-            pipeline_manager,
-            monitor_event_broadcaster,
-            session_lifecycle,
-            danmu_service,
-            notification_service,
-            notification_repository,
-            web_push_service,
-            metrics_collector,
-            health_checker,
-            maintenance_scheduler,
-            scheduler,
-            stream_monitor,
-            credential_service,
-            check_history_broadcaster,
-            session_cancels: Arc::new(SessionCancelTokens::new()),
-            pending_pipelines: Arc::new(DashMap::new()),
-            api_server_config: ApiServerConfig::from_env_or_default(),
-            cancellation_token,
-            logging_config: std::sync::OnceLock::new(),
-            discarded_segment_keys: Arc::new(DashMap::new()),
-            scheduler_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
-            maintenance_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
-        })
+            ServiceContainerBuildOptions::standard(cache_ttl, event_capacity),
+        )
+        .await
     }
 
-    /// Create a new service container with custom download and pipeline configs.
+    /// Create a service container with custom subsystem configs.
+    ///
+    /// Database-backed global settings remain authoritative for download concurrency,
+    /// pipeline worker counts, pipeline timeouts, and queue freshness.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the persisted global configuration cannot be loaded or initialized.
     #[allow(clippy::too_many_arguments)]
     pub async fn with_full_config(
         pool: SqlitePool,
@@ -1058,8 +815,39 @@ impl ServiceContainer {
         danmu_config: DanmuServiceConfig,
         api_config: ApiServerConfig,
     ) -> Result<Self> {
+        Self::build(
+            pool,
+            write_pool,
+            ServiceContainerBuildOptions {
+                cache_ttl,
+                event_capacity,
+                download_config,
+                pipeline_config,
+                danmu_config,
+                api_config,
+            },
+        )
+        .await
+    }
+
+    async fn build(
+        pool: SqlitePool,
+        write_pool: SqlitePool,
+        options: ServiceContainerBuildOptions,
+    ) -> Result<Self> {
+        let ServiceContainerBuildOptions {
+            cache_ttl,
+            event_capacity,
+            download_config,
+            pipeline_config,
+            danmu_config,
+            api_config,
+        } = options;
+
+        crate::i18n::init_from_env();
+
         let overall = Instant::now();
-        info!("Initializing service container with full configuration");
+        info!("Initializing service container");
 
         // Create repositories
         let repos_start = Instant::now();
@@ -1187,7 +975,7 @@ impl ServiceContainer {
 
         // Create download manager with custom config, overridden by global config for concurrency.
         let download_manager_start = Instant::now();
-        let mut effective_download_config = download_config.clone();
+        let mut effective_download_config = download_config;
         effective_download_config.max_concurrent_downloads =
             (global_config.max_concurrent_downloads as i64).max(1) as usize;
         let download_manager = Arc::new(
@@ -1278,6 +1066,7 @@ impl ServiceContainer {
         }
         let notification_service = Arc::new(notification_service);
         notification_service.start_web_push_worker();
+        credential_service.set_notification_service(Arc::clone(&notification_service));
         let notification_service_ms = notification_service_start.elapsed().as_millis();
         let web_push_enabled = web_push_service.is_some();
 
@@ -1375,7 +1164,7 @@ impl ServiceContainer {
             "Startup: service container build summary"
         );
 
-        info!("Service container initialized with full configuration and real status checking");
+        info!("Service container initialized with real status checking");
 
         Ok(Self {
             pool,
@@ -1854,9 +1643,21 @@ impl ServiceContainer {
                         break;
                     }
                     result = receiver.recv() => {
-                        match result {
-                            Ok(event) => {
-                                match event {
+                        let event = match result {
+                            Ok(event) => Some(event),
+                            Err(error) => {
+                                if broadcast_error_is_recoverable("config", error) {
+                                    Some(ConfigUpdateEvent::GlobalUpdated)
+                                } else {
+                                    None
+                                }
+                            }
+                        };
+                        let Some(event) = event else {
+                            break;
+                        };
+
+                        match event {
                                     ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => {
                                         // Ensure merged config cache is not stale after streamer/template/platform changes.
                                         config_service.invalidate_streamer(&streamer_id);
@@ -2099,9 +1900,6 @@ impl ServiceContainer {
                                             streamer_id
                                         );
                                     }
-                                }
-                            }
-                            Err(_) => break,
                         }
                     }
                 }
@@ -2703,7 +2501,11 @@ impl ServiceContainer {
                                     /* from_hysteresis_resume */ false,
                                 ).await;
                             }
-                            Err(_) => break,
+                            Err(error) => {
+                                if !broadcast_error_is_recoverable("monitor", error) {
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -2918,7 +2720,11 @@ impl ServiceContainer {
                                     }
                                 }
                             }
-                            Err(_) => break,
+                            Err(error) => {
+                                if !broadcast_error_is_recoverable("danmu", error) {
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -4445,10 +4251,77 @@ pub struct ServiceStats {
 #[cfg(test)]
 mod tests {
     use super::{
-        RECOVERY_PROGRESS_MIN_BYTES, should_end_stream_on_danmu_stream_closed,
-        should_record_recovery_from_progress,
+        RECOVERY_PROGRESS_MIN_BYTES, broadcast_error_is_recoverable,
+        should_end_stream_on_danmu_stream_closed, should_record_recovery_from_progress,
     };
     use crate::downloader::engine::DownloadProgress;
+
+    async fn migrated_test_pool() -> sqlx::SqlitePool {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .expect("test database should initialize");
+        crate::database::run_migrations(&pool)
+            .await
+            .expect("test migrations should succeed");
+        pool
+    }
+
+    #[tokio::test]
+    async fn broadcast_lag_is_recoverable_and_receiver_remains_usable() {
+        let (sender, mut receiver) = tokio::sync::broadcast::channel(1);
+        assert!(sender.send(1).is_ok());
+        assert!(sender.send(2).is_ok());
+
+        let error = receiver.recv().await.expect_err("receiver should lag");
+        assert!(broadcast_error_is_recoverable("test", error));
+        assert_eq!(receiver.recv().await, Ok(2));
+    }
+
+    #[tokio::test]
+    async fn closed_broadcast_channel_is_terminal() {
+        let (sender, mut receiver) = tokio::sync::broadcast::channel::<u8>(1);
+        drop(sender);
+
+        let error = receiver.recv().await.expect_err("channel should be closed");
+        assert!(!broadcast_error_is_recoverable("test", error));
+    }
+
+    #[tokio::test]
+    async fn full_config_wires_credential_notifications() {
+        let pool = migrated_test_pool().await;
+
+        let container = super::ServiceContainer::with_full_config(
+            pool.clone(),
+            pool,
+            std::time::Duration::from_secs(60),
+            8,
+            crate::downloader::DownloadManagerConfig::default(),
+            crate::pipeline::PipelineManagerConfig::default(),
+            crate::danmu::service::DanmuServiceConfig::default(),
+            crate::api::server::ApiServerConfig::default(),
+        )
+        .await
+        .expect("full service container should initialize");
+
+        assert!(container.credential_service.has_notification_service());
+        container.cancellation_token().cancel();
+    }
+
+    #[tokio::test]
+    async fn standard_config_uses_the_unified_build_path() {
+        let pool = migrated_test_pool().await;
+        let container = super::ServiceContainer::with_config(
+            pool.clone(),
+            pool,
+            std::time::Duration::from_secs(60),
+            8,
+        )
+        .await
+        .expect("standard service container should initialize");
+
+        assert!(container.credential_service.has_notification_service());
+        container.cancellation_token().cancel();
+    }
 
     #[test]
     fn test_should_end_stream_on_danmu_stream_closed_defaults_true() {
