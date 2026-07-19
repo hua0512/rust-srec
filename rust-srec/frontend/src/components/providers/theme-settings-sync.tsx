@@ -114,6 +114,17 @@ function isPristine(settings: ThemeSettingsSnapshot): boolean {
 function applyThemeSideEffects(settings: ThemeSettingsSnapshot): void {
   if (typeof document === 'undefined') return;
 
+  // The blocking script (theme-script.ts) can run both at parse time and when
+  // the router evaluates head() scripts after hydration. It guards against
+  // creating a duplicate itself, but keep the invariant enforced here too:
+  // getElementById below only ever updates the first element, so any extra
+  // element later in <head> would win the cascade with equal specificity and
+  // freeze the visible theme. Drop everything but the first before updating.
+  const duplicates = document.querySelectorAll(
+    `style[id="${USER_THEME_STYLE_ID}"]`,
+  );
+  for (let i = 1; i < duplicates.length; i++) duplicates[i].remove();
+
   const existing = document.getElementById(USER_THEME_STYLE_ID);
 
   if (isPristine(settings)) {

@@ -90,18 +90,27 @@ function themeScript(
   el.style.colorScheme = resolved;
 
   try {
-    var raw = localStorage.getItem(cacheKey);
-    if (raw) {
-      var entry = JSON.parse(raw);
-      if (entry && entry.v === cacheId && typeof entry.css === 'string') {
-        var style = document.createElement('style');
-        style.id = styleId;
-        style.textContent = entry.css;
-        // Position in <head> does not matter: the cached css uses
-        // over-specific selectors (:root:root — see compileThemeCss in
-        // theme-settings-sync.tsx) precisely because the styles.css <link>
-        // may not exist in the DOM yet while this runs during parse.
-        document.head.appendChild(style);
+    // This script runs more than once per document: as the parse-time inline
+    // script from the server/desktop HTML, and again when the router
+    // evaluates the root route's head() scripts after hydration. Once the
+    // element exists, ThemeSettingsSync owns it (applyThemeSideEffects
+    // updates it in place via getElementById) — creating a second element
+    // here would sit later in <head> and, with equal specificity, shadow
+    // every live update made to the first one.
+    if (!document.getElementById(styleId)) {
+      var raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        var entry = JSON.parse(raw);
+        if (entry && entry.v === cacheId && typeof entry.css === 'string') {
+          var style = document.createElement('style');
+          style.id = styleId;
+          style.textContent = entry.css;
+          // Position in <head> does not matter: the cached css uses
+          // over-specific selectors (:root:root — see compileThemeCss in
+          // theme-settings-sync.tsx) precisely because the styles.css <link>
+          // may not exist in the DOM yet while this runs during parse.
+          document.head.appendChild(style);
+        }
       }
     }
   } catch {
