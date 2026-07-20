@@ -26,7 +26,7 @@ impl ServiceContainer {
         let cancellation_token = self.cancellation_token.clone();
 
         // Spawn a task to handle config update events
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("config event handler", async move {
             use crate::config::ConfigUpdateEvent;
 
             loop {
@@ -318,7 +318,7 @@ impl ServiceContainer {
         // Prevent unbounded growth if danmu events are missed (best-effort cleanup).
         let cleanup_token = cancellation_token.clone();
         let cleanup_keys = discarded_segment_keys.clone();
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("discarded segment cleanup", async move {
             const CLEANUP_INTERVAL_SECS: u64 = 600;
             const MAX_AGE_SECS: u64 = 3600;
             let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
@@ -334,7 +334,7 @@ impl ServiceContainer {
 
         // Fast path: drain broadcast channel quickly so we don't drop critical session events under backpressure.
         let drain_token = cancellation_token.clone();
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("download event drain", async move {
             loop {
                 tokio::select! {
                     _ = drain_token.cancelled() => {
@@ -367,7 +367,7 @@ impl ServiceContainer {
         });
 
         let process_token = cancellation_token.clone();
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("download event processor", async move {
             while let Some(download_event) = event_rx.recv().await {
                 if process_token.is_cancelled() {
                     debug!("Download event processor shutting down");
@@ -563,7 +563,7 @@ impl ServiceContainer {
         let mut download_rx = self.download_manager.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("session download events", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -610,7 +610,7 @@ impl ServiceContainer {
         let mut transition_rx = self.session_lifecycle.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("session pipeline events", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -649,7 +649,7 @@ impl ServiceContainer {
         let mut transition_rx = self.session_lifecycle.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("session notifications", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -694,7 +694,7 @@ impl ServiceContainer {
         let mut transition_rx = self.session_lifecycle.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("danmu session transitions", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -776,8 +776,9 @@ impl ServiceContainer {
         let session_lifecycle = self.session_lifecycle.clone();
         let mut transition_rx = self.session_lifecycle.subscribe();
         let cancellation_token = self.cancellation_token.clone();
+        let task_supervisor = self.task_supervisor.clone();
 
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("resume download subscriber", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -832,6 +833,7 @@ impl ServiceContainer {
                                     &session_repository,
                                     &session_cancels,
                                     &pending_pipelines,
+                                    &task_supervisor,
                                     synthetic,
                                     /* from_hysteresis_resume */ true,
                                 )
@@ -868,19 +870,26 @@ impl ServiceContainer {
         let session_repository = self.session_repository.clone();
         let session_cancels = self.session_cancels.clone();
         let pending_pipelines = self.pending_pipelines.clone();
-        let mut receiver = self.monitor_event_broadcaster.subscribe();
+        let Some(mut receiver) = self.monitor_event_receiver.lock().take() else {
+            warn!("Required monitor event consumer is already running");
+            return;
+        };
         let cancellation_token = self.cancellation_token.clone();
+        let task_supervisor = self.task_supervisor.clone();
 
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("monitor event handler", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
                         debug!("Monitor event handler shutting down");
                         break;
                     }
-                    result = receiver.recv() => {
-                        match result {
-                            Ok(event) => {
+                    delivery = receiver.recv() => {
+                        match delivery {
+                            Some(crate::monitor::MonitorEventDelivery {
+                                event,
+                                acknowledgement,
+                            }) => {
                                 Self::handle_monitor_event(
                                     &download_manager,
                                     &streamer_manager,
@@ -890,14 +899,17 @@ impl ServiceContainer {
                                     &session_repository,
                                     &session_cancels,
                                     &pending_pipelines,
+                                    &task_supervisor,
                                     event,
                                     /* from_hysteresis_resume */ false,
                                 ).await;
-                            }
-                            Err(error) => {
-                                if !broadcast_error_is_recoverable("monitor", error) {
-                                    break;
+                                if acknowledgement.send(()).is_err() {
+                                    debug!("Monitor outbox acknowledgement receiver was dropped");
                                 }
+                            }
+                            None => {
+                                warn!("Required monitor event channel closed");
+                                break;
                             }
                         }
                     }
@@ -918,7 +930,7 @@ impl ServiceContainer {
         let discarded_segment_keys = self.discarded_segment_keys.clone();
         let cancellation_token = self.cancellation_token.clone();
 
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("danmu event handler", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {

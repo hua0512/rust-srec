@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot};
 
 use crate::domain::StreamerState;
 use crate::domain::streamer::FatalErrorType;
@@ -77,6 +77,25 @@ pub enum MonitorEvent {
         reason: Option<String>,
         timestamp: DateTime<Utc>,
     },
+}
+
+/// A durable monitor event awaiting acknowledgement from the required runtime consumer.
+pub(crate) struct MonitorEventDelivery {
+    pub(crate) event: MonitorEvent,
+    pub(crate) acknowledgement: oneshot::Sender<()>,
+}
+
+impl MonitorEventDelivery {
+    pub(crate) fn new(event: MonitorEvent) -> (Self, oneshot::Receiver<()>) {
+        let (acknowledgement, receiver) = oneshot::channel();
+        (
+            Self {
+                event,
+                acknowledgement,
+            },
+            receiver,
+        )
+    }
 }
 
 impl MonitorEvent {

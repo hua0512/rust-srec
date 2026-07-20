@@ -124,25 +124,29 @@ impl LoggingConfig {
     ///
     /// Runs daily and deletes log files older than 7 days.
     pub fn start_retention_cleanup(self: &Arc<Self>, cancel_token: CancellationToken) {
-        let log_dir = self.log_dir.clone();
+        let config = Arc::clone(self);
 
         tokio::spawn(async move {
-            let cleanup_interval = Duration::from_secs(24 * 60 * 60); // Daily
+            config.run_retention_cleanup(cancel_token).await;
+        });
+    }
 
-            loop {
-                tokio::select! {
-                    _ = cancel_token.cancelled() => {
-                        debug!("Log retention cleanup task shutting down");
-                        break;
-                    }
-                    _ = tokio::time::sleep(cleanup_interval) => {
-                        if let Err(e) = cleanup_old_logs(&log_dir, LOG_RETENTION_DAYS).await {
-                            warn!(error = %e, "Failed to cleanup old logs");
-                        }
+    pub(crate) async fn run_retention_cleanup(&self, cancel_token: CancellationToken) {
+        let cleanup_interval = Duration::from_secs(24 * 60 * 60);
+
+        loop {
+            tokio::select! {
+                _ = cancel_token.cancelled() => {
+                    debug!("Log retention cleanup task shutting down");
+                    break;
+                }
+                _ = tokio::time::sleep(cleanup_interval) => {
+                    if let Err(e) = cleanup_old_logs(&self.log_dir, LOG_RETENTION_DAYS).await {
+                        warn!(error = %e, "Failed to cleanup old logs");
                     }
                 }
             }
-        });
+        }
     }
 
     /// Apply persisted log filter from the config service.

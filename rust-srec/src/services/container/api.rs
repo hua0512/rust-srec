@@ -129,15 +129,16 @@ impl ServiceContainer {
 
         // Link server shutdown to container shutdown
         let server_cancel = server.cancel_token();
-        tokio::spawn(async move {
-            cancel_token.cancelled().await;
-            server_cancel.cancel();
-        });
+        self.task_supervisor
+            .spawn("API shutdown bridge", async move {
+                cancel_token.cancelled().await;
+                server_cancel.cancel();
+            });
 
         let (listener, local_addr) = server.bind().await?;
         info!("Starting API server on http://{}", local_addr);
 
-        tokio::spawn(async move {
+        self.task_supervisor.spawn("API server", async move {
             if let Err(e) = server.run_with_listener(listener).await {
                 tracing::error!("API server error: {}", e);
             }
@@ -189,19 +190,21 @@ impl ServiceContainer {
 
         // Link server shutdown to container shutdown
         let server_cancel = server.cancel_token();
-        tokio::spawn(async move {
-            cancel_token.cancelled().await;
-            server_cancel.cancel();
-        });
+        self.task_supervisor
+            .spawn("desktop API shutdown bridge", async move {
+                cancel_token.cancelled().await;
+                server_cancel.cancel();
+            });
 
         let (listener, local_addr) = server.bind().await?;
         info!("Starting API server on http://{}", local_addr);
 
-        tokio::spawn(async move {
-            if let Err(e) = server.run_with_listener(listener).await {
-                tracing::error!("API server error: {}", e);
-            }
-        });
+        self.task_supervisor
+            .spawn("desktop API server", async move {
+                if let Err(e) = server.run_with_listener(listener).await {
+                    tracing::error!("API server error: {}", e);
+                }
+            });
 
         Ok(local_addr)
     }

@@ -580,10 +580,13 @@ impl ServiceContainer {
             return;
         };
 
-        // The JoinHandle is intentionally dropped: the spawned task
-        // outlives this scope and is supervised by the cancellation
-        // token, so we don't need to await its completion.
-        drop(monitor.start(self.cancellation_token.child_token()));
+        let handle = monitor.start(self.cancellation_token.child_token());
+        self.task_supervisor
+            .spawn("GPU health monitor", async move {
+                if let Err(error) = handle.await {
+                    warn!(error = %error, "GPU health monitor task failed");
+                }
+            });
 
         if self.gpu_health_monitor.set(monitor).is_err() {
             warn!("GpuHealthMonitor was already installed; ignoring duplicate registration");
@@ -714,13 +717,15 @@ impl ServiceContainer {
             }));
 
         // Spawn the snapshot-refresh task so `/api/health` reads see
-        // populated data within seconds. Cancellation chains off the
-        // container token; the JoinHandle is intentionally dropped (the
-        // task is supervised by the cancellation token).
-        drop(
-            self.health_checker
-                .start(self.cancellation_token.child_token()),
-        );
+        // populated data within seconds.
+        let handle = self
+            .health_checker
+            .start(self.cancellation_token.child_token());
+        self.task_supervisor.spawn("health snapshots", async move {
+            if let Err(error) = handle.await {
+                warn!(error = %error, "Health snapshot task failed");
+            }
+        });
 
         info!("Health checks registered");
     }

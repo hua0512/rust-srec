@@ -44,6 +44,31 @@ jobs:
         if: always()
         run: sccache --show-stats || true
 
+  api-docs:
+    name: API and Rustdoc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-public-api@0.52.0
+      - uses: ./.github/actions/setup-protoc
+      - name: Install Linux TLS dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: api-docs
+      - name: Check private-item rustdoc
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo +stable doc --locked -p rust-srec --all-features --no-deps --document-private-items
+      - name: Check public API budget
+        run: scripts/check-rust-srec-public-api.sh
+
   test:
     name: Test Suite
     strategy:

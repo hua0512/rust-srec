@@ -333,27 +333,14 @@ impl OutputRootGate {
         let weak = self.notification_service.clone();
         let path_str = root.display().to_string();
         let kind_str = kind.as_str().to_string();
-        // Fire-and-forget. A notification delivery failure must not block the
-        // gate or the download path, and notify() is async so we cannot call
-        // it inline from a sync function anyway.
-        tokio::spawn(async move {
-            let Some(service) = weak.upgrade() else {
-                debug!("NotificationService dropped before gate notification could fire");
-                return;
-            };
-            let event = NotificationEvent::OutputPathInaccessible {
-                path: path_str.clone(),
-                error_kind: kind_str.clone(),
-                timestamp: Utc::now(),
-            };
-            if let Err(e) = service.notify(event).await {
-                warn!(
-                    error = %e,
-                    path = %path_str,
-                    kind = %kind_str,
-                    "Failed to dispatch OutputPathInaccessible notification (non-fatal)"
-                );
-            }
+        let Some(service) = weak.upgrade() else {
+            debug!("NotificationService dropped before gate notification could fire");
+            return;
+        };
+        service.dispatch_notification(NotificationEvent::OutputPathInaccessible {
+            path: path_str,
+            error_kind: kind_str,
+            timestamp: Utc::now(),
         });
     }
 
@@ -397,15 +384,9 @@ impl OutputRootGate {
             "Output root recovered: gate transitioned Degraded -> Healthy"
         );
 
-        // Fire the recovery hook — this is what clears streamer-level backoff
-        // for any streamer that was infra-blocked due to this root. Run it on
-        // a blocking-friendly task to avoid stalling the download path; the
-        // hook may iterate streamer metadata and call into the repo.
-        let hook = self.recovery_hook.clone();
-        let root_for_hook = root.clone();
-        tokio::spawn(async move {
-            (hook)(&root_for_hook);
-        });
+        // The hook only snapshots affected IDs and hands async work to the
+        // application task supervisor, so invoking it inline is non-blocking.
+        (self.recovery_hook)(&root);
     }
 
     /// Snapshot for the `/health` endpoint. Returns one entry per tracked
@@ -821,10 +802,6 @@ mod tests {
         assert!(gate.check(Path::new("/rec/X")).is_err());
 
         gate.mark_healthy(Path::new("/rec/X"));
-        // Recovery hook is dispatched on a tokio task — yield so it runs.
-        tokio::task::yield_now().await;
-        tokio::time::sleep(Duration::from_millis(20)).await;
-
         assert_eq!(
             counter.load(AtomOrd::SeqCst),
             1,
@@ -832,7 +809,6 @@ mod tests {
         );
         // Second mark_healthy on already-Healthy root is a no-op.
         gate.mark_healthy(Path::new("/rec/X"));
-        tokio::time::sleep(Duration::from_millis(20)).await;
         assert_eq!(counter.load(AtomOrd::SeqCst), 1, "no-op on already-healthy");
         // And the gate now lets traffic through again.
         assert!(gate.check(Path::new("/rec/X")).is_ok());

@@ -53,10 +53,7 @@ async fn main() -> anyhow::Result<()> {
         .apply_persisted_filter(container.config_service())
         .await;
 
-    // Start log retention cleanup task
-    logging_config.start_retention_cleanup(container.cancellation_token());
-
-    // Store logging config in container for API access
+    // Store logging config and start its supervised retention task.
     container.set_logging_config(logging_config.clone());
 
     // Initialize all services

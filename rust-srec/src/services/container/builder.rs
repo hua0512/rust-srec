@@ -36,6 +36,7 @@ use crate::pipeline::{PipelineManager, PipelineManagerConfig};
 use crate::scheduler::Scheduler;
 use crate::services::session_cancels::SessionCancelTokens;
 use crate::streamer::StreamerManager;
+use crate::utils::task_supervisor::TaskSupervisor;
 
 use super::{
     DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY, ServiceContainer, ServiceContainerBuildOptions,
@@ -123,6 +124,7 @@ impl ServiceContainer {
         crate::i18n::init_from_env();
 
         let overall = Instant::now();
+        let task_supervisor = Arc::new(TaskSupervisor::new());
         info!("Initializing service container");
 
         // Create repositories
@@ -220,13 +222,18 @@ impl ServiceContainer {
 
         // Create stream monitor for real status detection
         let stream_monitor_start = Instant::now();
-        let mut stream_monitor = StreamMonitor::new(
+        let (required_monitor_event_sender, required_monitor_event_receiver) =
+            tokio::sync::mpsc::channel(256);
+        let mut stream_monitor = StreamMonitor::with_runtime(
             streamer_manager.clone(),
             filter_repo,
             session_repo.clone(),
             config_service.clone(),
             write_pool.clone(),
             session_lifecycle.clone(),
+            crate::monitor::StreamMonitorConfig::default(),
+            Some(required_monitor_event_sender),
+            task_supervisor.clone(),
         );
         let stream_monitor_ms = stream_monitor_start.elapsed().as_millis();
 
@@ -340,6 +347,7 @@ impl ServiceContainer {
         if let Some(web_push) = web_push_service.clone() {
             notification_service = notification_service.with_web_push_service(web_push);
         }
+        notification_service = notification_service.with_task_supervisor(task_supervisor.clone());
         let notification_service = Arc::new(notification_service);
         notification_service.start_web_push_worker();
         credential_service.set_notification_service(Arc::clone(&notification_service));
@@ -353,7 +361,7 @@ impl ServiceContainer {
         // stay lock-free.
         let output_root_gate = OutputRootGate::new(
             Arc::downgrade(&notification_service),
-            build_output_root_gate_recovery_hook(streamer_manager.clone()),
+            build_output_root_gate_recovery_hook(streamer_manager.clone(), task_supervisor.clone()),
             parse_output_roots_env(),
             Duration::from_secs(DEFAULT_GATE_COOLDOWN_SECS),
         );
@@ -397,7 +405,7 @@ impl ServiceContainer {
         // Wire the streamer-check-history pipeline (writer feeds the
         // monitor-side polling path; broadcaster feeds the WS route loop).
         let (check_history_writer, check_history_broadcaster) =
-            wire_check_history_pipeline(&pool, &write_pool, &cancellation_token);
+            wire_check_history_pipeline(&pool, &write_pool, &cancellation_token, &task_supervisor);
 
         // Create scheduler with StreamMonitor for real status checking
         let scheduler_start = Instant::now();
@@ -454,6 +462,7 @@ impl ServiceContainer {
             gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
             monitor_event_broadcaster,
+            monitor_event_receiver: parking_lot::Mutex::new(Some(required_monitor_event_receiver)),
             session_lifecycle,
             danmu_service,
             notification_service,
@@ -470,10 +479,9 @@ impl ServiceContainer {
             pending_pipelines: Arc::new(DashMap::new()),
             api_server_config: api_config,
             cancellation_token,
+            task_supervisor,
             logging_config: std::sync::OnceLock::new(),
             discarded_segment_keys: Arc::new(DashMap::new()),
-            scheduler_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
-            maintenance_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
         })
     }
 }

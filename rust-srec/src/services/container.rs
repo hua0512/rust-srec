@@ -36,6 +36,7 @@ use crate::scheduler::Scheduler;
 use crate::services::session_cancels::SessionCancelTokens;
 use crate::streamer::StreamerManager;
 use crate::utils::filename::sanitize_filename;
+use crate::utils::task_supervisor::TaskSupervisor;
 use pipeline_common::expand_path_template;
 
 mod api;
@@ -52,10 +53,11 @@ mod health;
 /// they immediately re-enter the live-check rotation.
 ///
 /// Invoked by [`OutputRootGate::mark_healthy`] on every `Degraded → Healthy`
-/// transition. Runs inside a `tokio::spawn`'d task (see gate implementation),
-/// so blocking inside the closure is OK.
+/// transition. The synchronous portion only snapshots IDs; database writes
+/// are handed to the application task supervisor.
 fn build_output_root_gate_recovery_hook<R>(
     streamer_manager: Arc<StreamerManager<R>>,
+    task_supervisor: Arc<TaskSupervisor>,
 ) -> RecoveryHook
 where
     R: crate::database::repositories::streamer::StreamerRepository + Send + Sync + 'static,
@@ -101,12 +103,10 @@ where
             "Output-root gate recovered; clearing error state for affected streamers"
         );
 
-        // The hook is called inside a tokio task that the gate spawned on
-        // its own runtime, so we can safely spawn another task here for
-        // the per-streamer async DB writes. We fire them all in parallel
-        // because a single slow write shouldn't hold up fleet recovery.
+        // Keep database writes outside the synchronous gate callback and
+        // serialize them to avoid a write burst during fleet recovery.
         let sm = streamer_manager.clone();
-        tokio::spawn(async move {
+        task_supervisor.spawn("output-root recovery", async move {
             for id in affected_ids {
                 if let Err(e) = sm.clear_error_state(&id).await {
                     warn!(
@@ -312,6 +312,10 @@ pub struct ServiceContainer {
     pub(crate) pipeline_manager: Arc<PipelineManager>,
     /// Monitor event broadcaster.
     pub(crate) monitor_event_broadcaster: MonitorEventBroadcaster,
+    /// Required, lossless monitor-event receiver used for runtime state changes.
+    monitor_event_receiver: parking_lot::Mutex<
+        Option<tokio::sync::mpsc::Receiver<crate::monitor::MonitorEventDelivery>>,
+    >,
     /// Single-owner session lifecycle service. Owns the in-memory session map,
     /// hard-ended suppression cache, and the `SessionTransition` broadcast
     /// channel consumed by pipeline/notification/API layers.
@@ -372,15 +376,13 @@ pub struct ServiceContainer {
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,
+    /// Owner for background tasks started by the application runtime.
+    task_supervisor: Arc<TaskSupervisor>,
     /// Logging configuration
     logging_config: std::sync::OnceLock<Arc<LoggingConfig>>,
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
-    /// Handle to the scheduler background task for graceful shutdown.
-    scheduler_task_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    /// Handle to the database maintenance task for graceful shutdown.
-    maintenance_task_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 /// Wire the streamer-check-history pipeline:
@@ -397,6 +399,7 @@ fn wire_check_history_pipeline(
     pool: &SqlitePool,
     write_pool: &SqlitePool,
     cancellation_token: &CancellationToken,
+    task_supervisor: &TaskSupervisor,
 ) -> (
     crate::monitor::CheckHistoryWriter,
     crate::monitor::CheckHistoryBroadcaster,
@@ -422,12 +425,15 @@ fn wire_check_history_pipeline(
     });
     let broadcaster = crate::monitor::CheckHistoryBroadcaster::new(encoder);
 
-    tokio::spawn(crate::monitor::check_history_writer::run(
-        repo,
-        rx,
-        Some(broadcaster.clone()),
-        cancellation_token.child_token(),
-    ));
+    task_supervisor.spawn(
+        "check-history writer",
+        crate::monitor::check_history_writer::run(
+            repo,
+            rx,
+            Some(broadcaster.clone()),
+            cancellation_token.child_token(),
+        ),
+    );
     (writer, broadcaster)
 }
 
@@ -544,7 +550,12 @@ impl ServiceContainer {
             .maintenance_scheduler
             .clone()
             .start(self.cancellation_token.child_token());
-        *self.maintenance_task_handle.lock().await = Some(maintenance_handle);
+        self.task_supervisor
+            .spawn("database maintenance", async move {
+                if let Err(error) = maintenance_handle.await {
+                    warn!(error = %error, "Database maintenance task failed");
+                }
+            });
         let maintenance_start_ms = maintenance_start.elapsed().as_millis();
         info!("Database maintenance scheduler started");
 
@@ -589,15 +600,12 @@ impl ServiceContainer {
 
         // Run scheduler in background task
         let scheduler = self.scheduler.clone();
-        let handle = tokio::spawn(async move {
+        self.task_supervisor.spawn("scheduler", async move {
             let mut guard = scheduler.write().await;
             if let Err(e) = guard.run().await {
                 tracing::error!("Scheduler error: {}", e);
             }
         });
-
-        // Store the handle for graceful shutdown
-        *self.scheduler_task_handle.lock().await = Some(handle);
 
         info!("Scheduler started");
     }
@@ -777,6 +785,7 @@ impl ServiceContainer {
         session_repository: &Arc<SqlxSessionRepository>,
         session_cancels: &Arc<SessionCancelTokens>,
         pending_pipelines: &Arc<DashMap<String, ()>>,
+        task_supervisor: &Arc<TaskSupervisor>,
         event: MonitorEvent,
         from_hysteresis_resume: bool,
     ) {
@@ -816,7 +825,7 @@ impl ServiceContainer {
                 let session_repository = session_repository.clone();
                 let session_cancels = session_cancels.clone();
                 let pending_pipelines = pending_pipelines.clone();
-                tokio::spawn(async move {
+                task_supervisor.spawn("live download pipeline", async move {
                     run_live_download_pipeline(
                         download_manager,
                         streamer_manager,
@@ -986,75 +995,49 @@ impl ServiceContainer {
     /// Shutdown all services gracefully with a custom timeout.
     pub async fn shutdown_with_timeout(&self, timeout: Duration) -> Result<()> {
         info!("Shutting down services (timeout: {:?})", timeout);
+        let deadline = tokio::time::Instant::now() + timeout;
 
-        // Signal all background tasks to stop
+        // Stop accepting new work and signal all background tasks first.
         self.cancellation_token.cancel();
-
-        info!("Stopping maintenance scheduler...");
-        if let Some(handle) = self.maintenance_task_handle.lock().await.take() {
-            match tokio::time::timeout(timeout, handle).await {
-                Ok(Ok(())) => info!("Maintenance scheduler stopped gracefully"),
-                Ok(Err(error)) => warn!(error = %error, "Maintenance scheduler task panicked"),
-                Err(_) => warn!("Maintenance scheduler shutdown timed out"),
-            }
-        }
-
-        // Stop notification service
-        info!("Stopping notification service...");
-        self.notification_service.stop().await;
-        info!("Notification service stopped");
-
-        // Stop stream monitor outbox publisher
-        info!("Stopping stream monitor...");
         self.stream_monitor.stop();
-        info!("Stream monitor stopped");
-
-        // Stop danmu service (finalize XML files)
-        info!("Stopping danmu service...");
-        self.danmu_service.shutdown().await;
-        info!("Danmu service stopped");
-
-        // Stop accepting new downloads
-        info!("Stopping download manager...");
-        // Shut down the queue first so any pipelines parked on
-        // `acquire_slot` wake up and return `ShuttingDown` instead of
-        // racing with `stop_all` to grab a slot from a just-released
-        // active download.
         self.download_manager.shutdown_queue();
-        let stopped_downloads = self.download_manager.stop_all().await;
-        info!("Stopped {} active downloads", stopped_downloads.len());
 
-        // Stop pipeline manager and drain job queue
-        info!("Stopping pipeline manager...");
-        self.pipeline_manager.stop().await;
-        info!("Pipeline manager stopped");
+        let service_shutdown = async {
+            info!("Stopping notification service...");
+            self.notification_service.stop().await;
 
-        // Stop scheduler - wait for it to complete its shutdown sequence
-        // (cancellation already triggered via linked token above)
-        info!("Stopping scheduler...");
+            info!("Stopping danmu service...");
+            self.danmu_service.shutdown().await;
 
-        // Wait for the scheduler task to complete with timeout
-        // The scheduler's run() loop will exit on cancellation and call its own shutdown()
-        // which waits for all actors to stop gracefully
-        if let Some(handle) = self.scheduler_task_handle.lock().await.take() {
-            match tokio::time::timeout(timeout, handle).await {
-                Ok(Ok(())) => {
-                    info!("Scheduler stopped gracefully");
-                }
-                Ok(Err(e)) => {
-                    warn!("Scheduler task panicked: {}", e);
-                }
-                Err(_) => {
-                    warn!("Scheduler shutdown timed out");
-                }
-            }
-        } else {
-            debug!("No scheduler task handle to wait for");
+            info!("Stopping download manager...");
+            let stopped_downloads = self.download_manager.stop_all().await;
+            info!(count = stopped_downloads.len(), "Stopped active downloads");
+
+            info!("Stopping pipeline manager...");
+            self.pipeline_manager.stop().await;
+        };
+        if tokio::time::timeout_at(deadline, service_shutdown)
+            .await
+            .is_err()
+        {
+            warn!("Service shutdown deadline exceeded");
         }
 
-        // Close database pool
-        info!("Closing database pool...");
-        self.pool.close().await;
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if !self.task_supervisor.shutdown(remaining).await {
+            warn!("One or more background tasks required forced cancellation");
+        }
+
+        info!("Closing database pools...");
+        let close_pools = async {
+            tokio::join!(self.write_pool.close(), self.pool.close());
+        };
+        if tokio::time::timeout_at(deadline, close_pools)
+            .await
+            .is_err()
+        {
+            warn!("Database pool shutdown deadline exceeded");
+        }
 
         info!("Services shut down");
         Ok(())
@@ -1145,7 +1128,15 @@ impl ServiceContainer {
 
     /// Set the logging configuration
     pub fn set_logging_config(&self, config: Arc<LoggingConfig>) {
-        self.logging_config.get_or_init(|| config);
+        if self.logging_config.set(config.clone()).is_err() {
+            warn!("Logging configuration was already installed");
+            return;
+        }
+
+        let cancellation = self.cancellation_token.child_token();
+        self.task_supervisor.spawn("log retention", async move {
+            config.run_retention_cleanup(cancellation).await;
+        });
     }
 }
 

@@ -282,14 +282,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             }
         }
 
-        tokio::spawn(async move {
-            if let Err(e) = service
-                .notify(NotificationEvent::Credential { event })
-                .await
-            {
-                warn!(error = %e, "Failed to dispatch credential notification");
-            }
-        });
+        service.dispatch_notification(NotificationEvent::Credential { event });
     }
 
     /// Perform credential refresh.

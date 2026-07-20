@@ -294,21 +294,22 @@ impl PipelineCoordinator {
         }
 
         let (tx, mut rx) = mpsc::channel::<CoordinatorRequest>(1024);
-        let inner = self.inner.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => break,
-                    request = rx.recv() => {
-                        let Some(request) = request else {
-                            break;
-                        };
-                        Self::handle_request(&inner, request);
-                    }
+        *tx_guard = Some(tx);
+        drop(tx_guard);
+
+        loop {
+            tokio::select! {
+                _ = cancellation_token.cancelled() => break,
+                request = rx.recv() => {
+                    let Some(request) = request else {
+                        break;
+                    };
+                    Self::handle_request(&self.inner, request);
                 }
             }
-        });
-        *tx_guard = Some(tx);
+        }
+
+        *self.tx.lock().await = None;
     }
 
     fn lock_state(
