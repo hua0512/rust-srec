@@ -80,7 +80,7 @@ pub struct BroadcastEnvelope {
 
 /// Live-update broadcaster cloned into the WS route loop. The sender is
 /// held by the drain task; the WS route subscribes via `subscribe()` to
-/// receive every committed [`BroadcastEnvelope`].
+/// receive every committed `BroadcastEnvelope`.
 ///
 /// Carries a `BroadcastEnvelope` (record + pre-encoded WS bytes) rather
 /// than a bare `Arc<CheckRecord>` so the protobuf encoding runs once
@@ -137,7 +137,7 @@ pub struct CheckHistoryWriter {
 
 impl CheckHistoryWriter {
     /// Build a writer + receiver pair. The caller is expected to spawn
-    /// [`run`] with the returned receiver and a repository handle.
+    /// `run` with the returned receiver and a repository handle.
     pub fn new() -> (Self, mpsc::Receiver<Arc<CheckRecord>>) {
         let (tx, rx) = mpsc::channel(CHANNEL_CAPACITY);
         (Self { tx }, rx)

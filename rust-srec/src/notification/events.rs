@@ -528,7 +528,7 @@ pub enum NotificationEvent {
         path: String,
         /// Stable string identifying the underlying io error kind. Maps to the
         /// `notification.output_path_inaccessible.description.<kind>` i18n key
-        /// via [`crate::downloader::engine::traits::IoErrorKindSer::as_str`].
+        /// via [`crate::downloader::IoErrorKindSer::as_str`].
         error_kind: String,
         timestamp: DateTime<Utc>,
     },

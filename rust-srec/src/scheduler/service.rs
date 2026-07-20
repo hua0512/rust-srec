@@ -315,7 +315,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     ///
     /// Pass `history_writer = None` to disable persistence (the polling path
     /// is unaffected either way; the writer is purely diagnostic).
-    pub fn with_monitor_history_and_config<SR, FR, SSR, CR>(
+    pub(crate) fn with_monitor_history_and_config<SR, FR, SSR, CR>(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
         monitor: Arc<StreamMonitor<SR, FR, SSR, CR>>,

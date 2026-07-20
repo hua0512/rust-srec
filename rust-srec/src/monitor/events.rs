@@ -77,55 +77,6 @@ pub enum MonitorEvent {
         reason: Option<String>,
         timestamp: DateTime<Utc>,
     },
-    /// Internal trigger emitted by the monitor to ask [`crate::session::
-    /// SessionLifecycle`] to start or resume a recording session.
-    ///
-    /// Distinct from [`Self::StreamerLive`], which is the outbox-destined
-    /// notification emitted *by* `SessionLifecycle` once the DB write lands.
-    /// This trigger must never be enqueued into `monitor_event_outbox` —
-    /// it is a pure in-process broadcast signal.
-    LiveDetected {
-        streamer_id: String,
-        streamer_name: String,
-        streamer_url: String,
-        current_avatar: Option<String>,
-        new_avatar: Option<String>,
-        title: String,
-        category: Option<String>,
-        streams: Vec<StreamInfo>,
-        media_headers: Option<HashMap<String, String>>,
-        media_extras: Option<HashMap<String, String>>,
-        timestamp: DateTime<Utc>,
-    },
-    /// Internal trigger emitted by the monitor to ask [`crate::session::
-    /// SessionLifecycle`] to end the active session for a streamer.
-    ///
-    /// Distinct from [`Self::StreamerOffline`], which is the outbox-destined
-    /// notification emitted *by* `SessionLifecycle` once the DB write lands.
-    /// This trigger must never be enqueued into `monitor_event_outbox`.
-    OfflineDetected {
-        streamer_id: String,
-        streamer_name: String,
-        /// Explicit session id to end, if the monitor knows which session
-        /// was active. When `None`, the lifecycle falls back to closing
-        /// the active session for `streamer_id`.
-        session_id: Option<String>,
-        /// `true` if the streamer's pre-end state was `Live` — drives
-        /// whether `StreamerOffline` is emitted onto the outbox.
-        state_was_live: bool,
-        /// `true` if the streamer had accumulated transient errors that
-        /// should be cleared on this clean observation.
-        clear_errors: bool,
-        /// Optional definitive-offline signal that originated this event.
-        /// When `Some`, the lifecycle records the session-end cause as
-        /// [`crate::session::TerminalCause::DefinitiveOffline`] (carrying
-        /// the signal) instead of the default
-        /// [`crate::session::TerminalCause::StreamerOffline`]. Used by the
-        /// danmu observer to preserve `DanmuStreamClosed` in the audit log;
-        /// other call sites pass `None`.
-        signal: Option<crate::session::state::OfflineSignal>,
-        timestamp: DateTime<Utc>,
-    },
 }
 
 impl MonitorEvent {
@@ -169,12 +120,6 @@ impl MonitorEvent {
             } => {
                 format!("{}: {} -> {}", streamer_name, old_state, new_state)
             }
-            MonitorEvent::LiveDetected { streamer_name, .. } => {
-                format!("{} live detected (lifecycle trigger)", streamer_name)
-            }
-            MonitorEvent::OfflineDetected { streamer_name, .. } => {
-                format!("{} offline detected (lifecycle trigger)", streamer_name)
-            }
         }
     }
 
@@ -191,8 +136,6 @@ impl MonitorEvent {
                 *consecutive_errors >= 3
             }
             MonitorEvent::StateChanged { .. } => false,
-            // Internal lifecycle triggers — never user-visible.
-            MonitorEvent::LiveDetected { .. } | MonitorEvent::OfflineDetected { .. } => false,
         }
     }
 }
@@ -351,36 +294,5 @@ mod tests {
             timestamp: Utc::now(),
         };
         assert!(event.should_notify());
-    }
-
-    #[test]
-    fn test_live_detected_ignores_legacy_gap_fields() {
-        let payload = serde_json::json!({
-            "LiveDetected": {
-                "streamer_id": "123",
-                "streamer_name": "Test",
-                "streamer_url": "https://example.com/test",
-                "current_avatar": null,
-                "new_avatar": null,
-                "title": "Test stream",
-                "category": null,
-                "streams": [],
-                "media_headers": null,
-                "media_extras": null,
-                "started_at": null,
-                "gap_threshold_secs": 3600,
-                "timestamp": Utc::now()
-            }
-        });
-
-        let event: MonitorEvent = serde_json::from_value(payload).unwrap();
-        assert!(matches!(
-            event,
-            MonitorEvent::LiveDetected {
-                streamer_id,
-                title,
-                ..
-            } if streamer_id == "123" && title == "Test stream"
-        ));
     }
 }

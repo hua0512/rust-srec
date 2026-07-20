@@ -11,8 +11,8 @@
 pub mod engine;
 
 mod manager;
-pub mod output_root_gate;
-pub mod queue;
+pub(crate) mod output_root_gate;
+pub(crate) mod queue;
 mod resilience;
 mod stream_selector;
 

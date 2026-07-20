@@ -3,12 +3,12 @@
 //! This module provides the Config Service with in-memory caching and
 //! event broadcasting for configuration updates.
 
-pub mod cache;
+pub(crate) mod cache;
 mod context;
-pub mod events;
+pub(crate) mod events;
 mod merged;
 mod resolver;
-pub mod service;
+pub(crate) mod service;
 
 pub use cache::{CacheStats, ConfigCache};
 pub use context::ResolvedStreamerContext;

@@ -1,4 +1,4 @@
-//! Telegram upload processor using the `tdl` CLI (https://github.com/iyear/tdl).
+//! Telegram upload processor using the `tdl` CLI (<https://github.com/iyear/tdl>).
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

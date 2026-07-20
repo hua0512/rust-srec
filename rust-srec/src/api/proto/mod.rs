@@ -20,8 +20,7 @@ pub mod log_event {
 pub use download_progress::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadDequeued, DownloadFailed,
     DownloadMeta, DownloadMetrics, DownloadQueued, DownloadRejected, DownloadSnapshot,
-    DownloadState, ErrorPayload, EventType, SegmentCompleted, StreamerCheckRecorded,
-    SubscribeRequest, UnsubscribeRequest, WsMessage,
+    DownloadState, EventType, SegmentCompleted, StreamerCheckRecorded, WsMessage,
 };
 
 impl From<&DownloadInfo> for DownloadMeta {
@@ -112,19 +111,6 @@ pub fn create_snapshot_message(
             DownloadSnapshot {
                 downloads: states,
                 queued: queued_msgs,
-            },
-        )),
-    }
-}
-
-/// Create an error message.
-pub fn create_error_message(code: &str, message: &str) -> WsMessage {
-    WsMessage {
-        event_type: EventType::Error as i32,
-        payload: Some(download_progress::ws_message::Payload::Error(
-            ErrorPayload {
-                code: code.to_string(),
-                message: message.to_string(),
             },
         )),
     }
@@ -223,19 +209,6 @@ mod tests {
             assert_eq!(s.queued[0].engine_type, "ffmpeg");
         } else {
             panic!("expected snapshot payload");
-        }
-    }
-
-    #[test]
-    fn test_create_error_message() {
-        let msg = create_error_message("TEST_ERROR", "Test error message");
-
-        assert_eq!(msg.event_type, EventType::Error as i32);
-        if let Some(download_progress::ws_message::Payload::Error(err)) = msg.payload {
-            assert_eq!(err.code, "TEST_ERROR");
-            assert_eq!(err.message, "Test error message");
-        } else {
-            panic!("Expected error payload");
         }
     }
 }

@@ -31,8 +31,6 @@ use crate::api::middleware::JwtAuthLayer;
 use crate::api::openapi::ApiDoc;
 use crate::api::server::AppState;
 
-pub use auth::{LoginRequest, LoginResponse};
-
 /// Create the main API router with all routes.
 ///
 /// Routes are organized as:

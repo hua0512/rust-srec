@@ -10,7 +10,7 @@
 //!
 //! ## Locale selection
 //!
-//! At startup, [`crate::services::container`] reads the `RUST_SREC_LOCALE`
+//! At startup, [`crate::backend::ServiceContainer`] reads the `RUST_SREC_LOCALE`
 //! environment variable (default `"en"`) and calls [`set_locale`]. Supported
 //! locales are determined by the YAML files under `rust-srec/locales/`.
 //!
@@ -31,7 +31,8 @@ pub use rust_i18n::t;
 /// Localize a message and return it as an owned `String`.
 ///
 /// Wraps [`rust_i18n::t!`] and unwraps the returned `Cow<'static, str>` via
-/// [`Cow::into_owned`], so interpolated results (the common case for our
+/// [`Cow::into_owned`](std::borrow::Cow::into_owned), so interpolated results
+/// (the common case for our
 /// keys, which all carry `%{...}` placeholders) are moved out directly and
 /// only the rare static-fallback path clones.
 ///

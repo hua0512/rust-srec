@@ -118,9 +118,6 @@ fn auth_error_to_api_error(err: AuthError) -> ApiError {
         AuthError::TokenExpired => ApiError::unauthorized("Token has expired"),
         AuthError::TokenRevoked => ApiError::unauthorized("Token has been revoked"),
         AuthError::InvalidToken => ApiError::unauthorized("Invalid token"),
-        AuthError::PasswordChangeRequired => {
-            ApiError::forbidden("Password change required before accessing resources")
-        }
         AuthError::WeakPassword(msg) => ApiError::bad_request(format!("Weak password: {}", msg)),
         AuthError::IncorrectCurrentPassword => {
             ApiError::bad_request("Current password is incorrect")

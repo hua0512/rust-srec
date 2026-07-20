@@ -157,7 +157,7 @@ where
     /// Create a checker that records every poll outcome via `writer`. The
     /// writer is best-effort — failed sends drop silently — so wiring it up
     /// has no effect on polling cadence.
-    pub fn with_history_writer(
+    pub(crate) fn with_history_writer(
         monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
         writer: CheckHistoryWriter,
     ) -> Self {

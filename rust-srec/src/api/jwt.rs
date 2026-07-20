@@ -34,8 +34,6 @@ pub enum JwtError {
     TokenExpired,
     #[error("Invalid token")]
     InvalidToken,
-    #[error("Missing claims")]
-    MissingClaims,
 }
 
 /// JWT service for token generation and validation.
@@ -138,21 +136,6 @@ impl JwtService {
                 | jsonwebtoken::errors::ErrorKind::InvalidSignature => JwtError::InvalidToken,
                 _ => JwtError::TokenValidation(e.to_string()),
             })
-    }
-
-    /// Get the configured expiration time in seconds.
-    pub fn expiration_secs(&self) -> u64 {
-        self.expiration_secs
-    }
-
-    /// Get the configured issuer.
-    pub fn issuer(&self) -> &str {
-        &self.issuer
-    }
-
-    /// Get the configured audience.
-    pub fn audience(&self) -> &str {
-        &self.audience
     }
 }
 

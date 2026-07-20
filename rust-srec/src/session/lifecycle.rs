@@ -1,14 +1,14 @@
 //! The single-owner recording-session state service.
 //!
-//! `SessionLifecycle` subscribes to the three triggers that can open or close
+//! `SessionLifecycle` handles the three triggers that can open or close
 //! a recording session and holds the authoritative in-memory view of which
 //! sessions are still `Recording` and which have `Ended`:
 //!
-//! - [`MonitorEvent::LiveDetected`] → [`SessionLifecycle::on_live_detected`]
+//! - A live monitor result calls [`SessionLifecycle::on_live_detected`]
 //!   → one atomic `BEGIN IMMEDIATE` tx via
 //!   [`SessionLifecycleRepository::start_or_resume`] → emit
 //!   [`SessionTransition::Started`].
-//! - [`MonitorEvent::OfflineDetected`] → [`SessionLifecycle::on_offline_detected`]
+//! - An offline monitor result calls [`SessionLifecycle::on_offline_detected`]
 //!   → one atomic tx via [`SessionLifecycleRepository::end`] → emit
 //!   [`SessionTransition::Ended`] with [`TerminalCause::StreamerOffline`].
 //! - [`DownloadTerminalEvent`] → [`SessionLifecycle::on_download_terminal`]
@@ -46,7 +46,6 @@ use crate::downloader::DownloadProtocol;
 use crate::downloader::DownloadTerminalEvent;
 #[cfg(test)]
 use crate::downloader::engine::EngineType;
-use crate::monitor::MonitorEvent;
 use crate::session::classifier::{EngineKind, OfflineClassifier};
 use crate::session::events::SessionEventPayload;
 use crate::session::hysteresis::{HysteresisConfig, HysteresisHandle};
@@ -345,63 +344,6 @@ impl SessionLifecycle {
         self.sessions.get(session_id).map(|e| e.value().clone())
     }
 
-    /// Dispatch a `MonitorEvent` to the appropriate lifecycle handler. Non-
-    /// lifecycle variants are ignored — the subscription loop can funnel every
-    /// monitor event through this method without pre-filtering.
-    pub async fn handle_monitor_event(&self, event: &MonitorEvent) -> Result<()> {
-        match event {
-            MonitorEvent::LiveDetected {
-                streamer_id,
-                streamer_name,
-                streamer_url,
-                current_avatar,
-                new_avatar,
-                title,
-                category,
-                streams,
-                media_headers,
-                media_extras,
-                timestamp,
-            } => self
-                .on_live_detected(LiveDetectedArgs {
-                    streamer_id,
-                    streamer_name,
-                    streamer_url,
-                    current_avatar: current_avatar.as_deref(),
-                    new_avatar: new_avatar.as_deref(),
-                    title,
-                    category: category.as_deref(),
-                    streams,
-                    media_headers: media_headers.as_ref(),
-                    media_extras: media_extras.as_ref(),
-                    now: *timestamp,
-                })
-                .await
-                .map(|_| ()),
-            MonitorEvent::OfflineDetected {
-                streamer_id,
-                streamer_name,
-                session_id,
-                state_was_live,
-                clear_errors,
-                signal,
-                timestamp,
-            } => self
-                .on_offline_detected(OfflineDetectedArgs {
-                    streamer_id,
-                    streamer_name,
-                    session_id: session_id.as_deref(),
-                    state_was_live: *state_was_live,
-                    clear_errors: *clear_errors,
-                    signal: signal.clone(),
-                    now: *timestamp,
-                })
-                .await
-                .map(|_| ()),
-            _ => Ok(()),
-        }
-    }
-
     /// Start or resume a recording session on behalf of a monitor trigger.
     ///
     /// Decision tree:
@@ -506,7 +448,7 @@ impl SessionLifecycle {
     /// the streamer is no longer live), so this always commits `Ended`
     /// directly — no hysteresis. If the session was already in
     /// `Hysteresis` (e.g. mesio FLV clean disconnect happened first, then
-    /// monitor confirmed offline), [`Self::enter_ended_state`] cancels the
+    /// monitor confirmed offline), `enter_ended_state` cancels the
     /// timer.
     pub async fn on_offline_detected(
         &self,
@@ -613,11 +555,11 @@ impl SessionLifecycle {
     /// 3. **Already Ended → no-op** (idempotency).
     /// 4. **Authoritative cause** (`DefinitiveOffline`, `Rejected`, OR
     ///    `Completed` with `EngineEndSignal::HlsEndlist`) → straight to
-    ///    `Ended` via [`Self::enter_ended_state`]. Pipeline fires
+    ///    `Ended` via `enter_ended_state`. Pipeline fires
     ///    immediately.
     /// 5. **Ambiguous cause** (`Failed{Network/etc.}`, `Completed` with
     ///    `EngineEndSignal::CleanDisconnect` / `SubprocessExitZero` /
-    ///    `Unknown`) → `Hysteresis` via [`Self::enter_hysteresis_state`].
+    ///    `Unknown`) → `Hysteresis` via `enter_hysteresis_state`.
     ///    A timer task will commit `Ended` if no resume arrives within the
     ///    window.
     pub async fn on_download_terminal(

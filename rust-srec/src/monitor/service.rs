@@ -1231,7 +1231,7 @@ impl<
 }
 
 /// Reason a streamer is being put into infrastructure-level backoff via
-/// [`MonitorService::set_infra_blocked`]. The reason determines the target
+/// [`StreamMonitor::set_infra_blocked`]. The reason determines the target
 /// [`StreamerState`], the retry window, and whether `last_error` is rewritten.
 #[derive(Debug, Clone)]
 pub enum InfraBlockReason {
@@ -1585,8 +1585,6 @@ mod tests {
             MonitorEvent::FatalError { .. } => "FatalError",
             MonitorEvent::TransientError { .. } => "TransientError",
             MonitorEvent::StateChanged { .. } => "StateChanged",
-            MonitorEvent::LiveDetected { .. } => "LiveDetected",
-            MonitorEvent::OfflineDetected { .. } => "OfflineDetected",
         }
     }
 

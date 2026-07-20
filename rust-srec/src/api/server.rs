@@ -318,18 +318,6 @@ impl ApiServer {
 
         Ok(())
     }
-
-    /// Start the server.
-    pub async fn run(&self) -> Result<()> {
-        let (listener, local_addr) = self.bind().await?;
-        tracing::info!("API server listening on http://{}", local_addr);
-        self.run_with_listener(listener).await
-    }
-
-    /// Shutdown the server.
-    pub fn shutdown(&self) {
-        self.cancel_token.cancel();
-    }
 }
 
 #[cfg(test)]

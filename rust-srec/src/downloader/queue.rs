@@ -57,11 +57,6 @@ use tokio_util::sync::CancellationToken;
 
 use super::engine::EngineType;
 
-/// Default normal-pool capacity used by [`DownloadQueue::new`] when no
-/// explicit value is supplied. Mirrors the historical default in
-/// [`crate::downloader::manager::DownloadManagerConfig`].
-pub const DEFAULT_NORMAL_CAPACITY: usize = 6;
-
 /// Priority tier for a queued or active download.
 ///
 /// `High` always sorts before `Normal` in the wait order; ties are

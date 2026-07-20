@@ -517,7 +517,8 @@ pub enum DownloadTerminalEvent {
         /// rejected the download).
         retry_after_secs: Option<u64>,
         /// Why the download was rejected. Carries the payload the scheduler
-        /// needs to route this to the correct [`DownloadEndPolicy`] variant
+        /// needs to route this to the correct
+        /// [`DownloadEndPolicy`](crate::scheduler::actor::DownloadEndPolicy) variant
         /// and, ultimately, the correct [`crate::monitor::InfraBlockReason`].
         kind: DownloadRejectedKind,
     },
@@ -650,7 +651,7 @@ impl DownloadTerminalEvent {
     }
 }
 
-/// Reason a [`DownloadManagerEvent::DownloadRejected`] event was emitted.
+/// Reason a [`DownloadTerminalEvent::Rejected`] event was emitted.
 ///
 /// Distinct from the free-form `reason` string because the scheduler needs
 /// structured data to decide which state to transition the streamer into —
@@ -783,7 +784,7 @@ impl DownloadManager {
     }
 
     /// Late-bind the output-root write gate. Used by
-    /// [`crate::services::container`] when the download manager is already
+    /// the services container when the download manager is already
     /// wrapped in `Arc` and its dependencies are ready.
     ///
     /// Attempting to set the gate a second time is a no-op that logs a
@@ -1154,7 +1155,7 @@ impl DownloadManager {
         self.prepare_output_dir_for_path(&config.output_dir).await
     }
 
-    /// Path-only variant of [`Self::prepare_output_dir`] used by
+    /// Path-only variant of `prepare_output_dir` used by
     /// [`Self::preflight`]. Same behaviour, just doesn't require a
     /// fully-built `DownloadConfig`.
     async fn prepare_output_dir_for_path(

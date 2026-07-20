@@ -286,54 +286,54 @@ impl ServiceContainerBuildOptions {
 /// Service container holding all application services.
 pub struct ServiceContainer {
     /// Database connection pool (read-heavy).
-    pub pool: SqlitePool,
+    pub(crate) pool: SqlitePool,
     /// Serialized write pool (max_connections=1) for contention-free writes.
     write_pool: SqlitePool,
     /// Configuration service.
-    pub config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
+    pub(crate) config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
     /// Streamer manager.
-    pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
+    pub(crate) streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     /// Event broadcaster (shared between services).
-    pub event_broadcaster: ConfigEventBroadcaster,
+    pub(crate) event_broadcaster: ConfigEventBroadcaster,
     /// Download manager.
-    pub download_manager: Arc<DownloadManager>,
+    pub(crate) download_manager: Arc<DownloadManager>,
     /// Session repository shared by monitor, pipeline, danmu, and download startup.
-    pub session_repository: Arc<SqlxSessionRepository>,
+    pub(crate) session_repository: Arc<SqlxSessionRepository>,
     /// Output-root write gate (#508). Shared by the download manager for
     /// pre-start checks + runtime ENOSPC routing and by the health checker
     /// for aggregated `/health` reporting.
-    pub output_root_gate: Arc<OutputRootGate>,
+    pub(crate) output_root_gate: Arc<OutputRootGate>,
     /// GPU health monitor (#555). Empty when `nvidia-smi` is not available
     /// at startup; otherwise the background probe loop is owned by the
     /// container's cancellation token. Use [`std::sync::OnceLock::get`]
     /// to read; installation is owned by the private runtime initializer.
-    pub gpu_health_monitor: std::sync::OnceLock<Arc<crate::metrics::GpuHealthMonitor>>,
+    pub(crate) gpu_health_monitor: std::sync::OnceLock<Arc<crate::metrics::GpuHealthMonitor>>,
     /// Pipeline manager.
-    pub pipeline_manager: Arc<PipelineManager>,
+    pub(crate) pipeline_manager: Arc<PipelineManager>,
     /// Monitor event broadcaster.
-    pub monitor_event_broadcaster: MonitorEventBroadcaster,
+    pub(crate) monitor_event_broadcaster: MonitorEventBroadcaster,
     /// Single-owner session lifecycle service. Owns the in-memory session map,
     /// hard-ended suppression cache, and the `SessionTransition` broadcast
     /// channel consumed by pipeline/notification/API layers.
-    pub session_lifecycle: Arc<crate::session::SessionLifecycle>,
+    pub(crate) session_lifecycle: Arc<crate::session::SessionLifecycle>,
     /// Danmu service.
-    pub danmu_service: Arc<DanmuService>,
+    pub(crate) danmu_service: Arc<DanmuService>,
     /// Notification service.
-    pub notification_service: Arc<NotificationService>,
+    pub(crate) notification_service: Arc<NotificationService>,
     /// Notification repository.
-    pub notification_repository: Arc<dyn NotificationRepository>,
+    pub(crate) notification_repository: Arc<dyn NotificationRepository>,
     /// Web push service for browser notifications (VAPID), if configured.
-    pub web_push_service: Option<Arc<WebPushService>>,
+    pub(crate) web_push_service: Option<Arc<WebPushService>>,
     /// Metrics collector.
-    pub metrics_collector: Arc<MetricsCollector>,
+    pub(crate) metrics_collector: Arc<MetricsCollector>,
     /// Health checker.
-    pub health_checker: Arc<HealthChecker>,
+    pub(crate) health_checker: Arc<HealthChecker>,
     /// Database maintenance scheduler.
-    pub maintenance_scheduler: Arc<MaintenanceScheduler>,
+    pub(crate) maintenance_scheduler: Arc<MaintenanceScheduler>,
     /// Scheduler service
-    pub scheduler: Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
+    pub(crate) scheduler: Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
     /// Stream monitor for real status detection
-    pub stream_monitor: Arc<
+    pub(crate) stream_monitor: Arc<
         StreamMonitor<
             SqlxStreamerRepository,
             SqlxFilterRepository,
@@ -342,12 +342,13 @@ pub struct ServiceContainer {
         >,
     >,
     /// Credential refresh service (shared between monitor + API).
-    pub credential_service: Arc<crate::credentials::CredentialRefreshService<SqlxConfigRepository>>,
+    pub(crate) credential_service:
+        Arc<crate::credentials::CredentialRefreshService<SqlxConfigRepository>>,
     /// Live broadcaster for committed check-history rows. Cloned into the
     /// downloads WS route so per-streamer subscribers see new bars appear
     /// without polling. Same fan-out pattern as
     /// [`crate::downloader::DownloadManager::subscribe`].
-    pub check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
+    pub(crate) check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
     /// Per-session cancellation tokens. The
     /// [`MonitorEvent::StreamerLive`] handler spawns a download
     /// pipeline as a tokio task; the matching
@@ -355,7 +356,7 @@ pub struct ServiceContainer {
     /// monitor event for that session) cancels its token so a queued
     /// pipeline can bail without spinning up an engine for an
     /// already-offline streamer.
-    pub session_cancels: Arc<SessionCancelTokens>,
+    pub(crate) session_cancels: Arc<SessionCancelTokens>,
     /// Per-streamer "a download pipeline is in flight for this
     /// streamer right now" reservation set. Held from the start of
     /// `run_live_download_pipeline` (before preflight) through the
@@ -366,7 +367,7 @@ pub struct ServiceContainer {
     /// returning `false` and
     /// [`crate::downloader::DownloadManager::start_with_slot`]
     /// inserting into `active_downloads`.
-    pub pending_pipelines: Arc<DashMap<String, ()>>,
+    pub(crate) pending_pipelines: Arc<DashMap<String, ()>>,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
@@ -1102,6 +1103,13 @@ impl ServiceContainer {
     /// Get the notification service.
     pub fn notification_service(&self) -> &Arc<NotificationService> {
         &self.notification_service
+    }
+
+    /// Return the configuration service used by the runtime.
+    pub fn config_service(
+        &self,
+    ) -> &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>> {
+        &self.config_service
     }
 
     /// Get Prometheus metrics export.

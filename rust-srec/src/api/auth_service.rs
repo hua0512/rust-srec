@@ -120,9 +120,6 @@ pub enum AuthError {
     #[error("Invalid token")]
     InvalidToken,
 
-    #[error("Password change required")]
-    PasswordChangeRequired,
-
     #[error("Password does not meet requirements: {0}")]
     WeakPassword(String),
 
@@ -647,11 +644,6 @@ impl AuthService {
             .collect();
 
         Ok(sessions)
-    }
-
-    /// Get the authentication configuration.
-    pub fn config(&self) -> &AuthConfig {
-        &self.config
     }
 }
 

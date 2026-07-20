@@ -3,17 +3,18 @@
 //! Provides JWT token-based authentication for protected endpoints.
 
 use axum::{
-    extract::Request,
-    http::{StatusCode, header::AUTHORIZATION},
-    middleware::Next,
+    http::{Request, StatusCode, header::AUTHORIZATION},
     response::{IntoResponse, Response},
 };
 
-#[cfg(test)]
-use axum::body::Body;
 use std::sync::Arc;
 
-use crate::api::jwt::{Claims, JwtError, JwtService};
+use crate::api::jwt::{JwtError, JwtService};
+
+#[cfg(test)]
+use crate::api::jwt::Claims;
+#[cfg(test)]
+use axum::body::Body;
 
 /// JWT authentication error response.
 #[derive(Debug)]
@@ -40,8 +41,7 @@ impl IntoResponse for JwtAuthError {
     }
 }
 
-/// Extract Bearer token from Authorization header.
-fn extract_bearer_token(request: &Request) -> Result<&str, JwtAuthError> {
+fn extract_bearer_token<B>(request: &Request<B>) -> Result<&str, JwtAuthError> {
     let auth_header = request
         .headers()
         .get(AUTHORIZATION)
@@ -54,34 +54,6 @@ fn extract_bearer_token(request: &Request) -> Result<&str, JwtAuthError> {
     auth_str
         .strip_prefix("Bearer ")
         .ok_or(JwtAuthError::InvalidFormat)
-}
-
-/// JWT authentication middleware.
-///
-/// Extracts the Bearer token from the Authorization header, validates it,
-/// and injects the claims into request extensions.
-pub async fn jwt_auth_middleware(
-    jwt_service: Arc<JwtService>,
-    mut request: Request,
-    next: Next,
-) -> Result<Response, JwtAuthError> {
-    let token = extract_bearer_token(&request)?;
-
-    let claims = jwt_service
-        .validate_token(token)
-        .map_err(JwtAuthError::InvalidToken)?;
-
-    // Inject claims into request extensions for downstream handlers
-    request.extensions_mut().insert(claims);
-
-    Ok(next.run(request).await)
-}
-
-/// Extract claims from request extensions.
-///
-/// Use this in handlers to access the authenticated user's claims.
-pub fn extract_claims(request: &Request) -> Option<&Claims> {
-    request.extensions().get::<Claims>()
 }
 
 /// JWT authentication layer for use with axum's layer system.
@@ -139,27 +111,9 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            // Extract token from Authorization header
-            let auth_header = request.headers().get(AUTHORIZATION);
-
-            let token = match auth_header {
-                Some(header) => {
-                    let header_str = match header.to_str() {
-                        Ok(s) => s,
-                        Err(_) => {
-                            return Ok(JwtAuthError::InvalidFormat.into_response());
-                        }
-                    };
-
-                    if !header_str.starts_with("Bearer ") {
-                        return Ok(JwtAuthError::InvalidFormat.into_response());
-                    }
-
-                    &header_str[7..]
-                }
-                None => {
-                    return Ok(JwtAuthError::MissingToken.into_response());
-                }
+            let token = match extract_bearer_token(&request) {
+                Ok(token) => token,
+                Err(error) => return Ok(error.into_response()),
             };
 
             // Validate token
@@ -183,7 +137,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::Request;
 
     fn create_test_service() -> Arc<JwtService> {
         Arc::new(JwtService::new(
@@ -195,23 +148,32 @@ mod tests {
     }
 
     #[test]
+    fn test_jwt_auth_layer_creation() {
+        let jwt_service = create_test_service();
+        let layer = JwtAuthLayer::new(jwt_service);
+
+        // Just verify it can be created
+        assert!(Arc::strong_count(&layer.jwt_service) >= 1);
+    }
+
+    #[test]
     fn test_extract_bearer_token_valid() {
         let request = Request::builder()
             .header(AUTHORIZATION, "Bearer valid_token_here")
             .body(Body::empty())
             .unwrap();
 
-        let result = extract_bearer_token(&request);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "valid_token_here");
+        assert_eq!(extract_bearer_token(&request).unwrap(), "valid_token_here");
     }
 
     #[test]
     fn test_extract_bearer_token_missing() {
         let request = Request::builder().body(Body::empty()).unwrap();
 
-        let result = extract_bearer_token(&request);
-        assert!(matches!(result, Err(JwtAuthError::MissingToken)));
+        assert!(matches!(
+            extract_bearer_token(&request),
+            Err(JwtAuthError::MissingToken)
+        ));
     }
 
     #[test]
@@ -221,17 +183,10 @@ mod tests {
             .body(Body::empty())
             .unwrap();
 
-        let result = extract_bearer_token(&request);
-        assert!(matches!(result, Err(JwtAuthError::InvalidFormat)));
-    }
-
-    #[test]
-    fn test_jwt_auth_layer_creation() {
-        let jwt_service = create_test_service();
-        let layer = JwtAuthLayer::new(jwt_service);
-
-        // Just verify it can be created
-        assert!(Arc::strong_count(&layer.jwt_service) >= 1);
+        assert!(matches!(
+            extract_bearer_token(&request),
+            Err(JwtAuthError::InvalidFormat)
+        ));
     }
 }
 

@@ -8,7 +8,8 @@
 // re-exports `t!` and exposes locale-management helpers.
 rust_i18n::i18n!("locales", fallback = "en");
 
-pub mod api;
+mod api;
+pub mod backend;
 pub mod config;
 pub mod credentials;
 pub mod danmu;
@@ -24,7 +25,7 @@ pub mod notification;
 pub mod panic_hook;
 pub mod pipeline;
 pub mod scheduler;
-pub mod services;
+mod services;
 pub mod session;
 pub mod streamer;
 pub mod utils;

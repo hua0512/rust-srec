@@ -110,7 +110,8 @@ impl SessionEventPayload {
 }
 
 /// Wire-format DTO for [`TerminalCause`]. Keeps the domain enum serde-free
-/// (some inner types like [`DownloadStopCause`] are not `Serialize`, and
+/// (some inner types like [`DownloadStopCause`](crate::downloader::DownloadStopCause)
+/// are not `Serialize`, and
 /// adding the derive would risk drift in unrelated call sites).
 ///
 /// The shape is:

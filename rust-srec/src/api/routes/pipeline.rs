@@ -529,8 +529,6 @@ pub struct DagFilterParams {
     pub status: Option<String>,
     /// Filter by session ID.
     pub session_id: Option<String>,
-    /// Search query
-    pub search: Option<String>,
 }
 
 /// Pagination parameters for DAG list.

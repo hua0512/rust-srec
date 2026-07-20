@@ -5,6 +5,7 @@ use crate::database::repositories::{
     SessionRepository as _, SqlxSessionRepository, SqlxStreamerRepository, StreamerRepository as _,
 };
 use crate::database::{init_pool_with_size, run_migrations};
+use crate::monitor::MonitorEvent;
 use sqlx::SqlitePool;
 
 const STREAMER_ID: &str = "test-streamer";
@@ -51,8 +52,6 @@ async fn outbox_event_types(pool: &SqlitePool) -> Vec<String> {
                 MonitorEvent::FatalError { .. } => "FatalError",
                 MonitorEvent::TransientError { .. } => "TransientError",
                 MonitorEvent::StateChanged { .. } => "StateChanged",
-                MonitorEvent::LiveDetected { .. } => "LiveDetected",
-                MonitorEvent::OfflineDetected { .. } => "OfflineDetected",
             }
             .to_string()
         })
@@ -283,30 +282,6 @@ async fn ended_session_followed_by_live_creates_new_session() {
 
     assert!(matches!(second, StartSessionOutcome::Created { .. }));
     assert_ne!(second.session_id(), first.session_id());
-}
-
-#[tokio::test]
-async fn handle_monitor_event_ignores_non_lifecycle_variants() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle(pool);
-    let mut rx = lifecycle.subscribe();
-
-    let unrelated = MonitorEvent::StreamerLive {
-        streamer_id: STREAMER_ID.into(),
-        session_id: "some-id".into(),
-        streamer_name: "Test".into(),
-        streamer_url: "https://example.com".into(),
-        title: "t".into(),
-        category: None,
-        streams: vec![],
-        media_headers: None,
-        media_extras: None,
-        timestamp: Utc::now(),
-    };
-    lifecycle.handle_monitor_event(&unrelated).await.unwrap();
-
-    // No transition emitted.
-    assert!(rx.try_recv().is_err());
 }
 
 // =========================================================================

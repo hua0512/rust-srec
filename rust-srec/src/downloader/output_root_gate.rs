@@ -170,7 +170,7 @@ impl OutputRootGate {
     /// Construct a new gate.
     ///
     /// `configured_roots` is the optional list of explicit root paths from the
-    /// `RUST_SREC_OUTPUT_ROOTS` env var. When unset, [`resolve_root`] falls
+    /// `RUST_SREC_OUTPUT_ROOTS` env var. When unset, `resolve_root` falls
     /// back to a 2-component heuristic. Paths are normalized before being
     /// stored so `/rec`, `/rec/`, and `/rec/./` all hash to the same key.
     pub fn new(

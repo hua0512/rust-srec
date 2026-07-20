@@ -5,10 +5,8 @@ use tracing::{debug, info};
 
 use crate::Result;
 use crate::api::auth_service::{AuthConfig, AuthService};
-use crate::api::{
-    ApiServer, JwtService,
-    server::{ApiServices, AppState},
-};
+use crate::api::jwt::JwtService;
+use crate::api::server::{ApiServer, ApiServices, AppState};
 use crate::database::repositories::{
     SqlxRefreshTokenRepository, SqlxUserRepository,
     filter::SqlxFilterRepository,

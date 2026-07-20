@@ -346,14 +346,12 @@ pub struct UpdateGlobalConfigRequest {
     pub default_download_engine: Option<serde_json::Value>,
     pub record_danmu: Option<serde_json::Value>,
     pub proxy_config: Option<serde_json::Value>,
-    /// Global pipeline configuration (JSON serialized Vec<PipelineStep>)
+    /// Global pipeline configuration (JSON serialized `Vec<PipelineStep>`)
     pub pipeline: Option<serde_json::Value>,
     /// Session-complete pipeline configuration (JSON serialized DagPipelineDefinition)
     pub session_complete_pipeline: Option<serde_json::Value>,
     /// Paired-segment pipeline configuration (JSON serialized DagPipelineDefinition)
     pub paired_segment_pipeline: Option<serde_json::Value>,
-    /// Log filter directive for dynamic logging
-    pub log_filter_directive: Option<serde_json::Value>,
     /// Whether to automatically generate thumbnails for new sessions
     pub auto_thumbnail: Option<serde_json::Value>,
 
@@ -389,7 +387,7 @@ pub struct PlatformConfigResponse {
     pub max_part_size_bytes: Option<u64>,
     pub download_retry_policy: Option<String>,
     pub event_hooks: Option<String>,
-    /// Platform-specific pipeline configuration (JSON serialized Vec<PipelineStep>)
+    /// Platform-specific pipeline configuration (JSON serialized `Vec<PipelineStep>`)
     pub pipeline: Option<String>,
     pub session_complete_pipeline: Option<String>,
     pub paired_segment_pipeline: Option<String>,

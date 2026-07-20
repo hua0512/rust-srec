@@ -60,17 +60,17 @@ impl RefreshTokenDbModel {
         !self.is_expired() && !self.is_revoked()
     }
 
-    /// Get expires_at as DateTime<Utc>.
+    /// Get `expires_at` as `DateTime<Utc>`.
     pub fn get_expires_at(&self) -> DateTime<Utc> {
         crate::database::time::ms_to_datetime(self.expires_at)
     }
 
-    /// Get created_at as DateTime<Utc>.
+    /// Get `created_at` as `DateTime<Utc>`.
     pub fn get_created_at(&self) -> DateTime<Utc> {
         crate::database::time::ms_to_datetime(self.created_at)
     }
 
-    /// Get revoked_at as DateTime<Utc>.
+    /// Get `revoked_at` as `DateTime<Utc>`.
     pub fn get_revoked_at(&self) -> Option<DateTime<Utc>> {
         self.revoked_at.map(crate::database::time::ms_to_datetime)
     }

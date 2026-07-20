@@ -823,7 +823,7 @@ mod tests {
 
     #[test]
     fn test_client_message_subscribe_decode() {
-        use crate::api::proto::{SubscribeRequest, download_progress::client_message::Action};
+        use crate::api::proto::download_progress::{SubscribeRequest, client_message::Action};
 
         let client_msg = ClientMessage {
             action: Some(Action::Subscribe(SubscribeRequest {
@@ -846,7 +846,7 @@ mod tests {
 
     #[test]
     fn test_client_message_unsubscribe_decode() {
-        use crate::api::proto::{UnsubscribeRequest, download_progress::client_message::Action};
+        use crate::api::proto::download_progress::{UnsubscribeRequest, client_message::Action};
 
         let client_msg = ClientMessage {
             action: Some(Action::Unsubscribe(UnsubscribeRequest {})),

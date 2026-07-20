@@ -43,12 +43,6 @@ impl ApiError {
         }
     }
 
-    /// Add details to the error.
-    pub fn with_details(mut self, details: serde_json::Value) -> Self {
-        self.details = Some(details);
-        self
-    }
-
     /// Create a 400 Bad Request error.
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, "BAD_REQUEST", message)
@@ -57,11 +51,6 @@ impl ApiError {
     /// Create a 401 Unauthorized error.
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::new(StatusCode::UNAUTHORIZED, "UNAUTHORIZED", message)
-    }
-
-    /// Create a 403 Forbidden error.
-    pub fn forbidden(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::FORBIDDEN, "FORBIDDEN", message)
     }
 
     /// Create a 404 Not Found error.
@@ -161,14 +150,6 @@ mod tests {
         assert_eq!(err.status, StatusCode::NOT_FOUND);
         assert_eq!(err.code, "NOT_FOUND");
         assert_eq!(err.message, "User not found");
-    }
-
-    #[test]
-    fn test_api_error_with_details() {
-        let err = ApiError::validation("Invalid input")
-            .with_details(serde_json::json!({"field": "email", "reason": "invalid format"}));
-
-        assert!(err.details.is_some());
     }
 
     #[test]

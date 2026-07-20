@@ -63,23 +63,6 @@ pub struct WsAuthParams {
     pub token: String,
 }
 
-/// Optional authentication token via query parameter.
-///
-/// This is primarily used for endpoints where setting headers is inconvenient
-/// (e.g., links/downloads), and mirrors the WebSocket auth pattern.
-#[derive(Debug, Deserialize)]
-pub struct OptionalAuthParams {
-    pub token: Option<String>,
-}
-
-#[derive(Debug, Deserialize, utoipa::IntoParams)]
-pub struct LogRangeQuery {
-    /// Inclusive start date in YYYY-MM-DD.
-    pub from: Option<String>,
-    /// Inclusive end date in YYYY-MM-DD.
-    pub to: Option<String>,
-}
-
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct ListLogFilesQuery {
     /// Inclusive start date in YYYY-MM-DD.
@@ -557,7 +540,6 @@ pub async fn list_log_files(
     get,
     path = "/api/logging/archive-token",
     tag = "logging",
-    params(LogRangeQuery),
     responses(
         (status = 200, description = "Archive token", body = ArchiveTokenResponse),
         (status = 401, description = "Unauthorized", body = crate::api::error::ApiErrorResponse)
@@ -566,7 +548,6 @@ pub async fn list_log_files(
 )]
 pub async fn get_archive_token(
     State(state): State<LoggingRouteState>,
-    Query(_range): Query<LogRangeQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Json<ArchiveTokenResponse>> {
     let token =

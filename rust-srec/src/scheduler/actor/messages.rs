@@ -168,7 +168,7 @@ pub enum DownloadEndPolicy {
     /// `ensure_output_dir` failed, the engine stderr reader observed a
     /// runtime ENOSPC signature, or the startup probe flagged it. The actor
     /// should transition the streamer to
-    /// [`crate::domain::streamer::state::StreamerState::OutOfSpace`] and
+    /// [`crate::domain::StreamerState::OutOfSpace`] and
     /// schedule the next check after `retry_after_secs` (the gate cooldown).
     OutputRootBlocked {
         /// Resolved root path in Degraded state (e.g. `/rec`).
