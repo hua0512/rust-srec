@@ -134,7 +134,7 @@ pub struct GlobalConfigDbModel {
     /// download without a restart.
     pub queue_freshness_threshold_ms: i64,
 
-    /// Seconds between probes by the GPU health monitor (issue #555).
+    /// Seconds between probes by the GPU health monitor.
     /// The monitor shells out to `nvidia-smi` on this cadence and emits
     /// a single `GpuUnavailable` notification on Healthy → Unhealthy
     /// transitions. Runtime-mutable; the monitor re-reads the value

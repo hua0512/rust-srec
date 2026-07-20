@@ -534,7 +534,7 @@ pub enum NotificationEvent {
     },
     /// GPU became unavailable to the container (caught by the GPU health
     /// monitor probing nvidia-smi). Most often the NVIDIA Container Toolkit
-    /// and cgroup v2 reconciliation pattern from issue #555: the host's
+    /// and cgroup v2 reconciliation pattern: the host's
     /// systemd reloads the device cgroup and silently drops the
     /// container's GPU access while `/dev/nvidia*` nodes remain visible.
     ///

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) fn schema_version_at_least(version: &str, min: (u32, u32, u32)) -> bool {
     fn parse_segment(segment: &str) -> Option<u32> {
-        let digits: String = segment.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let digits: String = segment.chars().take_while(char::is_ascii_digit).collect();
         if digits.is_empty() {
             return None;
         }
@@ -61,41 +61,41 @@ fn parse_timestamp_ms_str(value: &str) -> Result<i64, String> {
     ))
 }
 
+/// Timestamp wire shape accepted by `deserialize_timestamp_ms` and
+/// `deserialize_opt_timestamp_ms`: epoch milliseconds, or a string parsed by
+/// `parse_timestamp_ms_str`.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawTimestamp {
+    Ms(i64),
+    Str(String),
+}
+
+impl RawTimestamp {
+    fn into_ms(self) -> Result<i64, String> {
+        match self {
+            Self::Ms(ms) => Ok(ms),
+            Self::Str(s) => parse_timestamp_ms_str(&s),
+        }
+    }
+}
+
 fn deserialize_timestamp_ms<'de, D>(deserializer: D) -> Result<i64, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    #[derive(serde::Deserialize)]
-    #[serde(untagged)]
-    enum RawTs {
-        Ms(i64),
-        Str(String),
-    }
-
-    match RawTs::deserialize(deserializer)? {
-        RawTs::Ms(ms) => Ok(ms),
-        RawTs::Str(s) => parse_timestamp_ms_str(&s).map_err(D::Error::custom),
-    }
+    RawTimestamp::deserialize(deserializer)?
+        .into_ms()
+        .map_err(D::Error::custom)
 }
 
 fn deserialize_opt_timestamp_ms<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    #[derive(serde::Deserialize)]
-    #[serde(untagged)]
-    enum RawTs {
-        Ms(i64),
-        Str(String),
-    }
-
-    let value = Option::<RawTs>::deserialize(deserializer)?;
-    match value {
+    match Option::<RawTimestamp>::deserialize(deserializer)? {
         None => Ok(None),
-        Some(RawTs::Ms(ms)) => Ok(Some(ms)),
-        Some(RawTs::Str(s)) => parse_timestamp_ms_str(&s)
-            .map(Some)
-            .map_err(D::Error::custom),
+        Some(raw) => raw.into_ms().map(Some).map_err(D::Error::custom),
     }
 }
 
@@ -205,7 +205,7 @@ pub struct GlobalConfigExport {
     /// Milliseconds a queued download may wait before refetching live state.
     #[serde(default = "default_queue_freshness_threshold_ms")]
     pub queue_freshness_threshold_ms: i64,
-    /// Seconds between GPU health probes (issue #555).
+    /// Seconds between `nvidia-smi` probes by the GPU health monitor.
     #[serde(default = "default_gpu_health_probe_interval_secs")]
     pub gpu_health_probe_interval_secs: i64,
 }

@@ -9,10 +9,8 @@
 //!    concrete SQL repository.
 //! 2. **Emission of [`SessionTransition`] events** — a narrow broadcast
 //!    stream consumed by `pipeline::manager`, `services::container`,
-//!    `notification::service`, and `api::routes::sessions`. Replaces the
-//!    per-component reconstruction of "is this session done?" from raw
-//!    download/monitor events that produced PR #524 and the
-//!    home-page-vs-session-detail divergence on 2026-04-22.
+//!    `notification::service`, and `api::routes::sessions`, so no consumer
+//!    re-derives "is this session done?" from raw download/monitor events.
 //!
 //! ## What `SessionLifecycle` does **not** own
 //!

@@ -143,6 +143,7 @@ jobs:
               - 'Cargo.lock'
               - 'rust-srec/Cargo.toml'
               - 'rust-srec/src/**'
+              - 'rust-srec/tests/**'
               - 'rust-srec/src-tauri/**'
               - 'scripts/check-rust-srec-public-api.sh'
               - '.github/public-api/**'

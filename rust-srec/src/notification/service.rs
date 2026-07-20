@@ -221,39 +221,12 @@ pub struct DeadLetterEntry {
     pub dead_lettered_at: DateTime<Utc>,
 }
 
-struct RetryParams {
-    id: u64,
-    delay: Duration,
-    expected_generation: u64,
-    channels: Vec<Arc<RuntimeChannel>>,
-    pending_queue: Arc<DashMap<u64, PendingNotification>>,
-    dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
-    dead_letter_cleanup_ts: Arc<AtomicU64>,
-    circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
-    notification_repo: Option<Arc<dyn NotificationRepository>>,
-    config: NotificationServiceConfig,
-    next_dead_letter_id: Arc<AtomicU64>,
-    cancellation_token: CancellationToken,
-    task_supervisor: Arc<TaskSupervisor>,
-}
-
-struct ProcessingParams {
-    id: u64,
-    channels: Vec<Arc<RuntimeChannel>>,
-    pending_queue: Arc<DashMap<u64, PendingNotification>>,
-    dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
-    dead_letter_cleanup_ts: Arc<AtomicU64>,
-    circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
-    notification_repo: Option<Arc<dyn NotificationRepository>>,
-    config: NotificationServiceConfig,
-    next_dead_letter_id: Arc<AtomicU64>,
-    cancellation_token: CancellationToken,
-    task_supervisor: Arc<TaskSupervisor>,
-}
-
 /// The notification service.
 pub struct NotificationService {
-    config: NotificationServiceConfig,
+    /// Shared with every detached delivery/retry task via
+    /// `delivery::DeliveryContext`; `Arc` so those clones don't deep-copy
+    /// `NotificationServiceConfig::channels` per attempt.
+    config: Arc<NotificationServiceConfig>,
     notification_repo: Option<Arc<dyn NotificationRepository>>,
     web_push_service: Option<Arc<WebPushService>>,
     web_push_tx: parking_lot::RwLock<Option<mpsc::Sender<WebPushQueuedEvent>>>,
@@ -351,7 +324,7 @@ impl NotificationService {
             cancellation_token: CancellationToken::new(),
             task_supervisor: Arc::new(TaskSupervisor::new()),
             owns_task_supervisor: true,
-            config,
+            config: Arc::new(config),
         };
 
         // Initialize channels from config

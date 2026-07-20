@@ -272,8 +272,8 @@ async fn ended_session_followed_by_live_creates_new_session() {
         .await
         .unwrap();
 
-    // New LiveDetected within what used to be the gap window: now
-    // unconditionally creates a fresh session.
+    // A LiveDetected arriving shortly after on_offline_detected ended the
+    // session unconditionally creates a fresh session.
     let restart_now = started_now + chrono::Duration::seconds(90);
     let second = lifecycle
         .on_live_detected(live_args(restart_now))
@@ -285,11 +285,13 @@ async fn ended_session_followed_by_live_creates_new_session() {
 }
 
 // =========================================================================
-// Download-terminal regression scenarios.
+// Download-terminal scenarios.
 //
-// These scenarios lock down the PR #524 regression (session-complete
-// pipeline not firing on DownloadFailed) and the 2026-04-22 home-page vs
-// session-detail divergence bug.
+// These scenarios pin two invariants of `on_download_terminal`: every
+// terminal cause maps to the right SessionTransition (in particular,
+// DownloadFailed must end the session and carry a positive
+// `should_run_session_complete_pipeline` decision), and the in-memory
+// `is_session_active` view stays consistent with `live_sessions.end_time`.
 //
 // These tests are intentionally SessionLifecycle-scoped: pipeline-side
 // behaviour for each cause is covered by `pipeline::manager::tests`, and
@@ -527,11 +529,11 @@ async fn d2_active_session_reused_on_repeat_live() {
     assert_eq!(second_id, first_id, "same session_id across Started emits");
 }
 
-// Gap-resume is intentionally absent. Hysteresis covers the valid case
+// Ended sessions are never resumed. Hysteresis covers the valid case
 // where an interrupted stream resumes before the session is ended.
 
 /// D4 — Once a session is Ended, the next LiveDetected creates a
-/// fresh session. Ended rows are final, with no gap window to consider.
+/// fresh session. Ended rows are final and never resumed.
 #[tokio::test]
 async fn d4_after_ended_creates_new_session() {
     let pool = setup_pool().await;
@@ -1617,8 +1619,7 @@ async fn j4_completed_with_hls_endlist_skips_hysteresis() {
 /// with `from_hysteresis: true` AND a populated `download_start`
 /// payload. The container's resume-download subscriber relies on the
 /// payload to (re)start the download for the resumed session — without
-/// it, the streamer stays "Live" in memory but no recording happens
-/// (kinetic / 2026-05-02 1.5h gap).
+/// it, the streamer stays "Live" in memory but no recording happens.
 #[tokio::test]
 async fn n1_resume_emits_started_with_download_start_payload() {
     let pool = setup_pool().await;
@@ -1692,7 +1693,7 @@ async fn n1_resume_emits_started_with_download_start_payload() {
             assert_eq!(session_id, started.session_id());
             let payload = download_start.as_deref().expect(
                 "resume_from_hysteresis MUST populate download_start so the \
-                     container can restart the download (the kinetic 1.5h gap fix)",
+                     container can restart the download",
             );
             assert_eq!(
                 payload.streamer_url, "https://example.com",

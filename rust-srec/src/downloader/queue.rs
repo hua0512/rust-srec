@@ -1,8 +1,8 @@
 //! Priority-aware download queue.
 //!
-//! Replaces the two `tokio::sync::Semaphore`s previously embedded in the
-//! [`crate::downloader::manager::DownloadManager`]. Owns the question
-//! "who's allowed to start a download right now, and in what order?"
+//! Owned by [`crate::downloader::manager::DownloadManager`]; answers the
+//! question "who's allowed to start a download right now, and in what
+//! order?"
 //!
 //! ## Why a custom queue
 //!
@@ -1510,12 +1510,11 @@ mod tests {
         assert!(matches!(res, Err(AcquireError::ShuttingDown)));
     }
 
-    /// Regression test for the race window between
-    /// `try_acquire_fast` returning `false` and the waiter being
-    /// enqueued. Before the fix, `release()` running in that gap
-    /// would see no waiters and return; the new waiter then slept
-    /// even though capacity was free, until another release happened.
-    /// The fix is the post-enqueue promotion pass in `acquire`.
+    /// Pins the race window between `try_acquire_fast` returning
+    /// `false` and the waiter being enqueued: a `release()` running in
+    /// that gap sees no waiters and returns, so the post-enqueue
+    /// promotion pass in `acquire` is what wakes the new waiter instead
+    /// of leaving it asleep while capacity is free.
     #[tokio::test]
     async fn no_lost_wakeup_when_release_races_with_enqueue() {
         // Saturate.

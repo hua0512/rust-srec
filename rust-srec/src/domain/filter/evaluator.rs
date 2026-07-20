@@ -5,9 +5,8 @@ use std::str::FromStr;
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use regex::RegexBuilder;
-use tracing::warn;
 
-use super::{CronFilter, Filter, RegexFilter};
+use super::{CronFilter, RegexFilter};
 
 /// Error type for filter evaluation failures.
 #[derive(Debug, thiserror::Error)]
@@ -23,48 +22,6 @@ pub enum FilterEvalError {
 
     #[error("Invalid regex pattern: {0}")]
     InvalidRegexPattern(String),
-}
-
-/// Stream data used to evaluate a set of filters.
-#[derive(Debug, Clone)]
-pub struct EvalContext {
-    pub current_time: DateTime<Utc>,
-    pub stream_title: Option<String>,
-    pub stream_category: Option<String>,
-}
-
-impl EvalContext {
-    pub fn new() -> Self {
-        Self {
-            current_time: Utc::now(),
-            stream_title: None,
-            stream_category: None,
-        }
-    }
-
-    pub fn with_time(time: DateTime<Utc>) -> Self {
-        Self {
-            current_time: time,
-            stream_title: None,
-            stream_category: None,
-        }
-    }
-
-    pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.stream_title = Some(title.into());
-        self
-    }
-
-    pub fn category(mut self, category: impl Into<String>) -> Self {
-        self.stream_category = Some(category.into());
-        self
-    }
-}
-
-impl Default for EvalContext {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 /// Evaluates already-parsed domain filters.
@@ -86,7 +43,12 @@ impl FilterEvaluator {
         Self::time_matches_schedule(&schedule, now.with_timezone(&timezone))
     }
 
-    fn time_matches_schedule<T: TimeZone>(
+    /// Whether `now` falls inside a minute the schedule fires on.
+    ///
+    /// Also called by `CronFilter::next_unmatch_time`, which must agree
+    /// with `CronFilter::matches` on the current minute before scanning
+    /// for the end of the matching run.
+    pub(super) fn time_matches_schedule<T: TimeZone>(
         schedule: &cron::Schedule,
         now: DateTime<T>,
     ) -> Result<bool, FilterEvalError>
@@ -127,45 +89,6 @@ impl FilterEvaluator {
 
         Ok(regex.is_match(title) ^ filter.exclude)
     }
-
-    /// Evaluate all filters with AND semantics.
-    ///
-    /// Missing title or category data does not reject a stream. Invalid cron
-    /// and regex filters fail closed and are logged.
-    pub fn evaluate_all(filters: &[Filter], context: &EvalContext) -> bool {
-        filters
-            .iter()
-            .all(|filter| match Self::evaluate_single(filter, context) {
-                Ok(matches) => matches,
-                Err(error) => {
-                    warn!(
-                        filter_type = filter.filter_type().as_str(),
-                        error = %error,
-                        "filter evaluation failed, treating as non-matching"
-                    );
-                    false
-                }
-            })
-    }
-
-    fn evaluate_single(filter: &Filter, context: &EvalContext) -> Result<bool, FilterEvalError> {
-        match filter {
-            Filter::TimeBased(filter) => Ok(filter.matches(context.current_time)),
-            Filter::Keyword(filter) => Ok(context
-                .stream_title
-                .as_deref()
-                .is_none_or(|title| filter.matches(title))),
-            Filter::Category(filter) => Ok(context
-                .stream_category
-                .as_deref()
-                .is_none_or(|category| filter.matches(category))),
-            Filter::Cron(filter) => Self::evaluate_cron(filter, context.current_time),
-            Filter::Regex(filter) => match context.stream_title.as_deref() {
-                Some(title) => Self::evaluate_regex(filter, title),
-                None => Ok(true),
-            },
-        }
-    }
 }
 
 #[cfg(test)]
@@ -173,7 +96,6 @@ mod tests {
     use chrono::TimeZone;
 
     use super::*;
-    use crate::domain::filter::{CategoryFilter, KeywordFilter};
 
     #[test]
     fn cron_matches_at_minute_granularity() {
@@ -181,6 +103,42 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2024, 12, 4, 22, 0, 45).unwrap();
 
         assert!(FilterEvaluator::evaluate_cron(&filter, now).unwrap());
+    }
+
+    #[test]
+    fn cron_only_matches_within_scheduled_minute() {
+        let filter = CronFilter::new("0 30 12 * * *");
+
+        let inside = Utc.with_ymd_and_hms(2024, 12, 4, 12, 30, 59).unwrap();
+        assert!(FilterEvaluator::evaluate_cron(&filter, inside).unwrap());
+
+        let outside = Utc.with_ymd_and_hms(2024, 12, 4, 12, 31, 0).unwrap();
+        assert!(!FilterEvaluator::evaluate_cron(&filter, outside).unwrap());
+    }
+
+    #[test]
+    fn cron_evaluates_in_configured_timezone() {
+        // 22:00 in Asia/Shanghai (UTC+8) is 14:00 UTC.
+        let filter = CronFilter::with_timezone("0 0 22 * * *", "Asia/Shanghai");
+
+        let matching_utc = Utc.with_ymd_and_hms(2024, 12, 4, 14, 0, 30).unwrap();
+        assert!(FilterEvaluator::evaluate_cron(&filter, matching_utc).unwrap());
+
+        // 22:00 UTC is 06:00 the next day in Asia/Shanghai — no match.
+        let non_matching_utc = Utc.with_ymd_and_hms(2024, 12, 4, 22, 0, 30).unwrap();
+        assert!(!FilterEvaluator::evaluate_cron(&filter, non_matching_utc).unwrap());
+    }
+
+    #[test]
+    fn cron_matches_day_of_week() {
+        let filter = CronFilter::new("0 0 20 * * Sat");
+
+        // 2024-12-07 was a Saturday, 2024-12-08 a Sunday.
+        let saturday = Utc.with_ymd_and_hms(2024, 12, 7, 20, 0, 10).unwrap();
+        assert!(FilterEvaluator::evaluate_cron(&filter, saturday).unwrap());
+
+        let sunday = Utc.with_ymd_and_hms(2024, 12, 8, 20, 0, 10).unwrap();
+        assert!(!FilterEvaluator::evaluate_cron(&filter, sunday).unwrap());
     }
 
     #[test]
@@ -203,36 +161,36 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_all_uses_and_semantics() {
-        let filters = vec![
-            Filter::Keyword(KeywordFilter::new(vec!["live".to_string()], vec![])),
-            Filter::Category(CategoryFilter::new(vec!["gaming".to_string()])),
-        ];
+    fn regex_supports_anchors_and_escaped_metacharacters() {
+        let filter = RegexFilter::new(r"^\[LIVE\]");
 
-        assert!(FilterEvaluator::evaluate_all(
-            &filters,
-            &EvalContext::new().title("Going live").category("Gaming")
-        ));
-        assert!(!FilterEvaluator::evaluate_all(
-            &filters,
-            &EvalContext::new().title("Going live").category("Music")
-        ));
+        assert!(FilterEvaluator::evaluate_regex(&filter, "[LIVE] speedrun night").unwrap());
+        assert!(!FilterEvaluator::evaluate_regex(&filter, "Re: [LIVE] speedrun night").unwrap());
     }
 
     #[test]
-    fn missing_optional_metadata_does_not_reject() {
-        let filters = vec![Filter::Regex(RegexFilter::new("live"))];
+    fn regex_supports_word_boundaries() {
+        let filter = RegexFilter::new(r"\bspeedrun\b");
 
-        assert!(FilterEvaluator::evaluate_all(&filters, &EvalContext::new()));
+        assert!(FilterEvaluator::evaluate_regex(&filter, "casual speedrun today").unwrap());
+        assert!(!FilterEvaluator::evaluate_regex(&filter, "speedrunning marathon").unwrap());
     }
 
     #[test]
-    fn invalid_filter_fails_closed() {
-        let filters = vec![Filter::Regex(RegexFilter::new("[invalid"))];
+    fn regex_empty_pattern_matches_everything() {
+        assert!(FilterEvaluator::evaluate_regex(&RegexFilter::new(""), "any title").unwrap());
+        assert!(!FilterEvaluator::evaluate_regex(&RegexFilter::exclude(""), "any title").unwrap());
+    }
 
-        assert!(!FilterEvaluator::evaluate_all(
-            &filters,
-            &EvalContext::new().title("live")
-        ));
+    #[test]
+    fn regex_combines_case_insensitivity_with_exclusion() {
+        let filter = RegexFilter {
+            pattern: "rerun".to_string(),
+            case_insensitive: true,
+            exclude: true,
+        };
+
+        assert!(!FilterEvaluator::evaluate_regex(&filter, "ReRun of stream").unwrap());
+        assert!(FilterEvaluator::evaluate_regex(&filter, "Fresh live show").unwrap());
     }
 }

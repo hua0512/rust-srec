@@ -71,13 +71,6 @@ fn io_error_in_chain<'a>(err: &'a (dyn std::error::Error + 'static)) -> Option<&
     None
 }
 
-// The per-tier concurrency primitives previously implemented here have
-// been replaced by [`DownloadQueue`] (`super::queue`), which subsumes
-// both the normal and high-priority pools, supports priority-aware
-// wakeup, and exposes the pending-set used by the WebSocket snapshot.
-// The struct used to be `ConcurrencyLimit`; callers now interact with
-// `self.queue` directly.
-
 /// Pending configuration update for an active download.
 ///
 /// Stores configuration changes that will be applied when the next segment starts.
@@ -170,8 +163,6 @@ struct ActiveDownload {
     handle: Arc<DownloadHandle>,
     status: DownloadStatus,
     progress: DownloadProgress,
-    #[allow(dead_code)]
-    is_high_priority: bool,
     /// Last known output path (from segments)
     pub output_path: Option<String>,
     current_segment_index: Option<u32>,
@@ -380,9 +371,8 @@ impl DownloadStopCause {
 ///
 /// The split exists to make session-termination a first-class, non-droppable
 /// signal: Rust's exhaustive pattern matching forces every consumer to make
-/// an explicit decision for every terminal variant. A silent `_ => {}` on the
-/// previous flat enum is how #520 (pipeline not running on `DownloadFailed`)
-/// went unnoticed since the feature landed in PR #187.
+/// an explicit decision for every terminal variant, where a flat enum would
+/// let a `_ => {}` catch-all silently drop one.
 #[derive(Debug, Clone)]
 pub enum DownloadManagerEvent {
     Progress(DownloadProgressEvent),
@@ -1244,7 +1234,7 @@ impl DownloadManager {
                 let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
-                    url: config_snapshot.url.clone(),
+                    url: config_snapshot.url,
                     streamer_id: config_snapshot.streamer_id,
                     session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
@@ -1427,31 +1417,35 @@ impl DownloadManager {
                     id: download_id.to_string(),
                 })?;
 
-        let streamer_id = download.handle.config_snapshot().streamer_id;
+        let streamer_id = download.handle.config.read().streamer_id.clone();
         // Drop the reference to avoid holding the lock while updating pending_updates
         drop(download);
 
+        // Capture presence flags for logging before the payloads move into
+        // the pending update.
+        let has_cookies = cookies.is_some();
+        let has_headers = headers.is_some();
+        let has_retry = retry_config.is_some();
+
         // Create the new pending update
-        let new_update =
-            PendingConfigUpdate::new(cookies.clone(), headers.clone(), retry_config.clone());
+        let new_update = PendingConfigUpdate::new(cookies, headers, retry_config);
 
         // Only store if there are actual updates
         if new_update.has_updates() {
             // Create or merge PendingConfigUpdate in pending_updates map
-            self.pending_updates
-                .entry(download_id.to_string())
-                .and_modify(|existing| {
-                    existing.merge(new_update.clone());
-                })
-                .or_insert(new_update);
+            match self.pending_updates.entry(download_id.to_string()) {
+                dashmap::mapref::entry::Entry::Occupied(mut existing) => {
+                    existing.get_mut().merge(new_update);
+                }
+                dashmap::mapref::entry::Entry::Vacant(slot) => {
+                    slot.insert(new_update);
+                }
+            }
 
             // Log the queued update
             info!(
                 "Config update queued for download {}: cookies={}, headers={}, retry={}",
-                download_id,
-                cookies.is_some(),
-                headers.is_some(),
-                retry_config.is_some()
+                download_id, has_cookies, has_headers, has_retry
             );
 
             debug!(
@@ -1472,13 +1466,15 @@ impl DownloadManager {
     pub fn get_download_by_streamer(&self, streamer_id: &str) -> Option<DownloadInfo> {
         self.active_downloads
             .iter()
-            .find(|entry| entry.value().handle.config_snapshot().streamer_id == streamer_id)
+            // Compare under the config read lock; `config_snapshot()` would
+            // deep-clone the whole `DownloadConfig` per scanned entry.
+            .find(|entry| entry.value().handle.config.read().streamer_id == streamer_id)
             .map(|entry| {
                 let download = entry.value();
                 let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
-                    url: config_snapshot.url.clone(),
+                    url: config_snapshot.url,
                     streamer_id: config_snapshot.streamer_id,
                     session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
@@ -1497,7 +1493,9 @@ impl DownloadManager {
     pub fn has_active_download(&self, streamer_id: &str) -> bool {
         self.active_downloads.iter().any(|entry| {
             let download = entry.value();
-            download.handle.config_snapshot().streamer_id == streamer_id
+            // Read the id under the config lock instead of cloning a full
+            // `DownloadConfig` snapshot per entry.
+            download.handle.config.read().streamer_id == streamer_id
                 && matches!(
                     download.status,
                     DownloadStatus::Starting | DownloadStatus::Downloading
@@ -1678,8 +1676,10 @@ impl DownloadManager {
         streamer_id: &str,
         events: &DownloadEventPublisher,
     ) {
+        // Classify before destructuring so the payloads can move into the
+        // handle config without a full `PendingConfigUpdate` clone.
+        let update_type = Self::determine_config_update_type(&update);
         let mut applied = false;
-        let update_clone = update.clone();
         let PendingConfigUpdate {
             cookies,
             headers,
@@ -1689,11 +1689,11 @@ impl DownloadManager {
 
         if cookies.is_some() || headers.is_some() {
             let mut cfg = download.handle.config.write();
-            if let Some(cookie_val) = cookies.clone() {
+            if let Some(cookie_val) = cookies {
                 cfg.cookies = Some(cookie_val);
                 applied = true;
             }
-            if let Some(header_val) = headers.clone() {
+            if let Some(header_val) = headers {
                 cfg.headers = header_val;
                 applied = true;
             }
@@ -1705,7 +1705,6 @@ impl DownloadManager {
         }
 
         if applied {
-            let update_type = Self::determine_config_update_type(&update_clone);
             let streamer_name = download.handle.config.read().streamer_name.clone();
             events.publish(DownloadManagerEvent::Progress(
                 DownloadProgressEvent::ConfigUpdated {
@@ -1728,7 +1727,7 @@ impl DownloadManager {
                 let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
-                    url: config_snapshot.url.clone(),
+                    url: config_snapshot.url,
                     streamer_id: config_snapshot.streamer_id,
                     session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
@@ -2661,7 +2660,7 @@ mod tests {
         }
     }
 
-    // ========== Output-root write gate integration (#508) ==========
+    // ========== Output-root write gate integration ==========
 
     /// Build a `DownloadConfig` pointed at `output_dir`, with the other
     /// fields set to minimal plausible values. The URL/streamer fields are
@@ -2872,10 +2871,9 @@ mod tests {
 
     #[tokio::test]
     async fn prepare_output_dir_without_gate_is_transparent() {
-        // Safety guarantee: installing no gate must leave prepare_output_dir
-        // behaving exactly like the old inline `ensure_output_dir` call —
-        // success creates the dir, failure returns a classified
-        // EngineStartError, no panics, no hidden state.
+        // Safety guarantee: with no gate installed, prepare_output_dir is a
+        // plain create-dir call — success creates the dir, failure returns
+        // a classified EngineStartError, no panics, no hidden state.
         let temp = tempfile::tempdir().expect("tempdir");
         let nested = temp.path().join("a").join("b").join("c");
         let manager = DownloadManager::new();

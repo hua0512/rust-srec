@@ -307,9 +307,8 @@ impl CredentialEvent {
             } => {
                 // Pre-format the optional error_code as a string so the YAML
                 // can just interpolate without conditional syntax. "N/A" is
-                // intentional — it's the same sentinel the old format! path
-                // used, and the zh-CN translation keeps it to avoid having
-                // to branch on Option inside the YAML.
+                // intentional — the zh-CN translation renders it verbatim,
+                // avoiding a branch on Option inside the YAML.
                 let error_code = error_code
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "N/A".to_string());

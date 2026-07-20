@@ -404,8 +404,8 @@ mod tests {
 
     // ---- Additional coverage ------------------------------------------
 
-    /// Mesio 404 (the previously-classified case) now returns `None` — the
-    /// FLV initial-request CDN race is not a definitive offline signal.
+    /// Mesio 404 returns `None` — the FLV initial-request CDN race is
+    /// not a definitive offline signal.
     #[test]
     fn mesio_404_no_longer_classifies() {
         let c = classic_classifier();

@@ -398,6 +398,13 @@ pub async fn import_config(
             }
         })?;
 
+    // The import writes user rows in its own transaction without going
+    // through `AuthService`, so cached `authorize_access_token` state may no
+    // longer match the rows just written; drop it all.
+    if let Some(auth_service) = state.auth_service.as_ref() {
+        auth_service.invalidate_user_cache();
+    }
+
     let stats = outcome.stats;
     let mut message = format!(
         "Imported: {} templates, {} streamers, {} engines, {} platforms updated, {} channels, {} job presets, {} pipeline presets, {} users",

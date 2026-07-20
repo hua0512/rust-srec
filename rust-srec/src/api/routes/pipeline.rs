@@ -65,15 +65,18 @@ pub(crate) mod dag;
 pub(crate) mod jobs;
 pub(crate) mod presets;
 
-pub use dag::{
+// Handler imports feed `router()` below; external code (e.g.
+// `api::openapi::ApiDoc`) addresses handlers through the `dag`/`jobs`/
+// `presets` submodules directly, so no re-export is needed.
+use dag::{
     cancel_dag, delete_dag, get_dag_graph, get_dag_stats, get_dag_status, list_dags,
     retry_all_failed_dags, retry_dag, validate_dag,
 };
-pub use jobs::{
+use jobs::{
     cancel_job, cancel_pipeline, create_pipeline, delete_job, get_job, get_job_progress, get_stats,
     list_job_logs, list_jobs, list_jobs_page, list_outputs, retry_job,
 };
-pub use presets::{
+use presets::{
     create_pipeline_preset, delete_pipeline_preset, get_pipeline_preset_by_id,
     list_pipeline_presets, preview_pipeline_preset, update_pipeline_preset,
 };
@@ -92,20 +95,53 @@ use std::sync::Arc;
 use crate::api::models::JobResponse;
 use crate::api::server::AppState;
 use crate::database::models::job::DagPipelineDefinition;
-use crate::database::repositories::StreamerRepository;
+use crate::database::repositories::{
+    PipelinePresetRepository, SessionRepository, StreamerRepository,
+};
 
-/// Dependencies shared by the job-management endpoints.
+/// Dependencies shared by the job and DAG execution endpoints in `jobs` and
+/// `dag` (everything routed through `pipeline_manager`, plus
+/// `streamer_repository` for resolving streamer display names).
 #[derive(Clone)]
-pub struct JobRouteState {
+pub struct PipelineRouteState {
     pipeline_manager: Arc<crate::pipeline::PipelineManager>,
     streamer_repository: Arc<dyn StreamerRepository>,
 }
 
-impl FromRef<AppState> for JobRouteState {
+impl FromRef<AppState> for PipelineRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             pipeline_manager: state.pipeline_manager.clone(),
             streamer_repository: state.streamer_repository.clone(),
+        }
+    }
+}
+
+/// Dependencies of the pipeline-preset endpoints in `presets`.
+#[derive(Clone)]
+pub struct PresetRouteState {
+    pipeline_preset_repository: Arc<dyn PipelinePresetRepository>,
+}
+
+impl FromRef<AppState> for PresetRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            pipeline_preset_repository: state.pipeline_preset_repository.clone(),
+        }
+    }
+}
+
+/// Dependencies of `jobs::list_outputs`, which reads media outputs from the
+/// session store rather than from `pipeline_manager`.
+#[derive(Clone)]
+pub struct OutputRouteState {
+    session_repository: Arc<dyn SessionRepository>,
+}
+
+impl FromRef<AppState> for OutputRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            session_repository: state.session_repository.clone(),
         }
     }
 }
@@ -631,38 +667,6 @@ pub struct DagStatsResponse {
     pub progress_percent: f64,
 }
 
-/// List pipeline jobs with pagination and filtering.
-///
-/// # Endpoint
-///
-/// `GET /api/pipeline/jobs`
-///
-/// # Query Parameters
-///
-/// - `limit` - Maximum number of results (default: 20, max: 100)
-/// - `offset` - Number of results to skip (default: 0)
-/// - `session_id` - Associated recording session ID
-/// - `streamer_id` - Associated streamer ID
-/// - `pipeline_id` - Associated pipeline ID (if part of a pipeline)
-/// - `status` - Current job status (pending, processing, completed, failed, cancelled)
-/// - `streamer_id` - Filter by streamer ID
-/// - `session_id` - Filter by session ID
-/// - `from_date` - Filter jobs created after this date (ISO 8601)
-/// - `to_date` - Filter jobs created before this date (ISO 8601)
-///
-/// # Response
-///
-/// Returns a paginated list of jobs matching the filter criteria.
-///
-/// ```json
-/// {
-///     "items": [...],
-///     "total": 100,
-///     "limit": 20,
-///     "offset": 0
-/// }
-/// ```
-///
 #[cfg(test)]
 mod tests {
     use axum::extract::{Path, Query, State};
@@ -679,15 +683,15 @@ mod tests {
     use crate::database::repositories::streamer::SqlxStreamerRepository;
     use crate::pipeline::PipelineManager;
 
-    fn build_test_state() -> JobRouteState {
+    fn build_test_state() -> PipelineRouteState {
         let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
-        JobRouteState {
+        PipelineRouteState {
             pipeline_manager: Arc::new(PipelineManager::new()),
             streamer_repository: Arc::new(SqlxStreamerRepository::new(pool.clone(), pool)),
         }
     }
 
-    async fn enqueue_job_with_status(status: JobStatus) -> (JobRouteState, String) {
+    async fn enqueue_job_with_status(status: JobStatus) -> (PipelineRouteState, String) {
         let state = build_test_state();
         let manager = state.pipeline_manager.clone();
 

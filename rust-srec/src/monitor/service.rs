@@ -37,7 +37,7 @@ use super::rate_limiter::{RateLimiterConfig, RateLimiterManager};
 
 /// Result of [`StreamMonitor::process_status`].
 ///
-/// This separates two outcomes that previously looked identical at the type level:
+/// This separates two outcomes at the type level:
 ///
 /// - the monitor accepted the observed [`LiveStatus`] and applied its normal side effects
 ///   (state changes, session updates, outbox events)
@@ -128,7 +128,6 @@ pub struct StreamMonitor<
     /// Filter repository for loading filters.
     filter_repo: Arc<FR>,
     /// Session repository for session management.
-    #[allow(dead_code)]
     session_repo: Arc<SSR>,
     /// Config service for resolving streamer configuration.
     config_service: Arc<crate::config::ConfigService<CR, SR>>,
@@ -149,7 +148,7 @@ pub struct StreamMonitor<
     /// Single-owner session lifecycle service. StreamMonitor publishes
     /// Live / Offline observations here; the lifecycle owns the atomic DB
     /// bundle, the in-memory session map, and the `hard_ended` suppression
-    /// cache that used to live on this type.
+    /// cache.
     session_lifecycle: Arc<crate::session::SessionLifecycle>,
     /// Database pool for transactional updates + outbox (serialized write pool).
     write_pool: SqlitePool,
@@ -160,7 +159,6 @@ pub struct StreamMonitor<
     /// Keeps standalone monitor tasks owned for the lifetime of the service.
     _task_supervisor: Arc<TaskSupervisor>,
     /// Configuration.
-    #[allow(dead_code)]
     config: StreamMonitorConfig,
     /// Optional credential refresh service for automatic cookie refresh.
     credential_service: Option<Arc<CredentialRefreshService<CR>>>,
@@ -705,7 +703,7 @@ impl<
                 if let Some(session_cookies) = media_extras
                     .as_ref()
                     .and_then(|e| e.get("session_cookies"))
-                    .map(|s| s.as_str())
+                    .map(String::as_str)
                     .filter(|s| !s.is_empty())
                     && let Some(ref credential_service) = self.credential_service
                 {
@@ -925,7 +923,7 @@ impl<
         trace!(
             streamer_id = %streamer.id,
             streamer_name = %streamer.name,
-            signal = signal.as_ref().map(|s| s.as_str()).unwrap_or("(none)"),
+            signal = signal.as_ref().map_or("(none)", |s| s.as_str()),
             "status=OFFLINE (monitor)"
         );
 
@@ -1299,8 +1297,8 @@ pub enum InfraBlockReason {
 impl InfraBlockReason {
     fn retry_after_secs(&self) -> u64 {
         match self {
-            Self::CircuitBreaker { retry_after_secs } => *retry_after_secs,
-            Self::OutputRootUnavailable {
+            Self::CircuitBreaker { retry_after_secs }
+            | Self::OutputRootUnavailable {
                 retry_after_secs, ..
             } => *retry_after_secs,
         }

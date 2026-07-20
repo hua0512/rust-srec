@@ -363,6 +363,31 @@ impl SessionLifecycle {
         self.sessions.get(session_id).map(|e| e.value().clone())
     }
 
+    /// Evict the `Ended` snapshot for `session_id` after `ended_retention`.
+    ///
+    /// The delay keeps the idempotency guards in `enter_ended_state` /
+    /// `on_offline_detected` able to dedupe a duplicate authoritative-end
+    /// event (the monitor can emit two `OfflineDetected` events a few ms
+    /// apart). Once the window passes, the `sessions` entry and the
+    /// `streamer_current_sessions` pointer (only if it still names this
+    /// session) are removed.
+    fn schedule_ended_eviction(&self, streamer_id: &str, session_id: &str) {
+        let sessions = self.sessions.clone();
+        let streamer_current_sessions = self.streamer_current_sessions.clone();
+        let streamer_id = streamer_id.to_string();
+        let session_id = session_id.to_string();
+        let retention = self.ended_retention;
+        tokio::spawn(async move {
+            tokio::time::sleep(retention).await;
+            sessions.remove(&session_id);
+            remove_streamer_current_session_if_matches(
+                &streamer_current_sessions,
+                &streamer_id,
+                &session_id,
+            );
+        });
+    }
+
     /// Start or resume a recording session on behalf of a monitor trigger.
     ///
     /// Decision tree:
@@ -979,9 +1004,9 @@ impl SessionLifecycle {
         // session this time around. Without `download_start` populated here,
         // the container has no signal to restart the download → the FLV
         // engine that disconnected at hysteresis-entry stays dead and the
-        // session "records" zero bytes for the rest of the broadcast (the
-        // kinetic/2026-05-02 1.5h gap). Populating the sidecar from `args`
-        // is what closes that gap.
+        // session "records" zero bytes for the rest of the broadcast.
+        // Populating the sidecar from `args` is what supplies that
+        // restart signal.
         self.publish_transition(SessionTransition::Started {
             session_id: session_id.to_string(),
             streamer_id: args.streamer_id.to_string(),
@@ -1142,49 +1167,20 @@ impl SessionLifecycle {
 
         // Defer eviction by `ended_retention` so the CAS-style idempotency
         // guard at the top of this function actually catches a duplicate
-        // authoritative-end event (e.g. the monitor occasionally emits two
-        // `OfflineDetected` events ~5 ms apart for the same streamer).
-        // Without this delay the entry would be gone by the time the second
-        // call lands and we'd broadcast `SessionTransition::Ended` twice.
-        let sessions = self.sessions.clone();
-        let streamer_current_sessions = self.streamer_current_sessions.clone();
-        let streamer_id_owned = streamer_id.to_string();
-        let session_id_owned = session_id.to_string();
-        let retention = self.ended_retention;
-        tokio::spawn(async move {
-            tokio::time::sleep(retention).await;
-            sessions.remove(&session_id_owned);
-            remove_streamer_current_session_if_matches(
-                &streamer_current_sessions,
-                &streamer_id_owned,
-                &session_id_owned,
-            );
-        });
+        // authoritative-end event.
+        self.schedule_ended_eviction(streamer_id, session_id);
 
         Ok(())
-    }
-
-    /// Find the current session for `streamer_id`.
-    ///
-    /// This uses the deterministic per-streamer index instead of scanning
-    /// `sessions`, because `sessions` deliberately retains old `Ended`
-    /// entries for a short window and may therefore contain multiple entries
-    /// for one streamer.
-    fn find_session_for_streamer(&self, streamer_id: &str) -> Option<(String, SessionState)> {
-        self.current_session_for_streamer(streamer_id)
     }
 
     /// Tear down the active session because the user disabled (or deleted)
     /// the streamer.
     ///
-    /// Replaces the deleted `monitor::service::force_end_active_session`,
-    /// which wrote `live_sessions.end_time` directly via SQL but never
-    /// touched `SessionLifecycle`'s in-memory FSM. That divergence caused
-    /// the disable/re-enable bug observed on `kinetic（无畏契约）` 2026-05-02:
-    /// re-enable found the stale Hysteresis handle, took the
-    /// `resume_from_hysteresis` short-circuit, and silently restarted a
-    /// download under an already-ended `session_id` while the dashboard
-    /// showed the streamer as offline.
+    /// Ends the DB row and the in-memory FSM together: writing
+    /// `live_sessions.end_time` without also cancelling the in-memory
+    /// Hysteresis handle would let a later re-enable take the
+    /// `resume_from_hysteresis` short-circuit and silently restart a
+    /// download under an already-ended `session_id`.
     ///
     /// Behaviour:
     /// - Cancels any active hysteresis handle via the same CAS protocol
@@ -1223,11 +1219,13 @@ impl SessionLifecycle {
     ) -> Result<Option<String>> {
         let now = Utc::now();
 
-        // Step 1: find the session in memory. The in-memory map is the
-        // source of truth for FSM state; if it has no entry we'll fall
-        // back to a DB lookup inside the repo to handle cold-start /
-        // post-restart cases (see Step 4).
-        let in_memory = self.find_session_for_streamer(streamer_id);
+        // Step 1: find the session in memory via the deterministic
+        // per-streamer index (`current_session_for_streamer`); `sessions`
+        // retains recently-ended entries and may hold several per streamer.
+        // The in-memory map is the source of truth for FSM state; if it has
+        // no entry we'll fall back to a DB lookup inside the repo to handle
+        // cold-start / post-restart cases (see Step 4).
+        let in_memory = self.current_session_for_streamer(streamer_id);
         let session_id_hint = in_memory.as_ref().map(|(sid, _)| sid.clone());
         let was_in_hysteresis = matches!(
             in_memory.as_ref(),
@@ -1326,21 +1324,8 @@ impl SessionLifecycle {
             via_hysteresis: was_in_hysteresis,
         });
 
-        // Defer in-memory eviction (see `enter_ended_state` for rationale).
-        let sessions = self.sessions.clone();
-        let streamer_current_sessions = self.streamer_current_sessions.clone();
-        let streamer_id_owned = streamer_id.to_string();
-        let session_id_owned = session_id.clone();
-        let retention = self.ended_retention;
-        tokio::spawn(async move {
-            tokio::time::sleep(retention).await;
-            sessions.remove(&session_id_owned);
-            remove_streamer_current_session_if_matches(
-                &streamer_current_sessions,
-                &streamer_id_owned,
-                &session_id_owned,
-            );
-        });
+        // Defer in-memory eviction (see `schedule_ended_eviction` for rationale).
+        self.schedule_ended_eviction(streamer_id, &session_id);
 
         Ok(Some(session_id))
     }
@@ -1362,7 +1347,7 @@ impl SessionLifecycle {
     ) -> Result<Option<String>> {
         let now = Utc::now();
 
-        let in_memory = self.find_session_for_streamer(streamer_id);
+        let in_memory = self.current_session_for_streamer(streamer_id);
         let session_id_hint = in_memory.as_ref().map(|(sid, _)| sid.clone());
         let was_in_hysteresis = matches!(
             in_memory.as_ref(),
@@ -1451,20 +1436,7 @@ impl SessionLifecycle {
             via_hysteresis: was_in_hysteresis,
         });
 
-        let sessions = self.sessions.clone();
-        let streamer_current_sessions = self.streamer_current_sessions.clone();
-        let streamer_id_owned = streamer_id.to_string();
-        let session_id_owned = session_id.clone();
-        let retention = self.ended_retention;
-        tokio::spawn(async move {
-            tokio::time::sleep(retention).await;
-            sessions.remove(&session_id_owned);
-            remove_streamer_current_session_if_matches(
-                &streamer_current_sessions,
-                &streamer_id_owned,
-                &session_id_owned,
-            );
-        });
+        self.schedule_ended_eviction(streamer_id, &session_id);
 
         Ok(Some(session_id))
     }

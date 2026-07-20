@@ -34,6 +34,9 @@ use crate::api::server::AppState;
 ///
 /// Routes are organized as:
 /// - Public routes: `/api/auth/*` (login), `/api/health/live`
+/// - Password-remediation routes: `/api/auth/change-password`, `/api/auth/logout-all`
+///   (JWT required, but reachable while a password change is being forced;
+///   they carry their own `JwtAuthLayer` via `auth::password_remediation_router`)
 /// - Protected routes: All other `/api/*` routes (require JWT authentication)
 /// - Documentation: `/api/docs` (Swagger UI), `/api/docs/openapi.json` (OpenAPI spec)
 pub fn create_router(state: AppState) -> Router {
@@ -69,6 +72,13 @@ pub fn create_router(state: AppState) -> Router {
         // Public routes (no authentication required)
         .nest("/api/health", health::router())
         .nest("/api/auth", auth::public_router())
+        // Password-remediation routes carry their own JwtAuthLayer, so they
+        // must sit outside the shared layer above (which would 403 the
+        // forced-change users they exist for).
+        .nest(
+            "/api/auth",
+            auth::password_remediation_router(state.auth_service.as_ref()),
+        )
         // WebSocket route with JWT auth via query parameter (not middleware)
         .nest("/api/downloads", downloads::router())
         // Logging routes with WebSocket (JWT auth via query param)

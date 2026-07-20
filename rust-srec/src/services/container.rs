@@ -14,7 +14,7 @@ use tracing::{debug, info, warn};
 use crate::Result;
 use crate::api::server::ApiServerConfig;
 use crate::config::{ConfigEventBroadcaster, ConfigService};
-use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
+use crate::danmu::{DanmuService, service::DanmuServiceConfig};
 use crate::database::maintenance::MaintenanceScheduler;
 use crate::database::repositories::NotificationRepository;
 use crate::database::repositories::{
@@ -26,11 +26,11 @@ use crate::downloader::{
     engine::DownloadProgress,
 };
 use crate::logging::LoggingConfig;
-use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
-use crate::monitor::{MonitorEvent, MonitorEventBroadcaster, StreamMonitor};
+use crate::metrics::HealthChecker;
+use crate::monitor::{MonitorEventBroadcaster, StreamMonitor};
 use crate::notification::NotificationService;
 use crate::notification::web_push::WebPushService;
-use crate::pipeline::{PipelineEvent, PipelineManager, PipelineManagerConfig};
+use crate::pipeline::{PipelineManager, PipelineManagerConfig};
 use crate::scheduler::{Scheduler, SchedulerHandle};
 use crate::services::runtime_coordinator::RuntimeCoordinator;
 use crate::streamer::StreamerManager;
@@ -159,9 +159,8 @@ fn static_root_prefix(template: &str) -> Option<String> {
 /// skipped. Relative paths are rejected with a warning (they would anchor
 /// to the current working directory, which is unpredictable inside Docker).
 fn parse_output_roots_env() -> Vec<std::path::PathBuf> {
-    let raw = match std::env::var("RUST_SREC_OUTPUT_ROOTS") {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
+    let Ok(raw) = std::env::var("RUST_SREC_OUTPUT_ROOTS") else {
+        return Vec::new();
     };
     raw.split(',')
         .map(|s| s.trim())
@@ -232,9 +231,7 @@ fn autoscale_concurrency_limit(raw: i32) -> usize {
         return raw as usize;
     }
 
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(2);
+    let cores = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
 
     (cores / 2).max(1)
 }
@@ -296,11 +293,11 @@ pub struct ServiceContainer {
     pub(crate) download_manager: Arc<DownloadManager>,
     /// Session repository shared by monitor, pipeline, danmu, and download startup.
     pub(crate) session_repository: Arc<SqlxSessionRepository>,
-    /// Output-root write gate (#508). Shared by the download manager for
+    /// Output-root write gate. Shared by the download manager for
     /// pre-start checks + runtime ENOSPC routing and by the health checker
     /// for aggregated `/health` reporting.
     pub(crate) output_root_gate: Arc<OutputRootGate>,
-    /// GPU health monitor (#555). Empty when `nvidia-smi` is not available
+    /// GPU health monitor. Empty when `nvidia-smi` is not available
     /// at startup; otherwise the background probe loop is owned by the
     /// container's cancellation token. Use [`std::sync::OnceLock::get`]
     /// to read; installation is owned by the private runtime initializer.
@@ -335,8 +332,6 @@ pub struct ServiceContainer {
     pub(crate) notification_repository: Arc<dyn NotificationRepository>,
     /// Web push service for browser notifications (VAPID), if configured.
     pub(crate) web_push_service: Option<Arc<WebPushService>>,
-    /// Metrics collector.
-    pub(crate) metrics_collector: Arc<MetricsCollector>,
     /// Health checker.
     pub(crate) health_checker: Arc<HealthChecker>,
     /// Database maintenance scheduler.
@@ -476,7 +471,7 @@ impl ServiceContainer {
             "Startup: pipeline manager started"
         );
 
-        // Detect and install the GPU health monitor (#555) BEFORE wiring
+        // Detect and install the GPU health monitor BEFORE wiring
         // the config-event subscription, so the latter can capture a
         // plain `Option<Arc<GpuHealthMonitor>>` clone for hot-reload.
         self.init_gpu_health_monitor().await;
@@ -517,7 +512,7 @@ impl ServiceContainer {
             "Startup: notifications + health checks"
         );
 
-        // One-shot output-root write gate startup probe (#508). Discovers
+        // One-shot output-root write gate startup probe. Discovers
         // broken mounts (e.g., stale Docker bind mounts from host-side
         // cleanup) on container boot rather than waiting for the first
         // monitor tick to try starting a download. Per-root probes run in
@@ -599,7 +594,7 @@ impl ServiceContainer {
     }
 
     /// Shutdown all services gracefully with a custom timeout.
-    pub async fn shutdown_with_timeout(&self, timeout: Duration) -> Result<()> {
+    pub(crate) async fn shutdown_with_timeout(&self, timeout: Duration) -> Result<()> {
         info!("Shutting down services (timeout: {:?})", timeout);
         let deadline = tokio::time::Instant::now() + timeout;
 
@@ -654,17 +649,19 @@ impl ServiceContainer {
         self.cancellation_token.clone()
     }
 
-    /// Check if shutdown has been requested.
-    pub fn is_shutting_down(&self) -> bool {
-        self.cancellation_token.is_cancelled()
-    }
-
     /// Wait until a critical runtime task fails.
     pub async fn wait_for_runtime_failure(&self) -> crate::Error {
         crate::Error::Other(self.task_supervisor.wait_for_failure().await.to_string())
     }
 
-    /// Get service statistics.
+    /// Build a point-in-time [`ServiceStats`] snapshot from live service
+    /// counters.
+    ///
+    /// Exported through [`crate::backend`] for embedders; nothing inside
+    /// the crate calls it. Every field is read at call time from the
+    /// owning service; `scheduler_stats` reads the `SchedulerHandle`
+    /// watch channel, so it stays current after `start_scheduler` moves
+    /// the `Scheduler` into its runtime task.
     pub fn stats(&self) -> ServiceStats {
         ServiceStats {
             streamer_count: self.streamer_manager.count(),
@@ -681,16 +678,6 @@ impl ServiceContainer {
         }
     }
 
-    /// Get the metrics collector.
-    pub fn metrics_collector(&self) -> &Arc<MetricsCollector> {
-        &self.metrics_collector
-    }
-
-    /// Get the health checker.
-    pub fn health_checker(&self) -> &Arc<HealthChecker> {
-        &self.health_checker
-    }
-
     /// Get the notification service.
     pub fn notification_service(&self) -> &Arc<NotificationService> {
         &self.notification_service
@@ -701,37 +688,6 @@ impl ServiceContainer {
         &self,
     ) -> &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>> {
         &self.config_service
-    }
-
-    /// Get Prometheus metrics export.
-    pub fn prometheus_metrics(&self) -> String {
-        let exporter = PrometheusExporter::new(self.metrics_collector.clone());
-        exporter.export()
-    }
-
-    /// Subscribe to danmu events.
-    pub fn subscribe_danmu_events(&self) -> tokio::sync::broadcast::Receiver<DanmuEvent> {
-        self.danmu_service.subscribe()
-    }
-
-    /// Get the danmu service for direct access.
-    pub fn danmu_service(&self) -> &Arc<DanmuService> {
-        &self.danmu_service
-    }
-
-    /// Subscribe to pipeline events.
-    pub fn subscribe_pipeline_events(&self) -> tokio::sync::broadcast::Receiver<PipelineEvent> {
-        self.pipeline_manager.subscribe()
-    }
-
-    /// Subscribe to monitor events.
-    pub fn subscribe_monitor_events(&self) -> tokio::sync::broadcast::Receiver<MonitorEvent> {
-        self.monitor_event_broadcaster.subscribe()
-    }
-
-    /// Get the monitor event broadcaster for external use.
-    pub fn monitor_broadcaster(&self) -> &MonitorEventBroadcaster {
-        &self.monitor_event_broadcaster
     }
 
     /// Set the logging configuration
@@ -748,7 +704,8 @@ impl ServiceContainer {
     }
 }
 
-/// Service statistics.
+/// Point-in-time service counters returned by [`ServiceContainer::stats`],
+/// exported through [`crate::backend`] for embedders.
 #[derive(Debug, Clone)]
 pub struct ServiceStats {
     /// Total number of streamers.
@@ -771,7 +728,8 @@ pub struct ServiceStats {
     pub active_danmu_collections: usize,
     /// Notification service statistics.
     pub notification_stats: crate::notification::NotificationStats,
-    /// Scheduler statistics (if available).
+    /// Scheduler supervisor statistics. [`ServiceContainer::stats`] always
+    /// populates this from the scheduler's watch channel.
     pub scheduler_stats: Option<crate::scheduler::actor::SupervisorStats>,
 }
 
@@ -886,15 +844,13 @@ mod tests {
         }));
     }
 
-    // ========== Output-root gate recovery hook filter (P1 regression) ==========
+    // ========== Output-root gate recovery hook filter ==========
 
     /// The recovery hook filters streamers by a per-root prefix built from
-    /// `set_infra_blocked`'s `last_error` format. Earlier versions filtered
-    /// on just `"output-root blocked:"`, which caused a Degraded → Healthy
-    /// transition on root A to also reset streamers blocked on root B.
-    /// This test locks in the fix: the prefix must include the root path +
-    /// a trailing space, so `/rec` cannot match `/rec/huya` entries and
-    /// vice versa.
+    /// `set_infra_blocked`'s `last_error` format. The prefix must include
+    /// the root path + a trailing space so a Degraded → Healthy transition
+    /// on one root only resets streamers blocked on that root: `/rec`
+    /// cannot match `/rec/huya` entries and vice versa.
     #[test]
     fn recovery_hook_prefix_discriminates_between_sibling_roots() {
         use crate::downloader::LAST_ERROR_GATE_PREFIX;

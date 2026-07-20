@@ -6,13 +6,12 @@ use axum::{
 };
 
 use crate::api::error::{ApiError, ApiResult};
-use crate::api::server::AppState;
 use crate::database::models::{Pagination, PipelineStep};
 
 use super::{
     CreatePipelinePresetRequest, PipelinePresetFilterParams, PipelinePresetListResponse,
     PipelinePresetPaginationParams, PipelinePresetResponse, PresetPreviewJob,
-    PresetPreviewResponse, UpdatePipelinePresetRequest, topological_sort,
+    PresetPreviewResponse, PresetRouteState, UpdatePipelinePresetRequest, topological_sort,
 };
 
 #[utoipa::path(
@@ -26,7 +25,7 @@ use super::{
     security(("bearer_auth" = []))
 )]
 pub async fn list_pipeline_presets(
-    State(state): State<AppState>,
+    State(state): State<PresetRouteState>,
     Query(filters): Query<PipelinePresetFilterParams>,
     Query(pagination): Query<PipelinePresetPaginationParams>,
 ) -> ApiResult<Json<PipelinePresetListResponse>> {
@@ -69,7 +68,7 @@ pub async fn list_pipeline_presets(
     security(("bearer_auth" = []))
 )]
 pub async fn get_pipeline_preset_by_id(
-    State(state): State<AppState>,
+    State(state): State<PresetRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
     let preset_repo = &state.pipeline_preset_repository;
@@ -95,7 +94,7 @@ pub async fn get_pipeline_preset_by_id(
     security(("bearer_auth" = []))
 )]
 pub async fn create_pipeline_preset(
-    State(state): State<AppState>,
+    State(state): State<PresetRouteState>,
     Json(payload): Json<CreatePipelinePresetRequest>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
     let preset_repo = &state.pipeline_preset_repository;
@@ -134,7 +133,7 @@ pub async fn create_pipeline_preset(
     security(("bearer_auth" = []))
 )]
 pub async fn update_pipeline_preset(
-    State(state): State<AppState>,
+    State(state): State<PresetRouteState>,
     Path(id): Path<String>,
     Json(payload): Json<UpdatePipelinePresetRequest>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
@@ -186,7 +185,7 @@ pub async fn update_pipeline_preset(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_pipeline_preset(
-    State(state): State<AppState>,
+    State(state): State<PresetRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<()>> {
     let preset_repo = &state.pipeline_preset_repository;
@@ -211,7 +210,7 @@ pub async fn delete_pipeline_preset(
     security(("bearer_auth" = []))
 )]
 pub async fn preview_pipeline_preset(
-    State(state): State<AppState>,
+    State(state): State<PresetRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<PresetPreviewResponse>> {
     let preset_repo = &state.pipeline_preset_repository;
@@ -226,11 +225,12 @@ pub async fn preview_pipeline_preset(
         .get_dag_definition()
         .ok_or_else(|| ApiError::internal("Pipeline preset has no DAG definition"))?;
 
-    // Build dependency map for finding leaf steps
-    let mut has_dependents: HashSet<String> = HashSet::new();
+    // Build dependency map for finding leaf steps; borrows step ids from
+    // `dag`, which outlives every use below.
+    let mut has_dependents: HashSet<&str> = HashSet::new();
     for step in &dag.steps {
         for dep in &step.depends_on {
-            has_dependents.insert(dep.clone());
+            has_dependents.insert(dep.as_str());
         }
     }
 
@@ -245,7 +245,7 @@ pub async fn preview_pipeline_preset(
                 PipelineStep::Inline { processor, .. } => processor.clone(),
             };
             let is_root = step.depends_on.is_empty();
-            let is_leaf = !has_dependents.contains(&step.id);
+            let is_leaf = !has_dependents.contains(step.id.as_str());
 
             PresetPreviewJob {
                 step_id: step.id.clone(),

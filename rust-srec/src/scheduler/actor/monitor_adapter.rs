@@ -350,13 +350,11 @@ where
         platform_id: &str,
         streamers: Vec<StreamerMetadata>,
     ) -> Result<Vec<BatchDetectionResult>, CheckError> {
-        let batch_result = self
-            .monitor
-            .batch_check(platform_id, streamers.clone())
-            .await?;
+        let batch_result = self.monitor.batch_check(platform_id, streamers).await?;
 
         // Convert BatchResult to Vec<BatchDetectionResult>
-        let mut results = Vec::new();
+        let mut results =
+            Vec::with_capacity(batch_result.results.len() + batch_result.failures.len());
 
         for (streamer_id, status) in batch_result.results {
             let check_result = convert_live_status_to_check_result(&status);

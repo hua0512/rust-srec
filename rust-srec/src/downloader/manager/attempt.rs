@@ -14,7 +14,7 @@ use crate::downloader::engine::{
     SegmentEvent,
 };
 use crate::downloader::output_root_gate::OutputRootGate;
-use crate::downloader::queue::{Priority, SlotGuard};
+use crate::downloader::queue::SlotGuard;
 use crate::downloader::resilience::EngineKey;
 
 use super::{
@@ -31,7 +31,6 @@ impl DownloadManager {
         engine_key: EngineKey,
         slot: SlotGuard,
     ) -> Result<String> {
-        let is_high_priority = matches!(slot.priority(), Priority::High);
         let active_slot = slot.into_active();
         Self::seed_session_segment_index(
             &self.session_segment_indices,
@@ -61,7 +60,6 @@ impl DownloadManager {
                 handle: handle.clone(),
                 status: DownloadStatus::Starting,
                 progress: DownloadProgress::default(),
-                is_high_priority,
                 output_path: None,
                 current_segment_index: None,
                 current_engine_segment_index: None,
@@ -90,13 +88,13 @@ impl DownloadManager {
             download_id, config.streamer_id, engine_type
         );
 
-        // Start the engine
-        let engine_clone = engine.clone();
-        let handle_clone = handle.clone();
+        // Start the engine. `engine` and `handle` have no further uses on
+        // this path, so move them into the task instead of cloning.
+        let handle_for_engine = handle;
         tokio::spawn(async move {
-            if let Err(e) = engine_clone.start(handle_clone.clone()).await {
+            if let Err(e) = engine.start(handle_for_engine.clone()).await {
                 error!("Engine start error: {}", e);
-                let _ = handle_clone
+                let _ = handle_for_engine
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
                         kind: e.kind,
@@ -131,7 +129,12 @@ impl DownloadManager {
             // Engines may emit progress 1-10x/sec; broadcasting every tick can overwhelm
             // tokio::broadcast (clone-per-subscriber) and the WS clients.
             const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(250);
-            let mut last_progress_emit = Instant::now() - PROGRESS_MIN_INTERVAL;
+            // Back-dated so the first progress tick publishes immediately;
+            // `checked_sub` guards the (boot-adjacent) case where the
+            // monotonic clock is younger than the interval.
+            let mut last_progress_emit = Instant::now()
+                .checked_sub(PROGRESS_MIN_INTERVAL)
+                .unwrap_or_else(Instant::now);
 
             // engine_segment_index -> session_segment_index for THIS download
             // attempt. Local to the spawn loop — populated as we observe
@@ -178,7 +181,7 @@ impl DownloadManager {
                                 .get(&download_id_clone)
                                 .and_then(|download| {
                                     if download.current_engine_segment_index == Some(index) {
-                                        download.current_segment_started_at.as_ref().cloned()
+                                        download.current_segment_started_at
                                     } else {
                                         None
                                     }
@@ -225,14 +228,24 @@ impl DownloadManager {
                         );
                     }
                     SegmentEvent::Progress(progress) => {
-                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
-                            download.progress = progress.clone();
-                            download.status = DownloadStatus::Downloading;
-                        }
-
-                        // Broadcast progress event to WebSocket subscribers (throttled).
-                        if last_progress_emit.elapsed() >= PROGRESS_MIN_INTERVAL {
+                        // Throttled ticks move the payload straight into
+                        // `active_downloads`; only broadcast ticks pay for the
+                        // extra clone (the map copy plus the event copy).
+                        if last_progress_emit.elapsed() < PROGRESS_MIN_INTERVAL {
+                            if let Some(mut download) = active_downloads.get_mut(&download_id_clone)
+                            {
+                                download.progress = progress;
+                                download.status = DownloadStatus::Downloading;
+                            }
+                        } else {
                             last_progress_emit = Instant::now();
+                            if let Some(mut download) = active_downloads.get_mut(&download_id_clone)
+                            {
+                                download.progress = progress.clone();
+                                download.status = DownloadStatus::Downloading;
+                            }
+
+                            // Broadcast progress event to WebSocket subscribers.
                             events.publish(DownloadManagerEvent::Progress(
                                 DownloadProgressEvent::Progress {
                                     download_id: download_id_clone.clone(),
@@ -392,14 +405,15 @@ impl DownloadManager {
                             download.current_segment_started_at = Some(started_at);
                         }
 
-                        // Emit segment started event
+                        // Emit segment started event; last use of
+                        // `segment_path`, so it moves into the event.
                         events.publish(DownloadManagerEvent::Progress(
                             DownloadProgressEvent::SegmentStarted {
                                 download_id: download_id_clone.clone(),
                                 streamer_id: streamer_id.clone(),
                                 streamer_name: streamer_name.clone(),
                                 session_id: session_id.clone(),
-                                segment_path: segment_path.clone(),
+                                segment_path,
                                 segment_index,
                                 started_at,
                             },

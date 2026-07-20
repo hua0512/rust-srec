@@ -1820,9 +1820,8 @@ async fn test_recovery_tracks_in_flight_ended_session_without_duplicate_dag() {
 }
 
 // -----------------------------------------------------------------------
-// Tests for #520 — session-complete pipeline firing on terminal download
-// events (regression guard: Completed *and* Failed should trigger it;
-// Cancelled and Rejected should not).
+// Session-complete pipeline firing on terminal download events:
+// Completed *and* Failed must trigger it; Cancelled and Rejected must not.
 // -----------------------------------------------------------------------
 
 use crate::downloader::engine::EngineType;
@@ -1938,10 +1937,10 @@ fn test_terminal_should_run_session_complete_policy() {
     );
 }
 
-/// Regression for #520: a recording that ends with `DownloadFailed` (e.g.
-/// HLS 404, stalled stream) must still fire the session-complete pipeline.
-/// Before the fix, the pipeline manager's `_ => {}` catch-all swallowed
-/// `DownloadFailed` and `on_video_complete` was never called.
+/// A recording that ends with `DownloadFailed` (e.g. HLS 404, stalled
+/// stream) must still fire the session-complete pipeline:
+/// `handle_session_transition` must treat an `Ended` with a `Failed`
+/// cause the same as one with `Completed`, not drop it in a catch-all.
 #[tokio::test]
 async fn test_handle_download_event_failed_triggers_session_complete() {
     let session_repo = Arc::new(TestSessionRepository::new(Some(
@@ -2042,8 +2041,8 @@ async fn test_handle_download_event_rejected_does_not_trigger_session_complete()
     );
 }
 
-/// Regression for #569: with global danmu recording enabled, the danmu XML can be
-/// registered before the final video SegmentCompleted event is processed. A
+/// With global danmu recording enabled, the danmu XML can be registered
+/// before the final video SegmentCompleted event is processed. A
 /// UserDisabled transition must not fire the session-complete pipeline with only
 /// danmu inputs (`video_outputs=0 danmu_outputs=1`).
 #[tokio::test]

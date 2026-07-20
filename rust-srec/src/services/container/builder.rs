@@ -59,7 +59,7 @@ impl ServiceContainer {
     /// # Errors
     ///
     /// Returns an error if the persisted global configuration cannot be loaded or initialized.
-    pub async fn with_config(
+    pub(crate) async fn with_config(
         pool: SqlitePool,
         write_pool: SqlitePool,
         cache_ttl: Duration,
@@ -365,7 +365,7 @@ impl ServiceContainer {
         let notification_service_ms = notification_service_start.elapsed().as_millis();
         let web_push_enabled = web_push_service.is_some();
 
-        // Build the output-root write gate (#508) AFTER both StreamerManager
+        // Build the output-root write gate AFTER both StreamerManager
         // and NotificationService are available. Late-bind into the already
         // Arc-wrapped download manager via `set_output_root_gate`, which
         // uses a OnceLock internally so subsequent reads on the hot path
@@ -378,11 +378,12 @@ impl ServiceContainer {
         );
         download_manager.set_output_root_gate(output_root_gate.clone());
 
-        // Create metrics collector
+        // Create metrics collector. Its only consumer is
+        // `WebPushService::set_metrics_collector` delivery accounting.
         let metrics_collector_start = Instant::now();
         let metrics_collector = Arc::new(MetricsCollector::new());
         if let Some(web_push) = web_push_service.as_ref() {
-            web_push.set_metrics_collector(metrics_collector.clone());
+            web_push.set_metrics_collector(metrics_collector);
         }
         let metrics_collector_ms = metrics_collector_start.elapsed().as_millis();
 
@@ -438,8 +439,8 @@ impl ServiceContainer {
                 danmu_service.clone(),
                 stream_monitor.clone(),
                 session_repo.clone(),
-                session_cancels.clone(),
-                pending_pipelines.clone(),
+                session_cancels,
+                pending_pipelines,
                 pipeline_manager.clone(),
                 session_lifecycle.clone(),
                 task_supervisor.clone(),
@@ -481,7 +482,7 @@ impl ServiceContainer {
             streamer_manager,
             event_broadcaster,
             download_manager,
-            session_repository: session_repo.clone(),
+            session_repository: session_repo,
             output_root_gate,
             gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,
@@ -497,7 +498,6 @@ impl ServiceContainer {
             notification_service,
             notification_repository,
             web_push_service,
-            metrics_collector,
             health_checker,
             maintenance_scheduler,
             scheduler,

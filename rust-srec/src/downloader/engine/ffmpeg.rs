@@ -507,9 +507,10 @@ impl DownloadEngine for FfmpegEngine {
                                 // often a "-28" errno reference) when ENOSPC hits
                                 // the muxer. Catching it here lets the manager
                                 // trip the output-root write gate BEFORE ffmpeg
-                                // exits, which is crucial for #508 where today's
-                                // date dir already exists so prepare_output_dir
-                                // never sees the failure.
+                                // exits; once the dated output dir exists,
+                                // prepare_output_dir has nothing left to create
+                                // and never sees ENOSPC, so this stderr scan is
+                                // the only mid-stream signal.
                                 if !disk_full_reported && is_disk_full_line(&line) {
                                     disk_full_reported = true;
                                     warn!(

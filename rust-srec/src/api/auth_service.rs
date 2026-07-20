@@ -7,12 +7,14 @@
 //! - Session management (logout, logout-all)
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use argon2::{
     Argon2, Params,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use chrono::{Duration, Utc};
+use dashmap::DashMap;
 use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
@@ -80,11 +82,16 @@ impl AuthConfig {
 
         let revoke_all_on_refresh_token_reuse = std::env::var("REVOKE_ALL_ON_REFRESH_TOKEN_REUSE")
             .ok()
-            .is_some_and(|v| {
-                matches!(
-                    v.trim().to_ascii_lowercase().as_str(),
-                    "1" | "true" | "yes" | "on"
-                )
+            .is_some_and(|v| match v.trim().to_ascii_lowercase().as_str() {
+                "1" | "true" | "yes" | "on" => true,
+                "0" | "false" | "no" | "off" | "" => false,
+                _ => {
+                    warn!(
+                        value = %v.trim(),
+                        "Unrecognized REVOKE_ALL_ON_REFRESH_TOKEN_REUSE value; treating as false"
+                    );
+                    false
+                }
             });
 
         let min_password_length = std::env::var("MIN_PASSWORD_LENGTH")
@@ -171,12 +178,36 @@ pub struct SessionInfo {
     pub expires_at: i64,
 }
 
+/// Hard TTL for `user_state_cache` entries consulted by
+/// `authorize_access_token`. Bounds how long a user disable or delete
+/// performed outside `AuthService` (direct `UserRepository` writes) can keep
+/// authorizing requests; mutations that go through `AuthService`, and the
+/// config import handler via `invalidate_user_cache`, invalidate immediately.
+const USER_STATE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Snapshot of the per-user flags enforced by `authorize_access_token`.
+///
+/// Only the result of `user_repo.find_by_id` is cached;
+/// `allow_password_remediation` is passed per call because it reflects which
+/// route the request hit (`JwtAuthLayer::password_remediation` vs
+/// `JwtAuthLayer::new`), not the user row.
+#[derive(Clone, Copy)]
+struct CachedUserState {
+    fetched_at: Instant,
+    is_active: bool,
+    must_change_password: bool,
+}
+
 /// Authentication service for managing user authentication and tokens.
 pub struct AuthService {
     user_repo: Arc<dyn UserRepository>,
     token_repo: Arc<dyn RefreshTokenRepository>,
     jwt_service: Arc<JwtService>,
     config: AuthConfig,
+    /// User-state cache read by `authorize_access_token`. Entries older than
+    /// `USER_STATE_CACHE_TTL` are treated exactly like a missing entry, so a
+    /// stale entry can never back an Ok decision.
+    user_state_cache: DashMap<String, CachedUserState>,
 }
 
 impl AuthService {
@@ -192,6 +223,7 @@ impl AuthService {
             token_repo,
             jwt_service,
             config,
+            user_state_cache: DashMap::new(),
         }
     }
 
@@ -200,6 +232,12 @@ impl AuthService {
     }
 
     /// Validate an access token and enforce the current user security state.
+    ///
+    /// `is_active` / `must_change_password` are read from `user_state_cache`
+    /// when the entry is younger than `USER_STATE_CACHE_TTL`, and refetched
+    /// via `user_repo.find_by_id` otherwise. A `find_by_id` error always
+    /// fails closed as `AuthError::Database`; a stale entry is never used as
+    /// a fallback.
     pub(crate) async fn authorize_access_token(
         &self,
         token: &str,
@@ -213,24 +251,69 @@ impl AuthService {
             }
         })?;
 
-        let user = self
-            .user_repo
-            .find_by_id(&claims.sub)
-            .await
-            .map_err(|error| AuthError::Database(error.to_string()))?
-            .ok_or(AuthError::UserNotFound)?;
+        // The `DashMap::get` shard guard is a temporary of this statement, so
+        // it is released before the `find_by_id` await below.
+        let cached = self
+            .user_state_cache
+            .get(&claims.sub)
+            .filter(|entry| entry.fetched_at.elapsed() < USER_STATE_CACHE_TTL)
+            .map(|entry| *entry);
 
-        if !user.is_active {
-            warn!(user_id = %user.id, "Access denied: account disabled");
+        let state = match cached {
+            Some(state) => state,
+            None => {
+                let user = self
+                    .user_repo
+                    .find_by_id(&claims.sub)
+                    .await
+                    .map_err(|error| AuthError::Database(error.to_string()))?;
+                let Some(user) = user else {
+                    // The user row is gone: reject without caching the
+                    // negative result, and drop any stale entry so the map
+                    // only holds users `find_by_id` has confirmed to exist.
+                    self.user_state_cache.remove(&claims.sub);
+                    return Err(AuthError::UserNotFound);
+                };
+                let state = CachedUserState {
+                    fetched_at: Instant::now(),
+                    is_active: user.is_active,
+                    must_change_password: user.must_change_password,
+                };
+                self.user_state_cache.insert(claims.sub.clone(), state);
+                state
+            }
+        };
+
+        if !state.is_active {
+            warn!(user_id = %claims.sub, "Access denied: account disabled");
             return Err(AuthError::AccountDisabled);
         }
 
-        if user.must_change_password && !allow_password_remediation {
-            warn!(user_id = %user.id, "Access denied: password change required");
+        if state.must_change_password && !allow_password_remediation {
+            warn!(user_id = %claims.sub, "Access denied: password change required");
             return Err(AuthError::PasswordChangeRequired);
         }
 
         Ok(claims)
+    }
+
+    /// Drop the cached `authorize_access_token` state for one user.
+    ///
+    /// Every `AuthService` method that writes the user's row (or revokes all
+    /// of their sessions) must call this after the write succeeds, so the
+    /// next `authorize_access_token` refetches via `find_by_id` instead of
+    /// acting on pre-write flags.
+    fn invalidate_user_state(&self, user_id: &str) {
+        self.user_state_cache.remove(user_id);
+    }
+
+    /// Drop all cached `authorize_access_token` state.
+    ///
+    /// For callers that write user rows without going through `AuthService`
+    /// (e.g. the config import transaction) and cannot enumerate the
+    /// affected user ids.
+    pub(crate) fn invalidate_user_cache(&self) {
+        self.user_state_cache.clear();
     }
 
     /// Hash a password using Argon2id with OWASP recommended parameters.
@@ -290,8 +373,8 @@ impl AuthService {
             )));
         }
 
-        let has_letter = password.chars().any(|c| c.is_alphabetic());
-        let has_number = password.chars().any(|c| c.is_numeric());
+        let has_letter = password.chars().any(char::is_alphabetic);
+        let has_number = password.chars().any(char::is_numeric);
 
         if !has_letter {
             return Err(AuthError::WeakPassword(
@@ -349,6 +432,9 @@ impl AuthService {
             .update_last_login(&user.id, now.timestamp_millis())
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
+        // `update_last_login` writes the user row, so the cached
+        // `authorize_access_token` state must be refetched.
+        self.invalidate_user_state(&user.id);
 
         // Generate tokens
         let roles = user.get_roles();
@@ -422,14 +508,10 @@ impl AuthService {
         // retry/concurrently refresh can legitimately present a recently revoked token.
         let is_revoked = stored_token.is_revoked();
         let revoked_recently = if is_revoked && self.config.refresh_token_reuse_grace_secs > 0 {
-            stored_token
-                .get_revoked_at()
-                .map(|revoked_at| {
-                    let grace =
-                        Duration::seconds(self.config.refresh_token_reuse_grace_secs as i64);
-                    (Utc::now() - revoked_at) <= grace
-                })
-                .unwrap_or(false)
+            stored_token.get_revoked_at().is_some_and(|revoked_at| {
+                let grace = Duration::seconds(self.config.refresh_token_reuse_grace_secs as i64);
+                (Utc::now() - revoked_at) <= grace
+            })
         } else {
             false
         };
@@ -602,6 +684,10 @@ impl AuthService {
             .update_password(user_id, &new_hash, true)
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
+        // `update_password` cleared `must_change_password`; drop the cached
+        // state so the next `authorize_access_token` refetches instead of
+        // still enforcing the pre-change flag.
+        self.invalidate_user_state(user_id);
 
         // Revoke all existing refresh tokens to invalidate all sessions
         // This ensures that if an attacker has a stolen token, they cannot
@@ -656,6 +742,11 @@ impl AuthService {
             .revoke_all_for_user(user_id)
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
+        // `revoke_all_for_user` does not write the user row, but invalidating
+        // here keeps every session-wide auth action behind
+        // `invalidate_user_state`, so cache-freshness reasoning reduces to
+        // `USER_STATE_CACHE_TTL` plus these call sites.
+        self.invalidate_user_state(user_id);
 
         info!(user_id = %user_id, "Logout-all successful (all refresh tokens revoked)");
 
@@ -688,7 +779,7 @@ impl AuthService {
 mod tests {
     use super::*;
     use crate::database::models::UserDbModel;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tokio::sync::Mutex;
 
     #[test]
@@ -1030,6 +1121,85 @@ mod tests {
         }
     }
 
+    /// Counts `find_by_id` calls so tests can tell whether
+    /// `authorize_access_token` consulted the repository or served the cached
+    /// user state; `fail_find_by_id` switches `find_by_id` to an error to
+    /// exercise the fail-closed path.
+    struct CountingUserRepository {
+        user: std::sync::Mutex<UserDbModel>,
+        find_by_id_calls: AtomicUsize,
+        fail_find_by_id: AtomicBool,
+    }
+
+    impl CountingUserRepository {
+        fn new(user: UserDbModel) -> Self {
+            Self {
+                user: std::sync::Mutex::new(user),
+                find_by_id_calls: AtomicUsize::new(0),
+                fail_find_by_id: AtomicBool::new(false),
+            }
+        }
+
+        fn find_by_id_calls(&self) -> usize {
+            self.find_by_id_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl UserRepository for CountingUserRepository {
+        async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn find_by_id(&self, id: &str) -> crate::Result<Option<UserDbModel>> {
+            self.find_by_id_calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail_find_by_id.load(Ordering::SeqCst) {
+                return Err(crate::Error::Database("lookup failed".to_string()));
+            }
+            let user = self.user.lock().expect("user lock").clone();
+            Ok((user.id == id).then_some(user))
+        }
+
+        async fn find_by_username(&self, _username: &str) -> crate::Result<Option<UserDbModel>> {
+            Ok(None)
+        }
+
+        async fn find_by_email(&self, _email: &str) -> crate::Result<Option<UserDbModel>> {
+            Ok(None)
+        }
+
+        async fn update(&self, _user: &UserDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn delete(&self, _id: &str) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
+            Ok(vec![])
+        }
+
+        async fn update_last_login(&self, _id: &str, _time_ms: i64) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn update_password(&self, id: &str, hash: &str, clear: bool) -> crate::Result<()> {
+            let mut user = self.user.lock().expect("user lock");
+            if user.id == id {
+                user.password_hash = hash.to_string();
+                if clear {
+                    user.must_change_password = false;
+                }
+            }
+            Ok(())
+        }
+
+        async fn count(&self) -> crate::Result<i64> {
+            Ok(0)
+        }
+    }
+
     fn create_access_test_service(
         user_repo: Arc<dyn UserRepository>,
     ) -> (AuthService, Arc<JwtService>) {
@@ -1046,6 +1216,61 @@ mod tests {
             AuthConfig::default(),
         );
         (service, jwt_service)
+    }
+
+    fn create_counting_access_service(
+        user: UserDbModel,
+    ) -> (AuthService, Arc<CountingUserRepository>, Arc<JwtService>) {
+        let repo = Arc::new(CountingUserRepository::new(user));
+        let jwt_service = Arc::new(JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(900),
+        ));
+        let service = AuthService::new(
+            repo.clone(),
+            Arc::new(MockRefreshTokenRepository),
+            jwt_service.clone(),
+            AuthConfig::default(),
+        );
+        (service, repo, jwt_service)
+    }
+
+    /// Backdate the cached entry for `user_id` past `USER_STATE_CACHE_TTL` so
+    /// the next `authorize_access_token` must refetch via `find_by_id`.
+    fn expire_cached_state(service: &AuthService, user_id: &str) {
+        let mut entry = service
+            .user_state_cache
+            .get_mut(user_id)
+            .expect("a prior authorize should have cached the user state");
+        entry.fetched_at -= USER_STATE_CACHE_TTL + std::time::Duration::from_millis(1);
+    }
+
+    /// Sign `Claims` directly, bypassing `JwtService::generate_token`, so
+    /// tests can pick an arbitrary `exp`/secret.
+    fn mint_access_token(secret: &str, user_id: &str, exp: u64, iat: u64) -> String {
+        let claims = Claims {
+            sub: user_id.to_string(),
+            roles: vec!["user".to_string()],
+            iss: "test-issuer".to_string(),
+            aud: "test-audience".to_string(),
+            exp,
+            iat,
+        };
+        jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &claims,
+            &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .expect("token encoding should succeed")
+    }
+
+    fn unix_now_secs() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be past the Unix epoch")
+            .as_secs()
     }
 
     #[tokio::test]
@@ -1119,6 +1344,254 @@ mod tests {
 
         let allowed = service.authorize_access_token(&token, true).await;
         assert!(allowed.is_ok());
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_serves_fresh_cache_without_repo_hit() {
+        let mut user = UserDbModel::new("cached", "hash", vec!["user".to_string()]);
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, repo, jwt_service) = create_counting_access_service(user);
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("first authorize should succeed");
+        assert_eq!(repo.find_by_id_calls(), 1);
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("second authorize should succeed");
+        assert_eq!(
+            repo.find_by_id_calls(),
+            1,
+            "an entry younger than USER_STATE_CACHE_TTL must not call find_by_id"
+        );
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_refetches_entry_past_ttl() {
+        let mut user = UserDbModel::new("stale", "hash", vec!["user".to_string()]);
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, repo, jwt_service) = create_counting_access_service(user);
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("first authorize should succeed");
+        assert_eq!(repo.find_by_id_calls(), 1);
+
+        expire_cached_state(&service, &user_id);
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("authorize past the TTL should refetch and succeed");
+        assert_eq!(
+            repo.find_by_id_calls(),
+            2,
+            "an entry past USER_STATE_CACHE_TTL must be refetched via find_by_id"
+        );
+    }
+
+    #[tokio::test]
+    async fn change_password_invalidates_cached_user_state() {
+        let current_password = "oldpassword1";
+        let hash = AuthService::hash_password(current_password).expect("hashing should succeed");
+        let mut user = UserDbModel::new("rotating", hash, vec!["user".to_string()]);
+        user.must_change_password = true;
+        let user_id = user.id.clone();
+        let (service, repo, jwt_service) = create_counting_access_service(user);
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        let denied = service.authorize_access_token(&token, false).await;
+        assert!(matches!(denied, Err(AuthError::PasswordChangeRequired)));
+        let denied_again = service.authorize_access_token(&token, false).await;
+        assert!(matches!(
+            denied_again,
+            Err(AuthError::PasswordChangeRequired)
+        ));
+        assert_eq!(
+            repo.find_by_id_calls(),
+            1,
+            "the second denial must come from cache"
+        );
+
+        service
+            .change_password(&user_id, current_password, "newpassword2")
+            .await
+            .expect("password change should succeed");
+        // change_password reads the user once itself via find_by_id.
+        assert_eq!(repo.find_by_id_calls(), 2);
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("authorize after change_password must refetch and see the cleared flag");
+        assert_eq!(
+            repo.find_by_id_calls(),
+            3,
+            "change_password must invalidate the cached entry"
+        );
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_enforces_disabled_user_from_cache() {
+        let mut user = UserDbModel::new("disabled-cached", "hash", vec!["user".to_string()]);
+        user.is_active = false;
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, repo, jwt_service) = create_counting_access_service(user);
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        let first = service.authorize_access_token(&token, false).await;
+        assert!(matches!(first, Err(AuthError::AccountDisabled)));
+        assert_eq!(repo.find_by_id_calls(), 1);
+
+        let second = service.authorize_access_token(&token, false).await;
+        assert!(matches!(second, Err(AuthError::AccountDisabled)));
+        assert_eq!(
+            repo.find_by_id_calls(),
+            1,
+            "the cached is_active=false state must deny without a repo call"
+        );
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_fails_closed_with_only_stale_cache() {
+        let mut user = UserDbModel::new("stale-error", "hash", vec!["user".to_string()]);
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, repo, jwt_service) = create_counting_access_service(user);
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("first authorize should succeed");
+        expire_cached_state(&service, &user_id);
+        repo.fail_find_by_id.store(true, Ordering::SeqCst);
+
+        let result = service.authorize_access_token(&token, false).await;
+        assert!(
+            matches!(result, Err(AuthError::Database(_))),
+            "a stale entry must not back an Ok decision when find_by_id fails"
+        );
+        assert_eq!(repo.find_by_id_calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn invalidate_user_cache_forces_refetch() {
+        let mut user = UserDbModel::new("cleared", "hash", vec!["user".to_string()]);
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, repo, jwt_service) = create_counting_access_service(user);
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("first authorize should succeed");
+        assert_eq!(repo.find_by_id_calls(), 1);
+
+        service.invalidate_user_cache();
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("authorize after clear-all should refetch and succeed");
+        assert_eq!(repo.find_by_id_calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn logout_all_invalidates_cached_user_state() {
+        let mut user = UserDbModel::new("logged-out", "hash", vec!["user".to_string()]);
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, repo, jwt_service) = create_counting_access_service(user);
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("first authorize should succeed");
+        assert_eq!(repo.find_by_id_calls(), 1);
+
+        service
+            .logout_all(&user_id)
+            .await
+            .expect("logout_all should succeed");
+
+        service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("authorize after logout_all should refetch and succeed");
+        assert_eq!(
+            repo.find_by_id_calls(),
+            2,
+            "logout_all must invalidate the cached entry"
+        );
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_rejects_expired_token_before_user_lookup() {
+        let mut user = UserDbModel::new("expired-token", "hash", vec!["user".to_string()]);
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, repo, _jwt_service) = create_counting_access_service(user);
+        let now = unix_now_secs();
+        // An hour-old exp clears the 60s leeway Validation::default() applies
+        // inside JwtService::validate_token.
+        let token = mint_access_token(
+            "test-secret-key-32-chars-long!!",
+            &user_id,
+            now - 3600,
+            now - 7200,
+        );
+
+        let result = service.authorize_access_token(&token, false).await;
+        assert!(matches!(result, Err(AuthError::TokenExpired)));
+        assert_eq!(
+            repo.find_by_id_calls(),
+            0,
+            "token validation failures must be decided before find_by_id"
+        );
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_rejects_token_signed_with_wrong_secret() {
+        let mut user = UserDbModel::new("forged-token", "hash", vec!["user".to_string()]);
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, repo, _jwt_service) = create_counting_access_service(user);
+        let now = unix_now_secs();
+        let token = mint_access_token("wrong-secret-key-32-chars-long!", &user_id, now + 900, now);
+
+        let result = service.authorize_access_token(&token, false).await;
+        assert!(matches!(result, Err(AuthError::InvalidToken)));
+        assert_eq!(
+            repo.find_by_id_calls(),
+            0,
+            "token validation failures must be decided before find_by_id"
+        );
     }
 
     #[tokio::test]

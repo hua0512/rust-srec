@@ -811,8 +811,8 @@ mod tests {
 
     /// `start_collection` for a different session of an already-tracked
     /// streamer must abort the prior collector before claiming the
-    /// streamer-level slot. Verifies the fix for the orphaned-collectors
-    /// bug surfaced by the 柔柔 / 2026-04-28 logs.
+    /// streamer-level slot; otherwise the old collector keeps running
+    /// orphaned alongside the new session's collector.
     #[tokio::test]
     async fn start_collection_aborts_previous_for_same_streamer() {
         let service = DanmuService::new(DanmuServiceConfig::default());

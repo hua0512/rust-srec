@@ -44,6 +44,10 @@ pub struct JwtService {
     issuer: String,
     audience: String,
     expiration_secs: u64,
+    /// Validation rules preconfigured with `issuer`/`audience`. Built once in
+    /// `new` so `validate_token` (called per authenticated request) does not
+    /// reallocate the allowed-issuer/audience sets on every call.
+    validation: Validation,
 }
 
 use tracing::info;
@@ -57,12 +61,16 @@ impl JwtService {
     /// * `audience` - The token audience claim
     /// * `expiration_secs` - Token expiration time in seconds (default: 3600)
     pub fn new(secret: &str, issuer: &str, audience: &str, expiration_secs: Option<u64>) -> Self {
+        let mut validation = Validation::default();
+        validation.set_issuer(&[issuer]);
+        validation.set_audience(&[audience]);
         Self {
             encoding_key: EncodingKey::from_secret(secret.as_bytes()),
             decoding_key: DecodingKey::from_secret(secret.as_bytes()),
             issuer: issuer.to_string(),
             audience: audience.to_string(),
             expiration_secs: expiration_secs.unwrap_or(3600),
+            validation,
         }
     }
 
@@ -126,11 +134,7 @@ impl JwtService {
     /// # Returns
     /// The token claims or an error
     pub fn validate_token(&self, token: &str) -> Result<Claims, JwtError> {
-        let mut validation = Validation::default();
-        validation.set_issuer(&[&self.issuer]);
-        validation.set_audience(&[&self.audience]);
-
-        decode::<Claims>(token, &self.decoding_key, &validation)
+        decode::<Claims>(token, &self.decoding_key, &self.validation)
             .map(|data| data.claims)
             .map_err(|e| match e.kind() {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => JwtError::TokenExpired,
@@ -204,6 +208,60 @@ mod tests {
             .expect("Token generation should succeed");
 
         let result = service2.validate_token(&token);
+        assert!(matches!(result, Err(JwtError::InvalidToken)));
+    }
+
+    #[test]
+    fn test_expired_token_rejected_as_expired() {
+        let service = create_test_service();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be past the Unix epoch")
+            .as_secs();
+        // validate_token uses Validation::default(), which applies a 60s
+        // leeway to exp; an hour-old expiry is unambiguously past it.
+        let claims = Claims {
+            sub: "user123".to_string(),
+            roles: vec!["user".to_string()],
+            iss: "test-issuer".to_string(),
+            aud: "test-audience".to_string(),
+            exp: now - 3600,
+            iat: now - 7200,
+        };
+        let token = encode(&Header::default(), &claims, &service.encoding_key)
+            .expect("token encoding should succeed");
+
+        let result = service.validate_token(&token);
+        assert!(matches!(result, Err(JwtError::TokenExpired)));
+    }
+
+    #[test]
+    fn test_tampered_signature_rejected() {
+        let service = create_test_service();
+        let token = service
+            .generate_token("user123", vec!["user".to_string()])
+            .expect("Token generation should succeed");
+
+        // Flip one character in the middle of the signature segment, staying
+        // inside the base64url alphabet so decoding succeeds and the failure
+        // is the signature check itself.
+        let (head, signature) = token
+            .rsplit_once('.')
+            .expect("JWT should have a signature segment");
+        let mut signature_bytes = signature.as_bytes().to_vec();
+        let mid = signature_bytes.len() / 2;
+        signature_bytes[mid] = if signature_bytes[mid] == b'A' {
+            b'B'
+        } else {
+            b'A'
+        };
+        let tampered = format!(
+            "{head}.{}",
+            String::from_utf8(signature_bytes).expect("signature should remain ASCII")
+        );
+        assert_ne!(tampered, token);
+
+        let result = service.validate_token(&tampered);
         assert!(matches!(result, Err(JwtError::InvalidToken)));
     }
 

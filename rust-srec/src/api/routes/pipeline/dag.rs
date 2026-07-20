@@ -6,14 +6,13 @@ use axum::{
 };
 
 use crate::api::error::{ApiError, ApiResult};
-use crate::api::server::AppState;
 use crate::database::models::JobStatus;
 use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
 
 use super::{
     DagCancelResponse, DagFilterParams, DagGraphEdge, DagGraphNode, DagGraphResponse, DagListItem,
     DagListResponse, DagPaginationParams, DagRetryResponse, DagStatsResponse, DagStatusResponse,
-    DagStepStatusResponse, ValidateDagRequest, ValidateDagResponse,
+    DagStepStatusResponse, PipelineRouteState, ValidateDagRequest, ValidateDagResponse,
 };
 
 #[utoipa::path(
@@ -28,7 +27,7 @@ use super::{
     security(("bearer_auth" = []))
 )]
 pub async fn get_dag_status(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagStatusResponse>> {
     let pipeline_manager = &state.pipeline_manager;
@@ -52,20 +51,29 @@ pub async fn get_dag_status(
     // Get DAG definition for step processor info
     let dag_def = dag.get_dag_definition();
 
+    // Index definition steps by id. `or_insert` keeps the first entry on a
+    // duplicate id, matching a linear scan of `def.steps` with `find`.
+    let mut def_step_by_id: HashMap<&str, &PipelineStep> = HashMap::new();
+    if let Some(def) = dag_def.as_ref() {
+        for def_step in &def.steps {
+            def_step_by_id
+                .entry(def_step.id.as_str())
+                .or_insert(&def_step.step);
+        }
+    }
+
     // Build step responses
     let step_responses: Vec<DagStepStatusResponse> = steps
         .iter()
         .map(|step| {
-            let processor = dag_def.as_ref().and_then(|def| {
-                def.steps
-                    .iter()
-                    .find(|s| s.id == step.step_id)
-                    .map(|s| match &s.step {
+            let processor =
+                def_step_by_id
+                    .get(step.step_id.as_str())
+                    .map(|def_step| match def_step {
                         PipelineStep::Preset { name } => name.clone(),
                         PipelineStep::Workflow { name } => format!("workflow:{}", name),
                         PipelineStep::Inline { processor, .. } => processor.clone(),
-                    })
-            });
+                    });
 
             DagStepStatusResponse {
                 step_id: step.step_id.clone(),
@@ -113,7 +121,7 @@ pub async fn get_dag_status(
     security(("bearer_auth" = []))
 )]
 pub async fn get_dag_graph(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagGraphResponse>> {
     let pipeline_manager = &state.pipeline_manager;
@@ -141,20 +149,30 @@ pub async fn get_dag_graph(
         .map(|d| d.name.clone())
         .unwrap_or_else(|| "Unknown".to_string());
 
+    // Index definition steps by id. `or_insert` keeps the first entry on a
+    // duplicate id, matching a linear scan of `def.steps` with `find`.
+    let mut def_step_by_id: HashMap<&str, &PipelineStep> = HashMap::new();
+    if let Some(def) = dag_def.as_ref() {
+        for def_step in &def.steps {
+            def_step_by_id
+                .entry(def_step.id.as_str())
+                .or_insert(&def_step.step);
+        }
+    }
+
     // Build nodes
     let nodes: Vec<DagGraphNode> = steps
         .iter()
         .map(|step| {
-            let processor = dag_def.as_ref().and_then(|def| {
-                def.steps
-                    .iter()
-                    .find(|s| s.id == step.step_id)
-                    .map(|s| match &s.step {
-                        PipelineStep::Preset { name } => name.clone(),
-                        PipelineStep::Workflow { name } => name.clone(),
+            let processor =
+                def_step_by_id
+                    .get(step.step_id.as_str())
+                    .map(|def_step| match def_step {
+                        PipelineStep::Preset { name } | PipelineStep::Workflow { name } => {
+                            name.clone()
+                        }
                         PipelineStep::Inline { processor, .. } => processor.clone(),
-                    })
-            });
+                    });
 
             let label = processor.clone().unwrap_or_else(|| step.step_id.clone());
 
@@ -199,7 +217,7 @@ pub async fn get_dag_graph(
     security(("bearer_auth" = []))
 )]
 pub async fn retry_dag(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagRetryResponse>> {
     let pipeline_manager = &state.pipeline_manager;
@@ -334,7 +352,7 @@ pub async fn retry_dag(
     security(("bearer_auth" = []))
 )]
 pub async fn list_dags(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
     Query(filters): Query<DagFilterParams>,
     Query(pagination): Query<DagPaginationParams>,
 ) -> ApiResult<Json<DagListResponse>> {
@@ -381,9 +399,8 @@ pub async fn list_dags(
     // Batch-fetch streamer names
     let streamer_ids: std::collections::HashSet<String> =
         dags.iter().filter_map(|d| d.streamer_id.clone()).collect();
-    let repo = state.streamer_repository.clone();
     let fetches = streamer_ids.into_iter().map(|streamer_id| {
-        let repo = repo.clone();
+        let repo = state.streamer_repository.clone();
         async move {
             let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
             (streamer_id, name)
@@ -448,7 +465,7 @@ pub async fn list_dags(
     security(("bearer_auth" = []))
 )]
 pub async fn retry_all_failed_dags(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -503,30 +520,33 @@ pub async fn retry_all_failed_dags(
         }
 
         for step in retryable_steps {
-            if let (Some(job_id), Ok(Some(job))) = (
-                &step.job_id,
-                pipeline_manager
-                    .get_job(step.job_id.as_ref().unwrap())
-                    .await,
-            ) {
-                match job.status {
-                    JobStatus::Failed | JobStatus::Cancelled => {
-                        let _ = pipeline_manager.retry_job(job_id).await;
-                    }
-                    JobStatus::Completed => {
-                        let _ = dag_scheduler
-                            .on_job_completed(
-                                &step.id,
-                                &job.outputs,
-                                job.streamer_name.as_deref(),
-                                job.session_title.as_deref(),
-                                job.platform.as_deref(),
-                                job.session_start,
-                            )
-                            .await;
-                    }
-                    _ => {}
+            // `retryable_steps` already filters on `job_id.is_some()`;
+            // destructure instead of unwrapping so a filter change cannot
+            // turn this into a panic. Lookup failures are skipped silently,
+            // unlike `retry_dag`, because this is a best-effort bulk sweep.
+            let Some(job_id) = &step.job_id else {
+                continue;
+            };
+            let Ok(Some(job)) = pipeline_manager.get_job(job_id).await else {
+                continue;
+            };
+            match job.status {
+                JobStatus::Failed | JobStatus::Cancelled => {
+                    let _ = pipeline_manager.retry_job(job_id).await;
                 }
+                JobStatus::Completed => {
+                    let _ = dag_scheduler
+                        .on_job_completed(
+                            &step.id,
+                            &job.outputs,
+                            job.streamer_name.as_deref(),
+                            job.session_title.as_deref(),
+                            job.platform.as_deref(),
+                            job.session_start,
+                        )
+                        .await;
+                }
+                _ => {}
             }
         }
         retried_count += 1;
@@ -550,7 +570,7 @@ pub async fn retry_all_failed_dags(
     security(("bearer_auth" = []))
 )]
 pub async fn cancel_dag(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagCancelResponse>> {
     let pipeline_manager = &state.pipeline_manager;
@@ -592,7 +612,7 @@ pub async fn cancel_dag(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_dag(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
@@ -625,7 +645,7 @@ pub async fn delete_dag(
     security(("bearer_auth" = []))
 )]
 pub async fn get_dag_stats(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagStatsResponse>> {
     let pipeline_manager = &state.pipeline_manager;

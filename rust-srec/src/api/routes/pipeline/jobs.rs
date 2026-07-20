@@ -12,12 +12,43 @@ use crate::api::models::{
     JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, PageResponse, PaginatedResponse,
     PaginationParams, PipelineStatsResponse, StepDurationInfo as ApiStepDurationInfo,
 };
-use crate::api::server::AppState;
 use crate::database::models::{JobFilters, JobStatus, OutputFilters, Pagination};
 use crate::pipeline::{Job, JobProgressSnapshot};
 
-use super::{CreatePipelineRequest, CreatePipelineResponse, JobRouteState, OutputFilterParams};
+use super::{
+    CreatePipelineRequest, CreatePipelineResponse, OutputFilterParams, OutputRouteState,
+    PipelineRouteState,
+};
 
+/// List pipeline jobs with pagination and filtering.
+///
+/// # Endpoint
+///
+/// `GET /api/pipeline/jobs`
+///
+/// # Query Parameters
+///
+/// - `limit` - Maximum number of results (default: 20, max: 100)
+/// - `offset` - Number of results to skip (default: 0)
+/// - `status` - Current job status (pending, processing, completed, failed, cancelled)
+/// - `streamer_id` - Filter by streamer ID
+/// - `session_id` - Filter by session ID
+/// - `pipeline_id` - Associated pipeline ID (if part of a pipeline)
+/// - `from_date` - Filter jobs created after this date (ISO 8601)
+/// - `to_date` - Filter jobs created before this date (ISO 8601)
+///
+/// # Response
+///
+/// Returns a paginated list of jobs matching the filter criteria.
+///
+/// ```json
+/// {
+///     "items": [...],
+///     "total": 100,
+///     "limit": 20,
+///     "offset": 0
+/// }
+/// ```
 #[utoipa::path(
     get,
     path = "/api/pipeline/jobs",
@@ -29,7 +60,7 @@ use super::{CreatePipelineRequest, CreatePipelineResponse, JobRouteState, Output
     security(("bearer_auth" = []))
 )]
 pub async fn list_jobs(
-    State(state): State<JobRouteState>,
+    State(state): State<PipelineRouteState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<JobFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<JobResponse>>> {
@@ -63,7 +94,7 @@ pub async fn list_jobs(
 
     // Convert jobs to API response format
     let job_responses: Vec<JobResponse> = jobs
-        .iter()
+        .into_iter()
         .map(|job| {
             let name = streamer_names.get(&job.streamer_id).cloned();
             job_to_response(job, name)
@@ -85,7 +116,7 @@ pub async fn list_jobs(
     security(("bearer_auth" = []))
 )]
 pub async fn list_jobs_page(
-    State(state): State<JobRouteState>,
+    State(state): State<PipelineRouteState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<JobFilterParams>,
 ) -> ApiResult<Json<PageResponse<JobResponse>>> {
@@ -115,7 +146,7 @@ pub async fn list_jobs_page(
     let streamer_names = fetch_streamer_names(&state, &jobs).await;
 
     let job_responses: Vec<JobResponse> = jobs
-        .iter()
+        .into_iter()
         .map(|job| {
             let name = streamer_names.get(&job.streamer_id).cloned();
             job_to_response(job, name)
@@ -140,7 +171,7 @@ pub async fn list_jobs_page(
     security(("bearer_auth" = []))
 )]
 pub async fn list_job_logs(
-    State(state): State<JobRouteState>,
+    State(state): State<PipelineRouteState>,
     Path(id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<PaginatedResponse<ApiJobLogEntry>>> {
@@ -183,7 +214,7 @@ pub async fn list_job_logs(
     security(("bearer_auth" = []))
 )]
 pub async fn get_job_progress(
-    State(state): State<JobRouteState>,
+    State(state): State<PipelineRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobProgressSnapshot>> {
     let pipeline_manager = &state.pipeline_manager;
@@ -243,7 +274,7 @@ pub async fn get_job_progress(
     security(("bearer_auth" = []))
 )]
 pub async fn get_job(
-    State(state): State<JobRouteState>,
+    State(state): State<PipelineRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobResponse>> {
     // Get pipeline manager from state
@@ -264,7 +295,7 @@ pub async fn get_job(
         .ok()
         .map(|s| s.name);
 
-    Ok(Json(job_to_response(&job, streamer_name)))
+    Ok(Json(job_to_response(job, streamer_name)))
 }
 
 /// Retry a failed or cancelled job.
@@ -308,7 +339,7 @@ pub async fn get_job(
     security(("bearer_auth" = []))
 )]
 pub async fn retry_job(
-    State(state): State<JobRouteState>,
+    State(state): State<PipelineRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobResponse>> {
     // Get pipeline manager from state
@@ -328,7 +359,7 @@ pub async fn retry_job(
         .ok()
         .map(|s| s.name);
 
-    Ok(Json(job_to_response(&job, streamer_name)))
+    Ok(Json(job_to_response(job, streamer_name)))
 }
 
 /// Cancel an active job.
@@ -378,7 +409,7 @@ pub async fn retry_job(
     security(("bearer_auth" = []))
 )]
 pub async fn cancel_job(
-    State(state): State<JobRouteState>,
+    State(state): State<PipelineRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
@@ -407,7 +438,7 @@ pub async fn cancel_job(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_job(
-    State(state): State<JobRouteState>,
+    State(state): State<PipelineRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
@@ -434,7 +465,7 @@ pub async fn delete_job(
     security(("bearer_auth" = []))
 )]
 pub async fn cancel_pipeline(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
     Path(pipeline_id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     // Get pipeline manager from state
@@ -464,15 +495,10 @@ pub async fn cancel_pipeline(
     security(("bearer_auth" = []))
 )]
 pub async fn list_outputs(
-    State(state): State<AppState>,
+    State(state): State<OutputRouteState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<OutputFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<MediaOutputResponse>>> {
-    // Get session repository from state
-    let session_repository = state.session_repository.clone();
-
-    let requested_streamer_id = filters.streamer_id.clone();
-
     // Convert API filter params to database filter types
     let db_filters = OutputFilters {
         session_id: filters.session_id,
@@ -480,11 +506,15 @@ pub async fn list_outputs(
         search: filters.search,
     };
 
+    // Borrowed from `db_filters`, which stays alive for the whole handler.
+    let requested_streamer_id = db_filters.streamer_id.as_deref();
+
     let effective_limit = pagination.limit.min(100);
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     // Call SessionRepository.list_outputs_filtered
-    let (outputs, total) = session_repository
+    let (outputs, total) = state
+        .session_repository
         .list_outputs_filtered(&db_filters, &db_pagination)
         .await
         .map_err(ApiError::from)?;
@@ -496,7 +526,7 @@ pub async fn list_outputs(
         }
 
         let fetches = session_ids.into_iter().map(|session_id| {
-            let session_repository = session_repository.clone();
+            let session_repository = state.session_repository.clone();
             async move {
                 let streamer_id = session_repository
                     .get_session(&session_id)
@@ -524,7 +554,7 @@ pub async fn list_outputs(
         .map(|output| {
             let created_at = crate::database::time::ms_to_datetime(output.created_at);
 
-            let streamer_id = match requested_streamer_id.as_deref() {
+            let streamer_id = match requested_streamer_id {
                 Some(streamer_id) => streamer_id.to_string(),
                 None => streamer_id_by_session
                     .get(&output.session_id)
@@ -579,7 +609,9 @@ pub async fn list_outputs(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStatsResponse>> {
+pub async fn get_stats(
+    State(state): State<PipelineRouteState>,
+) -> ApiResult<Json<PipelineStatsResponse>> {
     // Get pipeline manager from state
     let pipeline_manager = &state.pipeline_manager;
 
@@ -610,7 +642,7 @@ pub async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<Pipeline
     security(("bearer_auth" = []))
 )]
 pub async fn create_pipeline(
-    State(state): State<AppState>,
+    State(state): State<PipelineRouteState>,
     Json(request): Json<CreatePipelineRequest>,
 ) -> ApiResult<Json<CreatePipelineResponse>> {
     // Get pipeline manager from state
@@ -656,9 +688,8 @@ pub async fn create_pipeline(
 
     let response = CreatePipelineResponse {
         pipeline_id: result.dag_id,
-        first_job: job_to_response(&first_job, streamer_name),
+        first_job: job_to_response(first_job, streamer_name),
     };
-
     Ok(Json(response))
 }
 
@@ -689,72 +720,76 @@ pub(super) fn job_status_to_api_status(status: JobStatus) -> ApiJobStatus {
 }
 
 /// Convert a Job to JobResponse.
-fn job_to_response(job: &Job, streamer_name: Option<String>) -> JobResponse {
+///
+/// Takes the `Job` by value: every caller has just fetched an owned job, so
+/// the response can move the id/path/log strings instead of cloning them
+/// (list endpoints convert up to 100 jobs per request).
+fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
+    let execution_info = job.execution_info.map(|info| ApiJobExecutionInfo {
+        current_processor: info.current_processor,
+        current_step: info.current_step,
+        total_steps: info.total_steps,
+        items_produced: info.items_produced,
+        input_size_bytes: info.input_size_bytes,
+        output_size_bytes: info.output_size_bytes,
+        logs: info
+            .logs
+            .into_iter()
+            .map(|log| ApiJobLogEntry {
+                timestamp: log.timestamp,
+                level: format!("{:?}", log.level),
+                message: log.message,
+            })
+            .collect(),
+        log_lines_total: info.log_lines_total,
+        log_warn_count: info.log_warn_count,
+        log_error_count: info.log_error_count,
+        step_durations: info
+            .step_durations
+            .into_iter()
+            .map(|sd| ApiStepDurationInfo {
+                step: sd.step,
+                processor: sd.processor,
+                duration_secs: sd.duration_secs,
+                started_at: sd.started_at,
+                completed_at: sd.completed_at,
+            })
+            .collect(),
+    });
+
     JobResponse {
-        id: job.id.clone(),
-        session_id: job.session_id.clone(),
-        streamer_id: job.streamer_id.clone(),
+        id: job.id,
+        session_id: job.session_id,
+        streamer_id: job.streamer_id,
         streamer_name,
-        pipeline_id: job.pipeline_id.clone(),
+        pipeline_id: job.pipeline_id,
         status: job_status_to_api_status(job.status),
-        processor_type: job.job_type.clone(),
-        input_path: job.inputs.clone(),
+        processor_type: job.job_type,
+        input_path: job.inputs,
         output_path: if job.outputs.is_empty() {
             None
         } else {
-            Some(job.outputs.clone())
+            Some(job.outputs)
         },
-        error_message: job.error.clone(),
+        error_message: job.error,
         progress: Some(0.0), // Progress tracking not implemented yet, default to 0.0
         created_at: job.created_at,
         started_at: job.started_at,
         completed_at: job.completed_at,
-        execution_info: job.execution_info.as_ref().map(|info| ApiJobExecutionInfo {
-            current_processor: info.current_processor.clone(),
-            current_step: info.current_step,
-            total_steps: info.total_steps,
-            items_produced: info.items_produced.clone(),
-            input_size_bytes: info.input_size_bytes,
-            output_size_bytes: info.output_size_bytes,
-            logs: info
-                .logs
-                .iter()
-                .map(|log| ApiJobLogEntry {
-                    timestamp: log.timestamp,
-                    level: format!("{:?}", log.level),
-                    message: log.message.clone(),
-                })
-                .collect(),
-            log_lines_total: info.log_lines_total,
-            log_warn_count: info.log_warn_count,
-            log_error_count: info.log_error_count,
-            step_durations: info
-                .step_durations
-                .iter()
-                .map(|sd| ApiStepDurationInfo {
-                    step: sd.step,
-                    processor: sd.processor.clone(),
-                    duration_secs: sd.duration_secs,
-                    started_at: sd.started_at,
-                    completed_at: sd.completed_at,
-                })
-                .collect(),
-        }),
+        execution_info,
         duration_secs: job.duration_secs,
         queue_wait_secs: job.queue_wait_secs,
     }
 }
 
 /// Helper to batch-fetch streamer names for a list of jobs.
-async fn fetch_streamer_names(state: &JobRouteState, jobs: &[Job]) -> HashMap<String, String> {
-    let streamer_repository = state.streamer_repository.clone();
-
+async fn fetch_streamer_names(state: &PipelineRouteState, jobs: &[Job]) -> HashMap<String, String> {
     // Collect unique streamer IDs
     let streamer_ids: HashSet<String> = jobs.iter().map(|j| j.streamer_id.clone()).collect();
 
     // Fetch streamers in parallel
     let fetches = streamer_ids.into_iter().map(|streamer_id| {
-        let repo = streamer_repository.clone();
+        let repo = state.streamer_repository.clone();
         async move {
             let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
             (streamer_id, name)

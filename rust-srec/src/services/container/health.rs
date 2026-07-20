@@ -7,7 +7,6 @@ use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::danmu::DanmuService;
 use crate::downloader::{DownloadManager, OutputRootGate};
 use crate::metrics::{ComponentHealth, HealthChecker, HealthProbe, SystemMetricsSnapshot};
 use crate::pipeline::PipelineManager;
@@ -235,26 +234,6 @@ impl HealthProbe for PipelineManagerProbe {
                 ComponentHealth::healthy("pipeline_manager")
             }
         }
-    }
-}
-
-struct DanmuServiceProbe {
-    danmu_service: Arc<DanmuService>,
-}
-
-#[async_trait]
-impl HealthProbe for DanmuServiceProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("danmu_service")
-    }
-
-    fn cadence(&self) -> Duration {
-        Duration::from_secs(5)
-    }
-
-    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        let _active = self.danmu_service.active_sessions().len();
-        ComponentHealth::healthy("danmu_service")
     }
 }
 
@@ -548,7 +527,7 @@ impl ServiceContainer {
     }
 
     /// Detect the host GPU and install the [`crate::metrics::GpuHealthMonitor`] on the
-    /// container if `nvidia-smi` is available (#555). Called from
+    /// container if `nvidia-smi` is available. Called from
     /// [`Self::initialize`] **before** subscription wiring so the
     /// config-event handler can capture a plain `Option<Arc<…>>` clone
     /// of `gpu_health_monitor` for hot-reloading the probe interval.
@@ -595,7 +574,7 @@ impl ServiceContainer {
 
         info!(
             interval_secs = initial_interval,
-            "GPU health monitor started (issue #555)"
+            "GPU health monitor started"
         );
     }
 
@@ -650,11 +629,11 @@ impl ServiceContainer {
             let db_dir = db_file.parent().unwrap_or(db_file.as_path()).to_path_buf();
             let db_dir_str = db_dir.to_string_lossy().to_string();
             let db_dir_path = if db_dir.is_absolute() {
-                db_dir.clone()
+                db_dir
             } else if let Ok(cwd) = std::env::current_dir() {
                 cwd.join(&db_dir)
             } else {
-                db_dir.clone()
+                db_dir
             };
             self.health_checker
                 .register_probe(Arc::new(DiskSpaceProbe::new(
@@ -665,7 +644,7 @@ impl ServiceContainer {
                 )));
         }
 
-        // Output-root write gate health check (#508). Aggregated: one
+        // Output-root write gate health check. Aggregated: one
         // "output-root" component whose status reflects the worst state
         // across all tracked roots, with a detailed message listing each
         // Degraded root by kind and age. See
@@ -675,7 +654,7 @@ impl ServiceContainer {
                 gate: self.output_root_gate.clone(),
             }));
 
-        // GPU health monitor (#555). Detection + probe-loop spawn happen
+        // GPU health monitor. Detection + probe-loop spawn happen
         // earlier in `initialize()` (see [`Self::init_gpu_health_monitor`])
         // so the config-event subscription handler can capture a clone
         // for hot-reload. Here we only register the probe if the monitor
@@ -696,8 +675,9 @@ impl ServiceContainer {
             }));
 
         self.health_checker
-            .register_probe(Arc::new(DanmuServiceProbe {
-                danmu_service: self.danmu_service.clone(),
+            .register_probe(Arc::new(StaticHealthyProbe {
+                name: "danmu_service",
+                cadence: Duration::from_secs(5),
             }));
 
         self.health_checker.register_probe(Arc::new(SchedulerProbe {

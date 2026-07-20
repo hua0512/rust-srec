@@ -1,21 +1,47 @@
-use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use chrono::Utc;
+use dashmap::DashMap;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 use crate::database::models::notification::NotificationDeadLetterDbModel;
+use crate::database::repositories::NotificationRepository;
+use crate::utils::task_supervisor::TaskSupervisor;
 
 use super::{
-    DeadLetterEntry, DeliveryStatus, NotificationService, NotificationServiceConfig,
-    ProcessingParams, RetryParams,
+    CircuitBreakerState, DeadLetterEntry, DeliveryStatus, NotificationService,
+    NotificationServiceConfig, PendingNotification, RuntimeChannel,
 };
+
+/// State fixed for the lifetime of one notification's delivery and shared by
+/// the initial `process_notification_detached` pass and every retry hop
+/// `spawn_retry_detached` schedules: the `pending_queue` id, the channel
+/// snapshot taken at enqueue time (retries deliver to these channel objects
+/// even if `reload_from_db` swaps the live set), and the
+/// `NotificationService` handles the detached tasks run against. Per-hop
+/// values (retry delay, expected generation) are passed alongside instead.
+struct DeliveryContext {
+    id: u64,
+    channels: Vec<Arc<RuntimeChannel>>,
+    pending_queue: Arc<DashMap<u64, PendingNotification>>,
+    dead_letters: Arc<DashMap<u64, DeadLetterEntry>>,
+    dead_letter_cleanup_ts: Arc<AtomicU64>,
+    circuit_breakers: Arc<DashMap<String, CircuitBreakerState>>,
+    notification_repo: Option<Arc<dyn NotificationRepository>>,
+    config: Arc<NotificationServiceConfig>,
+    next_dead_letter_id: Arc<AtomicU64>,
+    cancellation_token: CancellationToken,
+    task_supervisor: Arc<TaskSupervisor>,
+}
 
 impl NotificationService {
     pub(super) async fn process_notification(&self, id: u64) {
         let channels = self.channels.read().clone();
-        Self::process_notification_detached(ProcessingParams {
+        Self::process_notification_detached(Arc::new(DeliveryContext {
             id,
             channels,
             pending_queue: self.pending_queue.clone(),
@@ -27,67 +53,43 @@ impl NotificationService {
             next_dead_letter_id: self.next_dead_letter_id.clone(),
             cancellation_token: self.cancellation_token.clone(),
             task_supervisor: self.task_supervisor.clone(),
-        })
+        }))
         .await;
     }
 
     /// Calculate retry delay with exponential backoff and jitter.
+    /// Test-only probe into `calculate_retry_delay_detached`, which is what
+    /// the delivery loop actually calls.
+    #[cfg(test)]
     pub(super) fn _calculate_retry_delay(&self, attempts: u32) -> Duration {
         Self::calculate_retry_delay_detached(&self.config, attempts)
     }
 
-    fn spawn_retry_detached(params: RetryParams) {
-        let RetryParams {
-            id,
-            delay,
-            expected_generation,
-            channels,
-            pending_queue,
-            dead_letters,
-            dead_letter_cleanup_ts,
-            circuit_breakers,
-            notification_repo,
-            config,
-            next_dead_letter_id,
-            cancellation_token,
-            task_supervisor,
-        } = params;
+    fn spawn_retry_detached(delay: Duration, expected_generation: u64, ctx: Arc<DeliveryContext>) {
         debug!(
-            notification_id = id,
+            notification_id = ctx.id,
             ?delay,
             generation = expected_generation,
             "Scheduling notification retry"
         );
 
-        let retry_supervisor = task_supervisor.clone();
-        task_supervisor.spawn("notification retry", async move {
+        let supervisor = ctx.task_supervisor.clone();
+        supervisor.spawn("notification retry", async move {
             tokio::select! {
-                _ = cancellation_token.cancelled() => return,
+                _ = ctx.cancellation_token.cancelled() => return,
                 _ = sleep(delay) => {},
             }
 
-            let should_run = pending_queue
-                .get(&id)
+            let should_run = ctx
+                .pending_queue
+                .get(&ctx.id)
                 .map(|pending| pending.retry_generation == expected_generation)
                 .unwrap_or(false);
             if !should_run {
                 return;
             }
 
-            Self::process_notification_detached(ProcessingParams {
-                id,
-                channels,
-                pending_queue,
-                dead_letters,
-                dead_letter_cleanup_ts,
-                circuit_breakers,
-                notification_repo,
-                config,
-                next_dead_letter_id,
-                cancellation_token,
-                task_supervisor: retry_supervisor,
-            })
-            .await;
+            Self::process_notification_detached(ctx).await;
         });
     }
 
@@ -109,8 +111,11 @@ impl NotificationService {
         Duration::from_millis(delay_ms.saturating_add(jitter))
     }
 
-    async fn process_notification_detached(params: ProcessingParams) {
-        let ProcessingParams {
+    async fn process_notification_detached(ctx: Arc<DeliveryContext>) {
+        // Borrow the context fields under their own names for the delivery
+        // pass; the borrows end before `ctx` is moved into
+        // `spawn_retry_detached` at the bottom.
+        let DeliveryContext {
             id,
             channels,
             pending_queue,
@@ -120,21 +125,23 @@ impl NotificationService {
             notification_repo,
             config,
             next_dead_letter_id,
-            cancellation_token,
-            task_supervisor,
-        } = params;
+            ..
+        } = &*ctx;
+        let id = *id;
         let pending_snapshot = match pending_queue.get(&id) {
             Some(pending) => pending.clone(),
             None => return,
         };
         let mut circuit_blocked = false;
 
-        for channel in &channels {
-            let channel_key = channel.key.clone();
+        for channel in channels {
+            // Borrow the key for the map lookups below; it is only
+            // materialised into an owned `String` on the dead-letter path.
+            let channel_key = channel.key.as_str();
             let is_pending = pending_queue.get(&id).and_then(|pending| {
                 pending
                     .channel_state
-                    .get(&channel_key)
+                    .get(channel_key)
                     .map(|state| state.status)
             }) == Some(DeliveryStatus::Pending);
             if !is_pending {
@@ -142,7 +149,7 @@ impl NotificationService {
             }
 
             let allowed = circuit_breakers
-                .get(&channel_key)
+                .get(channel_key)
                 .map(|breaker| breaker.is_allowed())
                 .unwrap_or(true);
             if !allowed {
@@ -152,11 +159,11 @@ impl NotificationService {
 
             match channel.channel.send(&pending_snapshot.event).await {
                 Ok(()) => {
-                    if let Some(mut breaker) = circuit_breakers.get_mut(&channel_key) {
+                    if let Some(mut breaker) = circuit_breakers.get_mut(channel_key) {
                         breaker.record_success();
                     }
                     if let Some(mut pending) = pending_queue.get_mut(&id)
-                        && let Some(state) = pending.channel_state.get_mut(&channel_key)
+                        && let Some(state) = pending.channel_state.get_mut(channel_key)
                     {
                         state.status = DeliveryStatus::Delivered;
                         state.last_attempt = Some(Utc::now());
@@ -165,7 +172,7 @@ impl NotificationService {
                     debug!(notification_id = id, channel = %channel.channel_type, "Notification delivered");
                 }
                 Err(error) => {
-                    if let Some(mut breaker) = circuit_breakers.get_mut(&channel_key) {
+                    if let Some(mut breaker) = circuit_breakers.get_mut(channel_key) {
                         breaker.record_failure(config.circuit_breaker_threshold);
                     }
 
@@ -173,7 +180,7 @@ impl NotificationService {
                     let mut attempts = 0;
                     let mut dead_lettered = false;
                     if let Some(mut pending) = pending_queue.get_mut(&id)
-                        && let Some(state) = pending.channel_state.get_mut(&channel_key)
+                        && let Some(state) = pending.channel_state.get_mut(channel_key)
                     {
                         state.attempts += 1;
                         state.last_attempt = Some(now);
@@ -214,7 +221,7 @@ impl NotificationService {
                                 id: dead_letter_id,
                                 notification_id: id,
                                 event: pending_snapshot.event.clone(),
-                                channel_key: Some(channel_key.clone()),
+                                channel_key: Some(channel_key.to_string()),
                                 channel_id: channel.db_channel_id.clone(),
                                 channel_type: channel.channel_type.clone(),
                                 attempts,
@@ -224,9 +231,9 @@ impl NotificationService {
                             },
                         );
                         Self::maybe_cleanup_dead_letters_detached(
-                            &dead_letters,
+                            dead_letters,
                             config.dead_letter_retention_days,
-                            &dead_letter_cleanup_ts,
+                            dead_letter_cleanup_ts,
                             now,
                         );
                         warn!(
@@ -249,7 +256,7 @@ impl NotificationService {
                         continue;
                     }
                     has_pending = true;
-                    let delay = Self::calculate_retry_delay_detached(&config, state.attempts);
+                    let delay = Self::calculate_retry_delay_detached(config, state.attempts);
                     min_delay = Some(min_delay.map_or(delay, |current| current.min(delay)));
                 }
                 (has_pending, min_delay)
@@ -279,20 +286,6 @@ impl NotificationService {
             None => return,
         };
 
-        Self::spawn_retry_detached(RetryParams {
-            id,
-            delay,
-            expected_generation,
-            channels,
-            pending_queue,
-            dead_letters,
-            dead_letter_cleanup_ts,
-            circuit_breakers,
-            notification_repo,
-            config,
-            next_dead_letter_id,
-            cancellation_token,
-            task_supervisor,
-        });
+        Self::spawn_retry_detached(delay, expected_generation, ctx);
     }
 }

@@ -143,6 +143,48 @@ impl ServiceContainer {
         Ok(state)
     }
 
+    /// Build `AppState`, bridge the container's cancellation token to the
+    /// server's, bind the listener, and hand the accept loop to the task
+    /// supervisor as a critical task.
+    ///
+    /// Shared tail of [`Self::start_api_server_bound`] and
+    /// [`Self::start_api_server_bound_with_jwt_secret`]; `bridge_task` and
+    /// `server_task` keep the two call paths distinguishable in supervisor
+    /// logs.
+    async fn bind_and_spawn_api_server(
+        &self,
+        auth_service: Option<Arc<AuthService>>,
+        bridge_task: &'static str,
+        server_task: &'static str,
+    ) -> Result<std::net::SocketAddr> {
+        let state = self.build_api_state(auth_service)?;
+        let server = ApiServer::new(self.api_server_config.clone(), state);
+        let cancel_token = self.cancellation_token.clone();
+
+        // Link server shutdown to container shutdown
+        let server_cancel = server.cancel_token();
+        self.task_supervisor.spawn(bridge_task, async move {
+            cancel_token.cancelled().await;
+            server_cancel.cancel();
+        });
+
+        let (listener, local_addr) = server.bind().await?;
+        info!("Starting API server on http://{}", local_addr);
+
+        if !self
+            .task_supervisor
+            .spawn_critical(server_task, async move {
+                server.run_with_listener(listener).await
+            })
+        {
+            return Err(crate::Error::Other(format!(
+                "{server_task} task was rejected during shutdown"
+            )));
+        }
+
+        Ok(local_addr)
+    }
+
     /// Initialize and start the API server, returning the resolved bind address.
     ///
     /// This is required when binding to port `0` (ephemeral port), where the actual port is only
@@ -190,33 +232,8 @@ impl ServiceContainer {
             }
         };
 
-        let state = self.build_api_state(auth_service)?;
-        let server = ApiServer::new(self.api_server_config.clone(), state);
-        let cancel_token = self.cancellation_token.clone();
-
-        // Link server shutdown to container shutdown
-        let server_cancel = server.cancel_token();
-        self.task_supervisor
-            .spawn("API shutdown bridge", async move {
-                cancel_token.cancelled().await;
-                server_cancel.cancel();
-            });
-
-        let (listener, local_addr) = server.bind().await?;
-        info!("Starting API server on http://{}", local_addr);
-
-        if !self
-            .task_supervisor
-            .spawn_critical("API server", async move {
-                server.run_with_listener(listener).await
-            })
-        {
-            return Err(crate::Error::Other(
-                "API server task was rejected during shutdown".to_string(),
-            ));
-        }
-
-        Ok(local_addr)
+        self.bind_and_spawn_api_server(auth_service, "API shutdown bridge", "API server")
+            .await
     }
 
     /// Initialize and start the API server, returning the resolved bind address, using a
@@ -249,40 +266,19 @@ impl ServiceContainer {
             self.pool.clone(),
             self.write_pool.clone(),
         ));
-        let auth_svc = AuthService::new(user_repo, token_repo, jwt_service.clone(), auth_config);
+        let auth_svc = AuthService::new(user_repo, token_repo, jwt_service, auth_config);
         info!(
             issuer = %issuer,
             audience = %audience,
             "AuthService initialized with desktop-provided JWT secret"
         );
 
-        let state = self.build_api_state(Some(Arc::new(auth_svc)))?;
-        let server = ApiServer::new(self.api_server_config.clone(), state);
-        let cancel_token = self.cancellation_token.clone();
-
-        // Link server shutdown to container shutdown
-        let server_cancel = server.cancel_token();
-        self.task_supervisor
-            .spawn("desktop API shutdown bridge", async move {
-                cancel_token.cancelled().await;
-                server_cancel.cancel();
-            });
-
-        let (listener, local_addr) = server.bind().await?;
-        info!("Starting API server on http://{}", local_addr);
-
-        if !self
-            .task_supervisor
-            .spawn_critical("desktop API server", async move {
-                server.run_with_listener(listener).await
-            })
-        {
-            return Err(crate::Error::Other(
-                "desktop API server task was rejected during shutdown".to_string(),
-            ));
-        }
-
-        Ok(local_addr)
+        self.bind_and_spawn_api_server(
+            Some(Arc::new(auth_svc)),
+            "desktop API shutdown bridge",
+            "desktop API server",
+        )
+        .await
     }
 }
 

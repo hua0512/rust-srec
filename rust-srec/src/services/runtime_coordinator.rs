@@ -42,6 +42,12 @@ pub(crate) struct RuntimeCoordinator {
     stream_monitor: Arc<RuntimeStreamMonitor>,
     session_repository: Arc<SqlxSessionRepository>,
     session_cancels: Arc<SessionCancelTokens>,
+    /// Streamer ids with a `run_live_download_pipeline` task in flight.
+    /// The pipeline inserts its streamer id before its first await (the
+    /// per-streamer dedup that stops two concurrent `StreamerLive` events
+    /// from both reaching `start_with_slot`) and removes it via
+    /// `PipelineReservationGuard` on every exit path. Keyed by streamer
+    /// id, unlike `session_cancels`, which is keyed by session id.
     pending_pipelines: Arc<DashMap<String, ()>>,
     pipeline_manager: Arc<PipelineManager>,
     session_lifecycle: Arc<SessionLifecycle>,
@@ -146,7 +152,7 @@ impl RuntimeCoordinator {
         let streamer_name = self
             .streamer_manager
             .get_streamer(streamer_id)
-            .map(|metadata| metadata.name.clone())
+            .map(|metadata| metadata.name)
             .unwrap_or_default();
         if let Err(error) = self
             .session_lifecycle
@@ -192,14 +198,7 @@ impl RuntimeCoordinator {
                 self.task_supervisor
                     .spawn("live download pipeline", async move {
                         run_live_download_pipeline(
-                            coordinator.download_manager.clone(),
-                            coordinator.streamer_manager.clone(),
-                            coordinator.config_service.clone(),
-                            coordinator.danmu_service.clone(),
-                            coordinator.stream_monitor.clone(),
-                            coordinator.session_repository.clone(),
-                            coordinator.session_cancels.clone(),
-                            coordinator.pending_pipelines.clone(),
+                            coordinator,
                             StreamerLivePayload {
                                 streamer_id,
                                 session_id,

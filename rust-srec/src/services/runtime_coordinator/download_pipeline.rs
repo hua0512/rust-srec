@@ -6,18 +6,12 @@ use dashmap::DashMap;
 use pipeline_common::expand_path_template;
 use tracing::{debug, info, warn};
 
-use crate::config::ConfigService;
-use crate::danmu::DanmuService;
-use crate::database::repositories::{
-    SessionRepository, SqlxConfigRepository, SqlxFilterRepository, SqlxSessionRepository,
-    SqlxStreamerRepository,
-};
+use crate::database::repositories::SessionRepository;
 use crate::domain::{Priority, StreamerState};
-use crate::downloader::{DownloadConfig, DownloadManager, DownloadProtocol};
-use crate::monitor::StreamMonitor;
-use crate::services::session_cancels::SessionCancelTokens;
-use crate::streamer::StreamerManager;
+use crate::downloader::{DownloadConfig, DownloadProtocol};
 use crate::utils::filename::sanitize_filename;
+
+use super::RuntimeCoordinator;
 
 /// Owned payload carrying the per-streamer data needed by
 /// [`run_live_download_pipeline`]. Mirrors the relevant fields of
@@ -34,10 +28,25 @@ pub(super) struct StreamerLivePayload {
     pub(super) media_extras: Option<std::collections::HashMap<String, String>>,
 }
 
+/// Removes the per-streamer reservation from
+/// `RuntimeCoordinator::pending_pipelines` when the pipeline exits,
+/// on every path (early return, panic, completion).
+struct PipelineReservationGuard<'a> {
+    map: &'a DashMap<String, ()>,
+    streamer_id: &'a str,
+}
+
+impl Drop for PipelineReservationGuard<'_> {
+    fn drop(&mut self) {
+        self.map.remove(self.streamer_id);
+    }
+}
+
 /// Per-streamer download pipeline.
 ///
-/// Runs in a `tokio::spawn`'d task per `StreamerLive` event. Walks the
-/// split startup flow:
+/// Runs as a `TaskSupervisor::spawn` task, started by
+/// `RuntimeCoordinator::handle_monitor_event` per `StreamerLive` event.
+/// Walks the split startup flow:
 ///
 /// 1. **Dedup / pre-checks** — bail if the streamer is already
 ///    downloading, no longer active, disabled, or has no streams.
@@ -60,23 +69,8 @@ pub(super) struct StreamerLivePayload {
 /// 6. **Danmu** — gated on download success, so danmu collection
 ///    never opens a platform connection for a stream that's still
 ///    queued or got aborted.
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn run_live_download_pipeline(
-    download_manager: Arc<DownloadManager>,
-    streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
-    config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
-    danmu_service: Arc<DanmuService>,
-    stream_monitor: Arc<
-        StreamMonitor<
-            SqlxStreamerRepository,
-            SqlxFilterRepository,
-            SqlxSessionRepository,
-            SqlxConfigRepository,
-        >,
-    >,
-    session_repository: Arc<SqlxSessionRepository>,
-    session_cancels: Arc<SessionCancelTokens>,
-    pending_pipelines: Arc<DashMap<String, ()>>,
+    coordinator: Arc<RuntimeCoordinator>,
     payload: StreamerLivePayload,
     // `true` when called for a session that just resumed out of
     // hysteresis. The resume-download subscriber synthesises a
@@ -88,6 +82,18 @@ pub(super) async fn run_live_download_pipeline(
     from_hysteresis_resume: bool,
 ) {
     use crate::downloader::{AcquireRequest, PreflightRequest, Priority as QueuePriority};
+
+    let RuntimeCoordinator {
+        download_manager,
+        streamer_manager,
+        config_service,
+        danmu_service,
+        stream_monitor,
+        session_repository,
+        session_cancels,
+        pending_pipelines,
+        ..
+    } = &*coordinator;
 
     let StreamerLivePayload {
         streamer_id,
@@ -116,17 +122,8 @@ pub(super) async fn run_live_download_pipeline(
         );
         return;
     }
-    struct PipelineReservationGuard<'a> {
-        map: &'a Arc<DashMap<String, ()>>,
-        streamer_id: &'a str,
-    }
-    impl<'a> Drop for PipelineReservationGuard<'a> {
-        fn drop(&mut self) {
-            self.map.remove(self.streamer_id);
-        }
-    }
     let _pipeline_guard = PipelineReservationGuard {
-        map: &pending_pipelines,
+        map: pending_pipelines,
         streamer_id: &streamer_id,
     };
 
@@ -141,11 +138,7 @@ pub(super) async fn run_live_download_pipeline(
     if download_manager.has_active_download(&streamer_id) {
         debug!("Download already active for {}", streamer_id);
         let active = download_manager.get_active_downloads();
-        let conflicts: Vec<_> = active
-            .iter()
-            .filter(|d| d.streamer_id == streamer_id)
-            .collect();
-        for conflict in conflicts {
+        for conflict in active.iter().filter(|d| d.streamer_id == streamer_id) {
             tracing::warn!(
                 "CONFLICTING DOWNLOAD: ID={}, Status={:?}, Started={:?}",
                 conflict.id,
@@ -210,8 +203,7 @@ pub(super) async fn run_live_download_pipeline(
 
     let is_high_priority = streamer_metadata
         .as_ref()
-        .map(|s| s.priority == Priority::High)
-        .unwrap_or(false);
+        .is_some_and(|s| s.priority == Priority::High);
     // Load merged config for this streamer.
     let merged_config = match config_service.get_config_for_streamer(&streamer_id).await {
         Ok(config) => config,
@@ -229,8 +221,7 @@ pub(super) async fn run_live_download_pipeline(
     let sanitized_title = sanitize_filename(&title);
     let platform = streamer_metadata
         .as_ref()
-        .map(|s| s.platform())
-        .unwrap_or("unknown");
+        .map_or("unknown", |s| s.platform());
 
     let dir = merged_config
         .output_folder
@@ -380,8 +371,7 @@ pub(super) async fn run_live_download_pipeline(
         let meta = streamer_manager.get_streamer(&streamer_id);
         let permits_start = meta
             .as_ref()
-            .map(|m| m.state == StreamerState::Live && !m.is_disabled())
-            .unwrap_or(false);
+            .is_some_and(|m| m.state == StreamerState::Live && !m.is_disabled());
         if !permits_start {
             debug!(
                 streamer_id = %streamer_id,
@@ -404,7 +394,6 @@ pub(super) async fn run_live_download_pipeline(
 
     // ── Build full DownloadConfig with possibly-refreshed URLs ──
     let best_stream = &streams[0];
-    let stream_url_selected = best_stream.url.clone();
     let stream_format = best_stream.stream_format.as_str();
     let media_format = best_stream.media_format.as_str();
     let initial_segment_index = match session_repository
@@ -423,7 +412,8 @@ pub(super) async fn run_live_download_pipeline(
         }
     };
 
-    let mut headers = media_headers.as_ref().cloned().unwrap_or_default();
+    // Last read of `media_headers`; move the map out rather than clone it.
+    let mut headers = media_headers.unwrap_or_default();
     if let Some(extras) = best_stream.extras.as_ref() {
         if let Some(extra_headers) = extras.get("headers").and_then(|v| v.as_object()) {
             for (k, v) in extra_headers {
@@ -445,8 +435,8 @@ pub(super) async fn run_live_download_pipeline(
     }
 
     let mut config = DownloadConfig::new(
-        stream_url_selected.clone(),
-        output_dir.clone(),
+        best_stream.url.clone(),
+        output_dir,
         streamer_id.clone(),
         streamer_name.clone(),
         session_id.clone(),
@@ -494,7 +484,7 @@ pub(super) async fn run_live_download_pipeline(
     info!(
         "Starting download for {} with stream URL: {} (stream_format: {}, media_format: {}, headers_needed: {}, output: {}, queue_wait_ms: {}, initial_segment_index: {})",
         streamer_name,
-        stream_url_selected,
+        best_stream.url,
         stream_format,
         media_format,
         best_stream.is_headers_needed,

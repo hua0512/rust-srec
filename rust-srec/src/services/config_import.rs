@@ -4,6 +4,7 @@ use std::sync::Arc;
 use argon2::password_hash::PasswordHash;
 use chrono::Utc;
 use sqlx::SqlitePool;
+use tracing::warn;
 
 use crate::config::ConfigService;
 use crate::config::backup::{
@@ -101,7 +102,12 @@ struct ImportSnapshot {
     engines: HashMap<String, EngineConfigurationDbModel>,
     templates: HashMap<String, TemplateConfigDbModel>,
     platforms: HashMap<String, PlatformConfigDbModel>,
-    streamers: HashMap<String, StreamerDbModel>,
+    // Grouped by url.to_ascii_lowercase() and sorted by id. The schema declares
+    // streamers.url COLLATE NOCASE UNIQUE, but databases whose streamers table
+    // predates that collation enforce case-sensitive uniqueness only, so one key
+    // can hold several rows; streamer_for_update picks the row an import writes to
+    // and apply_import deletes (Replace) or warns about (Merge) the rest.
+    streamers: HashMap<String, Vec<StreamerDbModel>>,
     channels: HashMap<String, NotificationChannelDbModel>,
     job_presets: HashMap<String, JobPreset>,
     pipeline_presets: HashMap<String, PipelinePreset>,
@@ -134,12 +140,22 @@ impl ImportSnapshot {
             .into_iter()
             .map(|model| (model.platform_name.clone(), model))
             .collect();
-        let streamers = sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers")
+        let mut streamers: HashMap<String, Vec<StreamerDbModel>> = HashMap::new();
+        for model in sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers")
             .fetch_all(&mut **tx)
             .await?
-            .into_iter()
-            .map(|model| (model.url.to_ascii_lowercase(), model))
-            .collect();
+        {
+            streamers
+                .entry(model.url.to_ascii_lowercase())
+                .or_default()
+                .push(model);
+        }
+        for rows in streamers.values_mut() {
+            // Lowest id first: streamer_for_update falls back to rows[0] when no
+            // byte-equal URL match exists, and that pick must not depend on row
+            // fetch order.
+            rows.sort_by(|a, b| a.id.cmp(&b.id));
+        }
         let channels =
             sqlx::query_as::<_, NotificationChannelDbModel>("SELECT * FROM notification_channel")
                 .fetch_all(&mut **tx)
@@ -178,6 +194,19 @@ impl ImportSnapshot {
             pipeline_presets,
             users,
         })
+    }
+
+    /// Row that receives imported updates for `url`: the byte-equal URL match when
+    /// one exists, otherwise the lowest-id row of the case-insensitive group
+    /// (`load` sorts each group by id). Preferring the byte-equal match matters on
+    /// tables without the NOCASE collation: persist_streamer rewrites
+    /// streamers.url, and writing one row's exact URL onto a sibling id would
+    /// collide on the url UNIQUE constraint while the shadowed row still exists.
+    fn streamer_for_update(&self, url: &str) -> Option<&StreamerDbModel> {
+        let rows = self.streamers.get(&url.to_ascii_lowercase())?;
+        rows.iter()
+            .find(|row| row.url == url)
+            .or_else(|| rows.first())
     }
 
     fn validate_references(
@@ -270,8 +299,12 @@ impl ImportSnapshot {
     }
 }
 
+fn validation_error(message: impl Into<String>) -> ConfigurationImportError {
+    ConfigurationImportError::Validation(message.into())
+}
+
 fn validation<T>(message: impl Into<String>) -> Result<T, ConfigurationImportError> {
-    Err(ConfigurationImportError::Validation(message.into()))
+    Err(validation_error(message))
 }
 
 fn validate_import(
@@ -285,9 +318,9 @@ fn validate_import(
         ));
     }
     RetentionDays::try_from(config.global_config.job_history_retention_days)
-        .map_err(|error| ConfigurationImportError::Validation(error.to_string()))?;
+        .map_err(|error| validation_error(error.to_string()))?;
     RetentionDays::try_from(config.global_config.notification_event_log_retention_days)
-        .map_err(|error| ConfigurationImportError::Validation(error.to_string()))?;
+        .map_err(|error| validation_error(error.to_string()))?;
 
     validate_non_empty("global output_folder", &config.global_config.output_folder)?;
     validate_non_empty(
@@ -407,7 +440,7 @@ fn validate_import(
                 crate::config::backup::json_value_to_db_string(filter.config.clone()),
             );
             crate::domain::filter::Filter::try_from(&model).map_err(|error| {
-                ConfigurationImportError::Validation(format!(
+                validation_error(format!(
                     "Invalid {} filter for streamer '{}': {}",
                     filter.filter_type, streamer.name, error
                 ))
@@ -437,10 +470,7 @@ fn validate_import(
         model.description = preset.description.clone();
         model.category = preset.category.clone();
         model.validate().map_err(|error| {
-            ConfigurationImportError::Validation(format!(
-                "Invalid job preset '{}': {}",
-                preset.name, error
-            ))
+            validation_error(format!("Invalid job preset '{}': {}", preset.name, error))
         })?;
     }
 
@@ -494,7 +524,7 @@ fn validate_import(
                 ));
             }
             let parsed = PasswordHash::new(&user.password_hash).map_err(|error| {
-                ConfigurationImportError::Validation(format!(
+                validation_error(format!(
                     "Invalid password hash for user '{}': {}",
                     user.username, error
                 ))
@@ -545,14 +575,10 @@ fn validate_pipeline_values<'a>(
         let normalized = crate::config::backup::unwrap_json_value(value.clone());
         let dag: crate::database::models::job::DagPipelineDefinition =
             serde_json::from_value(normalized).map_err(|error| {
-                ConfigurationImportError::Validation(format!(
-                    "Invalid pipeline definition in {owner}: {error}"
-                ))
+                validation_error(format!("Invalid pipeline definition in {owner}: {error}"))
             })?;
         dag.validate().map_err(|error| {
-            ConfigurationImportError::Validation(format!(
-                "Invalid pipeline definition in {owner}: {error}"
-            ))
+            validation_error(format!("Invalid pipeline definition in {owner}: {error}"))
         })?;
     }
     Ok(())
@@ -567,7 +593,7 @@ fn validate_pipeline_preset(preset: &PipelinePresetExport) -> Result<(), Configu
     };
     let normalized = crate::config::backup::unwrap_json_value(value);
     let dag = serde_json::from_value(normalized).map_err(|error| {
-        ConfigurationImportError::Validation(format!(
+        validation_error(format!(
             "Invalid dag_definition for pipeline preset '{}': {}",
             preset.name, error
         ))
@@ -576,7 +602,7 @@ fn validate_pipeline_preset(preset: &PipelinePresetExport) -> Result<(), Configu
     model.description = preset.description.clone();
     model.pipeline_type = preset.pipeline_type.clone();
     model.validate().map_err(|error| {
-        ConfigurationImportError::Validation(format!(
+        validation_error(format!(
             "Invalid pipeline preset '{}': {}",
             preset.name, error
         ))
@@ -617,7 +643,7 @@ fn validate_notification_channel(
         }
     };
     parse_result.map_err(|error| {
-        ConfigurationImportError::Validation(format!(
+        validation_error(format!(
             "Invalid settings for notification channel '{}': {}",
             channel.name, error
         ))
@@ -643,6 +669,16 @@ fn validate_engine_reference(
     Ok(())
 }
 
+/// Mutable outcome threaded through the credential-bearing apply_* passes:
+/// the per-entity counters apply_import returns to the caller plus the
+/// `CredentialScope`s that `ConfigurationImportService::import` feeds to
+/// `credential_service.invalidate` after the transaction commits.
+#[derive(Default)]
+struct ImportChanges {
+    stats: ImportStats,
+    invalidated_credentials: Vec<CredentialScope>,
+}
+
 async fn apply_import(
     tx: &mut ImmediateTransaction,
     snapshot: &ImportSnapshot,
@@ -650,12 +686,45 @@ async fn apply_import(
     mode: ImportMode,
 ) -> Result<(ImportStats, Vec<CredentialScope>), ConfigurationImportError> {
     let replace = mode == ImportMode::Replace;
-    let mut stats = ImportStats::default();
-    let mut invalidated_credentials = Vec::new();
+    let mut changes = ImportChanges::default();
 
     let global = global_model(&snapshot.global, config);
     persist_global(tx, &global).await?;
 
+    apply_engines(tx, snapshot, config, replace, &mut changes.stats).await?;
+    let template_ids = apply_templates(tx, snapshot, config, replace, &mut changes).await?;
+    let platform_ids = apply_platforms(tx, snapshot, config, &mut changes).await?;
+    apply_streamers(
+        tx,
+        snapshot,
+        config,
+        replace,
+        &template_ids,
+        &platform_ids,
+        &mut changes,
+    )
+    .await?;
+    delete_unimported_templates(tx, snapshot, config, replace, &mut changes).await?;
+
+    apply_notification_channels(tx, snapshot, config, replace, &mut changes.stats).await?;
+    apply_job_presets(tx, snapshot, config, replace, &mut changes.stats).await?;
+    apply_pipeline_presets(tx, snapshot, config, replace, &mut changes.stats).await?;
+    apply_users(tx, snapshot, config, replace, &mut changes.stats).await?;
+
+    sqlx::query("DELETE FROM refresh_tokens")
+        .execute(&mut **tx)
+        .await?;
+
+    Ok((changes.stats, changes.invalidated_credentials))
+}
+
+async fn apply_engines(
+    tx: &mut ImmediateTransaction,
+    snapshot: &ImportSnapshot,
+    config: &ConfigExport,
+    replace: bool,
+    stats: &mut ImportStats,
+) -> Result<(), ConfigurationImportError> {
     for item in &config.engines {
         let model = if let Some(existing) = snapshot.engines.get(&item.name) {
             stats.engines_updated += 1;
@@ -670,10 +739,7 @@ async fn apply_import(
             EngineConfigurationDbModel::new(
                 &item.name,
                 EngineType::parse(&item.engine_type).ok_or_else(|| {
-                    ConfigurationImportError::Validation(format!(
-                        "Invalid engine type '{}'",
-                        item.engine_type
-                    ))
+                    validation_error(format!("Invalid engine type '{}'", item.engine_type))
                 })?,
                 db_json(item.config.clone()),
             )
@@ -696,7 +762,23 @@ async fn apply_import(
             }
         }
     }
+    Ok(())
+}
 
+/// Upserts bundle templates and returns name -> template_config.id for
+/// apply_streamers to resolve streamer template references. Replace mode may
+/// only reference bundle templates, so the map starts empty; merge seeds it
+/// from the snapshot so streamers can keep pointing at templates the bundle
+/// does not carry. Replace-mode deletion of snapshot-only templates is
+/// deferred to delete_unimported_templates, which must run after
+/// apply_streamers.
+async fn apply_templates(
+    tx: &mut ImmediateTransaction,
+    snapshot: &ImportSnapshot,
+    config: &ConfigExport,
+    replace: bool,
+    changes: &mut ImportChanges,
+) -> Result<HashMap<String, String>, ConfigurationImportError> {
     let mut template_ids: HashMap<String, String> = if replace {
         HashMap::new()
     } else {
@@ -711,17 +793,31 @@ async fn apply_import(
         let model = template_model(existing, item);
         persist_template(tx, &model).await?;
         template_ids.insert(model.name.clone(), model.id.clone());
-        invalidated_credentials.push(CredentialScope::Template {
-            template_id: model.id.clone(),
-            template_name: model.name.clone(),
-        });
+        changes
+            .invalidated_credentials
+            .push(CredentialScope::Template {
+                template_id: model.id.clone(),
+                template_name: model.name.clone(),
+            });
         if existing.is_some() {
-            stats.templates_updated += 1;
+            changes.stats.templates_updated += 1;
         } else {
-            stats.templates_created += 1;
+            changes.stats.templates_created += 1;
         }
     }
+    Ok(template_ids)
+}
 
+/// Updates the platform_config rows named by the bundle and returns
+/// platform_name -> platform_config.id for apply_streamers. Imports never
+/// create or delete platform rows; validate_references already rejected
+/// bundle platforms absent from the snapshot.
+async fn apply_platforms(
+    tx: &mut ImmediateTransaction,
+    snapshot: &ImportSnapshot,
+    config: &ConfigExport,
+    changes: &mut ImportChanges,
+) -> Result<HashMap<String, String>, ConfigurationImportError> {
     let mut platform_ids: HashMap<String, String> = snapshot
         .platforms
         .iter()
@@ -729,30 +825,39 @@ async fn apply_import(
         .collect();
     for item in &config.platforms {
         let existing = snapshot.platforms.get(&item.platform_name).ok_or_else(|| {
-            ConfigurationImportError::Validation(format!(
-                "Unknown platform '{}'",
-                item.platform_name
-            ))
+            validation_error(format!("Unknown platform '{}'", item.platform_name))
         })?;
         let model = platform_model(existing, item);
         persist_platform(tx, &model).await?;
         platform_ids.insert(model.platform_name.clone(), model.id.clone());
-        invalidated_credentials.push(CredentialScope::Platform {
-            platform_id: model.id.clone(),
-            platform_name: model.platform_name.clone(),
-        });
-        stats.platforms_updated += 1;
+        changes
+            .invalidated_credentials
+            .push(CredentialScope::Platform {
+                platform_id: model.id.clone(),
+                platform_name: model.platform_name.clone(),
+            });
+        changes.stats.platforms_updated += 1;
     }
+    Ok(platform_ids)
+}
 
-    let imported_streamer_urls: HashSet<String> = config
-        .streamers
-        .iter()
-        .map(|item| item.url.to_ascii_lowercase())
-        .collect();
+async fn apply_streamers(
+    tx: &mut ImmediateTransaction,
+    snapshot: &ImportSnapshot,
+    config: &ConfigExport,
+    replace: bool,
+    template_ids: &HashMap<String, String>,
+    platform_ids: &HashMap<String, String>,
+    changes: &mut ImportChanges,
+) -> Result<(), ConfigurationImportError> {
+    // Ids written by the streamer loop below (updated or newly created). Replace
+    // mode deletes every snapshot row absent from this set, which covers both
+    // unmatched URLs and case-duplicate rows that streamer_for_update passed over.
+    let mut retained_streamer_ids: HashSet<String> = HashSet::new();
     for item in &config.streamers {
-        let existing = snapshot.streamers.get(&item.url.to_ascii_lowercase());
+        let existing = snapshot.streamer_for_update(&item.url);
         let platform_id = platform_ids.get(&item.platform).ok_or_else(|| {
-            ConfigurationImportError::Validation(format!(
+            validation_error(format!(
                 "Unknown platform '{}' for streamer '{}'",
                 item.platform, item.name
             ))
@@ -762,7 +867,7 @@ async fn apply_import(
             .as_ref()
             .map(|name| {
                 template_ids.get(name).cloned().ok_or_else(|| {
-                    ConfigurationImportError::Validation(format!(
+                    validation_error(format!(
                         "Unknown template '{}' for streamer '{}'",
                         name, item.name
                     ))
@@ -777,70 +882,99 @@ async fn apply_import(
             .await?;
         for item_filter in &item.filters {
             let filter_type = FilterType::parse(&item_filter.filter_type).ok_or_else(|| {
-                ConfigurationImportError::Validation(format!(
-                    "Invalid filter type '{}'",
-                    item_filter.filter_type
-                ))
+                validation_error(format!("Invalid filter type '{}'", item_filter.filter_type))
             })?;
             let filter =
                 FilterDbModel::new(&model.id, filter_type, db_json(item_filter.config.clone()));
             persist_filter(tx, &filter).await?;
         }
-        invalidated_credentials.push(CredentialScope::Streamer {
-            streamer_id: model.id.clone(),
-            streamer_name: model.name.clone(),
-        });
+        changes
+            .invalidated_credentials
+            .push(CredentialScope::Streamer {
+                streamer_id: model.id.clone(),
+                streamer_name: model.name.clone(),
+            });
+        retained_streamer_ids.insert(model.id.clone());
         if existing.is_some() {
-            stats.streamers_updated += 1;
+            changes.stats.streamers_updated += 1;
         } else {
-            stats.streamers_created += 1;
+            changes.stats.streamers_created += 1;
+        }
+    }
+    if !replace {
+        // Merge mode never deletes streamer rows, so every row of a case-duplicate
+        // group survives even though streamer_for_update routes an imported URL to
+        // a single row; surface the group so operators can remove the shadowed rows.
+        for rows in snapshot.streamers.values() {
+            if rows.len() > 1 {
+                let colliding: Vec<&str> = rows.iter().map(|row| row.url.as_str()).collect();
+                warn!(
+                    urls = %colliding.join(", "),
+                    "Streamer rows share a URL differing only by case; merge import updates at most one of them and keeps the rest"
+                );
+            }
         }
     }
     if replace {
-        for (url, existing) in &snapshot.streamers {
-            if !imported_streamer_urls.contains(url) {
+        for rows in snapshot.streamers.values() {
+            for existing in rows {
+                if retained_streamer_ids.contains(&existing.id) {
+                    continue;
+                }
                 sqlx::query("DELETE FROM streamers WHERE id = ?")
                     .bind(&existing.id)
                     .execute(&mut **tx)
                     .await?;
-                invalidated_credentials.push(CredentialScope::Streamer {
-                    streamer_id: existing.id.clone(),
-                    streamer_name: existing.name.clone(),
-                });
-                stats.streamers_deleted += 1;
-            }
-        }
-
-        let imported_templates: HashSet<&str> = config
-            .templates
-            .iter()
-            .map(|item| item.name.as_str())
-            .collect();
-        for (name, existing) in &snapshot.templates {
-            if !imported_templates.contains(name.as_str()) {
-                sqlx::query("DELETE FROM template_config WHERE id = ?")
-                    .bind(&existing.id)
-                    .execute(&mut **tx)
-                    .await?;
-                invalidated_credentials.push(CredentialScope::Template {
-                    template_id: existing.id.clone(),
-                    template_name: existing.name.clone(),
-                });
-                stats.templates_deleted += 1;
+                changes
+                    .invalidated_credentials
+                    .push(CredentialScope::Streamer {
+                        streamer_id: existing.id.clone(),
+                        streamer_name: existing.name.clone(),
+                    });
+                changes.stats.streamers_deleted += 1;
             }
         }
     }
+    Ok(())
+}
 
-    apply_notification_channels(tx, snapshot, config, replace, &mut stats).await?;
-    apply_job_presets(tx, snapshot, config, replace, &mut stats).await?;
-    apply_pipeline_presets(tx, snapshot, config, replace, &mut stats).await?;
-    apply_users(tx, snapshot, config, replace, &mut stats).await?;
-
-    sqlx::query("DELETE FROM refresh_tokens")
-        .execute(&mut **tx)
-        .await?;
-
-    Ok((stats, invalidated_credentials))
+/// Replace-mode deletion of snapshot templates absent from the bundle; no-op
+/// in merge mode. Must run after apply_streamers: until persist_streamer
+/// rewrites each retained row's template_config_id (Replace-mode template_ids
+/// resolves bundle templates only) and the unretained rows are deleted,
+/// snapshot streamer rows may still reference the template_config rows
+/// removed here.
+async fn delete_unimported_templates(
+    tx: &mut ImmediateTransaction,
+    snapshot: &ImportSnapshot,
+    config: &ConfigExport,
+    replace: bool,
+    changes: &mut ImportChanges,
+) -> Result<(), ConfigurationImportError> {
+    if !replace {
+        return Ok(());
+    }
+    let imported_templates: HashSet<&str> = config
+        .templates
+        .iter()
+        .map(|item| item.name.as_str())
+        .collect();
+    for (name, existing) in &snapshot.templates {
+        if !imported_templates.contains(name.as_str()) {
+            sqlx::query("DELETE FROM template_config WHERE id = ?")
+                .bind(&existing.id)
+                .execute(&mut **tx)
+                .await?;
+            changes
+                .invalidated_credentials
+                .push(CredentialScope::Template {
+                    template_id: existing.id.clone(),
+                    template_name: existing.name.clone(),
+                });
+            changes.stats.templates_deleted += 1;
+        }
+    }
+    Ok(())
 }
 
 fn global_model(existing: &GlobalConfigDbModel, config: &ConfigExport) -> GlobalConfigDbModel {
@@ -978,30 +1112,23 @@ async fn apply_notification_channels(
 ) -> Result<(), ConfigurationImportError> {
     for item in &config.notification_channels {
         let existing = snapshot.channels.get(&item.name);
+        let channel_type = ChannelType::parse(&item.channel_type).ok_or_else(|| {
+            validation_error(format!(
+                "Invalid notification channel type '{}'",
+                item.channel_type
+            ))
+        })?;
         let model = if let Some(existing) = existing {
             NotificationChannelDbModel {
                 id: existing.id.clone(),
                 name: item.name.clone(),
-                channel_type: ChannelType::parse(&item.channel_type)
-                    .ok_or_else(|| {
-                        ConfigurationImportError::Validation(format!(
-                            "Invalid notification channel type '{}'",
-                            item.channel_type
-                        ))
-                    })?
-                    .as_str()
-                    .to_string(),
+                channel_type: channel_type.as_str().to_string(),
                 settings: db_json(item.settings.clone()),
             }
         } else {
             NotificationChannelDbModel::new(
                 &item.name,
-                ChannelType::parse(&item.channel_type).ok_or_else(|| {
-                    ConfigurationImportError::Validation(format!(
-                        "Invalid notification channel type '{}'",
-                        item.channel_type
-                    ))
-                })?,
+                channel_type,
                 db_json(item.settings.clone()),
             )
         };
@@ -1108,31 +1235,35 @@ async fn apply_pipeline_presets(
     for item in &config.pipeline_presets {
         let existing = snapshot.pipeline_presets.get(&item.name);
         let dag_value = item.dag_definition.clone().ok_or_else(|| {
-            ConfigurationImportError::Validation(format!(
+            validation_error(format!(
                 "Missing dag_definition for pipeline preset '{}'",
                 item.name
             ))
         })?;
-        let dag: crate::database::models::job::DagPipelineDefinition = serde_json::from_value(
-            crate::config::backup::unwrap_json_value(dag_value),
-        )
-        .map_err(|error| {
-            ConfigurationImportError::Validation(format!(
-                "Invalid dag_definition for pipeline preset '{}': {}",
-                item.name, error
-            ))
-        })?;
+        let raw_dag = crate::config::backup::unwrap_json_value(dag_value);
+        // Parsing rejects invalid DAGs; the parsed value is persisted only for new
+        // presets, where PipelinePreset::new serializes it exactly like the API
+        // create handler (api::routes::pipeline::presets::create_pipeline_preset).
+        let dag: crate::database::models::job::DagPipelineDefinition =
+            serde_json::from_value(raw_dag.clone()).map_err(|error| {
+                validation_error(format!(
+                    "Invalid dag_definition for pipeline preset '{}': {}",
+                    item.name, error
+                ))
+            })?;
         let mut model = existing
             .cloned()
-            .unwrap_or_else(|| PipelinePreset::new(&item.name, dag.clone()));
+            .unwrap_or_else(|| PipelinePreset::new(&item.name, dag));
         model.name = item.name.clone();
         model.description = item.description.clone();
-        model.dag_definition = Some(serde_json::to_string(&dag).map_err(|error| {
-            ConfigurationImportError::Validation(format!(
-                "Failed to serialize pipeline preset '{}': {}",
-                item.name, error
-            ))
-        })?);
+        if existing.is_some() {
+            // Updates store the bundle's own JSON: round-tripping through
+            // DagPipelineDefinition would drop fields the struct does not model.
+            model.dag_definition = Some(raw_dag.to_string());
+        }
+        // pipeline_presets.pipeline_type is NOT NULL and PipelinePreset::new writes
+        // "dag", so an absent bundle value coerces to the same default while a
+        // present value is stored as-is.
         model.pipeline_type = item
             .pipeline_type
             .clone()
@@ -1180,7 +1311,7 @@ async fn apply_users(
     for item in &config.users {
         let existing = snapshot.users.get(&item.username);
         let roles = serde_json::to_string(&item.roles).map_err(|error| {
-            ConfigurationImportError::Validation(format!(
+            validation_error(format!(
                 "Failed to serialize roles for user '{}': {}",
                 item.username, error
             ))
@@ -1675,6 +1806,96 @@ mod tests {
         }
     }
 
+    fn imported_streamer(url: &str, platform: &str) -> crate::config::backup::StreamerExport {
+        crate::config::backup::StreamerExport {
+            name: "imported".to_string(),
+            url: url.to_string(),
+            platform: platform.to_string(),
+            template: None,
+            priority: "NORMAL".to_string(),
+            state: "NOT_LIVE".to_string(),
+            avatar_url: None,
+            streamer_specific_config: None,
+            filters: Vec::new(),
+        }
+    }
+
+    /// Seeds two streamer rows whose URLs differ only by ASCII case, ids chosen so
+    /// "streamer-a" is the lowest-id row of the group. The migrated schema declares
+    /// `streamers.url` COLLATE NOCASE UNIQUE, which rejects such rows outright, but
+    /// databases whose streamers table predates that collation enforce
+    /// case-sensitive uniqueness only — recreate that table shape (CHECK/FK
+    /// constraints elided) so the rows can exist.
+    async fn seed_case_duplicate_streamers(pool: &SqlitePool) -> PlatformConfigDbModel {
+        sqlx::query("DROP TABLE streamers")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+            CREATE TABLE streamers (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL UNIQUE,
+                platform_config_id TEXT NOT NULL,
+                template_config_id TEXT,
+                state TEXT NOT NULL,
+                priority TEXT NOT NULL DEFAULT 'NORMAL',
+                last_live_time INTEGER,
+                streamer_specific_config TEXT,
+                consecutive_error_count INTEGER DEFAULT 0,
+                last_error TEXT,
+                disabled_until INTEGER,
+                avatar TEXT,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+                updated_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let platform: PlatformConfigDbModel =
+            sqlx::query_as("SELECT * FROM platform_config WHERE platform_name = 'huya'")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        let mut lower =
+            StreamerDbModel::new("lower", "https://example.com/live/alpha", &platform.id);
+        lower.id = "streamer-a".to_string();
+        let mut mixed =
+            StreamerDbModel::new("mixed", "https://example.com/live/Alpha", &platform.id);
+        mixed.id = "streamer-b".to_string();
+        let mut setup_tx = begin_immediate(pool).await.unwrap();
+        persist_streamer(&mut setup_tx, &lower).await.unwrap();
+        persist_streamer(&mut setup_tx, &mixed).await.unwrap();
+        setup_tx.commit().await.unwrap();
+        platform
+    }
+
+    /// io::Write sink shared with a tracing fmt subscriber so tests can assert on
+    /// emitted log lines.
+    #[derive(Clone, Default)]
+    struct SharedLogBuffer(Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl SharedLogBuffer {
+        fn contents(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
+    impl std::io::Write for SharedLogBuffer {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn validation_rejects_duplicate_streamer_urls_case_insensitively() {
         let global = GlobalConfigDbModel::default();
@@ -1853,5 +2074,201 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(inserted.0, 0);
+    }
+
+    #[tokio::test]
+    async fn replace_import_updates_lowest_id_case_duplicate_and_deletes_shadow() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let global: GlobalConfigDbModel =
+            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let platform = seed_case_duplicate_streamers(&pool).await;
+
+        let mut config = import_config(&global);
+        // Replace-mode validate_references resolves engine names from the bundle
+        // alone, so mirror the seeded engines to keep default_download_engine valid.
+        let engines: Vec<EngineConfigurationDbModel> =
+            sqlx::query_as("SELECT * FROM engine_configuration")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        config.engines = engines
+            .iter()
+            .map(|engine| crate::config::backup::EngineExport {
+                name: engine.name.clone(),
+                engine_type: engine.engine_type.clone(),
+                config: serde_json::from_str(&engine.config).unwrap(),
+            })
+            .collect();
+        config.streamers.push(imported_streamer(
+            "https://example.com/live/ALPHA",
+            &platform.platform_name,
+        ));
+        validate_import(&config, ImportMode::Replace).unwrap();
+
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+        snapshot
+            .validate_references(&config, ImportMode::Replace)
+            .unwrap();
+        let (stats, _) = apply_import(&mut tx, &snapshot, &config, ImportMode::Replace)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "streamer-a");
+        assert_eq!(rows[0].url, "https://example.com/live/ALPHA");
+        assert_eq!(stats.streamers_updated, 1);
+        assert_eq!(stats.streamers_created, 0);
+        assert_eq!(stats.streamers_deleted, 1);
+    }
+
+    #[tokio::test]
+    async fn merge_import_updates_one_case_duplicate_keeps_shadow_and_warns() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let global: GlobalConfigDbModel =
+            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let platform = seed_case_duplicate_streamers(&pool).await;
+
+        let mut config = import_config(&global);
+        config.streamers.push(imported_streamer(
+            "https://example.com/live/ALPHA",
+            &platform.platform_name,
+        ));
+        validate_import(&config, ImportMode::Merge).unwrap();
+
+        let log_buffer = SharedLogBuffer::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::WARN)
+            .with_writer({
+                let log_buffer = log_buffer.clone();
+                move || log_buffer.clone()
+            })
+            .finish();
+        let _log_guard = tracing::subscriber::set_default(subscriber);
+
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+        snapshot
+            .validate_references(&config, ImportMode::Merge)
+            .unwrap();
+        let (stats, _) = apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, "streamer-a");
+        assert_eq!(rows[0].url, "https://example.com/live/ALPHA");
+        assert_eq!(rows[1].id, "streamer-b");
+        assert_eq!(rows[1].url, "https://example.com/live/Alpha");
+        assert_eq!(stats.streamers_updated, 1);
+        assert_eq!(stats.streamers_created, 0);
+        assert_eq!(stats.streamers_deleted, 0);
+
+        let logs = log_buffer.contents();
+        assert!(
+            logs.contains("https://example.com/live/alpha")
+                && logs.contains("https://example.com/live/Alpha"),
+            "warning should name the colliding URLs, got: {logs}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_preset_update_round_trips_bundle_dag_definition() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let global: GlobalConfigDbModel =
+            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        let mut create_config = import_config(&global);
+        create_config
+            .pipeline_presets
+            .push(crate::config::backup::PipelinePresetExport {
+                name: "roundtrip-preset".to_string(),
+                description: None,
+                dag_definition: Some(serde_json::json!({
+                    "name": "roundtrip",
+                    "steps": [
+                        {"id": "remux", "step": {"type": "preset", "name": "hq_remux"}}
+                    ]
+                })),
+                pipeline_type: None,
+            });
+        validate_import(&create_config, ImportMode::Merge).unwrap();
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+        snapshot
+            .validate_references(&create_config, ImportMode::Merge)
+            .unwrap();
+        apply_import(&mut tx, &snapshot, &create_config, ImportMode::Merge)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        // "x_layout" is not a DagPipelineDefinition field; storing the bundle's raw
+        // JSON on update must keep it verbatim.
+        let updated_dag = serde_json::json!({
+            "name": "roundtrip",
+            "steps": [
+                {
+                    "id": "remux",
+                    "step": {"type": "preset", "name": "hq_remux"},
+                    "depends_on": []
+                }
+            ],
+            "x_layout": {"remux": [10, 20]}
+        });
+        let mut update_config = import_config(&global);
+        update_config
+            .pipeline_presets
+            .push(crate::config::backup::PipelinePresetExport {
+                name: "roundtrip-preset".to_string(),
+                description: Some("updated".to_string()),
+                dag_definition: Some(updated_dag.clone()),
+                pipeline_type: Some("legacy".to_string()),
+            });
+        validate_import(&update_config, ImportMode::Merge).unwrap();
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+        snapshot
+            .validate_references(&update_config, ImportMode::Merge)
+            .unwrap();
+        let (stats, _) = apply_import(&mut tx, &snapshot, &update_config, ImportMode::Merge)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        assert_eq!(stats.pipeline_presets_updated, 1);
+        let stored: PipelinePreset =
+            sqlx::query_as("SELECT * FROM pipeline_presets WHERE name = 'roundtrip-preset'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            stored.dag_definition.as_deref(),
+            Some(updated_dag.to_string().as_str())
+        );
+        assert_eq!(stored.pipeline_type.as_deref(), Some("legacy"));
     }
 }

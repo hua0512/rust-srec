@@ -1,4 +1,4 @@
-//! GPU health monitor (issue #555).
+//! GPU health monitor.
 //!
 //! Background poller that probes `nvidia-smi` on a configurable cadence and
 //! exposes a single `gpu` [`ComponentHealth`] entry through the
@@ -75,7 +75,7 @@ const COMPONENT_NAME: &str = "gpu";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuErrorKind {
     /// `Failed to initialize NVML: Unknown Error` — the cgroup-wipe
-    /// signature from issue #555.
+    /// signature described in the module docs.
     NvmlUnknownError,
     /// `Driver/library version mismatch` — host driver was upgraded
     /// without restarting `nvidia-uvm` or the container.

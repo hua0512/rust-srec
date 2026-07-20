@@ -214,11 +214,10 @@ impl SessionLifecycleRepository {
         //
         // The partial unique index `live_sessions_one_active_per_streamer`
         // (initial schema) caps the candidate set at 0 or 1 row in normal
-        // operation, so this is a no-op on a healthy DB. But the
-        // 2026-04-28 production logs (柔柔) showed at least one buggy
-        // build leaked enough state that operators could end up with
-        // multiple `end_time IS NULL` rows for one streamer. Without this
-        // step, the next `start_or_resume` would either:
+        // operation, so this is a no-op on a healthy DB. But if the DB
+        // nonetheless holds multiple `end_time IS NULL` rows for one
+        // streamer, then without this step the next `start_or_resume`
+        // would either:
         //   - on the Created path, trip the unique index on INSERT and
         //     fail the request loudly; or
         //   - on the ReusedActive path, pick the most-recent active and

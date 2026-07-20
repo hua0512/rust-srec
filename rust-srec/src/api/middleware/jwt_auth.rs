@@ -50,12 +50,32 @@ fn extract_bearer_token<B>(request: &Request<B>) -> Result<&str, JwtAuthError> {
 #[derive(Clone)]
 pub struct JwtAuthLayer {
     auth_service: Arc<AuthService>,
+    /// Forwarded to `AuthService::authorize_access_token`. Routes wrapped by
+    /// a `password_remediation` layer stay reachable for users whose
+    /// `must_change_password` flag is set; token validation itself is
+    /// unaffected.
+    allow_password_remediation: bool,
 }
 
 impl JwtAuthLayer {
-    /// Create a new JWT auth layer.
+    /// Create a JWT auth layer that also enforces the forced-password-change
+    /// state (`AuthError::PasswordChangeRequired` for flagged users).
     pub fn new(auth_service: Arc<AuthService>) -> Self {
-        Self { auth_service }
+        Self {
+            auth_service,
+            allow_password_remediation: false,
+        }
+    }
+
+    /// Create a JWT auth layer for the password-remediation routes
+    /// (`routes::auth::password_remediation_router`): tokens are validated as
+    /// usual, but a user with `must_change_password` set is let through so
+    /// they can actually remediate.
+    pub fn password_remediation(auth_service: Arc<AuthService>) -> Self {
+        Self {
+            auth_service,
+            allow_password_remediation: true,
+        }
     }
 }
 
@@ -66,6 +86,7 @@ impl<S> tower::Layer<S> for JwtAuthLayer {
         JwtAuthService {
             inner,
             auth_service: self.auth_service.clone(),
+            allow_password_remediation: self.allow_password_remediation,
         }
     }
 }
@@ -75,6 +96,7 @@ impl<S> tower::Layer<S> for JwtAuthLayer {
 pub struct JwtAuthService<S> {
     inner: S,
     auth_service: Arc<AuthService>,
+    allow_password_remediation: bool,
 }
 
 impl<S, B> tower::Service<axum::http::Request<B>> for JwtAuthService<S>
@@ -96,9 +118,14 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, request: axum::http::Request<B>) -> Self::Future {
+    fn call(&mut self, mut request: axum::http::Request<B>) -> Self::Future {
         let auth_service = self.auth_service.clone();
-        let mut inner = self.inner.clone();
+        let allow_password_remediation = self.allow_password_remediation;
+        // The future must capture the instance `poll_ready` was called on;
+        // leave the fresh clone in `self.inner` for the next `call` (the
+        // standard tower pattern for cloning a service into a future).
+        let clone = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, clone);
 
         Box::pin(async move {
             let token = match extract_bearer_token(&request) {
@@ -106,10 +133,6 @@ where
                 Err(error) => return Ok(error.into_response()),
             };
 
-            let allow_password_remediation = matches!(
-                request.uri().path(),
-                "/api/auth/change-password" | "/api/auth/logout-all"
-            );
             let claims = match auth_service
                 .authorize_access_token(token, allow_password_remediation)
                 .await
@@ -118,9 +141,7 @@ where
                 Err(error) => return Ok(ApiError::from(error).into_response()),
             };
 
-            let (mut parts, body) = request.into_parts();
-            parts.extensions.insert(claims);
-            let request = axum::http::Request::from_parts(parts, body);
+            request.extensions_mut().insert(claims);
 
             inner.call(request).await
         })
@@ -253,11 +274,7 @@ mod tests {
         (auth_service, jwt_service)
     }
 
-    async fn call_layer(
-        auth_service: Arc<AuthService>,
-        path: &str,
-        authorization: Option<&str>,
-    ) -> Response {
+    async fn call_layer(layer: JwtAuthLayer, path: &str, authorization: Option<&str>) -> Response {
         let inner = service_fn(|request: Request<Body>| async move {
             let claims = request
                 .extensions()
@@ -271,7 +288,7 @@ mod tests {
                     .expect("test response should build"),
             )
         });
-        let service = JwtAuthLayer::new(auth_service).layer(inner);
+        let service = layer.layer(inner);
         let mut request = Request::builder()
             .uri(path)
             .body(Body::empty())
@@ -300,11 +317,101 @@ mod tests {
         let user = active_user();
         let (auth_service, _) = test_services(UserLookup::Found(user));
 
-        let missing = call_layer(auth_service.clone(), "/api/config", None).await;
+        let missing =
+            call_layer(JwtAuthLayer::new(auth_service.clone()), "/api/config", None).await;
         assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
 
-        let invalid = call_layer(auth_service, "/api/config", Some("Bearer invalid")).await;
+        let invalid = call_layer(
+            JwtAuthLayer::new(auth_service),
+            "/api/config",
+            Some("Bearer invalid"),
+        )
+        .await;
         assert_eq!(invalid.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn non_bearer_scheme_and_empty_bearer_are_unauthorized() {
+        let user = active_user();
+        let (auth_service, _) = test_services(UserLookup::Found(user));
+
+        let basic = call_layer(
+            JwtAuthLayer::new(auth_service.clone()),
+            "/api/config",
+            Some("Basic xyz"),
+        )
+        .await;
+        assert_eq!(basic.status(), StatusCode::UNAUTHORIZED);
+
+        let empty_bearer = call_layer(
+            JwtAuthLayer::new(auth_service),
+            "/api/config",
+            Some("Bearer "),
+        )
+        .await;
+        assert_eq!(empty_bearer.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn expired_and_tampered_tokens_are_unauthorized() {
+        let user = active_user();
+        let user_id = user.id.clone();
+        let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be past the Unix epoch")
+            .as_secs();
+        // An hour-old exp clears the 60s leeway Validation::default() applies
+        // inside JwtService::validate_token.
+        let expired_claims = Claims {
+            sub: user_id.clone(),
+            roles: vec!["user".to_string()],
+            iss: "test-issuer".to_string(),
+            aud: "test-audience".to_string(),
+            exp: now - 3600,
+            iat: now - 7200,
+        };
+        let expired = jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &expired_claims,
+            &jsonwebtoken::EncodingKey::from_secret("test-secret-key-32-chars-long!!".as_bytes()),
+        )
+        .expect("token encoding should succeed");
+        let response = call_layer(
+            JwtAuthLayer::new(auth_service.clone()),
+            "/api/config",
+            Some(&format!("Bearer {expired}")),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+        // Flip one mid-signature character (still base64url) so validation
+        // fails on the signature check rather than on decoding.
+        let (head, signature) = token
+            .rsplit_once('.')
+            .expect("JWT should have a signature segment");
+        let mut signature_bytes = signature.as_bytes().to_vec();
+        let mid = signature_bytes.len() / 2;
+        signature_bytes[mid] = if signature_bytes[mid] == b'A' {
+            b'B'
+        } else {
+            b'A'
+        };
+        let tampered = format!(
+            "{head}.{}",
+            String::from_utf8(signature_bytes).expect("signature should remain ASCII")
+        );
+        let response = call_layer(
+            JwtAuthLayer::new(auth_service),
+            "/api/config",
+            Some(&format!("Bearer {tampered}")),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -317,7 +424,7 @@ mod tests {
             .expect("token generation should succeed");
 
         let response = call_layer(
-            auth_service,
+            JwtAuthLayer::new(auth_service),
             "/api/config",
             Some(&format!("Bearer {token}")),
         )
@@ -337,7 +444,7 @@ mod tests {
             .expect("token generation should succeed");
 
         let response = call_layer(
-            auth_service,
+            JwtAuthLayer::new(auth_service),
             "/api/config",
             Some(&format!("Bearer {token}")),
         )
@@ -353,18 +460,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn forced_password_change_can_reach_only_remediation_routes() {
-        for path in ["/api/auth/change-password", "/api/auth/logout-all"] {
-            let user = UserDbModel::new("test-user", "hash", vec!["user".to_string()]);
-            let user_id = user.id.clone();
-            let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
-            let token = jwt_service
-                .generate_token(&user_id, vec!["user".to_string()])
-                .expect("token generation should succeed");
+    async fn forced_password_change_passes_password_remediation_layer() {
+        // Which routes actually carry the `password_remediation` layer is
+        // pinned by the drift-guard tests in `routes::auth`; this test only
+        // covers the layer behavior for a `must_change_password` user.
+        let user = UserDbModel::new("test-user", "hash", vec!["user".to_string()]);
+        let user_id = user.id.clone();
+        let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
 
-            let response = call_layer(auth_service, path, Some(&format!("Bearer {token}"))).await;
-            assert_eq!(response.status(), StatusCode::OK, "path: {path}");
-        }
+        let response = call_layer(
+            JwtAuthLayer::password_remediation(auth_service),
+            "/api/auth/change-password",
+            Some(&format!("Bearer {token}")),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -375,7 +488,7 @@ mod tests {
             .expect("token generation should succeed");
 
         let response = call_layer(
-            auth_service,
+            JwtAuthLayer::new(auth_service),
             "/api/config",
             Some(&format!("Bearer {token}")),
         )
