@@ -15,8 +15,8 @@ use super::RuntimeCoordinator;
 
 /// Owned payload carrying the per-streamer data needed by
 /// [`run_live_download_pipeline`]. Mirrors the relevant fields of
-/// [`MonitorEvent::StreamerLive`] but is decoupled from the enum so
-/// the spawned task can capture exactly what it needs.
+/// [`crate::monitor::MonitorEvent::StreamerLive`] but is decoupled from
+/// the enum so the spawned task can capture exactly what it needs.
 pub(super) struct StreamerLivePayload {
     pub(super) streamer_id: String,
     pub(super) session_id: String,
