@@ -62,6 +62,7 @@ tower-http = { workspace = true }
 utoipa = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
 jsonwebtoken = { workspace = true }
+lettre = { workspace = true }
 mimalloc = { workspace = true }
 
 # Cryptography for password hashing and token generation

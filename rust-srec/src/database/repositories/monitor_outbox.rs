@@ -31,15 +31,6 @@ impl MonitorOutboxTxOps {
             MonitorEvent::FatalError { .. } => "FatalError",
             MonitorEvent::TransientError { .. } => "TransientError",
             MonitorEvent::StateChanged { .. } => "StateChanged",
-            // LiveDetected / OfflineDetected are in-process lifecycle triggers.
-            // SessionLifecycle converts them into StreamerLive / StreamerOffline
-            // before any outbox write; they must never reach this path.
-            MonitorEvent::LiveDetected { .. } | MonitorEvent::OfflineDetected { .. } => {
-                return Err(crate::Error::Other(
-                    "internal lifecycle trigger event cannot be enqueued to monitor outbox"
-                        .to_string(),
-                ));
-            }
         };
 
         sqlx::query(

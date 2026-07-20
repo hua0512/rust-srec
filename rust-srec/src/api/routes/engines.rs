@@ -4,7 +4,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{FromRef, Path, State},
     routing::get,
 };
 
@@ -15,6 +15,24 @@ use crate::database::models::{
     StreamlinkEngineConfig,
 };
 use crate::downloader::engine::{DownloadEngine, FfmpegEngine, MesioEngine, StreamlinkEngine};
+
+#[derive(Clone)]
+pub struct EngineRouteState {
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+}
+
+impl FromRef<AppState> for EngineRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            config_service: state.config_service.clone(),
+        }
+    }
+}
 
 /// Create the engines router.
 pub fn router() -> Router<AppState> {
@@ -60,12 +78,9 @@ pub struct EngineTestResponse {
     security(("bearer_auth" = []))
 )]
 pub async fn list_engines(
-    State(state): State<AppState>,
+    State(state): State<EngineRouteState>,
 ) -> ApiResult<Json<Vec<EngineConfigurationDbModel>>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let engines = config_service
         .list_engine_configs()
@@ -87,13 +102,10 @@ pub async fn list_engines(
     security(("bearer_auth" = []))
 )]
 pub async fn get_engine(
-    State(state): State<AppState>,
+    State(state): State<EngineRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<EngineConfigurationDbModel>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let engine = config_service.get_engine_config(&id).await.map_err(|e| {
         if e.to_string().contains("not found") {
@@ -117,13 +129,10 @@ pub async fn get_engine(
     security(("bearer_auth" = []))
 )]
 pub async fn create_engine(
-    State(state): State<AppState>,
+    State(state): State<EngineRouteState>,
     Json(request): Json<CreateEngineRequest>,
 ) -> ApiResult<Json<EngineConfigurationDbModel>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let config_str = serde_json::to_string(&request.config)
         .map_err(|e| ApiError::bad_request(format!("Invalid config JSON: {}", e)))?;
@@ -151,14 +160,11 @@ pub async fn create_engine(
     security(("bearer_auth" = []))
 )]
 pub async fn update_engine(
-    State(state): State<AppState>,
+    State(state): State<EngineRouteState>,
     Path(id): Path<String>,
     Json(request): Json<UpdateEngineRequest>,
 ) -> ApiResult<Json<EngineConfigurationDbModel>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     // Get current config to apply partial updates
     let mut engine = config_service.get_engine_config(&id).await.map_err(|e| {
@@ -201,11 +207,11 @@ pub async fn update_engine(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn delete_engine(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<()> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+pub async fn delete_engine(
+    State(state): State<EngineRouteState>,
+    Path(id): Path<String>,
+) -> ApiResult<()> {
+    let config_service = &state.config_service;
 
     // Check if exists first
     let _ = config_service.get_engine_config(&id).await.map_err(|e| {
@@ -236,13 +242,10 @@ pub async fn delete_engine(State(state): State<AppState>, Path(id): Path<String>
     security(("bearer_auth" = []))
 )]
 pub async fn test_engine(
-    State(state): State<AppState>,
+    State(state): State<EngineRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<EngineTestResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let config = config_service.get_engine_config(&id).await.map_err(|e| {
         if e.to_string().contains("not found") {

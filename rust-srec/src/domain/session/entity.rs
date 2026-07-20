@@ -3,8 +3,6 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::session::SessionEventPayload;
-
 /// A timestamped title entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TitleEntry {
@@ -79,17 +77,6 @@ impl LiveSession {
     pub fn link_danmu_statistics(&mut self, stats_id: impl Into<String>) {
         self.danmu_statistics_id = Some(stats_id.into());
     }
-}
-
-/// Persisted lifecycle audit event for a recording session.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionEvent {
-    pub id: i64,
-    pub session_id: String,
-    pub streamer_id: String,
-    pub kind: String,
-    pub occurred_at: DateTime<Utc>,
-    pub payload: Option<SessionEventPayload>,
 }
 
 /// Media file types.

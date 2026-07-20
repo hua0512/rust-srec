@@ -7,7 +7,8 @@
 //! - **mesio HLS / mesio FLV + `Network` failures** — accumulate per
 //!   streamer; reaching the threshold inside the trailing window is treated
 //!   as a definitive offline. Returns
-//!   [`OfflineSignal::ConsecutiveFailures(threshold)`]. Counter resets when a
+//!   [`OfflineSignal::ConsecutiveFailures`] with the threshold. Counter resets
+//!   when a
 //!   successful segment is observed (preserves Bilibili-style mid-stream
 //!   RST reconnects).
 //! - **ffmpeg / streamlink** — subprocess errors are too fuzzy to
@@ -112,7 +113,8 @@ impl OfflineClassifier {
     /// Construct directly from explicit window/threshold values. Used by
     /// the test-only [`OfflineClassifier::new`] / [`Default`] path so test
     /// fixtures get the historical `(60 s, 2)` defaults regardless of
-    /// changes to [`SchedulerConfig::default`]. Production code goes
+    /// changes to [`SchedulerConfig::default`](crate::scheduler::SchedulerConfig::default).
+    /// Production code goes
     /// through [`Self::from_scheduler`].
     pub fn from_window_threshold(window: Duration, threshold: usize) -> Self {
         Self {

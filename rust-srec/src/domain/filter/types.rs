@@ -1,14 +1,7 @@
 //! Filter types.
 
 use chrono::{Datelike, NaiveTime, Weekday};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-
-fn parse_db_filter_config<T: DeserializeOwned>(raw: &str, label: &'static str) -> crate::Result<T> {
-    serde_json::from_str(raw).map_err(|e| {
-        crate::Error::validation(format!("Failed to parse {label} filter config: {e}"))
-    })
-}
 
 /// Filter type enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,59 +85,6 @@ impl Filter {
             Self::TimeBased(f) => f.next_unmatch_time(now),
             Self::Cron(f) => f.next_unmatch_time(now),
             _ => None,
-        }
-    }
-
-    /// Create a Filter from a database model.
-    pub fn from_db_model(model: &crate::database::models::FilterDbModel) -> crate::Result<Self> {
-        use crate::database::models::filter::FilterType as DbFilterType;
-
-        let filter_type = DbFilterType::parse(&model.filter_type).ok_or_else(|| {
-            crate::Error::validation(format!("Unknown filter type: {}", model.filter_type))
-        })?;
-
-        match filter_type {
-            DbFilterType::TimeBased => {
-                let config: crate::database::models::filter::TimeBasedFilterConfig =
-                    parse_db_filter_config(&model.config, "time-based")?;
-                Ok(Filter::TimeBased(TimeBasedFilter {
-                    days_of_week: config.days_of_week,
-                    start_time: config.start_time,
-                    end_time: config.end_time,
-                }))
-            }
-            DbFilterType::Keyword => {
-                let config: crate::database::models::filter::KeywordFilterConfig =
-                    parse_db_filter_config(&model.config, "keyword")?;
-                Ok(Filter::Keyword(KeywordFilter {
-                    include: config.include,
-                    exclude: config.exclude,
-                }))
-            }
-            DbFilterType::Category => {
-                let config: crate::database::models::filter::CategoryFilterConfig =
-                    parse_db_filter_config(&model.config, "category")?;
-                Ok(Filter::Category(CategoryFilter {
-                    categories: config.categories,
-                }))
-            }
-            DbFilterType::Cron => {
-                let config: crate::database::models::filter::CronFilterConfig =
-                    parse_db_filter_config(&model.config, "cron")?;
-                Ok(Filter::Cron(CronFilter {
-                    expression: config.expression,
-                    timezone: config.timezone,
-                }))
-            }
-            DbFilterType::Regex => {
-                let config: crate::database::models::filter::RegexFilterConfig =
-                    parse_db_filter_config(&model.config, "regex")?;
-                Ok(Filter::Regex(RegexFilter {
-                    pattern: config.pattern,
-                    case_insensitive: config.case_insensitive,
-                    exclude: config.exclude,
-                }))
-            }
         }
     }
 }
@@ -457,14 +397,9 @@ impl CronFilter {
 
     /// Check if the current time matches this cron schedule.
     pub fn matches(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
-        use crate::database::models::filter::CronFilterConfig;
         use crate::domain::filter::FilterEvaluator;
 
-        let config = CronFilterConfig {
-            expression: self.expression.clone(),
-            timezone: self.timezone.clone(),
-        };
-        FilterEvaluator::evaluate_cron(&config, now).unwrap_or(false)
+        FilterEvaluator::evaluate_cron(self, now).unwrap_or(false)
     }
 
     /// Calculate the next time this filter will match.
@@ -616,15 +551,9 @@ impl RegexFilter {
 
     /// Check if a title matches this regex filter.
     pub fn matches(&self, title: &str) -> bool {
-        use crate::database::models::filter::RegexFilterConfig;
         use crate::domain::filter::FilterEvaluator;
 
-        let config = RegexFilterConfig {
-            pattern: self.pattern.clone(),
-            case_insensitive: self.case_insensitive,
-            exclude: self.exclude,
-        };
-        FilterEvaluator::evaluate_regex(&config, title).unwrap_or(false)
+        FilterEvaluator::evaluate_regex(self, title).unwrap_or(false)
     }
 }
 

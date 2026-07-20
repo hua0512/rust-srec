@@ -150,10 +150,11 @@ where
         }
     }
 
-    /// Handle a session lifecycle transition. Only [`SessionTransition::Ended`]
+    /// Handle a session lifecycle transition. Only
+    /// [`SessionTransition::Ended`](crate::session::SessionTransition::Ended)
     /// is acted on. The session-complete pipeline fires iff
-    /// [`TerminalCause::should_run_session_complete_pipeline`] returns true for
-    /// the cause carried by the transition.
+    /// [`TerminalCause::should_run_session_complete_pipeline`](crate::session::TerminalCause::should_run_session_complete_pipeline)
+    /// returns true for the cause carried by the transition.
     pub async fn handle_session_transition(&self, event: crate::session::SessionTransition) {
         let crate::session::SessionTransition::Ended {
             session_id,

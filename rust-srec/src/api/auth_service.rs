@@ -19,7 +19,7 @@ use tracing::{debug, info, warn};
 use crate::database::models::RefreshTokenDbModel;
 use crate::database::repositories::{RefreshTokenRepository, UserRepository};
 
-use super::jwt::JwtService;
+use super::jwt::{Claims, JwtError, JwtService};
 
 /// Authentication configuration.
 #[derive(Debug, Clone)]
@@ -111,6 +111,9 @@ pub enum AuthError {
     #[error("Account is disabled")]
     AccountDisabled,
 
+    #[error("Password change is required")]
+    PasswordChangeRequired,
+
     #[error("Token has expired")]
     TokenExpired,
 
@@ -119,9 +122,6 @@ pub enum AuthError {
 
     #[error("Invalid token")]
     InvalidToken,
-
-    #[error("Password change required")]
-    PasswordChangeRequired,
 
     #[error("Password does not meet requirements: {0}")]
     WeakPassword(String),
@@ -197,6 +197,40 @@ impl AuthService {
 
     pub fn user_repository(&self) -> Arc<dyn UserRepository> {
         self.user_repo.clone()
+    }
+
+    /// Validate an access token and enforce the current user security state.
+    pub(crate) async fn authorize_access_token(
+        &self,
+        token: &str,
+        allow_password_remediation: bool,
+    ) -> Result<Claims, AuthError> {
+        let claims = self.jwt_service.validate_token(token).map_err(|error| {
+            if matches!(error, JwtError::TokenExpired) {
+                AuthError::TokenExpired
+            } else {
+                AuthError::InvalidToken
+            }
+        })?;
+
+        let user = self
+            .user_repo
+            .find_by_id(&claims.sub)
+            .await
+            .map_err(|error| AuthError::Database(error.to_string()))?
+            .ok_or(AuthError::UserNotFound)?;
+
+        if !user.is_active {
+            warn!(user_id = %user.id, "Access denied: account disabled");
+            return Err(AuthError::AccountDisabled);
+        }
+
+        if user.must_change_password && !allow_password_remediation {
+            warn!(user_id = %user.id, "Access denied: password change required");
+            return Err(AuthError::PasswordChangeRequired);
+        }
+
+        Ok(claims)
     }
 
     /// Hash a password using Argon2id with OWASP recommended parameters.
@@ -648,11 +682,6 @@ impl AuthService {
 
         Ok(sessions)
     }
-
-    /// Get the authentication configuration.
-    pub fn config(&self) -> &AuthConfig {
-        &self.config
-    }
 }
 
 #[cfg(test)]
@@ -949,6 +978,147 @@ mod tests {
         async fn count(&self) -> crate::Result<i64> {
             Ok(0)
         }
+    }
+
+    struct FailingUserRepository;
+
+    #[async_trait::async_trait]
+    impl UserRepository for FailingUserRepository {
+        async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn find_by_id(&self, _id: &str) -> crate::Result<Option<UserDbModel>> {
+            Err(crate::Error::Database("lookup failed".to_string()))
+        }
+
+        async fn find_by_username(&self, _username: &str) -> crate::Result<Option<UserDbModel>> {
+            Ok(None)
+        }
+
+        async fn find_by_email(&self, _email: &str) -> crate::Result<Option<UserDbModel>> {
+            Ok(None)
+        }
+
+        async fn update(&self, _user: &UserDbModel) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn delete(&self, _id: &str) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
+            Ok(Vec::new())
+        }
+
+        async fn update_last_login(&self, _id: &str, _time_ms: i64) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn update_password(
+            &self,
+            _id: &str,
+            _password_hash: &str,
+            _clear_must_change: bool,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+
+        async fn count(&self) -> crate::Result<i64> {
+            Ok(0)
+        }
+    }
+
+    fn create_access_test_service(
+        user_repo: Arc<dyn UserRepository>,
+    ) -> (AuthService, Arc<JwtService>) {
+        let jwt_service = Arc::new(JwtService::new(
+            "test-secret-key-32-chars-long!!",
+            "test-issuer",
+            "test-audience",
+            Some(900),
+        ));
+        let service = AuthService::new(
+            user_repo,
+            Arc::new(MockRefreshTokenRepository),
+            jwt_service.clone(),
+            AuthConfig::default(),
+        );
+        (service, jwt_service)
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_allows_active_user() {
+        let mut user = UserDbModel::new("active", "hash", vec!["user".to_string()]);
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, jwt_service) =
+            create_access_test_service(Arc::new(SpyUserRepository { user }));
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        let claims = service
+            .authorize_access_token(&token, false)
+            .await
+            .expect("active user should be authorized");
+        assert_eq!(claims.sub, user_id);
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_rejects_unknown_user() {
+        let (service, jwt_service) = create_access_test_service(Arc::new(MockUserRepository));
+        let token = jwt_service
+            .generate_token("missing-user", vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        let result = service.authorize_access_token(&token, false).await;
+        assert!(matches!(result, Err(AuthError::UserNotFound)));
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_rejects_disabled_user() {
+        let mut user = UserDbModel::new("disabled", "hash", vec!["user".to_string()]);
+        user.is_active = false;
+        user.must_change_password = false;
+        let user_id = user.id.clone();
+        let (service, jwt_service) =
+            create_access_test_service(Arc::new(SpyUserRepository { user }));
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        let result = service.authorize_access_token(&token, false).await;
+        assert!(matches!(result, Err(AuthError::AccountDisabled)));
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_fails_closed_on_repository_error() {
+        let (service, jwt_service) = create_access_test_service(Arc::new(FailingUserRepository));
+        let token = jwt_service
+            .generate_token("user", vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        let result = service.authorize_access_token(&token, false).await;
+        assert!(matches!(result, Err(AuthError::Database(_))));
+    }
+
+    #[tokio::test]
+    async fn authorize_access_token_limits_forced_change_user_to_remediation() {
+        let user = UserDbModel::new("forced-change", "hash", vec!["user".to_string()]);
+        let user_id = user.id.clone();
+        let (service, jwt_service) =
+            create_access_test_service(Arc::new(SpyUserRepository { user }));
+        let token = jwt_service
+            .generate_token(&user_id, vec!["user".to_string()])
+            .expect("token generation should succeed");
+
+        let denied = service.authorize_access_token(&token, false).await;
+        assert!(matches!(denied, Err(AuthError::PasswordChangeRequired)));
+
+        let allowed = service.authorize_access_token(&token, true).await;
+        assert!(allowed.is_ok());
     }
 
     #[tokio::test]

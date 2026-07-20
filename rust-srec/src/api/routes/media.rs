@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use axum::Router;
-use axum::extract::{Path, Query, Request, State};
+use axum::extract::{FromRef, Path, Query, Request, State};
 use axum::http::header::AUTHORIZATION;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -11,6 +11,21 @@ use tower_http::services::ServeFile;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
+
+#[derive(Clone)]
+pub struct MediaRouteState {
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
+    session_repository: std::sync::Arc<dyn crate::database::repositories::SessionRepository>,
+}
+
+impl FromRef<AppState> for MediaRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_service: state.auth_service.clone(),
+            session_repository: state.session_repository.clone(),
+        }
+    }
+}
 
 /// Create the media router.
 pub fn router() -> Router<AppState> {
@@ -35,47 +50,31 @@ pub struct AuthQuery {
     security(("bearer_auth" = []))
 )]
 pub async fn get_media_content(
-    State(state): State<AppState>,
+    State(state): State<MediaRouteState>,
     Path(id): Path<String>,
     Query(query): Query<AuthQuery>,
     req: Request,
 ) -> ApiResult<Response> {
-    let jwt_service = state
-        .jwt_service
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("Authentication not configured"))?;
-
     let headers = req.headers();
-    let (token, source) = if let Some(t) = query.token {
-        (t, "Query")
-    } else if let Some(t) = headers
-        .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .map(String::from)
-    {
-        (t, "Header")
-    } else {
-        tracing::warn!("Missing or invalid Authorization header or token query");
-        return Err(ApiError::unauthorized(
-            "Missing or invalid Authorization header",
-        ));
-    };
+    if let Some(auth_service) = &state.auth_service {
+        let token = query.token.or_else(|| {
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|header| header.to_str().ok())
+                .and_then(|value| value.strip_prefix("Bearer "))
+                .map(String::from)
+        });
+        let token = token.as_deref().ok_or_else(|| {
+            ApiError::unauthorized("Missing or invalid Authorization header or token query")
+        })?;
 
-    tracing::info!(
-        "Validating token from {}: {}...",
-        source,
-        &token.chars().take(10).collect::<String>()
-    );
+        auth_service
+            .authorize_access_token(token, false)
+            .await
+            .map_err(ApiError::from)?;
+    }
 
-    jwt_service.validate_token(&token).map_err(|e| {
-        tracing::error!("Token validation failed (source: {}): {}", source, e);
-        ApiError::unauthorized("Invalid or expired token")
-    })?;
-
-    let session_repo = state
-        .session_repository
-        .ok_or_else(|| ApiError::service_unavailable("Session repository not available"))?;
+    let session_repo = &state.session_repository;
 
     // Query media output to get file path
     let media = session_repo

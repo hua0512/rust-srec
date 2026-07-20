@@ -27,7 +27,7 @@ use crate::Result;
 use crate::database::WritePool;
 use crate::database::models::SessionEventDbModel;
 use crate::database::retry::retry_on_sqlite_busy;
-use crate::domain::session::SessionEvent;
+use crate::session::SessionEvent;
 
 const INSERT_SQL: &str = r#"
     INSERT INTO session_events (session_id, streamer_id, kind, occurred_at, payload)

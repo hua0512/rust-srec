@@ -168,12 +168,12 @@ impl LiveStatus {
         }
     }
 
-    /// Map a fatal-error variant to its [`crate::monitor::FatalErrorType`].
+    /// Map a fatal-error variant to its domain discriminator.
     /// Returns `None` for non-fatal variants (Live, Offline, Filtered).
     /// Used by the check-history writer to populate `fatal_kind` without
     /// hand-spelling the variant strings.
-    pub fn fatal_kind(&self) -> Option<crate::monitor::FatalErrorType> {
-        use crate::monitor::FatalErrorType;
+    pub fn fatal_kind(&self) -> Option<crate::domain::streamer::FatalErrorType> {
+        use crate::domain::streamer::FatalErrorType;
         match self {
             LiveStatus::NotFound => Some(FatalErrorType::NotFound),
             LiveStatus::Banned => Some(FatalErrorType::Banned),

@@ -20,9 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
-use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -37,13 +35,17 @@ use super::web_push::WebPushService;
 use crate::Result;
 use crate::database::models::{
     ChannelType, DiscordChannelSettings, EmailChannelSettings, GotifyChannelSettings,
-    NotificationChannelDbModel, NotificationDeadLetterDbModel, NotificationEventLogDbModel,
-    TelegramChannelSettings, WebhookChannelSettings,
+    NotificationChannelDbModel, NotificationEventLogDbModel, TelegramChannelSettings,
+    WebhookChannelSettings,
 };
 use crate::database::repositories::NotificationRepository;
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
+use crate::utils::task_supervisor::TaskSupervisor;
+
+mod dead_letter;
+mod delivery;
 
 /// Best-effort interval for in-memory dead-letter cleanup.
 ///
@@ -232,6 +234,7 @@ struct RetryParams {
     config: NotificationServiceConfig,
     next_dead_letter_id: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
+    task_supervisor: Arc<TaskSupervisor>,
 }
 
 struct ProcessingParams {
@@ -245,6 +248,7 @@ struct ProcessingParams {
     config: NotificationServiceConfig,
     next_dead_letter_id: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
+    task_supervisor: Arc<TaskSupervisor>,
 }
 
 /// The notification service.
@@ -254,7 +258,6 @@ pub struct NotificationService {
     web_push_service: Option<Arc<WebPushService>>,
     web_push_tx: parking_lot::RwLock<Option<mpsc::Sender<WebPushQueuedEvent>>>,
     web_push_worker_started: AtomicBool,
-    web_push_worker_handle: parking_lot::RwLock<Option<JoinHandle<()>>>,
     subscriptions_by_event: RwLock<HashMap<String, Vec<String>>>,
     channels: RwLock<Vec<Arc<RuntimeChannel>>>,
     channels_by_key: DashMap<String, Arc<RuntimeChannel>>,
@@ -267,6 +270,8 @@ pub struct NotificationService {
     next_dead_letter_id: Arc<AtomicU64>,
     event_tx: broadcast::Sender<NotificationEvent>,
     cancellation_token: CancellationToken,
+    task_supervisor: Arc<TaskSupervisor>,
+    owns_task_supervisor: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -318,6 +323,12 @@ impl NotificationService {
         self
     }
 
+    pub(crate) fn with_task_supervisor(mut self, task_supervisor: Arc<TaskSupervisor>) -> Self {
+        self.task_supervisor = task_supervisor;
+        self.owns_task_supervisor = false;
+        self
+    }
+
     /// Create a new notification service with custom configuration.
     pub fn with_config(config: NotificationServiceConfig) -> Self {
         let (event_tx, _) = broadcast::channel(256);
@@ -327,7 +338,6 @@ impl NotificationService {
             web_push_service: None,
             web_push_tx: parking_lot::RwLock::new(None),
             web_push_worker_started: AtomicBool::new(false),
-            web_push_worker_handle: parking_lot::RwLock::new(None),
             subscriptions_by_event: RwLock::new(HashMap::new()),
             channels: RwLock::new(Vec::new()),
             channels_by_key: DashMap::new(),
@@ -339,6 +349,8 @@ impl NotificationService {
             next_dead_letter_id: Arc::new(AtomicU64::new(1)),
             event_tx,
             cancellation_token: CancellationToken::new(),
+            task_supervisor: Arc::new(TaskSupervisor::new()),
+            owns_task_supervisor: true,
             config,
         };
 
@@ -353,9 +365,9 @@ impl NotificationService {
     /// This avoids spawning a new task per notification event and reduces DB load by
     /// letting `WebPushService` reuse its internal subscription cache.
     pub fn start_web_push_worker(self: &Arc<Self>) {
-        if self.web_push_service.is_none() {
+        let Some(web_push) = self.web_push_service.clone() else {
             return;
-        }
+        };
         if self
             .web_push_worker_started
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
@@ -367,15 +379,9 @@ impl NotificationService {
         let (tx, mut rx) = mpsc::channel::<WebPushQueuedEvent>(WEB_PUSH_QUEUE_CAPACITY);
         *self.web_push_tx.write() = Some(tx);
 
-        let service = Arc::clone(self);
-        let web_push = service
-            .web_push_service
-            .as_ref()
-            .expect("web_push_service checked above")
-            .clone();
-        let cancellation_token = service.cancellation_token.clone();
+        let cancellation_token = self.cancellation_token.clone();
 
-        let handle = tokio::spawn(async move {
+        self.task_supervisor.spawn("web push worker", async move {
             async fn flush_buffer(
                 web_push: &Arc<WebPushService>,
                 buffer: &mut Vec<WebPushQueuedEvent>,
@@ -432,8 +438,6 @@ impl NotificationService {
                 }
             }
         });
-
-        *service.web_push_worker_handle.write() = Some(handle);
     }
 
     /// Initialize channels from configuration.
@@ -959,7 +963,7 @@ impl NotificationService {
                         warn!(error = %err, "Web push queue full/closed; falling back to detached send");
                         let event = event.clone();
                         let event_log_id = event_log_id.clone();
-                        tokio::spawn(async move {
+                        self.task_supervisor.spawn("web push fallback", async move {
                             web_push.send_event(&event, Some(&event_log_id)).await;
                         });
                     }
@@ -967,7 +971,7 @@ impl NotificationService {
                 None => {
                     let event = event.clone();
                     let event_log_id = event_log_id.clone();
-                    tokio::spawn(async move {
+                    self.task_supervisor.spawn("web push fallback", async move {
                         web_push.send_event(&event, Some(&event_log_id)).await;
                     });
                 }
@@ -1042,375 +1046,6 @@ impl NotificationService {
         Ok(())
     }
 
-    /// Process a pending notification.
-    async fn process_notification(&self, id: u64) {
-        let channels = self.channels.read().clone();
-        Self::process_notification_detached(ProcessingParams {
-            id,
-            channels,
-            pending_queue: self.pending_queue.clone(),
-            dead_letters: self.dead_letters.clone(),
-            dead_letter_cleanup_ts: self.dead_letter_cleanup_ts.clone(),
-            circuit_breakers: self.circuit_breakers.clone(),
-            notification_repo: self.notification_repo.clone(),
-            config: self.config.clone(),
-            next_dead_letter_id: self.next_dead_letter_id.clone(),
-            cancellation_token: self.cancellation_token.clone(),
-        })
-        .await;
-    }
-
-    fn maybe_cleanup_dead_letters_detached(
-        dead_letters: &DashMap<u64, DeadLetterEntry>,
-        retention_days: u32,
-        dead_letter_cleanup_ts: &AtomicU64,
-        now: DateTime<Utc>,
-    ) {
-        let now_ts = now.timestamp().max(0) as u64;
-        let last = dead_letter_cleanup_ts.load(Ordering::Relaxed);
-        if now_ts.saturating_sub(last) < DEAD_LETTER_CLEANUP_INTERVAL_SECS {
-            return;
-        }
-        if dead_letter_cleanup_ts
-            .compare_exchange(last, now_ts, Ordering::SeqCst, Ordering::Relaxed)
-            .is_err()
-        {
-            return;
-        }
-
-        if retention_days == 0 {
-            dead_letters.clear();
-            return;
-        }
-
-        let retention = chrono::Duration::days(retention_days as i64);
-        let cutoff = now - retention;
-        dead_letters.retain(|_, entry| entry.dead_lettered_at > cutoff);
-    }
-
-    /// Calculate retry delay with exponential backoff and jitter.
-    fn _calculate_retry_delay(&self, attempts: u32) -> Duration {
-        let base_delay = self.config.initial_retry_delay_ms;
-        let max_delay = self.config.max_retry_delay_ms;
-
-        // Exponential backoff: delay = base * 2^attempts
-        let delay_ms = base_delay.saturating_mul(2u64.saturating_pow(attempts));
-        let delay_ms = delay_ms.min(max_delay);
-
-        // Add jitter (±25%)
-        let jitter_range = delay_ms / 4;
-        let jitter = if jitter_range > 0 {
-            (rand::random::<u64>() % (jitter_range * 2)).saturating_sub(jitter_range)
-        } else {
-            0
-        };
-
-        Duration::from_millis(delay_ms.saturating_add(jitter))
-    }
-
-    fn spawn_retry_detached(params: RetryParams) {
-        let RetryParams {
-            id,
-            delay,
-            expected_generation,
-            channels,
-            pending_queue,
-            dead_letters,
-            dead_letter_cleanup_ts,
-            circuit_breakers,
-            notification_repo,
-            config,
-            next_dead_letter_id,
-            cancellation_token,
-        } = params;
-        debug!(
-            "Scheduling retry for notification {} in {:?} (gen={})",
-            id, delay, expected_generation
-        );
-
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => return,
-                _ = sleep(delay) => {},
-            }
-
-            let should_run = pending_queue
-                .get(&id)
-                .map(|p| p.retry_generation == expected_generation)
-                .unwrap_or(false);
-            if !should_run {
-                return;
-            }
-
-            Self::process_notification_detached(ProcessingParams {
-                id,
-                channels,
-                pending_queue,
-                dead_letters,
-                dead_letter_cleanup_ts,
-                circuit_breakers,
-                notification_repo,
-                config,
-                next_dead_letter_id,
-                cancellation_token,
-            })
-            .await;
-        });
-    }
-
-    fn calculate_retry_delay_detached(
-        config: &NotificationServiceConfig,
-        attempts: u32,
-    ) -> Duration {
-        let base_delay = config.initial_retry_delay_ms;
-        let max_delay = config.max_retry_delay_ms;
-
-        let delay_ms = base_delay.saturating_mul(2u64.saturating_pow(attempts));
-        let delay_ms = delay_ms.min(max_delay);
-
-        let jitter_range = delay_ms / 4;
-        let jitter = if jitter_range > 0 {
-            (rand::random::<u64>() % (jitter_range * 2)).saturating_sub(jitter_range)
-        } else {
-            0
-        };
-
-        Duration::from_millis(delay_ms.saturating_add(jitter))
-    }
-
-    async fn process_notification_detached(params: ProcessingParams) {
-        let ProcessingParams {
-            id,
-            channels,
-            pending_queue,
-            dead_letters,
-            dead_letter_cleanup_ts,
-            circuit_breakers,
-            notification_repo,
-            config,
-            next_dead_letter_id,
-            cancellation_token,
-        } = params;
-        let pending_snapshot = match pending_queue.get(&id) {
-            Some(p) => p.clone(),
-            None => return,
-        };
-
-        let mut circuit_blocked = false;
-
-        for channel in &channels {
-            let channel_key = channel.key.clone();
-
-            let is_pending = pending_queue
-                .get(&id)
-                .and_then(|p| p.channel_state.get(&channel_key).map(|cs| cs.status))
-                == Some(DeliveryStatus::Pending);
-            if !is_pending {
-                continue;
-            }
-
-            let allowed = circuit_breakers
-                .get(&channel_key)
-                .map(|cb| cb.is_allowed())
-                .unwrap_or(true);
-            if !allowed {
-                circuit_blocked = true;
-                continue;
-            }
-
-            let event = pending_snapshot.event.clone();
-            match channel.channel.send(&event).await {
-                Ok(()) => {
-                    if let Some(mut cb) = circuit_breakers.get_mut(&channel_key) {
-                        cb.record_success();
-                    }
-                    if let Some(mut p) = pending_queue.get_mut(&id)
-                        && let Some(cs) = p.channel_state.get_mut(&channel_key)
-                    {
-                        cs.status = DeliveryStatus::Delivered;
-                        cs.last_attempt = Some(Utc::now());
-                        cs.last_error = None;
-                    }
-                    debug!("Notification {} sent via {}", id, channel.channel_type);
-                }
-                Err(e) => {
-                    if let Some(mut cb) = circuit_breakers.get_mut(&channel_key) {
-                        cb.record_failure(config.circuit_breaker_threshold);
-                    }
-
-                    let now = Utc::now();
-                    let mut attempts = 0;
-                    let mut dead_lettered = false;
-
-                    if let Some(mut p) = pending_queue.get_mut(&id)
-                        && let Some(cs) = p.channel_state.get_mut(&channel_key)
-                    {
-                        cs.attempts += 1;
-                        cs.last_attempt = Some(now);
-                        cs.last_error = Some(e.to_string());
-                        attempts = cs.attempts;
-                        if cs.attempts >= config.max_retries {
-                            cs.status = DeliveryStatus::DeadLettered;
-                            dead_lettered = true;
-                        }
-                    }
-
-                    if dead_lettered
-                        && let (Some(repo), Some(db_channel_id)) =
-                            (notification_repo.clone(), channel.db_channel_id.clone())
-                    {
-                        if let Ok(payload) = serde_json::to_string(&pending_snapshot.event) {
-                            let db_entry = NotificationDeadLetterDbModel::new(
-                                db_channel_id.clone(),
-                                pending_snapshot.event.event_type(),
-                                payload,
-                                e.to_string(),
-                                attempts as i32,
-                                pending_snapshot.created_at.timestamp_millis(),
-                            );
-                            if let Err(err) = repo.add_to_dead_letter(&db_entry).await {
-                                warn!(
-                                    "Failed to persist dead letter entry for channel {}: {}",
-                                    db_channel_id, err
-                                );
-                            }
-                        }
-
-                        let dead_letter_id = next_dead_letter_id.fetch_add(1, Ordering::SeqCst);
-                        dead_letters.insert(
-                            dead_letter_id,
-                            DeadLetterEntry {
-                                id: dead_letter_id,
-                                notification_id: id,
-                                event: pending_snapshot.event.clone(),
-                                channel_key: Some(channel_key.clone()),
-                                channel_id: channel.db_channel_id.clone(),
-                                channel_type: channel.channel_type.clone(),
-                                attempts,
-                                error: e.to_string(),
-                                created_at: pending_snapshot.created_at,
-                                dead_lettered_at: now,
-                            },
-                        );
-
-                        Self::maybe_cleanup_dead_letters_detached(
-                            &dead_letters,
-                            config.dead_letter_retention_days,
-                            &dead_letter_cleanup_ts,
-                            now,
-                        );
-                        warn!(
-                            "Notification {} dead-lettered for channel {} after {} attempts",
-                            id, channel.channel_type, config.max_retries
-                        );
-                    }
-                }
-            }
-        }
-
-        let (has_pending, min_delay) = match pending_queue.get(&id) {
-            Some(p) => {
-                let mut min_delay: Option<Duration> = None;
-                let mut has_pending = false;
-                for cs in p.channel_state.values() {
-                    if cs.status != DeliveryStatus::Pending {
-                        continue;
-                    }
-                    has_pending = true;
-                    let delay = Self::calculate_retry_delay_detached(&config, cs.attempts);
-                    min_delay = Some(match min_delay {
-                        Some(existing) => existing.min(delay),
-                        None => delay,
-                    });
-                }
-                (has_pending, min_delay)
-            }
-            None => return,
-        };
-
-        if !has_pending {
-            pending_queue.remove(&id);
-            return;
-        }
-
-        let mut delay = min_delay.unwrap_or_else(|| Duration::from_secs(1));
-        if circuit_blocked {
-            delay = delay.max(Duration::from_secs(config.circuit_breaker_cooldown_secs));
-        }
-
-        let expected_generation = match pending_queue.get_mut(&id) {
-            Some(mut p) => {
-                p.retry_generation = p.retry_generation.saturating_add(1);
-                p.next_retry_at = Some(
-                    Utc::now()
-                        + chrono::Duration::from_std(delay)
-                            .unwrap_or_else(|_| chrono::Duration::seconds(delay.as_secs() as i64)),
-                );
-                p.retry_generation
-            }
-            None => return,
-        };
-
-        Self::spawn_retry_detached(RetryParams {
-            id,
-            delay,
-            expected_generation,
-            channels,
-            pending_queue,
-            dead_letters,
-            dead_letter_cleanup_ts,
-            circuit_breakers,
-            notification_repo,
-            config,
-            next_dead_letter_id,
-            cancellation_token,
-        });
-    }
-
-    /// Get dead letter entries.
-    pub fn get_dead_letters(&self) -> Vec<DeadLetterEntry> {
-        self.cleanup_dead_letters();
-        self.dead_letters
-            .iter()
-            .map(|e| e.value().clone())
-            .collect()
-    }
-
-    /// Retry a dead letter notification.
-    pub async fn retry_dead_letter(&self, id: u64) -> Result<()> {
-        if let Some((_, dead_letter)) = self.dead_letters.remove(&id) {
-            if let Some(channel_key) = dead_letter.channel_key.clone() {
-                self.notify_channel_instance(&channel_key, dead_letter.event)
-                    .await
-            } else {
-                self.notify(dead_letter.event).await
-            }
-        } else {
-            Err(crate::Error::NotFound {
-                entity_type: "DeadLetter".to_string(),
-                id: id.to_string(),
-            })
-        }
-    }
-
-    /// Clear old dead letters.
-    pub fn cleanup_dead_letters(&self) {
-        let now = Utc::now();
-        self.dead_letter_cleanup_ts
-            .store(now.timestamp().max(0) as u64, Ordering::Relaxed);
-
-        if self.config.dead_letter_retention_days == 0 {
-            self.dead_letters.clear();
-            return;
-        }
-
-        let retention = chrono::Duration::days(self.config.dead_letter_retention_days as i64);
-        let cutoff = now - retention;
-
-        self.dead_letters
-            .retain(|_, entry| entry.dead_lettered_at > cutoff);
-    }
-
     /// Get queue statistics.
     pub fn stats(&self) -> NotificationStats {
         NotificationStats {
@@ -1439,13 +1074,24 @@ impl NotificationService {
         self.listen_for_session_transitions(session_rx);
     }
 
+    pub(crate) fn dispatch_notification(self: &Arc<Self>, notification: NotificationEvent) {
+        let service = self.clone();
+        self.task_supervisor
+            .spawn("notification dispatch", async move {
+                if let Err(error) = service.notify(notification).await {
+                    warn!(error = %error, "Failed to dispatch notification");
+                }
+            });
+    }
+
     /// Listen for monitor events.
     fn listen_for_monitor_events(self: &Arc<Self>, mut rx: broadcast::Receiver<MonitorEvent>) {
         let service = Arc::clone(self);
         let config = service.config.clone();
         let cancellation_token = service.cancellation_token.clone();
+        let task_supervisor = service.task_supervisor.clone();
 
-        tokio::spawn(async move {
+        task_supervisor.spawn("monitor notification listener", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -1486,12 +1132,7 @@ impl NotificationService {
                                 };
 
                                 if let Some(notification) = notification {
-                                    let service = service.clone();
-                                    tokio::spawn(async move {
-                                        if let Err(e) = service.notify(notification).await {
-                                            warn!("Failed to dispatch notification: {}", e);
-                                        }
-                                    });
+                                    service.dispatch_notification(notification);
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -1523,8 +1164,9 @@ impl NotificationService {
         let service = Arc::clone(self);
         let config = service.config.clone();
         let cancellation_token = service.cancellation_token.clone();
+        let task_supervisor = service.task_supervisor.clone();
 
-        tokio::spawn(async move {
+        task_supervisor.spawn("session notification listener", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -1592,12 +1234,7 @@ impl NotificationService {
                                 };
 
                                 if let Some(notification) = notification {
-                                    let service = service.clone();
-                                    tokio::spawn(async move {
-                                        if let Err(e) = service.notify(notification).await {
-                                            warn!("Failed to dispatch notification: {}", e);
-                                        }
-                                    });
+                                    service.dispatch_notification(notification);
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -1622,8 +1259,9 @@ impl NotificationService {
         let service = Arc::clone(self);
         let config = service.config.clone();
         let cancellation_token = service.cancellation_token.clone();
+        let task_supervisor = service.task_supervisor.clone();
 
-        tokio::spawn(async move {
+        task_supervisor.spawn("download notification listener", async move {
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
@@ -1752,12 +1390,7 @@ impl NotificationService {
                                 };
 
                                 if let Some(notification) = notification {
-                                    let service = service.clone();
-                                    tokio::spawn(async move {
-                                        if let Err(e) = service.notify(notification).await {
-                                            warn!("Failed to dispatch notification: {}", e);
-                                        }
-                                    });
+                                    service.dispatch_notification(notification);
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -1779,8 +1412,9 @@ impl NotificationService {
         let service = Arc::clone(self);
         let config = service.config.clone();
         let cancellation_token = service.cancellation_token.clone();
+        let task_supervisor = service.task_supervisor.clone();
 
-        tokio::spawn(async move {
+        task_supervisor.spawn("pipeline notification listener", async move {
             let mut job_to_streamer: HashMap<String, String> = HashMap::new();
             loop {
                 tokio::select! {
@@ -1856,12 +1490,7 @@ impl NotificationService {
                                 };
 
                                 if let Some(notification) = notification {
-                                    let service = service.clone();
-                                    tokio::spawn(async move {
-                                        if let Err(e) = service.notify(notification).await {
-                                            warn!("Failed to dispatch notification: {}", e);
-                                        }
-                                    });
+                                    service.dispatch_notification(notification);
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -1883,21 +1512,15 @@ impl NotificationService {
         info!("Stopping notification service");
         self.cancellation_token.cancel();
 
-        // Close web push channel and wait briefly for the worker to flush queued events.
+        // Closing the queue lets the supervised worker flush pending events.
         let tx = self.web_push_tx.write().take();
         if let Some(tx) = tx {
             drop(tx);
         }
-        let handle = self.web_push_worker_handle.write().take();
-        if let Some(handle) = handle {
-            let mut handle = handle;
-            if tokio::time::timeout(Duration::from_secs(10), &mut handle)
-                .await
-                .is_err()
-            {
-                warn!("Web push worker did not shut down in time; aborting");
-                handle.abort();
-            }
+        if self.owns_task_supervisor
+            && !self.task_supervisor.shutdown(Duration::from_secs(10)).await
+        {
+            warn!("Notification background task shutdown required forced cancellation");
         }
 
         // Process any remaining notifications
@@ -1965,6 +1588,7 @@ pub struct NotificationStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::models::NotificationDeadLetterDbModel;
     use crate::notification::channels::DiscordConfig;
 
     #[test]

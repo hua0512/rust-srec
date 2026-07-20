@@ -2,7 +2,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{FromRef, Path, Query, State},
     routing::{delete, get, post, put},
 };
 
@@ -15,6 +15,30 @@ use crate::api::server::AppState;
 use crate::database::models::TemplateConfigDbModel;
 use crate::utils::json::{self, JsonContext};
 use tracing::info;
+
+#[derive(Clone)]
+pub struct TemplateRouteState {
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+    streamer_manager: std::sync::Arc<
+        crate::streamer::StreamerManager<
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+}
+
+impl FromRef<AppState> for TemplateRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            config_service: state.config_service.clone(),
+            streamer_manager: state.streamer_manager.clone(),
+        }
+    }
+}
 
 /// Request to clone a template.
 #[derive(Debug, Clone, serde::Deserialize, utoipa::ToSchema)]
@@ -112,7 +136,7 @@ fn validate_offline_check_overrides(
     security(("bearer_auth" = []))
 )]
 pub async fn create_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Json(request): Json<CreateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
     // Validate name
@@ -123,10 +147,7 @@ pub async fn create_template(
     validate_offline_check_overrides(request.offline_check_count, request.offline_check_delay_ms)?;
 
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Create the template config model
     let mut template = TemplateConfigDbModel::new(&request.name);
@@ -185,17 +206,14 @@ pub async fn create_template(
     security(("bearer_auth" = []))
 )]
 pub async fn list_templates(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<PaginatedResponse<TemplateResponse>>> {
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get streamer manager to count usage
-    let streamer_manager = state.streamer_manager.as_ref();
+    let streamer_manager = &state.streamer_manager;
 
     // Get all templates
     let templates = config_service
@@ -216,9 +234,7 @@ pub async fn list_templates(
         .take(limit)
         .map(|t| {
             // Count streamers using this template
-            let usage_count = streamer_manager
-                .map(|sm| sm.get_by_template(&t.id).len() as u32)
-                .unwrap_or(0);
+            let usage_count = streamer_manager.get_by_template(&t.id).len() as u32;
             db_model_to_response(&t, usage_count)
         })
         .collect();
@@ -239,17 +255,14 @@ pub async fn list_templates(
     security(("bearer_auth" = []))
 )]
 pub async fn get_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<TemplateResponse>> {
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get streamer manager to count usage
-    let streamer_manager = state.streamer_manager.as_ref();
+    let streamer_manager = &state.streamer_manager;
 
     // Get the template
     let template = config_service.get_template_config(&id).await.map_err(|e| {
@@ -261,9 +274,7 @@ pub async fn get_template(
     })?;
 
     // Count streamers using this template
-    let usage_count = streamer_manager
-        .map(|sm| sm.get_by_template(&id).len() as u32)
-        .unwrap_or(0);
+    let usage_count = streamer_manager.get_by_template(&id).len() as u32;
 
     Ok(Json(db_model_to_response(&template, usage_count)))
 }
@@ -281,20 +292,17 @@ pub async fn get_template(
     security(("bearer_auth" = []))
 )]
 pub async fn update_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Path(id): Path<String>,
     Json(request): Json<UpdateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
     validate_offline_check_overrides(request.offline_check_count, request.offline_check_delay_ms)?;
 
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get streamer manager to count usage
-    let streamer_manager = state.streamer_manager.as_ref();
+    let streamer_manager = &state.streamer_manager;
 
     // Get the existing template
     let mut template = config_service.get_template_config(&id).await.map_err(|e| {
@@ -357,9 +365,7 @@ pub async fn update_template(
     info!("Updated template '{}' (id: {})", template.name, id);
 
     // Count streamers using this template
-    let usage_count = streamer_manager
-        .map(|sm| sm.get_by_template(&id).len() as u32)
-        .unwrap_or(0);
+    let usage_count = streamer_manager.get_by_template(&id).len() as u32;
 
     Ok(Json(db_model_to_response(&template, usage_count)))
 }
@@ -377,17 +383,14 @@ pub async fn update_template(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get streamer manager to check usage
-    let streamer_manager = state.streamer_manager.as_ref();
+    let streamer_manager = &state.streamer_manager;
 
     // Check if template exists
     config_service.get_template_config(&id).await.map_err(|e| {
@@ -399,15 +402,13 @@ pub async fn delete_template(
     })?;
 
     // Check if any streamers are using this template
-    if let Some(sm) = streamer_manager {
-        let streamers_using = sm.get_by_template(&id);
-        if !streamers_using.is_empty() {
-            return Err(ApiError::conflict(format!(
-                "Cannot delete template '{}': {} streamer(s) are using it",
-                id,
-                streamers_using.len()
-            )));
-        }
+    let streamers_using = streamer_manager.get_by_template(&id);
+    if !streamers_using.is_empty() {
+        return Err(ApiError::conflict(format!(
+            "Cannot delete template '{}': {} streamer(s) are using it",
+            id,
+            streamers_using.len()
+        )));
     }
 
     // Delete the template
@@ -436,7 +437,7 @@ pub async fn delete_template(
     security(("bearer_auth" = []))
 )]
 pub async fn clone_template(
-    State(state): State<AppState>,
+    State(state): State<TemplateRouteState>,
     Path(id): Path<String>,
     Json(request): Json<CloneTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
@@ -446,10 +447,7 @@ pub async fn clone_template(
     }
 
     // Get config service from state
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get the existing template
     let existing = config_service.get_template_config(&id).await.map_err(|e| {

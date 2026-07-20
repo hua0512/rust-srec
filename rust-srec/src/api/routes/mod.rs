@@ -23,15 +23,12 @@ pub mod tdl;
 pub mod templates;
 
 use axum::Router;
-use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::api::middleware::JwtAuthLayer;
 use crate::api::openapi::ApiDoc;
 use crate::api::server::AppState;
-
-pub use auth::{LoginRequest, LoginResponse};
 
 /// Create the main API router with all routes.
 ///
@@ -57,10 +54,10 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/parse", parse::router())
         .nest("/api/auth", auth::protected_router());
 
-    // Apply JWT auth layer to protected routes if JWT service is configured
+    // Apply JWT auth layer to protected routes if authentication is enabled.
     // The layer wraps the router, so we need to handle the type conversion
-    let protected_routes: Router<AppState> = if let Some(jwt_service) = &state.jwt_service {
-        protected_routes.layer(JwtAuthLayer::new(Arc::clone(jwt_service)))
+    let protected_routes: Router<AppState> = if let Some(auth_service) = &state.auth_service {
+        protected_routes.layer(JwtAuthLayer::new(auth_service.clone()))
     } else {
         protected_routes
     };
@@ -79,7 +76,7 @@ pub fn create_router(state: AppState) -> Router {
         // Media route with optional query param auth (not middleware)
         .nest("/api/media", media::router())
         // Stream proxy route with query-param auth (not middleware)
-        .nest("/api/stream-proxy", stream_proxy::router())
+        .nest("/api/stream-proxy", stream_proxy::router::<AppState>())
         // Merge protected routes
         .merge(protected_routes)
         // Apply state to all routes

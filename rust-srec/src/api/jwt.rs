@@ -34,8 +34,6 @@ pub enum JwtError {
     TokenExpired,
     #[error("Invalid token")]
     InvalidToken,
-    #[error("Missing claims")]
-    MissingClaims,
 }
 
 /// JWT service for token generation and validation.
@@ -73,7 +71,9 @@ impl JwtService {
     /// # Arguments
     /// * `expiration_secs` - Token expiration time in seconds
     pub fn from_env(expiration_secs: u64) -> Option<Self> {
-        let secret = std::env::var("JWT_SECRET").ok()?;
+        let secret = std::env::var("JWT_SECRET")
+            .ok()
+            .filter(|value| !value.trim().is_empty())?;
         let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
         let audience =
             std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
@@ -138,21 +138,6 @@ impl JwtService {
                 | jsonwebtoken::errors::ErrorKind::InvalidSignature => JwtError::InvalidToken,
                 _ => JwtError::TokenValidation(e.to_string()),
             })
-    }
-
-    /// Get the configured expiration time in seconds.
-    pub fn expiration_secs(&self) -> u64 {
-        self.expiration_secs
-    }
-
-    /// Get the configured issuer.
-    pub fn issuer(&self) -> &str {
-        &self.issuer
-    }
-
-    /// Get the configured audience.
-    pub fn audience(&self) -> &str {
-        &self.audience
     }
 }
 

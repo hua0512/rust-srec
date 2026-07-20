@@ -1,6 +1,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use rust_srec::backend::{NotificationEvent, NotificationPriority};
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use tauri::Listener;
@@ -110,7 +111,7 @@ impl<'de> Deserialize<'de> for DesktopNotificationMinPriority {
     }
 }
 
-impl From<DesktopNotificationMinPriority> for rust_srec::notification::NotificationPriority {
+impl From<DesktopNotificationMinPriority> for NotificationPriority {
     fn from(value: DesktopNotificationMinPriority) -> Self {
         match value {
             DesktopNotificationMinPriority::Low => Self::Low,
@@ -176,13 +177,13 @@ pub fn persist_desktop_notifications_config(
 
 pub fn should_deliver_desktop_notification(
     cfg: &DesktopNotificationConfig,
-    event: &rust_srec::notification::NotificationEvent,
+    event: &NotificationEvent,
 ) -> bool {
     if !cfg.enabled {
         return false;
     }
 
-    let min_priority: rust_srec::notification::NotificationPriority = cfg.min_priority.into();
+    let min_priority: NotificationPriority = cfg.min_priority.into();
     if event.priority() < min_priority {
         return false;
     }

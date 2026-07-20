@@ -216,7 +216,7 @@ pub trait HealthProbe: Send + Sync {
     fn name(&self) -> Cow<'_, str>;
 
     /// How often the refresh task should call [`probe`](Self::probe).
-    /// At least one tick of [`REFRESH_TICK`] elapses between probes
+    /// At least one tick of `REFRESH_TICK` elapses between probes
     /// regardless of cadence.
     fn cadence(&self) -> Duration;
 
@@ -235,9 +235,9 @@ pub trait HealthProbe: Send + Sync {
 
 /// Long-lived `sysinfo` inventory owned by the refresh task.
 struct SysinfoCache {
-    /// CPU + memory inventory. Refresh with [`refresh_cpu_mem`].
+    /// CPU + memory inventory. Refresh with `refresh_cpu_mem`.
     system: System,
-    /// Mounted filesystems. Refresh with [`refresh_disks`].
+    /// Mounted filesystems. Refresh with `refresh_disks`.
     disks: sysinfo::Disks,
 }
 
@@ -410,7 +410,7 @@ impl HealthChecker {
     /// Spawn the background refresh task. Runs an immediate first
     /// refresh of every registered probe so the snapshot is populated
     /// within seconds of process start, then ticks at
-    /// [`REFRESH_TICK`] cadence for the lifetime of the supplied
+    /// `REFRESH_TICK` cadence for the lifetime of the supplied
     /// [`CancellationToken`].
     ///
     /// Returns the [`JoinHandle`]; cancellation is driven by the token

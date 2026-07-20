@@ -105,7 +105,7 @@ pub struct GlobalConfigDbModel {
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
     pub notification_event_log_retention_days: i32,
-    /// JSON serialized Vec<PipelineStep>
+    /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
     pub session_complete_pipeline: Option<String>,
@@ -211,7 +211,7 @@ pub struct PlatformConfigDbModel {
     pub download_retry_policy: Option<String>,
     /// JSON serialized EventHooks
     pub event_hooks: Option<String>,
-    /// JSON serialized Vec<PipelineStep>
+    /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
     pub session_complete_pipeline: Option<String>,
@@ -251,7 +251,7 @@ pub struct TemplateConfigDbModel {
     pub event_hooks: Option<String>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
-    /// JSON serialized Vec<PipelineStep>
+    /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
     pub session_complete_pipeline: Option<String>,

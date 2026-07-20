@@ -18,12 +18,12 @@ use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
 };
 use crate::database::repositories::{config::ConfigRepository, streamer::StreamerRepository};
-use crate::domain::config::{ConfigResolver, MergedConfig, ResolvedStreamerContext};
 use crate::domain::streamer::Streamer;
 use crate::utils::json::{self, JsonContext};
 
 use super::cache::ConfigCache;
 use super::events::{ConfigEventBroadcaster, ConfigUpdateEvent};
+use super::{ConfigResolver, MergedConfig, ResolvedStreamerContext};
 
 /// Hard upper bound for a single streamer config resolution. This prevents `in_flight` entries
 /// from getting stuck forever if an upstream call hangs.

@@ -142,11 +142,6 @@ impl SessionCancelTokens {
     pub fn len(&self) -> usize {
         self.inner.len()
     }
-
-    /// True when no sessions are tracked.
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
 }
 
 #[cfg(test)]
@@ -179,7 +174,7 @@ mod tests {
     fn cancel_unknown_is_noop() {
         let reg = SessionCancelTokens::new();
         reg.cancel("ghost");
-        assert!(reg.is_empty());
+        assert_eq!(reg.len(), 0);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::header;
 use axum::serve::ListenerExt;
 use dashmap::DashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use std::time::Instant;
 use tokio::net::TcpListener;
@@ -70,11 +70,9 @@ impl ApiServerConfig {
 
 use std::sync::Arc;
 
-use crate::api::auth_service::{AuthConfig, AuthService};
-use crate::api::jwt::JwtService;
+use crate::api::auth_service::AuthService;
 use crate::config::ConfigService;
 use crate::credentials::CredentialRefreshService;
-use crate::danmu::DanmuService;
 use crate::database::repositories::{
     config::SqlxConfigRepository,
     filter::FilterRepository,
@@ -89,245 +87,73 @@ use crate::metrics::HealthChecker;
 use crate::notification::web_push::WebPushService;
 use crate::pipeline::PipelineManager;
 use crate::streamer::StreamerManager;
-use platforms_parser::extractor::create_client_builder;
+
+/// Services required by the API router.
+///
+/// Keeping these dependencies required makes an incompletely wired API
+/// impossible to construct. Optional product capabilities live on
+/// [`AppState`] instead.
+pub struct ApiServices {
+    /// Configuration service
+    pub config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
+    /// Streamer manager
+    pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
+    /// Pipeline manager
+    pub pipeline_manager: Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
+    /// Download manager
+    pub download_manager: Arc<DownloadManager>,
+    /// Session repository for session and output queries
+    pub session_repository: Arc<dyn SessionRepository>,
+    /// Session-event repository for the session-detail timeline.
+    pub session_event_repository: Arc<dyn SessionEventRepository>,
+    /// Per-poll check-history repository for streamer details.
+    pub streamer_check_history_repository: Arc<dyn StreamerCheckHistoryRepository>,
+    /// Live broadcaster for committed check-history rows.
+    pub check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
+    /// Filter repository for streamer filters
+    pub filter_repository: Arc<dyn FilterRepository>,
+    /// Health checker for real health status
+    pub health_checker: Arc<HealthChecker>,
+    /// Streamer repository for querying streamer details
+    pub streamer_repository: Arc<dyn StreamerRepository>,
+    /// Pipeline preset repository for pipeline presets (workflow sequences)
+    pub pipeline_preset_repository: Arc<dyn PipelinePresetRepository>,
+    /// Job preset repository for job presets (reusable processor configs)
+    pub job_preset_repository: Arc<dyn crate::database::repositories::JobPresetRepository>,
+    /// Notification repository for channel/subscription management
+    pub notification_repository: Arc<dyn NotificationRepository>,
+    /// Notification service for testing and reloading
+    pub notification_service: Arc<NotificationService>,
+    /// Logging configuration for dynamic log level changes
+    pub logging_config: Arc<crate::logging::LoggingConfig>,
+    /// Single-use download tokens for log archives.
+    pub logging_download_tokens: Arc<DashMap<String, chrono::DateTime<chrono::Utc>>>,
+    /// Credential refresh service for API-triggered refresh and cookie resolution.
+    pub credential_service: Arc<CredentialRefreshService<SqlxConfigRepository>>,
+}
 
 /// Shared application state.
 #[derive(Clone)]
 pub struct AppState {
     /// Server start time for uptime calculation
     pub start_time: Instant,
-    /// JWT service for authentication
-    pub jwt_service: Option<Arc<JwtService>>,
-    /// Auth service for user authentication and token management
+    /// Authentication and token service. `None` means authentication is explicitly disabled.
     pub auth_service: Option<Arc<AuthService>>,
-    /// Configuration service
-    pub config_service: Option<Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>>,
-    /// Streamer manager
-    pub streamer_manager: Option<Arc<StreamerManager<SqlxStreamerRepository>>>,
-    /// Pipeline manager
-    pub pipeline_manager:
-        Option<Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>>,
-    /// Danmu service
-    pub danmu_service: Option<Arc<DanmuService>>,
-    /// Download manager
-    pub download_manager: Option<Arc<DownloadManager>>,
-    /// Session repository for session and output queries
-    pub session_repository: Option<Arc<dyn SessionRepository>>,
-    /// Session-event repository for the timeline read path on
-    /// `GET /api/sessions/{id}`. Optional — when `None`, the route returns
-    /// `events: []` (e.g. test harnesses that don't seed the table).
-    pub session_event_repository: Option<Arc<dyn SessionEventRepository>>,
-    /// Per-poll check-history repository powering the
-    /// `GET /api/streamers/{id}/check-history` read path. Optional — when
-    /// `None`, the route returns an empty array (matches test harnesses
-    /// that don't run the writer task).
-    pub streamer_check_history_repository: Option<Arc<dyn StreamerCheckHistoryRepository>>,
-    /// Live broadcaster for committed check-history rows. Cloned into the
-    /// downloads WS route so per-streamer subscribers see new bars appear
-    /// without polling. `None` when the writer pipeline isn't wired (test
-    /// harnesses); the WS route falls back to download-only events.
-    pub check_history_broadcaster: Option<crate::monitor::CheckHistoryBroadcaster>,
-    /// Filter repository for streamer filters
-    pub filter_repository: Option<Arc<dyn FilterRepository>>,
-    /// Health checker for real health status
-    pub health_checker: Option<Arc<HealthChecker>>,
-    /// Streamer repository for querying streamer details
-    pub streamer_repository: Option<Arc<dyn StreamerRepository>>,
-    /// Pipeline preset repository for pipeline presets (workflow sequences)
-    pub pipeline_preset_repository: Option<Arc<dyn PipelinePresetRepository>>,
-    /// Job preset repository for job presets (reusable processor configs)
-    pub job_preset_repository: Option<Arc<dyn crate::database::repositories::JobPresetRepository>>,
-    /// Notification repository for channel/subscription management
-    pub notification_repository: Option<Arc<dyn NotificationRepository>>,
-    /// Notification service for testing and reloading
-    pub notification_service: Option<Arc<NotificationService>>,
-    /// Web push service for browser notifications (VAPID)
+    /// Browser push capability. `None` means VAPID is not configured.
     pub web_push_service: Option<Arc<WebPushService>>,
-    /// Logging configuration for dynamic log level changes
-    pub logging_config: Option<Arc<crate::logging::LoggingConfig>>,
-    /// Single-use download tokens for log archives.
-    pub logging_download_tokens: Arc<DashMap<String, chrono::DateTime<chrono::Utc>>>,
-    /// Shared HTTP client for parsing/resolving URLs
-    pub http_client: Option<reqwest::Client>,
-    /// Optional credential refresh service for API-triggered refresh and cookie resolution.
-    pub credential_service: Option<Arc<CredentialRefreshService<SqlxConfigRepository>>>,
+    /// Services that every API instance requires.
+    pub services: Arc<ApiServices>,
 }
 
 impl AppState {
-    pub(crate) fn build_http_client() -> reqwest::Client {
-        match create_client_builder(None).build() {
-            Ok(client) => client,
-            Err(error) => {
-                tracing::warn!(
-                    error = %error,
-                    "Failed to create HTTP client via platforms-parser; falling back to reqwest defaults"
-                );
-                reqwest::Client::new()
-            }
-        }
-    }
-
-    /// Create a new application state without services (for testing).
-    pub fn new() -> Self {
+    /// Create a fully wired application state.
+    pub fn new(services: ApiServices) -> Self {
         Self {
             start_time: Instant::now(),
-            jwt_service: None,
             auth_service: None,
-            config_service: None,
-            streamer_manager: None,
-            pipeline_manager: None,
-            danmu_service: None,
-            download_manager: None,
-            session_repository: None,
-            session_event_repository: None,
-            streamer_check_history_repository: None,
-            check_history_broadcaster: None,
-            filter_repository: None,
-            health_checker: None,
-            streamer_repository: None,
-            pipeline_preset_repository: None,
-            job_preset_repository: None,
-            notification_repository: None,
-            notification_service: None,
             web_push_service: None,
-            logging_config: None,
-            logging_download_tokens: Arc::new(DashMap::new()),
-            http_client: Some(Self::build_http_client()),
-            credential_service: None,
+            services: Arc::new(services),
         }
-    }
-
-    /// Create a new application state with JWT service from environment variables.
-    pub fn with_jwt_from_env() -> Self {
-        let auth_config = AuthConfig::from_env();
-        let jwt_service =
-            JwtService::from_env(auth_config.access_token_expiration_secs).map(Arc::new);
-        Self {
-            start_time: Instant::now(),
-            jwt_service,
-            auth_service: None,
-            config_service: None,
-            streamer_manager: None,
-            pipeline_manager: None,
-            danmu_service: None,
-            download_manager: None,
-            session_repository: None,
-            session_event_repository: None,
-            streamer_check_history_repository: None,
-            check_history_broadcaster: None,
-            filter_repository: None,
-            health_checker: None,
-            streamer_repository: None,
-            pipeline_preset_repository: None,
-            job_preset_repository: None,
-            notification_repository: None,
-            notification_service: None,
-            web_push_service: None,
-            logging_config: None,
-            logging_download_tokens: Arc::new(DashMap::new()),
-            http_client: Some(Self::build_http_client()),
-            credential_service: None,
-        }
-    }
-
-    /// Create application state with all services.
-    pub fn with_services(
-        jwt_service: Option<Arc<JwtService>>,
-        config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
-        streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
-        pipeline_manager: Arc<PipelineManager<SqlxConfigRepository, SqlxStreamerRepository>>,
-        danmu_service: Arc<DanmuService>,
-        download_manager: Arc<DownloadManager>,
-    ) -> Self {
-        Self {
-            start_time: Instant::now(),
-            jwt_service,
-            auth_service: None,
-            config_service: Some(config_service),
-            streamer_manager: Some(streamer_manager),
-            pipeline_manager: Some(pipeline_manager),
-            danmu_service: Some(danmu_service),
-            download_manager: Some(download_manager),
-            session_repository: None,
-            session_event_repository: None,
-            streamer_check_history_repository: None,
-            check_history_broadcaster: None,
-            filter_repository: None,
-            health_checker: None,
-            streamer_repository: None,
-            pipeline_preset_repository: None,
-            job_preset_repository: None,
-            notification_repository: None,
-            notification_service: None,
-            web_push_service: None,
-            logging_config: None,
-            logging_download_tokens: Arc::new(DashMap::new()),
-            http_client: Some(Self::build_http_client()),
-            credential_service: None,
-        }
-    }
-
-    /// Set the session repository.
-    pub fn with_session_repository(
-        mut self,
-        session_repository: Arc<dyn SessionRepository>,
-    ) -> Self {
-        self.session_repository = Some(session_repository);
-        self
-    }
-
-    /// Set the session-event repository (powers the Timeline tab on the
-    /// session detail page). Optional — when unset, the route returns an
-    /// empty `events` array.
-    pub fn with_session_event_repository(
-        mut self,
-        session_event_repository: Arc<dyn SessionEventRepository>,
-    ) -> Self {
-        self.session_event_repository = Some(session_event_repository);
-        self
-    }
-
-    /// Set the streamer check-history repository (powers the check-history
-    /// strip on the streamer details page). Optional — when unset, the
-    /// route returns an empty `items` array.
-    pub fn with_streamer_check_history_repository(
-        mut self,
-        streamer_check_history_repository: Arc<dyn StreamerCheckHistoryRepository>,
-    ) -> Self {
-        self.streamer_check_history_repository = Some(streamer_check_history_repository);
-        self
-    }
-
-    /// Set the live check-history broadcaster (powers WebSocket push for
-    /// new bars). Optional — when unset, clients fall back to the REST
-    /// endpoint's polling cadence.
-    pub fn with_check_history_broadcaster(
-        mut self,
-        broadcaster: crate::monitor::CheckHistoryBroadcaster,
-    ) -> Self {
-        self.check_history_broadcaster = Some(broadcaster);
-        self
-    }
-
-    /// Set the filter repository.
-    pub fn with_filter_repository(mut self, filter_repository: Arc<dyn FilterRepository>) -> Self {
-        self.filter_repository = Some(filter_repository);
-        self
-    }
-
-    /// Set the streamer repository.
-    pub fn with_streamer_repository(
-        mut self,
-        streamer_repository: Arc<dyn StreamerRepository>,
-    ) -> Self {
-        self.streamer_repository = Some(streamer_repository);
-        self
-    }
-
-    /// Set the JWT service.
-    pub fn with_jwt_service(mut self, jwt_service: Arc<JwtService>) -> Self {
-        self.jwt_service = Some(jwt_service);
-        self
     }
 
     /// Set the auth service.
@@ -336,67 +162,18 @@ impl AppState {
         self
     }
 
-    /// Set the health checker.
-    pub fn with_health_checker(mut self, health_checker: Arc<HealthChecker>) -> Self {
-        self.health_checker = Some(health_checker);
-        self
-    }
-
-    /// Set the credential refresh service.
-    pub fn with_credential_service(
-        mut self,
-        credential_service: Arc<CredentialRefreshService<SqlxConfigRepository>>,
-    ) -> Self {
-        self.credential_service = Some(credential_service);
-        self
-    }
-
-    /// Set the pipeline preset repository.
-    pub fn with_pipeline_preset_repository(
-        mut self,
-        repo: Arc<dyn PipelinePresetRepository>,
-    ) -> Self {
-        self.pipeline_preset_repository = Some(repo);
-        self
-    }
-
-    /// Set the job preset repository.
-    pub fn with_job_preset_repository(
-        mut self,
-        repo: Arc<dyn crate::database::repositories::JobPresetRepository>,
-    ) -> Self {
-        self.job_preset_repository = Some(repo);
-        self
-    }
-
-    /// Set the notification repository.
-    pub fn with_notification_repository(mut self, repo: Arc<dyn NotificationRepository>) -> Self {
-        self.notification_repository = Some(repo);
-        self
-    }
-
-    /// Set the notification service.
-    pub fn with_notification_service(mut self, service: Arc<NotificationService>) -> Self {
-        self.notification_service = Some(service);
-        self
-    }
-
     /// Set the web push service.
     pub fn with_web_push_service(mut self, service: Arc<WebPushService>) -> Self {
         self.web_push_service = Some(service);
         self
     }
-
-    /// Set the logging configuration.
-    pub fn with_logging_config(mut self, config: Arc<crate::logging::LoggingConfig>) -> Self {
-        self.logging_config = Some(config);
-        self
-    }
 }
 
-impl Default for AppState {
-    fn default() -> Self {
-        Self::new()
+impl std::ops::Deref for AppState {
+    type Target = ApiServices;
+
+    fn deref(&self) -> &Self::Target {
+        &self.services
     }
 }
 
@@ -409,16 +186,7 @@ pub struct ApiServer {
 
 impl ApiServer {
     /// Create a new API server.
-    pub fn new(config: ApiServerConfig) -> Self {
-        Self {
-            config,
-            state: AppState::new(),
-            cancel_token: CancellationToken::new(),
-        }
-    }
-
-    /// Create with custom state.
-    pub fn with_state(config: ApiServerConfig, state: AppState) -> Self {
+    pub fn new(config: ApiServerConfig, state: AppState) -> Self {
         Self {
             config,
             state,
@@ -510,9 +278,13 @@ impl ApiServer {
     /// This is useful when binding to port `0` (ephemeral port), where the actual port is only
     /// known after binding.
     pub async fn bind(&self) -> Result<(TcpListener, SocketAddr)> {
-        let addr: SocketAddr = format!("{}:{}", self.config.bind_address, self.config.port)
-            .parse()
-            .map_err(|e| crate::error::Error::ApiError(format!("Invalid address: {}", e)))?;
+        let bind_address: IpAddr = self.config.bind_address.trim().parse().map_err(|error| {
+            crate::error::Error::config(format!(
+                "Invalid API_BIND_ADDRESS '{}': {error}",
+                self.config.bind_address
+            ))
+        })?;
+        let addr = SocketAddr::new(bind_address, self.config.port);
 
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
@@ -540,18 +312,6 @@ impl ApiServer {
 
         Ok(())
     }
-
-    /// Start the server.
-    pub async fn run(&self) -> Result<()> {
-        let (listener, local_addr) = self.bind().await?;
-        tracing::info!("API server listening on http://{}", local_addr);
-        self.run_with_listener(listener).await
-    }
-
-    /// Shutdown the server.
-    pub fn shutdown(&self) {
-        self.cancel_token.cancel();
-    }
 }
 
 #[cfg(test)]
@@ -564,21 +324,5 @@ mod tests {
         assert_eq!(config.bind_address, "0.0.0.0");
         assert_eq!(config.port, 12555);
         assert!(config.enable_cors);
-    }
-
-    #[test]
-    fn test_app_state_creation() {
-        let state = AppState::new();
-        assert!(state.start_time.elapsed().as_secs() < 1);
-    }
-
-    #[test]
-    fn test_server_creation() {
-        let config = ApiServerConfig::default();
-        let server = ApiServer::new(config);
-
-        // Server should have a valid cancel token
-        let token = server.cancel_token();
-        assert!(!token.is_cancelled());
     }
 }

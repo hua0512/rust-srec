@@ -2,7 +2,6 @@
 //!
 //! This module contains the core business logic, entities, and value objects.
 
-pub mod config;
 pub mod filter;
 pub mod session;
 pub mod streamer;
