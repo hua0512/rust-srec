@@ -6,7 +6,7 @@
 use axum::{
     Json, Router,
     extract::{
-        Query, State,
+        FromRef, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::header,
@@ -31,6 +31,31 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::proto::log_event::{self, EventType, LogLevel};
 use crate::api::server::AppState;
 use crate::logging::available_modules;
+
+#[derive(Clone)]
+pub struct LoggingRouteState {
+    jwt_service: Option<std::sync::Arc<crate::api::jwt::JwtService>>,
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+    logging_config: std::sync::Arc<crate::logging::LoggingConfig>,
+    logging_download_tokens:
+        std::sync::Arc<dashmap::DashMap<String, chrono::DateTime<chrono::Utc>>>,
+}
+
+impl FromRef<AppState> for LoggingRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            jwt_service: state.jwt_service.clone(),
+            config_service: state.config_service.clone(),
+            logging_config: state.logging_config.clone(),
+            logging_download_tokens: state.logging_download_tokens.clone(),
+        }
+    }
+}
 
 /// Query parameters for WebSocket connection (JWT token).
 #[derive(Debug, Deserialize)]
@@ -171,7 +196,7 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     }
 }
 
-fn validate_token(state: &AppState, token: &str) -> Result<(), ApiError> {
+fn validate_token(state: &LoggingRouteState, token: &str) -> Result<(), ApiError> {
     let jwt_service = state
         .jwt_service
         .as_ref()
@@ -439,7 +464,7 @@ fn generate_download_token() -> String {
     hex::encode(bytes)
 }
 
-fn cleanup_expired_download_tokens(state: &AppState) {
+fn cleanup_expired_download_tokens(state: &LoggingRouteState) {
     if state.logging_download_tokens.len() < 1000 {
         return;
     }
@@ -449,7 +474,7 @@ fn cleanup_expired_download_tokens(state: &AppState) {
         .retain(|_, expires_at| *expires_at > now);
 }
 
-fn issue_download_token(state: &AppState) -> Result<ArchiveTokenResponse, ApiError> {
+fn issue_download_token(state: &LoggingRouteState) -> Result<ArchiveTokenResponse, ApiError> {
     cleanup_expired_download_tokens(state);
 
     let token = generate_download_token();
@@ -464,7 +489,7 @@ fn issue_download_token(state: &AppState) -> Result<ArchiveTokenResponse, ApiErr
     })
 }
 
-fn consume_download_token(state: &AppState, token: &str) -> Result<(), ApiError> {
+fn consume_download_token(state: &LoggingRouteState, token: &str) -> Result<(), ApiError> {
     let now = chrono::Utc::now();
     match state.logging_download_tokens.remove(token) {
         Some((_, expires_at)) if expires_at > now => Ok(()),
@@ -485,7 +510,7 @@ fn consume_download_token(state: &AppState, token: &str) -> Result<(), ApiError>
     security(("bearer_auth" = []))
 )]
 pub async fn list_log_files(
-    State(state): State<AppState>,
+    State(state): State<LoggingRouteState>,
     Query(query): Query<ListLogFilesQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Json<LogFilesResponse>> {
@@ -493,10 +518,7 @@ pub async fn list_log_files(
         extract_bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("Missing token"))?;
     validate_token(&state, &token)?;
 
-    let logging_config = state
-        .logging_config
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("Logging configuration not available"))?;
+    let logging_config = &state.logging_config;
     let log_dir = logging_config.log_dir().to_path_buf();
 
     let (from, to) = parse_range(query.from.as_deref(), query.to.as_deref())?;
@@ -543,7 +565,7 @@ pub async fn list_log_files(
     security(("bearer_auth" = []))
 )]
 pub async fn get_archive_token(
-    State(state): State<AppState>,
+    State(state): State<LoggingRouteState>,
     Query(_range): Query<LogRangeQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Json<ArchiveTokenResponse>> {
@@ -566,7 +588,7 @@ pub async fn get_archive_token(
     security(("bearer_auth" = []))
 )]
 pub async fn list_log_entries(
-    State(state): State<AppState>,
+    State(state): State<LoggingRouteState>,
     Query(query): Query<ListLogEntriesQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Json<LogEntriesResponse>> {
@@ -574,10 +596,7 @@ pub async fn list_log_entries(
         extract_bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("Missing token"))?;
     validate_token(&state, &token)?;
 
-    let logging_config = state
-        .logging_config
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("Logging configuration not available"))?;
+    let logging_config = &state.logging_config;
     let log_dir = logging_config.log_dir().to_path_buf();
 
     let limit = query.limit.unwrap_or(200).min(2000) as u64;
@@ -625,15 +644,12 @@ pub async fn list_log_entries(
     )
 )]
 pub async fn download_logs_archive(
-    State(state): State<AppState>,
+    State(state): State<LoggingRouteState>,
     Query(query): Query<ArchiveQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     consume_download_token(&state, &query.token)?;
 
-    let logging_config = state
-        .logging_config
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("Logging configuration not available"))?;
+    let logging_config = &state.logging_config;
     let log_dir = logging_config.log_dir().to_path_buf();
 
     let (from, to) = parse_range(query.from.as_deref(), query.to.as_deref())?;
@@ -672,17 +688,14 @@ pub async fn download_logs_archive(
     security(("bearer_auth" = []))
 )]
 pub async fn get_logging_config(
-    State(state): State<AppState>,
+    State(state): State<LoggingRouteState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<LoggingConfigResponse>> {
     let token =
         extract_bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("Missing token"))?;
     validate_token(&state, &token)?;
 
-    let logging_config = state
-        .logging_config
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("Logging configuration not available"))?;
+    let logging_config = &state.logging_config;
 
     let filter = logging_config.get_filter();
     let modules: Vec<ModuleInfo> = available_modules()
@@ -711,7 +724,7 @@ pub async fn get_logging_config(
     security(("bearer_auth" = []))
 )]
 pub async fn update_logging_config(
-    State(state): State<AppState>,
+    State(state): State<LoggingRouteState>,
     headers: HeaderMap,
     Json(request): Json<UpdateLogFilterRequest>,
 ) -> ApiResult<Json<LoggingConfigResponse>> {
@@ -719,30 +732,24 @@ pub async fn update_logging_config(
         extract_bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("Missing token"))?;
     validate_token(&state, &token)?;
 
-    let logging_config = state
-        .logging_config
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("Logging configuration not available"))?;
+    let logging_config = &state.logging_config;
 
     // Apply the new filter
     logging_config
         .set_filter(&request.filter)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-    // Persist to database if config service is available
-    if let Some(config_service) = &state.config_service {
-        let mut global_config = config_service
-            .get_global_config()
-            .await
-            .map_err(|e| ApiError::internal(format!("Failed to get config: {}", e)))?;
-
-        global_config.log_filter_directive = request.filter.clone();
-
-        config_service
-            .update_global_config(&global_config)
-            .await
-            .map_err(|e| ApiError::internal(format!("Failed to persist config: {}", e)))?;
-    }
+    let mut global_config = state
+        .config_service
+        .get_global_config()
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to get config: {}", e)))?;
+    global_config.log_filter_directive = request.filter.clone();
+    state
+        .config_service
+        .update_global_config(&global_config)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to persist config: {}", e)))?;
 
     let modules: Vec<ModuleInfo> = available_modules()
         .into_iter()
@@ -761,7 +768,7 @@ pub async fn update_logging_config(
 /// WebSocket handler for real-time log streaming.
 async fn logging_stream_ws(
     ws: WebSocketUpgrade,
-    State(state): State<AppState>,
+    State(state): State<LoggingRouteState>,
     Query(auth): Query<WsAuthParams>,
 ) -> Result<impl IntoResponse, ApiError> {
     // Validate JWT token
@@ -774,10 +781,7 @@ async fn logging_stream_ws(
         .validate_token(&auth.token)
         .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
 
-    let logging_config = state
-        .logging_config
-        .clone()
-        .ok_or_else(|| ApiError::internal("Logging configuration not available"))?;
+    let logging_config = state.logging_config.clone();
 
     Ok(ws.on_upgrade(move |socket| handle_socket(socket, logging_config)))
 }

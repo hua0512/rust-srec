@@ -79,7 +79,7 @@ pub fn create_router(state: AppState) -> Router {
         // Media route with optional query param auth (not middleware)
         .nest("/api/media", media::router())
         // Stream proxy route with query-param auth (not middleware)
-        .nest("/api/stream-proxy", stream_proxy::router())
+        .nest("/api/stream-proxy", stream_proxy::router::<AppState>())
         // Merge protected routes
         .merge(protected_routes)
         // Apply state to all routes

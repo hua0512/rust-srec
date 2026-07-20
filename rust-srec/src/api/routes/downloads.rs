@@ -8,7 +8,7 @@ use std::time::Duration;
 use axum::{
     Router,
     extract::{
-        Query, State,
+        FromRef, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
@@ -32,14 +32,29 @@ const SNAPSHOT_ON_SUBSCRIBE: bool = true;
 use crate::api::error::ApiError;
 use crate::api::proto::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadRejected,
-    EventType, SegmentCompleted, StreamerCheckRecorded, WsMessage, create_error_message,
-    create_snapshot_message, download_progress::client_message::Action,
-    download_progress::ws_message::Payload,
+    EventType, SegmentCompleted, StreamerCheckRecorded, WsMessage, create_snapshot_message,
+    download_progress::client_message::Action, download_progress::ws_message::Payload,
 };
 use crate::api::server::AppState;
 use crate::domain::streamer::{CheckOutcome, CheckRecord};
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
-use crate::monitor::check_history_writer::BroadcastEnvelope;
+
+#[derive(Clone)]
+pub struct DownloadRouteState {
+    jwt_service: Option<std::sync::Arc<crate::api::jwt::JwtService>>,
+    download_manager: std::sync::Arc<crate::downloader::DownloadManager>,
+    check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
+}
+
+impl FromRef<AppState> for DownloadRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            jwt_service: state.jwt_service.clone(),
+            download_manager: state.download_manager.clone(),
+            check_history_broadcaster: state.check_history_broadcaster.clone(),
+        }
+    }
+}
 
 /// Query parameters for WebSocket connection (JWT token).
 #[derive(Debug, Deserialize)]
@@ -76,7 +91,7 @@ pub fn router() -> Router<AppState> {
 /// - `unsubscribe`: Receive all updates (remove filter)
 async fn download_progress_ws(
     ws: WebSocketUpgrade,
-    State(state): State<AppState>,
+    State(state): State<DownloadRouteState>,
     Query(auth): Query<WsAuthParams>,
 ) -> Result<impl IntoResponse, ApiError> {
     // Validate JWT token using existing JwtService
@@ -93,21 +108,9 @@ async fn download_progress_ws(
 }
 
 /// Handle an established WebSocket connection.
-async fn handle_socket(socket: WebSocket, state: AppState) {
+async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     // debug!("New WebSocket connection established");
-    let download_manager = match &state.download_manager {
-        Some(dm) => dm.clone(),
-        None => {
-            // Send error as protobuf and close
-            let (mut sender, _) = socket.split();
-            let error_msg =
-                create_error_message("SERVICE_UNAVAILABLE", "Download manager is not available");
-            let bytes = error_msg.encode_to_vec();
-            let _ = sender.send(Message::Binary(Bytes::from(bytes))).await;
-            let _ = sender.close().await;
-            return;
-        }
-    };
+    let download_manager = state.download_manager.clone();
 
     let (mut sender, mut receiver) = socket.split();
 
@@ -129,19 +132,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     // 2. Subscribe to broadcast
     let mut event_rx = download_manager.subscribe();
-    // Per-poll check-history events. When the broadcaster isn't wired
-    // (test harnesses), we hold both sides of a tiny no-op channel — the
-    // sender keeps the receiver open without ever firing, so the select!
-    // arm below never returns Closed and falls back to download-only
-    // streaming naturally.
-    let (_check_history_keepalive, mut check_history_rx) =
-        match state.check_history_broadcaster.as_ref() {
-            Some(b) => (None, b.subscribe()),
-            None => {
-                let (tx, rx) = broadcast::channel::<BroadcastEnvelope>(1);
-                (Some(tx), rx)
-            }
-        };
+    let mut check_history_rx = state.check_history_broadcaster.subscribe();
 
     // 3. Track filter state and heartbeat
     let mut filter: Option<String> = None;

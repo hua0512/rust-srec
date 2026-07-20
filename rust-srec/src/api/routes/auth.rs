@@ -4,7 +4,7 @@
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{FromRef, State},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,19 @@ use crate::api::auth_service::{AuthError, AuthResponse, SessionInfo};
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::jwt::Claims;
 use crate::api::server::AppState;
+
+#[derive(Clone)]
+pub struct AuthRouteState {
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
+}
+
+impl FromRef<AppState> for AuthRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_service: state.auth_service.clone(),
+        }
+    }
+}
 
 /// Login request body.
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
@@ -130,7 +143,7 @@ fn auth_error_to_api_error(err: AuthError) -> ApiError {
     )
 )]
 pub async fn login(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
     let auth_service = state
@@ -158,7 +171,7 @@ pub async fn login(
     )
 )]
 pub async fn refresh(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     Json(request): Json<RefreshRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
     let auth_service = state
@@ -186,7 +199,7 @@ pub async fn refresh(
     )
 )]
 pub async fn logout(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     Json(request): Json<LogoutRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let auth_service = state
@@ -216,7 +229,7 @@ pub async fn logout(
     )
 )]
 pub async fn logout_all(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let auth_service = state
@@ -248,7 +261,7 @@ pub async fn logout_all(
     )
 )]
 pub async fn change_password(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
     Json(request): Json<ChangePasswordRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -283,7 +296,7 @@ pub async fn change_password(
     )
 )]
 pub async fn list_sessions(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
 ) -> ApiResult<Json<Vec<SessionInfo>>> {
     let auth_service = state

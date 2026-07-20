@@ -6,7 +6,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::Path,
     routing::{get, post},
 };
 use dashmap::DashMap;
@@ -447,7 +447,6 @@ fn parse_storage_path(storage_spec: &str) -> Option<String> {
 }
 
 pub async fn get_tdl_status(
-    State(_state): State<AppState>,
     Json(payload): Json<TdlStatusRequest>,
 ) -> ApiResult<Json<TdlStatusResponse>> {
     let tdl_path = resolve_tdl_path(payload.tdl_path);
@@ -661,7 +660,6 @@ pub async fn get_tdl_status(
 }
 
 pub async fn start_login(
-    State(_state): State<AppState>,
     Json(payload): Json<StartLoginRequest>,
 ) -> ApiResult<Json<StartLoginResponse>> {
     let manager = TdlLoginManager::get().clone();
@@ -722,7 +720,6 @@ pub async fn start_login(
 }
 
 pub async fn get_login_status(
-    State(_state): State<AppState>,
     Path(session_id): Path<String>,
 ) -> ApiResult<Json<LoginStatusResponse>> {
     let manager = TdlLoginManager::get();
@@ -745,7 +742,6 @@ pub async fn get_login_status(
 }
 
 pub async fn send_login_input(
-    State(_state): State<AppState>,
     Path(session_id): Path<String>,
     Json(payload): Json<SendInputRequest>,
 ) -> ApiResult<Json<()>> {
@@ -781,10 +777,7 @@ pub async fn send_login_input(
     Ok(Json(()))
 }
 
-pub async fn cancel_login(
-    State(_state): State<AppState>,
-    Path(session_id): Path<String>,
-) -> ApiResult<Json<()>> {
+pub async fn cancel_login(Path(session_id): Path<String>) -> ApiResult<Json<()>> {
     let manager = TdlLoginManager::get();
     manager.prune();
 

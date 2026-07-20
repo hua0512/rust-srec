@@ -63,11 +63,12 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{FromRef, Path, Query, State},
     routing::{delete, get, post},
 };
 use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
@@ -78,8 +79,25 @@ use crate::api::models::{
 use crate::api::server::AppState;
 use crate::database::models::job::{DagPipelineDefinition, PipelineStep};
 use crate::database::models::{JobFilters, JobStatus, OutputFilters, Pagination};
+use crate::database::repositories::StreamerRepository;
 use crate::pipeline::Job;
 use crate::pipeline::JobProgressSnapshot;
+
+/// Dependencies shared by the job-management endpoints.
+#[derive(Clone)]
+pub struct JobRouteState {
+    pipeline_manager: Arc<crate::pipeline::PipelineManager>,
+    streamer_repository: Arc<dyn StreamerRepository>,
+}
+
+impl FromRef<AppState> for JobRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            pipeline_manager: state.pipeline_manager.clone(),
+            streamer_repository: state.streamer_repository.clone(),
+        }
+    }
+}
 
 /// Create the pipeline router (DAG-native).
 ///
@@ -647,15 +665,12 @@ pub struct DagStatsResponse {
     security(("bearer_auth" = []))
 )]
 pub async fn list_jobs(
-    State(state): State<AppState>,
+    State(state): State<JobRouteState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<JobFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<JobResponse>>> {
     // Get pipeline manager from state
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     // Convert API filter params to database filter types
     let db_filters = JobFilters {
@@ -706,14 +721,11 @@ pub async fn list_jobs(
     security(("bearer_auth" = []))
 )]
 pub async fn list_jobs_page(
-    State(state): State<AppState>,
+    State(state): State<JobRouteState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<JobFilterParams>,
 ) -> ApiResult<Json<PageResponse<JobResponse>>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let db_filters = JobFilters {
         status: filters.status.map(api_status_to_job_status),
@@ -764,14 +776,11 @@ pub async fn list_jobs_page(
     security(("bearer_auth" = []))
 )]
 pub async fn list_job_logs(
-    State(state): State<AppState>,
+    State(state): State<JobRouteState>,
     Path(id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<PaginatedResponse<ApiJobLogEntry>>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let effective_limit = pagination.limit.min(100);
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
@@ -810,13 +819,10 @@ pub async fn list_job_logs(
     security(("bearer_auth" = []))
 )]
 pub async fn get_job_progress(
-    State(state): State<AppState>,
+    State(state): State<JobRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobProgressSnapshot>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let snapshot = pipeline_manager
         .get_job_progress(&id)
@@ -873,14 +879,11 @@ pub async fn get_job_progress(
     security(("bearer_auth" = []))
 )]
 pub async fn get_job(
-    State(state): State<AppState>,
+    State(state): State<JobRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobResponse>> {
     // Get pipeline manager from state
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     // Call PipelineManager.get_job
     let job = pipeline_manager
@@ -890,14 +893,12 @@ pub async fn get_job(
         .ok_or_else(|| ApiError::not_found(format!("Job with id '{}' not found", id)))?;
 
     // Fetch streamer name
-    let streamer_name = if let Some(repo) = state.streamer_repository.as_ref() {
-        repo.get_streamer(&job.streamer_id)
-            .await
-            .ok()
-            .map(|s| s.name)
-    } else {
-        None
-    };
+    let streamer_name = state
+        .streamer_repository
+        .get_streamer(&job.streamer_id)
+        .await
+        .ok()
+        .map(|s| s.name);
 
     Ok(Json(job_to_response(&job, streamer_name)))
 }
@@ -943,14 +944,11 @@ pub async fn get_job(
     security(("bearer_auth" = []))
 )]
 pub async fn retry_job(
-    State(state): State<AppState>,
+    State(state): State<JobRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<JobResponse>> {
     // Get pipeline manager from state
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     // Call PipelineManager.retry_job
     let job = pipeline_manager
@@ -959,14 +957,12 @@ pub async fn retry_job(
         .map_err(ApiError::from)?;
 
     // Fetch streamer name
-    let streamer_name = if let Some(repo) = state.streamer_repository.as_ref() {
-        repo.get_streamer(&job.streamer_id)
-            .await
-            .ok()
-            .map(|s| s.name)
-    } else {
-        None
-    };
+    let streamer_name = state
+        .streamer_repository
+        .get_streamer(&job.streamer_id)
+        .await
+        .ok()
+        .map(|s| s.name);
 
     Ok(Json(job_to_response(&job, streamer_name)))
 }
@@ -1018,13 +1014,10 @@ pub async fn retry_job(
     security(("bearer_auth" = []))
 )]
 pub async fn cancel_job(
-    State(state): State<AppState>,
+    State(state): State<JobRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     pipeline_manager
         .cancel_job(&id)
@@ -1050,13 +1043,10 @@ pub async fn cancel_job(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_job(
-    State(state): State<AppState>,
+    State(state): State<JobRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     pipeline_manager
         .delete_job(&id)
@@ -1084,10 +1074,7 @@ pub async fn cancel_pipeline(
     Path(pipeline_id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     // Get pipeline manager from state
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     // Call PipelineManager.cancel_pipeline
     let cancelled_count = pipeline_manager
@@ -1118,11 +1105,7 @@ pub async fn list_outputs(
     Query(filters): Query<OutputFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<MediaOutputResponse>>> {
     // Get session repository from state
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?
-        .clone();
+    let session_repository = state.session_repository.clone();
 
     let requested_streamer_id = filters.streamer_id.clone();
 
@@ -1234,10 +1217,7 @@ pub async fn list_outputs(
 )]
 pub async fn get_stats(State(state): State<AppState>) -> ApiResult<Json<PipelineStatsResponse>> {
     // Get pipeline manager from state
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     // Call PipelineManager.get_stats
     let stats = pipeline_manager.get_stats().await.map_err(ApiError::from)?;
@@ -1270,10 +1250,7 @@ pub async fn create_pipeline(
     Json(request): Json<CreatePipelineRequest>,
 ) -> ApiResult<Json<CreatePipelineResponse>> {
     // Get pipeline manager from state
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     // Validate DAG has at least one step
     if request.dag.steps.is_empty() {
@@ -1306,14 +1283,12 @@ pub async fn create_pipeline(
         .ok_or_else(|| ApiError::internal("Failed to retrieve created job"))?;
 
     // Fetch streamer name (we have the ID from the request)
-    let streamer_name = if let Some(repo) = state.streamer_repository.as_ref() {
-        repo.get_streamer(&request.streamer_id)
-            .await
-            .ok()
-            .map(|s| s.name)
-    } else {
-        None
-    };
+    let streamer_name = state
+        .streamer_repository
+        .get_streamer(&request.streamer_id)
+        .await
+        .ok()
+        .map(|s| s.name);
 
     let response = CreatePipelineResponse {
         pipeline_id: result.dag_id,
@@ -1407,11 +1382,8 @@ fn job_to_response(job: &Job, streamer_name: Option<String>) -> JobResponse {
 }
 
 /// Helper to batch-fetch streamer names for a list of jobs.
-async fn fetch_streamer_names(state: &AppState, jobs: &[Job]) -> HashMap<String, String> {
-    let streamer_repository = match &state.streamer_repository {
-        Some(repo) => repo.clone(),
-        None => return HashMap::new(),
-    };
+async fn fetch_streamer_names(state: &JobRouteState, jobs: &[Job]) -> HashMap<String, String> {
+    let streamer_repository = state.streamer_repository.clone();
 
     // Collect unique streamer IDs
     let streamer_ids: HashSet<String> = jobs.iter().map(|j| j.streamer_id.clone()).collect();
@@ -1451,10 +1423,7 @@ pub async fn list_pipeline_presets(
     Query(filters): Query<PipelinePresetFilterParams>,
     Query(pagination): Query<PipelinePresetPaginationParams>,
 ) -> ApiResult<Json<PipelinePresetListResponse>> {
-    let preset_repo = state
-        .pipeline_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+    let preset_repo = &state.pipeline_preset_repository;
 
     let db_filters = crate::database::repositories::PipelinePresetFilters {
         search: filters.search,
@@ -1496,10 +1465,7 @@ pub async fn get_pipeline_preset_by_id(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
-    let preset_repo = state
-        .pipeline_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+    let preset_repo = &state.pipeline_preset_repository;
 
     let preset = preset_repo
         .get_pipeline_preset(&id)
@@ -1525,10 +1491,7 @@ pub async fn create_pipeline_preset(
     State(state): State<AppState>,
     Json(payload): Json<CreatePipelinePresetRequest>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
-    let preset_repo = state
-        .pipeline_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+    let preset_repo = &state.pipeline_preset_repository;
 
     // Validate DAG has at least one step
     if payload.dag.steps.is_empty() {
@@ -1568,10 +1531,7 @@ pub async fn update_pipeline_preset(
     Path(id): Path<String>,
     Json(payload): Json<UpdatePipelinePresetRequest>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
-    let preset_repo = state
-        .pipeline_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+    let preset_repo = &state.pipeline_preset_repository;
 
     // Check if preset exists
     let existing = preset_repo
@@ -1622,10 +1582,7 @@ pub async fn delete_pipeline_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<()>> {
-    let preset_repo = state
-        .pipeline_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+    let preset_repo = &state.pipeline_preset_repository;
 
     preset_repo
         .delete_pipeline_preset(&id)
@@ -1650,10 +1607,7 @@ pub async fn preview_pipeline_preset(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<PresetPreviewResponse>> {
-    let preset_repo = state
-        .pipeline_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline preset service not available"))?;
+    let preset_repo = &state.pipeline_preset_repository;
 
     let preset = preset_repo
         .get_pipeline_preset(&id)
@@ -1726,10 +1680,7 @@ pub async fn get_dag_status(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagStatusResponse>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let dag_scheduler = pipeline_manager
         .dag_scheduler()
@@ -1814,10 +1765,7 @@ pub async fn get_dag_graph(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagGraphResponse>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let dag_scheduler = pipeline_manager
         .dag_scheduler()
@@ -1903,10 +1851,7 @@ pub async fn retry_dag(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagRetryResponse>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let dag_scheduler = pipeline_manager
         .dag_scheduler()
@@ -2042,10 +1987,7 @@ pub async fn list_dags(
     Query(filters): Query<DagFilterParams>,
     Query(pagination): Query<DagPaginationParams>,
 ) -> ApiResult<Json<DagListResponse>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let dag_scheduler = pipeline_manager
         .dag_scheduler()
@@ -2088,23 +2030,20 @@ pub async fn list_dags(
     // Batch-fetch streamer names
     let streamer_ids: std::collections::HashSet<String> =
         dags.iter().filter_map(|d| d.streamer_id.clone()).collect();
+    let repo = state.streamer_repository.clone();
+    let fetches = streamer_ids.into_iter().map(|streamer_id| {
+        let repo = repo.clone();
+        async move {
+            let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
+            (streamer_id, name)
+        }
+    });
     let streamer_names: std::collections::HashMap<String, String> =
-        if let Some(repo) = &state.streamer_repository {
-            let fetches = streamer_ids.into_iter().map(|streamer_id| {
-                let repo = repo.clone();
-                async move {
-                    let name = repo.get_streamer(&streamer_id).await.ok().map(|s| s.name);
-                    (streamer_id, name)
-                }
-            });
-            futures::future::join_all(fetches)
-                .await
-                .into_iter()
-                .filter_map(|(id, name)| name.map(|n| (id, n)))
-                .collect()
-        } else {
-            std::collections::HashMap::new()
-        };
+        futures::future::join_all(fetches)
+            .await
+            .into_iter()
+            .filter_map(|(id, name)| name.map(|n| (id, n)))
+            .collect();
 
     // Convert to response format
     let dag_items: Vec<DagListItem> = dags
@@ -2160,10 +2099,7 @@ pub async fn list_dags(
 pub async fn retry_all_failed_dags(
     State(state): State<AppState>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let dag_scheduler = pipeline_manager
         .dag_scheduler()
@@ -2266,10 +2202,7 @@ pub async fn cancel_dag(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagCancelResponse>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     // Preserve service-unavailable semantics if DAG support isn't configured.
     pipeline_manager
@@ -2311,10 +2244,7 @@ pub async fn delete_dag(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let dag_scheduler = pipeline_manager
         .dag_scheduler()
@@ -2347,10 +2277,7 @@ pub async fn get_dag_stats(
     State(state): State<AppState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagStatsResponse>> {
-    let pipeline_manager = state
-        .pipeline_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Pipeline service not available"))?;
+    let pipeline_manager = &state.pipeline_manager;
 
     let dag_scheduler = pipeline_manager
         .dag_scheduler()
@@ -2397,7 +2324,6 @@ pub async fn get_dag_stats(
     security(("bearer_auth" = []))
 )]
 pub async fn validate_dag(
-    State(_state): State<AppState>,
     Json(request): Json<ValidateDagRequest>,
 ) -> ApiResult<Json<ValidateDagResponse>> {
     let dag = &request.dag;
@@ -2627,21 +2553,22 @@ fn topological_sort(dag: &DagPipelineDefinition) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use crate::database::models::DagStep;
-    use std::sync::Arc;
 
     use super::*;
-    use crate::api::server::AppState;
+    use crate::database::repositories::streamer::SqlxStreamerRepository;
     use crate::pipeline::PipelineManager;
 
-    fn build_test_state() -> AppState {
-        let mut state = AppState::new();
-        state.pipeline_manager = Some(Arc::new(PipelineManager::new()));
-        state
+    fn build_test_state() -> JobRouteState {
+        let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        JobRouteState {
+            pipeline_manager: Arc::new(PipelineManager::new()),
+            streamer_repository: Arc::new(SqlxStreamerRepository::new(pool.clone(), pool)),
+        }
     }
 
-    async fn enqueue_job_with_status(status: JobStatus) -> (AppState, String) {
+    async fn enqueue_job_with_status(status: JobStatus) -> (JobRouteState, String) {
         let state = build_test_state();
-        let manager = state.pipeline_manager.as_ref().unwrap().clone();
+        let manager = state.pipeline_manager.clone();
 
         let mut job = Job::new(
             "remux",
@@ -2669,7 +2596,7 @@ mod tests {
             serde_json::Value::String(format!("Job '{}' cancelled successfully", job_id))
         );
 
-        let manager = state.pipeline_manager.as_ref().unwrap();
+        let manager = state.pipeline_manager.as_ref();
         let job = manager.get_job(&job_id).await.unwrap().unwrap();
         assert_eq!(job.status, JobStatus::Cancelled);
     }
@@ -2687,7 +2614,7 @@ mod tests {
             serde_json::Value::String(format!("Job '{}' deleted successfully", job_id))
         );
 
-        let manager = state.pipeline_manager.as_ref().unwrap();
+        let manager = state.pipeline_manager.as_ref();
         let job = manager.get_job(&job_id).await.unwrap();
         assert!(job.is_none());
     }
@@ -2720,7 +2647,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_job_returns_cancelled_status() {
         let (state, job_id) = enqueue_job_with_status(JobStatus::Pending).await;
-        let manager = state.pipeline_manager.as_ref().unwrap();
+        let manager = state.pipeline_manager.as_ref();
         manager.cancel_job(&job_id).await.unwrap();
 
         let response = get_job(State(state), Path(job_id)).await.unwrap();
@@ -2731,7 +2658,7 @@ mod tests {
     #[tokio::test]
     async fn test_list_jobs_filters_cancelled_status() {
         let state = build_test_state();
-        let manager = state.pipeline_manager.as_ref().unwrap().clone();
+        let manager = state.pipeline_manager.clone();
 
         let pending_job = Job::new(
             "remux",

@@ -537,35 +537,17 @@ pub struct ImportStats {
     security(("bearer_auth" = []))
 )]
 pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
-    let streamer_repo = state
-        .streamer_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("StreamerRepository not available"))?;
+    let streamer_repo = &state.streamer_repository;
 
-    let notification_repo = state
-        .notification_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("NotificationRepository not available"))?;
+    let notification_repo = &state.notification_repository;
 
-    let filter_repo = state
-        .filter_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("FilterRepository not available"))?;
+    let filter_repo = &state.filter_repository;
 
-    let job_preset_repo = state
-        .job_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("JobPresetRepository not available"))?;
+    let job_preset_repo = &state.job_preset_repository;
 
-    let pipeline_preset_repo = state
-        .pipeline_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("PipelinePresetRepository not available"))?;
+    let pipeline_preset_repo = &state.pipeline_preset_repository;
 
     let user_exports = if let Some(auth_service) = state.auth_service.as_ref() {
         let user_repo = auth_service.user_repository();
@@ -875,35 +857,17 @@ pub async fn import_config(
         i64::from(config.global_config.notification_event_log_retention_days),
     )?;
 
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
-    let streamer_repo = state
-        .streamer_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("StreamerRepository not available"))?;
+    let streamer_repo = &state.streamer_repository;
 
-    let notification_repo = state
-        .notification_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("NotificationRepository not available"))?;
+    let notification_repo = &state.notification_repository;
 
-    let filter_repo = state
-        .filter_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("FilterRepository not available"))?;
+    let filter_repo = &state.filter_repository;
 
-    let job_preset_repo = state
-        .job_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("JobPresetRepository not available"))?;
+    let job_preset_repo = &state.job_preset_repository;
 
-    let pipeline_preset_repo = state
-        .pipeline_preset_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("PipelinePresetRepository not available"))?;
+    let pipeline_preset_repo = &state.pipeline_preset_repository;
 
     let mut stats = ImportStats::default();
     let is_replace = mode == ImportMode::Replace;
@@ -1085,12 +1049,10 @@ pub async fn import_config(
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to update template: {}", e)))?;
 
-            if let Some(cs) = credential_service.as_ref() {
-                cs.invalidate(&CredentialScope::Template {
-                    template_id: updated.id.clone(),
-                    template_name: updated.name.clone(),
-                });
-            }
+            credential_service.invalidate(&CredentialScope::Template {
+                template_id: updated.id.clone(),
+                template_name: updated.name.clone(),
+            });
             new_template_name_to_id.insert(updated.name.clone(), updated.id.clone());
             stats.templates_updated += 1;
         } else {
@@ -1154,12 +1116,10 @@ pub async fn import_config(
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to create template: {}", e)))?;
 
-            if let Some(cs) = credential_service.as_ref() {
-                cs.invalidate(&CredentialScope::Template {
-                    template_id: new_template.id.clone(),
-                    template_name: new_template.name.clone(),
-                });
-            }
+            credential_service.invalidate(&CredentialScope::Template {
+                template_id: new_template.id.clone(),
+                template_name: new_template.name.clone(),
+            });
             new_template_name_to_id.insert(new_template.name.clone(), new_template.id.clone());
             stats.templates_created += 1;
         }
@@ -1176,12 +1136,10 @@ pub async fn import_config(
                     .await
                     .is_ok()
             {
-                if let Some(cs) = credential_service.as_ref() {
-                    cs.invalidate(&CredentialScope::Template {
-                        template_id: template.id.clone(),
-                        template_name: template.name.clone(),
-                    });
-                }
+                credential_service.invalidate(&CredentialScope::Template {
+                    template_id: template.id.clone(),
+                    template_name: template.name.clone(),
+                });
                 stats.templates_deleted += 1;
             }
         }
@@ -1265,12 +1223,10 @@ pub async fn import_config(
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to update platform: {}", e)))?;
 
-            if let Some(cs) = credential_service.as_ref() {
-                cs.invalidate(&CredentialScope::Platform {
-                    platform_id: updated.id.clone(),
-                    platform_name: updated.platform_name.clone(),
-                });
-            }
+            credential_service.invalidate(&CredentialScope::Platform {
+                platform_id: updated.id.clone(),
+                platform_name: updated.platform_name.clone(),
+            });
             platform_name_to_id.insert(updated.platform_name.clone(), updated.id.clone());
             stats.platforms_updated += 1;
         }
@@ -1332,12 +1288,10 @@ pub async fn import_config(
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to update streamer: {}", e)))?;
 
-            if let Some(cs) = credential_service.as_ref() {
-                cs.invalidate(&CredentialScope::Streamer {
-                    streamer_id: updated.id.clone(),
-                    streamer_name: updated.name.clone(),
-                });
-            }
+            credential_service.invalidate(&CredentialScope::Streamer {
+                streamer_id: updated.id.clone(),
+                streamer_name: updated.name.clone(),
+            });
 
             // Update filters: delete existing, add new
             filter_repo
@@ -1384,12 +1338,10 @@ pub async fn import_config(
                 .await
                 .map_err(|e| ApiError::internal(format!("Failed to create streamer: {}", e)))?;
 
-            if let Some(cs) = credential_service.as_ref() {
-                cs.invalidate(&CredentialScope::Streamer {
-                    streamer_id: new_streamer.id.clone(),
-                    streamer_name: new_streamer.name.clone(),
-                });
-            }
+            credential_service.invalidate(&CredentialScope::Streamer {
+                streamer_id: new_streamer.id.clone(),
+                streamer_name: new_streamer.name.clone(),
+            });
 
             // Add filters
             for filter_export in &streamer_export.filters {
@@ -1418,12 +1370,10 @@ pub async fn import_config(
                     .await
                     .ok();
                 if streamer_repo.delete_streamer(&streamer.id).await.is_ok() {
-                    if let Some(cs) = credential_service.as_ref() {
-                        cs.invalidate(&CredentialScope::Streamer {
-                            streamer_id: streamer.id.clone(),
-                            streamer_name: streamer.name.clone(),
-                        });
-                    }
+                    credential_service.invalidate(&CredentialScope::Streamer {
+                        streamer_id: streamer.id.clone(),
+                        streamer_name: streamer.name.clone(),
+                    });
                     stats.streamers_deleted += 1;
                 }
             }
@@ -1506,13 +1456,13 @@ pub async fn import_config(
     }
 
     // Reload streamer manager to pick up changes
-    if let Some(streamer_manager) = state.streamer_manager.as_ref() {
-        let _ = streamer_manager.hydrate().await;
+    if let Err(error) = state.streamer_manager.hydrate().await {
+        tracing::warn!(%error, "Failed to reload streamers after config import");
     }
 
     // Reload notification service to pick up channel changes
-    if let Some(notification_service) = state.notification_service.as_ref() {
-        let _ = notification_service.reload_from_db().await;
+    if let Err(error) = state.notification_service.reload_from_db().await {
+        tracing::warn!(%error, "Failed to reload notifications after config import");
     }
 
     // 7. Import job presets (by name)

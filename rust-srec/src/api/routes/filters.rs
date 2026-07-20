@@ -2,7 +2,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{FromRef, Path, State},
     routing::{delete, get, patch, post},
 };
 use serde_json::Value;
@@ -14,6 +14,26 @@ use crate::database::models::{
     CategoryFilterConfig, CronFilterConfig, FilterConfigValidator, FilterDbModel, FilterType,
     KeywordFilterConfig, RegexFilterConfig, TimeBasedFilterConfig,
 };
+
+#[derive(Clone)]
+pub struct FilterRouteState {
+    filter_repository: std::sync::Arc<dyn crate::database::repositories::FilterRepository>,
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+}
+
+impl FromRef<AppState> for FilterRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            filter_repository: state.filter_repository.clone(),
+            config_service: state.config_service.clone(),
+        }
+    }
+}
 
 /// Create the filters router.
 pub fn router() -> Router<AppState> {
@@ -113,13 +133,10 @@ fn validate_and_serialize_config(filter_type: FilterType, config: Value) -> ApiR
     security(("bearer_auth" = []))
 )]
 pub async fn list_filters(
-    State(state): State<AppState>,
+    State(state): State<FilterRouteState>,
     Path(streamer_id): Path<String>,
 ) -> ApiResult<Json<Vec<FilterResponse>>> {
-    let filter_repo = state
-        .filter_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Filter service not available"))?;
+    let filter_repo = &state.filter_repository;
 
     let filters = filter_repo
         .get_filters_for_streamer(&streamer_id)
@@ -143,14 +160,11 @@ pub async fn list_filters(
     security(("bearer_auth" = []))
 )]
 pub async fn create_filter(
-    State(state): State<AppState>,
+    State(state): State<FilterRouteState>,
     Path(streamer_id): Path<String>,
     Json(request): Json<CreateFilterRequest>,
 ) -> ApiResult<Json<FilterResponse>> {
-    let filter_repo = state
-        .filter_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Filter service not available"))?;
+    let filter_repo = &state.filter_repository;
 
     if request.streamer_id != streamer_id {
         return Err(ApiError::validation(format!(
@@ -177,9 +191,9 @@ pub async fn create_filter(
         .map_err(ApiError::from)?;
 
     // Notify scheduler/runtime that filter rules changed for this streamer.
-    if let Some(config_service) = &state.config_service {
-        config_service.notify_streamer_filters_updated(&streamer_id);
-    }
+    state
+        .config_service
+        .notify_streamer_filters_updated(&streamer_id);
 
     model_to_response(&filter).map(Json)
 }
@@ -199,13 +213,10 @@ pub async fn create_filter(
     security(("bearer_auth" = []))
 )]
 pub async fn get_filter(
-    State(state): State<AppState>,
+    State(state): State<FilterRouteState>,
     Path((streamer_id, id)): Path<(String, String)>,
 ) -> ApiResult<Json<FilterResponse>> {
-    let filter_repo = state
-        .filter_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Filter service not available"))?;
+    let filter_repo = &state.filter_repository;
 
     let filter = filter_repo.get_filter(&id).await.map_err(ApiError::from)?;
 
@@ -236,14 +247,11 @@ pub async fn get_filter(
     security(("bearer_auth" = []))
 )]
 pub async fn update_filter(
-    State(state): State<AppState>,
+    State(state): State<FilterRouteState>,
     Path((streamer_id, id)): Path<(String, String)>,
     Json(request): Json<UpdateFilterRequest>,
 ) -> ApiResult<Json<FilterResponse>> {
-    let filter_repo = state
-        .filter_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Filter service not available"))?;
+    let filter_repo = &state.filter_repository;
 
     // Get existing filter
     let mut filter = filter_repo.get_filter(&id).await.map_err(ApiError::from)?;
@@ -294,9 +302,9 @@ pub async fn update_filter(
         .await
         .map_err(ApiError::from)?;
 
-    if let Some(config_service) = &state.config_service {
-        config_service.notify_streamer_filters_updated(&streamer_id);
-    }
+    state
+        .config_service
+        .notify_streamer_filters_updated(&streamer_id);
 
     model_to_response(&filter).map(Json)
 }
@@ -316,13 +324,10 @@ pub async fn update_filter(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_filter(
-    State(state): State<AppState>,
+    State(state): State<FilterRouteState>,
     Path((streamer_id, id)): Path<(String, String)>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let filter_repo = state
-        .filter_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Filter service not available"))?;
+    let filter_repo = &state.filter_repository;
 
     // Check ownership before deleting
     let filter = filter_repo.get_filter(&id).await.map_err(ApiError::from)?;
@@ -339,9 +344,9 @@ pub async fn delete_filter(
         .await
         .map_err(ApiError::from)?;
 
-    if let Some(config_service) = &state.config_service {
-        config_service.notify_streamer_filters_updated(&streamer_id);
-    }
+    state
+        .config_service
+        .notify_streamer_filters_updated(&streamer_id);
 
     Ok(Json(serde_json::json!({
         "success": true,

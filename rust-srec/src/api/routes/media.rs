@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use axum::Router;
-use axum::extract::{Path, Query, Request, State};
+use axum::extract::{FromRef, Path, Query, Request, State};
 use axum::http::header::AUTHORIZATION;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -11,6 +11,21 @@ use tower_http::services::ServeFile;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
+
+#[derive(Clone)]
+pub struct MediaRouteState {
+    jwt_service: Option<std::sync::Arc<crate::api::jwt::JwtService>>,
+    session_repository: std::sync::Arc<dyn crate::database::repositories::SessionRepository>,
+}
+
+impl FromRef<AppState> for MediaRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            jwt_service: state.jwt_service.clone(),
+            session_repository: state.session_repository.clone(),
+        }
+    }
+}
 
 /// Create the media router.
 pub fn router() -> Router<AppState> {
@@ -35,7 +50,7 @@ pub struct AuthQuery {
     security(("bearer_auth" = []))
 )]
 pub async fn get_media_content(
-    State(state): State<AppState>,
+    State(state): State<MediaRouteState>,
     Path(id): Path<String>,
     Query(query): Query<AuthQuery>,
     req: Request,
@@ -73,9 +88,7 @@ pub async fn get_media_content(
         ApiError::unauthorized("Invalid or expired token")
     })?;
 
-    let session_repo = state
-        .session_repository
-        .ok_or_else(|| ApiError::service_unavailable("Session repository not available"))?;
+    let session_repo = &state.session_repository;
 
     // Query media output to get file path
     let media = session_repo

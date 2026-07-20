@@ -2,7 +2,7 @@
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{FromRef, State},
     http::{HeaderMap, StatusCode, header::AUTHORIZATION},
     response::IntoResponse,
     routing::get,
@@ -11,6 +11,23 @@ use axum::{
 use crate::api::error::ApiResult;
 use crate::api::models::{ComponentHealth, HealthResponse};
 use crate::api::server::AppState;
+
+#[derive(Clone)]
+pub struct HealthRouteState {
+    start_time: std::time::Instant,
+    jwt_service: Option<std::sync::Arc<crate::api::jwt::JwtService>>,
+    health_checker: std::sync::Arc<crate::metrics::HealthChecker>,
+}
+
+impl FromRef<AppState> for HealthRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            start_time: state.start_time,
+            jwt_service: state.jwt_service.clone(),
+            health_checker: state.health_checker.clone(),
+        }
+    }
+}
 
 /// Create the health router.
 pub fn router() -> Router<AppState> {
@@ -22,7 +39,7 @@ pub fn router() -> Router<AppState> {
 
 fn validate_health_auth(
     headers: &HeaderMap,
-    state: &AppState,
+    state: &HealthRouteState,
 ) -> Result<(), crate::api::error::ApiError> {
     let jwt_service = state.jwt_service.as_ref().ok_or_else(|| {
         crate::api::error::ApiError::unauthorized("Authentication not configured")
@@ -54,49 +71,33 @@ fn validate_health_auth(
     )
 )]
 pub async fn health_check(
-    State(state): State<AppState>,
+    State(state): State<HealthRouteState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<HealthResponse>> {
     validate_health_auth(&headers, &state)?;
     let uptime = state.start_time.elapsed().as_secs();
 
-    // Use HealthChecker if available, otherwise return fallback response
-    if let Some(health_checker) = &state.health_checker {
-        let system_health = health_checker.current();
+    let system_health = state.health_checker.current();
+    let components: Vec<ComponentHealth> = system_health
+        .components
+        .iter()
+        .map(|(name, health)| ComponentHealth {
+            name: name.clone(),
+            status: health.status.to_string(),
+            message: health.message.clone(),
+            last_check: health.last_check.clone(),
+            check_duration_ms: health.check_duration_ms,
+        })
+        .collect();
 
-        let components: Vec<ComponentHealth> = system_health
-            .components
-            .iter()
-            .map(|(name, health)| ComponentHealth {
-                name: name.clone(),
-                status: health.status.to_string(),
-                message: health.message.clone(),
-                last_check: health.last_check.clone(),
-                check_duration_ms: health.check_duration_ms,
-            })
-            .collect();
-
-        let response = HealthResponse {
-            status: system_health.status.to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            uptime_secs: uptime,
-            components,
-            cpu_usage: system_health.cpu_usage,
-            memory_usage: system_health.memory_usage,
-        };
-
-        Ok(Json(response))
-    } else {
-        // Fallback for testing without full service setup
-        Ok(Json(HealthResponse {
-            status: "healthy".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            uptime_secs: uptime,
-            components: vec![],
-            cpu_usage: 0.0,
-            memory_usage: 0.0,
-        }))
-    }
+    Ok(Json(HealthResponse {
+        status: system_health.status.to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        uptime_secs: uptime,
+        components,
+        cpu_usage: system_health.cpu_usage,
+        memory_usage: system_health.memory_usage,
+    }))
 }
 
 #[utoipa::path(
@@ -111,20 +112,15 @@ pub async fn health_check(
     )
 )]
 pub async fn readiness_check(
-    State(state): State<AppState>,
+    State(state): State<HealthRouteState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
     if let Err(err) = validate_health_auth(&headers, &state) {
         return err.into_response();
     }
 
-    if let Some(health_checker) = &state.health_checker {
-        let is_ready = health_checker.check_ready();
-        if is_ready {
-            (StatusCode::OK, "ready").into_response()
-        } else {
-            (StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response()
-        }
+    if state.health_checker.check_ready() {
+        (StatusCode::OK, "ready").into_response()
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, "not ready").into_response()
     }
@@ -138,7 +134,7 @@ pub async fn readiness_check(
         (status = 200, description = "Service is alive", body = crate::api::openapi::LivenessResponse)
     )
 )]
-pub async fn liveness_check(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn liveness_check(State(state): State<HealthRouteState>) -> impl IntoResponse {
     let uptime = state.start_time.elapsed().as_secs();
     (
         StatusCode::OK,

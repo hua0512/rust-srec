@@ -17,7 +17,7 @@ use crate::Result;
 use crate::api::auth_service::{AuthConfig, AuthService};
 use crate::api::{
     ApiServer, JwtService,
-    server::{ApiServerConfig, AppState},
+    server::{ApiServerConfig, ApiServices, AppState},
 };
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
 use crate::credentials::{
@@ -1378,6 +1378,74 @@ impl ServiceContainer {
         Ok(())
     }
 
+    fn build_api_state(
+        &self,
+        jwt_service: Option<Arc<JwtService>>,
+        auth_service: Option<Arc<AuthService>>,
+    ) -> Result<AppState> {
+        let logging_config = self.logging_config.get().cloned().ok_or_else(|| {
+            crate::Error::ApiError(
+                "Logging configuration must be initialized before starting the API".to_string(),
+            )
+        })?;
+
+        let services = ApiServices {
+            config_service: self.config_service.clone(),
+            streamer_manager: self.streamer_manager.clone(),
+            pipeline_manager: self.pipeline_manager.clone(),
+            download_manager: self.download_manager.clone(),
+            session_repository: self.session_repository.clone(),
+            session_event_repository: Arc::new(
+                crate::database::repositories::SqlxSessionEventRepository::new(
+                    self.pool.clone(),
+                    self.write_pool.clone(),
+                ),
+            ),
+            streamer_check_history_repository: Arc::new(
+                crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
+                    self.pool.clone(),
+                    self.write_pool.clone(),
+                ),
+            ),
+            check_history_broadcaster: self.check_history_broadcaster.clone(),
+            filter_repository: Arc::new(SqlxFilterRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )),
+            health_checker: self.health_checker.clone(),
+            streamer_repository: Arc::new(SqlxStreamerRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )),
+            pipeline_preset_repository: Arc::new(SqlitePipelinePresetRepository::new(
+                Arc::new(self.pool.clone()),
+                Arc::new(self.write_pool.clone()),
+            )),
+            job_preset_repository: Arc::new(SqliteJobPresetRepository::new(
+                Arc::new(self.pool.clone()),
+                Arc::new(self.write_pool.clone()),
+            )),
+            notification_repository: self.notification_repository.clone(),
+            notification_service: self.notification_service.clone(),
+            logging_config,
+            logging_download_tokens: Arc::new(DashMap::new()),
+            credential_service: self.credential_service.clone(),
+        };
+
+        let mut state = AppState::new(services);
+        if let Some(jwt_service) = jwt_service {
+            state = state.with_jwt_service(jwt_service);
+        }
+        if let Some(auth_service) = auth_service {
+            state = state.with_auth_service(auth_service);
+        }
+        if let Some(web_push_service) = self.web_push_service.clone() {
+            state = state.with_web_push_service(web_push_service);
+        }
+
+        Ok(state)
+    }
+
     /// Initialize and start the API server, returning the resolved bind address.
     ///
     /// This is required when binding to port `0` (ephemeral port), where the actual port is only
@@ -1409,74 +1477,8 @@ impl ServiceContainer {
             None
         };
 
-        let mut state = AppState::with_services(
-            jwt_service,
-            self.config_service.clone(),
-            self.streamer_manager.clone(),
-            self.pipeline_manager.clone(),
-            self.danmu_service.clone(),
-            self.download_manager.clone(),
-        );
-
-        // Wire AuthService into AppState if available
-        if let Some(auth_svc) = auth_service {
-            state = state.with_auth_service(auth_svc);
-        }
-
-        // Wire HealthChecker into AppState for health endpoints
-        state = state.with_health_checker(self.health_checker.clone());
-
-        // Wire credential refresh service into AppState for API endpoints.
-        state = state.with_credential_service(self.credential_service.clone());
-
-        // Wire SessionRepository, SessionEventRepository, FilterRepository, and PipelinePresetRepository into AppState
-        state = state
-            .with_session_repository(Arc::new(SqlxSessionRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_session_event_repository(Arc::new(
-                crate::database::repositories::SqlxSessionEventRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ))
-            .with_streamer_check_history_repository(Arc::new(
-                crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ))
-            .with_check_history_broadcaster(self.check_history_broadcaster.clone())
-            .with_filter_repository(Arc::new(SqlxFilterRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )))
-            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )))
-            .with_notification_repository(self.notification_repository.clone())
-            .with_notification_service(self.notification_service.clone());
-
-        if let Some(web_push) = self.web_push_service.clone() {
-            state = state.with_web_push_service(web_push);
-        }
-
-        // Wire logging config if available
-        if let Some(logging_config) = self.logging_config.get().cloned() {
-            state = state.with_logging_config(logging_config);
-        }
-
-        let server = ApiServer::with_state(self.api_server_config.clone(), state);
+        let state = self.build_api_state(jwt_service, auth_service)?;
+        let server = ApiServer::new(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
 
         // Link server shutdown to container shutdown
@@ -1535,70 +1537,8 @@ impl ServiceContainer {
             "AuthService initialized with desktop-provided JWT secret"
         );
 
-        let mut state = AppState::with_services(
-            Some(jwt_service),
-            self.config_service.clone(),
-            self.streamer_manager.clone(),
-            self.pipeline_manager.clone(),
-            self.danmu_service.clone(),
-            self.download_manager.clone(),
-        )
-        .with_auth_service(Arc::new(auth_svc));
-
-        // Wire HealthChecker into AppState for health endpoints
-        state = state.with_health_checker(self.health_checker.clone());
-
-        // Wire credential refresh service into AppState for API endpoints.
-        state = state.with_credential_service(self.credential_service.clone());
-
-        // Wire SessionRepository, SessionEventRepository, FilterRepository, and PipelinePresetRepository into AppState
-        state = state
-            .with_session_repository(Arc::new(SqlxSessionRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_session_event_repository(Arc::new(
-                crate::database::repositories::SqlxSessionEventRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ))
-            .with_streamer_check_history_repository(Arc::new(
-                crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ))
-            .with_check_history_broadcaster(self.check_history_broadcaster.clone())
-            .with_filter_repository(Arc::new(SqlxFilterRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )))
-            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )))
-            .with_notification_repository(self.notification_repository.clone())
-            .with_notification_service(self.notification_service.clone());
-
-        if let Some(web_push) = self.web_push_service.clone() {
-            state = state.with_web_push_service(web_push);
-        }
-
-        // Wire logging config if available
-        if let Some(logging_config) = self.logging_config.get().cloned() {
-            state = state.with_logging_config(logging_config);
-        }
-
-        let server = ApiServer::with_state(self.api_server_config.clone(), state);
+        let state = self.build_api_state(Some(jwt_service), Some(Arc::new(auth_svc)))?;
+        let server = ApiServer::new(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
 
         // Link server shutdown to container shutdown

@@ -12,7 +12,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{FromRef, Path, Query, State},
     routing::{get, post},
 };
 
@@ -27,6 +27,24 @@ use crate::database::models::{
     DanmuRateEntry, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
 };
 use crate::domain::session::SessionEvent;
+
+#[derive(Clone)]
+pub struct SessionRouteState {
+    session_repository: std::sync::Arc<dyn crate::database::repositories::SessionRepository>,
+    session_event_repository:
+        std::sync::Arc<dyn crate::database::repositories::SessionEventRepository>,
+    streamer_repository: std::sync::Arc<dyn crate::database::repositories::StreamerRepository>,
+}
+
+impl FromRef<AppState> for SessionRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            session_repository: state.session_repository.clone(),
+            session_event_repository: state.session_event_repository.clone(),
+            streamer_repository: state.streamer_repository.clone(),
+        }
+    }
+}
 
 /// Create the sessions router.
 ///
@@ -60,15 +78,11 @@ pub fn router() -> Router<AppState> {
     security(("bearer_auth" = []))
 )]
 pub async fn list_session_segments(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Path(id): Path<String>,
     Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<PageResponse<SessionSegmentResponse>>> {
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?
-        .clone();
+    let session_repository = state.session_repository.clone();
 
     session_repository
         .get_session(&id)
@@ -175,20 +189,14 @@ pub async fn list_session_segments(
     security(("bearer_auth" = []))
 )]
 pub async fn list_sessions(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<SessionFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<SessionResponse>>> {
     // Get session repository from state
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
-    let streamer_repository = state
-        .streamer_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_repository = &state.streamer_repository;
 
     // Convert API filter params to database filter types
     let db_filters = SessionFilters {
@@ -328,19 +336,13 @@ pub async fn list_sessions(
     security(("bearer_auth" = []))
 )]
 pub async fn get_session(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<SessionResponse>> {
     // Get session repository from state
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
-    let streamer_repository = state
-        .streamer_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_repository = &state.streamer_repository;
 
     // Get session by ID
     let session = session_repository
@@ -382,20 +384,15 @@ pub async fn get_session(
     // Get thumbnail URL
     let thumbnail_url = get_thumbnail_url(&session.id, session_repository.as_ref()).await;
 
-    // Load the lifecycle audit log for the Timeline tab. Repository is
-    // optional in `AppState` (test harnesses may omit it) and a query
-    // failure here must not break the rest of the response — fall back to
-    // an empty list and log.
-    let events = match state.session_event_repository.as_ref() {
-        Some(repo) => match repo.list_for_session(&id).await {
-            Ok(rows) => map_session_events(rows),
-            Err(e) => {
-                tracing::warn!(session_id = %id, error = %e,
-                    "Failed to load session events; returning empty timeline");
-                Vec::new()
-            }
-        },
-        None => Vec::new(),
+    // A timeline query is an enhancement to the session response, so a
+    // storage failure still degrades to an empty timeline.
+    let events = match state.session_event_repository.list_for_session(&id).await {
+        Ok(rows) => map_session_events(rows),
+        Err(e) => {
+            tracing::warn!(session_id = %id, error = %e,
+                "Failed to load session events; returning empty timeline");
+            Vec::new()
+        }
     };
 
     let response = SessionResponse {
@@ -447,13 +444,10 @@ fn map_session_events(events: Vec<SessionEvent>) -> Vec<SessionEventResponse> {
     security(("bearer_auth" = []))
 )]
 pub async fn get_session_danmu_statistics(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<SessionDanmuStatisticsResponse>> {
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
     // Ensure session exists so missing stats can cleanly map to 404.
     let session = session_repository
@@ -586,14 +580,11 @@ fn parse_titles(titles_json: &Option<String>) -> (Vec<TitleChange>, String) {
     security(("bearer_auth" = []))
 )]
 pub async fn delete_session(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<()> {
     // Get session repository from state
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
     // Check if session exists
     let _ = session_repository
@@ -665,14 +656,11 @@ pub struct BatchDeleteResponse {
     security(("bearer_auth" = []))
 )]
 pub async fn delete_sessions_batch(
-    State(state): State<AppState>,
+    State(state): State<SessionRouteState>,
     Json(request): Json<BatchDeleteRequest>,
 ) -> ApiResult<Json<BatchDeleteResponse>> {
     // Get session repository from state
-    let session_repository = state
-        .session_repository
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session service not available"))?;
+    let session_repository = &state.session_repository;
 
     // Delete sessions in batch
     let deleted = session_repository

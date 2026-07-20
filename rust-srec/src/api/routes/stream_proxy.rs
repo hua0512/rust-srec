@@ -6,17 +6,31 @@
 //! support.
 
 use axum::Router;
-use axum::extract::{Query, Request, State};
+use axum::extract::{FromRef, Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header::AUTHORIZATION};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures::TryStreamExt;
 use serde::Deserialize;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::jwt::JwtService;
 use crate::api::server::AppState;
+
+#[derive(Clone)]
+pub struct StreamProxyState {
+    jwt_service: Option<Arc<JwtService>>,
+}
+
+impl FromRef<AppState> for StreamProxyState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            jwt_service: state.jwt_service.clone(),
+        }
+    }
+}
 
 fn stream_proxy_client() -> ApiResult<&'static reqwest::Client> {
     // The platforms-parser default client sets a 30s request timeout.
@@ -25,6 +39,7 @@ fn stream_proxy_client() -> ApiResult<&'static reqwest::Client> {
     static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
 
     let client = CLIENT.get_or_init(|| {
+        crate::utils::http_client::install_rustls_provider();
         reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .tcp_nodelay(true)
@@ -47,7 +62,11 @@ pub struct StreamProxyQuery {
 }
 
 /// Create the stream proxy router.
-pub fn router() -> Router<AppState> {
+pub fn router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    StreamProxyState: FromRef<S>,
+{
     Router::new()
         // Mounted under `/api/stream-proxy` by the main router.
         .route("/", get(stream_proxy_get).options(stream_proxy_options))
@@ -76,7 +95,7 @@ async fn stream_proxy_options() -> impl IntoResponse {
 }
 
 pub async fn stream_proxy_get(
-    State(state): State<AppState>,
+    State(state): State<StreamProxyState>,
     Query(query): Query<StreamProxyQuery>,
     req: Request,
 ) -> ApiResult<Response> {
@@ -294,11 +313,12 @@ mod tests {
         ));
         let token = jwt.generate_token("user", vec![]).unwrap();
 
-        let mut state = AppState::new();
-        state.jwt_service = Some(jwt);
+        let state = StreamProxyState {
+            jwt_service: Some(jwt),
+        };
 
         let app = Router::new()
-            .nest("/api/stream-proxy", super::router())
+            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
             .with_state(state);
 
         let target = format!("http://{upstream_addr}/stream");
@@ -338,11 +358,12 @@ mod tests {
         ));
         let token = jwt.generate_token("user", vec![]).unwrap();
 
-        let mut state = AppState::new();
-        state.jwt_service = Some(jwt);
+        let state = StreamProxyState {
+            jwt_service: Some(jwt),
+        };
 
         let app = Router::new()
-            .nest("/api/stream-proxy", super::router())
+            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
             .with_state(state);
 
         let query = build_query(&[("url", "file:///etc/passwd"), ("token", &token)]);
