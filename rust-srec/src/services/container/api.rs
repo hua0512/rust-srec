@@ -121,6 +121,15 @@ impl ServiceContainer {
             logging_config,
             logging_download_tokens: Arc::new(DashMap::new()),
             credential_service: self.credential_service.clone(),
+            configuration_import_service: Arc::new(
+                crate::services::config_import::ConfigurationImportService::new(
+                    self.write_pool.clone(),
+                    self.config_service.clone(),
+                    self.streamer_manager.clone(),
+                    self.notification_service.clone(),
+                    self.credential_service.clone(),
+                ),
+            ),
         };
 
         let mut state = AppState::new(services);
@@ -196,11 +205,16 @@ impl ServiceContainer {
         let (listener, local_addr) = server.bind().await?;
         info!("Starting API server on http://{}", local_addr);
 
-        self.task_supervisor.spawn("API server", async move {
-            if let Err(e) = server.run_with_listener(listener).await {
-                tracing::error!("API server error: {}", e);
-            }
-        });
+        if !self
+            .task_supervisor
+            .spawn_critical("API server", async move {
+                server.run_with_listener(listener).await
+            })
+        {
+            return Err(crate::Error::Other(
+                "API server task was rejected during shutdown".to_string(),
+            ));
+        }
 
         Ok(local_addr)
     }
@@ -257,12 +271,16 @@ impl ServiceContainer {
         let (listener, local_addr) = server.bind().await?;
         info!("Starting API server on http://{}", local_addr);
 
-        self.task_supervisor
-            .spawn("desktop API server", async move {
-                if let Err(e) = server.run_with_listener(listener).await {
-                    tracing::error!("API server error: {}", e);
-                }
-            });
+        if !self
+            .task_supervisor
+            .spawn_critical("desktop API server", async move {
+                server.run_with_listener(listener).await
+            })
+        {
+            return Err(crate::Error::Other(
+                "desktop API server task was rejected during shutdown".to_string(),
+            ));
+        }
 
         Ok(local_addr)
     }

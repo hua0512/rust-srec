@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
@@ -39,6 +39,18 @@ use super::actor::{
     ShutdownReport, StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig,
     TaskCompletionAction,
 };
+
+/// Read-only scheduler state for health and diagnostics consumers.
+#[derive(Clone)]
+pub(crate) struct SchedulerHandle {
+    stats_rx: watch::Receiver<super::actor::SupervisorStats>,
+}
+
+impl SchedulerHandle {
+    pub(crate) fn stats(&self) -> super::actor::SupervisorStats {
+        self.stats_rx.borrow().clone()
+    }
+}
 
 /// Default check interval (60 seconds).
 const DEFAULT_CHECK_INTERVAL_MS: u64 = 60_000;
@@ -120,6 +132,8 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     cancellation_token: CancellationToken,
     /// Supervisor for managing actor lifecycle.
     supervisor: Supervisor,
+    /// Latest supervisor snapshot for read-only runtime consumers.
+    stats_tx: watch::Sender<super::actor::SupervisorStats>,
     /// Platform mapping for config routing.
     platform_mapping: PlatformMapping,
     /// Platform actor handles for batch coordination.
@@ -215,6 +229,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             config.supervisor_config.clone(),
             metadata_store,
         );
+        let (stats_tx, _) = watch::channel(supervisor.stats());
 
         Self {
             streamer_manager,
@@ -223,6 +238,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             config_repo: None,
             cancellation_token,
             supervisor,
+            stats_tx,
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
@@ -347,6 +363,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             status_checker,
             batch_checker,
         );
+        let (stats_tx, _) = watch::channel(supervisor.stats());
 
         Self {
             streamer_manager,
@@ -355,6 +372,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             config_repo: None,
             cancellation_token,
             supervisor,
+            stats_tx,
             platform_mapping: PlatformMapping::new(),
             platform_handles: HashMap::new(),
             download_event_rx: None,
@@ -373,6 +391,17 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// Get the cancellation token for this scheduler.
     pub fn cancellation_token(&self) -> CancellationToken {
         self.cancellation_token.clone()
+    }
+
+    /// Create a cheap read-only handle for scheduler diagnostics.
+    pub(crate) fn handle(&self) -> SchedulerHandle {
+        SchedulerHandle {
+            stats_rx: self.stats_tx.subscribe(),
+        }
+    }
+
+    fn publish_stats(&self) {
+        self.stats_tx.send_replace(self.supervisor.stats());
     }
 
     /// Set the download event receiver.
@@ -482,6 +511,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         // Initial actor spawning for all active streamers
         self.spawn_initial_actors().await?;
+        self.publish_stats();
 
         info!(
             "Scheduler started with {} streamer actors and {} platform actors",
@@ -562,10 +592,12 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     }
                 }
             }
+            self.publish_stats();
         }
 
         // Graceful shutdown
         let report = self.shutdown().await;
+        self.publish_stats();
         info!(
             "Scheduler stopped: {} graceful, {} forced",
             report.graceful_stops, report.forced_terminations
@@ -1228,5 +1260,28 @@ mod tests {
         assert!(matches!("twitch", "twitch" | "youtube"));
         assert!(matches!("youtube", "twitch" | "youtube"));
         assert!(!matches!("bilibili", "twitch" | "youtube"));
+    }
+
+    #[test]
+    fn scheduler_handle_reads_latest_stats_snapshot() {
+        fn stats(streamer_count: usize) -> crate::scheduler::actor::SupervisorStats {
+            crate::scheduler::actor::SupervisorStats {
+                streamer_count,
+                platform_count: 0,
+                pending_restarts: 0,
+                restart_stats: crate::scheduler::actor::RestartTrackerStats {
+                    total_actors: streamer_count,
+                    actors_with_failures: 0,
+                    total_restarts: 0,
+                },
+            }
+        }
+
+        let (stats_tx, stats_rx) = watch::channel(stats(1));
+        let handle = SchedulerHandle { stats_rx };
+        assert_eq!(handle.stats().streamer_count, 1);
+
+        stats_tx.send_replace(stats(2));
+        assert_eq!(handle.stats().streamer_count, 2);
     }
 }

@@ -16,15 +16,14 @@ use crate::api::server::ApiServerConfig;
 use crate::config::{ConfigEventBroadcaster, ConfigService};
 use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
 use crate::database::maintenance::MaintenanceScheduler;
-use crate::database::repositories::{NotificationRepository, SessionRepository};
+use crate::database::repositories::NotificationRepository;
 use crate::database::repositories::{
     config::SqlxConfigRepository, filter::SqlxFilterRepository, session::SqlxSessionRepository,
     streamer::SqlxStreamerRepository,
 };
-use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
-    DownloadConfig, DownloadManager, DownloadManagerConfig, DownloadProtocol,
-    LAST_ERROR_GATE_PREFIX, OutputRootGate, RecoveryHook, engine::DownloadProgress,
+    DownloadManager, DownloadManagerConfig, LAST_ERROR_GATE_PREFIX, OutputRootGate, RecoveryHook,
+    engine::DownloadProgress,
 };
 use crate::logging::LoggingConfig;
 use crate::metrics::{HealthChecker, MetricsCollector, PrometheusExporter};
@@ -32,12 +31,10 @@ use crate::monitor::{MonitorEvent, MonitorEventBroadcaster, StreamMonitor};
 use crate::notification::NotificationService;
 use crate::notification::web_push::WebPushService;
 use crate::pipeline::{PipelineEvent, PipelineManager, PipelineManagerConfig};
-use crate::scheduler::Scheduler;
-use crate::services::session_cancels::SessionCancelTokens;
+use crate::scheduler::{Scheduler, SchedulerHandle};
+use crate::services::runtime_coordinator::RuntimeCoordinator;
 use crate::streamer::StreamerManager;
-use crate::utils::filename::sanitize_filename;
 use crate::utils::task_supervisor::TaskSupervisor;
-use pipeline_common::expand_path_template;
 
 mod api;
 mod builder;
@@ -316,10 +313,20 @@ pub struct ServiceContainer {
     monitor_event_receiver: parking_lot::Mutex<
         Option<tokio::sync::mpsc::Receiver<crate::monitor::MonitorEventDelivery>>,
     >,
+    /// Required terminal-download receiver used for session state changes.
+    download_terminal_receiver: parking_lot::Mutex<
+        Option<tokio::sync::mpsc::UnboundedReceiver<crate::downloader::DownloadTerminalEvent>>,
+    >,
     /// Single-owner session lifecycle service. Owns the in-memory session map,
     /// hard-ended suppression cache, and the `SessionTransition` broadcast
     /// channel consumed by pipeline/notification/API layers.
     pub(crate) session_lifecycle: Arc<crate::session::SessionLifecycle>,
+    /// Required session-transition receiver used for runtime side effects.
+    session_transition_receiver: parking_lot::Mutex<
+        Option<tokio::sync::mpsc::UnboundedReceiver<crate::session::SessionTransition>>,
+    >,
+    /// Operational policy for required runtime events.
+    runtime_coordinator: Arc<RuntimeCoordinator>,
     /// Danmu service.
     pub(crate) danmu_service: Arc<DanmuService>,
     /// Notification service.
@@ -334,8 +341,10 @@ pub struct ServiceContainer {
     pub(crate) health_checker: Arc<HealthChecker>,
     /// Database maintenance scheduler.
     pub(crate) maintenance_scheduler: Arc<MaintenanceScheduler>,
-    /// Scheduler service
-    pub(crate) scheduler: Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
+    /// Scheduler instance before its one-shot move into the runtime task.
+    scheduler: parking_lot::Mutex<Option<Scheduler<SqlxStreamerRepository>>>,
+    /// Read-only scheduler state available while the runtime task owns the scheduler.
+    scheduler_handle: SchedulerHandle,
     /// Stream monitor for real status detection
     pub(crate) stream_monitor: Arc<
         StreamMonitor<
@@ -353,25 +362,6 @@ pub struct ServiceContainer {
     /// without polling. Same fan-out pattern as
     /// [`crate::downloader::DownloadManager::subscribe`].
     pub(crate) check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
-    /// Per-session cancellation tokens. The
-    /// [`MonitorEvent::StreamerLive`] handler spawns a download
-    /// pipeline as a tokio task; the matching
-    /// [`MonitorEvent::StreamerOffline`] (and any other terminal
-    /// monitor event for that session) cancels its token so a queued
-    /// pipeline can bail without spinning up an engine for an
-    /// already-offline streamer.
-    pub(crate) session_cancels: Arc<SessionCancelTokens>,
-    /// Per-streamer "a download pipeline is in flight for this
-    /// streamer right now" reservation set. Held from the start of
-    /// `run_live_download_pipeline` (before preflight) through the
-    /// final step (after danmu start). Protects against two concurrent
-    /// `StreamerLive` events spawning duplicate pipelines for the
-    /// same streamer in the window between
-    /// [`crate::downloader::DownloadManager::has_active_download`]
-    /// returning `false` and
-    /// [`crate::downloader::DownloadManager::start_with_slot`]
-    /// inserting into `active_downloads`.
-    pub(crate) pending_pipelines: Arc<DashMap<String, ()>>,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
@@ -464,12 +454,9 @@ impl ServiceContainer {
         // wouldn't take effect until each streamer's config was independently
         // resolved (e.g. on first config-update event).
         for metadata in self.streamer_manager.get_all() {
-            Self::refresh_metadata_offline_check(
-                &self.streamer_manager,
-                &self.config_service,
-                &metadata.id,
-            )
-            .await;
+            self.runtime_coordinator
+                .refresh_metadata_offline_check(&metadata.id)
+                .await;
         }
 
         // Recover jobs from database on startup.
@@ -504,11 +491,6 @@ impl ServiceContainer {
         // the session row and emit SessionTransition::Ended for every
         // terminal download outcome.
         self.setup_session_lifecycle_subscriptions();
-
-        // Wire `SessionTransition::Started { from_hysteresis: true }` →
-        // synthetic `MonitorEvent::StreamerLive` so a hysteresis resume
-        // restarts the download. See `setup_resume_download_subscriber`.
-        self.setup_resume_download_subscriber();
 
         // Wire monitor events to download manager and danmu service
         self.setup_monitor_event_subscriptions();
@@ -561,7 +543,7 @@ impl ServiceContainer {
 
         // Start scheduler in background
         let scheduler_start = Instant::now();
-        self.start_scheduler().await;
+        self.start_scheduler()?;
 
         let scheduler_start_ms = scheduler_start.elapsed().as_millis();
 
@@ -591,400 +573,24 @@ impl ServiceContainer {
     ///
     /// The scheduler uses a child token of the container's cancellation token,
     /// so it will automatically stop when the container is shut down.
-    async fn start_scheduler(&self) {
-        // Set download receiver before starting
-        {
-            let mut scheduler = self.scheduler.write().await;
-            scheduler.set_download_receiver(self.download_manager.subscribe());
-        }
+    fn start_scheduler(&self) -> Result<()> {
+        let mut scheduler =
+            self.scheduler.lock().take().ok_or_else(|| {
+                crate::Error::Other("scheduler has already been started".to_string())
+            })?;
+        scheduler.set_download_receiver(self.download_manager.subscribe());
 
-        // Run scheduler in background task
-        let scheduler = self.scheduler.clone();
-        self.task_supervisor.spawn("scheduler", async move {
-            let mut guard = scheduler.write().await;
-            if let Err(e) = guard.run().await {
-                tracing::error!("Scheduler error: {}", e);
-            }
-        });
+        if !self
+            .task_supervisor
+            .spawn_critical("scheduler", async move { scheduler.run().await })
+        {
+            return Err(crate::Error::Other(
+                "scheduler task was rejected during shutdown".to_string(),
+            ));
+        }
 
         info!("Scheduler started");
-    }
-
-    /// Handle streamer disabled state transition.
-    ///
-    /// This method coordinates cleanup when a streamer is **disabled via UI/API**.
-    /// The key challenge is that the actor is removed before it can process the
-    /// DownloadCancelled event, so we must explicitly end the session here.
-    ///
-    /// ## Cleanup Steps
-    ///
-    /// 1. **End active streaming session** - Close the session in the database
-    ///    BEFORE removing the actor. This ensures the session is properly closed
-    ///    even though the actor won't be around to process the DownloadCancelled event.
-    /// 2. **Remove the streamer actor** - Stop monitoring this streamer
-    /// 3. **Cancel active downloads** - Stop any ongoing download tasks
-    /// 4. **Stop danmu collection** - Stop any active comment collection
-    ///
-    /// ## Session Cleanup: Two Scenarios
-    ///
-    /// This function handles **Scenario 1: Streamer Disable/Delete**:
-    /// - User disables/deletes a streamer via UI/API
-    /// - Actor is being removed from the scheduler
-    /// - We explicitly end the session HERE before actor removal
-    /// - DownloadCancelled event sent, but actor is already gone
-    ///
-    /// **Scenario 2: Manual Download Cancellation** is handled separately by
-    /// `StreamerActor::handle_download_ended(Cancelled)`:
-    /// - User cancels download without disabling the streamer
-    /// - Actor is still active and processes the DownloadCancelled event
-    /// - Actor calls `process_status(Offline)` to end the session
-    /// - Actor then stops itself
-    ///
-    /// Both paths are necessary for complete session cleanup coverage.
-    ///
-    /// ## Error Handling
-    ///
-    /// All errors are logged but do not propagate - cleanup is best-effort
-    /// and should not block other operations.
-    ///
-    /// # Arguments
-    /// * `download_manager` - The download manager to cancel downloads
-    /// * `danmu_service` - The danmu service to stop collection
-    /// * `stream_monitor` - The stream monitor to end active sessions
-    /// * `streamer_id` - The ID of the streamer being disabled
-    ///
-    /// # Note
-    /// Actor removal is handled by the Scheduler's own config event handler.
-    /// We don't do it here to avoid RwLock deadlock (scheduler.run() holds the write lock).
-    pub async fn handle_streamer_disabled(
-        download_manager: &Arc<DownloadManager>,
-        danmu_service: &Arc<DanmuService>,
-        session_lifecycle: &Arc<crate::session::SessionLifecycle>,
-        streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
-        streamer_id: &str,
-    ) {
-        // 1. Cancel active downloads (best-effort).
-        //
-        // Do this before ending the session so the session's `total_size_bytes` snapshot
-        // is less likely to be stale due to late segment persistence.
-        let downloads: Vec<_> = download_manager
-            .get_active_downloads()
-            .into_iter()
-            .filter(|d| d.streamer_id == streamer_id)
-            .collect();
-
-        if downloads.is_empty() {
-            debug!(
-                "No active download found for disabled streamer: {}",
-                streamer_id
-            );
-        } else {
-            for download in downloads {
-                match download_manager
-                    .stop_download_with_reason(
-                        &download.id,
-                        crate::downloader::DownloadStopCause::StreamerDisabled,
-                    )
-                    .await
-                {
-                    Ok(()) => {
-                        info!(
-                            "Cancelled download {} for disabled streamer {}",
-                            download.id, streamer_id
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to cancel download {} for disabled streamer {}: {}",
-                            download.id, streamer_id, e
-                        );
-                    }
-                }
-            }
-        }
-
-        // 2. Stop danmu collection if active (best-effort).
-        if let Some(session_id) = danmu_service.get_session_by_streamer(streamer_id) {
-            match danmu_service.stop_collection(&session_id).await {
-                Ok(stats) => {
-                    info!(
-                        "Stopped danmu collection for disabled streamer {}: {} messages",
-                        streamer_id, stats.total_count
-                    );
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to stop danmu collection for disabled streamer {}: {}",
-                        streamer_id, e
-                    );
-                }
-            }
-        } else {
-            debug!(
-                "No active danmu session found for disabled streamer: {}",
-                streamer_id
-            );
-        }
-
-        // 3. End active streaming session via the lifecycle FSM (best-effort).
-        //
-        // Replaces the old `stream_monitor.force_end_active_session`, which
-        // wrote `live_sessions.end_time` directly via SQL but never touched
-        // `SessionLifecycle`'s in-memory state. That divergence caused the
-        // disable/re-enable bug: re-enable found the stale Hysteresis handle
-        // and silently restarted a download under an already-ended session_id.
-        let streamer_name = streamer_manager
-            .get_streamer(streamer_id)
-            .map(|m| m.name.clone())
-            .unwrap_or_default();
-        if let Err(e) = session_lifecycle
-            .end_for_disable(streamer_id, &streamer_name)
-            .await
-        {
-            warn!(
-                "Failed to end session via lifecycle for disabled streamer {}: {}",
-                streamer_id, e
-            );
-        }
-
-        // Note: Actor removal is handled by the Scheduler's own config event handler.
-        // We don't do it here because scheduler.run() holds the RwLock write lock forever.
-    }
-
-    /// Refresh `effective_offline_check_*` on `StreamerMetadata` from the
-    /// freshly resolved merged config. The actor's `StreamerConfig` and the
-    /// `SessionLifecycle` hysteresis backstop both read from these cached
-    /// fields, so calling this keeps both consumers in lockstep with the
-    /// 4-layer config hierarchy.
-    async fn refresh_metadata_offline_check(
-        streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
-        config_service: &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
-        streamer_id: &str,
-    ) {
-        match config_service.get_config_for_streamer(streamer_id).await {
-            Ok(merged) => streamer_manager.apply_resolved_config(streamer_id, &merged),
-            Err(e) => debug!("Skipping offline_check refresh for {}: {}", streamer_id, e),
-        }
-    }
-
-    /// Handle monitor events to trigger downloads and danmu collection.
-    #[allow(clippy::too_many_arguments)]
-    async fn handle_monitor_event(
-        download_manager: &Arc<DownloadManager>,
-        streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
-        config_service: &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
-        danmu_service: &Arc<DanmuService>,
-        stream_monitor: &Arc<
-            StreamMonitor<
-                SqlxStreamerRepository,
-                SqlxFilterRepository,
-                SqlxSessionRepository,
-                SqlxConfigRepository,
-            >,
-        >,
-        session_repository: &Arc<SqlxSessionRepository>,
-        session_cancels: &Arc<SessionCancelTokens>,
-        pending_pipelines: &Arc<DashMap<String, ()>>,
-        task_supervisor: &Arc<TaskSupervisor>,
-        event: MonitorEvent,
-        from_hysteresis_resume: bool,
-    ) {
-        match event {
-            MonitorEvent::StreamerLive {
-                streamer_id,
-                session_id,
-                streamer_name,
-                title,
-                streams,
-                streamer_url,
-                media_headers,
-                media_extras,
-                ..
-            } => {
-                info!(
-                    "Streamer {} ({}) went live: {} ({} streams available, {} media headers, {} media extras)",
-                    streamer_name,
-                    streamer_id,
-                    title,
-                    streams.len(),
-                    media_headers.as_ref().map(|h| h.len()).unwrap_or(0),
-                    media_extras.as_ref().map(|h| h.len()).unwrap_or(0)
-                );
-
-                // Hand off the per-streamer pipeline to a spawned task.
-                // Without this, an `acquire_slot` parked on a saturated
-                // queue would block the monitor-event loop and stall
-                // every other streamer's events (live, offline, etc.).
-                // Each pipeline owns a per-session cancellation token
-                // that StreamerOffline fires to abort cleanly.
-                let download_manager = download_manager.clone();
-                let streamer_manager = streamer_manager.clone();
-                let config_service = config_service.clone();
-                let danmu_service = danmu_service.clone();
-                let stream_monitor = stream_monitor.clone();
-                let session_repository = session_repository.clone();
-                let session_cancels = session_cancels.clone();
-                let pending_pipelines = pending_pipelines.clone();
-                task_supervisor.spawn("live download pipeline", async move {
-                    run_live_download_pipeline(
-                        download_manager,
-                        streamer_manager,
-                        config_service,
-                        danmu_service,
-                        stream_monitor,
-                        session_repository,
-                        session_cancels,
-                        pending_pipelines,
-                        StreamerLivePayload {
-                            streamer_id,
-                            session_id,
-                            streamer_name,
-                            title,
-                            streams,
-                            streamer_url,
-                            media_headers,
-                            media_extras,
-                        },
-                        from_hysteresis_resume,
-                    )
-                    .await;
-                });
-            }
-            MonitorEvent::StreamerOffline {
-                streamer_id,
-                streamer_name,
-                session_id,
-                ..
-            } => {
-                info!("Streamer {} ({}) went offline", streamer_name, streamer_id);
-
-                // Cancel any queued/in-flight pipeline for this
-                // session. A pipeline parked on `acquire_slot` wakes
-                // up and bails without spinning up an engine for an
-                // already-offline streamer; one already in
-                // `start_with_slot` is past the cancel point and
-                // proceeds to run normally — the existing
-                // stop-download path below handles tearing it down.
-                if let Some(sid) = session_id.as_deref() {
-                    session_cancels.cancel(sid);
-                }
-
-                // Stop danmu collection if active
-                let sid = session_id
-                    .filter(|sid| danmu_service.is_collecting(sid))
-                    .or_else(|| danmu_service.get_session_by_streamer(&streamer_id));
-                if let Some(sid) = sid {
-                    match danmu_service.stop_collection(&sid).await {
-                        Ok(stats) => {
-                            info!(
-                                "Stopped danmu collection for session {}: {} messages collected",
-                                sid, stats.total_count
-                            );
-                        }
-                        Err(e) => {
-                            warn!("Failed to stop danmu collection for session {}: {}", sid, e);
-                        }
-                    }
-                }
-
-                // Stop download if active
-                if let Some(download_info) = download_manager.get_download_by_streamer(&streamer_id)
-                {
-                    match download_manager
-                        .stop_download_with_reason(
-                            &download_info.id,
-                            crate::downloader::DownloadStopCause::StreamerOffline,
-                        )
-                        .await
-                    {
-                        Ok(()) => {
-                            info!(
-                                "Stopped download {} for streamer {}",
-                                download_info.id, streamer_id
-                            );
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to stop download for streamer {}: {}",
-                                streamer_id, e
-                            );
-                        }
-                    }
-                }
-            }
-            MonitorEvent::StateChanged {
-                streamer_id,
-                streamer_name,
-                new_state: StreamerState::OutOfSchedule,
-                reason,
-                ..
-            } => {
-                // Only stop recording when the state transition is due to schedule.
-                // Title/category mismatch currently also maps to OutOfSchedule, but we
-                // intentionally don't stop downloads for those reasons here.
-                if reason.as_deref() != Some("out_of_schedule") {
-                    return;
-                }
-
-                info!(
-                    "Streamer {} ({}) became OutOfSchedule; stopping active download/danmu if any",
-                    streamer_name, streamer_id
-                );
-
-                // Cancel any queued pipeline for this streamer so a
-                // download parked on `acquire_slot` doesn't acquire +
-                // start a recording the moment a slot frees, even
-                // though the schedule window has just closed.
-                for entry in download_manager.snapshot_pending() {
-                    if entry.streamer_id == streamer_id {
-                        session_cancels.cancel(&entry.session_id);
-                    }
-                }
-
-                // Stop danmu collection if active.
-                if let Some(sid) = danmu_service.get_session_by_streamer(&streamer_id) {
-                    match danmu_service.stop_collection(&sid).await {
-                        Ok(stats) => {
-                            info!(
-                                "Stopped danmu collection for session {}: {} messages collected",
-                                sid, stats.total_count
-                            );
-                        }
-                        Err(e) => {
-                            warn!("Failed to stop danmu collection for session {}: {}", sid, e);
-                        }
-                    }
-                }
-
-                // Stop download if active.
-                if let Some(download_info) = download_manager.get_download_by_streamer(&streamer_id)
-                {
-                    match download_manager
-                        .stop_download_with_reason(
-                            &download_info.id,
-                            crate::downloader::DownloadStopCause::OutOfSchedule,
-                        )
-                        .await
-                    {
-                        Ok(()) => {
-                            info!(
-                                "Stopped download {} for streamer {} (out_of_schedule)",
-                                download_info.id, streamer_id
-                            );
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to stop download for streamer {} (out_of_schedule): {}",
-                                streamer_id, e
-                            );
-                        }
-                    }
-                }
-            }
-            _ => {
-                // Other events don't trigger download actions
-            }
-        }
+        Ok(())
     }
 
     /// Shutdown all services gracefully.
@@ -1053,11 +659,13 @@ impl ServiceContainer {
         self.cancellation_token.is_cancelled()
     }
 
+    /// Wait until a critical runtime task fails.
+    pub async fn wait_for_runtime_failure(&self) -> crate::Error {
+        crate::Error::Other(self.task_supervisor.wait_for_failure().await.to_string())
+    }
+
     /// Get service statistics.
     pub fn stats(&self) -> ServiceStats {
-        // Try to get scheduler stats without blocking
-        let scheduler_stats = self.scheduler.try_read().ok().map(|guard| guard.stats());
-
         ServiceStats {
             streamer_count: self.streamer_manager.count(),
             active_streamer_count: self.streamer_manager.active_count(),
@@ -1069,7 +677,7 @@ impl ServiceContainer {
             pipeline_queue_depth: self.pipeline_manager.queue_depth(),
             active_danmu_collections: self.danmu_service.active_sessions().len(),
             notification_stats: self.notification_service.stats(),
-            scheduler_stats,
+            scheduler_stats: Some(self.scheduler_handle.stats()),
         }
     }
 
@@ -1137,548 +745,6 @@ impl ServiceContainer {
         self.task_supervisor.spawn("log retention", async move {
             config.run_retention_cleanup(cancellation).await;
         });
-    }
-}
-
-/// Owned payload carrying the per-streamer data needed by
-/// [`run_live_download_pipeline`]. Mirrors the relevant fields of
-/// [`MonitorEvent::StreamerLive`] but is decoupled from the enum so
-/// the spawned task can capture exactly what it needs.
-struct StreamerLivePayload {
-    streamer_id: String,
-    session_id: String,
-    streamer_name: String,
-    title: String,
-    streams: Vec<crate::monitor::StreamInfo>,
-    streamer_url: String,
-    media_headers: Option<std::collections::HashMap<String, String>>,
-    media_extras: Option<std::collections::HashMap<String, String>>,
-}
-
-/// Per-streamer download pipeline.
-///
-/// Runs in a `tokio::spawn`'d task per `StreamerLive` event. Walks the
-/// split startup flow:
-///
-/// 1. **Dedup / pre-checks** — bail if the streamer is already
-///    downloading, no longer active, disabled, or has no streams.
-/// 2. **Preflight** — engine resolution, circuit breaker, output-root
-///    write gate, `prepare_output_dir`. Failures emit
-///    `DownloadRejected` events directly (the manager handles that)
-///    and the pipeline exits without consuming a queue slot.
-/// 3. **Acquire slot** — parks on the priority-aware download queue,
-///    emitting `DownloadQueued` if it had to wait. Honours the
-///    per-session [`CancellationToken`] so a `StreamerOffline`
-///    arriving mid-wait aborts cleanly with no engine startup.
-/// 4. **Freshness re-check** — when the wait was non-trivial
-///    (`waited_ms > queue_freshness_threshold_ms()`), refetches the
-///    live state via `StreamMonitor::check_streamer`; on
-///    Offline / Filtered / Error, drops the slot and exits without
-///    starting the engine. Below the threshold, only does a cheap
-///    state re-check via the streamer manager.
-/// 5. **Start engine** — calls `start_with_slot`, which moves the
-///    slot into the active downloads map and emits `DownloadStarted`.
-/// 6. **Danmu** — gated on download success, so danmu collection
-///    never opens a platform connection for a stream that's still
-///    queued or got aborted.
-#[allow(clippy::too_many_arguments)]
-async fn run_live_download_pipeline(
-    download_manager: Arc<DownloadManager>,
-    streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
-    config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
-    danmu_service: Arc<DanmuService>,
-    stream_monitor: Arc<
-        StreamMonitor<
-            SqlxStreamerRepository,
-            SqlxFilterRepository,
-            SqlxSessionRepository,
-            SqlxConfigRepository,
-        >,
-    >,
-    session_repository: Arc<SqlxSessionRepository>,
-    session_cancels: Arc<SessionCancelTokens>,
-    pending_pipelines: Arc<DashMap<String, ()>>,
-    payload: StreamerLivePayload,
-    // `true` when called for a session that just resumed out of
-    // hysteresis. The resume-download subscriber synthesises a
-    // `MonitorEvent::StreamerLive` from the lifecycle's
-    // `SessionTransition::Started { from_hysteresis: true, .. }` and routes
-    // it through the same pipeline as a fresh-live event; this flag
-    // tells the short-queue-wait branch to trust the lifecycle signal
-    // instead of re-reading the streamer-manager cache.
-    from_hysteresis_resume: bool,
-) {
-    use crate::downloader::{AcquireRequest, PreflightRequest, Priority as QueuePriority};
-
-    let StreamerLivePayload {
-        streamer_id,
-        session_id,
-        streamer_name,
-        title,
-        mut streams,
-        streamer_url,
-        mut media_headers,
-        mut media_extras,
-    } = payload;
-
-    // Per-streamer reservation. The earliest atomic point we can grab
-    // — before any await, before preflight, before queue acquire —
-    // covers the window where two concurrent `StreamerLive` events
-    // could otherwise both pass `has_active_download` and both
-    // proceed to `start_with_slot`. Hysteresis-resume synthetic
-    // events for the same streamer also funnel through here. The
-    // queue's session_id dedup catches the rarer case of duplicate
-    // session_ids; this catches the common case of duplicate
-    // streamer_ids racing.
-    if pending_pipelines.insert(streamer_id.clone(), ()).is_some() {
-        debug!(
-            "Skipping StreamerLive for {} — pipeline already in flight",
-            streamer_id
-        );
-        return;
-    }
-    struct PipelineReservationGuard<'a> {
-        map: &'a Arc<DashMap<String, ()>>,
-        streamer_id: &'a str,
-    }
-    impl<'a> Drop for PipelineReservationGuard<'a> {
-        fn drop(&mut self) {
-            self.map.remove(self.streamer_id);
-        }
-    }
-    let _pipeline_guard = PipelineReservationGuard {
-        map: &pending_pipelines,
-        streamer_id: &streamer_id,
-    };
-
-    // Per-session cancellation token. The registration handle clears
-    // itself on exit, but only if it still owns the same token; this
-    // keeps cleanup local to the cancellation registry instead of
-    // spreading token lifetime rules through the pipeline.
-    let cancel_handle = session_cancels.register(&session_id);
-    let cancel = cancel_handle.token();
-
-    // Dedup and pre-checks.
-    if download_manager.has_active_download(&streamer_id) {
-        debug!("Download already active for {}", streamer_id);
-        let active = download_manager.get_active_downloads();
-        let conflicts: Vec<_> = active
-            .iter()
-            .filter(|d| d.streamer_id == streamer_id)
-            .collect();
-        for conflict in conflicts {
-            tracing::warn!(
-                "CONFLICTING DOWNLOAD: ID={}, Status={:?}, Started={:?}",
-                conflict.id,
-                conflict.status,
-                conflict.started_at
-            );
-        }
-        return;
-    }
-
-    let streamer_metadata = streamer_manager.get_streamer(&streamer_id);
-    if let Some(metadata) = &streamer_metadata {
-        if !metadata.is_active() {
-            info!(
-                "Ignoring StreamerLive for inactive streamer {} (state: {})",
-                streamer_id, metadata.state
-            );
-            return;
-        }
-        if metadata.is_disabled() {
-            // Returning silently here would strand the pipeline: the session
-            // lifecycle has already committed this session to Recording (via
-            // `start_or_resume` or `resume_from_hysteresis`), and with no
-            // download there is never a DownloadStarted/DownloadEnded to move
-            // the streamer actor out of Live — the `(Live, Live)` arm of
-            // `HysteresisState::should_emit` then suppresses every future
-            // check and recording stays dead for the rest of the broadcast.
-            // Emit the same Rejected terminal `preflight` uses so the session
-            // lifecycle closes the session (`TerminalCause::Rejected` is an
-            // authoritative end) and the actor re-checks once the backoff
-            // expires.
-            let retry_after_secs = metadata
-                .remaining_backoff_std()
-                .map_or(0, |d| d.as_secs())
-                .saturating_add(2);
-            info!(
-                streamer_id = %streamer_id,
-                streamer_name = %streamer_name,
-                disabled_until = ?metadata.disabled_until,
-                retry_after_secs,
-                "Ignoring StreamerLive while temporarily disabled"
-            );
-            download_manager.emit_rejected(
-                streamer_id.clone(),
-                streamer_name.clone(),
-                session_id.clone(),
-                "streamer temporarily disabled (error backoff)".to_string(),
-                Some(retry_after_secs),
-                crate::downloader::DownloadRejectedKind::StreamerBackoff,
-            );
-            return;
-        }
-    }
-
-    if streams.is_empty() {
-        warn!(
-            "Streamer {} has no streams available, cannot start download",
-            streamer_id
-        );
-        return;
-    }
-
-    let is_high_priority = streamer_metadata
-        .as_ref()
-        .map(|s| s.priority == Priority::High)
-        .unwrap_or(false);
-    // Load merged config for this streamer.
-    let merged_config = match config_service.get_config_for_streamer(&streamer_id).await {
-        Ok(config) => config,
-        Err(e) => {
-            warn!(
-                "Failed to load config for streamer {}, using defaults: {}",
-                streamer_id, e
-            );
-            Arc::new(crate::config::MergedConfig::builder().build())
-        }
-    };
-
-    // Sanitize names for filename usage.
-    let sanitized_streamer = sanitize_filename(&streamer_name);
-    let sanitized_title = sanitize_filename(&title);
-    let platform = streamer_metadata
-        .as_ref()
-        .map(|s| s.platform())
-        .unwrap_or("unknown");
-
-    let dir = merged_config
-        .output_folder
-        .replace("{streamer}", &sanitized_streamer)
-        .replace("{title}", &sanitized_title)
-        .replace("{session_id}", &session_id)
-        .replace("{platform}", platform);
-    let output_dir = expand_path_template(&dir);
-
-    // Preflight.
-    let preflight_req = PreflightRequest {
-        streamer_id: streamer_id.clone(),
-        streamer_name: streamer_name.clone(),
-        session_id: session_id.clone(),
-        output_dir: output_dir.clone().into(),
-        engine_id: Some(merged_config.download_engine.clone()),
-        engines_override: merged_config.engines_override.clone(),
-    };
-    let engine = match download_manager.preflight(preflight_req).await {
-        Ok(e) => e,
-        Err(e) => {
-            warn!("Preflight failed for streamer {}: {}", streamer_id, e);
-            return; // Manager has already emitted DownloadRejected if applicable.
-        }
-    };
-    let engine_type = engine.engine_type;
-
-    // Honour cancellation that fired between preflight and slot acquire.
-    if cancel.is_cancelled() {
-        debug!("Streamer {} cancelled before slot acquire", streamer_id);
-        return;
-    }
-
-    // Acquire slot.
-    let acquire_req = AcquireRequest {
-        session_id: session_id.clone(),
-        streamer_id: streamer_id.clone(),
-        streamer_name: streamer_name.clone(),
-        engine_type,
-        priority: if is_high_priority {
-            QueuePriority::High
-        } else {
-            QueuePriority::Normal
-        },
-    };
-    let slot = match download_manager
-        .acquire_slot(acquire_req, cancel.clone())
-        .await
-    {
-        Ok(slot) => slot,
-        Err(e) => {
-            // Cancelled / duplicate session / shutdown are benign
-            // exits. If a visible queued event fired, the manager has
-            // already emitted the matching `DownloadDequeued`.
-            debug!(
-                "acquire_slot returned without a slot for streamer {}: {}",
-                streamer_id, e
-            );
-            return;
-        }
-    };
-
-    let waited_ms = slot.waited_ms();
-
-    // Freshness re-check.
-    if waited_ms > download_manager.queue_freshness_threshold_ms() {
-        debug!(
-            streamer_id = %streamer_id,
-            waited_ms,
-            "Queue wait exceeded freshness threshold; refetching live state"
-        );
-        // Re-fetch via the monitor's deduped, rate-limited check.
-        let metadata_for_check = streamer_manager.get_streamer(&streamer_id);
-        if let Some(meta) = metadata_for_check {
-            match stream_monitor.check_streamer(&meta).await {
-                Ok(crate::monitor::LiveStatus::Live {
-                    streams: fresh_streams,
-                    media_headers: fresh_headers,
-                    media_extras: fresh_extras,
-                    ..
-                }) => {
-                    if fresh_streams.is_empty() {
-                        debug!(
-                            streamer_id = %streamer_id,
-                            "Refetch returned Live with no streams; aborting"
-                        );
-                        download_manager.emit_dequeued_for_slot(
-                            &slot,
-                            &streamer_id,
-                            &streamer_name,
-                        );
-                        return;
-                    }
-                    // Replace BOTH the URLs and the associated
-                    // headers/extras. On platforms whose signed
-                    // URLs rotate together with required headers
-                    // (e.g. Host overrides, signed referer),
-                    // keeping the old headers with new URLs would
-                    // 403 just as reliably as keeping the old
-                    // URLs.
-                    streams = fresh_streams;
-                    media_headers = fresh_headers;
-                    media_extras = fresh_extras;
-                }
-                Ok(_) => {
-                    debug!(
-                        streamer_id = %streamer_id,
-                        "Streamer no longer live after queue wait; aborting"
-                    );
-                    download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-                    return;
-                }
-                Err(e) => {
-                    warn!(
-                        streamer_id = %streamer_id,
-                        error = %e,
-                        "Refetch failed; falling back to cached URLs"
-                    );
-                }
-            }
-        } else {
-            debug!(
-                streamer_id = %streamer_id,
-                "Streamer metadata vanished during queue wait; aborting"
-            );
-            download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-            return;
-        }
-    } else if !from_hysteresis_resume {
-        // Cheap re-check for the short-wait case: is the streamer
-        // still in a state that permits a fresh recording? `Live`
-        // specifically, NOT just `is_active()` — `OutOfSchedule`
-        // counts as active in the metadata sense (the streamer is
-        // still being monitored) but recording is not allowed.
-        // Without this tighter check, a schedule window could close
-        // mid-wait and we'd start an out-of-schedule recording.
-        //
-        // Skipped on hysteresis resume: the lifecycle writes
-        // `state=LIVE` before broadcasting, but `StreamMonitor::handle_live`
-        // reloads the streamer-manager cache only after the broadcast
-        // returns, so this check can read a stale `NotLive`. Out-of-schedule
-        // streamers never reach this code path because
-        // `monitor::service::handle_live` runs only for `LiveStatus::Live`
-        // (filtered events take a different branch), and any window that
-        // closes mid-recording is caught later by the
-        // `MonitorEvent::StateChanged { OutOfSchedule }` handler.
-        let meta = streamer_manager.get_streamer(&streamer_id);
-        let permits_start = meta
-            .as_ref()
-            .map(|m| m.state == StreamerState::Live && !m.is_disabled())
-            .unwrap_or(false);
-        if !permits_start {
-            debug!(
-                streamer_id = %streamer_id,
-                state = ?meta.as_ref().map(|m| m.state),
-                "Streamer no longer in LIVE state after short queue wait; aborting"
-            );
-            download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-            return;
-        }
-    }
-
-    if cancel.is_cancelled() {
-        debug!(
-            "Streamer {} cancelled between freshness check and engine start",
-            streamer_id
-        );
-        download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-        return;
-    }
-
-    // ── Build full DownloadConfig with possibly-refreshed URLs ──
-    let best_stream = &streams[0];
-    let stream_url_selected = best_stream.url.clone();
-    let stream_format = best_stream.stream_format.as_str();
-    let media_format = best_stream.media_format.as_str();
-    let initial_segment_index = match session_repository
-        .next_session_segment_index(&session_id)
-        .await
-    {
-        Ok(index) => index,
-        Err(e) => {
-            warn!(
-                session_id = %session_id,
-                streamer_id = %streamer_id,
-                error = %e,
-                "Failed to load next persisted session segment index; starting from zero"
-            );
-            0
-        }
-    };
-
-    let mut headers = media_headers.as_ref().cloned().unwrap_or_default();
-    if let Some(extras) = best_stream.extras.as_ref() {
-        if let Some(extra_headers) = extras.get("headers").and_then(|v| v.as_object()) {
-            for (k, v) in extra_headers {
-                if let Some(v) = v.as_str() {
-                    headers.insert(k.clone(), v.to_string());
-                }
-            }
-        }
-        if let Some(host_header) = extras.get("host_header").and_then(|v| v.as_str()) {
-            headers.insert("Host".to_string(), host_header.to_string());
-        }
-    }
-    if !headers.is_empty() {
-        debug!(
-            "Using {} merged headers for download: {:?}",
-            headers.len(),
-            headers.keys().collect::<Vec<_>>()
-        );
-    }
-
-    let mut config = DownloadConfig::new(
-        stream_url_selected.clone(),
-        output_dir.clone(),
-        streamer_id.clone(),
-        streamer_name.clone(),
-        session_id.clone(),
-    )
-    .with_initial_segment_index(initial_segment_index)
-    .with_filename_template(
-        merged_config
-            .output_filename_template
-            .replace("{streamer}", &sanitized_streamer)
-            .replace("{title}", &sanitized_title)
-            .replace("{platform}", platform),
-    )
-    .with_output_format(&merged_config.output_file_format)
-    .with_protocol(DownloadProtocol::from_format_label(stream_format))
-    .with_max_segment_duration(merged_config.max_download_duration_secs as u64)
-    .with_max_segment_size(merged_config.max_part_size_bytes as u64)
-    .with_engines_override(merged_config.engines_override.clone());
-
-    if let Some(ref cookies) = merged_config.cookies {
-        debug!(
-            "Applying cookies from merged config to download (length: {} chars)",
-            cookies.len()
-        );
-        config = config.with_cookies(cookies);
-    }
-
-    let proxy_config = &merged_config.proxy_config;
-    if proxy_config.enabled {
-        if let Some(effective_proxy_url) = proxy_config.effective_url() {
-            debug!(
-                "Applying explicit proxy from merged config to download: {}",
-                effective_proxy_url
-            );
-            config = config.with_proxy(effective_proxy_url);
-        } else if proxy_config.use_system_proxy {
-            debug!("Enabling system proxy for download");
-            config = config.with_system_proxy(true);
-        }
-    }
-
-    for (key, value) in headers {
-        config = config.with_header(key, value);
-    }
-
-    info!(
-        "Starting download for {} with stream URL: {} (stream_format: {}, media_format: {}, headers_needed: {}, output: {}, queue_wait_ms: {}, initial_segment_index: {})",
-        streamer_name,
-        stream_url_selected,
-        stream_format,
-        media_format,
-        best_stream.is_headers_needed,
-        merged_config.output_folder,
-        waited_ms,
-        initial_segment_index,
-    );
-
-    let cookies = merged_config.cookies.clone();
-
-    // Start engine on the slot.
-    let started = match download_manager.start_with_slot(slot, config, engine).await {
-        Ok(download_id) => {
-            info!(
-                "Started download {} for streamer {} (priority: {})",
-                download_id,
-                streamer_id,
-                if is_high_priority { "high" } else { "normal" }
-            );
-            true
-        }
-        Err(e) => {
-            warn!(
-                "Failed to start download for streamer {}: {}",
-                streamer_id, e
-            );
-            false
-        }
-    };
-
-    // Danmu.
-    // Gated on the download having a real id. If `start_with_slot`
-    // failed, the slot is already released by SlotGuard's drop and
-    // there's no engine to interleave danmu with — opening a danmu
-    // socket for a stream we're not recording would leak a platform
-    // connection.
-    if started && merged_config.record_danmu {
-        let sampling_config = Some(merged_config.danmu_sampling_config.clone());
-        match danmu_service
-            .start_collection(
-                &session_id,
-                &streamer_id,
-                &streamer_url,
-                sampling_config,
-                cookies,
-                media_extras,
-            )
-            .await
-        {
-            Ok(handle) => {
-                info!(
-                    "Started danmu collection for session {} (streamer: {})",
-                    handle.session_id(),
-                    streamer_id
-                );
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to start danmu collection for streamer {}: {}",
-                    streamer_id, e
-                );
-            }
-        }
     }
 }
 

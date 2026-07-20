@@ -591,21 +591,20 @@ impl JobQueue {
         }
     }
 
-    /// Set the job repository for database persistence.
-    pub fn set_repository(&mut self, repository: Arc<dyn JobRepository>) {
-        self.job_repository = Some(repository);
-    }
-
     /// Set the session repository for persisting media outputs (e.g., thumbnails).
     /// This can only be called once.
-    pub fn set_session_repo(&self, repo: Arc<dyn SessionRepository>) {
-        let _ = self.session_repo.set(repo);
+    pub(crate) fn set_session_repo(&self, repo: Arc<dyn SessionRepository>) {
+        if self.session_repo.set(repo).is_err() {
+            tracing::warn!("Job queue session repository was already installed");
+        }
     }
 
     /// Set the streamer repository for looking up streamer metadata.
     /// This can only be called once.
-    pub fn set_streamer_repo(&self, repo: Arc<dyn StreamerRepository>) {
-        let _ = self.streamer_repo.set(repo);
+    pub(crate) fn set_streamer_repo(&self, repo: Arc<dyn StreamerRepository>) {
+        if self.streamer_repo.set(repo).is_err() {
+            tracing::warn!("Job queue streamer repository was already installed");
+        }
     }
 
     /// Persist thumbnail output to media_outputs table.

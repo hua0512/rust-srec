@@ -39,4 +39,5 @@ pub use batch::BatchGroup;
 pub use resource::{DiskInfo, DiskSpaceStatus, ResourceMonitor};
 
 // Scheduler service
+pub(crate) use service::SchedulerHandle;
 pub use service::{Scheduler, SchedulerConfig};

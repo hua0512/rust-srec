@@ -124,7 +124,12 @@ impl ServiceContainer {
         crate::i18n::init_from_env();
 
         let overall = Instant::now();
-        let task_supervisor = Arc::new(TaskSupervisor::new());
+        let cancellation_token_start = Instant::now();
+        let cancellation_token = CancellationToken::new();
+        let cancellation_token_ms = cancellation_token_start.elapsed().as_millis();
+        let task_supervisor = Arc::new(TaskSupervisor::with_cancellation(
+            cancellation_token.clone(),
+        ));
         info!("Initializing service container");
 
         // Create repositories
@@ -205,6 +210,8 @@ impl ServiceContainer {
             global_config.offline_check_count as u32,
             global_config.offline_check_delay_ms as u64,
         ));
+        let (required_transition_sender, required_transition_receiver) =
+            tokio::sync::mpsc::unbounded_channel();
         let session_lifecycle = Arc::new(
             crate::session::SessionLifecycle::with_config(
                 Arc::new(
@@ -216,6 +223,7 @@ impl ServiceContainer {
                 crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
                 hysteresis_config,
             )
+            .with_required_transition_sender(required_transition_sender)
             .with_hysteresis_resolver(hysteresis_resolver)
             .with_event_repo(session_event_repo.clone()),
         );
@@ -261,8 +269,11 @@ impl ServiceContainer {
         let mut effective_download_config = download_config;
         effective_download_config.max_concurrent_downloads =
             (global_config.max_concurrent_downloads as i64).max(1) as usize;
+        let (required_terminal_sender, required_terminal_receiver) =
+            tokio::sync::mpsc::unbounded_channel();
         let download_manager = Arc::new(
             DownloadManager::with_config(effective_download_config)
+                .with_required_terminal_sender(required_terminal_sender)
                 .with_config_repo(config_repo.clone()),
         );
         download_manager
@@ -302,18 +313,18 @@ impl ServiceContainer {
             global_config.pipeline_io_job_timeout_secs.max(1) as u64;
         effective_pipeline_config.execute_timeout_secs =
             global_config.pipeline_execute_timeout_secs.max(1) as u64;
-        let pipeline_manager = Arc::new(
-            PipelineManager::with_repository(effective_pipeline_config, job_repo)
-                .with_session_repository(session_repo.clone())
-                .with_streamer_repository(streamer_repo.clone())
-                .with_preset_repository(preset_repo)
-                .with_pipeline_preset_repository(pipeline_preset_repo)
-                .with_config_service(config_service.clone())
-                .with_dag_repository(Arc::new(SqlxDagRepository::new(
-                    pool.clone(),
-                    write_pool.clone(),
-                ))),
-        );
+        let pipeline_manager = Arc::new(PipelineManager::for_runtime(
+            effective_pipeline_config,
+            crate::pipeline::PipelineRuntimeDependencies {
+                job_repository: job_repo,
+                session_repository: session_repo.clone(),
+                streamer_repository: streamer_repo.clone(),
+                preset_repository: preset_repo,
+                pipeline_preset_repository: pipeline_preset_repo,
+                config_service: config_service.clone(),
+                dag_repository: Arc::new(SqlxDagRepository::new(pool.clone(), write_pool.clone())),
+            },
+        ));
         let pipeline_manager_ms = pipeline_manager_start.elapsed().as_millis();
 
         // Get monitor event broadcaster
@@ -390,11 +401,6 @@ impl ServiceContainer {
         ));
         let maintenance_scheduler_ms = maintenance_scheduler_start.elapsed().as_millis();
 
-        // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
-        let cancellation_token_start = Instant::now();
-        let cancellation_token = CancellationToken::new();
-        let cancellation_token_ms = cancellation_token_start.elapsed().as_millis();
-
         let scheduler_config = crate::scheduler::SchedulerConfig {
             check_interval_ms: global_config.streamer_check_delay_ms as u64,
             offline_check_interval_ms: global_config.offline_check_delay_ms as u64,
@@ -409,18 +415,36 @@ impl ServiceContainer {
 
         // Create scheduler with StreamMonitor for real status checking
         let scheduler_start = Instant::now();
-        let scheduler = Arc::new(tokio::sync::RwLock::new(
-            Scheduler::with_monitor_history_and_config(
-                streamer_manager.clone(),
-                event_broadcaster.clone(),
-                stream_monitor.clone(),
-                Some(check_history_writer),
-                scheduler_config,
-                cancellation_token.child_token(),
-            )
-            .with_config_repo(config_repo.clone()),
-        ));
+        let scheduler = Scheduler::with_monitor_history_and_config(
+            streamer_manager.clone(),
+            event_broadcaster.clone(),
+            stream_monitor.clone(),
+            Some(check_history_writer),
+            scheduler_config,
+            cancellation_token.child_token(),
+        )
+        .with_config_repo(config_repo.clone());
+        let scheduler_handle = scheduler.handle();
+        let scheduler = parking_lot::Mutex::new(Some(scheduler));
         let scheduler_ms = scheduler_start.elapsed().as_millis();
+
+        let session_cancels = Arc::new(SessionCancelTokens::new());
+        let pending_pipelines = Arc::new(DashMap::new());
+        let runtime_coordinator = Arc::new(
+            crate::services::runtime_coordinator::RuntimeCoordinator::new(
+                download_manager.clone(),
+                streamer_manager.clone(),
+                config_service.clone(),
+                danmu_service.clone(),
+                stream_monitor.clone(),
+                session_repo.clone(),
+                session_cancels.clone(),
+                pending_pipelines.clone(),
+                pipeline_manager.clone(),
+                session_lifecycle.clone(),
+                task_supervisor.clone(),
+            ),
+        );
 
         let total_ms = overall.elapsed().as_millis();
         info!(
@@ -463,7 +487,12 @@ impl ServiceContainer {
             pipeline_manager,
             monitor_event_broadcaster,
             monitor_event_receiver: parking_lot::Mutex::new(Some(required_monitor_event_receiver)),
+            download_terminal_receiver: parking_lot::Mutex::new(Some(required_terminal_receiver)),
             session_lifecycle,
+            session_transition_receiver: parking_lot::Mutex::new(Some(
+                required_transition_receiver,
+            )),
+            runtime_coordinator,
             danmu_service,
             notification_service,
             notification_repository,
@@ -472,11 +501,10 @@ impl ServiceContainer {
             health_checker,
             maintenance_scheduler,
             scheduler,
+            scheduler_handle,
             stream_monitor,
             credential_service,
             check_history_broadcaster,
-            session_cancels: Arc::new(SessionCancelTokens::new()),
-            pending_pipelines: Arc::new(DashMap::new()),
             api_server_config: api_config,
             cancellation_token,
             task_supervisor,

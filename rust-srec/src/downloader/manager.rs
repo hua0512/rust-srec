@@ -13,7 +13,7 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -187,6 +187,42 @@ struct ActiveDownload {
     retry_config_override: Option<RetryConfig>,
 }
 
+#[derive(Clone)]
+struct DownloadEventPublisher {
+    observer_tx: broadcast::Sender<DownloadManagerEvent>,
+    required_terminal_tx: Option<mpsc::UnboundedSender<DownloadTerminalEvent>>,
+}
+
+impl DownloadEventPublisher {
+    fn new(
+        observer_tx: broadcast::Sender<DownloadManagerEvent>,
+        required_terminal_tx: Option<mpsc::UnboundedSender<DownloadTerminalEvent>>,
+    ) -> Self {
+        Self {
+            observer_tx,
+            required_terminal_tx,
+        }
+    }
+
+    fn publish(&self, event: DownloadManagerEvent) -> bool {
+        if let DownloadManagerEvent::Terminal(terminal) = &event
+            && let Some(required_tx) = &self.required_terminal_tx
+            && required_tx.send(terminal.clone()).is_err()
+        {
+            warn!(
+                session_id = %terminal.session_id(),
+                "Required download terminal event consumer is unavailable"
+            );
+        }
+
+        self.observer_tx.send(event).is_ok()
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<DownloadManagerEvent> {
+        self.observer_tx.subscribe()
+    }
+}
+
 /// The Download Manager service.
 pub struct DownloadManager {
     /// Configuration.
@@ -221,8 +257,8 @@ pub struct DownloadManager {
     /// download manager, and the gate depends on the former). After the
     /// one-shot write, reads are lock-free.
     output_root_gate: OnceLock<Arc<OutputRootGate>>,
-    /// Broadcast sender for download events
-    event_tx: broadcast::Sender<DownloadManagerEvent>,
+    /// Publishes best-effort observer events and reliable terminal events.
+    events: DownloadEventPublisher,
     /// Config repository for resolving custom engines.
     config_repo: Option<Arc<dyn ConfigRepository>>,
     /// Queue-wait freshness threshold (ms). Read on the per-pipeline
@@ -744,7 +780,7 @@ impl DownloadManager {
             engines: RwLock::new(HashMap::new()),
             circuit_breakers,
             output_root_gate: OnceLock::new(),
-            event_tx,
+            events: DownloadEventPublisher::new(event_tx, None),
             config_repo: None,
             // Overwritten from persisted global config at boot.
             queue_freshness_threshold_ms: AtomicI64::new(60_000),
@@ -768,6 +804,14 @@ impl DownloadManager {
         }
 
         manager
+    }
+
+    pub(crate) fn with_required_terminal_sender(
+        mut self,
+        sender: mpsc::UnboundedSender<DownloadTerminalEvent>,
+    ) -> Self {
+        self.events.required_terminal_tx = Some(sender);
+        self
     }
 
     /// Attach an output-root write gate during construction.
@@ -1020,7 +1064,7 @@ impl DownloadManager {
         req: AcquireRequest,
         cancel: CancellationToken,
     ) -> Result<SlotGuard> {
-        let event_tx_for_queue = self.event_tx.clone();
+        let events_for_queue = self.events.clone();
         // Captured by the on_queued closure so the abort-emit branch
         // below can tell whether `DownloadQueued` actually fired
         // (slow path) or not (fast path — no event was emitted, so
@@ -1031,7 +1075,7 @@ impl DownloadManager {
             .queue
             .acquire(req.clone(), cancel, move |entry| {
                 queued_emitted_cb.store(true, std::sync::atomic::Ordering::SeqCst);
-                let _ = event_tx_for_queue.send(DownloadManagerEvent::Progress(
+                events_for_queue.publish(DownloadManagerEvent::Progress(
                     DownloadProgressEvent::DownloadQueued {
                         streamer_id: entry.streamer_id.clone(),
                         streamer_name: entry.streamer_name.clone(),
@@ -1057,7 +1101,7 @@ impl DownloadManager {
                 if queued_emitted.load(std::sync::atomic::Ordering::SeqCst)
                     && !matches!(qerr, QueueAcquireError::DuplicateSession(_))
                 {
-                    let _ = self.event_tx.send(DownloadManagerEvent::Progress(
+                    self.events.publish(DownloadManagerEvent::Progress(
                         DownloadProgressEvent::DownloadDequeued {
                             streamer_id: req.streamer_id.clone(),
                             streamer_name: req.streamer_name.clone(),
@@ -1110,7 +1154,7 @@ impl DownloadManager {
             return;
         }
 
-        let _ = self.event_tx.send(DownloadManagerEvent::Progress(
+        self.events.publish(DownloadManagerEvent::Progress(
             DownloadProgressEvent::DownloadDequeued {
                 streamer_id: streamer_id.to_string(),
                 streamer_name: streamer_name.to_string(),
@@ -1149,7 +1193,7 @@ impl DownloadManager {
             let session_id = config_snap.session_id;
 
             // Emit one final progress update before cancellation.
-            let _ = self.event_tx.send(DownloadManagerEvent::Progress(
+            self.events.publish(DownloadManagerEvent::Progress(
                 DownloadProgressEvent::Progress {
                     download_id: download_id.to_string(),
                     streamer_id: streamer_id.clone(),
@@ -1166,8 +1210,7 @@ impl DownloadManager {
 
             self.pending_updates.remove(download_id);
 
-            // Broadcast send is synchronous, ignore if no receivers
-            let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
+            self.events.publish(DownloadManagerEvent::Terminal(
                 DownloadTerminalEvent::Cancelled {
                     download_id: download_id.to_string(),
                     streamer_id,
@@ -1316,7 +1359,7 @@ impl DownloadManager {
     /// Returns a broadcast receiver that will receive all download events.
     /// Multiple subscribers can receive the same events concurrently.
     pub fn subscribe(&self) -> broadcast::Receiver<DownloadManagerEvent> {
-        self.event_tx.subscribe()
+        self.events.subscribe()
     }
 
     /// Emit [`DownloadTerminalEvent::Rejected`] — the single construction
@@ -1341,7 +1384,7 @@ impl DownloadManager {
         retry_after_secs: Option<u64>,
         kind: DownloadRejectedKind,
     ) {
-        let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
+        self.events.publish(DownloadManagerEvent::Terminal(
             DownloadTerminalEvent::Rejected {
                 streamer_id,
                 streamer_name,
@@ -1534,22 +1577,19 @@ impl DownloadManager {
 
         // Broadcast send returns Ok if at least one receiver got the message
         // Returns Err if there are no receivers, which is fine
-        match self.event_tx.send(event) {
-            Ok(_) => {
-                debug!(
-                    "Emitted ConfigUpdated event for download {} (streamer {})",
-                    download_id, streamer_id
-                );
-                true
-            }
-            Err(_) => {
-                // No receivers - this is not an error, just means no one is listening
-                debug!(
-                    "ConfigUpdated event for download {} had no receivers",
-                    download_id
-                );
-                false
-            }
+        if self.events.publish(event) {
+            debug!(
+                "Emitted ConfigUpdated event for download {} (streamer {})",
+                download_id, streamer_id
+            );
+            true
+        } else {
+            // No receivers - this is not an error, just means no one is listening
+            debug!(
+                "ConfigUpdated event for download {} had no receivers",
+                download_id
+            );
+            false
         }
     }
 
@@ -1582,21 +1622,18 @@ impl DownloadManager {
             error: error.to_string(),
         });
 
-        match self.event_tx.send(event) {
-            Ok(_) => {
-                warn!(
-                    "Emitted ConfigUpdateFailed event for download {}: {}",
-                    download_id, error
-                );
-                true
-            }
-            Err(_) => {
-                debug!(
-                    "ConfigUpdateFailed event for download {} had no receivers",
-                    download_id
-                );
-                false
-            }
+        if self.events.publish(event) {
+            warn!(
+                "Emitted ConfigUpdateFailed event for download {}: {}",
+                download_id, error
+            );
+            true
+        } else {
+            debug!(
+                "ConfigUpdateFailed event for download {} had no receivers",
+                download_id
+            );
+            false
         }
     }
 
@@ -1639,7 +1676,7 @@ impl DownloadManager {
         update: PendingConfigUpdate,
         download_id: &str,
         streamer_id: &str,
-        event_tx: &broadcast::Sender<DownloadManagerEvent>,
+        events: &DownloadEventPublisher,
     ) {
         let mut applied = false;
         let update_clone = update.clone();
@@ -1670,7 +1707,7 @@ impl DownloadManager {
         if applied {
             let update_type = Self::determine_config_update_type(&update_clone);
             let streamer_name = download.handle.config.read().streamer_name.clone();
-            let _ = event_tx.send(DownloadManagerEvent::Progress(
+            events.publish(DownloadManagerEvent::Progress(
                 DownloadProgressEvent::ConfigUpdated {
                     download_id: download_id.to_string(),
                     streamer_id: streamer_id.to_string(),
@@ -2847,5 +2884,41 @@ mod tests {
         let config = test_config_with_output_dir(nested.clone());
         assert!(manager.prepare_output_dir(&config).await.is_ok());
         assert!(nested.is_dir());
+    }
+
+    #[tokio::test]
+    async fn required_terminal_event_survives_lagged_observer() {
+        let (required_tx, mut required_rx) = mpsc::unbounded_channel();
+        let manager = DownloadManager::new().with_required_terminal_sender(required_tx);
+        let mut observer = manager.subscribe();
+
+        for index in 0..300 {
+            manager.events.publish(DownloadManagerEvent::Progress(
+                DownloadProgressEvent::DownloadDequeued {
+                    streamer_id: "streamer".to_string(),
+                    streamer_name: "Streamer".to_string(),
+                    session_id: format!("session-{index}"),
+                },
+            ));
+        }
+
+        manager.emit_rejected(
+            "streamer".to_string(),
+            "Streamer".to_string(),
+            "required-session".to_string(),
+            "test rejection".to_string(),
+            Some(5),
+            DownloadRejectedKind::CircuitBreaker,
+        );
+
+        let terminal = tokio::time::timeout(Duration::from_secs(1), required_rx.recv())
+            .await
+            .expect("required terminal event timed out")
+            .expect("required terminal channel closed");
+        assert_eq!(terminal.session_id(), "required-session");
+        assert!(matches!(
+            observer.recv().await,
+            Err(broadcast::error::RecvError::Lagged(_))
+        ));
     }
 }

@@ -130,6 +130,9 @@ pub struct ApiServices {
     pub logging_download_tokens: Arc<DashMap<String, chrono::DateTime<chrono::Utc>>>,
     /// Credential refresh service for API-triggered refresh and cookie resolution.
     pub credential_service: Arc<CredentialRefreshService<SqlxConfigRepository>>,
+    /// Validated, transactional configuration import application service.
+    pub(crate) configuration_import_service:
+        Arc<crate::services::config_import::ConfigurationImportService>,
 }
 
 /// Shared application state.

@@ -73,20 +73,28 @@ async fn main() -> anyhow::Result<()> {
 
     info!("rust-srec started successfully");
 
-    // Wait for shutdown signal
+    // Wait for a shutdown signal or a critical runtime failure.
     let container_shutdown = container.clone();
-    tokio::select! {
+    let runtime_failure = tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             info!("Received SIGINT (Ctrl+C), initiating shutdown...");
+            None
         }
         _ = wait_for_sigterm() => {
             info!("Received SIGTERM, initiating shutdown...");
+            None
         }
-    }
+        failure = container.wait_for_runtime_failure() => {
+            error!(error = %failure, "Critical runtime failure; initiating shutdown");
+            Some(failure)
+        }
+    };
 
     // Send shutdown notification
     let shutdown_event = NotificationEvent::SystemShutdown {
-        reason: "Signal received".to_string(),
+        reason: runtime_failure
+            .as_ref()
+            .map_or_else(|| "Signal received".to_string(), ToString::to_string),
         timestamp: chrono::Utc::now(),
     };
     if let Err(e) = container
@@ -104,7 +112,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     info!("rust-srec shutdown complete");
-    Ok(())
+    match runtime_failure {
+        Some(failure) => Err(failure.into()),
+        None => Ok(()),
+    }
 }
 
 /// Wait for SIGTERM signal (Unix only).

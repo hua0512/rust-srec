@@ -2,15 +2,13 @@ use std::time::{Duration, Instant};
 
 use tracing::{debug, info, warn};
 
-use crate::danmu::DanmuEvent;
-use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
-use crate::monitor::MonitorEvent;
-
 use super::{
     ServiceContainer, autoscale_concurrency_limit, broadcast_error_is_recoverable,
     has_transient_error_state, should_end_stream_on_danmu_stream_closed,
     should_record_recovery_from_progress,
 };
+use crate::danmu::DanmuEvent;
+use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
 
 impl ServiceContainer {
     /// Set up config event subscriptions between services.
@@ -19,8 +17,7 @@ impl ServiceContainer {
         let config_service = self.config_service.clone();
         let download_manager = self.download_manager.clone();
         let pipeline_manager = self.pipeline_manager.clone();
-        let danmu_service = self.danmu_service.clone();
-        let session_lifecycle = self.session_lifecycle.clone();
+        let runtime_coordinator = self.runtime_coordinator.clone();
         let gpu_health_monitor = self.gpu_health_monitor.get().cloned();
         let mut receiver = self.event_broadcaster.subscribe();
         let cancellation_token = self.cancellation_token.clone();
@@ -59,12 +56,9 @@ impl ServiceContainer {
                                         // streamer metadata so the actor's StreamerConfig and
                                         // SessionLifecycle hysteresis backstop pick up any new
                                         // per-streamer override.
-                                        Self::refresh_metadata_offline_check(
-                                            &streamer_manager,
-                                            &config_service,
-                                            &streamer_id,
-                                        )
-                                        .await;
+                                        runtime_coordinator
+                                            .refresh_metadata_offline_check(&streamer_id)
+                                            .await;
 
                                         // Config update event - handles name, URL, priority, template changes.
                                         // If the update includes a state transition to an inactive state
@@ -83,14 +77,9 @@ impl ServiceContainer {
                                                     "Streamer {} is inactive after update (state: {}), initiating cleanup",
                                                     streamer_id, metadata.state
                                                 );
-                                                Self::handle_streamer_disabled(
-                                                    &download_manager,
-                                                    &danmu_service,
-                                                    &session_lifecycle,
-                                                    &streamer_manager,
-                                                    &streamer_id,
-                                                )
-                                                .await;
+                                                runtime_coordinator
+                                                    .handle_streamer_disabled(&streamer_id)
+                                                    .await;
                                             }
                                             Some(_) => {}
                                             None => {
@@ -100,14 +89,9 @@ impl ServiceContainer {
                                                     "Streamer {} not found after update, initiating best-effort cleanup",
                                                     streamer_id
                                                 );
-                                                Self::handle_streamer_disabled(
-                                                    &download_manager,
-                                                    &danmu_service,
-                                                    &session_lifecycle,
-                                                    &streamer_manager,
-                                                    &streamer_id,
-                                                )
-                                                .await;
+                                                runtime_coordinator
+                                                    .handle_streamer_disabled(&streamer_id)
+                                                    .await;
                                             }
                                         }
                                     }
@@ -126,12 +110,9 @@ impl ServiceContainer {
                                             .map(|m| m.id)
                                             .collect();
                                         for id in affected {
-                                            Self::refresh_metadata_offline_check(
-                                                &streamer_manager,
-                                                &config_service,
-                                                &id,
-                                            )
-                                            .await;
+                                            runtime_coordinator
+                                                .refresh_metadata_offline_check(&id)
+                                                .await;
                                         }
                                     }
                                     ConfigUpdateEvent::TemplateUpdated { template_id } => {
@@ -149,12 +130,9 @@ impl ServiceContainer {
                                             .map(|m| m.id)
                                             .collect();
                                         for id in affected {
-                                            Self::refresh_metadata_offline_check(
-                                                &streamer_manager,
-                                                &config_service,
-                                                &id,
-                                            )
-                                            .await;
+                                            runtime_coordinator
+                                                .refresh_metadata_offline_check(&id)
+                                                .await;
                                         }
                                     }
                                     ConfigUpdateEvent::GlobalUpdated => {
@@ -169,12 +147,9 @@ impl ServiceContainer {
                                             .map(|m| m.id)
                                             .collect();
                                         for id in all_ids {
-                                            Self::refresh_metadata_offline_check(
-                                                &streamer_manager,
-                                                &config_service,
-                                                &id,
-                                            )
-                                            .await;
+                                            runtime_coordinator
+                                                .refresh_metadata_offline_check(&id)
+                                                .await;
                                         }
 
                                         match config_service.get_global_config().await {
@@ -252,13 +227,9 @@ impl ServiceContainer {
                                             streamer_id
                                         );
                                         // Reuse the same cleanup logic as disabled state
-                                        Self::handle_streamer_disabled(
-                                            &download_manager,
-                                            &danmu_service,
-                                            &session_lifecycle,
-                                            &streamer_manager,
-                                            &streamer_id,
-                                        ).await;
+                                        runtime_coordinator
+                                            .handle_streamer_disabled(&streamer_id)
+                                            .await;
                                     }
                                     ConfigUpdateEvent::EngineUpdated { engine_id } => {
                                         debug!(
@@ -274,13 +245,9 @@ impl ServiceContainer {
                                         // If streamer became inactive (error, disabled, etc.), clean up
                                         if !is_active {
                                             info!("Streamer {} became inactive, initiating cleanup", streamer_id);
-                                            Self::handle_streamer_disabled(
-                                                &download_manager,
-                                                &danmu_service,
-                                                &session_lifecycle,
-                                                &streamer_manager,
-                                                &streamer_id,
-                                            ).await;
+                                            runtime_coordinator
+                                                .handle_streamer_disabled(&streamer_id)
+                                                .await;
                                         }
                                     }
                                     ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => {
@@ -307,6 +274,7 @@ impl ServiceContainer {
         let streamer_manager = self.streamer_manager.clone();
         let danmu_service = self.danmu_service.clone();
         let config_service = self.config_service.clone();
+        let session_lifecycle = self.session_lifecycle.clone();
         let discarded_segment_keys = self.discarded_segment_keys.clone();
         let mut receiver = self.download_manager.subscribe();
         let cancellation_token = self.cancellation_token.clone();
@@ -457,6 +425,8 @@ impl ServiceContainer {
                         size_bytes,
                         ..
                     }) => {
+                        session_lifecycle.on_segment_completed(streamer_id);
+
                         // Decide discard *before* ending danmu segment so we can suppress the
                         // imminent DanmuEvent::SegmentCompleted (avoids pipeline race with deletion).
                         let mut discard = false;
@@ -558,364 +528,121 @@ impl ServiceContainer {
     /// pipeline manager so the session-complete DAG fires at the right
     /// moment (per `cause.should_run_session_complete_pipeline()`).
     pub(super) fn setup_session_lifecycle_subscriptions(&self) {
-        // Download terminals → SessionLifecycle.
+        let Some(mut download_rx) = self.download_terminal_receiver.lock().take() else {
+            warn!("Required download terminal event consumer is already running");
+            return;
+        };
         let lifecycle = self.session_lifecycle.clone();
-        let mut download_rx = self.download_manager.subscribe();
         let cancellation_token = self.cancellation_token.clone();
 
-        self.task_supervisor.spawn("session download events", async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("SessionLifecycle download-event handler shutting down");
-                        break;
-                    }
-                    result = download_rx.recv() => {
-                        match result {
-                            Ok(DownloadManagerEvent::Terminal(event)) => {
-                                if let Err(e) = lifecycle.on_download_terminal(&event).await {
-                                    warn!(
-                                        session_id = %event.session_id(),
-                                        streamer_id = %event.streamer_id(),
-                                        error = %e,
-                                        "SessionLifecycle failed to process terminal download event",
+        self.task_supervisor
+            .spawn_critical("session download events", async move {
+                loop {
+                    tokio::select! {
+                        _ = cancellation_token.cancelled() => {
+                            debug!("SessionLifecycle download-event handler shutting down");
+                            return Ok::<(), String>(());
+                        }
+                        result = download_rx.recv() => {
+                            match result {
+                                Some(event) => {
+                                    lifecycle.on_download_terminal(&event).await.map_err(|error| {
+                                        format!(
+                                            "failed to process terminal event for session '{}': {error}",
+                                            event.session_id()
+                                        )
+                                    })?;
+                                }
+                                None => {
+                                    if cancellation_token.is_cancelled() {
+                                        return Ok(());
+                                    }
+                                    return Err(
+                                        "required download terminal event channel closed".to_string()
                                     );
                                 }
                             }
-                            Ok(DownloadManagerEvent::Progress(
-                                DownloadProgressEvent::SegmentCompleted { streamer_id, .. },
-                            )) => {
-                                // Successful segment → reset the classifier's
-                                // consecutive-failure counter for this streamer
-                                // (preserves Bilibili-style mid-stream RST
-                                // reconnects from being classified as offline).
-                                lifecycle.on_segment_completed(&streamer_id);
-                            }
-                            Ok(DownloadManagerEvent::Progress(_)) => {}
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("SessionLifecycle download-event handler lagged {} events", n);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("SessionLifecycle download-event channel closed");
-                                break;
-                            }
                         }
                     }
                 }
-            }
-        });
+            });
 
-        // SessionTransition → PipelineManager.
-        let pipeline_manager = self.pipeline_manager.clone();
-        let mut transition_rx = self.session_lifecycle.subscribe();
+        let Some(mut transition_rx) = self.session_transition_receiver.lock().take() else {
+            warn!("Required session transition consumer is already running");
+            return;
+        };
+        let runtime_coordinator = self.runtime_coordinator.clone();
         let cancellation_token = self.cancellation_token.clone();
 
-        self.task_supervisor.spawn("session pipeline events", async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Pipeline session-transition handler shutting down");
-                        break;
-                    }
-                    result = transition_rx.recv() => {
-                        match result {
-                            Ok(transition) => {
-                                pipeline_manager.handle_session_transition(transition).await;
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("Pipeline session-transition handler lagged {} events", n);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("Pipeline session-transition channel closed");
-                                break;
-                            }
+        self.task_supervisor
+            .spawn_critical("session transition coordinator", async move {
+                loop {
+                    tokio::select! {
+                        _ = cancellation_token.cancelled() => {
+                            debug!("Session transition coordinator shutting down");
+                            return Ok::<(), String>(());
                         }
-                    }
-                }
-            }
-        });
-
-        // SessionTransition::Ended → DownloadManager::clear_session_segment_index.
-        //
-        // The handler is a synchronous DashMap remove; the subscriber does no
-        // async work after `recv`, so its broadcast cursor cannot Lag from
-        // upstream load. Each subscriber on `session_lifecycle` has an
-        // independent cursor, so a slow neighbour (the pipeline-manager
-        // subscriber above, which awaits `handle_session_transition`) cannot
-        // drop cleanups for `DownloadManager::session_segment_indices`. Without
-        // this isolation, a `Lagged` on the pipeline subscriber would leak
-        // session-scoped segment-index counters until process restart.
-        let download_manager = self.download_manager.clone();
-        let mut transition_rx = self.session_lifecycle.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        self.task_supervisor.spawn("session notifications", async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Download session-cleanup handler shutting down");
-                        break;
-                    }
-                    result = transition_rx.recv() => {
-                        match result {
-                            Ok(transition) => {
-                                if let crate::session::SessionTransition::Ended { session_id, .. } = transition {
-                                    download_manager.clear_session_segment_index(&session_id);
+                        result = transition_rx.recv() => {
+                            match result {
+                                Some(transition) => {
+                                    runtime_coordinator
+                                        .handle_session_transition(transition)
+                                        .await;
                                 }
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!(
-                                    lagged = n,
-                                    "Download session-cleanup handler lagged; DownloadManager::session_segment_indices entries for the missed sessions will persist until process restart"
-                                );
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("Download session-cleanup channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // SessionTransition → stop danmu collection on Failed.
-        //
-        // Cancelled does not emit SessionTransition (the engine may still
-        // flush a Completed, so `SessionLifecycle` leaves the session in
-        // Recording); when the actor's cancellation path eventually pushes
-        // Offline through the monitor, danmu is stopped by the existing
-        // MonitorEvent::StreamerOffline branch. Completed cleanly ends the
-        // download and the platform-side danmu close signal stops the
-        // stream. Only Failed needs an explicit stop here because the
-        // engine has given up without a flush and the monitor may not
-        // observe offline for a full polling cycle.
-        let danmu_service = self.danmu_service.clone();
-        let mut transition_rx = self.session_lifecycle.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        self.task_supervisor.spawn("danmu session transitions", async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Danmu session-transition handler shutting down");
-                        break;
-                    }
-                    result = transition_rx.recv() => {
-                        match result {
-                            Ok(crate::session::SessionTransition::Ended {
-                                session_id,
-                                cause: crate::session::TerminalCause::Failed { .. },
-                                ..
-                            }) => {
-                                if !danmu_service.is_collecting(&session_id) {
-                                    continue;
-                                }
-                                match danmu_service.stop_collection(&session_id).await {
-                                    Ok(stats) => {
-                                        info!(
-                                            "Stopped danmu collection after download failure for session {}: {} messages",
-                                            session_id, stats.total_count
-                                        );
+                                None => {
+                                    if cancellation_token.is_cancelled() {
+                                        return Ok(());
                                     }
-                                    Err(e) => {
-                                        warn!(
-                                            "Failed to stop danmu collection for session {}: {}",
-                                            session_id, e
-                                        );
-                                    }
-                                }
-                            }
-                            Ok(_) => {}
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("Danmu session-transition handler lagged {} events", n);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("Danmu session-transition channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /// Subscribe to `SessionTransition::Started { from_hysteresis: true, .. }`
-    /// and (re)start the download for the resumed session.
-    ///
-    /// The lifecycle's `resume_from_hysteresis` short-circuits before
-    /// `start_or_resume`, so the `MonitorEvent::StreamerLive` outbox
-    /// event that drives `handle_monitor_event::StreamerLive` is never
-    /// emitted on a resume — leaving the streamer "Live" in memory but
-    /// with no actual download running. Without this subscriber, every
-    /// FLV TCP-close that resumes within the hysteresis window stops
-    /// recording for the rest of the broadcast (kinetic / 2026-05-02
-    /// 02:28 → 03:51 was a 1.5-hour silent gap).
-    ///
-    /// We synthesise a `MonitorEvent::StreamerLive` from the
-    /// `DownloadStartPayload` carried on the `Started` transition and
-    /// dispatch through the existing handler — same code path as a
-    /// fresh-session start. The handler's `has_active_download` guard
-    /// makes this idempotent against any race with a real
-    /// `MonitorEvent::StreamerLive` outbox event.
-    ///
-    /// Defence against the resume-vs-Ended race: before dispatching, we
-    /// re-check `is_session_active`. If the hysteresis-timer / direct
-    /// authoritative-end fired between the lifecycle's broadcast and
-    /// our dispatch, we skip — the session is already over.
-    pub(super) fn setup_resume_download_subscriber(&self) {
-        let download_manager = self.download_manager.clone();
-        let streamer_manager = self.streamer_manager.clone();
-        let config_service = self.config_service.clone();
-        let danmu_service = self.danmu_service.clone();
-        let stream_monitor = self.stream_monitor.clone();
-        let session_repository = self.session_repository.clone();
-        let session_cancels = self.session_cancels.clone();
-        let pending_pipelines = self.pending_pipelines.clone();
-        let session_lifecycle = self.session_lifecycle.clone();
-        let mut transition_rx = self.session_lifecycle.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-        let task_supervisor = self.task_supervisor.clone();
-
-        self.task_supervisor.spawn("resume download subscriber", async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Resume-download subscriber shutting down");
-                        break;
-                    }
-                    result = transition_rx.recv() => {
-                        match result {
-                            Ok(crate::session::SessionTransition::Started {
-                                from_hysteresis: true,
-                                download_start: Some(payload),
-                                session_id,
-                                streamer_id,
-                                streamer_name,
-                                title,
-                                category,
-                                started_at,
-                                ..
-                            }) => {
-                                if !session_lifecycle.is_session_active(&session_id) {
-                                    debug!(
-                                        session_id,
-                                        streamer_id,
-                                        "resume-download subscriber: session no longer active, skipping"
+                                    return Err(
+                                        "required session transition channel closed".to_string()
                                     );
-                                    continue;
                                 }
-                                info!(
-                                    streamer_id,
-                                    session_id,
-                                    streamer_name,
-                                    "Session resumed from hysteresis — restarting download"
-                                );
-                                let synthetic = MonitorEvent::StreamerLive {
-                                    streamer_id,
-                                    session_id,
-                                    streamer_name,
-                                    streamer_url: payload.streamer_url,
-                                    title,
-                                    category,
-                                    streams: payload.streams,
-                                    media_headers: payload.media_headers,
-                                    media_extras: payload.media_extras,
-                                    timestamp: started_at,
-                                };
-                                Self::handle_monitor_event(
-                                    &download_manager,
-                                    &streamer_manager,
-                                    &config_service,
-                                    &danmu_service,
-                                    &stream_monitor,
-                                    &session_repository,
-                                    &session_cancels,
-                                    &pending_pipelines,
-                                    &task_supervisor,
-                                    synthetic,
-                                    /* from_hysteresis_resume */ true,
-                                )
-                                .await;
-                            }
-                            Ok(_) => {
-                                // Other transitions (Started fresh, Ending, Resumed,
-                                // Ended) are handled by other subscribers / paths.
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!(
-                                    "resume-download subscriber lagged {} events",
-                                    n
-                                );
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("resume-download transition channel closed");
-                                break;
                             }
                         }
                     }
                 }
-            }
-        });
+            });
     }
 
     /// Set up monitor event subscriptions to download manager and danmu service.
     pub(super) fn setup_monitor_event_subscriptions(&self) {
-        let download_manager = self.download_manager.clone();
-        let streamer_manager = self.streamer_manager.clone();
-        let config_service = self.config_service.clone();
-        let danmu_service = self.danmu_service.clone();
-        let stream_monitor = self.stream_monitor.clone();
-        let session_repository = self.session_repository.clone();
-        let session_cancels = self.session_cancels.clone();
-        let pending_pipelines = self.pending_pipelines.clone();
+        let runtime_coordinator = self.runtime_coordinator.clone();
         let Some(mut receiver) = self.monitor_event_receiver.lock().take() else {
             warn!("Required monitor event consumer is already running");
             return;
         };
         let cancellation_token = self.cancellation_token.clone();
-        let task_supervisor = self.task_supervisor.clone();
 
-        self.task_supervisor.spawn("monitor event handler", async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Monitor event handler shutting down");
-                        break;
-                    }
-                    delivery = receiver.recv() => {
-                        match delivery {
-                            Some(crate::monitor::MonitorEventDelivery {
-                                event,
-                                acknowledgement,
-                            }) => {
-                                Self::handle_monitor_event(
-                                    &download_manager,
-                                    &streamer_manager,
-                                    &config_service,
-                                    &danmu_service,
-                                    &stream_monitor,
-                                    &session_repository,
-                                    &session_cancels,
-                                    &pending_pipelines,
-                                    &task_supervisor,
+        self.task_supervisor
+            .spawn_critical("monitor event handler", async move {
+                loop {
+                    tokio::select! {
+                        _ = cancellation_token.cancelled() => {
+                            debug!("Monitor event handler shutting down");
+                            return Ok::<(), String>(());
+                        }
+                        delivery = receiver.recv() => {
+                            match delivery {
+                                Some(crate::monitor::MonitorEventDelivery {
                                     event,
-                                    /* from_hysteresis_resume */ false,
-                                ).await;
-                                if acknowledgement.send(()).is_err() {
-                                    debug!("Monitor outbox acknowledgement receiver was dropped");
+                                    acknowledgement,
+                                }) => {
+                                    runtime_coordinator.handle_monitor_event(event, false).await;
+                                    if acknowledgement.send(()).is_err() {
+                                        debug!("Monitor outbox acknowledgement receiver was dropped");
+                                    }
                                 }
-                            }
-                            None => {
-                                warn!("Required monitor event channel closed");
-                                break;
+                                None => {
+                                    if cancellation_token.is_cancelled() {
+                                        return Ok(());
+                                    }
+                                    return Err("required monitor event channel closed".to_string());
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
+            });
     }
 
     /// Set up danmu event subscriptions for segment coordination.

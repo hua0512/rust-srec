@@ -73,7 +73,7 @@ impl DownloadManager {
         );
 
         // Emit start event (broadcast send is synchronous, ignore if no receivers)
-        let _ = self.event_tx.send(DownloadManagerEvent::Progress(
+        self.events.publish(DownloadManagerEvent::Progress(
             DownloadProgressEvent::DownloadStarted {
                 download_id: download_id.clone(),
                 streamer_id: config.streamer_id.clone(),
@@ -108,7 +108,7 @@ impl DownloadManager {
 
         // Spawn task to handle segment events
         let download_id_clone = download_id.clone();
-        let event_tx = self.event_tx.clone();
+        let events = self.events.clone();
         let streamer_id = config.streamer_id.clone();
         let streamer_name = config.streamer_name.clone();
         let session_id = config.session_id.clone();
@@ -192,7 +192,7 @@ impl DownloadManager {
                         });
 
                         // Broadcast send is synchronous, ignore if no receivers
-                        let _ = event_tx.send(DownloadManagerEvent::Progress(
+                        events.publish(DownloadManagerEvent::Progress(
                             DownloadProgressEvent::SegmentCompleted {
                                 download_id: download_id_clone.clone(),
                                 streamer_id: streamer_id.clone(),
@@ -233,7 +233,7 @@ impl DownloadManager {
                         // Broadcast progress event to WebSocket subscribers (throttled).
                         if last_progress_emit.elapsed() >= PROGRESS_MIN_INTERVAL {
                             last_progress_emit = Instant::now();
-                            let _ = event_tx.send(DownloadManagerEvent::Progress(
+                            events.publish(DownloadManagerEvent::Progress(
                                 DownloadProgressEvent::Progress {
                                     download_id: download_id_clone.clone(),
                                     streamer_id: streamer_id.clone(),
@@ -257,7 +257,7 @@ impl DownloadManager {
                         // Emit one final progress update before sending the terminal event.
                         if let Some(download) = active_downloads.get(&download_id_clone) {
                             let final_progress = download.progress.clone();
-                            let _ = event_tx.send(DownloadManagerEvent::Progress(
+                            events.publish(DownloadManagerEvent::Progress(
                                 DownloadProgressEvent::Progress {
                                     download_id: download_id_clone.clone(),
                                     streamer_id: streamer_id.clone(),
@@ -285,7 +285,7 @@ impl DownloadManager {
                         // ActiveSlot, which releases the queue capacity
                         // and wakes the next waiter automatically.
 
-                        let _ = event_tx.send(DownloadManagerEvent::Terminal(
+                        events.publish(DownloadManagerEvent::Terminal(
                             DownloadTerminalEvent::Completed {
                                 download_id: download_id_clone.clone(),
                                 streamer_id: streamer_id.clone(),
@@ -333,7 +333,7 @@ impl DownloadManager {
                         // Emit one final progress update (best-effort) before the failure event.
                         if let Some(download) = active_downloads.get(&download_id_clone) {
                             let final_progress = download.progress.clone();
-                            let _ = event_tx.send(DownloadManagerEvent::Progress(
+                            events.publish(DownloadManagerEvent::Progress(
                                 DownloadProgressEvent::Progress {
                                     download_id: download_id_clone.clone(),
                                     streamer_id: streamer_id.clone(),
@@ -354,7 +354,7 @@ impl DownloadManager {
                         // ActiveSlot, which releases the queue capacity
                         // and wakes the next waiter automatically.
 
-                        let _ = event_tx.send(DownloadManagerEvent::Terminal(
+                        events.publish(DownloadManagerEvent::Terminal(
                             DownloadTerminalEvent::Failed {
                                 download_id: download_id_clone.clone(),
                                 streamer_id: streamer_id.clone(),
@@ -393,7 +393,7 @@ impl DownloadManager {
                         }
 
                         // Emit segment started event
-                        let _ = event_tx.send(DownloadManagerEvent::Progress(
+                        events.publish(DownloadManagerEvent::Progress(
                             DownloadProgressEvent::SegmentStarted {
                                 download_id: download_id_clone.clone(),
                                 streamer_id: streamer_id.clone(),
@@ -414,7 +414,7 @@ impl DownloadManager {
                                 pending_update,
                                 &download_id_clone,
                                 &streamer_id,
-                                &event_tx,
+                                &events,
                             );
                         }
 

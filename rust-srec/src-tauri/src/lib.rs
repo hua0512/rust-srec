@@ -508,6 +508,33 @@ async fn run_desktop_backend_init(
 
     state.set_container(container.clone());
 
+    {
+        let app_handle = app_handle.clone();
+        let container = container.clone();
+        tauri::async_runtime::spawn(async move {
+            let cancellation_token = container.cancellation_token();
+            let failure = tokio::select! {
+                biased;
+                failure = container.wait_for_runtime_failure() => failure,
+                _ = cancellation_token.cancelled() => return,
+            };
+            log::error!("Critical backend failure: {}", failure);
+
+            let should_shutdown = {
+                let state = app_handle.state::<DesktopBackendState>();
+                !state.shutdown_started.swap(true, Ordering::SeqCst)
+            };
+            if !should_shutdown {
+                return;
+            }
+
+            if let Err(error) = container.shutdown().await {
+                log::error!("Error during backend failure shutdown: {}", error);
+            }
+            app_handle.exit(1);
+        });
+    }
+
     let total_ms = overall.elapsed().as_millis();
     log::info!("Desktop init: total {}ms", total_ms);
     log::info!(

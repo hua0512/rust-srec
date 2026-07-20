@@ -3,6 +3,7 @@
 //! This module provides the Config Service with in-memory caching and
 //! event broadcasting for configuration updates.
 
+pub(crate) mod backup;
 pub(crate) mod cache;
 mod context;
 pub(crate) mod events;

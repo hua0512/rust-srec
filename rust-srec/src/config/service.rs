@@ -435,6 +435,11 @@ where
             });
     }
 
+    pub(crate) fn notify_import_committed(&self) {
+        self.cache.invalidate_all();
+        self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
+    }
+
     /// Invalidate cached configs for all streamers on a platform.
     pub async fn invalidate_platform(&self, platform_id: &str) -> Result<()> {
         self.invalidate_streamers_by_platform(platform_id).await

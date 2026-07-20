@@ -22,9 +22,6 @@ use crate::api::routes::credentials::{
     QrGenerateApiResponse, QrPollApiResponse, QrPollRequest,
 };
 use crate::api::routes::engines::{CreateEngineRequest, EngineTestResponse, UpdateEngineRequest};
-use crate::api::routes::export_import::{
-    ConfigExport, ImportMode, ImportRequest, ImportResult, ImportStats,
-};
 use crate::api::routes::job::{
     ClonePresetRequest, CreatePresetRequest, PresetListResponse, UpdatePresetRequest,
 };
@@ -41,6 +38,7 @@ use crate::api::routes::pipeline::{
     PipelinePresetListResponse, PipelinePresetResponse, PresetPreviewResponse,
     UpdatePipelinePresetRequest, ValidateDagRequest, ValidateDagResponse,
 };
+use crate::config::backup::{ConfigExport, ImportMode, ImportRequest, ImportResult, ImportStats};
 
 /// Liveness check response.
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]

@@ -31,7 +31,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, info, warn};
 
 use crate::Result;
@@ -126,6 +126,7 @@ pub struct SessionLifecycle {
     /// the audit log.
     event_repo: Option<Arc<dyn SessionEventRepository>>,
     transition_tx: broadcast::Sender<SessionTransition>,
+    required_transition_tx: Option<mpsc::UnboundedSender<SessionTransition>>,
 }
 
 /// Closure type for resolving a per-streamer hysteresis window.
@@ -165,7 +166,16 @@ impl SessionLifecycle {
             ended_retention: ENDED_RETENTION_DEFAULT,
             event_repo: None,
             transition_tx,
+            required_transition_tx: None,
         }
+    }
+
+    pub(crate) fn with_required_transition_sender(
+        mut self,
+        sender: mpsc::UnboundedSender<SessionTransition>,
+    ) -> Self {
+        self.required_transition_tx = Some(sender);
+        self
     }
 
     /// Attach a per-streamer hysteresis-window resolver. The lifecycle calls
@@ -215,6 +225,15 @@ impl SessionLifecycle {
     /// apply (newly-attached subscribers miss prior events).
     pub fn subscribe(&self) -> broadcast::Receiver<SessionTransition> {
         self.transition_tx.subscribe()
+    }
+
+    fn publish_transition(&self, transition: SessionTransition) {
+        if let Some(required_tx) = &self.required_transition_tx
+            && required_tx.send(transition.clone()).is_err()
+        {
+            warn!("Required session transition consumer is unavailable");
+        }
+        let _ = self.transition_tx.send(transition);
     }
 
     pub fn subscriber_count(&self) -> usize {
@@ -423,7 +442,7 @@ impl SessionLifecycle {
         );
         self.set_current_session(args.streamer_id, outcome.session_id());
 
-        let _ = self.transition_tx.send(SessionTransition::Started {
+        self.publish_transition(SessionTransition::Started {
             session_id: outcome.session_id().to_string(),
             streamer_id: args.streamer_id.to_string(),
             streamer_name: args.streamer_name.to_string(),
@@ -757,7 +776,7 @@ impl SessionLifecycle {
 
         let resume_deadline = observed_at
             + chrono::Duration::from_std(window).unwrap_or(chrono::Duration::seconds(90));
-        let _ = self.transition_tx.send(SessionTransition::Ending {
+        self.publish_transition(SessionTransition::Ending {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             streamer_name: streamer_name.to_string(),
@@ -925,7 +944,7 @@ impl SessionLifecycle {
         );
         self.refresh_current_session_if_current(args.streamer_id, session_id);
 
-        let _ = self.transition_tx.send(SessionTransition::Resumed {
+        self.publish_transition(SessionTransition::Resumed {
             session_id: session_id.to_string(),
             streamer_id: args.streamer_id.to_string(),
             resumed_at: args.now,
@@ -963,7 +982,7 @@ impl SessionLifecycle {
         // session "records" zero bytes for the rest of the broadcast (the
         // kinetic/2026-05-02 1.5h gap). Populating the sidecar from `args`
         // is what closes that gap.
-        let _ = self.transition_tx.send(SessionTransition::Started {
+        self.publish_transition(SessionTransition::Started {
             session_id: session_id.to_string(),
             streamer_id: args.streamer_id.to_string(),
             streamer_name: args.streamer_name.to_string(),
@@ -1112,7 +1131,7 @@ impl SessionLifecycle {
             "Session ended"
         );
 
-        let _ = self.transition_tx.send(SessionTransition::Ended {
+        self.publish_transition(SessionTransition::Ended {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             streamer_name: streamer_name.to_string(),
@@ -1298,7 +1317,7 @@ impl SessionLifecycle {
 
         // Broadcast last — subscribers querying `session_snapshot` from
         // inside the receiver must observe the post-update state.
-        let _ = self.transition_tx.send(SessionTransition::Ended {
+        self.publish_transition(SessionTransition::Ended {
             session_id: session_id.clone(),
             streamer_id: streamer_id.to_string(),
             streamer_name: streamer_name.to_string(),
@@ -1423,7 +1442,7 @@ impl SessionLifecycle {
             "Session ended"
         );
 
-        let _ = self.transition_tx.send(SessionTransition::Ended {
+        self.publish_transition(SessionTransition::Ended {
             session_id: session_id.clone(),
             streamer_id: streamer_id.to_string(),
             streamer_name: streamer_name.to_string(),

@@ -3017,3 +3017,54 @@ async fn o9_end_for_disable_broadcast_after_commit_and_memory_update() {
 
     observer.await.unwrap();
 }
+
+#[tokio::test]
+async fn required_transition_survives_lagged_observer() {
+    let pool = setup_pool().await;
+    let (required_tx, mut required_rx) = tokio::sync::mpsc::unbounded_channel();
+    let lifecycle = SessionLifecycle::new(
+        Arc::new(SessionLifecycleRepository::new(pool)),
+        Arc::new(OfflineClassifier::new()),
+        4,
+    )
+    .with_required_transition_sender(required_tx);
+    let mut observer = lifecycle.subscribe();
+
+    for index in 0..8 {
+        lifecycle.publish_transition(SessionTransition::Resumed {
+            session_id: format!("session-{index}"),
+            streamer_id: STREAMER_ID.to_string(),
+            resumed_at: Utc::now(),
+            hysteresis_duration: chrono::Duration::seconds(1),
+        });
+    }
+
+    let expected_session_id = "required-session";
+    lifecycle.publish_transition(SessionTransition::Ended {
+        session_id: expected_session_id.to_string(),
+        streamer_id: STREAMER_ID.to_string(),
+        streamer_name: "Test".to_string(),
+        ended_at: Utc::now(),
+        cause: TerminalCause::Completed,
+        via_hysteresis: false,
+    });
+
+    let mut received_terminal = false;
+    while let Ok(Some(transition)) =
+        tokio::time::timeout(std::time::Duration::from_secs(1), required_rx.recv()).await
+    {
+        if matches!(
+            transition,
+            SessionTransition::Ended { ref session_id, .. } if session_id == expected_session_id
+        ) {
+            received_terminal = true;
+            break;
+        }
+    }
+
+    assert!(received_terminal, "required transition was not delivered");
+    assert!(matches!(
+        observer.recv().await,
+        Err(tokio::sync::broadcast::error::RecvError::Lagged(_))
+    ));
+}
