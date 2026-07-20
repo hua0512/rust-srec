@@ -23,7 +23,6 @@ pub mod tdl;
 pub mod templates;
 
 use axum::Router;
-use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -55,10 +54,10 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/parse", parse::router())
         .nest("/api/auth", auth::protected_router());
 
-    // Apply JWT auth layer to protected routes if JWT service is configured
+    // Apply JWT auth layer to protected routes if authentication is enabled.
     // The layer wraps the router, so we need to handle the type conversion
-    let protected_routes: Router<AppState> = if let Some(jwt_service) = &state.jwt_service {
-        protected_routes.layer(JwtAuthLayer::new(Arc::clone(jwt_service)))
+    let protected_routes: Router<AppState> = if let Some(auth_service) = &state.auth_service {
+        protected_routes.layer(JwtAuthLayer::new(auth_service.clone()))
     } else {
         protected_routes
     };

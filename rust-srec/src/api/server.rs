@@ -5,7 +5,7 @@ use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::header;
 use axum::serve::ListenerExt;
 use dashmap::DashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use std::time::Instant;
 use tokio::net::TcpListener;
@@ -71,7 +71,6 @@ impl ApiServerConfig {
 use std::sync::Arc;
 
 use crate::api::auth_service::AuthService;
-use crate::api::jwt::JwtService;
 use crate::config::ConfigService;
 use crate::credentials::CredentialRefreshService;
 use crate::database::repositories::{
@@ -138,9 +137,7 @@ pub struct ApiServices {
 pub struct AppState {
     /// Server start time for uptime calculation
     pub start_time: Instant,
-    /// JWT service for authentication. `None` means authentication is disabled.
-    pub jwt_service: Option<Arc<JwtService>>,
-    /// Auth service for user authentication and token management.
+    /// Authentication and token service. `None` means authentication is explicitly disabled.
     pub auth_service: Option<Arc<AuthService>>,
     /// Browser push capability. `None` means VAPID is not configured.
     pub web_push_service: Option<Arc<WebPushService>>,
@@ -153,17 +150,10 @@ impl AppState {
     pub fn new(services: ApiServices) -> Self {
         Self {
             start_time: Instant::now(),
-            jwt_service: None,
             auth_service: None,
             web_push_service: None,
             services: Arc::new(services),
         }
-    }
-
-    /// Set the JWT service.
-    pub fn with_jwt_service(mut self, jwt_service: Arc<JwtService>) -> Self {
-        self.jwt_service = Some(jwt_service);
-        self
     }
 
     /// Set the auth service.
@@ -288,9 +278,13 @@ impl ApiServer {
     /// This is useful when binding to port `0` (ephemeral port), where the actual port is only
     /// known after binding.
     pub async fn bind(&self) -> Result<(TcpListener, SocketAddr)> {
-        let addr: SocketAddr = format!("{}:{}", self.config.bind_address, self.config.port)
-            .parse()
-            .map_err(|e| crate::error::Error::ApiError(format!("Invalid address: {}", e)))?;
+        let bind_address: IpAddr = self.config.bind_address.trim().parse().map_err(|error| {
+            crate::error::Error::config(format!(
+                "Invalid API_BIND_ADDRESS '{}': {error}",
+                self.config.bind_address
+            ))
+        })?;
+        let addr = SocketAddr::new(bind_address, self.config.port);
 
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;

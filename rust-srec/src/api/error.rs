@@ -9,6 +9,7 @@ use axum::{
 };
 use serde::Serialize;
 
+use crate::api::auth_service::AuthError;
 use crate::error::Error;
 
 /// API error response body.
@@ -137,6 +138,42 @@ impl From<Error> for ApiError {
     }
 }
 
+impl From<AuthError> for ApiError {
+    fn from(err: AuthError) -> Self {
+        match err {
+            AuthError::InvalidCredentials => ApiError::unauthorized("Invalid username or password"),
+            AuthError::AccountDisabled => ApiError::new(
+                StatusCode::FORBIDDEN,
+                "ACCOUNT_DISABLED",
+                "Account is disabled",
+            ),
+            AuthError::PasswordChangeRequired => ApiError::new(
+                StatusCode::FORBIDDEN,
+                "PASSWORD_CHANGE_REQUIRED",
+                "Password change is required",
+            ),
+            AuthError::TokenExpired => ApiError::unauthorized("Token has expired"),
+            AuthError::TokenRevoked => ApiError::unauthorized("Token has been revoked"),
+            AuthError::InvalidToken => ApiError::unauthorized("Invalid token"),
+            AuthError::WeakPassword(message) => {
+                ApiError::bad_request(format!("Weak password: {message}"))
+            }
+            AuthError::IncorrectCurrentPassword => {
+                ApiError::bad_request("Current password is incorrect")
+            }
+            AuthError::UserNotFound => ApiError::unauthorized("Invalid credentials"),
+            AuthError::Database(error) => {
+                tracing::error!(error = %error, "Authentication database error");
+                ApiError::service_unavailable("Authentication service unavailable")
+            }
+            AuthError::Internal(error) => {
+                tracing::error!(error = %error, "Authentication internal error");
+                ApiError::internal("Authentication failed due to an internal error")
+            }
+        }
+    }
+}
+
 /// Result type for API handlers.
 pub type ApiResult<T> = Result<T, ApiError>;
 
@@ -159,5 +196,22 @@ mod tests {
 
         assert_eq!(api_err.status, StatusCode::NOT_FOUND);
         assert!(api_err.message.contains("123"));
+    }
+
+    #[test]
+    fn test_password_change_required_error_has_stable_code() {
+        let api_err = ApiError::from(AuthError::PasswordChangeRequired);
+
+        assert_eq!(api_err.status, StatusCode::FORBIDDEN);
+        assert_eq!(api_err.code, "PASSWORD_CHANGE_REQUIRED");
+    }
+
+    #[test]
+    fn test_auth_database_error_is_generic_service_unavailable() {
+        let api_err = ApiError::from(AuthError::Database("sensitive details".to_string()));
+
+        assert_eq!(api_err.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(api_err.code, "SERVICE_UNAVAILABLE");
+        assert!(!api_err.message.contains("sensitive"));
     }
 }

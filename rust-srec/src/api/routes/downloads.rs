@@ -41,7 +41,7 @@ use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTer
 
 #[derive(Clone)]
 pub struct DownloadRouteState {
-    jwt_service: Option<std::sync::Arc<crate::api::jwt::JwtService>>,
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
     download_manager: std::sync::Arc<crate::downloader::DownloadManager>,
     check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
 }
@@ -49,7 +49,7 @@ pub struct DownloadRouteState {
 impl FromRef<AppState> for DownloadRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
-            jwt_service: state.jwt_service.clone(),
+            auth_service: state.auth_service.clone(),
             download_manager: state.download_manager.clone(),
             check_history_broadcaster: state.check_history_broadcaster.clone(),
         }
@@ -60,7 +60,7 @@ impl FromRef<AppState> for DownloadRouteState {
 #[derive(Debug, Deserialize)]
 pub struct WsAuthParams {
     /// JWT token for authentication
-    pub token: String,
+    pub token: Option<String>,
 }
 
 /// Create the downloads router.
@@ -94,15 +94,16 @@ async fn download_progress_ws(
     State(state): State<DownloadRouteState>,
     Query(auth): Query<WsAuthParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Validate JWT token using existing JwtService
-    let jwt_service = state
-        .jwt_service
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("Authentication not configured"))?;
-
-    jwt_service
-        .validate_token(&auth.token)
-        .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+    if let Some(auth_service) = &state.auth_service {
+        let token = auth
+            .token
+            .as_deref()
+            .ok_or_else(|| ApiError::unauthorized("Missing token"))?;
+        auth_service
+            .authorize_access_token(token, false)
+            .await
+            .map_err(ApiError::from)?;
+    }
 
     Ok(ws.on_upgrade(|socket| handle_socket(socket, state)))
 }
@@ -597,7 +598,7 @@ mod tests {
     fn test_ws_auth_params_deserialize() {
         let json = r#"{"token": "test-jwt-token"}"#;
         let params: WsAuthParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.token, "test-jwt-token");
+        assert_eq!(params.token.as_deref(), Some("test-jwt-token"));
     }
 
     #[test]

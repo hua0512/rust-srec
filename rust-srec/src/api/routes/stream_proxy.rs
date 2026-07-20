@@ -15,19 +15,19 @@ use serde::Deserialize;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use crate::api::auth_service::AuthService;
 use crate::api::error::{ApiError, ApiResult};
-use crate::api::jwt::JwtService;
 use crate::api::server::AppState;
 
 #[derive(Clone)]
 pub struct StreamProxyState {
-    jwt_service: Option<Arc<JwtService>>,
+    auth_service: Option<Arc<AuthService>>,
 }
 
 impl FromRef<AppState> for StreamProxyState {
     fn from_ref(state: &AppState) -> Self {
         Self {
-            jwt_service: state.jwt_service.clone(),
+            auth_service: state.auth_service.clone(),
         }
     }
 }
@@ -99,32 +99,25 @@ pub async fn stream_proxy_get(
     Query(query): Query<StreamProxyQuery>,
     req: Request,
 ) -> ApiResult<Response> {
-    // Auth: support token query param (media elements can't send Authorization easily).
-    let jwt_service = state
-        .jwt_service
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("Authentication not configured"))?;
-
     let headers_in = req.headers();
 
-    let token = if let Some(t) = query.token.clone() {
-        t
-    } else if let Some(t) = headers_in
-        .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .map(String::from)
-    {
-        t
-    } else {
-        return Err(ApiError::unauthorized(
-            "Missing or invalid Authorization header or token query",
-        ));
-    };
+    if let Some(auth_service) = &state.auth_service {
+        // Media elements cannot always send an Authorization header, so query tokens are allowed.
+        let token = query.token.as_deref().or_else(|| {
+            headers_in
+                .get(AUTHORIZATION)
+                .and_then(|header| header.to_str().ok())
+                .and_then(|value| value.strip_prefix("Bearer "))
+        });
+        let token = token.ok_or_else(|| {
+            ApiError::unauthorized("Missing or invalid Authorization header or token query")
+        })?;
 
-    jwt_service
-        .validate_token(&token)
-        .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+        auth_service
+            .authorize_access_token(token, false)
+            .await
+            .map_err(ApiError::from)?;
+    }
 
     // Validate target URL.
     let target = url::Url::parse(&query.url)
@@ -261,11 +254,8 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request as HttpRequest, header};
     use axum::response::IntoResponse;
-    use std::sync::Arc;
     use tokio::net::TcpListener;
     use tower::ServiceExt;
-
-    use crate::api::jwt::JwtService;
 
     async fn upstream_handler(req: HttpRequest<Body>) -> impl IntoResponse {
         let mut headers = HeaderMap::new();
@@ -305,17 +295,7 @@ mod tests {
             axum::serve(upstream_listener, upstream_app).await.unwrap();
         });
 
-        let jwt = Arc::new(JwtService::new(
-            "test-secret-key-32-chars-long!!",
-            "test-issuer",
-            "test-audience",
-            Some(3600),
-        ));
-        let token = jwt.generate_token("user", vec![]).unwrap();
-
-        let state = StreamProxyState {
-            jwt_service: Some(jwt),
-        };
+        let state = StreamProxyState { auth_service: None };
 
         let app = Router::new()
             .nest("/api/stream-proxy", super::router::<StreamProxyState>())
@@ -326,7 +306,7 @@ mod tests {
         let query = build_query(&[
             ("url", &target),
             ("headers", headers_json),
-            ("token", &token),
+            ("token", "unused-in-no-auth-mode"),
         ]);
 
         let request = HttpRequest::builder()
@@ -350,23 +330,13 @@ mod tests {
 
     #[tokio::test]
     async fn proxy_rejects_non_http_schemes() {
-        let jwt = Arc::new(JwtService::new(
-            "test-secret-key-32-chars-long!!",
-            "test-issuer",
-            "test-audience",
-            Some(3600),
-        ));
-        let token = jwt.generate_token("user", vec![]).unwrap();
-
-        let state = StreamProxyState {
-            jwt_service: Some(jwt),
-        };
+        let state = StreamProxyState { auth_service: None };
 
         let app = Router::new()
             .nest("/api/stream-proxy", super::router::<StreamProxyState>())
             .with_state(state);
 
-        let query = build_query(&[("url", "file:///etc/passwd"), ("token", &token)]);
+        let query = build_query(&[("url", "file:///etc/passwd")]);
         let request = HttpRequest::builder()
             .uri(format!("/api/stream-proxy?{query}"))
             .body(Body::empty())

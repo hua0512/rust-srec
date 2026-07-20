@@ -15,7 +15,7 @@ use crate::api::server::AppState;
 #[derive(Clone)]
 pub struct HealthRouteState {
     start_time: std::time::Instant,
-    jwt_service: Option<std::sync::Arc<crate::api::jwt::JwtService>>,
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
     health_checker: std::sync::Arc<crate::metrics::HealthChecker>,
 }
 
@@ -23,7 +23,7 @@ impl FromRef<AppState> for HealthRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             start_time: state.start_time,
-            jwt_service: state.jwt_service.clone(),
+            auth_service: state.auth_service.clone(),
             health_checker: state.health_checker.clone(),
         }
     }
@@ -37,13 +37,13 @@ pub fn router() -> Router<AppState> {
         .route("/live", get(liveness_check))
 }
 
-fn validate_health_auth(
+async fn validate_health_auth(
     headers: &HeaderMap,
     state: &HealthRouteState,
 ) -> Result<(), crate::api::error::ApiError> {
-    let jwt_service = state.jwt_service.as_ref().ok_or_else(|| {
-        crate::api::error::ApiError::unauthorized("Authentication not configured")
-    })?;
+    let Some(auth_service) = &state.auth_service else {
+        return Ok(());
+    };
 
     let token = headers
         .get(AUTHORIZATION)
@@ -53,9 +53,10 @@ fn validate_health_auth(
             crate::api::error::ApiError::unauthorized("Missing or invalid Authorization header")
         })?;
 
-    jwt_service
-        .validate_token(token)
-        .map_err(|_| crate::api::error::ApiError::unauthorized("Invalid or expired token"))?;
+    auth_service
+        .authorize_access_token(token, false)
+        .await
+        .map_err(crate::api::error::ApiError::from)?;
 
     Ok(())
 }
@@ -74,7 +75,7 @@ pub async fn health_check(
     State(state): State<HealthRouteState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<HealthResponse>> {
-    validate_health_auth(&headers, &state)?;
+    validate_health_auth(&headers, &state).await?;
     let uptime = state.start_time.elapsed().as_secs();
 
     let system_health = state.health_checker.current();
@@ -115,7 +116,7 @@ pub async fn readiness_check(
     State(state): State<HealthRouteState>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    if let Err(err) = validate_health_auth(&headers, &state) {
+    if let Err(err) = validate_health_auth(&headers, &state).await {
         return err.into_response();
     }
 

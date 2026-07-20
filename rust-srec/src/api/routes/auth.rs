@@ -9,7 +9,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::api::auth_service::{AuthError, AuthResponse, SessionInfo};
+use crate::api::auth_service::{AuthResponse, SessionInfo};
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::jwt::Claims;
 use crate::api::server::AppState;
@@ -110,24 +110,6 @@ pub fn protected_router() -> Router<AppState> {
         .route("/sessions", get(list_sessions))
 }
 
-/// Convert AuthError to ApiError.
-fn auth_error_to_api_error(err: AuthError) -> ApiError {
-    match err {
-        AuthError::InvalidCredentials => ApiError::unauthorized("Invalid username or password"),
-        AuthError::AccountDisabled => ApiError::unauthorized("Account is disabled"),
-        AuthError::TokenExpired => ApiError::unauthorized("Token has expired"),
-        AuthError::TokenRevoked => ApiError::unauthorized("Token has been revoked"),
-        AuthError::InvalidToken => ApiError::unauthorized("Invalid token"),
-        AuthError::WeakPassword(msg) => ApiError::bad_request(format!("Weak password: {}", msg)),
-        AuthError::IncorrectCurrentPassword => {
-            ApiError::bad_request("Current password is incorrect")
-        }
-        AuthError::UserNotFound => ApiError::unauthorized("Invalid credentials"),
-        AuthError::Database(msg) => ApiError::internal(format!("Database error: {}", msg)),
-        AuthError::Internal(msg) => ApiError::internal(msg),
-    }
-}
-
 #[utoipa::path(
     post,
     path = "/api/auth/login",
@@ -151,7 +133,7 @@ pub async fn login(
     let response = auth_service
         .authenticate(&request.username, &request.password, request.device_info)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(response.into()))
 }
@@ -179,7 +161,7 @@ pub async fn refresh(
     let response = auth_service
         .refresh_tokens(&request.refresh_token)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(response.into()))
 }
@@ -207,7 +189,7 @@ pub async fn logout(
     auth_service
         .logout(&request.refresh_token)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(
         serde_json::json!({ "message": "Logged out successfully" }),
@@ -237,7 +219,7 @@ pub async fn logout_all(
     auth_service
         .logout_all(&claims.sub)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(
         serde_json::json!({ "message": "All sessions logged out successfully" }),
@@ -274,7 +256,7 @@ pub async fn change_password(
             &request.new_password,
         )
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(
         serde_json::json!({ "message": "Password changed successfully" }),
@@ -304,7 +286,7 @@ pub async fn list_sessions(
     let sessions = auth_service
         .list_active_sessions(&claims.sub)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(sessions))
 }

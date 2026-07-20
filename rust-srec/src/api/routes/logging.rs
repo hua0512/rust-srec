@@ -34,7 +34,7 @@ use crate::logging::available_modules;
 
 #[derive(Clone)]
 pub struct LoggingRouteState {
-    jwt_service: Option<std::sync::Arc<crate::api::jwt::JwtService>>,
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
     config_service: std::sync::Arc<
         crate::config::ConfigService<
             crate::database::repositories::config::SqlxConfigRepository,
@@ -49,7 +49,7 @@ pub struct LoggingRouteState {
 impl FromRef<AppState> for LoggingRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
-            jwt_service: state.jwt_service.clone(),
+            auth_service: state.auth_service.clone(),
             config_service: state.config_service.clone(),
             logging_config: state.logging_config.clone(),
             logging_download_tokens: state.logging_download_tokens.clone(),
@@ -60,7 +60,7 @@ impl FromRef<AppState> for LoggingRouteState {
 /// Query parameters for WebSocket connection (JWT token).
 #[derive(Debug, Deserialize)]
 pub struct WsAuthParams {
-    pub token: String,
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -179,17 +179,23 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     }
 }
 
-fn validate_token(state: &LoggingRouteState, token: &str) -> Result<(), ApiError> {
-    let jwt_service = state
-        .jwt_service
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("Authentication not configured"))?;
+async fn authorize_token(state: &LoggingRouteState, token: Option<&str>) -> Result<(), ApiError> {
+    let Some(auth_service) = &state.auth_service else {
+        return Ok(());
+    };
+    let token = token.ok_or_else(|| ApiError::unauthorized("Missing token"))?;
 
-    jwt_service
-        .validate_token(token)
-        .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+    auth_service
+        .authorize_access_token(token, false)
+        .await
+        .map_err(ApiError::from)?;
 
     Ok(())
+}
+
+async fn authorize_headers(state: &LoggingRouteState, headers: &HeaderMap) -> Result<(), ApiError> {
+    let token = extract_bearer_token(headers);
+    authorize_token(state, token.as_deref()).await
 }
 
 fn parse_yyyy_mm_dd(s: &str) -> Result<chrono::NaiveDate, ApiError> {
@@ -497,9 +503,7 @@ pub async fn list_log_files(
     Query(query): Query<ListLogFilesQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Json<LogFilesResponse>> {
-    let token =
-        extract_bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("Missing token"))?;
-    validate_token(&state, &token)?;
+    authorize_headers(&state, &headers).await?;
 
     let logging_config = &state.logging_config;
     let log_dir = logging_config.log_dir().to_path_buf();
@@ -550,9 +554,7 @@ pub async fn get_archive_token(
     State(state): State<LoggingRouteState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<ArchiveTokenResponse>> {
-    let token =
-        extract_bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("Missing token"))?;
-    validate_token(&state, &token)?;
+    authorize_headers(&state, &headers).await?;
     Ok(Json(issue_download_token(&state)?))
 }
 
@@ -573,9 +575,7 @@ pub async fn list_log_entries(
     Query(query): Query<ListLogEntriesQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Json<LogEntriesResponse>> {
-    let token =
-        extract_bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("Missing token"))?;
-    validate_token(&state, &token)?;
+    authorize_headers(&state, &headers).await?;
 
     let logging_config = &state.logging_config;
     let log_dir = logging_config.log_dir().to_path_buf();
@@ -672,9 +672,7 @@ pub async fn get_logging_config(
     State(state): State<LoggingRouteState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<LoggingConfigResponse>> {
-    let token =
-        extract_bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("Missing token"))?;
-    validate_token(&state, &token)?;
+    authorize_headers(&state, &headers).await?;
 
     let logging_config = &state.logging_config;
 
@@ -709,9 +707,7 @@ pub async fn update_logging_config(
     headers: HeaderMap,
     Json(request): Json<UpdateLogFilterRequest>,
 ) -> ApiResult<Json<LoggingConfigResponse>> {
-    let token =
-        extract_bearer_token(&headers).ok_or_else(|| ApiError::unauthorized("Missing token"))?;
-    validate_token(&state, &token)?;
+    authorize_headers(&state, &headers).await?;
 
     let logging_config = &state.logging_config;
 
@@ -752,15 +748,7 @@ async fn logging_stream_ws(
     State(state): State<LoggingRouteState>,
     Query(auth): Query<WsAuthParams>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Validate JWT token
-    let jwt_service = state
-        .jwt_service
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("Authentication not configured"))?;
-
-    jwt_service
-        .validate_token(&auth.token)
-        .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+    authorize_token(&state, auth.token.as_deref()).await?;
 
     let logging_config = state.logging_config.clone();
 

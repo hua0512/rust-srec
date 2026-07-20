@@ -91,6 +91,7 @@ The following environment variables can be configured in your <a :href="withBase
 ### Network
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `API_BIND_ADDRESS` | IP address the backend API binds to | `0.0.0.0` |
 | `API_PORT` | External port for the backend API | `12555` |
 | `FRONTEND_PORT` | External port for the web interface | `15275` |
 | `BACKEND_URL` | Internal URL for the frontend to reach the backend | `http://rust-srec:8080` |
@@ -101,12 +102,15 @@ The following environment variables can be configured in your <a :href="withBase
 ### Security & Auth
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `JWT_SECRET` | Secret key for JWT signing (**Required**) | - |
+| `JWT_SECRET` | Secret key for JWT signing (**Required** unless using the local-only opt-out below) | - |
+| `AUTH_DISABLED` | Disable backend authentication for loopback-only local development | `false` |
 | `JWT_ISSUER` | JWT issuer identifier | `rust-srec` |
 | `JWT_AUDIENCE` | JWT audience identifier | `rust-srec-api` |
 | `SESSION_SECRET` | Frontend session encryption secret (**Required**, min 32 chars) | - |
 | `COOKIE_SECURE` | Set to `true` to force HTTPS-only cookies | (auto) |
 | `MIN_PASSWORD_LENGTH` | Minimum length for user passwords | `8` |
+
+The backend refuses to start without a non-empty `JWT_SECRET`. For local development only, authentication can be disabled by setting both `AUTH_DISABLED=true` and `API_BIND_ADDRESS=127.0.0.1` (or `::1`). The backend rejects this opt-out for wildcard, hostname, and non-loopback bind addresses.
 
 ### Token Expiration
 | Variable | Description | Default |

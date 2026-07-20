@@ -71,7 +71,9 @@ impl JwtService {
     /// # Arguments
     /// * `expiration_secs` - Token expiration time in seconds
     pub fn from_env(expiration_secs: u64) -> Option<Self> {
-        let secret = std::env::var("JWT_SECRET").ok()?;
+        let secret = std::env::var("JWT_SECRET")
+            .ok()
+            .filter(|value| !value.trim().is_empty())?;
         let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
         let audience =
             std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
