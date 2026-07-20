@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::domain::StreamerState;
+use crate::domain::streamer::FatalErrorType;
 
 /// Re-export StreamInfo from platforms_parser for convenience.
 pub use platforms_parser::media::StreamInfo;
@@ -125,39 +126,6 @@ pub enum MonitorEvent {
         signal: Option<crate::session::state::OfflineSignal>,
         timestamp: DateTime<Utc>,
     },
-}
-
-/// Types of fatal errors.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FatalErrorType {
-    /// Streamer not found on platform.
-    NotFound,
-    /// Streamer is banned.
-    Banned,
-    /// Content is age-restricted.
-    AgeRestricted,
-    /// Content is region-locked.
-    RegionLocked,
-    /// Content is private.
-    Private,
-    /// Platform is not supported.
-    UnsupportedPlatform,
-}
-
-impl FatalErrorType {
-    /// Stable string discriminator. Used as the on-the-wire / on-disk value
-    /// (notification payloads, `streamer_check_history.fatal_kind`) so the
-    /// frontend can switch on it without parsing Debug output.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            FatalErrorType::NotFound => "NotFound",
-            FatalErrorType::Banned => "Banned",
-            FatalErrorType::AgeRestricted => "AgeRestricted",
-            FatalErrorType::RegionLocked => "RegionLocked",
-            FatalErrorType::Private => "Private",
-            FatalErrorType::UnsupportedPlatform => "UnsupportedPlatform",
-        }
-    }
 }
 
 impl MonitorEvent {

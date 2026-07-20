@@ -5,7 +5,8 @@ mod entity;
 mod state;
 
 pub use check_record::{
-    CheckOutcome, CheckRecord, FilterCause, MAX_ERROR_MESSAGE_LEN, SelectedStreamSummary,
+    CheckOutcome, CheckRecord, FatalErrorType, FilterCause, MAX_ERROR_MESSAGE_LEN,
+    SelectedStreamSummary,
 };
 pub use entity::Streamer;
 pub use state::StreamerState;

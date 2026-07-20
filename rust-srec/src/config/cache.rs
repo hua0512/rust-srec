@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Notify, OnceCell};
 
-use crate::domain::config::ResolvedStreamerContext;
+use crate::config::ResolvedStreamerContext;
 
 /// Default TTL for cached configurations (1 hour).
 const DEFAULT_TTL: Duration = Duration::from_secs(3600);
@@ -311,8 +311,8 @@ pub struct CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::MergedConfig;
     use crate::domain::ProxyConfig;
-    use crate::domain::config::MergedConfig;
 
     fn create_test_context() -> ResolvedStreamerContext {
         let config = MergedConfig::builder()

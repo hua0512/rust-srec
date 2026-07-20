@@ -99,9 +99,9 @@ impl StreamerMetadata {
     }
 
     /// Refresh the cached effective values from a freshly resolved
-    /// [`crate::domain::config::MergedConfig`]. Called at registration
+    /// [`crate::config::MergedConfig`]. Called at registration
     /// and from the scheduler's `ConfigUpdate` fan-out path.
-    pub fn apply_resolved_config(&mut self, merged: &crate::domain::config::MergedConfig) {
+    pub fn apply_resolved_config(&mut self, merged: &crate::config::MergedConfig) {
         self.effective_offline_check_count = merged.offline_check_count;
         self.effective_offline_check_delay_ms = merged.offline_check_delay_ms;
     }

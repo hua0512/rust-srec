@@ -489,17 +489,13 @@ where
     }
 
     /// Refresh the cached `effective_offline_check_*` values on a streamer's
-    /// metadata from a freshly resolved [`crate::domain::config::MergedConfig`].
+    /// metadata from a freshly resolved [`crate::config::MergedConfig`].
     /// No-op if the streamer is not currently registered.
     ///
     /// Called from the scheduler's config-update fan-out so per-streamer
     /// overrides flow into both the StreamerActor's `StreamerConfig` and the
     /// SessionLifecycle's hysteresis backstop without an extra DB hit.
-    pub fn apply_resolved_config(
-        &self,
-        streamer_id: &str,
-        merged: &crate::domain::config::MergedConfig,
-    ) {
+    pub fn apply_resolved_config(&self, streamer_id: &str, merged: &crate::config::MergedConfig) {
         if let Some(mut entry) = self.metadata.get_mut(streamer_id) {
             entry.apply_resolved_config(merged);
         }

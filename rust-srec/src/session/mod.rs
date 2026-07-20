@@ -49,7 +49,7 @@ pub mod transition;
 
 pub use classifier::{EngineKind, OfflineClassifier};
 pub use download_start::DownloadStartPayload;
-pub use events::{SessionEventKind, SessionEventPayload, TerminalCauseDto};
+pub use events::{SessionEvent, SessionEventKind, SessionEventPayload, TerminalCauseDto};
 pub use hysteresis::{
     HysteresisConfig, HysteresisHandle, HysteresisOutcome, MAX_HYSTERESIS_WINDOW,
 };

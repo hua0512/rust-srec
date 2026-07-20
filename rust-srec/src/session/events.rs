@@ -24,6 +24,17 @@ use serde::{Deserialize, Serialize};
 use crate::downloader::DownloadFailureKind;
 use crate::session::state::{OfflineSignal, TerminalCause};
 
+/// Persisted lifecycle audit event for a recording session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionEvent {
+    pub id: i64,
+    pub session_id: String,
+    pub streamer_id: String,
+    pub kind: String,
+    pub occurred_at: DateTime<Utc>,
+    pub payload: Option<SessionEventPayload>,
+}
+
 /// Discriminator for the `session_events.kind` column.
 ///
 /// Stays in sync with the SQL `CHECK` constraint on the table — a typo here

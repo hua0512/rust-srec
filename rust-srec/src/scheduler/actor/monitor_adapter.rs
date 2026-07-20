@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::domain::streamer::CheckRecord;
+use crate::domain::streamer::{
+    CheckOutcome, CheckRecord, FatalErrorType, FilterCause, SelectedStreamSummary,
+};
 use crate::monitor::{CheckHistoryWriter, FilterReason, LiveStatus, ProcessStatusResult};
 use crate::streamer::StreamerMetadata;
 
@@ -194,7 +196,7 @@ where
         if let Some(writer) = &self.history_writer {
             let record = match &outcome {
                 Ok(status) => {
-                    CheckRecord::from_live_status(&streamer.id, checked_at, duration, status)
+                    check_record_from_live_status(&streamer.id, checked_at, duration, status)
                 }
                 Err(err) => {
                     CheckRecord::from_error(&streamer.id, checked_at, duration, &err.to_string())
@@ -237,6 +239,75 @@ where
     ) -> Result<(), CheckError> {
         self.monitor.set_infra_blocked(streamer, reason).await?;
         Ok(())
+    }
+}
+
+fn check_record_from_live_status(
+    streamer_id: &str,
+    checked_at: chrono::DateTime<chrono::Utc>,
+    duration: chrono::Duration,
+    status: &LiveStatus,
+) -> CheckRecord {
+    let outcome = match status {
+        LiveStatus::Live {
+            title,
+            category,
+            viewer_count,
+            streams,
+            candidates,
+            ..
+        } => CheckOutcome::Live {
+            title: title.clone(),
+            category: category.clone(),
+            viewer_count: *viewer_count,
+            candidates: candidates.iter().map(selected_stream_summary).collect(),
+            selected_stream: streams.first().map(selected_stream_summary),
+        },
+        LiveStatus::Offline => CheckOutcome::Offline,
+        LiveStatus::Filtered {
+            reason,
+            title,
+            category,
+        } => CheckOutcome::Filtered {
+            reason: match reason {
+                FilterReason::OutOfSchedule { .. } => FilterCause::OutOfSchedule,
+                FilterReason::TitleMismatch => FilterCause::TitleMismatch,
+                FilterReason::CategoryMismatch => FilterCause::CategoryMismatch,
+            },
+            title: title.clone(),
+            category: category.clone(),
+        },
+        LiveStatus::NotFound => CheckOutcome::FatalError {
+            kind: FatalErrorType::NotFound,
+        },
+        LiveStatus::Banned => CheckOutcome::FatalError {
+            kind: FatalErrorType::Banned,
+        },
+        LiveStatus::AgeRestricted => CheckOutcome::FatalError {
+            kind: FatalErrorType::AgeRestricted,
+        },
+        LiveStatus::RegionLocked => CheckOutcome::FatalError {
+            kind: FatalErrorType::RegionLocked,
+        },
+        LiveStatus::Private => CheckOutcome::FatalError {
+            kind: FatalErrorType::Private,
+        },
+        LiveStatus::UnsupportedPlatform => CheckOutcome::FatalError {
+            kind: FatalErrorType::UnsupportedPlatform,
+        },
+    };
+
+    CheckRecord::new(streamer_id, checked_at, duration, outcome)
+}
+
+fn selected_stream_summary(stream: &platforms_parser::media::StreamInfo) -> SelectedStreamSummary {
+    SelectedStreamSummary {
+        quality: stream.quality.clone(),
+        stream_format: format!("{:?}", stream.stream_format),
+        media_format: format!("{:?}", stream.media_format),
+        bitrate: stream.bitrate,
+        codec: stream.codec.clone(),
+        fps: stream.fps,
     }
 }
 
@@ -467,5 +538,72 @@ impl BatchChecker for NoOpBatchChecker {
             .collect();
 
         Ok(results)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{Duration, Utc};
+    use platforms_parser::media::{StreamFormat, StreamInfo, formats::MediaFormat};
+
+    use super::*;
+
+    fn stream() -> StreamInfo {
+        StreamInfo {
+            url: "https://example.com/stream.flv?signed=secret".to_string(),
+            stream_format: StreamFormat::Flv,
+            media_format: MediaFormat::Flv,
+            quality: "best".to_string(),
+            bitrate: 5_000_000,
+            priority: 1,
+            extras: None,
+            codec: "h264".to_string(),
+            fps: 30.0,
+            is_headers_needed: false,
+            is_audio_only: false,
+        }
+    }
+
+    #[test]
+    fn history_projection_excludes_stream_urls() {
+        let status = LiveStatus::Live {
+            title: "Playing Games".to_string(),
+            category: Some("Gaming".to_string()),
+            started_at: None,
+            viewer_count: Some(1234),
+            avatar: None,
+            streams: vec![stream()],
+            media_headers: None,
+            media_extras: None,
+            next_check_hint: None,
+            candidates: vec![stream()],
+        };
+
+        let record = check_record_from_live_status("s1", Utc::now(), Duration::zero(), &status);
+        let json = serde_json::to_string(&record).unwrap();
+
+        assert!(!json.contains("signed=secret"));
+        assert!(matches!(record.outcome, CheckOutcome::Live { .. }));
+    }
+
+    #[test]
+    fn history_projection_maps_all_fatal_statuses() {
+        for (status, expected) in [
+            (LiveStatus::NotFound, FatalErrorType::NotFound),
+            (LiveStatus::Banned, FatalErrorType::Banned),
+            (LiveStatus::AgeRestricted, FatalErrorType::AgeRestricted),
+            (LiveStatus::RegionLocked, FatalErrorType::RegionLocked),
+            (LiveStatus::Private, FatalErrorType::Private),
+            (
+                LiveStatus::UnsupportedPlatform,
+                FatalErrorType::UnsupportedPlatform,
+            ),
+        ] {
+            let record = check_record_from_live_status("s1", Utc::now(), Duration::zero(), &status);
+            assert!(matches!(
+                record.outcome,
+                CheckOutcome::FatalError { kind } if kind == expected
+            ));
+        }
     }
 }

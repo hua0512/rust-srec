@@ -26,7 +26,7 @@ use crate::api::server::AppState;
 use crate::database::models::{
     DanmuRateEntry, Pagination, SessionFilters, TitleEntry, TopTalkerEntry,
 };
-use crate::domain::session::SessionEvent;
+use crate::session::SessionEvent;
 
 #[derive(Clone)]
 pub struct SessionRouteState {

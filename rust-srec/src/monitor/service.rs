@@ -29,7 +29,9 @@ use crate::{Error, Result};
 
 use super::batch_detector::{BatchDetector, BatchResult};
 use super::detector::{FilterReason, LiveStatus, StreamDetector};
-use super::events::{FatalErrorType, MonitorEvent, MonitorEventBroadcaster};
+use crate::domain::streamer::FatalErrorType;
+
+use super::events::{MonitorEvent, MonitorEventBroadcaster};
 use super::rate_limiter::{RateLimiterConfig, RateLimiterManager};
 
 /// Result of [`StreamMonitor::process_status`].
@@ -471,7 +473,7 @@ impl<
                     let filter_models = filter_repo.get_by_streamer(streamer_id).await?;
                     let filters: Vec<Filter> = filter_models
                         .into_iter()
-                        .filter_map(|model| match Filter::from_db_model(&model) {
+                        .filter_map(|model| match Filter::try_from(&model) {
                             Ok(filter) => Some(filter),
                             Err(error) => {
                                 warn!(
