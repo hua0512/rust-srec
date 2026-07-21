@@ -79,12 +79,16 @@ jobs:
           - os: macos-15-intel
           - os: macos-latest
     runs-on: ${{ matrix.os }}
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v7
+      - name: Enable sccache
+        if: runner.os != 'macOS' || runner.arch == 'ARM64'
+        shell: pwsh
+        run: |
+          "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: mozilla-actions/sccache-action@v0.0.10
+        if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
           version: "v0.13.0"
       - uses: ./.github/actions/setup-rust
@@ -109,7 +113,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --locked --workspace --exclude rust-srec-desktop --doc --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
       - name: sccache stats
-        if: always()
+        if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
 
   check-changes:
