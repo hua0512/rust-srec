@@ -351,7 +351,13 @@ pub async fn get_session(
         .map_err(ApiError::from)?;
 
     // Get output count
-    let output_count = session_repository.get_output_count(&id).await.unwrap_or(0);
+    let output_count = match session_repository.get_output_count(&id).await {
+        Ok(count) => count,
+        Err(error) => {
+            tracing::warn!(session_id = %id, %error, "Failed to load session output count");
+            0
+        }
+    };
 
     let start_time = crate::database::time::ms_to_datetime(session.start_time);
     let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
@@ -363,10 +369,17 @@ pub async fn get_session(
     let (titles, title) = parse_titles(&session.titles);
 
     // Get streamer details
-    let streamer = streamer_repository
-        .get_streamer(&session.streamer_id)
-        .await
-        .ok();
+    let streamer = match streamer_repository.get_streamer(&session.streamer_id).await {
+        Ok(streamer) => Some(streamer),
+        Err(error) => {
+            tracing::warn!(
+                streamer_id = %session.streamer_id,
+                %error,
+                "Failed to load streamer for session response"
+            );
+            None
+        }
+    };
     let (streamer_name, streamer_avatar) = if let Some(s) = streamer {
         (s.name, s.avatar)
     } else {
@@ -374,12 +387,13 @@ pub async fn get_session(
     };
 
     // Fetch danmu stats by session id (danmu_statistics.session_id).
-    let danmu_count = session_repository
-        .get_danmu_statistics(&session.id)
-        .await
-        .ok()
-        .flatten()
-        .map(|stats| stats.total_danmus as u64);
+    let danmu_count = match session_repository.get_danmu_statistics(&session.id).await {
+        Ok(stats) => stats.map(|stats| stats.total_danmus as u64),
+        Err(error) => {
+            tracing::warn!(session_id = %id, %error, "Failed to load session danmu statistics");
+            None
+        }
+    };
 
     // Get thumbnail URL
     let thumbnail_url = get_thumbnail_url(&session.id, session_repository.as_ref()).await;
@@ -587,7 +601,7 @@ pub async fn delete_session(
     let session_repository = &state.session_repository;
 
     // Check if session exists
-    let _ = session_repository
+    session_repository
         .get_session(&id)
         .await
         .map_err(ApiError::from)?;

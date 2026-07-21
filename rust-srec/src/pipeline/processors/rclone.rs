@@ -142,6 +142,15 @@ pub struct RcloneProcessor {
     max_retries: u32,
 }
 
+struct RcloneExecution<'a> {
+    remote_destination: &'a str,
+    operation: RcloneOperation,
+    config_path: Option<&'a str>,
+    throughput: &'a [String],
+    extra_args: &'a [String],
+    context: &'a ProcessorContext,
+}
+
 impl RcloneProcessor {
     /// Create a new rclone processor.
     pub fn new() -> Self {
@@ -239,23 +248,25 @@ impl RcloneProcessor {
     }
 
     /// Execute a single-file rclone operation.
-    #[allow(clippy::too_many_arguments)]
     async fn process_single(
         &self,
         input_path: &str,
-        remote_destination: &str,
-        operation: RcloneOperation,
-        config_path: Option<&str>,
-        throughput: &[String],
-        extra_args: &[String],
-        ctx: &ProcessorContext,
+        execution: &RcloneExecution<'_>,
     ) -> Result<ProcessorOutput> {
+        let RcloneExecution {
+            remote_destination,
+            operation,
+            config_path,
+            throughput,
+            extra_args,
+            context,
+        } = execution;
         let start = std::time::Instant::now();
 
         // Use 'copyto' and 'moveto' for single-file operations.
         // Unlike 'copy' and 'move', these commands are designed for file-to-file transfer
         // and won't create a directory with the destination filename.
-        let cmd_op = match operation {
+        let cmd_op = match *operation {
             RcloneOperation::Copy => "copyto",
             RcloneOperation::Move => "moveto",
             RcloneOperation::Sync => unreachable!(),
@@ -276,7 +287,7 @@ impl RcloneProcessor {
 
             let mut cmd = Command::new(&self.rclone_path);
 
-            if let Some(cfg) = config_path {
+            if let Some(cfg) = *config_path {
                 cmd.arg("--config").arg(cfg);
             }
 
@@ -293,15 +304,15 @@ impl RcloneProcessor {
             ]);
 
             // Throughput flags first, so any duplicates in `extra_args` win.
-            cmd.args(throughput);
-            for arg in extra_args {
+            cmd.args(*throughput);
+            for arg in *extra_args {
                 cmd.arg(arg);
             }
 
             let command_output = match crate::pipeline::processors::utils::run_rclone_with_progress(
                 &mut cmd,
-                &ctx.progress,
-                Some(ctx.log_sink.clone()),
+                &context.progress,
+                Some(context.log_sink.clone()),
             )
             .await
             {
@@ -318,7 +329,7 @@ impl RcloneProcessor {
 
                 let input_size_bytes = tokio::fs::metadata(input_path).await.ok().map(|m| m.len());
 
-                let outputs = match operation {
+                let outputs = match *operation {
                     // Move operation does not produce any outputs
                     RcloneOperation::Move => vec![],
                     _ => vec![input_path.to_string()],
@@ -362,20 +373,22 @@ impl RcloneProcessor {
     }
 
     /// Execute a batch rclone operation using --files-from.
-    #[allow(clippy::too_many_arguments)]
     async fn process_batch(
         &self,
         inputs: &[String],
-        remote_destination: &str,
-        operation: RcloneOperation,
-        config_path: Option<&str>,
-        throughput: &[String],
-        extra_args: &[String],
-        ctx: &ProcessorContext,
+        execution: &RcloneExecution<'_>,
     ) -> Result<ProcessorOutput> {
+        let RcloneExecution {
+            remote_destination,
+            operation,
+            config_path,
+            throughput,
+            extra_args,
+            context,
+        } = execution;
         let start = std::time::Instant::now();
 
-        let cmd_op = match operation {
+        let cmd_op = match *operation {
             RcloneOperation::Copy => "copy",
             RcloneOperation::Move => "move",
             RcloneOperation::Sync => "sync",
@@ -414,7 +427,7 @@ impl RcloneProcessor {
 
             let mut cmd = Command::new(&self.rclone_path);
 
-            if let Some(cfg) = config_path {
+            if let Some(cfg) = *config_path {
                 cmd.arg("--config").arg(cfg);
             }
 
@@ -433,15 +446,15 @@ impl RcloneProcessor {
             ]);
 
             // Throughput flags first, so any duplicates in `extra_args` win.
-            cmd.args(throughput);
-            for arg in extra_args {
+            cmd.args(*throughput);
+            for arg in *extra_args {
                 cmd.arg(arg);
             }
 
             let command_output = match crate::pipeline::processors::utils::run_rclone_with_progress(
                 &mut cmd,
-                &ctx.progress,
-                Some(ctx.log_sink.clone()),
+                &context.progress,
+                Some(context.log_sink.clone()),
             )
             .await
             {
@@ -470,7 +483,7 @@ impl RcloneProcessor {
                 }
 
                 // Determine outputs based on operation
-                let outputs = match operation {
+                let outputs = match *operation {
                     RcloneOperation::Move => vec![], // Files consumed
                     _ => inputs.to_vec(),            // Copy/Sync: pass through original inputs
                 };
@@ -666,12 +679,14 @@ impl Processor for RcloneProcessor {
 
             self.process_single(
                 input_path,
-                &full_destination,
-                config.operation,
-                config.config_path.as_deref(),
-                &throughput,
-                &config.args,
-                ctx,
+                &RcloneExecution {
+                    remote_destination: &full_destination,
+                    operation: config.operation,
+                    config_path: config.config_path.as_deref(),
+                    throughput: &throughput,
+                    extra_args: &config.args,
+                    context: ctx,
+                },
             )
             .await
         } else {
@@ -680,12 +695,14 @@ impl Processor for RcloneProcessor {
 
             self.process_batch(
                 &input.inputs,
-                &remote_destination,
-                config.operation,
-                config.config_path.as_deref(),
-                &throughput,
-                &config.args,
-                ctx,
+                &RcloneExecution {
+                    remote_destination: &remote_destination,
+                    operation: config.operation,
+                    config_path: config.config_path.as_deref(),
+                    throughput: &throughput,
+                    extra_args: &config.args,
+                    context: ctx,
+                },
             )
             .await
         }

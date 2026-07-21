@@ -82,7 +82,10 @@ pub struct VuiParameters {
 
 impl VuiParameters {
     // TODO: Find a solution for this
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "parameters mirror the H.265 VUI bitstream syntax"
+    )]
     pub(crate) fn parse<R: io::Read>(
         bit_reader: &mut BitReader<R>,
         sps_max_sub_layers_minus1: u8,

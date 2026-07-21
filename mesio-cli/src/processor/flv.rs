@@ -20,7 +20,7 @@ use std::pin::Pin;
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::BufReader;
-use tracing::{Instrument, Level, Span, info, span};
+use tracing::{Instrument, Level, Span, info, span, warn};
 
 async fn process_raw_stream(
     stream: Pin<Box<dyn Stream<Item = Result<FlvData, PipelineError>> + Send>>,
@@ -318,8 +318,10 @@ pub async fn process_flv_stream(
 
     let elapsed = start_time.elapsed();
     handle.cancel();
-    if let Some(task) = progress_task {
-        let _ = task.await;
+    if let Some(task) = progress_task
+        && let Err(error) = task.await
+    {
+        warn!(%error, "download progress task failed");
     }
     spans::summarize_dropped_events(&handle, &download_span);
 

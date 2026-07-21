@@ -214,7 +214,6 @@ impl DouyinDanmuProtocol {
     ) -> Vec<DanmuItem> {
         let mut parsed = Vec::new();
         for message in messages_list.iter() {
-            #[allow(clippy::single_match)]
             match message.method.as_str() {
                 "WebcastChatMessage" => {
                     if let Ok(chat_msg) =

@@ -94,13 +94,16 @@ impl DownloadManager {
         tokio::spawn(async move {
             if let Err(e) = engine.start(handle_for_engine.clone()).await {
                 error!("Engine start error: {}", e);
-                let _ = handle_for_engine
+                if let Err(send_error) = handle_for_engine
                     .event_tx
                     .send(SegmentEvent::DownloadFailed {
                         kind: e.kind,
                         message: format!("Engine start error: {}", e),
                     })
-                    .await;
+                    .await
+                {
+                    debug!(%send_error, "download event receiver closed after engine start failure");
+                }
             }
         });
 

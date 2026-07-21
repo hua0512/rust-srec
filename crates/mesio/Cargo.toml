@@ -2,9 +2,13 @@
 name = "mesio-engine"
 version = "0.5.0"
 edition.workspace = true
+rust-version.workspace = true
 description = "Mesio (media) streaming downloader engine"
 license.workspace = true
 repository = "https://github.com/hua0512/rust-srec"
+
+[lints]
+workspace = true
 
 [dependencies]
 bytes = { workspace = true }
@@ -31,9 +35,9 @@ rand = { workspace = true }
 parking_lot = { workspace = true }
 rustls = { workspace = true }
 moka = { version = "0.12", features = ["future", "sync"] }
-aes = "0.9.1"
-cbc = "0.2.1"
-cipher = "0.5.2"
+aes = { workspace = true }
+cbc = { workspace = true }
+cipher = { workspace = true }
 hex = { workspace = true }
 clap = { version = "4.6", features = ["derive"], optional = true }
 # Logging

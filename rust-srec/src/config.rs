@@ -14,6 +14,8 @@ pub(crate) mod service;
 pub use cache::{CacheStats, ConfigCache};
 pub use context::ResolvedStreamerContext;
 pub use events::{ConfigEventBroadcaster, ConfigUpdateEvent, UpdateCoalescer};
-pub use merged::{MergedConfig, MergedConfigBuilder};
+pub use merged::{
+    GlobalConfigLayer, MergedConfig, MergedConfigBuilder, PlatformConfigLayer, TemplateConfigLayer,
+};
 pub use resolver::ConfigResolver;
 pub use service::ConfigService;

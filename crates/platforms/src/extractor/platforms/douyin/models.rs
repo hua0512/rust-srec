@@ -1,4 +1,7 @@
-#![allow(dead_code, unused_variables)]
+#![expect(
+    dead_code,
+    reason = "API response models include fields and variant payloads not consumed by the extractor"
+)]
 
 use rustc_hash::FxHashMap;
 use serde::de::Deserializer;

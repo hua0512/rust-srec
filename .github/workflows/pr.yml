@@ -28,7 +28,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.10
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: clippy
       - uses: ./.github/actions/setup-protoc
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
       - uses: ./.github/actions/setup-protoc
       - name: Install Linux TLS dependencies
         run: |
@@ -66,7 +66,7 @@ jobs:
       - name: Check private-item rustdoc
         env:
           RUSTDOCFLAGS: "-D warnings"
-        run: cargo +stable doc --locked -p rust-srec --all-features --no-deps --document-private-items
+        run: cargo doc --locked --workspace --exclude rust-srec-desktop --all-features --no-deps --document-private-items
 
   test:
     name: Test Suite
@@ -93,7 +93,7 @@ jobs:
         if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
       - name: Install Linux TLS dependencies
@@ -185,7 +185,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
         with:

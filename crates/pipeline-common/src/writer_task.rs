@@ -4,7 +4,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::split_reason::SplitReason;
 use crate::{PipelineError, PipelineReceiver};
@@ -77,13 +77,13 @@ impl Default for ProgressConfig {
 /// Callback type for progress events.
 pub type ProgressCallback = Box<dyn Fn(WriterProgress) + Send + Sync>;
 
-/// Expands a filename template with optional sequence number.
-/// Replaces `%i` with the sequence number if provided.
-/// TODO: Clippy is reporting false positives here.
-#[allow(dead_code)]
-pub fn expand_filename_template(template: &str, sequence_number: Option<u32>) -> String {
-    if let Some(seq) = sequence_number {
-        template.replace("%i", &seq.to_string())
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by the optional default writer strategy")
+)]
+fn expand_writer_sequence_template(template: &str, sequence_number: Option<u32>) -> String {
+    if let Some(sequence_number) = sequence_number {
+        template.replace("%i", &sequence_number.to_string())
     } else {
         template.to_string()
     }
@@ -220,7 +220,10 @@ pub enum WriterError {
 
 /// Internal error type for the writer task (keeps strategy error generic).
 #[derive(Error, Debug)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for optional pipeline strategies and diagnostics"
+)]
 pub(crate) enum TaskError<StrategyError: Error + Send + Sync + 'static> {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
@@ -709,7 +712,13 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
                     self.process_item(item)?;
                 }
                 Err(e) => {
-                    let _ = self.close();
+                    if let Err(close_error) = self.close() {
+                        warn!(
+                            error = %close_error,
+                            input_error = %e,
+                            "failed to close writer after input error"
+                        );
+                    }
                     return Err(WriterError::InputError(e));
                 }
             }
@@ -744,10 +753,16 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
 /// A default file-based strategy for convenience.
 /// This can be used directly or as a template for more complex strategies.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for optional pipeline strategies and diagnostics"
+)]
 pub struct DefaultFileStrategy;
 
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for optional pipeline strategies and diagnostics"
+)]
 #[derive(Error, Debug)]
 pub enum DefaultStrategyError {
     #[error("I/O error: {0}")]
@@ -782,7 +797,7 @@ impl<D: Send + Sync + 'static> FormatStrategy<D> for DefaultFileStrategy {
     }
 
     fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
-        let filename = expand_filename_template(
+        let filename = expand_writer_sequence_template(
             &config.file_name_template,
             Some(state.file_sequence_number + 1),
         );
@@ -866,7 +881,7 @@ mod tests {
         }
 
         fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
-            let filename = expand_filename_template(
+            let filename = expand_writer_sequence_template(
                 &config.file_name_template,
                 Some(state.file_sequence_number),
             );

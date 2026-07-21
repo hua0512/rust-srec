@@ -2,7 +2,6 @@
 /target/
 *.rs.bk
 rust-toolchain
-rust-toolchain.toml
 
 # Logs
 *.log

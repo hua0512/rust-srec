@@ -175,7 +175,13 @@ impl GlobalTtwidManager {
     }
 
     /// Clear the global ttwid
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "retained for protocol variants and forward-compatible response handling"
+        )
+    )]
     pub fn clear_global_ttwid() {
         if let Ok(mut guard) = GLOBAL_TTWID.lock() {
             *guard = None;

@@ -83,7 +83,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.10
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: clippy
       - uses: taiki-e/install-action@nextest
@@ -167,7 +167,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
         with:
           targets: ${{ contains(matrix.args, '--target') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 

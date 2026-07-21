@@ -11,6 +11,8 @@ pub mod utf8_simd {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("sse2") {
+                // SAFETY: SSE2 support was checked at runtime. The helper only
+                // performs unaligned loads within the bounds of `bytes`.
                 unsafe { validate_utf8_sse2(bytes) }
             } else {
                 std::str::from_utf8(bytes).map(|_| ())
@@ -41,14 +43,16 @@ pub mod utf8_simd {
 
         // Process 16-byte chunks with SSE2
         while pos + 16 <= len {
-            let chunk = unsafe { _mm_loadu_si128(bytes.as_ptr().add(pos) as *const __m128i) };
+            let non_ascii_bits = unsafe {
+                // SAFETY: `pos + 16 <= len`, so the unaligned 16-byte load is
+                // in bounds. This function is called only after checking SSE2.
+                let chunk = _mm_loadu_si128(bytes.as_ptr().add(pos) as *const __m128i);
+                let non_ascii_mask = _mm_cmplt_epi8(chunk, _mm_set1_epi8(0));
+                _mm_movemask_epi8(non_ascii_mask) as u16
+            };
 
-            // Check for ASCII (all bytes < 0x80)
-            let ascii_mask = unsafe { _mm_cmplt_epi8(chunk, _mm_set1_epi8(0)) };
-            let ascii_bits = unsafe { _mm_movemask_epi8(ascii_mask) } as u16;
-
-            if ascii_bits == 0xFFFF {
-                // All ASCII, safe to skip detailed validation for this chunk
+            if non_ascii_bits == 0 {
+                // All bytes are ASCII, so this chunk is valid UTF-8.
                 pos += 16;
                 continue;
             }
@@ -76,6 +80,8 @@ pub mod utf8_simd {
         #[cfg(target_arch = "x86_64")]
         {
             if a.len() >= 16 && is_x86_feature_detected!("sse2") {
+                // SAFETY: SSE2 support was checked at runtime. The helper only
+                // performs unaligned loads within the bounds of both slices.
                 unsafe { bytes_equal_sse2(a, b) }
             } else {
                 a == b
@@ -96,11 +102,14 @@ pub mod utf8_simd {
 
         // Compare 16-byte chunks
         while pos + 16 <= len {
-            let chunk_a = unsafe { _mm_loadu_si128(a.as_ptr().add(pos) as *const __m128i) };
-            let chunk_b = unsafe { _mm_loadu_si128(b.as_ptr().add(pos) as *const __m128i) };
-
-            let cmp = unsafe { _mm_cmpeq_epi8(chunk_a, chunk_b) };
-            let mask = unsafe { _mm_movemask_epi8(cmp) } as u16;
+            let mask = unsafe {
+                // SAFETY: `pos + 16 <= len` for equal-length slices, so both
+                // unaligned loads are in bounds. SSE2 was checked by the caller.
+                let chunk_a = _mm_loadu_si128(a.as_ptr().add(pos) as *const __m128i);
+                let chunk_b = _mm_loadu_si128(b.as_ptr().add(pos) as *const __m128i);
+                let cmp = _mm_cmpeq_epi8(chunk_a, chunk_b);
+                _mm_movemask_epi8(cmp) as u16
+            };
 
             if mask != 0xFFFF {
                 return false; // Found difference
@@ -187,5 +196,37 @@ impl crate::ValidatedBytes {
     #[inline]
     pub fn equals_fast(&self, other: &Self) -> bool {
         utf8_simd::bytes_equal_simd(&self.0, &other.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::utf8_simd;
+
+    #[test]
+    fn rejects_full_non_ascii_invalid_chunk() {
+        let invalid = [0xff; 16];
+
+        assert!(utf8_simd::validate_utf8(&invalid).is_err());
+        assert!(utf8_simd::validated_bytes_fast(Bytes::copy_from_slice(&invalid)).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_data_after_ascii_chunk() {
+        let mut invalid = vec![b'a'; 32];
+        invalid[23] = 0xff;
+
+        assert!(utf8_simd::validate_utf8(&invalid).is_err());
+    }
+
+    #[test]
+    fn accepts_ascii_and_multibyte_utf8() {
+        let ascii = [b'a'; 32];
+        let multibyte = "ASCII prefix long enough: 你好, мир";
+
+        assert!(utf8_simd::validate_utf8(&ascii).is_ok());
+        assert!(utf8_simd::validate_utf8(multibyte.as_bytes()).is_ok());
     }
 }

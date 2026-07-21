@@ -2,7 +2,11 @@
 name = "flv-fix"
 version = "0.1.8"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 bytes = { workspace = true }
@@ -15,7 +19,7 @@ pipeline-common = { path = "../pipeline-common" }
 zlib-rs = { workspace = true }
 time = { version = "0.3.46", features = ["macros", "formatting", "parsing"] }
 tracing = { workspace = true }
-tracing-indicatif = "0.3"
+tracing-indicatif = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "rt-multi-thread"] }
 
@@ -29,6 +33,3 @@ tokio = { workspace = true, features = [
     "macros",
     "rt-multi-thread",
 ] }
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

@@ -456,8 +456,7 @@ pub trait PlatformExtractor: Send + Sync {
 
     async fn extract(&self) -> Result<MediaInfo, ExtractorError>;
 
-    #[allow(unused_variables)]
-    async fn get_url(&self, stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
+    async fn get_url(&self, _stream_info: &mut StreamInfo) -> Result<(), ExtractorError> {
         // Default implementation, can be overridden by specific extractors
         Ok(())
     }

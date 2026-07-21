@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::io::ErrorKind;
 use std::path::Path;
 use tokio::fs;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
@@ -422,7 +422,13 @@ impl Processor for CopyMoveProcessor {
 
                     // Verify integrity using size comparison (avoid extra metadata call)
                     if config.verify_integrity && bytes_copied != source_size {
-                        let _ = fs::remove_file(&dest).await;
+                        if let Err(cleanup_error) = fs::remove_file(&dest).await {
+                            warn!(
+                                path = %dest.display(),
+                                error = %cleanup_error,
+                                "Failed to remove copy after integrity check failure"
+                            );
+                        }
                         let error_msg = format!(
                             "File integrity check failed. Source size: {}, Destination size: {}",
                             source_size, bytes_copied
@@ -496,7 +502,13 @@ impl Processor for CopyMoveProcessor {
                             };
 
                             if config.verify_integrity && bytes_copied != source_size {
-                                let _ = fs::remove_file(&dest).await;
+                                if let Err(cleanup_error) = fs::remove_file(&dest).await {
+                                    warn!(
+                                        path = %dest.display(),
+                                        error = %cleanup_error,
+                                        "Failed to remove cross-filesystem copy after integrity check failure"
+                                    );
+                                }
                                 let error_msg = format!(
                                     "File integrity check failed. Source size: {}, Destination size: {}",
                                     source_size, bytes_copied

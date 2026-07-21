@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tokio::process::Command;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{create_log_entry, get_extension, is_media, parse_config_or_default};
@@ -808,7 +808,13 @@ impl Processor for RemuxProcessor {
                 Err(e) => {
                     // Best-effort cleanup of any produced outputs in this batch to avoid leaving partial artifacts.
                     for produced in &items_produced {
-                        let _ = tokio::fs::remove_file(produced).await;
+                        if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
+                            warn!(
+                                path = %produced,
+                                error = %cleanup_error,
+                                "Failed to remove remux output after batch failure"
+                            );
+                        }
                     }
                     return Err(e);
                 }
@@ -821,7 +827,8 @@ impl Processor for RemuxProcessor {
                 let input_path_string = make_absolute(input_path).await;
                 let input_path = input_path_string.as_str();
                 if let Err(e) = tokio::fs::remove_file(input_path).await {
-                    let _ = ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
+                    warn!(path = input_path, error = %e, "Failed to remove remux input");
+                    ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
                     logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Warn,
                         format!("Failed to remove input file {}: {}", input_path, e),

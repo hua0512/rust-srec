@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 // Demo data type for our example
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for optional pipeline strategies and diagnostics"
+)]
 enum MediaData {
     Video(Vec<u8>),
     Audio(Vec<u8>),

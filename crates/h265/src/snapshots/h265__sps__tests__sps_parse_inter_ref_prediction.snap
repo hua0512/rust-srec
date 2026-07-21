@@ -1,5 +1,5 @@
 ---
-source: crates/h265/src/sps/mod.rs
+source: crates/h265/src/sps.rs
 expression: nalu
 ---
 SpsNALUnit {

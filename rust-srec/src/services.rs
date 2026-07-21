@@ -8,4 +8,4 @@ pub(crate) mod container;
 pub(crate) mod runtime_coordinator;
 pub(crate) mod session_cancels;
 
-pub use container::{ServiceContainer, ServiceStats};
+pub use container::{ServiceContainer, ServiceContainerConfig, ServiceStats};

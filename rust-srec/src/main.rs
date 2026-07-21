@@ -16,8 +16,12 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Load environment variables
-    dotenvy::dotenv().ok();
+    // Logging is not initialized yet, so surface malformed or unreadable dotenv files directly.
+    if let Err(error) = dotenvy::dotenv()
+        && !error.not_found()
+    {
+        eprintln!("Failed to load .env: {error}");
+    }
 
     install_rustls_provider();
 

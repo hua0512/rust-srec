@@ -18,7 +18,10 @@ use crate::downloader::StreamSelectionConfig;
 use crate::utils::json::{self, JsonContext};
 use std::sync::Arc;
 
-use super::{MergedConfig, ResolvedStreamerContext};
+use super::{
+    GlobalConfigLayer, MergedConfig, PlatformConfigLayer, ResolvedStreamerContext,
+    TemplateConfigLayer,
+};
 
 /// Service for resolving configuration for streamers.
 pub struct ConfigResolver<R: ConfigRepository> {
@@ -98,15 +101,15 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             "Invalid JSON config; ignoring",
         );
 
-        builder = builder.with_global(
-            global_config.output_folder.clone(),
-            global_config.output_filename_template.clone(),
-            global_config.output_file_format.clone(),
-            global_config.min_segment_size_bytes,
-            global_config.max_download_duration_secs,
-            global_config.max_part_size_bytes,
-            global_config.record_danmu,
-            json::parse_or_default(
+        builder = builder.with_global(GlobalConfigLayer {
+            output_folder: global_config.output_folder.clone(),
+            output_filename_template: global_config.output_filename_template.clone(),
+            output_file_format: global_config.output_file_format.clone(),
+            min_segment_size_bytes: global_config.min_segment_size_bytes,
+            max_download_duration_secs: global_config.max_download_duration_secs,
+            max_part_size_bytes: global_config.max_part_size_bytes,
+            record_danmu: global_config.record_danmu,
+            proxy_config: json::parse_or_default(
                 &global_config.proxy_config,
                 JsonContext::StreamerConfig {
                     streamer_id: &streamer.id,
@@ -116,14 +119,14 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 },
                 "Invalid JSON config; using defaults",
             ),
-            global_config.default_download_engine.clone(),
-            global_pipeline,
-            global_session_complete_pipeline,
-            global_paired_segment_pipeline,
-            global_config.auto_thumbnail,
-            global_config.offline_check_count.max(0) as u32,
-            global_config.offline_check_delay_ms.max(0) as u64,
-        );
+            download_engine: global_config.default_download_engine.clone(),
+            pipeline: global_pipeline,
+            session_complete_pipeline: global_session_complete_pipeline,
+            paired_segment_pipeline: global_paired_segment_pipeline,
+            auto_thumbnail: global_config.auto_thumbnail,
+            offline_check_count: global_config.offline_check_count.max(0) as u32,
+            offline_check_delay_ms: global_config.offline_check_delay_ms.max(0) as u64,
+        });
 
         // Layer 2: Platform config
         let platform_config = self
@@ -225,29 +228,29 @@ impl<R: ConfigRepository> ConfigResolver<R> {
             "Invalid JSON config; ignoring",
         );
 
-        builder = builder.with_platform(
-            platform_config.fetch_delay_ms,
-            platform_config.download_delay_ms,
-            platform_config.cookies.clone(),
-            platform_proxy,
-            platform_config.record_danmu,
-            platform_extras.as_ref(), // Pass as Option<&Value>
-            platform_config.output_folder.clone(),
-            platform_config.output_filename_template.clone(),
-            platform_config.download_engine.clone(),
-            platform_stream_selection,
-            platform_config.output_file_format.clone(),
-            platform_config.min_segment_size_bytes,
-            platform_config.max_download_duration_secs,
-            platform_config.max_part_size_bytes,
-            platform_download_retry_policy,
-            platform_event_hooks,
-            platform_pipeline,
-            platform_session_complete_pipeline,
-            platform_paired_segment_pipeline,
-            platform_config.offline_check_count,
-            platform_config.offline_check_delay_ms,
-        );
+        builder = builder.with_platform(PlatformConfigLayer {
+            fetch_delay_ms: platform_config.fetch_delay_ms,
+            download_delay_ms: platform_config.download_delay_ms,
+            cookies: platform_config.cookies.clone(),
+            proxy_config: platform_proxy,
+            record_danmu: platform_config.record_danmu,
+            platform_specific_config: platform_extras,
+            output_folder: platform_config.output_folder.clone(),
+            output_filename_template: platform_config.output_filename_template.clone(),
+            download_engine: platform_config.download_engine.clone(),
+            stream_selection: platform_stream_selection,
+            output_file_format: platform_config.output_file_format.clone(),
+            min_segment_size_bytes: platform_config.min_segment_size_bytes,
+            max_download_duration_secs: platform_config.max_download_duration_secs,
+            max_part_size_bytes: platform_config.max_part_size_bytes,
+            download_retry_policy: platform_download_retry_policy,
+            event_hooks: platform_event_hooks,
+            pipeline: platform_pipeline,
+            session_complete_pipeline: platform_session_complete_pipeline,
+            paired_segment_pipeline: platform_paired_segment_pipeline,
+            offline_check_count: platform_config.offline_check_count,
+            offline_check_delay_ms: platform_config.offline_check_delay_ms,
+        });
 
         let mut credential_source: Option<CredentialSource> = streamer
             .streamer_specific_config
@@ -432,29 +435,29 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                     "Invalid JSON config; ignoring",
                 );
 
-            builder = builder.with_template(
-                template_config.output_folder,
-                template_config.output_filename_template,
-                template_config.output_file_format,
-                template_config.min_segment_size_bytes,
-                template_config.max_download_duration_secs,
-                template_config.max_part_size_bytes,
-                template_config.record_danmu,
-                template_proxy,
-                template_config.cookies,
-                template_config.download_engine,
-                template_retry,
-                template_danmu,
-                template_hooks,
-                template_stream_selection,
-                template_engines_override,
-                template_pipeline,
-                template_session_complete_pipeline,
-                template_paired_segment_pipeline,
-                template_platform_extras, // platform_extras from platform_overrides
-                template_config.offline_check_count,
-                template_config.offline_check_delay_ms,
-            );
+            builder = builder.with_template(TemplateConfigLayer {
+                output_folder: template_config.output_folder,
+                output_filename_template: template_config.output_filename_template,
+                output_file_format: template_config.output_file_format,
+                min_segment_size_bytes: template_config.min_segment_size_bytes,
+                max_download_duration_secs: template_config.max_download_duration_secs,
+                max_part_size_bytes: template_config.max_part_size_bytes,
+                record_danmu: template_config.record_danmu,
+                proxy_config: template_proxy,
+                cookies: template_config.cookies,
+                download_engine: template_config.download_engine,
+                download_retry_policy: template_retry,
+                danmu_sampling_config: template_danmu,
+                event_hooks: template_hooks,
+                stream_selection: template_stream_selection,
+                engines_override: template_engines_override,
+                pipeline: template_pipeline,
+                session_complete_pipeline: template_session_complete_pipeline,
+                paired_segment_pipeline: template_paired_segment_pipeline,
+                platform_extras: template_platform_extras,
+                offline_check_count: template_config.offline_check_count,
+                offline_check_delay_ms: template_config.offline_check_delay_ms,
+            });
 
             // Template platform overrides are more specific than top-level template
             // pipeline fields, so apply them after with_template().

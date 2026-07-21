@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
@@ -97,7 +97,10 @@ impl MetadataProcessor {
     }
 
     /// Create with a custom ffmpeg path.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for optional runtime paths and diagnostics"
+    )]
     pub fn with_ffmpeg_path(path: impl Into<String>) -> Self {
         Self {
             ffmpeg_path: path.into(),
@@ -464,7 +467,13 @@ impl Processor for MetadataProcessor {
                     }
                     Err(e) => {
                         for produced in &items_produced {
-                            let _ = tokio::fs::remove_file(produced).await;
+                            if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
+                                warn!(
+                                    path = %produced,
+                                    error = %cleanup_error,
+                                    "Failed to remove metadata output after batch failure"
+                                );
+                            }
                         }
                         return Err(e);
                     }

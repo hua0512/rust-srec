@@ -219,7 +219,7 @@ impl SplitOperator {
 
     /// Compute a "semantic signature" for AAC sequence headers.
     ///
-    /// Layout: [AudioHeader][AACPacketType=0][AudioSpecificConfig...]
+    /// Layout: `AudioHeader | AACPacketType=0 | AudioSpecificConfig...`
     /// We ignore the legacy audio header bits and only hash the AAC payload.
     fn calculate_audio_sequence_signature(tag: &FlvTag) -> u32 {
         let data = tag.data().as_ref();

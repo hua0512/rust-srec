@@ -255,16 +255,17 @@ fn broadcast_error_is_recoverable(
     }
 }
 
-struct ServiceContainerBuildOptions {
-    cache_ttl: Duration,
-    event_capacity: usize,
-    download_config: DownloadManagerConfig,
-    pipeline_config: PipelineManagerConfig,
-    danmu_config: DanmuServiceConfig,
-    api_config: ApiServerConfig,
+/// Configuration used to assemble a [`ServiceContainer`].
+pub struct ServiceContainerConfig {
+    pub cache_ttl: Duration,
+    pub event_capacity: usize,
+    pub download_config: DownloadManagerConfig,
+    pub pipeline_config: PipelineManagerConfig,
+    pub danmu_config: DanmuServiceConfig,
+    pub api_config: ApiServerConfig,
 }
 
-impl ServiceContainerBuildOptions {
+impl ServiceContainerConfig {
     fn standard(cache_ttl: Duration, event_capacity: usize) -> Self {
         Self {
             cache_ttl,
@@ -778,12 +779,14 @@ mod tests {
         let container = super::ServiceContainer::with_full_config(
             pool.clone(),
             pool,
-            std::time::Duration::from_secs(60),
-            8,
-            crate::downloader::DownloadManagerConfig::default(),
-            crate::pipeline::PipelineManagerConfig::default(),
-            crate::danmu::service::DanmuServiceConfig::default(),
-            crate::api::server::ApiServerConfig::default(),
+            super::ServiceContainerConfig {
+                cache_ttl: std::time::Duration::from_secs(60),
+                event_capacity: 8,
+                download_config: crate::downloader::DownloadManagerConfig::default(),
+                pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
+                danmu_config: crate::danmu::service::DanmuServiceConfig::default(),
+                api_config: crate::api::server::ApiServerConfig::default(),
+            },
         )
         .await
         .expect("full service container should initialize");

@@ -172,7 +172,10 @@ struct ActiveDownload {
     /// Queue slot held by the download. Released (and the next waiter
     /// woken) when this `ActiveDownload` entry is removed from the
     /// active map.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for optional runtime paths and diagnostics"
+    )]
     slot: Option<ActiveSlot>,
     /// Retry configuration override applied via config update.
     retry_config_override: Option<RetryConfig>,

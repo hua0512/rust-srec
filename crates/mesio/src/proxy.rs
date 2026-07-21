@@ -24,7 +24,7 @@ pub struct ProxyAuth {
 /// Proxy configuration
 #[derive(Debug, Clone)]
 pub struct ProxyConfig {
-    /// Proxy server URL (e.g., "http://proxy.example.com:8080")
+    /// Proxy server URL (for example, <http://proxy.example.com:8080>)
     pub url: String,
     /// Type of proxy (HTTP, HTTPS, SOCKS5).
     ///

@@ -69,7 +69,7 @@ impl ServiceContainer {
     /// Initialize and start the API server.
     /// This should be called after initialize() and runs the server in the background.
     pub async fn start_api_server(&self) -> Result<()> {
-        let _ = self.start_api_server_bound().await?;
+        self.start_api_server_bound().await?;
         Ok(())
     }
 

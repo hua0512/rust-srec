@@ -33,11 +33,8 @@
 //! handle more complex timing issues like rebounds, discontinuities, or A/V sync problems.
 //! For complete timing correction, use this operator first, followed by `TimingRepairOperator`.
 //!
-//! Example pipeline:
-//! ```
-//! // 1. First apply TimeConsistencyOperator to handle split points
-//! // 2. Then apply TimingRepairOperator for comprehensive timing fixes
-//! ```
+//! Example pipeline: first apply `TimeConsistencyOperator` to handle split points, then apply
+//! `TimingRepairOperator` for comprehensive timing fixes.
 //!
 //! ## License
 //!

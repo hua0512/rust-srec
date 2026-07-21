@@ -406,12 +406,14 @@ async fn run_desktop_backend_init(
     let container = match backend::ServiceContainer::with_full_config(
         pool,
         write_pool,
-        Duration::from_secs(3600),
-        256,
-        backend::DownloadManagerConfig::default(),
-        backend::PipelineManagerConfig::default(),
-        backend::DanmuServiceConfig::default(),
-        api_config,
+        backend::ServiceContainerConfig {
+            cache_ttl: Duration::from_secs(3600),
+            event_capacity: 256,
+            download_config: backend::DownloadManagerConfig::default(),
+            pipeline_config: backend::PipelineManagerConfig::default(),
+            danmu_config: backend::DanmuServiceConfig::default(),
+            api_config,
+        },
     )
     .await
     {

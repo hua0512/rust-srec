@@ -1,4 +1,7 @@
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "API response models include fields not consumed by the extractor"
+)]
 
 //! Serde models for Bigo studio + WebSocket link APIs.
 

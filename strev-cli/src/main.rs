@@ -6,7 +6,7 @@ mod output;
 
 use crate::{
     cli::{Args, Commands},
-    commands::CommandExecutor,
+    commands::{CommandExecutor, ExtractRequest},
     config::AppConfig,
     error::Result,
 };
@@ -57,7 +57,6 @@ async fn main() {
     }
 }
 
-#[allow(clippy::println_empty_string)]
 async fn run(args: Args) -> Result<()> {
     let output_format = match &args.command {
         Commands::Extract { output, .. } => Some(*output),
@@ -76,13 +75,13 @@ async fn run(args: Args) -> Result<()> {
         println!("╚════██║   ██║   ██╔══██╗██╔══╝  ╚██╗ ██╔╝");
         println!("███████║   ██║   ██║  ██║███████╗ ╚████╔╝ ");
         println!("╚══════╝   ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ");
-        println!("");
+        println!();
         println!(
             "Streev - CLI tool for streaming media extraction and retrieval from various platforms"
         );
         println!("GitHub: https://github.com/hua0512/rust-srec");
         println!("==================================================================");
-        println!("");
+        println!();
     } else {
         init_logging(args.verbose, args.quiet)?;
     }
@@ -120,18 +119,18 @@ async fn run(args: Args) -> Result<()> {
             auto_select,
         } => {
             executor
-                .extract_single(
-                    &url,
-                    cookies.as_deref(),
-                    extras.as_deref(),
-                    output_file.as_deref(),
-                    quality.as_deref(),
-                    format.as_deref(),
+                .extract_single(ExtractRequest {
+                    url: &url,
+                    cookies: cookies.as_deref(),
+                    extras: extras.as_deref(),
+                    output_file: output_file.as_deref(),
+                    quality: quality.as_deref(),
+                    format: format.as_deref(),
                     auto_select,
-                    output,
-                    std::time::Duration::from_secs(args.timeout),
-                    args.retries,
-                )
+                    output_format: output,
+                    timeout: std::time::Duration::from_secs(args.timeout),
+                    retries: args.retries,
+                })
                 .await?;
         }
 
@@ -147,12 +146,9 @@ async fn run(args: Args) -> Result<()> {
                     &input,
                     output_dir.as_deref(),
                     max_concurrent,
-                    None, // quality filter
-                    None, // format filter
                     true, // auto_select
                     output_format,
                     std::time::Duration::from_secs(args.timeout),
-                    args.retries,
                 )
                 .await?;
         }

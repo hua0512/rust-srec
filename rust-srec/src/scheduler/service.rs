@@ -738,8 +738,10 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => {
                 // Filters can affect OutOfSchedule smart-wake hints. Force a fresh check soon so
                 // the StreamerActor picks up the new filter behavior immediately.
-                if let Some(handle) = self.supervisor.registry().get_streamer(streamer_id) {
-                    let _ = handle.send(StreamerMessage::CheckStatus).await;
+                if let Some(handle) = self.supervisor.registry().get_streamer(streamer_id)
+                    && let Err(error) = handle.send(StreamerMessage::CheckStatus).await
+                {
+                    debug!(streamer_id, %error, "Streamer actor stopped before forced check");
                 }
             }
             ConfigUpdateEvent::GlobalUpdated => match self.refresh_timing_config_from_db().await {
@@ -925,8 +927,14 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 && !self.supervisor.registry().has_streamer(streamer_id)
             {
                 // Ensure platform actor exists for batch-capable platforms.
-                if self.is_batch_capable_platform(&metadata.platform_config_id) {
-                    let _ = self.spawn_platform_actor(&metadata.platform_config_id);
+                if self.is_batch_capable_platform(&metadata.platform_config_id)
+                    && let Err(e) = self.spawn_platform_actor(&metadata.platform_config_id)
+                {
+                    warn!(
+                        platform_id = %metadata.platform_config_id,
+                        error = %e,
+                        "Failed to spawn platform actor during state sync"
+                    );
                 }
 
                 info!(

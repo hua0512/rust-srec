@@ -96,7 +96,10 @@ pub struct StreamerActor {
     /// Mailbox for receiving high-priority messages (checked first).
     priority_mailbox: Option<mpsc::Receiver<StreamerMessage>>,
     /// Handle for sending messages to self (for self-scheduling).
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for optional runtime paths and diagnostics"
+    )]
     self_handle: mpsc::Sender<StreamerMessage>,
     /// Platform actor handle (if on batch-capable platform).
     platform_actor: Option<mpsc::Sender<PlatformMessage>>,
@@ -744,8 +747,7 @@ impl StreamerActor {
 
                 // Record the error in state
                 let error_result = CheckResult::failure(&e.message);
-                let _ = self
-                    .state
+                self.state
                     .record_check(error_result, &self.config, self.get_error_count());
 
                 if e.transient {
@@ -890,8 +892,7 @@ impl StreamerActor {
             }
 
             // Record the check result so scheduling/backoff can proceed normally when not Live.
-            let _ = self
-                .state
+            self.state
                 .record_check(result.result, &self.config, error_count);
 
             if let Some(metadata) = self.get_metadata() {

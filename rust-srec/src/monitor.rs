@@ -22,6 +22,7 @@ pub use detector::{FilterReason, LiveStatus, StreamDetector, StreamInfo};
 pub(crate) use events::MonitorEventDelivery;
 pub use events::{MonitorEvent, MonitorEventBroadcaster};
 pub use rate_limiter::{RateLimiter, RateLimiterConfig, RateLimiterManager};
+pub(crate) use service::StreamMonitorRuntimeConfig;
 pub use service::{
     InfraBlockReason, ProcessStatusResult, ProcessStatusSuppression, StreamMonitor,
     StreamMonitorConfig,

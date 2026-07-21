@@ -14,7 +14,7 @@ use super::coordination::{
     SessionOutputs, SourceType,
 };
 use super::dag_scheduler::{
-    DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagScheduler,
+    DagCompletionInfo, DagCreationResult, DagExecutionMetadata, DagRunContext, DagScheduler,
 };
 use super::job_queue::{Job, JobLogEntry, JobQueue, JobQueueConfig, QueueDepthStatus};
 use super::processors::{
@@ -303,7 +303,7 @@ where
     }
 
     /// Create an in-memory Pipeline Manager without persistence repositories.
-    #[allow(
+    #[expect(
         clippy::new_without_default,
         reason = "production construction requires PipelineRuntimeDependencies"
     )]

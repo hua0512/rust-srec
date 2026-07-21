@@ -444,7 +444,14 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
         self.daily_tracker
             .record_check(&source.scope, CredentialStatus::Valid);
         self.failure_tracker.clear(&source.scope);
-        let _ = self.store.update_check_result(&source.scope, "valid").await;
+        if let Err(e) = self.store.update_check_result(&source.scope, "valid").await {
+            warn!(
+                platform = %source.platform_name,
+                scope = %source.scope.describe(),
+                error = %e,
+                "Failed to persist credential check status"
+            );
+        }
         info!(
             platform = %source.platform_name,
             scope = %source.scope.describe(),

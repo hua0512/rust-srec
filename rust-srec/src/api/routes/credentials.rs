@@ -827,7 +827,10 @@ pub async fn bilibili_qr_poll(
                     }
                 }
 
-                streamer.streamer_specific_config = serde_json::to_string(&config).ok();
+                streamer.streamer_specific_config =
+                    Some(serde_json::to_string(&config).map_err(|error| {
+                        ApiError::internal(format!("Failed to save credentials: {error}"))
+                    })?);
                 streamer_repo
                     .update_streamer(&streamer)
                     .await

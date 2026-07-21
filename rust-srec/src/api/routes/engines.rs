@@ -214,7 +214,7 @@ pub async fn delete_engine(
     let config_service = &state.config_service;
 
     // Check if exists first
-    let _ = config_service.get_engine_config(&id).await.map_err(|e| {
+    config_service.get_engine_config(&id).await.map_err(|e| {
         if e.to_string().contains("not found") {
             ApiError::not_found(format!("Engine config with id '{}' not found", id))
         } else {

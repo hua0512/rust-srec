@@ -442,7 +442,6 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
     planned
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_init_descriptor(
     final_map_uri: &str,
     map_info: &m3u8_rs::Map,

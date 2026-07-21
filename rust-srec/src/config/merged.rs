@@ -101,27 +101,97 @@ pub struct MergedConfigBuilder {
     offline_check_delay_ms: Option<u64>,
 }
 
+/// Fully parsed global configuration layer.
+pub struct GlobalConfigLayer {
+    pub output_folder: String,
+    pub output_filename_template: String,
+    pub output_file_format: String,
+    pub min_segment_size_bytes: i64,
+    pub max_download_duration_secs: i64,
+    pub max_part_size_bytes: i64,
+    pub record_danmu: bool,
+    pub proxy_config: ProxyConfig,
+    pub download_engine: String,
+    pub pipeline: Option<DagPipelineDefinition>,
+    pub session_complete_pipeline: Option<DagPipelineDefinition>,
+    pub paired_segment_pipeline: Option<DagPipelineDefinition>,
+    pub auto_thumbnail: bool,
+    pub offline_check_count: u32,
+    pub offline_check_delay_ms: u64,
+}
+
+/// Fully parsed platform configuration overrides.
+#[derive(Default)]
+pub struct PlatformConfigLayer {
+    pub fetch_delay_ms: Option<i64>,
+    pub download_delay_ms: Option<i64>,
+    pub cookies: Option<String>,
+    pub proxy_config: Option<ProxyConfig>,
+    pub record_danmu: Option<bool>,
+    pub platform_specific_config: Option<serde_json::Value>,
+    pub output_folder: Option<String>,
+    pub output_filename_template: Option<String>,
+    pub download_engine: Option<String>,
+    pub stream_selection: Option<StreamSelectionConfig>,
+    pub output_file_format: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    pub download_retry_policy: Option<RetryPolicy>,
+    pub event_hooks: Option<EventHooks>,
+    pub pipeline: Option<DagPipelineDefinition>,
+    pub session_complete_pipeline: Option<DagPipelineDefinition>,
+    pub paired_segment_pipeline: Option<DagPipelineDefinition>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
+}
+
+/// Fully parsed template configuration overrides.
+#[derive(Default)]
+pub struct TemplateConfigLayer {
+    pub output_folder: Option<String>,
+    pub output_filename_template: Option<String>,
+    pub output_file_format: Option<String>,
+    pub min_segment_size_bytes: Option<i64>,
+    pub max_download_duration_secs: Option<i64>,
+    pub max_part_size_bytes: Option<i64>,
+    pub record_danmu: Option<bool>,
+    pub proxy_config: Option<ProxyConfig>,
+    pub cookies: Option<String>,
+    pub download_engine: Option<String>,
+    pub download_retry_policy: Option<RetryPolicy>,
+    pub danmu_sampling_config: Option<DanmuSamplingConfig>,
+    pub event_hooks: Option<EventHooks>,
+    pub stream_selection: Option<StreamSelectionConfig>,
+    pub engines_override: Option<serde_json::Value>,
+    pub pipeline: Option<DagPipelineDefinition>,
+    pub session_complete_pipeline: Option<DagPipelineDefinition>,
+    pub paired_segment_pipeline: Option<DagPipelineDefinition>,
+    pub platform_extras: Option<serde_json::Value>,
+    pub offline_check_count: Option<i32>,
+    pub offline_check_delay_ms: Option<i64>,
+}
+
 impl MergedConfigBuilder {
     /// Apply global config as the base layer.
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_global(
-        mut self,
-        output_folder: String,
-        output_filename_template: String,
-        output_file_format: String,
-        min_segment_size_bytes: i64,
-        max_download_duration_secs: i64,
-        max_part_size_bytes: i64,
-        record_danmu: bool,
-        proxy_config: ProxyConfig,
-        download_engine: String,
-        pipeline: Option<DagPipelineDefinition>,
-        session_complete_pipeline: Option<DagPipelineDefinition>,
-        paired_segment_pipeline: Option<DagPipelineDefinition>,
-        auto_thumbnail: bool,
-        offline_check_count: u32,
-        offline_check_delay_ms: u64,
-    ) -> Self {
+    pub fn with_global(mut self, layer: GlobalConfigLayer) -> Self {
+        let GlobalConfigLayer {
+            output_folder,
+            output_filename_template,
+            output_file_format,
+            min_segment_size_bytes,
+            max_download_duration_secs,
+            max_part_size_bytes,
+            record_danmu,
+            proxy_config,
+            download_engine,
+            pipeline,
+            session_complete_pipeline,
+            paired_segment_pipeline,
+            auto_thumbnail,
+            offline_check_count,
+            offline_check_delay_ms,
+        } = layer;
         debug!(
             "[Layer 1: Global] Setting base config: output_folder={}, output_format={}, engine={}, record_danmu={}, pipeline_steps={}",
             output_folder,
@@ -152,31 +222,30 @@ impl MergedConfigBuilder {
     }
 
     /// Apply platform config layer.
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_platform(
-        mut self,
-        fetch_delay_ms: Option<i64>,
-        download_delay_ms: Option<i64>,
-        cookies: Option<String>,
-        proxy_config: Option<ProxyConfig>,
-        record_danmu: Option<bool>,
-        platform_specific_config: Option<&serde_json::Value>,
-        output_folder: Option<String>,
-        output_filename_template: Option<String>,
-        download_engine: Option<String>,
-        stream_selection: Option<StreamSelectionConfig>,
-        output_file_format: Option<String>,
-        min_segment_size_bytes: Option<i64>,
-        max_download_duration_secs: Option<i64>,
-        max_part_size_bytes: Option<i64>,
-        download_retry_policy: Option<RetryPolicy>,
-        event_hooks: Option<EventHooks>,
-        pipeline: Option<DagPipelineDefinition>,
-        session_complete_pipeline: Option<DagPipelineDefinition>,
-        paired_segment_pipeline: Option<DagPipelineDefinition>,
-        offline_check_count: Option<i32>,
-        offline_check_delay_ms: Option<i64>,
-    ) -> Self {
+    pub fn with_platform(mut self, layer: PlatformConfigLayer) -> Self {
+        let PlatformConfigLayer {
+            fetch_delay_ms,
+            download_delay_ms,
+            cookies,
+            proxy_config,
+            record_danmu,
+            platform_specific_config,
+            output_folder,
+            output_filename_template,
+            download_engine,
+            stream_selection,
+            output_file_format,
+            min_segment_size_bytes,
+            max_download_duration_secs,
+            max_part_size_bytes,
+            download_retry_policy,
+            event_hooks,
+            pipeline,
+            session_complete_pipeline,
+            paired_segment_pipeline,
+            offline_check_count,
+            offline_check_delay_ms,
+        } = layer;
         debug!(
             "[Layer 2: Platform] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, pipeline_steps={}",
             output_folder,
@@ -219,8 +288,7 @@ impl MergedConfigBuilder {
         // Apply platform-specific config overrides
         if let Some(config) = platform_specific_config {
             debug!("Applying platform-specific config overrides");
-            self.platform_extras =
-                merge_platform_extras(self.platform_extras.take(), Some(config.clone()));
+            self.platform_extras = merge_platform_extras(self.platform_extras.take(), Some(config));
         }
 
         // Apply explicit overrides
@@ -287,31 +355,30 @@ impl MergedConfigBuilder {
     }
 
     /// Apply template config layer.
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_template(
-        mut self,
-        output_folder: Option<String>,
-        output_filename_template: Option<String>,
-        output_file_format: Option<String>,
-        min_segment_size_bytes: Option<i64>,
-        max_download_duration_secs: Option<i64>,
-        max_part_size_bytes: Option<i64>,
-        record_danmu: Option<bool>,
-        proxy_config: Option<ProxyConfig>,
-        cookies: Option<String>,
-        download_engine: Option<String>,
-        download_retry_policy: Option<RetryPolicy>,
-        danmu_sampling_config: Option<DanmuSamplingConfig>,
-        event_hooks: Option<EventHooks>,
-        stream_selection: Option<StreamSelectionConfig>,
-        engines_override: Option<serde_json::Value>,
-        pipeline: Option<DagPipelineDefinition>,
-        session_complete_pipeline: Option<DagPipelineDefinition>,
-        paired_segment_pipeline: Option<DagPipelineDefinition>,
-        platform_extras: Option<serde_json::Value>,
-        offline_check_count: Option<i32>,
-        offline_check_delay_ms: Option<i64>,
-    ) -> Self {
+    pub fn with_template(mut self, layer: TemplateConfigLayer) -> Self {
+        let TemplateConfigLayer {
+            output_folder,
+            output_filename_template,
+            output_file_format,
+            min_segment_size_bytes,
+            max_download_duration_secs,
+            max_part_size_bytes,
+            record_danmu,
+            proxy_config,
+            cookies,
+            download_engine,
+            download_retry_policy,
+            danmu_sampling_config,
+            event_hooks,
+            stream_selection,
+            engines_override,
+            pipeline,
+            session_complete_pipeline,
+            paired_segment_pipeline,
+            platform_extras,
+            offline_check_count,
+            offline_check_delay_ms,
+        } = layer;
         debug!(
             "[Layer 3: Template] Applying overrides: output_folder={:?}, engine={:?}, record_danmu={:?}, cookies={}, stream_selection={}, engines_override={}, pipeline_steps={}, platform_extras={}",
             output_folder,
@@ -665,49 +732,35 @@ mod tests {
 
     use super::*;
 
+    fn global_layer(download_engine: &str) -> GlobalConfigLayer {
+        GlobalConfigLayer {
+            output_folder: "/app/output".to_string(),
+            output_filename_template: "{streamer}".to_string(),
+            output_file_format: "flv".to_string(),
+            min_segment_size_bytes: 1_024,
+            max_download_duration_secs: 0,
+            max_part_size_bytes: 8_589_934_592,
+            record_danmu: false,
+            proxy_config: ProxyConfig::disabled(),
+            download_engine: download_engine.to_string(),
+            pipeline: None,
+            session_complete_pipeline: None,
+            paired_segment_pipeline: None,
+            auto_thumbnail: true,
+            offline_check_count: 3,
+            offline_check_delay_ms: 20_000,
+        }
+    }
+
     #[test]
     fn test_merged_config_builder() {
         let config = MergedConfig::builder()
-            .with_global(
-                "/app/output".to_string(),
-                "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
-                "flv".to_string(),
-                1024,
-                0,
-                8589934592,
-                false,
-                ProxyConfig::disabled(),
-                "mesio".to_string(),
-                None, // pipeline
-                None, // session_complete_pipeline
-                None, // paired_segment_pipeline
-                true,
-                3,
-                20_000,
-            )
-            .with_platform(
-                Some(60000),
-                Some(1000),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None, // session_complete_pipeline
-                None, // paired_segment_pipeline
-                None, // offline_check_count
-                None, // offline_check_delay_ms
-            )
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                ..Default::default()
+            })
             .build();
 
         assert_eq!(config.output_folder, "/app/output");
@@ -718,69 +771,18 @@ mod tests {
     #[test]
     fn test_layer_override() {
         let config = MergedConfig::builder()
-            .with_global(
-                "/app/output".to_string(),
-                "{streamer}".to_string(),
-                "flv".to_string(),
-                1024,
-                0,
-                8589934592,
-                false,
-                ProxyConfig::disabled(),
-                "ffmpeg".to_string(),
-                None,
-                None,
-                None,
-                true,
-                3,
-                20_000,
-            )
-            .with_platform(
-                Some(60000),
-                Some(1000),
-                None,
-                None,
-                Some(true),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None, // offline_check_count
-                None, // offline_check_delay_ms
-            )
-            .with_template(
-                Some("./custom".to_string()),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some("mesio".to_string()),
-                None,
-                None,
-                None,
-                None, // stream_selection
-                None, // engines_override
-                None, // pipeline
-                None, // session_complete_pipeline
-                None, // paired_segment_pipeline
-                None, // platform_extras
-                None, // offline_check_count
-                None, // offline_check_delay_ms
-            )
+            .with_global(global_layer("ffmpeg"))
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                record_danmu: Some(true),
+                ..Default::default()
+            })
+            .with_template(TemplateConfigLayer {
+                output_folder: Some("./custom".to_string()),
+                download_engine: Some("mesio".to_string()),
+                ..Default::default()
+            })
             .build();
 
         // Template overrides global
@@ -804,17 +806,8 @@ mod tests {
         });
 
         let config = MergedConfig::builder()
-            .with_global(
-                "/app/output".to_string(),
-                "{streamer}".to_string(),
-                "flv".to_string(),
-                1024,
-                0,
-                8589934592,
-                false,
-                ProxyConfig::disabled(),
-                "mesio".to_string(),
-                Some(DagPipelineDefinition::new(
+            .with_global(GlobalConfigLayer {
+                pipeline: Some(DagPipelineDefinition::new(
                     "global",
                     vec![
                         crate::database::models::job::DagStep::new(
@@ -827,35 +820,13 @@ mod tests {
                         ),
                     ],
                 )),
-                None,
-                None,
-                true,
-                3,
-                20_000,
-            )
-            .with_platform(
-                Some(60000),
-                Some(1000),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None, // offline_check_count
-                None, // offline_check_delay_ms
-            )
+                ..global_layer("mesio")
+            })
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                ..Default::default()
+            })
             .with_streamer(Some(&streamer_config))
             .build();
 
@@ -886,46 +857,12 @@ mod tests {
         });
 
         let config = MergedConfig::builder()
-            .with_global(
-                "/app/output".to_string(),
-                "{streamer}".to_string(),
-                "flv".to_string(),
-                1024,
-                0,
-                8589934592,
-                false,
-                ProxyConfig::disabled(),
-                "mesio".to_string(),
-                None,
-                None,
-                None,
-                true,
-                3,
-                20_000,
-            )
-            .with_platform(
-                Some(60000),
-                Some(1000),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None, // offline_check_count
-                None, // offline_check_delay_ms
-            )
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                ..Default::default()
+            })
             .with_streamer(Some(&streamer_config))
             .build();
 
@@ -956,46 +893,13 @@ mod tests {
         });
 
         let config = MergedConfig::builder()
-            .with_global(
-                "/app/output".to_string(),
-                "{streamer}".to_string(),
-                "flv".to_string(),
-                1024,
-                0,
-                8589934592,
-                false,
-                ProxyConfig::disabled(),
-                "mesio".to_string(),
-                None,
-                None,
-                None,
-                true,
-                3,
-                20_000,
-            )
-            .with_platform(
-                Some(60000),
-                Some(1000),
-                None,
-                None,
-                Some(true), // record_danmu
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None, // offline_check_count
-                None, // offline_check_delay_ms
-            )
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                record_danmu: Some(true),
+                ..Default::default()
+            })
             .with_streamer(Some(&streamer_config))
             .build();
 
@@ -1029,69 +933,15 @@ mod tests {
         });
 
         let config = MergedConfig::builder()
-            .with_global(
-                "/app/output".to_string(),
-                "{streamer}".to_string(),
-                "flv".to_string(),
-                1024,
-                0,
-                8589934592,
-                false,
-                ProxyConfig::disabled(),
-                "mesio".to_string(),
-                None,
-                None,
-                None,
-                true,
-                3,
-                20_000,
-            )
-            .with_platform(
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(5),
-                None,
-            )
-            .with_template(
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(30_000),
-            )
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                offline_check_count: Some(5),
+                ..Default::default()
+            })
+            .with_template(TemplateConfigLayer {
+                offline_check_delay_ms: Some(30_000),
+                ..Default::default()
+            })
             .with_streamer(Some(&streamer_config))
             .build();
 
@@ -1106,46 +956,12 @@ mod tests {
     #[test]
     fn test_offline_check_floors() {
         let config = MergedConfig::builder()
-            .with_global(
-                "/app/output".to_string(),
-                "{streamer}".to_string(),
-                "flv".to_string(),
-                1024,
-                0,
-                8589934592,
-                false,
-                ProxyConfig::disabled(),
-                "mesio".to_string(),
-                None,
-                None,
-                None,
-                true,
-                3,
-                20_000,
-            )
-            .with_platform(
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(0),
-                Some(50),
-            )
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                offline_check_count: Some(0),
+                offline_check_delay_ms: Some(50),
+                ..Default::default()
+            })
             .build();
 
         assert_eq!(config.offline_check_count, 1);

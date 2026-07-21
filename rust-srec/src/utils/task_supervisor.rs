@@ -334,7 +334,10 @@ mod tests {
 
         assert!(supervisor.spawn_critical("critical panic", async {
             panic!("test panic");
-            #[allow(unreachable_code)]
+            #[expect(
+                unreachable_code,
+                reason = "typed return value follows the intentional panic in this test"
+            )]
             Ok::<(), &'static str>(())
         }));
         let failure = tokio::time::timeout(Duration::from_secs(1), supervisor.wait_for_failure())

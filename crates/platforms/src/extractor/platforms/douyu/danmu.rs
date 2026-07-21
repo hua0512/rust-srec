@@ -89,7 +89,13 @@ impl DouyuDanmuProtocol {
     }
 
     /// Parse gift messages from STT payload.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "retained for protocol variants and forward-compatible response handling"
+        )
+    )]
     fn parse_gift_message(map: &rustc_hash::FxHashMap<String, String>) -> Option<DanmuMessage> {
         let gift = DouyuGiftMessage::from_map(map)?;
 

@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
+use tracing::warn;
 
 use crate::database::models::{
     DanmuStatisticsDbModel, LiveSessionDbModel, MediaOutputDbModel, OutputFilters, Pagination,
@@ -300,7 +301,15 @@ impl SessionRepository for SqlxSessionRepository {
                     Ok(())
                 }
                 Err(err) => {
-                    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+                    if let Err(rollback_error) =
+                        sqlx::query("ROLLBACK").execute(&mut *conn).await
+                    {
+                        warn!(
+                            error = %rollback_error,
+                            original_error = %err,
+                            "Failed to roll back media output transaction"
+                        );
+                    }
                     Err(err)
                 }
             }
@@ -355,7 +364,13 @@ impl SessionRepository for SqlxSessionRepository {
                     Ok(())
                 }
                 Err(err) => {
-                    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+                    if let Err(rollback_error) = sqlx::query("ROLLBACK").execute(&mut *conn).await {
+                        warn!(
+                            error = %rollback_error,
+                            original_error = %err,
+                            "Failed to roll back session segment transaction"
+                        );
+                    }
                     Err(err)
                 }
             }
@@ -448,7 +463,13 @@ impl SessionRepository for SqlxSessionRepository {
                     Ok(())
                 }
                 Err(err) => {
-                    let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+                    if let Err(rollback_error) = sqlx::query("ROLLBACK").execute(&mut *conn).await {
+                        warn!(
+                            error = %rollback_error,
+                            original_error = %err,
+                            "Failed to roll back danmu output transaction"
+                        );
+                    }
                     Err(err)
                 }
             }

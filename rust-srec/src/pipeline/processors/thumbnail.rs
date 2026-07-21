@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use super::utils::{get_extension, is_image, is_video, parse_config_or_default};
@@ -386,7 +386,13 @@ impl Processor for ThumbnailProcessor {
                 }
                 Err(e) => {
                     for produced in &items_produced {
-                        let _ = tokio::fs::remove_file(produced).await;
+                        if let Err(cleanup_error) = tokio::fs::remove_file(produced).await {
+                            warn!(
+                                path = %produced,
+                                error = %cleanup_error,
+                                "Failed to remove thumbnail output after batch failure"
+                            );
+                        }
                     }
                     return Err(e);
                 }

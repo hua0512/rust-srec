@@ -13,7 +13,7 @@ use std::io::{BufReader, BufWriter, Read};
 use std::path::{Path, PathBuf};
 use tar::Builder as TarBuilder;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
@@ -92,18 +92,27 @@ struct CancelProgressReader<R> {
     current_file: String,
 }
 
+struct CompressionProgressContext {
+    cancel: CancellationToken,
+    progress: ProgressReporter,
+    bytes_total: u64,
+    bytes_done: u64,
+    file_index: usize,
+    file_count: usize,
+    current_file: String,
+}
+
 impl<R> CancelProgressReader<R> {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        inner: R,
-        cancel: CancellationToken,
-        progress: ProgressReporter,
-        bytes_total: u64,
-        bytes_done: u64,
-        file_index: usize,
-        file_count: usize,
-        current_file: String,
-    ) -> Self {
+    fn new(inner: R, context: CompressionProgressContext) -> Self {
+        let CompressionProgressContext {
+            cancel,
+            progress,
+            bytes_total,
+            bytes_done,
+            file_index,
+            file_count,
+            current_file,
+        } = context;
         Self {
             inner,
             cancel,
@@ -353,13 +362,15 @@ impl CompressionProcessor {
 
             let mut reader = CancelProgressReader::new(
                 BufReader::new(file),
-                cancel.clone(),
-                progress.clone(),
-                total_input_size,
-                bytes_done,
-                idx.saturating_add(1),
-                inputs.len(),
-                input_path.clone(),
+                CompressionProgressContext {
+                    cancel: cancel.clone(),
+                    progress: progress.clone(),
+                    bytes_total: total_input_size,
+                    bytes_done,
+                    file_index: idx.saturating_add(1),
+                    file_count: inputs.len(),
+                    current_file: input_path.clone(),
+                },
             );
 
             // Write to archive
@@ -468,13 +479,15 @@ impl CompressionProcessor {
 
             let reader = CancelProgressReader::new(
                 BufReader::new(&mut file),
-                cancel.clone(),
-                progress.clone(),
-                total_input_size,
-                bytes_done,
-                idx.saturating_add(1),
-                inputs.len(),
-                input_path.clone(),
+                CompressionProgressContext {
+                    cancel: cancel.clone(),
+                    progress: progress.clone(),
+                    bytes_total: total_input_size,
+                    bytes_done,
+                    file_index: idx.saturating_add(1),
+                    file_count: inputs.len(),
+                    current_file: input_path.clone(),
+                },
             );
 
             tar.append_data(&mut header, Path::new(&archive_name), reader)
@@ -638,8 +651,15 @@ impl Processor for CompressionProcessor {
 
             impl Drop for TmpFileGuard {
                 fn drop(&mut self) {
-                    if let Some(path) = self.path.take() {
-                        let _ = std::fs::remove_file(path);
+                    if let Some(path) = self.path.take()
+                        && let Err(error) = std::fs::remove_file(&path)
+                        && error.kind() != std::io::ErrorKind::NotFound
+                    {
+                        warn!(
+                            %error,
+                            path = %path.display(),
+                            "failed to remove partial compression output"
+                        );
                     }
                 }
             }

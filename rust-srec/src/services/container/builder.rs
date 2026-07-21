@@ -7,13 +7,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::Result;
-use crate::api::server::ApiServerConfig;
 use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
 use crate::credentials::{
     CredentialRefreshService, CredentialResolver,
     platforms::{BilibiliCredentialManager, SoopCredentialManager},
 };
-use crate::danmu::{DanmuService, service::DanmuServiceConfig};
+use crate::danmu::DanmuService;
 use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
 use crate::database::repositories::{
     ConfigRepository, SqlxCredentialStore, SqlxNotificationRepository,
@@ -25,21 +24,19 @@ use crate::database::repositories::{
     session::SqlxSessionRepository,
     streamer::SqlxStreamerRepository,
 };
-use crate::downloader::{
-    DEFAULT_GATE_COOLDOWN_SECS, DownloadManager, DownloadManagerConfig, OutputRootGate,
-};
+use crate::downloader::{DEFAULT_GATE_COOLDOWN_SECS, DownloadManager, OutputRootGate};
 use crate::metrics::{HealthChecker, MetricsCollector};
 use crate::monitor::StreamMonitor;
 use crate::notification::web_push::WebPushService;
 use crate::notification::{NotificationService, NotificationServiceConfig};
-use crate::pipeline::{PipelineManager, PipelineManagerConfig};
+use crate::pipeline::PipelineManager;
 use crate::scheduler::Scheduler;
 use crate::services::session_cancels::SessionCancelTokens;
 use crate::streamer::StreamerManager;
 use crate::utils::task_supervisor::TaskSupervisor;
 
 use super::{
-    DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY, ServiceContainer, ServiceContainerBuildOptions,
+    DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY, ServiceContainer, ServiceContainerConfig,
     autoscale_concurrency_limit, build_output_root_gate_recovery_hook, parse_output_roots_env,
     wire_check_history_pipeline,
 };
@@ -68,7 +65,7 @@ impl ServiceContainer {
         Self::build(
             pool,
             write_pool,
-            ServiceContainerBuildOptions::standard(cache_ttl, event_capacity),
+            ServiceContainerConfig::standard(cache_ttl, event_capacity),
         )
         .await
     }
@@ -81,38 +78,20 @@ impl ServiceContainer {
     /// # Errors
     ///
     /// Returns an error if the persisted global configuration cannot be loaded or initialized.
-    #[allow(clippy::too_many_arguments)]
     pub async fn with_full_config(
         pool: SqlitePool,
         write_pool: SqlitePool,
-        cache_ttl: Duration,
-        event_capacity: usize,
-        download_config: DownloadManagerConfig,
-        pipeline_config: PipelineManagerConfig,
-        danmu_config: DanmuServiceConfig,
-        api_config: ApiServerConfig,
+        config: ServiceContainerConfig,
     ) -> Result<Self> {
-        Self::build(
-            pool,
-            write_pool,
-            ServiceContainerBuildOptions {
-                cache_ttl,
-                event_capacity,
-                download_config,
-                pipeline_config,
-                danmu_config,
-                api_config,
-            },
-        )
-        .await
+        Self::build(pool, write_pool, config).await
     }
 
     async fn build(
         pool: SqlitePool,
         write_pool: SqlitePool,
-        options: ServiceContainerBuildOptions,
+        options: ServiceContainerConfig,
     ) -> Result<Self> {
-        let ServiceContainerBuildOptions {
+        let ServiceContainerConfig {
             cache_ttl,
             event_capacity,
             download_config,
@@ -239,9 +218,11 @@ impl ServiceContainer {
             config_service.clone(),
             write_pool.clone(),
             session_lifecycle.clone(),
-            crate::monitor::StreamMonitorConfig::default(),
-            Some(required_monitor_event_sender),
-            task_supervisor.clone(),
+            crate::monitor::StreamMonitorRuntimeConfig {
+                monitor: crate::monitor::StreamMonitorConfig::default(),
+                required_event_sender: Some(required_monitor_event_sender),
+                task_supervisor: task_supervisor.clone(),
+            },
         );
         let stream_monitor_ms = stream_monitor_start.elapsed().as_millis();
 
@@ -433,17 +414,19 @@ impl ServiceContainer {
         let pending_pipelines = Arc::new(DashMap::new());
         let runtime_coordinator = Arc::new(
             crate::services::runtime_coordinator::RuntimeCoordinator::new(
-                download_manager.clone(),
-                streamer_manager.clone(),
-                config_service.clone(),
-                danmu_service.clone(),
-                stream_monitor.clone(),
-                session_repo.clone(),
-                session_cancels,
-                pending_pipelines,
-                pipeline_manager.clone(),
-                session_lifecycle.clone(),
-                task_supervisor.clone(),
+                crate::services::runtime_coordinator::RuntimeCoordinatorDependencies {
+                    download_manager: download_manager.clone(),
+                    streamer_manager: streamer_manager.clone(),
+                    config_service: config_service.clone(),
+                    danmu_service: danmu_service.clone(),
+                    stream_monitor: stream_monitor.clone(),
+                    session_repository: session_repo.clone(),
+                    session_cancels,
+                    pending_pipelines,
+                    pipeline_manager: pipeline_manager.clone(),
+                    session_lifecycle: session_lifecycle.clone(),
+                    task_supervisor: task_supervisor.clone(),
+                },
             ),
         );
 
