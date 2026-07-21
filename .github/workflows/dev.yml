@@ -27,9 +27,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.10
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@1.97.1
-        with:
-          components: clippy
+      - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-protoc
       - name: Install Linux TLS dependencies
         run: |
@@ -67,7 +65,7 @@ jobs:
         if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
       - name: Install Linux TLS dependencies
