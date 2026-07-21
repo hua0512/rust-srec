@@ -13,8 +13,9 @@ Build / lint / test
 
 Rust (run from repo root; match CI by adding `--locked`)
 
-- Build (debug): `cargo build`
-- Build (release): `cargo build --release`
+- Build default applications (debug, excludes desktop): `cargo build`
+- Build default applications (release, excludes desktop): `cargo build --release`
+- Build the full workspace: `cargo build --workspace`
 - Build specific package: `cargo build -p rust-srec` (or `-p strev`, `-p mesio`)
 - Format: `cargo fmt --all`
 - Lint (CI): `cargo clippy --locked --all-targets --all-features -- -D warnings`

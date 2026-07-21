@@ -36,8 +36,8 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
-          save-if: ${{ false }}
+          shared-key: pr-clippy
+          save-if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
       - name: Clippy check
         run: cargo clippy --locked --workspace --exclude rust-srec-desktop --all-targets --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback -- -D warnings
       - name: sccache stats
@@ -59,8 +59,8 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: rustdoc
-          save-if: ${{ false }}
+          shared-key: pr-rustdoc
+          save-if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
       - name: Check private-item rustdoc
         env:
           RUSTDOCFLAGS: "-D warnings"
@@ -79,16 +79,12 @@ jobs:
           - os: macos-15-intel
           - os: macos-latest
     runs-on: ${{ matrix.os }}
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v7
-      - name: Enable sccache
-        if: runner.os != 'macOS' || runner.arch == 'ARM64'
-        shell: pwsh
-        run: |
-          "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: mozilla-actions/sccache-action@v0.0.10
-        if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
           version: "v0.13.0"
       - uses: ./.github/actions/setup-rust
@@ -101,8 +97,8 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
-          save-if: ${{ false }}
+          shared-key: pr-test
+          save-if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
       - name: Run tests (backend only)
         if: matrix.os == 'ubuntu-latest'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
@@ -113,7 +109,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --locked --workspace --exclude rust-srec-desktop --doc --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
       - name: sccache stats
-        if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
+        if: always()
         run: sccache --show-stats || true
 
   check-changes:
@@ -177,18 +173,24 @@ jobs:
         run: pnpm run build
 
   desktop-build:
-    name: Desktop Build (no bundle)
+    name: Desktop Debug Build (no bundle)
     needs: check-changes
     if: needs.check-changes.outputs.desktop == 'true'
     runs-on: windows-latest
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v7
+      - uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: "v0.13.0"
       - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
-          save-if: ${{ false }}
+          shared-key: pr-desktop-debug
+          save-if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
 
       - uses: pnpm/action-setup@v6
         with:
@@ -205,4 +207,7 @@ jobs:
       - uses: tauri-apps/tauri-action@action-v1.0.0
         with:
           projectPath: rust-srec/src-tauri
-          args: --no-bundle
+          args: --debug --no-bundle
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats || true
