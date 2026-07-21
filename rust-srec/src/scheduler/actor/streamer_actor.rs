@@ -1091,7 +1091,6 @@ impl StreamerActor {
                 // the race: two `Session ended` rows, two
                 // `SessionTransition::Ended` broadcasts, two
                 // session-complete pipeline DAG fires for one stream.
-                // (Surfaced by the 柔柔 / 2026-04-28 logs.)
                 //
                 // The actor still updates its own scheduling state below —
                 // those touches are local to this struct and don't race
@@ -1125,9 +1124,8 @@ impl StreamerActor {
                 // If we did, the monitor would emit `StreamerOffline` and the
                 // lifecycle's `on_offline_detected` would override the
                 // in-flight hysteresis (it always wins because StreamerOffline
-                // is authoritative). That race produced 0-byte session rows
-                // for connection blips on Douyin and similar platforms (see
-                // 沈心 / 2026-05-01 logs and the Minana / 2026-04-29 case).
+                // is authoritative). That race yields 0-byte session rows
+                // for connection blips on Douyin and similar platforms.
                 // Same precedent as the DanmuStreamClosed arm above:
                 // separate paths must not double-end the session.
                 //
@@ -2688,8 +2686,7 @@ mod tests {
     /// would race the observer at the `streamer.state == Live` gate inside
     /// `handle_offline_with_session`, ending whichever session the actor's
     /// snapshot saw as active (frequently a different `session_id` than
-    /// the one the observer is closing). Surfaced by the 柔柔 / 2026-04-28
-    /// production logs.
+    /// the one the observer is closing).
     #[derive(Debug, Default)]
     struct AssertNotCalledStatusChecker;
 

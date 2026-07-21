@@ -494,7 +494,7 @@ impl DownloadFailureKind {
     /// are NOT counted because they indicate the specific resource is gone or
     /// misconfigured, not that the engine is malfunctioning. Output-root
     /// failures are also excluded because they are infrastructure-level and
-    /// already gated by [`crate::downloader::output_root_gate`]; routing them
+    /// already gated by the output-root gate; routing them
     /// into the engine circuit breaker would double-block recovery.
     pub fn affects_circuit_breaker(&self) -> bool {
         !matches!(

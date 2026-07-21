@@ -3,64 +3,43 @@
 //! The ServiceContainer holds references to all application services
 //! and manages their lifecycle.
 
-use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::Result;
-use crate::api::auth_service::{AuthConfig, AuthService};
-use crate::api::{
-    ApiServer, JwtService,
-    server::{ApiServerConfig, AppState},
-};
-use crate::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
-use crate::credentials::{
-    CredentialRefreshService, CredentialResolver,
-    platforms::{BilibiliCredentialManager, SoopCredentialManager},
-};
-use crate::danmu::{DanmuEvent, DanmuService, service::DanmuServiceConfig};
-use crate::database::maintenance::{MaintenanceConfig, MaintenanceScheduler};
+use crate::api::server::ApiServerConfig;
+use crate::config::{ConfigEventBroadcaster, ConfigService};
+use crate::danmu::{DanmuService, service::DanmuServiceConfig};
+use crate::database::maintenance::MaintenanceScheduler;
+use crate::database::repositories::NotificationRepository;
 use crate::database::repositories::{
-    ConfigRepository, NotificationRepository, SessionRepository, SqlxNotificationRepository,
-};
-use crate::database::repositories::{
-    SqlxCredentialStore,
-    config::SqlxConfigRepository,
-    dag::SqlxDagRepository,
-    filter::SqlxFilterRepository,
-    job::SqlxJobRepository,
-    preset::{SqliteJobPresetRepository, SqlitePipelinePresetRepository},
-    refresh_token::SqlxRefreshTokenRepository,
-    session::SqlxSessionRepository,
+    config::SqlxConfigRepository, filter::SqlxFilterRepository, session::SqlxSessionRepository,
     streamer::SqlxStreamerRepository,
-    user::SqlxUserRepository,
 };
-use crate::domain::{Priority, StreamerState};
 use crate::downloader::{
-    DEFAULT_GATE_COOLDOWN_SECS, DownloadConfig, DownloadManager, DownloadManagerConfig,
-    DownloadManagerEvent, DownloadProgressEvent, DownloadProtocol, DownloadTerminalEvent,
-    LAST_ERROR_GATE_PREFIX, OutputRootGate, RecoveryHook, engine::DownloadProgress,
+    DownloadManager, DownloadManagerConfig, LAST_ERROR_GATE_PREFIX, OutputRootGate, RecoveryHook,
+    engine::DownloadProgress,
 };
 use crate::logging::LoggingConfig;
-use crate::metrics::{
-    ComponentHealth, HealthChecker, HealthProbe, MetricsCollector, PrometheusExporter,
-    SystemMetricsSnapshot,
-};
-use crate::monitor::{MonitorEvent, MonitorEventBroadcaster, StreamMonitor};
+use crate::metrics::HealthChecker;
+use crate::monitor::{MonitorEventBroadcaster, StreamMonitor};
+use crate::notification::NotificationService;
 use crate::notification::web_push::WebPushService;
-use crate::notification::{NotificationService, NotificationServiceConfig};
-use crate::pipeline::{PipelineEvent, PipelineManager, PipelineManagerConfig};
-use crate::scheduler::Scheduler;
-use crate::services::session_cancels::SessionCancelTokens;
+use crate::pipeline::{PipelineManager, PipelineManagerConfig};
+use crate::scheduler::{Scheduler, SchedulerHandle};
+use crate::services::runtime_coordinator::RuntimeCoordinator;
 use crate::streamer::StreamerManager;
-use crate::utils::filename::sanitize_filename;
-use pipeline_common::expand_path_template;
+use crate::utils::task_supervisor::TaskSupervisor;
+
+mod api;
+mod builder;
+mod events;
+mod health;
 
 /// Build the recovery hook closure for the output-root write gate.
 ///
@@ -71,10 +50,11 @@ use pipeline_common::expand_path_template;
 /// they immediately re-enter the live-check rotation.
 ///
 /// Invoked by [`OutputRootGate::mark_healthy`] on every `Degraded → Healthy`
-/// transition. Runs inside a `tokio::spawn`'d task (see gate implementation),
-/// so blocking inside the closure is OK.
+/// transition. The synchronous portion only snapshots IDs; database writes
+/// are handed to the application task supervisor.
 fn build_output_root_gate_recovery_hook<R>(
     streamer_manager: Arc<StreamerManager<R>>,
+    task_supervisor: Arc<TaskSupervisor>,
 ) -> RecoveryHook
 where
     R: crate::database::repositories::streamer::StreamerRepository + Send + Sync + 'static,
@@ -120,12 +100,10 @@ where
             "Output-root gate recovered; clearing error state for affected streamers"
         );
 
-        // The hook is called inside a tokio task that the gate spawned on
-        // its own runtime, so we can safely spawn another task here for
-        // the per-streamer async DB writes. We fire them all in parallel
-        // because a single slow write shouldn't hold up fleet recovery.
+        // Keep database writes outside the synchronous gate callback and
+        // serialize them to avoid a write burst during fleet recovery.
         let sm = streamer_manager.clone();
-        tokio::spawn(async move {
+        task_supervisor.spawn("output-root recovery", async move {
             for id in affected_ids {
                 if let Err(e) = sm.clear_error_state(&id).await {
                     warn!(
@@ -181,9 +159,8 @@ fn static_root_prefix(template: &str) -> Option<String> {
 /// skipped. Relative paths are rejected with a warning (they would anchor
 /// to the current working directory, which is unpredictable inside Docker).
 fn parse_output_roots_env() -> Vec<std::path::PathBuf> {
-    let raw = match std::env::var("RUST_SREC_OUTPUT_ROOTS") {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
+    let Ok(raw) = std::env::var("RUST_SREC_OUTPUT_ROOTS") else {
+        return Vec::new();
     };
     raw.split(',')
         .map(|s| s.trim())
@@ -213,324 +190,6 @@ fn sqlite_file_path_from_url(url: &str) -> Option<std::path::PathBuf> {
 
     let normalized = path_part.strip_prefix("///").unwrap_or(path_part);
     Some(std::path::PathBuf::from(normalized))
-}
-
-struct DatabaseProbe {
-    pool: SqlitePool,
-}
-
-#[async_trait]
-impl HealthProbe for DatabaseProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("database")
-    }
-
-    fn cadence(&self) -> Duration {
-        Duration::from_secs(5)
-    }
-
-    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        if self.pool.is_closed() {
-            ComponentHealth::unhealthy("database", "Connection pool is closed")
-        } else {
-            ComponentHealth::healthy("database")
-        }
-    }
-}
-
-struct DiskSpaceProbe {
-    /// Component identifier rendered as `disk:{display_path}`. Pre-built
-    /// once so [`HealthProbe::name`] doesn't allocate per call (the
-    /// refresh loop reads it twice per tick).
-    component_name: String,
-    display_path: String,
-    lookup_path: std::path::PathBuf,
-    warning_threshold: f64,
-    critical_threshold: f64,
-}
-
-impl DiskSpaceProbe {
-    fn new(
-        display_path: String,
-        lookup_path: std::path::PathBuf,
-        warning_threshold: f64,
-        critical_threshold: f64,
-    ) -> Self {
-        Self {
-            component_name: format!("disk:{}", display_path),
-            display_path,
-            lookup_path,
-            warning_threshold,
-            critical_threshold,
-        }
-    }
-}
-
-#[async_trait]
-impl HealthProbe for DiskSpaceProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.component_name)
-    }
-
-    fn cadence(&self) -> Duration {
-        Duration::from_secs(30)
-    }
-
-    fn needs_disk_snapshot(&self) -> bool {
-        true
-    }
-
-    async fn probe(&self, metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        match metrics.best_disk_for_path(&self.lookup_path) {
-            Some(disk) => HealthChecker::check_disk_space_with_thresholds(
-                &self.display_path,
-                disk.available_space,
-                disk.total_space,
-                self.warning_threshold,
-                self.critical_threshold,
-            ),
-            None => ComponentHealth {
-                name: self.component_name.clone(),
-                status: crate::metrics::HealthStatus::Unknown,
-                message: Some("Unable to resolve disk for path".to_string()),
-                last_check: Some(chrono::Utc::now().to_rfc3339()),
-                check_duration_ms: None,
-            },
-        }
-    }
-}
-
-struct OutputRootProbe {
-    gate: Arc<OutputRootGate>,
-}
-
-#[async_trait]
-impl HealthProbe for OutputRootProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("output-root")
-    }
-
-    fn cadence(&self) -> Duration {
-        Duration::from_secs(5)
-    }
-
-    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        HealthChecker::check_output_root_gate(&self.gate)
-    }
-}
-
-struct GpuProbe {
-    monitor: Arc<crate::metrics::GpuHealthMonitor>,
-}
-
-#[async_trait]
-impl HealthProbe for GpuProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("gpu")
-    }
-
-    fn cadence(&self) -> Duration {
-        Duration::from_secs(5)
-    }
-
-    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        self.monitor.snapshot().health.clone()
-    }
-}
-
-struct DownloadManagerProbe {
-    download_manager: Arc<DownloadManager>,
-}
-
-#[async_trait]
-impl HealthProbe for DownloadManagerProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("download_manager")
-    }
-
-    fn cadence(&self) -> Duration {
-        Duration::from_secs(5)
-    }
-
-    async fn probe(&self, metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        let active = self.download_manager.active_count();
-        let total_slots = self.download_manager.total_concurrent_slots();
-        let pending = self.download_manager.pending_count();
-
-        if total_slots == 0 {
-            return ComponentHealth::degraded(
-                "download_manager",
-                "No download slots configured (total_concurrent_slots=0)",
-            );
-        }
-
-        if active > total_slots {
-            return ComponentHealth::unhealthy(
-                "download_manager",
-                format!(
-                    "Active downloads exceed capacity: {}/{}",
-                    active, total_slots
-                ),
-            );
-        }
-
-        if active >= total_slots && pending > 0 {
-            return ComponentHealth::degraded(
-                "download_manager",
-                format!(
-                    "Concurrency limit reached: {}/{} active, {} streamer(s) queued",
-                    active, total_slots, pending
-                ),
-            );
-        }
-
-        let cpu_threshold = 85.0_f32;
-        let mem_threshold = 90.0_f32;
-        let utilization = active as f32 / total_slots as f32;
-
-        if utilization >= 0.95
-            && (metrics.cpu_usage >= cpu_threshold || metrics.memory_usage >= mem_threshold)
-        {
-            ComponentHealth::degraded(
-                "download_manager",
-                format!(
-                    "Near capacity under resource pressure: active {}/{}, cpu {:.1}%, mem {:.1}%",
-                    active, total_slots, metrics.cpu_usage, metrics.memory_usage
-                ),
-            )
-        } else {
-            ComponentHealth::healthy("download_manager")
-        }
-    }
-}
-
-struct PipelineManagerProbe {
-    pipeline_manager: Arc<PipelineManager>,
-}
-
-#[async_trait]
-impl HealthProbe for PipelineManagerProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("pipeline_manager")
-    }
-
-    fn cadence(&self) -> Duration {
-        Duration::from_secs(5)
-    }
-
-    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        let depth = self.pipeline_manager.queue_depth();
-        let status = self.pipeline_manager.queue_status();
-        match status {
-            crate::pipeline::QueueDepthStatus::Critical => ComponentHealth::unhealthy(
-                "pipeline_manager",
-                format!("Queue depth critical: {}", depth),
-            ),
-            crate::pipeline::QueueDepthStatus::Warning => ComponentHealth::degraded(
-                "pipeline_manager",
-                format!("Queue depth warning: {}", depth),
-            ),
-            crate::pipeline::QueueDepthStatus::Normal => {
-                ComponentHealth::healthy("pipeline_manager")
-            }
-        }
-    }
-}
-
-struct DanmuServiceProbe {
-    danmu_service: Arc<DanmuService>,
-}
-
-#[async_trait]
-impl HealthProbe for DanmuServiceProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("danmu_service")
-    }
-
-    fn cadence(&self) -> Duration {
-        Duration::from_secs(5)
-    }
-
-    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        let _active = self.danmu_service.active_sessions().len();
-        ComponentHealth::healthy("danmu_service")
-    }
-}
-
-struct SchedulerProbe {
-    cancellation_token: CancellationToken,
-}
-
-#[async_trait]
-impl HealthProbe for SchedulerProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed("scheduler")
-    }
-
-    fn cadence(&self) -> Duration {
-        Duration::from_secs(5)
-    }
-
-    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        if self.cancellation_token.is_cancelled() {
-            ComponentHealth::unhealthy("scheduler", "Scheduler has been cancelled")
-        } else {
-            ComponentHealth::healthy("scheduler")
-        }
-    }
-}
-
-struct StaticHealthyProbe {
-    name: &'static str,
-    cadence: Duration,
-}
-
-#[async_trait]
-impl HealthProbe for StaticHealthyProbe {
-    fn name(&self) -> Cow<'_, str> {
-        Cow::Borrowed(self.name)
-    }
-
-    fn cadence(&self) -> Duration {
-        self.cadence
-    }
-
-    async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        ComponentHealth::healthy(self.name)
-    }
-}
-
-/// Synchronous writability probe used by `run_output_root_startup_probe`.
-///
-/// Creates a temp file inside `root` with restrictive permissions, writes
-/// zero bytes, and drops it (RAII unlink via the `tempfile` crate). Returns
-/// the underlying `io::Error` on any failure so the gate can classify via
-/// `IoErrorKindSer::from_io_kind`.
-///
-/// Kept separate from `OutputRootGate::record_failure` so the gate itself
-/// stays ignorant of how failures are discovered — it just accepts an
-/// `io::Error` from any caller.
-fn probe_root_writable(root: &std::path::Path) -> std::io::Result<()> {
-    // Ensure the root itself is a directory. `std::fs::metadata` follows
-    // symlinks, which is what we want — a dangling symlink would trip the
-    // gate with ENOENT, correctly.
-    let meta = std::fs::metadata(root)?;
-    if !meta.is_dir() {
-        return Err(std::io::Error::other(format!(
-            "root path {} is not a directory",
-            root.display()
-        )));
-    }
-
-    // tempfile::Builder::tempfile_in uses O_EXCL + restrictive mode by
-    // default on Unix, which is what we want: no symlink/TOCTOU window
-    // and no leftover probe file even if the process is killed.
-    let mut file = tempfile::Builder::new()
-        .prefix(".rust-srec-probe-")
-        .tempfile_in(root)?;
-    std::io::Write::write_all(&mut file, b"")?;
-    // `file` drops here and the tempfile crate unlinks it.
-    Ok(())
 }
 
 fn should_end_stream_on_danmu_stream_closed(platform_specific_config: Option<&str>) -> bool {
@@ -572,64 +231,117 @@ fn autoscale_concurrency_limit(raw: i32) -> usize {
         return raw as usize;
     }
 
-    let cores = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(2);
+    let cores = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
 
     (cores / 2).max(1)
+}
+
+fn broadcast_error_is_recoverable(
+    subscriber: &'static str,
+    error: tokio::sync::broadcast::error::RecvError,
+) -> bool {
+    match error {
+        tokio::sync::broadcast::error::RecvError::Lagged(skipped) => {
+            warn!(
+                subscriber,
+                skipped, "Broadcast subscriber lagged; continuing from the newest available event"
+            );
+            true
+        }
+        tokio::sync::broadcast::error::RecvError::Closed => {
+            debug!(subscriber, "Broadcast channel closed");
+            false
+        }
+    }
+}
+
+struct ServiceContainerBuildOptions {
+    cache_ttl: Duration,
+    event_capacity: usize,
+    download_config: DownloadManagerConfig,
+    pipeline_config: PipelineManagerConfig,
+    danmu_config: DanmuServiceConfig,
+    api_config: ApiServerConfig,
+}
+
+impl ServiceContainerBuildOptions {
+    fn standard(cache_ttl: Duration, event_capacity: usize) -> Self {
+        Self {
+            cache_ttl,
+            event_capacity,
+            download_config: DownloadManagerConfig::default(),
+            pipeline_config: PipelineManagerConfig::default(),
+            danmu_config: DanmuServiceConfig::default(),
+            api_config: ApiServerConfig::from_env_or_default(),
+        }
+    }
 }
 
 /// Service container holding all application services.
 pub struct ServiceContainer {
     /// Database connection pool (read-heavy).
-    pub pool: SqlitePool,
+    pub(crate) pool: SqlitePool,
     /// Serialized write pool (max_connections=1) for contention-free writes.
     write_pool: SqlitePool,
     /// Configuration service.
-    pub config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
+    pub(crate) config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
     /// Streamer manager.
-    pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
+    pub(crate) streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     /// Event broadcaster (shared between services).
-    pub event_broadcaster: ConfigEventBroadcaster,
+    pub(crate) event_broadcaster: ConfigEventBroadcaster,
     /// Download manager.
-    pub download_manager: Arc<DownloadManager>,
+    pub(crate) download_manager: Arc<DownloadManager>,
     /// Session repository shared by monitor, pipeline, danmu, and download startup.
-    pub session_repository: Arc<SqlxSessionRepository>,
-    /// Output-root write gate (#508). Shared by the download manager for
+    pub(crate) session_repository: Arc<SqlxSessionRepository>,
+    /// Output-root write gate. Shared by the download manager for
     /// pre-start checks + runtime ENOSPC routing and by the health checker
     /// for aggregated `/health` reporting.
-    pub output_root_gate: Arc<OutputRootGate>,
-    /// GPU health monitor (#555). Empty when `nvidia-smi` is not available
+    pub(crate) output_root_gate: Arc<OutputRootGate>,
+    /// GPU health monitor. Empty when `nvidia-smi` is not available
     /// at startup; otherwise the background probe loop is owned by the
     /// container's cancellation token. Use [`std::sync::OnceLock::get`]
-    /// to read; install only via [`Self::init_gpu_health_monitor`].
-    pub gpu_health_monitor: std::sync::OnceLock<Arc<crate::metrics::GpuHealthMonitor>>,
+    /// to read; installation is owned by the private runtime initializer.
+    pub(crate) gpu_health_monitor: std::sync::OnceLock<Arc<crate::metrics::GpuHealthMonitor>>,
     /// Pipeline manager.
-    pub pipeline_manager: Arc<PipelineManager>,
+    pub(crate) pipeline_manager: Arc<PipelineManager>,
     /// Monitor event broadcaster.
-    pub monitor_event_broadcaster: MonitorEventBroadcaster,
+    pub(crate) monitor_event_broadcaster: MonitorEventBroadcaster,
+    /// Required, lossless monitor-event receiver used for runtime state changes.
+    monitor_event_receiver: parking_lot::Mutex<
+        Option<tokio::sync::mpsc::Receiver<crate::monitor::MonitorEventDelivery>>,
+    >,
+    /// Required terminal-download receiver used for session state changes.
+    download_terminal_receiver: parking_lot::Mutex<
+        Option<tokio::sync::mpsc::UnboundedReceiver<crate::downloader::DownloadTerminalEvent>>,
+    >,
     /// Single-owner session lifecycle service. Owns the in-memory session map,
     /// hard-ended suppression cache, and the `SessionTransition` broadcast
     /// channel consumed by pipeline/notification/API layers.
-    pub session_lifecycle: Arc<crate::session::SessionLifecycle>,
+    pub(crate) session_lifecycle: Arc<crate::session::SessionLifecycle>,
+    /// Required session-transition receiver used for runtime side effects.
+    session_transition_receiver: parking_lot::Mutex<
+        Option<tokio::sync::mpsc::UnboundedReceiver<crate::session::SessionTransition>>,
+    >,
+    /// Operational policy for required runtime events.
+    runtime_coordinator: Arc<RuntimeCoordinator>,
     /// Danmu service.
-    pub danmu_service: Arc<DanmuService>,
+    pub(crate) danmu_service: Arc<DanmuService>,
     /// Notification service.
-    pub notification_service: Arc<NotificationService>,
+    pub(crate) notification_service: Arc<NotificationService>,
     /// Notification repository.
-    pub notification_repository: Arc<dyn NotificationRepository>,
+    pub(crate) notification_repository: Arc<dyn NotificationRepository>,
     /// Web push service for browser notifications (VAPID), if configured.
-    pub web_push_service: Option<Arc<WebPushService>>,
-    /// Metrics collector.
-    pub metrics_collector: Arc<MetricsCollector>,
+    pub(crate) web_push_service: Option<Arc<WebPushService>>,
     /// Health checker.
-    pub health_checker: Arc<HealthChecker>,
+    pub(crate) health_checker: Arc<HealthChecker>,
     /// Database maintenance scheduler.
-    pub maintenance_scheduler: Arc<MaintenanceScheduler>,
-    /// Scheduler service
-    pub scheduler: Arc<tokio::sync::RwLock<Scheduler<SqlxStreamerRepository>>>,
+    pub(crate) maintenance_scheduler: Arc<MaintenanceScheduler>,
+    /// Scheduler instance before its one-shot move into the runtime task.
+    scheduler: parking_lot::Mutex<Option<Scheduler<SqlxStreamerRepository>>>,
+    /// Read-only scheduler state available while the runtime task owns the scheduler.
+    scheduler_handle: SchedulerHandle,
     /// Stream monitor for real status detection
-    pub stream_monitor: Arc<
+    pub(crate) stream_monitor: Arc<
         StreamMonitor<
             SqlxStreamerRepository,
             SqlxFilterRepository,
@@ -638,44 +350,24 @@ pub struct ServiceContainer {
         >,
     >,
     /// Credential refresh service (shared between monitor + API).
-    pub credential_service: Arc<crate::credentials::CredentialRefreshService<SqlxConfigRepository>>,
+    pub(crate) credential_service:
+        Arc<crate::credentials::CredentialRefreshService<SqlxConfigRepository>>,
     /// Live broadcaster for committed check-history rows. Cloned into the
     /// downloads WS route so per-streamer subscribers see new bars appear
     /// without polling. Same fan-out pattern as
     /// [`crate::downloader::DownloadManager::subscribe`].
-    pub check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
-    /// Per-session cancellation tokens. The
-    /// [`MonitorEvent::StreamerLive`] handler spawns a download
-    /// pipeline as a tokio task; the matching
-    /// [`MonitorEvent::StreamerOffline`] (and any other terminal
-    /// monitor event for that session) cancels its token so a queued
-    /// pipeline can bail without spinning up an engine for an
-    /// already-offline streamer.
-    pub session_cancels: Arc<SessionCancelTokens>,
-    /// Per-streamer "a download pipeline is in flight for this
-    /// streamer right now" reservation set. Held from the start of
-    /// `run_live_download_pipeline` (before preflight) through the
-    /// final step (after danmu start). Protects against two concurrent
-    /// `StreamerLive` events spawning duplicate pipelines for the
-    /// same streamer in the window between
-    /// [`crate::downloader::DownloadManager::has_active_download`]
-    /// returning `false` and
-    /// [`crate::downloader::DownloadManager::start_with_slot`]
-    /// inserting into `active_downloads`.
-    pub pending_pipelines: Arc<DashMap<String, ()>>,
+    pub(crate) check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster,
     /// API server configuration.
     api_server_config: ApiServerConfig,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,
+    /// Owner for background tasks started by the application runtime.
+    task_supervisor: Arc<TaskSupervisor>,
     /// Logging configuration
     logging_config: std::sync::OnceLock<Arc<LoggingConfig>>,
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
     discarded_segment_keys: Arc<DashMap<(String, String), Instant>>,
-    /// Handle to the scheduler background task for graceful shutdown.
-    scheduler_task_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    /// Handle to the database maintenance task for graceful shutdown.
-    maintenance_task_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 /// Wire the streamer-check-history pipeline:
@@ -692,6 +384,7 @@ fn wire_check_history_pipeline(
     pool: &SqlitePool,
     write_pool: &SqlitePool,
     cancellation_token: &CancellationToken,
+    task_supervisor: &TaskSupervisor,
 ) -> (
     crate::monitor::CheckHistoryWriter,
     crate::monitor::CheckHistoryBroadcaster,
@@ -717,701 +410,19 @@ fn wire_check_history_pipeline(
     });
     let broadcaster = crate::monitor::CheckHistoryBroadcaster::new(encoder);
 
-    tokio::spawn(crate::monitor::check_history_writer::run(
-        repo,
-        rx,
-        Some(broadcaster.clone()),
-        cancellation_token.child_token(),
-    ));
+    task_supervisor.spawn(
+        "check-history writer",
+        crate::monitor::check_history_writer::run(
+            repo,
+            rx,
+            Some(broadcaster.clone()),
+            cancellation_token.child_token(),
+        ),
+    );
     (writer, broadcaster)
 }
 
 impl ServiceContainer {
-    /// Create a new service container with the given database pool.
-    pub async fn new(pool: SqlitePool, write_pool: SqlitePool) -> Result<Self> {
-        Self::with_config(pool, write_pool, DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY).await
-    }
-
-    /// Create a new service container with custom configuration.
-    pub async fn with_config(
-        pool: SqlitePool,
-        write_pool: SqlitePool,
-        cache_ttl: Duration,
-        event_capacity: usize,
-    ) -> Result<Self> {
-        // Apply the backend locale before any `t!` call can run. Reads
-        // `RUST_SREC_LOCALE`; no-op when unset. Must precede anything that
-        // may emit a localized notification string.
-        crate::i18n::init_from_env();
-
-        info!("Initializing service container");
-
-        // Create repositories
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), write_pool.clone()));
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(
-            pool.clone(),
-            write_pool.clone(),
-        ));
-
-        // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
-        let global_config = config_repo.get_global_config().await?;
-
-        // Create shared event broadcaster
-        let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
-
-        // Create additional repositories for StreamMonitor
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), write_pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
-
-        // Create config service with custom cache
-        let cache = ConfigCache::with_ttl(cache_ttl);
-        let config_service = Arc::new(ConfigService::with_cache_and_broadcaster(
-            config_repo.clone(),
-            streamer_repo.clone(),
-            cache,
-            event_broadcaster.clone(),
-        ));
-
-        // Create streamer manager
-        let streamer_manager = Arc::new(StreamerManager::new(
-            streamer_repo.clone(),
-            event_broadcaster.clone(),
-        ));
-
-        // Construct the single-owner session lifecycle service up-front so
-        // the stream monitor can delegate its atomic session+streamer+outbox
-        // writes to it.
-        //
-        // The hysteresis backstop window is derived from the same scheduler
-        // tunables the actor uses for offline confirmation — single source
-        // of truth, no parallel tunable.
-        let hysteresis_config = crate::session::HysteresisConfig::from_scheduler(
-            global_config.offline_check_count as u32,
-            global_config.offline_check_delay_ms as u64,
-        );
-        // Per-streamer resolver: read the cached effective values off the
-        // streamer manager's metadata so platform/template/streamer
-        // overrides take effect at hysteresis-arming time.
-        let sm_for_resolver = streamer_manager.clone();
-        let hysteresis_resolver: crate::session::HysteresisWindowFn =
-            std::sync::Arc::new(move |streamer_id: &str| {
-                sm_for_resolver.get_streamer(streamer_id).map(|m| {
-                    crate::session::HysteresisConfig::from_scheduler(
-                        m.effective_offline_check_count,
-                        m.effective_offline_check_delay_ms,
-                    )
-                })
-            });
-        // Standalone session-event repository for the two best-effort
-        // audit writes (`hysteresis_entered`, `session_resumed`). Atomic-tx
-        // writes for `session_started` / `session_ended` go through the
-        // `SessionLifecycleRepository` directly.
-        let session_event_repo: Arc<dyn crate::database::repositories::SessionEventRepository> =
-            Arc::new(
-                crate::database::repositories::SqlxSessionEventRepository::new(
-                    pool.clone(),
-                    write_pool.clone(),
-                ),
-            );
-        // Classifier window/threshold derived from the same scheduler
-        // tunables — single source of truth alongside the hysteresis
-        // backstop (no parallel knob, no hardcoded 60 s).
-        let offline_classifier = Arc::new(crate::session::OfflineClassifier::from_scheduler(
-            global_config.offline_check_count as u32,
-            global_config.offline_check_delay_ms as u64,
-        ));
-        let session_lifecycle = Arc::new(
-            crate::session::SessionLifecycle::with_config(
-                Arc::new(
-                    crate::database::repositories::SessionLifecycleRepository::new(
-                        write_pool.clone(),
-                    ),
-                ),
-                offline_classifier,
-                crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
-                hysteresis_config,
-            )
-            .with_hysteresis_resolver(hysteresis_resolver)
-            .with_event_repo(session_event_repo.clone()),
-        );
-
-        // Create stream monitor for real status detection
-        let mut stream_monitor = StreamMonitor::new(
-            streamer_manager.clone(),
-            filter_repo,
-            session_repo.clone(),
-            config_service.clone(),
-            write_pool.clone(),
-            session_lifecycle.clone(),
-        );
-
-        // Create notification service with default config (also used for credential events).
-        let notification_repository = Arc::new(SqlxNotificationRepository::new(
-            pool.clone(),
-            write_pool.clone(),
-        ));
-        let web_push_service = WebPushService::from_env(pool.clone(), write_pool.clone())
-            .unwrap_or_else(|e| {
-                warn!(error = %e, "Web push service disabled due to configuration error");
-                None
-            })
-            .map(Arc::new);
-
-        let mut notification_service = NotificationService::with_repository(
-            NotificationServiceConfig::default(),
-            notification_repository.clone(),
-        );
-        if let Some(web_push) = web_push_service.clone() {
-            notification_service = notification_service.with_web_push_service(web_push);
-        }
-        let notification_service = Arc::new(notification_service);
-        notification_service.start_web_push_worker();
-
-        // Build credential refresh service (shared between StreamMonitor + API).
-        let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
-        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone(), write_pool.clone()));
-        let mut credential_service =
-            CredentialRefreshService::new(credential_resolver, credential_store);
-        credential_service.set_notification_service(Arc::clone(&notification_service));
-        match BilibiliCredentialManager::new_lazy() {
-            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
-            Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
-        }
-        match SoopCredentialManager::new_lazy() {
-            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
-            Err(e) => warn!(error = %e, "Failed to init SOOP credential manager; skipping"),
-        }
-        let credential_service = Arc::new(credential_service);
-        stream_monitor.set_credential_service(Arc::clone(&credential_service));
-        let stream_monitor = Arc::new(stream_monitor);
-
-        // Create download manager with default config, overridden by global config.
-        let download_config = DownloadManagerConfig {
-            max_concurrent_downloads: (global_config.max_concurrent_downloads as i64).max(1)
-                as usize,
-            ..Default::default()
-        };
-        let download_manager = Arc::new(
-            DownloadManager::with_config(download_config).with_config_repo(config_repo.clone()),
-        );
-        download_manager
-            .set_queue_freshness_threshold_ms(global_config.queue_freshness_threshold_ms);
-
-        // Build the output-root write gate (#508) now that StreamerManager
-        // and NotificationService are both available. The gate holds a
-        // Weak<NotificationService> so its lifetime stays independent, and
-        // a recovery hook closure that resets affected streamers when a
-        // root transitions back to Healthy. Attach via the late-bind
-        // setter since `download_manager` is already wrapped in Arc.
-        let output_root_gate = OutputRootGate::new(
-            Arc::downgrade(&notification_service),
-            build_output_root_gate_recovery_hook(streamer_manager.clone()),
-            parse_output_roots_env(),
-            Duration::from_secs(DEFAULT_GATE_COOLDOWN_SECS),
-        );
-        download_manager.set_output_root_gate(output_root_gate.clone());
-
-        // Create job repository for pipeline persistence
-        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
-
-        // Create job preset repository
-        let preset_repo = Arc::new(SqliteJobPresetRepository::new(
-            pool.clone().into(),
-            write_pool.clone().into(),
-        ));
-
-        // Create pipeline preset repository
-        let pipeline_preset_repo = Arc::new(SqlitePipelinePresetRepository::new(
-            pool.clone().into(),
-            write_pool.clone().into(),
-        ));
-
-        // Create pipeline manager with job repository for database persistence.
-        // Wire global-config concurrency knobs into CPU/IO worker pool sizes.
-        let mut pipeline_config = PipelineManagerConfig::default();
-        pipeline_config.cpu_pool.max_workers =
-            autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
-        pipeline_config.io_pool.max_workers =
-            autoscale_concurrency_limit(global_config.max_concurrent_io_jobs);
-
-        // Pipeline job timeouts are configured via global config.
-        // NOTE: These are applied at startup; changing them at runtime requires restart.
-        pipeline_config.cpu_pool.job_timeout_secs =
-            global_config.pipeline_cpu_job_timeout_secs.max(1) as u64;
-        pipeline_config.io_pool.job_timeout_secs =
-            global_config.pipeline_io_job_timeout_secs.max(1) as u64;
-        pipeline_config.execute_timeout_secs =
-            global_config.pipeline_execute_timeout_secs.max(1) as u64;
-        let pipeline_manager = Arc::new(
-            PipelineManager::with_repository(pipeline_config, job_repo)
-                .with_session_repository(session_repo.clone())
-                .with_streamer_repository(streamer_repo.clone())
-                .with_preset_repository(preset_repo)
-                .with_pipeline_preset_repository(pipeline_preset_repo)
-                .with_config_service(config_service.clone())
-                .with_dag_repository(Arc::new(SqlxDagRepository::new(
-                    pool.clone(),
-                    write_pool.clone(),
-                ))),
-        );
-
-        // Event broadcaster
-        let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
-
-        // Create danmu service with default config
-        let danmu_service = Arc::new(
-            DanmuService::new(DanmuServiceConfig::default())
-                .with_session_repository(session_repo.clone()),
-        );
-
-        // Create metrics collector
-        let metrics_collector = Arc::new(MetricsCollector::new());
-        if let Some(web_push) = web_push_service.as_ref() {
-            web_push.set_metrics_collector(metrics_collector.clone());
-        }
-
-        // Create health checker
-        let health_checker = Arc::new(HealthChecker::new());
-
-        // Retention values are loaded from global_config on every sweep.
-        let maintenance_config = MaintenanceConfig::default();
-        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
-            pool.clone(),
-            write_pool.clone(),
-            maintenance_config,
-        ));
-
-        // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
-        let cancellation_token = CancellationToken::new();
-
-        let scheduler_config = crate::scheduler::SchedulerConfig {
-            check_interval_ms: global_config.streamer_check_delay_ms as u64,
-            offline_check_interval_ms: global_config.offline_check_delay_ms as u64,
-            offline_check_count: global_config.offline_check_count as u32,
-            supervisor_config: crate::scheduler::actor::SupervisorConfig::default(),
-        };
-
-        // Wire the streamer-check-history pipeline (writer feeds the
-        // monitor-side polling path; broadcaster feeds the WS route loop).
-        let (check_history_writer, check_history_broadcaster) =
-            wire_check_history_pipeline(&pool, &write_pool, &cancellation_token);
-
-        // Create scheduler with StreamMonitor for real status checking
-        let scheduler = Arc::new(tokio::sync::RwLock::new(
-            Scheduler::with_monitor_history_and_config(
-                streamer_manager.clone(),
-                event_broadcaster.clone(),
-                stream_monitor.clone(),
-                Some(check_history_writer),
-                scheduler_config,
-                cancellation_token.child_token(),
-            )
-            .with_config_repo(config_repo.clone()),
-        ));
-
-        info!("Service container initialized");
-
-        Ok(Self {
-            pool,
-            write_pool,
-            config_service,
-            streamer_manager,
-            event_broadcaster,
-            download_manager,
-            session_repository: session_repo,
-            output_root_gate,
-            gpu_health_monitor: std::sync::OnceLock::new(),
-            pipeline_manager,
-            monitor_event_broadcaster,
-            session_lifecycle,
-            danmu_service,
-            notification_service,
-            notification_repository,
-            web_push_service,
-            metrics_collector,
-            health_checker,
-            maintenance_scheduler,
-            scheduler,
-            stream_monitor,
-            credential_service,
-            check_history_broadcaster,
-            session_cancels: Arc::new(SessionCancelTokens::new()),
-            pending_pipelines: Arc::new(DashMap::new()),
-            api_server_config: ApiServerConfig::from_env_or_default(),
-            cancellation_token,
-            logging_config: std::sync::OnceLock::new(),
-            discarded_segment_keys: Arc::new(DashMap::new()),
-            scheduler_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
-            maintenance_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
-        })
-    }
-
-    /// Create a new service container with custom download and pipeline configs.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn with_full_config(
-        pool: SqlitePool,
-        write_pool: SqlitePool,
-        cache_ttl: Duration,
-        event_capacity: usize,
-        download_config: DownloadManagerConfig,
-        pipeline_config: PipelineManagerConfig,
-        danmu_config: DanmuServiceConfig,
-        api_config: ApiServerConfig,
-    ) -> Result<Self> {
-        let overall = Instant::now();
-        info!("Initializing service container with full configuration");
-
-        // Create repositories
-        let repos_start = Instant::now();
-        let config_repo = Arc::new(SqlxConfigRepository::new(pool.clone(), write_pool.clone()));
-        let streamer_repo = Arc::new(SqlxStreamerRepository::new(
-            pool.clone(),
-            write_pool.clone(),
-        ));
-        let repos_ms = repos_start.elapsed().as_millis();
-
-        // Load global config early for initial runtime knobs (worker pools, scheduler timing, etc.).
-        let global_config_start = Instant::now();
-        let global_config = config_repo.get_global_config().await?;
-        let global_config_ms = global_config_start.elapsed().as_millis();
-
-        // Create shared event broadcaster
-        let event_broadcaster_start = Instant::now();
-        let event_broadcaster = ConfigEventBroadcaster::with_capacity(event_capacity);
-        let event_broadcaster_ms = event_broadcaster_start.elapsed().as_millis();
-
-        // Create additional repositories for StreamMonitor
-        let monitor_repos_start = Instant::now();
-        let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), write_pool.clone()));
-        let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), write_pool.clone()));
-        let monitor_repos_ms = monitor_repos_start.elapsed().as_millis();
-
-        // Create config service with custom cache
-        let config_service_start = Instant::now();
-        let cache = ConfigCache::with_ttl(cache_ttl);
-        let config_service = Arc::new(ConfigService::with_cache_and_broadcaster(
-            config_repo.clone(),
-            streamer_repo.clone(),
-            cache,
-            event_broadcaster.clone(),
-        ));
-        let config_service_ms = config_service_start.elapsed().as_millis();
-
-        // Create streamer manager
-        let streamer_manager_start = Instant::now();
-        let streamer_manager = Arc::new(StreamerManager::new(
-            streamer_repo.clone(),
-            event_broadcaster.clone(),
-        ));
-        let streamer_manager_ms = streamer_manager_start.elapsed().as_millis();
-
-        // Construct the single-owner session lifecycle service up-front so
-        // the stream monitor can delegate its atomic session+streamer+outbox
-        // writes to it.
-        //
-        // The hysteresis backstop window is derived from the same scheduler
-        // tunables the actor uses for offline confirmation — single source
-        // of truth, no parallel tunable.
-        let hysteresis_config = crate::session::HysteresisConfig::from_scheduler(
-            global_config.offline_check_count as u32,
-            global_config.offline_check_delay_ms as u64,
-        );
-        let sm_for_resolver = streamer_manager.clone();
-        let hysteresis_resolver: crate::session::HysteresisWindowFn =
-            std::sync::Arc::new(move |streamer_id: &str| {
-                sm_for_resolver.get_streamer(streamer_id).map(|m| {
-                    crate::session::HysteresisConfig::from_scheduler(
-                        m.effective_offline_check_count,
-                        m.effective_offline_check_delay_ms,
-                    )
-                })
-            });
-        let session_event_repo: Arc<dyn crate::database::repositories::SessionEventRepository> =
-            Arc::new(
-                crate::database::repositories::SqlxSessionEventRepository::new(
-                    pool.clone(),
-                    write_pool.clone(),
-                ),
-            );
-        // Classifier window/threshold derived from the same scheduler
-        // tunables — see the primary container site for rationale.
-        let offline_classifier = Arc::new(crate::session::OfflineClassifier::from_scheduler(
-            global_config.offline_check_count as u32,
-            global_config.offline_check_delay_ms as u64,
-        ));
-        let session_lifecycle = Arc::new(
-            crate::session::SessionLifecycle::with_config(
-                Arc::new(
-                    crate::database::repositories::SessionLifecycleRepository::new(
-                        write_pool.clone(),
-                    ),
-                ),
-                offline_classifier,
-                crate::session::DEFAULT_TRANSITION_CHANNEL_CAPACITY,
-                hysteresis_config,
-            )
-            .with_hysteresis_resolver(hysteresis_resolver)
-            .with_event_repo(session_event_repo.clone()),
-        );
-
-        // Create stream monitor for real status detection
-        let stream_monitor_start = Instant::now();
-        let mut stream_monitor = StreamMonitor::new(
-            streamer_manager.clone(),
-            filter_repo,
-            session_repo.clone(),
-            config_service.clone(),
-            write_pool.clone(),
-            session_lifecycle.clone(),
-        );
-        let stream_monitor_ms = stream_monitor_start.elapsed().as_millis();
-
-        // Build credential refresh service (shared between StreamMonitor + API).
-        let credential_service_start = Instant::now();
-        let credential_resolver = Arc::new(CredentialResolver::new(config_repo.clone()));
-        let credential_store = Arc::new(SqlxCredentialStore::new(pool.clone(), write_pool.clone()));
-        let mut credential_service =
-            CredentialRefreshService::new(credential_resolver, credential_store);
-        match BilibiliCredentialManager::new_lazy() {
-            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
-            Err(e) => warn!(error = %e, "Failed to init bilibili credential manager; skipping"),
-        }
-        match SoopCredentialManager::new_lazy() {
-            Ok(manager) => credential_service.register_manager(Arc::new(manager)),
-            Err(e) => warn!(error = %e, "Failed to init SOOP credential manager; skipping"),
-        }
-        let credential_service = Arc::new(credential_service);
-        stream_monitor.set_credential_service(Arc::clone(&credential_service));
-        let stream_monitor = Arc::new(stream_monitor);
-        let credential_service_ms = credential_service_start.elapsed().as_millis();
-
-        // Create download manager with custom config, overridden by global config for concurrency.
-        let download_manager_start = Instant::now();
-        let mut effective_download_config = download_config.clone();
-        effective_download_config.max_concurrent_downloads =
-            (global_config.max_concurrent_downloads as i64).max(1) as usize;
-        let download_manager = Arc::new(
-            DownloadManager::with_config(effective_download_config)
-                .with_config_repo(config_repo.clone()),
-        );
-        download_manager
-            .set_queue_freshness_threshold_ms(global_config.queue_freshness_threshold_ms);
-        let download_manager_ms = download_manager_start.elapsed().as_millis();
-
-        // Create job repository for pipeline persistence
-        let pipeline_repo_start = Instant::now();
-        let job_repo = Arc::new(SqlxJobRepository::new(pool.clone(), write_pool.clone()));
-
-        // Create job preset repository
-        let preset_repo = Arc::new(SqliteJobPresetRepository::new(
-            pool.clone().into(),
-            write_pool.clone().into(),
-        ));
-
-        // Create pipeline preset repository (for workflow expansion)
-        let pipeline_preset_repo = Arc::new(SqlitePipelinePresetRepository::new(
-            pool.clone().into(),
-            write_pool.clone().into(),
-        ));
-        let pipeline_repo_ms = pipeline_repo_start.elapsed().as_millis();
-
-        // Create pipeline manager with job repository for database persistence.
-        // Wire global-config concurrency knobs into CPU/IO worker pool sizes.
-        let pipeline_manager_start = Instant::now();
-        let mut effective_pipeline_config = pipeline_config;
-        effective_pipeline_config.cpu_pool.max_workers =
-            autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
-        effective_pipeline_config.io_pool.max_workers =
-            autoscale_concurrency_limit(global_config.max_concurrent_io_jobs);
-
-        // Apply global-config pipeline timeouts (startup-only).
-        effective_pipeline_config.cpu_pool.job_timeout_secs =
-            global_config.pipeline_cpu_job_timeout_secs.max(1) as u64;
-        effective_pipeline_config.io_pool.job_timeout_secs =
-            global_config.pipeline_io_job_timeout_secs.max(1) as u64;
-        effective_pipeline_config.execute_timeout_secs =
-            global_config.pipeline_execute_timeout_secs.max(1) as u64;
-        let pipeline_manager = Arc::new(
-            PipelineManager::with_repository(effective_pipeline_config, job_repo)
-                .with_session_repository(session_repo.clone())
-                .with_streamer_repository(streamer_repo.clone())
-                .with_preset_repository(preset_repo)
-                .with_pipeline_preset_repository(pipeline_preset_repo)
-                .with_config_service(config_service.clone())
-                .with_dag_repository(Arc::new(SqlxDagRepository::new(
-                    pool.clone(),
-                    write_pool.clone(),
-                ))),
-        );
-        let pipeline_manager_ms = pipeline_manager_start.elapsed().as_millis();
-
-        // Get monitor event broadcaster
-        let monitor_event_broadcaster_start = Instant::now();
-        let monitor_event_broadcaster = stream_monitor.event_broadcaster().clone();
-        let monitor_event_broadcaster_ms = monitor_event_broadcaster_start.elapsed().as_millis();
-
-        // Create danmu service with custom config
-        let danmu_service_start = Instant::now();
-        let danmu_service =
-            Arc::new(DanmuService::new(danmu_config).with_session_repository(session_repo.clone()));
-        let danmu_service_ms = danmu_service_start.elapsed().as_millis();
-
-        // Create notification service with default config
-        let notification_service_start = Instant::now();
-        let notification_repository = Arc::new(SqlxNotificationRepository::new(
-            pool.clone(),
-            write_pool.clone(),
-        ));
-        let web_push_service = WebPushService::from_env(pool.clone(), write_pool.clone())
-            .unwrap_or_else(|e| {
-                warn!(error = %e, "Web push service disabled due to configuration error");
-                None
-            })
-            .map(Arc::new);
-
-        let mut notification_service = NotificationService::with_repository(
-            NotificationServiceConfig::default(),
-            notification_repository.clone(),
-        );
-        if let Some(web_push) = web_push_service.clone() {
-            notification_service = notification_service.with_web_push_service(web_push);
-        }
-        let notification_service = Arc::new(notification_service);
-        notification_service.start_web_push_worker();
-        let notification_service_ms = notification_service_start.elapsed().as_millis();
-        let web_push_enabled = web_push_service.is_some();
-
-        // Build the output-root write gate (#508) AFTER both StreamerManager
-        // and NotificationService are available. Late-bind into the already
-        // Arc-wrapped download manager via `set_output_root_gate`, which
-        // uses a OnceLock internally so subsequent reads on the hot path
-        // stay lock-free.
-        let output_root_gate = OutputRootGate::new(
-            Arc::downgrade(&notification_service),
-            build_output_root_gate_recovery_hook(streamer_manager.clone()),
-            parse_output_roots_env(),
-            Duration::from_secs(DEFAULT_GATE_COOLDOWN_SECS),
-        );
-        download_manager.set_output_root_gate(output_root_gate.clone());
-
-        // Create metrics collector
-        let metrics_collector_start = Instant::now();
-        let metrics_collector = Arc::new(MetricsCollector::new());
-        if let Some(web_push) = web_push_service.as_ref() {
-            web_push.set_metrics_collector(metrics_collector.clone());
-        }
-        let metrics_collector_ms = metrics_collector_start.elapsed().as_millis();
-
-        // Create health checker
-        let health_checker_start = Instant::now();
-        let health_checker = Arc::new(HealthChecker::new());
-        let health_checker_ms = health_checker_start.elapsed().as_millis();
-
-        // Retention values are loaded from global_config on every sweep.
-        let maintenance_scheduler_start = Instant::now();
-        let maintenance_config = MaintenanceConfig::default();
-        let maintenance_scheduler = Arc::new(MaintenanceScheduler::new(
-            pool.clone(),
-            write_pool.clone(),
-            maintenance_config,
-        ));
-        let maintenance_scheduler_ms = maintenance_scheduler_start.elapsed().as_millis();
-
-        // Create cancellation token for graceful shutdown (before scheduler so it can be shared)
-        let cancellation_token_start = Instant::now();
-        let cancellation_token = CancellationToken::new();
-        let cancellation_token_ms = cancellation_token_start.elapsed().as_millis();
-
-        let scheduler_config = crate::scheduler::SchedulerConfig {
-            check_interval_ms: global_config.streamer_check_delay_ms as u64,
-            offline_check_interval_ms: global_config.offline_check_delay_ms as u64,
-            offline_check_count: global_config.offline_check_count as u32,
-            supervisor_config: crate::scheduler::actor::SupervisorConfig::default(),
-        };
-
-        // Wire the streamer-check-history pipeline (writer feeds the
-        // monitor-side polling path; broadcaster feeds the WS route loop).
-        let (check_history_writer, check_history_broadcaster) =
-            wire_check_history_pipeline(&pool, &write_pool, &cancellation_token);
-
-        // Create scheduler with StreamMonitor for real status checking
-        let scheduler_start = Instant::now();
-        let scheduler = Arc::new(tokio::sync::RwLock::new(
-            Scheduler::with_monitor_history_and_config(
-                streamer_manager.clone(),
-                event_broadcaster.clone(),
-                stream_monitor.clone(),
-                Some(check_history_writer),
-                scheduler_config,
-                cancellation_token.child_token(),
-            )
-            .with_config_repo(config_repo.clone()),
-        ));
-        let scheduler_ms = scheduler_start.elapsed().as_millis();
-
-        let total_ms = overall.elapsed().as_millis();
-        info!(
-            startup_container_repos_ms = repos_ms,
-            startup_container_global_config_ms = global_config_ms,
-            startup_container_event_broadcaster_ms = event_broadcaster_ms,
-            startup_container_monitor_repos_ms = monitor_repos_ms,
-            startup_container_config_service_ms = config_service_ms,
-            startup_container_streamer_manager_ms = streamer_manager_ms,
-            startup_container_stream_monitor_ms = stream_monitor_ms,
-            startup_container_credential_service_ms = credential_service_ms,
-            startup_container_download_manager_ms = download_manager_ms,
-            startup_container_pipeline_repos_ms = pipeline_repo_ms,
-            startup_container_pipeline_manager_ms = pipeline_manager_ms,
-            startup_container_monitor_event_broadcaster_ms = monitor_event_broadcaster_ms,
-            startup_container_danmu_service_ms = danmu_service_ms,
-            startup_container_notification_service_ms = notification_service_ms,
-            startup_container_metrics_collector_ms = metrics_collector_ms,
-            startup_container_health_checker_ms = health_checker_ms,
-            startup_container_maintenance_scheduler_ms = maintenance_scheduler_ms,
-            startup_container_cancellation_token_ms = cancellation_token_ms,
-            startup_container_scheduler_ms = scheduler_ms,
-            startup_container_total_ms = total_ms,
-            web_push_enabled,
-            "Startup: service container build summary"
-        );
-
-        info!("Service container initialized with full configuration and real status checking");
-
-        Ok(Self {
-            pool,
-            write_pool,
-            config_service,
-            streamer_manager,
-            event_broadcaster,
-            download_manager,
-            session_repository: session_repo.clone(),
-            output_root_gate,
-            gpu_health_monitor: std::sync::OnceLock::new(),
-            pipeline_manager,
-            monitor_event_broadcaster,
-            session_lifecycle,
-            danmu_service,
-            notification_service,
-            notification_repository,
-            web_push_service,
-            metrics_collector,
-            health_checker,
-            maintenance_scheduler,
-            scheduler,
-            stream_monitor,
-            credential_service,
-            check_history_broadcaster,
-            session_cancels: Arc::new(SessionCancelTokens::new()),
-            pending_pipelines: Arc::new(DashMap::new()),
-            api_server_config: api_config,
-            cancellation_token,
-            logging_config: std::sync::OnceLock::new(),
-            discarded_segment_keys: Arc::new(DashMap::new()),
-            scheduler_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
-            maintenance_task_handle: Arc::new(tokio::sync::Mutex::new(None)),
-        })
-    }
-
     /// Initialize all services (hydrate data, start background tasks, etc.).
     pub async fn initialize(&self) -> Result<()> {
         let overall = Instant::now();
@@ -1438,12 +449,9 @@ impl ServiceContainer {
         // wouldn't take effect until each streamer's config was independently
         // resolved (e.g. on first config-update event).
         for metadata in self.streamer_manager.get_all() {
-            Self::refresh_metadata_offline_check(
-                &self.streamer_manager,
-                &self.config_service,
-                &metadata.id,
-            )
-            .await;
+            self.runtime_coordinator
+                .refresh_metadata_offline_check(&metadata.id)
+                .await;
         }
 
         // Recover jobs from database on startup.
@@ -1463,7 +471,7 @@ impl ServiceContainer {
             "Startup: pipeline manager started"
         );
 
-        // Detect and install the GPU health monitor (#555) BEFORE wiring
+        // Detect and install the GPU health monitor BEFORE wiring
         // the config-event subscription, so the latter can capture a
         // plain `Option<Arc<GpuHealthMonitor>>` clone for hot-reload.
         self.init_gpu_health_monitor().await;
@@ -1478,11 +486,6 @@ impl ServiceContainer {
         // the session row and emit SessionTransition::Ended for every
         // terminal download outcome.
         self.setup_session_lifecycle_subscriptions();
-
-        // Wire `SessionTransition::Started { from_hysteresis: true }` →
-        // synthetic `MonitorEvent::StreamerLive` so a hysteresis resume
-        // restarts the download. See `setup_resume_download_subscriber`.
-        self.setup_resume_download_subscriber();
 
         // Wire monitor events to download manager and danmu service
         self.setup_monitor_event_subscriptions();
@@ -1509,7 +512,7 @@ impl ServiceContainer {
             "Startup: notifications + health checks"
         );
 
-        // One-shot output-root write gate startup probe (#508). Discovers
+        // One-shot output-root write gate startup probe. Discovers
         // broken mounts (e.g., stale Docker bind mounts from host-side
         // cleanup) on container boot rather than waiting for the first
         // monitor tick to try starting a download. Per-root probes run in
@@ -1524,13 +527,18 @@ impl ServiceContainer {
             .maintenance_scheduler
             .clone()
             .start(self.cancellation_token.child_token());
-        *self.maintenance_task_handle.lock().await = Some(maintenance_handle);
+        self.task_supervisor
+            .spawn("database maintenance", async move {
+                if let Err(error) = maintenance_handle.await {
+                    warn!(error = %error, "Database maintenance task failed");
+                }
+            });
         let maintenance_start_ms = maintenance_start.elapsed().as_millis();
         info!("Database maintenance scheduler started");
 
         // Start scheduler in background
         let scheduler_start = Instant::now();
-        self.start_scheduler().await;
+        self.start_scheduler()?;
 
         let scheduler_start_ms = scheduler_start.elapsed().as_millis();
 
@@ -1560,2153 +568,24 @@ impl ServiceContainer {
     ///
     /// The scheduler uses a child token of the container's cancellation token,
     /// so it will automatically stop when the container is shut down.
-    async fn start_scheduler(&self) {
-        // Set download receiver before starting
+    fn start_scheduler(&self) -> Result<()> {
+        let mut scheduler =
+            self.scheduler.lock().take().ok_or_else(|| {
+                crate::Error::Other("scheduler has already been started".to_string())
+            })?;
+        scheduler.set_download_receiver(self.download_manager.subscribe());
+
+        if !self
+            .task_supervisor
+            .spawn_critical("scheduler", async move { scheduler.run().await })
         {
-            let mut scheduler = self.scheduler.write().await;
-            scheduler.set_download_receiver(self.download_manager.subscribe());
+            return Err(crate::Error::Other(
+                "scheduler task was rejected during shutdown".to_string(),
+            ));
         }
-
-        // Run scheduler in background task
-        let scheduler = self.scheduler.clone();
-        let handle = tokio::spawn(async move {
-            let mut guard = scheduler.write().await;
-            if let Err(e) = guard.run().await {
-                tracing::error!("Scheduler error: {}", e);
-            }
-        });
-
-        // Store the handle for graceful shutdown
-        *self.scheduler_task_handle.lock().await = Some(handle);
 
         info!("Scheduler started");
-    }
-
-    /// Initialize and start the API server.
-    /// This should be called after initialize() and runs the server in the background.
-    pub async fn start_api_server(&self) -> Result<()> {
-        let _ = self.start_api_server_bound().await?;
         Ok(())
-    }
-
-    /// Initialize and start the API server, returning the resolved bind address.
-    ///
-    /// This is required when binding to port `0` (ephemeral port), where the actual port is only
-    /// known after binding.
-    pub async fn start_api_server_bound(&self) -> Result<std::net::SocketAddr> {
-        // Create AuthConfig from environment first (single source of truth for token expiration)
-        let auth_config = AuthConfig::from_env();
-
-        let jwt_service =
-            JwtService::from_env(auth_config.access_token_expiration_secs).map(Arc::new);
-
-        // Create AuthService if JWT is configured
-        let auth_service = if let Some(ref jwt) = jwt_service {
-            // Create user and refresh token repositories
-            let user_repo = Arc::new(SqlxUserRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            ));
-            let token_repo = Arc::new(SqlxRefreshTokenRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            ));
-
-            let auth_svc = AuthService::new(user_repo, token_repo, jwt.clone(), auth_config);
-            info!("AuthService initialized with user database authentication");
-            Some(Arc::new(auth_svc))
-        } else {
-            debug!("JWT not configured, AuthService disabled");
-            None
-        };
-
-        let mut state = AppState::with_services(
-            jwt_service,
-            self.config_service.clone(),
-            self.streamer_manager.clone(),
-            self.pipeline_manager.clone(),
-            self.danmu_service.clone(),
-            self.download_manager.clone(),
-        );
-
-        // Wire AuthService into AppState if available
-        if let Some(auth_svc) = auth_service {
-            state = state.with_auth_service(auth_svc);
-        }
-
-        // Wire HealthChecker into AppState for health endpoints
-        state = state.with_health_checker(self.health_checker.clone());
-
-        // Wire credential refresh service into AppState for API endpoints.
-        state = state.with_credential_service(self.credential_service.clone());
-
-        // Wire SessionRepository, SessionEventRepository, FilterRepository, and PipelinePresetRepository into AppState
-        state = state
-            .with_session_repository(Arc::new(SqlxSessionRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_session_event_repository(Arc::new(
-                crate::database::repositories::SqlxSessionEventRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ))
-            .with_streamer_check_history_repository(Arc::new(
-                crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ))
-            .with_check_history_broadcaster(self.check_history_broadcaster.clone())
-            .with_filter_repository(Arc::new(SqlxFilterRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )))
-            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )))
-            .with_notification_repository(self.notification_repository.clone())
-            .with_notification_service(self.notification_service.clone());
-
-        if let Some(web_push) = self.web_push_service.clone() {
-            state = state.with_web_push_service(web_push);
-        }
-
-        // Wire logging config if available
-        if let Some(logging_config) = self.logging_config.get().cloned() {
-            state = state.with_logging_config(logging_config);
-        }
-
-        let server = ApiServer::with_state(self.api_server_config.clone(), state);
-        let cancel_token = self.cancellation_token.clone();
-
-        // Link server shutdown to container shutdown
-        let server_cancel = server.cancel_token();
-        tokio::spawn(async move {
-            cancel_token.cancelled().await;
-            server_cancel.cancel();
-        });
-
-        let (listener, local_addr) = server.bind().await?;
-        info!("Starting API server on http://{}", local_addr);
-
-        tokio::spawn(async move {
-            if let Err(e) = server.run_with_listener(listener).await {
-                tracing::error!("API server error: {}", e);
-            }
-        });
-
-        Ok(local_addr)
-    }
-
-    /// Initialize and start the API server, returning the resolved bind address, using a
-    /// caller-provided JWT secret.
-    ///
-    /// This is primarily intended for the desktop (Tauri) wrapper, which should not depend on
-    /// `.env` loading / shell environment setup for authentication to work.
-    pub async fn start_api_server_bound_with_jwt_secret(
-        &self,
-        jwt_secret: String,
-    ) -> Result<std::net::SocketAddr> {
-        let auth_config = AuthConfig::from_env();
-
-        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
-        let audience =
-            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
-        let jwt_service = Arc::new(JwtService::new(
-            &jwt_secret,
-            &issuer,
-            &audience,
-            Some(auth_config.access_token_expiration_secs),
-        ));
-
-        // Create AuthService (always enabled when a JWT secret is provided)
-        let user_repo = Arc::new(SqlxUserRepository::new(
-            self.pool.clone(),
-            self.write_pool.clone(),
-        ));
-        let token_repo = Arc::new(SqlxRefreshTokenRepository::new(
-            self.pool.clone(),
-            self.write_pool.clone(),
-        ));
-        let auth_svc = AuthService::new(user_repo, token_repo, jwt_service.clone(), auth_config);
-        info!(
-            issuer = %issuer,
-            audience = %audience,
-            "AuthService initialized with desktop-provided JWT secret"
-        );
-
-        let mut state = AppState::with_services(
-            Some(jwt_service),
-            self.config_service.clone(),
-            self.streamer_manager.clone(),
-            self.pipeline_manager.clone(),
-            self.danmu_service.clone(),
-            self.download_manager.clone(),
-        )
-        .with_auth_service(Arc::new(auth_svc));
-
-        // Wire HealthChecker into AppState for health endpoints
-        state = state.with_health_checker(self.health_checker.clone());
-
-        // Wire credential refresh service into AppState for API endpoints.
-        state = state.with_credential_service(self.credential_service.clone());
-
-        // Wire SessionRepository, SessionEventRepository, FilterRepository, and PipelinePresetRepository into AppState
-        state = state
-            .with_session_repository(Arc::new(SqlxSessionRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_session_event_repository(Arc::new(
-                crate::database::repositories::SqlxSessionEventRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ))
-            .with_streamer_check_history_repository(Arc::new(
-                crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ))
-            .with_check_history_broadcaster(self.check_history_broadcaster.clone())
-            .with_filter_repository(Arc::new(SqlxFilterRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_streamer_repository(Arc::new(SqlxStreamerRepository::new(
-                self.pool.clone(),
-                self.write_pool.clone(),
-            )))
-            .with_pipeline_preset_repository(Arc::new(SqlitePipelinePresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )))
-            .with_job_preset_repository(Arc::new(SqliteJobPresetRepository::new(
-                Arc::new(self.pool.clone()),
-                Arc::new(self.write_pool.clone()),
-            )))
-            .with_notification_repository(self.notification_repository.clone())
-            .with_notification_service(self.notification_service.clone());
-
-        if let Some(web_push) = self.web_push_service.clone() {
-            state = state.with_web_push_service(web_push);
-        }
-
-        // Wire logging config if available
-        if let Some(logging_config) = self.logging_config.get().cloned() {
-            state = state.with_logging_config(logging_config);
-        }
-
-        let server = ApiServer::with_state(self.api_server_config.clone(), state);
-        let cancel_token = self.cancellation_token.clone();
-
-        // Link server shutdown to container shutdown
-        let server_cancel = server.cancel_token();
-        tokio::spawn(async move {
-            cancel_token.cancelled().await;
-            server_cancel.cancel();
-        });
-
-        let (listener, local_addr) = server.bind().await?;
-        info!("Starting API server on http://{}", local_addr);
-
-        tokio::spawn(async move {
-            if let Err(e) = server.run_with_listener(listener).await {
-                tracing::error!("API server error: {}", e);
-            }
-        });
-
-        Ok(local_addr)
-    }
-
-    /// Set up config event subscriptions between services.
-    fn setup_config_event_subscriptions(&self) {
-        let streamer_manager = self.streamer_manager.clone();
-        let config_service = self.config_service.clone();
-        let download_manager = self.download_manager.clone();
-        let pipeline_manager = self.pipeline_manager.clone();
-        let danmu_service = self.danmu_service.clone();
-        let session_lifecycle = self.session_lifecycle.clone();
-        let gpu_health_monitor = self.gpu_health_monitor.get().cloned();
-        let mut receiver = self.event_broadcaster.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        // Spawn a task to handle config update events
-        tokio::spawn(async move {
-            use crate::config::ConfigUpdateEvent;
-
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Config event handler shutting down");
-                        break;
-                    }
-                    result = receiver.recv() => {
-                        match result {
-                            Ok(event) => {
-                                match event {
-                                    ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => {
-                                        // Ensure merged config cache is not stale after streamer/template/platform changes.
-                                        config_service.invalidate_streamer(&streamer_id);
-
-                                        // Refresh the cached effective offline_check_* on the
-                                        // streamer metadata so the actor's StreamerConfig and
-                                        // SessionLifecycle hysteresis backstop pick up any new
-                                        // per-streamer override.
-                                        Self::refresh_metadata_offline_check(
-                                            &streamer_manager,
-                                            &config_service,
-                                            &streamer_id,
-                                        )
-                                        .await;
-
-                                        // Config update event - handles name, URL, priority, template changes.
-                                        // If the update includes a state transition to an inactive state
-                                        // (e.g., user disables a streamer via API), we must still perform
-                                        // best-effort cleanup to stop active downloads and danmu collection.
-                                        debug!(
-                                            "Received streamer config update event: {}",
-                                            streamer_id
-                                        );
-
-                                        // Align with ConfigUpdateEvent docs: handlers should check
-                                        // `metadata.is_active()` to determine if cleanup is needed.
-                                        match streamer_manager.get_streamer(&streamer_id) {
-                                            Some(metadata) if !metadata.is_active() => {
-                                                info!(
-                                                    "Streamer {} is inactive after update (state: {}), initiating cleanup",
-                                                    streamer_id, metadata.state
-                                                );
-                                                Self::handle_streamer_disabled(
-                                                    &download_manager,
-                                                    &danmu_service,
-                                                    &session_lifecycle,
-                                                    &streamer_manager,
-                                                    &streamer_id,
-                                                )
-                                                .await;
-                                            }
-                                            Some(_) => {}
-                                            None => {
-                                                // Streamer not in memory (race with delete/hydration issues).
-                                                // Best-effort cleanup anyway.
-                                                warn!(
-                                                    "Streamer {} not found after update, initiating best-effort cleanup",
-                                                    streamer_id
-                                                );
-                                                Self::handle_streamer_disabled(
-                                                    &download_manager,
-                                                    &danmu_service,
-                                                    &session_lifecycle,
-                                                    &streamer_manager,
-                                                    &streamer_id,
-                                                )
-                                                .await;
-                                            }
-                                        }
-                                    }
-                                    ConfigUpdateEvent::PlatformUpdated { platform_id } => {
-                                        debug!(
-                                            "Received platform config update event: {}",
-                                            platform_id
-                                        );
-                                        // Refresh effective offline_check_* on every streamer
-                                        // bound to this platform. The cache invalidation runs
-                                        // upstream; we just need to repopulate metadata.
-                                        let affected: Vec<String> = streamer_manager
-                                            .get_all()
-                                            .into_iter()
-                                            .filter(|m| m.platform_config_id == platform_id)
-                                            .map(|m| m.id)
-                                            .collect();
-                                        for id in affected {
-                                            Self::refresh_metadata_offline_check(
-                                                &streamer_manager,
-                                                &config_service,
-                                                &id,
-                                            )
-                                            .await;
-                                        }
-                                    }
-                                    ConfigUpdateEvent::TemplateUpdated { template_id } => {
-                                        debug!(
-                                            "Received template config update event: {}",
-                                            template_id
-                                        );
-                                        let affected: Vec<String> = streamer_manager
-                                            .get_all()
-                                            .into_iter()
-                                            .filter(|m| {
-                                                m.template_config_id.as_deref()
-                                                    == Some(template_id.as_str())
-                                            })
-                                            .map(|m| m.id)
-                                            .collect();
-                                        for id in affected {
-                                            Self::refresh_metadata_offline_check(
-                                                &streamer_manager,
-                                                &config_service,
-                                                &id,
-                                            )
-                                            .await;
-                                        }
-                                    }
-                                    ConfigUpdateEvent::GlobalUpdated => {
-                                        debug!("Received global config update event");
-
-                                        // Refresh effective offline_check_* on every streamer
-                                        // since the global default may have changed (and any
-                                        // streamer not overriding this layer inherits from it).
-                                        let all_ids: Vec<String> = streamer_manager
-                                            .get_all()
-                                            .into_iter()
-                                            .map(|m| m.id)
-                                            .collect();
-                                        for id in all_ids {
-                                            Self::refresh_metadata_offline_check(
-                                                &streamer_manager,
-                                                &config_service,
-                                                &id,
-                                            )
-                                            .await;
-                                        }
-
-                                        match config_service.get_global_config().await {
-                                            Ok(global) => {
-                                                let new_limit =
-                                                    (global.max_concurrent_downloads as i64)
-                                                        .max(1)
-                                                        as usize;
-                                                let old_limit =
-                                                    download_manager.max_concurrent_downloads();
-
-                                                if new_limit != old_limit {
-                                                    download_manager
-                                                        .set_max_concurrent_downloads(new_limit);
-                                                    info!(
-                                                        "Updated download concurrency: max_concurrent_downloads {} -> {}",
-                                                        old_limit, new_limit
-                                                    );
-                                                }
-
-                                                // Apply the queue-wait freshness threshold. The
-                                                // setter clamps and returns the applied value.
-                                                let old_freshness =
-                                                    download_manager.queue_freshness_threshold_ms();
-                                                let new_freshness = download_manager
-                                                    .set_queue_freshness_threshold_ms(
-                                                        global.queue_freshness_threshold_ms,
-                                                    );
-                                                if new_freshness != old_freshness {
-                                                    info!(
-                                                        "Updated queue-wait freshness threshold: {} ms -> {} ms",
-                                                        old_freshness, new_freshness
-                                                    );
-                                                }
-
-                                                // Hot-reload the GPU health probe cadence (#555).
-                                                // No-op when the monitor wasn't registered (no
-                                                // GPU). `.max(0)` guards against a negative i64
-                                                // wrapping during the u64 cast (the API
-                                                // validator already rejects sub-second values,
-                                                // but the DB could be edited out-of-band);
-                                                // `set_interval` then clamps to its own minimum.
-                                                if let Some(monitor) = gpu_health_monitor.as_ref() {
-                                                    monitor.set_interval(
-                                                        global.gpu_health_probe_interval_secs.max(0)
-                                                            as u64,
-                                                    );
-                                                }
-
-                                                // Wire CPU/IO pipeline job concurrency knobs (best-effort).
-                                                let cpu_jobs = autoscale_concurrency_limit(
-                                                    global.max_concurrent_cpu_jobs,
-                                                );
-                                                let io_jobs =
-                                                    autoscale_concurrency_limit(
-                                                        global.max_concurrent_io_jobs,
-                                                    );
-                                                pipeline_manager
-                                                    .set_worker_concurrency(cpu_jobs, io_jobs);
-                                            }
-                                            Err(e) => {
-                                                warn!(
-                                                    "Failed to reload global config for download concurrency: {}",
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    }
-                                    ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
-                                        // Best-effort: drop any stale cache entry (usually already removed).
-                                        config_service.invalidate_streamer(&streamer_id);
-
-                                        info!(
-                                            "Streamer {} deleted, initiating cleanup",
-                                            streamer_id
-                                        );
-                                        // Reuse the same cleanup logic as disabled state
-                                        Self::handle_streamer_disabled(
-                                            &download_manager,
-                                            &danmu_service,
-                                            &session_lifecycle,
-                                            &streamer_manager,
-                                            &streamer_id,
-                                        ).await;
-                                    }
-                                    ConfigUpdateEvent::EngineUpdated { engine_id } => {
-                                        debug!(
-                                            "Received engine config update event: {}",
-                                            engine_id
-                                        );
-                                    }
-                                    ConfigUpdateEvent::StreamerStateSyncedFromDb { streamer_id, is_active } => {
-                                        debug!(
-                                            "Received streamer state change event: {} (active={})",
-                                            streamer_id, is_active
-                                        );
-                                        // If streamer became inactive (error, disabled, etc.), clean up
-                                        if !is_active {
-                                            info!("Streamer {} became inactive, initiating cleanup", streamer_id);
-                                            Self::handle_streamer_disabled(
-                                                &download_manager,
-                                                &danmu_service,
-                                                &session_lifecycle,
-                                                &streamer_manager,
-                                                &streamer_id,
-                                            ).await;
-                                        }
-                                    }
-                                    ConfigUpdateEvent::StreamerFiltersUpdated { streamer_id } => {
-                                        // Filters are evaluated by StreamMonitor on each check, but changing
-                                        // them can affect OutOfSchedule smart-wake behavior. Invalidate merged
-                                        // config and let the scheduler/actors re-check soon.
-                                        config_service.invalidate_streamer(&streamer_id);
-                                        debug!(
-                                            "Received streamer filters update event: {}",
-                                            streamer_id
-                                        );
-                                    }
-                                }
-                            }
-                            Err(_) => break,
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /// Set up download event subscriptions to pipeline manager.
-    fn setup_download_event_subscriptions(&self) {
-        let pipeline_manager = self.pipeline_manager.clone();
-        let stream_monitor = self.stream_monitor.clone();
-        let streamer_manager = self.streamer_manager.clone();
-        let danmu_service = self.danmu_service.clone();
-        let config_service = self.config_service.clone();
-        let discarded_segment_keys = self.discarded_segment_keys.clone();
-        let mut receiver = self.download_manager.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        const DOWNLOAD_EVENT_QUEUE_CAPACITY: usize = 8192;
-        let (event_tx, mut event_rx) =
-            tokio::sync::mpsc::channel::<DownloadManagerEvent>(DOWNLOAD_EVENT_QUEUE_CAPACITY);
-
-        // Prevent unbounded growth if danmu events are missed (best-effort cleanup).
-        let cleanup_token = cancellation_token.clone();
-        let cleanup_keys = discarded_segment_keys.clone();
-        tokio::spawn(async move {
-            const CLEANUP_INTERVAL_SECS: u64 = 600;
-            const MAX_AGE_SECS: u64 = 3600;
-            let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
-            loop {
-                tokio::select! {
-                    _ = cleanup_token.cancelled() => break,
-                    _ = interval.tick() => {
-                        cleanup_keys.retain(|_, inserted_at| inserted_at.elapsed() < Duration::from_secs(MAX_AGE_SECS));
-                    }
-                }
-            }
-        });
-
-        // Fast path: drain broadcast channel quickly so we don't drop critical session events under backpressure.
-        let drain_token = cancellation_token.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = drain_token.cancelled() => {
-                        debug!("Download event drain shutting down");
-                        break;
-                    }
-                    result = receiver.recv() => {
-                        match result {
-                            Ok(download_event) => {
-                                if let DownloadManagerEvent::Progress(DownloadProgressEvent::Progress { progress, .. }) = &download_event
-                                    && !should_record_recovery_from_progress(progress)
-                                {
-                                    continue;
-                                }
-                                if event_tx.send(download_event).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("Download event handler lagged {} events", n);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("Download event channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        let process_token = cancellation_token.clone();
-        tokio::spawn(async move {
-            while let Some(download_event) = event_rx.recv().await {
-                if process_token.is_cancelled() {
-                    debug!("Download event processor shutting down");
-                    break;
-                }
-
-                // Handle download failure for streamer error tracking. Danmu
-                // collection is stopped separately by the SessionTransition
-                // subscriber in `setup_session_lifecycle_subscriptions` so
-                // Failed and Cancelled share one code path.
-                if let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
-                    ref streamer_id,
-                    ref error,
-                    ..
-                }) = download_event
-                    && let Some(metadata) = streamer_manager.get_streamer(streamer_id)
-                {
-                    if let Err(e) = stream_monitor.handle_error(&metadata, error).await {
-                        warn!("Failed to record download error for {}: {}", streamer_id, e);
-                    } else {
-                        debug!("Recorded download error for {}: {}", streamer_id, error);
-                    }
-                }
-
-                if let DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
-                    ref streamer_id,
-                    ref progress,
-                    ..
-                }) = download_event
-                    && should_record_recovery_from_progress(progress)
-                    && let Some(metadata) = streamer_manager.get_streamer(streamer_id)
-                    && metadata.is_active()
-                    && has_transient_error_state(&metadata)
-                    && let Err(e) = streamer_manager.record_success(streamer_id, true).await
-                {
-                    warn!(
-                        streamer_id = %streamer_id,
-                        error = %e,
-                        "failed to clear transient streamer error state after sustained download progress"
-                    );
-                }
-
-                // Handle danmu segmentation
-                match &download_event {
-                    DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
-                        session_id,
-                        streamer_id,
-                        segment_path,
-                        segment_index,
-                        started_at,
-                        ..
-                    }) => {
-                        if let Some(metadata) = streamer_manager.get_streamer(streamer_id)
-                            && !metadata.is_disabled()
-                            && metadata.last_error.is_some()
-                            && let Err(e) = streamer_manager.clear_last_error(streamer_id).await
-                        {
-                            warn!(
-                                streamer_id = %streamer_id,
-                                error = %e,
-                                "failed to clear streamer last_error on segment start"
-                            );
-                        }
-
-                        if let Some(handle) = danmu_service.get_handle(session_id) {
-                            let path = std::path::Path::new(segment_path);
-                            let segment_id = segment_index.to_string();
-
-                            // Start danmu segment
-                            // We change extension to .xml for danmu file
-                            let mut danmu_path = path.to_path_buf();
-                            danmu_path.set_extension("xml");
-
-                            if let Err(e) = handle
-                                .start_segment(&segment_id, danmu_path, started_at.to_owned())
-                                .await
-                            {
-                                warn!("Failed to start danmu segment: {}", e);
-                            }
-                        }
-                    }
-                    DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
-                        session_id,
-                        streamer_id,
-                        segment_path,
-                        segment_index,
-                        size_bytes,
-                        ..
-                    }) => {
-                        // Decide discard *before* ending danmu segment so we can suppress the
-                        // imminent DanmuEvent::SegmentCompleted (avoids pipeline race with deletion).
-                        let mut discard = false;
-                        let effective_size_bytes = tokio::fs::metadata(segment_path)
-                            .await
-                            .map(|m| m.len())
-                            .unwrap_or(*size_bytes);
-
-                        // Resolve config to check min_size.
-                        match config_service.get_config_for_streamer(streamer_id).await {
-                            Ok(config) => {
-                                let min = u64::try_from(config.min_segment_size_bytes)
-                                    .ok()
-                                    .filter(|v| *v > 0);
-                                if let Some(min) = min
-                                    && effective_size_bytes < min
-                                {
-                                    info!(
-                                        "Segment {} is too small ({} bytes < min {}), discarding",
-                                        segment_path, effective_size_bytes, min
-                                    );
-                                    discard = true;
-                                    discarded_segment_keys.insert(
-                                        (session_id.clone(), segment_index.to_string()),
-                                        Instant::now(),
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                warn!(
-                                    "Failed to resolve config for streamer {} during segment completion: {}",
-                                    streamer_id, e
-                                );
-                            }
-                        }
-
-                        // Always finish the danmu segment first (Flush/Close XML).
-                        if let Some(handle) = danmu_service.get_handle(session_id) {
-                            let segment_id = segment_index.to_string();
-
-                            if let Err(e) = handle.end_segment(&segment_id).await {
-                                warn!("Failed to end danmu segment: {}", e);
-                            }
-                        }
-
-                        if discard {
-                            let path = std::path::Path::new(segment_path);
-                            match tokio::fs::remove_file(path).await {
-                                Ok(()) => debug!("Deleted small segment: {}", segment_path),
-                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                                Err(e) => {
-                                    warn!("Failed to delete small segment {}: {}", segment_path, e)
-                                }
-                            }
-
-                            let mut danmu_path = path.to_path_buf();
-                            danmu_path.set_extension("xml");
-                            match tokio::fs::remove_file(&danmu_path).await {
-                                Ok(()) => {
-                                    debug!("Deleted small segment danmu: {}", danmu_path.display())
-                                }
-                                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                                Err(e) => warn!(
-                                    "Failed to delete small segment danmu {}: {}",
-                                    danmu_path.display(),
-                                    e
-                                ),
-                            }
-                            continue;
-                        }
-
-                        if let Some(metadata) = streamer_manager.get_streamer(streamer_id)
-                            && metadata.is_active()
-                            && has_transient_error_state(&metadata)
-                            && let Err(e) = streamer_manager.record_success(streamer_id, true).await
-                        {
-                            warn!(
-                                streamer_id = %streamer_id,
-                                error = %e,
-                                "failed to clear transient streamer error state after segment completion"
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-
-                // Forward to pipeline manager. Last use of the event in
-                // this iteration — move it instead of cloning (Progress
-                // events carry ids/strings and fire on every progress tick
-                // of every active download).
-                pipeline_manager.handle_download_event(download_event).await;
-            }
-        });
-    }
-
-    /// Feed terminal download events into `SessionLifecycle` so every
-    /// terminal download outcome closes the session row and emits
-    /// `SessionTransition::Ended`, and feed those transitions into the
-    /// pipeline manager so the session-complete DAG fires at the right
-    /// moment (per `cause.should_run_session_complete_pipeline()`).
-    fn setup_session_lifecycle_subscriptions(&self) {
-        // Download terminals → SessionLifecycle.
-        let lifecycle = self.session_lifecycle.clone();
-        let mut download_rx = self.download_manager.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("SessionLifecycle download-event handler shutting down");
-                        break;
-                    }
-                    result = download_rx.recv() => {
-                        match result {
-                            Ok(DownloadManagerEvent::Terminal(event)) => {
-                                if let Err(e) = lifecycle.on_download_terminal(&event).await {
-                                    warn!(
-                                        session_id = %event.session_id(),
-                                        streamer_id = %event.streamer_id(),
-                                        error = %e,
-                                        "SessionLifecycle failed to process terminal download event",
-                                    );
-                                }
-                            }
-                            Ok(DownloadManagerEvent::Progress(
-                                DownloadProgressEvent::SegmentCompleted { streamer_id, .. },
-                            )) => {
-                                // Successful segment → reset the classifier's
-                                // consecutive-failure counter for this streamer
-                                // (preserves Bilibili-style mid-stream RST
-                                // reconnects from being classified as offline).
-                                lifecycle.on_segment_completed(&streamer_id);
-                            }
-                            Ok(DownloadManagerEvent::Progress(_)) => {}
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("SessionLifecycle download-event handler lagged {} events", n);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("SessionLifecycle download-event channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // SessionTransition → PipelineManager.
-        let pipeline_manager = self.pipeline_manager.clone();
-        let mut transition_rx = self.session_lifecycle.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Pipeline session-transition handler shutting down");
-                        break;
-                    }
-                    result = transition_rx.recv() => {
-                        match result {
-                            Ok(transition) => {
-                                pipeline_manager.handle_session_transition(transition).await;
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("Pipeline session-transition handler lagged {} events", n);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("Pipeline session-transition channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // SessionTransition::Ended → DownloadManager::clear_session_segment_index.
-        //
-        // The handler is a synchronous DashMap remove; the subscriber does no
-        // async work after `recv`, so its broadcast cursor cannot Lag from
-        // upstream load. Each subscriber on `session_lifecycle` has an
-        // independent cursor, so a slow neighbour (the pipeline-manager
-        // subscriber above, which awaits `handle_session_transition`) cannot
-        // drop cleanups for `DownloadManager::session_segment_indices`. Without
-        // this isolation, a `Lagged` on the pipeline subscriber would leak
-        // session-scoped segment-index counters until process restart.
-        let download_manager = self.download_manager.clone();
-        let mut transition_rx = self.session_lifecycle.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Download session-cleanup handler shutting down");
-                        break;
-                    }
-                    result = transition_rx.recv() => {
-                        match result {
-                            Ok(transition) => {
-                                if let crate::session::SessionTransition::Ended { session_id, .. } = transition {
-                                    download_manager.clear_session_segment_index(&session_id);
-                                }
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!(
-                                    lagged = n,
-                                    "Download session-cleanup handler lagged; DownloadManager::session_segment_indices entries for the missed sessions will persist until process restart"
-                                );
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("Download session-cleanup channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // SessionTransition → stop danmu collection on Failed.
-        //
-        // Cancelled does not emit SessionTransition (the engine may still
-        // flush a Completed, so `SessionLifecycle` leaves the session in
-        // Recording); when the actor's cancellation path eventually pushes
-        // Offline through the monitor, danmu is stopped by the existing
-        // MonitorEvent::StreamerOffline branch. Completed cleanly ends the
-        // download and the platform-side danmu close signal stops the
-        // stream. Only Failed needs an explicit stop here because the
-        // engine has given up without a flush and the monitor may not
-        // observe offline for a full polling cycle.
-        let danmu_service = self.danmu_service.clone();
-        let mut transition_rx = self.session_lifecycle.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Danmu session-transition handler shutting down");
-                        break;
-                    }
-                    result = transition_rx.recv() => {
-                        match result {
-                            Ok(crate::session::SessionTransition::Ended {
-                                session_id,
-                                cause: crate::session::TerminalCause::Failed { .. },
-                                ..
-                            }) => {
-                                if !danmu_service.is_collecting(&session_id) {
-                                    continue;
-                                }
-                                match danmu_service.stop_collection(&session_id).await {
-                                    Ok(stats) => {
-                                        info!(
-                                            "Stopped danmu collection after download failure for session {}: {} messages",
-                                            session_id, stats.total_count
-                                        );
-                                    }
-                                    Err(e) => {
-                                        warn!(
-                                            "Failed to stop danmu collection for session {}: {}",
-                                            session_id, e
-                                        );
-                                    }
-                                }
-                            }
-                            Ok(_) => {}
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!("Danmu session-transition handler lagged {} events", n);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("Danmu session-transition channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /// Subscribe to `SessionTransition::Started { from_hysteresis: true, .. }`
-    /// and (re)start the download for the resumed session.
-    ///
-    /// The lifecycle's `resume_from_hysteresis` short-circuits before
-    /// `start_or_resume`, so the `MonitorEvent::StreamerLive` outbox
-    /// event that drives `handle_monitor_event::StreamerLive` is never
-    /// emitted on a resume — leaving the streamer "Live" in memory but
-    /// with no actual download running. Without this subscriber, every
-    /// FLV TCP-close that resumes within the hysteresis window stops
-    /// recording for the rest of the broadcast (kinetic / 2026-05-02
-    /// 02:28 → 03:51 was a 1.5-hour silent gap).
-    ///
-    /// We synthesise a `MonitorEvent::StreamerLive` from the
-    /// `DownloadStartPayload` carried on the `Started` transition and
-    /// dispatch through the existing handler — same code path as a
-    /// fresh-session start. The handler's `has_active_download` guard
-    /// makes this idempotent against any race with a real
-    /// `MonitorEvent::StreamerLive` outbox event.
-    ///
-    /// Defence against the resume-vs-Ended race: before dispatching, we
-    /// re-check `is_session_active`. If the hysteresis-timer / direct
-    /// authoritative-end fired between the lifecycle's broadcast and
-    /// our dispatch, we skip — the session is already over.
-    fn setup_resume_download_subscriber(&self) {
-        let download_manager = self.download_manager.clone();
-        let streamer_manager = self.streamer_manager.clone();
-        let config_service = self.config_service.clone();
-        let danmu_service = self.danmu_service.clone();
-        let stream_monitor = self.stream_monitor.clone();
-        let session_repository = self.session_repository.clone();
-        let session_cancels = self.session_cancels.clone();
-        let pending_pipelines = self.pending_pipelines.clone();
-        let session_lifecycle = self.session_lifecycle.clone();
-        let mut transition_rx = self.session_lifecycle.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Resume-download subscriber shutting down");
-                        break;
-                    }
-                    result = transition_rx.recv() => {
-                        match result {
-                            Ok(crate::session::SessionTransition::Started {
-                                from_hysteresis: true,
-                                download_start: Some(payload),
-                                session_id,
-                                streamer_id,
-                                streamer_name,
-                                title,
-                                category,
-                                started_at,
-                                ..
-                            }) => {
-                                if !session_lifecycle.is_session_active(&session_id) {
-                                    debug!(
-                                        session_id,
-                                        streamer_id,
-                                        "resume-download subscriber: session no longer active, skipping"
-                                    );
-                                    continue;
-                                }
-                                info!(
-                                    streamer_id,
-                                    session_id,
-                                    streamer_name,
-                                    "Session resumed from hysteresis — restarting download"
-                                );
-                                let synthetic = MonitorEvent::StreamerLive {
-                                    streamer_id,
-                                    session_id,
-                                    streamer_name,
-                                    streamer_url: payload.streamer_url,
-                                    title,
-                                    category,
-                                    streams: payload.streams,
-                                    media_headers: payload.media_headers,
-                                    media_extras: payload.media_extras,
-                                    timestamp: started_at,
-                                };
-                                Self::handle_monitor_event(
-                                    &download_manager,
-                                    &streamer_manager,
-                                    &config_service,
-                                    &danmu_service,
-                                    &stream_monitor,
-                                    &session_repository,
-                                    &session_cancels,
-                                    &pending_pipelines,
-                                    synthetic,
-                                    /* from_hysteresis_resume */ true,
-                                )
-                                .await;
-                            }
-                            Ok(_) => {
-                                // Other transitions (Started fresh, Ending, Resumed,
-                                // Ended) are handled by other subscribers / paths.
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                warn!(
-                                    "resume-download subscriber lagged {} events",
-                                    n
-                                );
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                debug!("resume-download transition channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /// Set up monitor event subscriptions to download manager and danmu service.
-    fn setup_monitor_event_subscriptions(&self) {
-        let download_manager = self.download_manager.clone();
-        let streamer_manager = self.streamer_manager.clone();
-        let config_service = self.config_service.clone();
-        let danmu_service = self.danmu_service.clone();
-        let stream_monitor = self.stream_monitor.clone();
-        let session_repository = self.session_repository.clone();
-        let session_cancels = self.session_cancels.clone();
-        let pending_pipelines = self.pending_pipelines.clone();
-        let mut receiver = self.monitor_event_broadcaster.subscribe();
-        let cancellation_token = self.cancellation_token.clone();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Monitor event handler shutting down");
-                        break;
-                    }
-                    result = receiver.recv() => {
-                        match result {
-                            Ok(event) => {
-                                Self::handle_monitor_event(
-                                    &download_manager,
-                                    &streamer_manager,
-                                    &config_service,
-                                    &danmu_service,
-                                    &stream_monitor,
-                                    &session_repository,
-                                    &session_cancels,
-                                    &pending_pipelines,
-                                    event,
-                                    /* from_hysteresis_resume */ false,
-                                ).await;
-                            }
-                            Err(_) => break,
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /// Set up danmu event subscriptions for segment coordination.
-    fn setup_danmu_event_subscriptions(&self) {
-        let mut receiver = self.danmu_service.subscribe();
-        let pipeline_manager = self.pipeline_manager.clone();
-        let download_manager = self.download_manager.clone();
-        let streamer_manager = self.streamer_manager.clone();
-        let config_service = self.config_service.clone();
-        let stream_monitor = self.stream_monitor.clone();
-        let session_lifecycle = self.session_lifecycle.clone();
-        let discarded_segment_keys = self.discarded_segment_keys.clone();
-        let cancellation_token = self.cancellation_token.clone();
-
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        debug!("Danmu event handler shutting down");
-                        break;
-                    }
-                    result = receiver.recv() => {
-                        match result {
-                            Ok(event) => {
-                                match &event {
-                                    DanmuEvent::CollectionStarted { session_id, streamer_id } => {
-                                        info!(
-                                            "Danmu collection started for session {} (streamer: {})",
-                                            session_id, streamer_id
-                                        );
-                                        pipeline_manager.handle_danmu_event(event.clone()).await;
-                                    }
-                                    DanmuEvent::CollectionStopped { session_id, statistics } => {
-                                        info!(
-                                            "Danmu collection stopped for session {}: {} messages",
-                                            session_id, statistics.total_count
-                                        );
-                                        pipeline_manager.handle_danmu_event(event.clone()).await;
-                                    }
-                                    DanmuEvent::SegmentStarted { session_id, segment_id, output_path, start_time, .. } => {
-                                        debug!(
-                                            "Danmu segment started: session={}, segment={}, path={:?}, start_time={}",
-                                            session_id, segment_id, output_path, start_time
-                                        );
-                                    }
-                                    DanmuEvent::SegmentCompleted { session_id, segment_id, output_path, message_count, .. } => {
-                                        info!(
-                                            "Danmu segment completed: session={}, segment={}, messages={}",
-                                            session_id, segment_id, message_count
-                                        );
-                                        if discarded_segment_keys
-                                            .remove(&(session_id.clone(), segment_id.clone()))
-                                            .is_some()
-                                        {
-                                            match tokio::fs::remove_file(output_path).await {
-                                                Ok(()) => debug!(
-                                                    "Deleted discarded danmu segment: {}",
-                                                    output_path.display()
-                                                ),
-                                                Err(e)
-                                                    if e.kind() == std::io::ErrorKind::NotFound => {}
-                                                Err(e) => warn!(
-                                                    "Failed to delete discarded danmu segment {}: {}",
-                                                    output_path.display(),
-                                                    e
-                                                ),
-                                            }
-                                            debug!(
-                                                "Skipping danmu segment {} for session {} (paired video discarded)",
-                                                segment_id, session_id
-                                            );
-                                            continue;
-                                        }
-                                        // Forward to pipeline manager for processing
-                                        pipeline_manager.handle_danmu_event(event.clone()).await;
-                                    }
-                                    DanmuEvent::Control { session_id, streamer_id, platform, control } => {
-                                        warn!(
-                                            "Danmu control event for session {} (streamer={} platform={}): {:?}",
-                                            session_id, streamer_id, platform, control
-                                        );
-
-                                        // Forward to pipeline manager (e.g., title updates).
-                                        pipeline_manager.handle_danmu_event(event.clone()).await;
-
-                                        // Treat stream-closed as authoritative end-of-stream:
-                                        // - stop downloads promptly
-                                        // - end session and bypass resume hysteresis
-                                        if matches!(control, crate::danmu::DanmuControlEvent::StreamClosed { .. }) {
-                                            let should_end_stream = match config_service
-                                                .get_platform_config_by_name(platform)
-                                                .await
-                                            {
-                                                Ok(platform_config) => {
-                                                    should_end_stream_on_danmu_stream_closed(
-                                                        platform_config
-                                                            .platform_specific_config
-                                                            .as_deref(),
-                                                    )
-                                                }
-                                                Err(e) => {
-                                                    warn!(
-                                                        "Failed to load platform config for '{}' while handling danmu stream closed: {}",
-                                                        platform, e
-                                                    );
-                                                    true
-                                                }
-                                            };
-
-                                            if !should_end_stream {
-                                                info!(
-                                                    session_id = %session_id,
-                                                    streamer_id = %streamer_id,
-                                                    platform = %platform,
-                                                    "Ignoring danmu stream-closed signal due to platform config"
-                                                );
-                                                continue;
-                                            }
-
-                                            debug!(
-                                                session_id = %session_id,
-                                                streamer_id = %streamer_id,
-                                                "Danmu stream closed; forcing end-of-stream handling"
-                                            );
-
-                                            if let Some(download_info) =
-                                                download_manager.get_download_by_streamer(streamer_id)
-                                            {
-                                                match download_manager
-                                                    .stop_download_with_reason(
-                                                        &download_info.id,
-                                                        crate::downloader::DownloadStopCause::DanmuStreamClosed,
-                                                    )
-                                                    .await
-                                                {
-                                                    Ok(()) => info!(
-                                                        session_id = %session_id,
-                                                        streamer_id = %streamer_id,
-                                                        download_id = %download_info.id,
-                                                        "Stopped download after danmu stream closed"
-                                                    ),
-                                                    Err(e) => warn!(
-                                                        "Failed to stop download {} after danmu stream closed (streamer={}): {}",
-                                                        download_info.id, streamer_id, e
-                                                    ),
-                                                }
-                                            } else {
-                                                debug!(
-                                                    session_id = %session_id,
-                                                    streamer_id = %streamer_id,
-                                                    "No active download found to stop after danmu stream closed"
-                                                );
-                                            }
-
-                                            // The danmu observer lets the lifecycle perform the
-                                            // terminal write. `handle_offline_with_session` routes
-                                            // to `lifecycle.on_offline_detected`, which writes
-                                            // `end_time` atomically. That DB write is the fence
-                                            // that makes the next `LiveDetected` create a fresh
-                                            // session.
-                                            //
-                                            // Pass `Some(DanmuStreamClosed)` so the lifecycle
-                                            // promotes the cause to
-                                            // `TerminalCause::DefinitiveOffline { signal }` —
-                                            // preserves "danmu triggered this end" in the audit
-                                            // log instead of the generic `StreamerOffline`.
-                                            let _ = &session_lifecycle;
-                                            if let Some(streamer) = streamer_manager.get_streamer(streamer_id) {
-                                                if let Err(e) = stream_monitor
-                                                    .handle_offline_with_session(
-                                                        &streamer,
-                                                        Some(session_id.clone()),
-                                                        Some(crate::session::state::OfflineSignal::DanmuStreamClosed),
-                                                    )
-                                                    .await
-                                                {
-                                                    warn!(
-                                                        "Failed to mark streamer offline after danmu stream closed (streamer={} session={}): {}",
-                                                        streamer_id, session_id, e
-                                                    );
-                                                }
-                                            } else {
-                                                warn!(
-                                                    "Streamer metadata not found for stream-closed danmu control (streamer={} session={})",
-                                                    streamer_id, session_id
-                                                );
-                                            }
-                                        }
-                                    }
-                                    DanmuEvent::Reconnecting { session_id, attempt } => {
-                                        warn!(
-                                            "Danmu reconnecting for session {}: attempt {}",
-                                            session_id, attempt
-                                        );
-                                    }
-                                    DanmuEvent::ReconnectFailed { session_id, error } => {
-                                        warn!(
-                                            "Danmu reconnect failed for session {}: {}",
-                                            session_id, error
-                                        );
-                                    }
-                                    DanmuEvent::Error { session_id, error } => {
-                                        warn!(
-                                            "Danmu error for session {}: {}",
-                                            session_id, error
-                                        );
-                                    }
-                                }
-                            }
-                            Err(_) => break,
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /// Set up notification service event subscriptions.
-    fn setup_notification_event_subscriptions(&self) {
-        let notification_service = self.notification_service.clone();
-        let monitor_rx = self.monitor_event_broadcaster.subscribe();
-        let download_rx = self.download_manager.subscribe();
-        let pipeline_rx = self.pipeline_manager.subscribe();
-        let session_rx = self.session_lifecycle.subscribe();
-
-        notification_service.start_event_listeners(
-            monitor_rx,
-            download_rx,
-            pipeline_rx,
-            session_rx,
-        );
-        info!("Notification service event listeners started");
-    }
-
-    /// Run the output-root write gate's one-shot startup probe.
-    ///
-    /// Collects the set of root paths to probe from:
-    ///
-    /// 1. `RUST_SREC_OUTPUT_ROOTS` env var (if set).
-    /// 2. Otherwise, resolves each streamer's configured `output_folder`
-    ///    through `expand_path_template` + `resolve_root` and deduplicates.
-    ///
-    /// Each root is probed in parallel via `spawn_blocking` (sync `tempfile`
-    /// creation, write zero bytes, RAII unlink) wrapped in a 5-second
-    /// tokio timeout. A timeout or any error feeds the synthetic
-    /// `io::Error` into `gate.record_failure`, so broken mounts are
-    /// visible in `/health` from second zero rather than waiting for the
-    /// first monitor tick to attempt a download.
-    ///
-    /// This is the ONLY synthetic probe in the design — all other gate
-    /// transitions are event-driven via real `ensure_output_dir` calls
-    /// and engine stderr readers. See
-    /// `crate::downloader::output_root_gate` for the rationale.
-    async fn run_output_root_startup_probe(&self) {
-        use std::collections::HashSet;
-
-        // Build the union of roots to probe from all sources. Every source
-        // feeds through the gate's own `resolve_path` so the keys match
-        // what the runtime hot path will use — and we dedupe via HashSet
-        // so overlapping templates (e.g. three platforms all writing to
-        // `/rec/...`) produce a single probe.
-        let mut roots: HashSet<std::path::PathBuf> = HashSet::new();
-
-        // 1. Explicit env var always wins — if the user configured it,
-        //    they know exactly what mounts they want watched.
-        for root in parse_output_roots_env() {
-            roots.insert(root);
-        }
-
-        // 2. `OUTPUT_DIR` env var, only when the operator set it. When
-        //    unset, step 3 (global config `output_folder`) covers the
-        //    canonical default — probing `./output` here would register
-        //    a root the downloader never uses on a typical install, and
-        //    the tempfile probe would silently create that directory.
-        if let Ok(raw) = std::env::var("OUTPUT_DIR")
-            && !raw.trim().is_empty()
-        {
-            roots.insert(
-                self.output_root_gate
-                    .resolve_path(std::path::Path::new(raw.trim())),
-            );
-        }
-
-        // 3. Global config's `output_folder` template. This is the
-        //    source the download path actually consults; it may be
-        //    `/rec/{platform}/{streamer}/...`-style.
-        match self.config_service.get_global_config().await {
-            Ok(global) => {
-                if let Some(prefix) = static_root_prefix(&global.output_folder) {
-                    roots.insert(
-                        self.output_root_gate
-                            .resolve_path(std::path::Path::new(&prefix)),
-                    );
-                }
-            }
-            Err(e) => warn!(
-                error = %e,
-                "Output-root startup probe: failed to read global config (continuing with env roots)"
-            ),
-        }
-
-        // 4. Platform-level overrides. Platforms are a small fixed set
-        //    (one entry per streaming site). One list call.
-        match self.config_service.list_platform_configs().await {
-            Ok(platforms) => {
-                for p in platforms {
-                    if let Some(folder) = p.output_folder.as_ref()
-                        && let Some(prefix) = static_root_prefix(folder)
-                    {
-                        roots.insert(
-                            self.output_root_gate
-                                .resolve_path(std::path::Path::new(&prefix)),
-                        );
-                    }
-                }
-            }
-            Err(e) => warn!(
-                error = %e,
-                "Output-root startup probe: failed to list platform configs (continuing)"
-            ),
-        }
-
-        // 5. Template-level overrides. Templates are user-defined
-        //    presets shared across streamers; there are typically a
-        //    handful. One list call, cached.
-        match self.config_service.list_template_configs().await {
-            Ok(templates) => {
-                for t in templates {
-                    if let Some(folder) = t.output_folder.as_ref()
-                        && let Some(prefix) = static_root_prefix(folder)
-                    {
-                        roots.insert(
-                            self.output_root_gate
-                                .resolve_path(std::path::Path::new(&prefix)),
-                        );
-                    }
-                }
-            }
-            Err(e) => warn!(
-                error = %e,
-                "Output-root startup probe: failed to list template configs (continuing)"
-            ),
-        }
-
-        // 6. Per-streamer overrides. `get_config_for_streamer` is cached
-        //    with in-flight dedup, so the N merges we do here are the same
-        //    N merges the first download of each streamer would have done
-        //    lazily — we're just paying the cost concentrated at boot,
-        //    which in turn pre-warms the cache for faster first-download
-        //    latency. Runs in parallel via `join_all` so total wall-clock
-        //    is bounded by the slowest single merge (typically < 50ms).
-        let streamer_ids: Vec<String> = self
-            .streamer_manager
-            .get_all()
-            .into_iter()
-            .map(|s| s.id)
-            .collect();
-        if !streamer_ids.is_empty() {
-            let merge_futures = streamer_ids.into_iter().map(|id| {
-                let cs = self.config_service.clone();
-                async move {
-                    let result = cs.get_config_for_streamer(&id).await;
-                    (id, result)
-                }
-            });
-            let results = futures::future::join_all(merge_futures).await;
-            for (id, result) in results {
-                match result {
-                    Ok(merged) => {
-                        if let Some(prefix) = static_root_prefix(&merged.output_folder) {
-                            roots.insert(
-                                self.output_root_gate
-                                    .resolve_path(std::path::Path::new(&prefix)),
-                            );
-                        }
-                    }
-                    Err(e) => debug!(
-                        streamer_id = %id,
-                        error = %e,
-                        "Output-root startup probe: skipping streamer whose config failed to merge"
-                    ),
-                }
-            }
-        }
-
-        if roots.is_empty() {
-            debug!("Output-root startup probe: no roots to probe");
-            return;
-        }
-
-        info!(count = roots.len(), "Running output-root startup probe");
-
-        let mut handles = Vec::with_capacity(roots.len());
-        for root in roots {
-            let gate = self.output_root_gate.clone();
-            handles.push(tokio::spawn(async move {
-                let probe_result = tokio::time::timeout(
-                    Duration::from_secs(5),
-                    tokio::task::spawn_blocking({
-                        let root = root.clone();
-                        move || probe_root_writable(&root)
-                    }),
-                )
-                .await;
-
-                match probe_result {
-                    Ok(Ok(Ok(()))) => {
-                        debug!(root = %root.display(), "Startup probe: healthy");
-                    }
-                    Ok(Ok(Err(io_err))) => {
-                        warn!(
-                            root = %root.display(),
-                            error = %io_err,
-                            "Startup probe: output root unwritable"
-                        );
-                        gate.record_failure(&root, &io_err);
-                    }
-                    Ok(Err(join_err)) => {
-                        warn!(
-                            root = %root.display(),
-                            error = %join_err,
-                            "Startup probe: spawn_blocking failed (likely panic)"
-                        );
-                        let synthetic = std::io::Error::other("probe task panicked");
-                        gate.record_failure(&root, &synthetic);
-                    }
-                    Err(_timeout) => {
-                        warn!(
-                            root = %root.display(),
-                            "Startup probe: timed out after 5s (hung mount?)"
-                        );
-                        let synthetic =
-                            std::io::Error::new(std::io::ErrorKind::TimedOut, "probe timed out");
-                        gate.record_failure(&root, &synthetic);
-                    }
-                }
-            }));
-        }
-
-        for h in handles {
-            let _ = h.await;
-        }
-
-        info!("Output-root startup probe complete");
-    }
-
-    /// Detect the host GPU and install the [`GpuHealthMonitor`] on the
-    /// container if `nvidia-smi` is available (#555). Called from
-    /// [`Self::initialize`] **before** subscription wiring so the
-    /// config-event handler can capture a plain `Option<Arc<…>>` clone
-    /// of `gpu_health_monitor` for hot-reloading the probe interval.
-    ///
-    /// Idempotent: if the field is already populated (e.g. a future
-    /// caller invokes this twice), the second call is a no-op and logs
-    /// at warn.
-    async fn init_gpu_health_monitor(&self) {
-        if self.gpu_health_monitor.get().is_some() {
-            return;
-        }
-
-        let default = crate::metrics::DEFAULT_GPU_PROBE_INTERVAL_SECS;
-        let initial_interval = match self.config_service.get_global_config().await {
-            Ok(cfg) => match cfg.gpu_health_probe_interval_secs {
-                n if n > 0 => n as u64,
-                _ => default,
-            },
-            Err(_) => default,
-        };
-
-        let Some(monitor) = crate::metrics::GpuHealthMonitor::detect(
-            Arc::downgrade(&self.notification_service),
-            initial_interval,
-        )
-        .await
-        else {
-            debug!("GPU health monitor not registered: nvidia-smi unavailable at startup");
-            return;
-        };
-
-        // The JoinHandle is intentionally dropped: the spawned task
-        // outlives this scope and is supervised by the cancellation
-        // token, so we don't need to await its completion.
-        drop(monitor.start(self.cancellation_token.child_token()));
-
-        if self.gpu_health_monitor.set(monitor).is_err() {
-            warn!("GpuHealthMonitor was already installed; ignoring duplicate registration");
-            return;
-        }
-
-        info!(
-            interval_secs = initial_interval,
-            "GPU health monitor started (issue #555)"
-        );
-    }
-
-    /// Register health checks for all components.
-    async fn register_health_checks(&self) {
-        use std::path::PathBuf;
-
-        // Database health check — atomic pool-closed check; cheap.
-        self.health_checker.register_probe(Arc::new(DatabaseProbe {
-            pool: self.pool.clone(),
-        }));
-
-        // Disk space health checks (output dir and DB directory).
-        // Priority: explicit OUTPUT_DIR env, then the static prefix of the
-        // global config's `output_folder` template (matches what the
-        // download path will actually consult), then `./output` as a last
-        // resort for display when neither source is usable.
-        let output_dir = {
-            let env_dir = std::env::var("OUTPUT_DIR")
-                .ok()
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty());
-            match env_dir {
-                Some(v) => v,
-                None => match self.config_service.get_global_config().await {
-                    Ok(cfg) => static_root_prefix(&cfg.output_folder)
-                        .unwrap_or_else(|| "./output".to_string()),
-                    Err(_) => "./output".to_string(),
-                },
-            }
-        };
-        // Ensure path is absolute for disk lookup
-        let output_dir_path = if let Ok(cwd) = std::env::current_dir() {
-            cwd.join(&output_dir)
-        } else {
-            PathBuf::from(output_dir.clone())
-        };
-
-        let disk_warning_threshold = self.health_checker.disk_warning_threshold();
-        let disk_critical_threshold = self.health_checker.disk_critical_threshold();
-        self.health_checker
-            .register_probe(Arc::new(DiskSpaceProbe::new(
-                output_dir,
-                output_dir_path,
-                disk_warning_threshold,
-                disk_critical_threshold,
-            )));
-
-        if let Ok(database_url) = std::env::var("DATABASE_URL")
-            && let Some(db_file) = sqlite_file_path_from_url(&database_url)
-        {
-            let db_dir = db_file.parent().unwrap_or(db_file.as_path()).to_path_buf();
-            let db_dir_str = db_dir.to_string_lossy().to_string();
-            let db_dir_path = if db_dir.is_absolute() {
-                db_dir.clone()
-            } else if let Ok(cwd) = std::env::current_dir() {
-                cwd.join(&db_dir)
-            } else {
-                db_dir.clone()
-            };
-            self.health_checker
-                .register_probe(Arc::new(DiskSpaceProbe::new(
-                    db_dir_str,
-                    db_dir_path,
-                    disk_warning_threshold,
-                    disk_critical_threshold,
-                )));
-        }
-
-        // Output-root write gate health check (#508). Aggregated: one
-        // "output-root" component whose status reflects the worst state
-        // across all tracked roots, with a detailed message listing each
-        // Degraded root by kind and age. See
-        // `HealthChecker::check_output_root_gate` for the shape.
-        self.health_checker
-            .register_probe(Arc::new(OutputRootProbe {
-                gate: self.output_root_gate.clone(),
-            }));
-
-        // GPU health monitor (#555). Detection + probe-loop spawn happen
-        // earlier in `initialize()` (see [`Self::init_gpu_health_monitor`])
-        // so the config-event subscription handler can capture a clone
-        // for hot-reload. Here we only register the probe if the monitor
-        // is installed.
-        if let Some(monitor) = self.gpu_health_monitor.get().cloned() {
-            self.health_checker
-                .register_probe(Arc::new(GpuProbe { monitor }));
-        }
-
-        self.health_checker
-            .register_probe(Arc::new(DownloadManagerProbe {
-                download_manager: self.download_manager.clone(),
-            }));
-
-        self.health_checker
-            .register_probe(Arc::new(PipelineManagerProbe {
-                pipeline_manager: self.pipeline_manager.clone(),
-            }));
-
-        self.health_checker
-            .register_probe(Arc::new(DanmuServiceProbe {
-                danmu_service: self.danmu_service.clone(),
-            }));
-
-        self.health_checker.register_probe(Arc::new(SchedulerProbe {
-            cancellation_token: self.cancellation_token.clone(),
-        }));
-
-        self.health_checker
-            .register_probe(Arc::new(StaticHealthyProbe {
-                name: "notification_service",
-                cadence: Duration::from_secs(10),
-            }));
-
-        self.health_checker
-            .register_probe(Arc::new(StaticHealthyProbe {
-                name: "maintenance_scheduler",
-                cadence: Duration::from_secs(10),
-            }));
-
-        // Spawn the snapshot-refresh task so `/api/health` reads see
-        // populated data within seconds. Cancellation chains off the
-        // container token; the JoinHandle is intentionally dropped (the
-        // task is supervised by the cancellation token).
-        drop(
-            self.health_checker
-                .start(self.cancellation_token.child_token()),
-        );
-
-        info!("Health checks registered");
-    }
-
-    /// Handle streamer disabled state transition.
-    ///
-    /// This method coordinates cleanup when a streamer is **disabled via UI/API**.
-    /// The key challenge is that the actor is removed before it can process the
-    /// DownloadCancelled event, so we must explicitly end the session here.
-    ///
-    /// ## Cleanup Steps
-    ///
-    /// 1. **End active streaming session** - Close the session in the database
-    ///    BEFORE removing the actor. This ensures the session is properly closed
-    ///    even though the actor won't be around to process the DownloadCancelled event.
-    /// 2. **Remove the streamer actor** - Stop monitoring this streamer
-    /// 3. **Cancel active downloads** - Stop any ongoing download tasks
-    /// 4. **Stop danmu collection** - Stop any active comment collection
-    ///
-    /// ## Session Cleanup: Two Scenarios
-    ///
-    /// This function handles **Scenario 1: Streamer Disable/Delete**:
-    /// - User disables/deletes a streamer via UI/API
-    /// - Actor is being removed from the scheduler
-    /// - We explicitly end the session HERE before actor removal
-    /// - DownloadCancelled event sent, but actor is already gone
-    ///
-    /// **Scenario 2: Manual Download Cancellation** is handled separately by
-    /// `StreamerActor::handle_download_ended(Cancelled)`:
-    /// - User cancels download without disabling the streamer
-    /// - Actor is still active and processes the DownloadCancelled event
-    /// - Actor calls `process_status(Offline)` to end the session
-    /// - Actor then stops itself
-    ///
-    /// Both paths are necessary for complete session cleanup coverage.
-    ///
-    /// ## Error Handling
-    ///
-    /// All errors are logged but do not propagate - cleanup is best-effort
-    /// and should not block other operations.
-    ///
-    /// # Arguments
-    /// * `download_manager` - The download manager to cancel downloads
-    /// * `danmu_service` - The danmu service to stop collection
-    /// * `stream_monitor` - The stream monitor to end active sessions
-    /// * `streamer_id` - The ID of the streamer being disabled
-    ///
-    /// # Note
-    /// Actor removal is handled by the Scheduler's own config event handler.
-    /// We don't do it here to avoid RwLock deadlock (scheduler.run() holds the write lock).
-    pub async fn handle_streamer_disabled(
-        download_manager: &Arc<DownloadManager>,
-        danmu_service: &Arc<DanmuService>,
-        session_lifecycle: &Arc<crate::session::SessionLifecycle>,
-        streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
-        streamer_id: &str,
-    ) {
-        // 1. Cancel active downloads (best-effort).
-        //
-        // Do this before ending the session so the session's `total_size_bytes` snapshot
-        // is less likely to be stale due to late segment persistence.
-        let downloads: Vec<_> = download_manager
-            .get_active_downloads()
-            .into_iter()
-            .filter(|d| d.streamer_id == streamer_id)
-            .collect();
-
-        if downloads.is_empty() {
-            debug!(
-                "No active download found for disabled streamer: {}",
-                streamer_id
-            );
-        } else {
-            for download in downloads {
-                match download_manager
-                    .stop_download_with_reason(
-                        &download.id,
-                        crate::downloader::DownloadStopCause::StreamerDisabled,
-                    )
-                    .await
-                {
-                    Ok(()) => {
-                        info!(
-                            "Cancelled download {} for disabled streamer {}",
-                            download.id, streamer_id
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to cancel download {} for disabled streamer {}: {}",
-                            download.id, streamer_id, e
-                        );
-                    }
-                }
-            }
-        }
-
-        // 2. Stop danmu collection if active (best-effort).
-        if let Some(session_id) = danmu_service.get_session_by_streamer(streamer_id) {
-            match danmu_service.stop_collection(&session_id).await {
-                Ok(stats) => {
-                    info!(
-                        "Stopped danmu collection for disabled streamer {}: {} messages",
-                        streamer_id, stats.total_count
-                    );
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to stop danmu collection for disabled streamer {}: {}",
-                        streamer_id, e
-                    );
-                }
-            }
-        } else {
-            debug!(
-                "No active danmu session found for disabled streamer: {}",
-                streamer_id
-            );
-        }
-
-        // 3. End active streaming session via the lifecycle FSM (best-effort).
-        //
-        // Replaces the old `stream_monitor.force_end_active_session`, which
-        // wrote `live_sessions.end_time` directly via SQL but never touched
-        // `SessionLifecycle`'s in-memory state. That divergence caused the
-        // disable/re-enable bug: re-enable found the stale Hysteresis handle
-        // and silently restarted a download under an already-ended session_id.
-        let streamer_name = streamer_manager
-            .get_streamer(streamer_id)
-            .map(|m| m.name.clone())
-            .unwrap_or_default();
-        if let Err(e) = session_lifecycle
-            .end_for_disable(streamer_id, &streamer_name)
-            .await
-        {
-            warn!(
-                "Failed to end session via lifecycle for disabled streamer {}: {}",
-                streamer_id, e
-            );
-        }
-
-        // Note: Actor removal is handled by the Scheduler's own config event handler.
-        // We don't do it here because scheduler.run() holds the RwLock write lock forever.
-    }
-
-    /// Refresh `effective_offline_check_*` on `StreamerMetadata` from the
-    /// freshly resolved merged config. The actor's `StreamerConfig` and the
-    /// `SessionLifecycle` hysteresis backstop both read from these cached
-    /// fields, so calling this keeps both consumers in lockstep with the
-    /// 4-layer config hierarchy.
-    async fn refresh_metadata_offline_check(
-        streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
-        config_service: &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
-        streamer_id: &str,
-    ) {
-        match config_service.get_config_for_streamer(streamer_id).await {
-            Ok(merged) => streamer_manager.apply_resolved_config(streamer_id, &merged),
-            Err(e) => debug!("Skipping offline_check refresh for {}: {}", streamer_id, e),
-        }
-    }
-
-    /// Handle monitor events to trigger downloads and danmu collection.
-    #[allow(clippy::too_many_arguments)]
-    async fn handle_monitor_event(
-        download_manager: &Arc<DownloadManager>,
-        streamer_manager: &Arc<StreamerManager<SqlxStreamerRepository>>,
-        config_service: &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
-        danmu_service: &Arc<DanmuService>,
-        stream_monitor: &Arc<
-            StreamMonitor<
-                SqlxStreamerRepository,
-                SqlxFilterRepository,
-                SqlxSessionRepository,
-                SqlxConfigRepository,
-            >,
-        >,
-        session_repository: &Arc<SqlxSessionRepository>,
-        session_cancels: &Arc<SessionCancelTokens>,
-        pending_pipelines: &Arc<DashMap<String, ()>>,
-        event: MonitorEvent,
-        from_hysteresis_resume: bool,
-    ) {
-        match event {
-            MonitorEvent::StreamerLive {
-                streamer_id,
-                session_id,
-                streamer_name,
-                title,
-                streams,
-                streamer_url,
-                media_headers,
-                media_extras,
-                ..
-            } => {
-                info!(
-                    "Streamer {} ({}) went live: {} ({} streams available, {} media headers, {} media extras)",
-                    streamer_name,
-                    streamer_id,
-                    title,
-                    streams.len(),
-                    media_headers.as_ref().map(|h| h.len()).unwrap_or(0),
-                    media_extras.as_ref().map(|h| h.len()).unwrap_or(0)
-                );
-
-                // Hand off the per-streamer pipeline to a spawned task.
-                // Without this, an `acquire_slot` parked on a saturated
-                // queue would block the monitor-event loop and stall
-                // every other streamer's events (live, offline, etc.).
-                // Each pipeline owns a per-session cancellation token
-                // that StreamerOffline fires to abort cleanly.
-                let download_manager = download_manager.clone();
-                let streamer_manager = streamer_manager.clone();
-                let config_service = config_service.clone();
-                let danmu_service = danmu_service.clone();
-                let stream_monitor = stream_monitor.clone();
-                let session_repository = session_repository.clone();
-                let session_cancels = session_cancels.clone();
-                let pending_pipelines = pending_pipelines.clone();
-                tokio::spawn(async move {
-                    run_live_download_pipeline(
-                        download_manager,
-                        streamer_manager,
-                        config_service,
-                        danmu_service,
-                        stream_monitor,
-                        session_repository,
-                        session_cancels,
-                        pending_pipelines,
-                        StreamerLivePayload {
-                            streamer_id,
-                            session_id,
-                            streamer_name,
-                            title,
-                            streams,
-                            streamer_url,
-                            media_headers,
-                            media_extras,
-                        },
-                        from_hysteresis_resume,
-                    )
-                    .await;
-                });
-            }
-            MonitorEvent::StreamerOffline {
-                streamer_id,
-                streamer_name,
-                session_id,
-                ..
-            } => {
-                info!("Streamer {} ({}) went offline", streamer_name, streamer_id);
-
-                // Cancel any queued/in-flight pipeline for this
-                // session. A pipeline parked on `acquire_slot` wakes
-                // up and bails without spinning up an engine for an
-                // already-offline streamer; one already in
-                // `start_with_slot` is past the cancel point and
-                // proceeds to run normally — the existing
-                // stop-download path below handles tearing it down.
-                if let Some(sid) = session_id.as_deref() {
-                    session_cancels.cancel(sid);
-                }
-
-                // Stop danmu collection if active
-                let sid = session_id
-                    .filter(|sid| danmu_service.is_collecting(sid))
-                    .or_else(|| danmu_service.get_session_by_streamer(&streamer_id));
-                if let Some(sid) = sid {
-                    match danmu_service.stop_collection(&sid).await {
-                        Ok(stats) => {
-                            info!(
-                                "Stopped danmu collection for session {}: {} messages collected",
-                                sid, stats.total_count
-                            );
-                        }
-                        Err(e) => {
-                            warn!("Failed to stop danmu collection for session {}: {}", sid, e);
-                        }
-                    }
-                }
-
-                // Stop download if active
-                if let Some(download_info) = download_manager.get_download_by_streamer(&streamer_id)
-                {
-                    match download_manager
-                        .stop_download_with_reason(
-                            &download_info.id,
-                            crate::downloader::DownloadStopCause::StreamerOffline,
-                        )
-                        .await
-                    {
-                        Ok(()) => {
-                            info!(
-                                "Stopped download {} for streamer {}",
-                                download_info.id, streamer_id
-                            );
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to stop download for streamer {}: {}",
-                                streamer_id, e
-                            );
-                        }
-                    }
-                }
-            }
-            MonitorEvent::StateChanged {
-                streamer_id,
-                streamer_name,
-                new_state: StreamerState::OutOfSchedule,
-                reason,
-                ..
-            } => {
-                // Only stop recording when the state transition is due to schedule.
-                // Title/category mismatch currently also maps to OutOfSchedule, but we
-                // intentionally don't stop downloads for those reasons here.
-                if reason.as_deref() != Some("out_of_schedule") {
-                    return;
-                }
-
-                info!(
-                    "Streamer {} ({}) became OutOfSchedule; stopping active download/danmu if any",
-                    streamer_name, streamer_id
-                );
-
-                // Cancel any queued pipeline for this streamer so a
-                // download parked on `acquire_slot` doesn't acquire +
-                // start a recording the moment a slot frees, even
-                // though the schedule window has just closed.
-                for entry in download_manager.snapshot_pending() {
-                    if entry.streamer_id == streamer_id {
-                        session_cancels.cancel(&entry.session_id);
-                    }
-                }
-
-                // Stop danmu collection if active.
-                if let Some(sid) = danmu_service.get_session_by_streamer(&streamer_id) {
-                    match danmu_service.stop_collection(&sid).await {
-                        Ok(stats) => {
-                            info!(
-                                "Stopped danmu collection for session {}: {} messages collected",
-                                sid, stats.total_count
-                            );
-                        }
-                        Err(e) => {
-                            warn!("Failed to stop danmu collection for session {}: {}", sid, e);
-                        }
-                    }
-                }
-
-                // Stop download if active.
-                if let Some(download_info) = download_manager.get_download_by_streamer(&streamer_id)
-                {
-                    match download_manager
-                        .stop_download_with_reason(
-                            &download_info.id,
-                            crate::downloader::DownloadStopCause::OutOfSchedule,
-                        )
-                        .await
-                    {
-                        Ok(()) => {
-                            info!(
-                                "Stopped download {} for streamer {} (out_of_schedule)",
-                                download_info.id, streamer_id
-                            );
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to stop download for streamer {} (out_of_schedule): {}",
-                                streamer_id, e
-                            );
-                        }
-                    }
-                }
-            }
-            _ => {
-                // Other events don't trigger download actions
-            }
-        }
     }
 
     /// Shutdown all services gracefully.
@@ -3715,77 +594,51 @@ impl ServiceContainer {
     }
 
     /// Shutdown all services gracefully with a custom timeout.
-    pub async fn shutdown_with_timeout(&self, timeout: Duration) -> Result<()> {
+    pub(crate) async fn shutdown_with_timeout(&self, timeout: Duration) -> Result<()> {
         info!("Shutting down services (timeout: {:?})", timeout);
+        let deadline = tokio::time::Instant::now() + timeout;
 
-        // Signal all background tasks to stop
+        // Stop accepting new work and signal all background tasks first.
         self.cancellation_token.cancel();
-
-        info!("Stopping maintenance scheduler...");
-        if let Some(handle) = self.maintenance_task_handle.lock().await.take() {
-            match tokio::time::timeout(timeout, handle).await {
-                Ok(Ok(())) => info!("Maintenance scheduler stopped gracefully"),
-                Ok(Err(error)) => warn!(error = %error, "Maintenance scheduler task panicked"),
-                Err(_) => warn!("Maintenance scheduler shutdown timed out"),
-            }
-        }
-
-        // Stop notification service
-        info!("Stopping notification service...");
-        self.notification_service.stop().await;
-        info!("Notification service stopped");
-
-        // Stop stream monitor outbox publisher
-        info!("Stopping stream monitor...");
         self.stream_monitor.stop();
-        info!("Stream monitor stopped");
-
-        // Stop danmu service (finalize XML files)
-        info!("Stopping danmu service...");
-        self.danmu_service.shutdown().await;
-        info!("Danmu service stopped");
-
-        // Stop accepting new downloads
-        info!("Stopping download manager...");
-        // Shut down the queue first so any pipelines parked on
-        // `acquire_slot` wake up and return `ShuttingDown` instead of
-        // racing with `stop_all` to grab a slot from a just-released
-        // active download.
         self.download_manager.shutdown_queue();
-        let stopped_downloads = self.download_manager.stop_all().await;
-        info!("Stopped {} active downloads", stopped_downloads.len());
 
-        // Stop pipeline manager and drain job queue
-        info!("Stopping pipeline manager...");
-        self.pipeline_manager.stop().await;
-        info!("Pipeline manager stopped");
+        let service_shutdown = async {
+            info!("Stopping notification service...");
+            self.notification_service.stop().await;
 
-        // Stop scheduler - wait for it to complete its shutdown sequence
-        // (cancellation already triggered via linked token above)
-        info!("Stopping scheduler...");
+            info!("Stopping danmu service...");
+            self.danmu_service.shutdown().await;
 
-        // Wait for the scheduler task to complete with timeout
-        // The scheduler's run() loop will exit on cancellation and call its own shutdown()
-        // which waits for all actors to stop gracefully
-        if let Some(handle) = self.scheduler_task_handle.lock().await.take() {
-            match tokio::time::timeout(timeout, handle).await {
-                Ok(Ok(())) => {
-                    info!("Scheduler stopped gracefully");
-                }
-                Ok(Err(e)) => {
-                    warn!("Scheduler task panicked: {}", e);
-                }
-                Err(_) => {
-                    warn!("Scheduler shutdown timed out");
-                }
-            }
-        } else {
-            debug!("No scheduler task handle to wait for");
+            info!("Stopping download manager...");
+            let stopped_downloads = self.download_manager.stop_all().await;
+            info!(count = stopped_downloads.len(), "Stopped active downloads");
+
+            info!("Stopping pipeline manager...");
+            self.pipeline_manager.stop().await;
+        };
+        if tokio::time::timeout_at(deadline, service_shutdown)
+            .await
+            .is_err()
+        {
+            warn!("Service shutdown deadline exceeded");
         }
 
-        // Close database pool
-        info!("Closing database pool...");
-        self.pool.close().await;
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if !self.task_supervisor.shutdown(remaining).await {
+            warn!("One or more background tasks required forced cancellation");
+        }
+
+        info!("Closing database pools...");
+        let close_pools = async {
+            tokio::join!(self.write_pool.close(), self.pool.close());
+        };
+        if tokio::time::timeout_at(deadline, close_pools)
+            .await
+            .is_err()
+        {
+            warn!("Database pool shutdown deadline exceeded");
+        }
 
         info!("Services shut down");
         Ok(())
@@ -3796,16 +649,20 @@ impl ServiceContainer {
         self.cancellation_token.clone()
     }
 
-    /// Check if shutdown has been requested.
-    pub fn is_shutting_down(&self) -> bool {
-        self.cancellation_token.is_cancelled()
+    /// Wait until a critical runtime task fails.
+    pub async fn wait_for_runtime_failure(&self) -> crate::Error {
+        crate::Error::Other(self.task_supervisor.wait_for_failure().await.to_string())
     }
 
-    /// Get service statistics.
+    /// Build a point-in-time [`ServiceStats`] snapshot from live service
+    /// counters.
+    ///
+    /// Exported through [`crate::backend`] for embedders; nothing inside
+    /// the crate calls it. Every field is read at call time from the
+    /// owning service; `scheduler_stats` reads the `SchedulerHandle`
+    /// watch channel, so it stays current after `start_scheduler` moves
+    /// the `Scheduler` into its runtime task.
     pub fn stats(&self) -> ServiceStats {
-        // Try to get scheduler stats without blocking
-        let scheduler_stats = self.scheduler.try_read().ok().map(|guard| guard.stats());
-
         ServiceStats {
             streamer_count: self.streamer_manager.count(),
             active_streamer_count: self.streamer_manager.active_count(),
@@ -3817,18 +674,8 @@ impl ServiceContainer {
             pipeline_queue_depth: self.pipeline_manager.queue_depth(),
             active_danmu_collections: self.danmu_service.active_sessions().len(),
             notification_stats: self.notification_service.stats(),
-            scheduler_stats,
+            scheduler_stats: Some(self.scheduler_handle.stats()),
         }
-    }
-
-    /// Get the metrics collector.
-    pub fn metrics_collector(&self) -> &Arc<MetricsCollector> {
-        &self.metrics_collector
-    }
-
-    /// Get the health checker.
-    pub fn health_checker(&self) -> &Arc<HealthChecker> {
-        &self.health_checker
     }
 
     /// Get the notification service.
@@ -3836,586 +683,29 @@ impl ServiceContainer {
         &self.notification_service
     }
 
-    /// Get Prometheus metrics export.
-    pub fn prometheus_metrics(&self) -> String {
-        let exporter = PrometheusExporter::new(self.metrics_collector.clone());
-        exporter.export()
-    }
-
-    /// Subscribe to danmu events.
-    pub fn subscribe_danmu_events(&self) -> tokio::sync::broadcast::Receiver<DanmuEvent> {
-        self.danmu_service.subscribe()
-    }
-
-    /// Get the danmu service for direct access.
-    pub fn danmu_service(&self) -> &Arc<DanmuService> {
-        &self.danmu_service
-    }
-
-    /// Subscribe to pipeline events.
-    pub fn subscribe_pipeline_events(&self) -> tokio::sync::broadcast::Receiver<PipelineEvent> {
-        self.pipeline_manager.subscribe()
-    }
-
-    /// Subscribe to monitor events.
-    pub fn subscribe_monitor_events(&self) -> tokio::sync::broadcast::Receiver<MonitorEvent> {
-        self.monitor_event_broadcaster.subscribe()
-    }
-
-    /// Get the monitor event broadcaster for external use.
-    pub fn monitor_broadcaster(&self) -> &MonitorEventBroadcaster {
-        &self.monitor_event_broadcaster
+    /// Return the configuration service used by the runtime.
+    pub fn config_service(
+        &self,
+    ) -> &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>> {
+        &self.config_service
     }
 
     /// Set the logging configuration
     pub fn set_logging_config(&self, config: Arc<LoggingConfig>) {
-        self.logging_config.get_or_init(|| config);
+        if self.logging_config.set(config.clone()).is_err() {
+            warn!("Logging configuration was already installed");
+            return;
+        }
+
+        let cancellation = self.cancellation_token.child_token();
+        self.task_supervisor.spawn("log retention", async move {
+            config.run_retention_cleanup(cancellation).await;
+        });
     }
 }
 
-/// Owned payload carrying the per-streamer data needed by
-/// [`run_live_download_pipeline`]. Mirrors the relevant fields of
-/// [`MonitorEvent::StreamerLive`] but is decoupled from the enum so
-/// the spawned task can capture exactly what it needs.
-struct StreamerLivePayload {
-    streamer_id: String,
-    session_id: String,
-    streamer_name: String,
-    title: String,
-    streams: Vec<crate::monitor::StreamInfo>,
-    streamer_url: String,
-    media_headers: Option<std::collections::HashMap<String, String>>,
-    media_extras: Option<std::collections::HashMap<String, String>>,
-}
-
-/// Per-streamer download pipeline.
-///
-/// Runs in a `tokio::spawn`'d task per `StreamerLive` event. Walks the
-/// split startup flow:
-///
-/// 1. **Dedup / pre-checks** — bail if the streamer is already
-///    downloading, no longer active, disabled, or has no streams.
-/// 2. **Preflight** — engine resolution, circuit breaker, output-root
-///    write gate, `prepare_output_dir`. Failures emit
-///    `DownloadRejected` events directly (the manager handles that)
-///    and the pipeline exits without consuming a queue slot.
-/// 3. **Acquire slot** — parks on the priority-aware download queue,
-///    emitting `DownloadQueued` if it had to wait. Honours the
-///    per-session [`CancellationToken`] so a `StreamerOffline`
-///    arriving mid-wait aborts cleanly with no engine startup.
-/// 4. **Freshness re-check** — when the wait was non-trivial
-///    (`waited_ms > queue_freshness_threshold_ms()`), refetches the
-///    live state via `StreamMonitor::check_streamer`; on
-///    Offline / Filtered / Error, drops the slot and exits without
-///    starting the engine. Below the threshold, only does a cheap
-///    state re-check via the streamer manager.
-/// 5. **Start engine** — calls `start_with_slot`, which moves the
-///    slot into the active downloads map and emits `DownloadStarted`.
-/// 6. **Danmu** — gated on download success, so danmu collection
-///    never opens a platform connection for a stream that's still
-///    queued or got aborted.
-#[allow(clippy::too_many_arguments)]
-async fn run_live_download_pipeline(
-    download_manager: Arc<DownloadManager>,
-    streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
-    config_service: Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>>,
-    danmu_service: Arc<DanmuService>,
-    stream_monitor: Arc<
-        StreamMonitor<
-            SqlxStreamerRepository,
-            SqlxFilterRepository,
-            SqlxSessionRepository,
-            SqlxConfigRepository,
-        >,
-    >,
-    session_repository: Arc<SqlxSessionRepository>,
-    session_cancels: Arc<SessionCancelTokens>,
-    pending_pipelines: Arc<DashMap<String, ()>>,
-    payload: StreamerLivePayload,
-    // `true` when called for a session that just resumed out of
-    // hysteresis. The resume-download subscriber synthesises a
-    // `MonitorEvent::StreamerLive` from the lifecycle's
-    // `SessionTransition::Started { from_hysteresis: true, .. }` and routes
-    // it through the same pipeline as a fresh-live event; this flag
-    // tells the short-queue-wait branch to trust the lifecycle signal
-    // instead of re-reading the streamer-manager cache.
-    from_hysteresis_resume: bool,
-) {
-    use crate::downloader::{AcquireRequest, PreflightRequest, Priority as QueuePriority};
-
-    let StreamerLivePayload {
-        streamer_id,
-        session_id,
-        streamer_name,
-        title,
-        mut streams,
-        streamer_url,
-        mut media_headers,
-        mut media_extras,
-    } = payload;
-
-    // Per-streamer reservation. The earliest atomic point we can grab
-    // — before any await, before preflight, before queue acquire —
-    // covers the window where two concurrent `StreamerLive` events
-    // could otherwise both pass `has_active_download` and both
-    // proceed to `start_with_slot`. Hysteresis-resume synthetic
-    // events for the same streamer also funnel through here. The
-    // queue's session_id dedup catches the rarer case of duplicate
-    // session_ids; this catches the common case of duplicate
-    // streamer_ids racing.
-    if pending_pipelines.insert(streamer_id.clone(), ()).is_some() {
-        debug!(
-            "Skipping StreamerLive for {} — pipeline already in flight",
-            streamer_id
-        );
-        return;
-    }
-    struct PipelineReservationGuard<'a> {
-        map: &'a Arc<DashMap<String, ()>>,
-        streamer_id: &'a str,
-    }
-    impl<'a> Drop for PipelineReservationGuard<'a> {
-        fn drop(&mut self) {
-            self.map.remove(self.streamer_id);
-        }
-    }
-    let _pipeline_guard = PipelineReservationGuard {
-        map: &pending_pipelines,
-        streamer_id: &streamer_id,
-    };
-
-    // Per-session cancellation token. The registration handle clears
-    // itself on exit, but only if it still owns the same token; this
-    // keeps cleanup local to the cancellation registry instead of
-    // spreading token lifetime rules through the pipeline.
-    let cancel_handle = session_cancels.register(&session_id);
-    let cancel = cancel_handle.token();
-
-    // Dedup and pre-checks.
-    if download_manager.has_active_download(&streamer_id) {
-        debug!("Download already active for {}", streamer_id);
-        let active = download_manager.get_active_downloads();
-        let conflicts: Vec<_> = active
-            .iter()
-            .filter(|d| d.streamer_id == streamer_id)
-            .collect();
-        for conflict in conflicts {
-            tracing::warn!(
-                "CONFLICTING DOWNLOAD: ID={}, Status={:?}, Started={:?}",
-                conflict.id,
-                conflict.status,
-                conflict.started_at
-            );
-        }
-        return;
-    }
-
-    let streamer_metadata = streamer_manager.get_streamer(&streamer_id);
-    if let Some(metadata) = &streamer_metadata {
-        if !metadata.is_active() {
-            info!(
-                "Ignoring StreamerLive for inactive streamer {} (state: {})",
-                streamer_id, metadata.state
-            );
-            return;
-        }
-        if metadata.is_disabled() {
-            // Returning silently here would strand the pipeline: the session
-            // lifecycle has already committed this session to Recording (via
-            // `start_or_resume` or `resume_from_hysteresis`), and with no
-            // download there is never a DownloadStarted/DownloadEnded to move
-            // the streamer actor out of Live — the `(Live, Live)` arm of
-            // `HysteresisState::should_emit` then suppresses every future
-            // check and recording stays dead for the rest of the broadcast.
-            // Emit the same Rejected terminal `preflight` uses so the session
-            // lifecycle closes the session (`TerminalCause::Rejected` is an
-            // authoritative end) and the actor re-checks once the backoff
-            // expires.
-            let retry_after_secs = metadata
-                .remaining_backoff_std()
-                .map_or(0, |d| d.as_secs())
-                .saturating_add(2);
-            info!(
-                streamer_id = %streamer_id,
-                streamer_name = %streamer_name,
-                disabled_until = ?metadata.disabled_until,
-                retry_after_secs,
-                "Ignoring StreamerLive while temporarily disabled"
-            );
-            download_manager.emit_rejected(
-                streamer_id.clone(),
-                streamer_name.clone(),
-                session_id.clone(),
-                "streamer temporarily disabled (error backoff)".to_string(),
-                Some(retry_after_secs),
-                crate::downloader::DownloadRejectedKind::StreamerBackoff,
-            );
-            return;
-        }
-    }
-
-    if streams.is_empty() {
-        warn!(
-            "Streamer {} has no streams available, cannot start download",
-            streamer_id
-        );
-        return;
-    }
-
-    let is_high_priority = streamer_metadata
-        .as_ref()
-        .map(|s| s.priority == Priority::High)
-        .unwrap_or(false);
-    // Load merged config for this streamer.
-    let merged_config = match config_service.get_config_for_streamer(&streamer_id).await {
-        Ok(config) => config,
-        Err(e) => {
-            warn!(
-                "Failed to load config for streamer {}, using defaults: {}",
-                streamer_id, e
-            );
-            Arc::new(crate::domain::config::MergedConfig::builder().build())
-        }
-    };
-
-    // Sanitize names for filename usage.
-    let sanitized_streamer = sanitize_filename(&streamer_name);
-    let sanitized_title = sanitize_filename(&title);
-    let platform = streamer_metadata
-        .as_ref()
-        .map(|s| s.platform())
-        .unwrap_or("unknown");
-
-    let dir = merged_config
-        .output_folder
-        .replace("{streamer}", &sanitized_streamer)
-        .replace("{title}", &sanitized_title)
-        .replace("{session_id}", &session_id)
-        .replace("{platform}", platform);
-    let output_dir = expand_path_template(&dir);
-
-    // Preflight.
-    let preflight_req = PreflightRequest {
-        streamer_id: streamer_id.clone(),
-        streamer_name: streamer_name.clone(),
-        session_id: session_id.clone(),
-        output_dir: output_dir.clone().into(),
-        engine_id: Some(merged_config.download_engine.clone()),
-        engines_override: merged_config.engines_override.clone(),
-    };
-    let engine = match download_manager.preflight(preflight_req).await {
-        Ok(e) => e,
-        Err(e) => {
-            warn!("Preflight failed for streamer {}: {}", streamer_id, e);
-            return; // Manager has already emitted DownloadRejected if applicable.
-        }
-    };
-    let engine_type = engine.engine_type;
-
-    // Honour cancellation that fired between preflight and slot acquire.
-    if cancel.is_cancelled() {
-        debug!("Streamer {} cancelled before slot acquire", streamer_id);
-        return;
-    }
-
-    // Acquire slot.
-    let acquire_req = AcquireRequest {
-        session_id: session_id.clone(),
-        streamer_id: streamer_id.clone(),
-        streamer_name: streamer_name.clone(),
-        engine_type,
-        priority: if is_high_priority {
-            QueuePriority::High
-        } else {
-            QueuePriority::Normal
-        },
-    };
-    let slot = match download_manager
-        .acquire_slot(acquire_req, cancel.clone())
-        .await
-    {
-        Ok(slot) => slot,
-        Err(e) => {
-            // Cancelled / duplicate session / shutdown are benign
-            // exits. If a visible queued event fired, the manager has
-            // already emitted the matching `DownloadDequeued`.
-            debug!(
-                "acquire_slot returned without a slot for streamer {}: {}",
-                streamer_id, e
-            );
-            return;
-        }
-    };
-
-    let waited_ms = slot.waited_ms();
-
-    // Freshness re-check.
-    if waited_ms > download_manager.queue_freshness_threshold_ms() {
-        debug!(
-            streamer_id = %streamer_id,
-            waited_ms,
-            "Queue wait exceeded freshness threshold; refetching live state"
-        );
-        // Re-fetch via the monitor's deduped, rate-limited check.
-        let metadata_for_check = streamer_manager.get_streamer(&streamer_id);
-        if let Some(meta) = metadata_for_check {
-            match stream_monitor.check_streamer(&meta).await {
-                Ok(crate::monitor::LiveStatus::Live {
-                    streams: fresh_streams,
-                    media_headers: fresh_headers,
-                    media_extras: fresh_extras,
-                    ..
-                }) => {
-                    if fresh_streams.is_empty() {
-                        debug!(
-                            streamer_id = %streamer_id,
-                            "Refetch returned Live with no streams; aborting"
-                        );
-                        download_manager.emit_dequeued_for_slot(
-                            &slot,
-                            &streamer_id,
-                            &streamer_name,
-                        );
-                        return;
-                    }
-                    // Replace BOTH the URLs and the associated
-                    // headers/extras. On platforms whose signed
-                    // URLs rotate together with required headers
-                    // (e.g. Host overrides, signed referer),
-                    // keeping the old headers with new URLs would
-                    // 403 just as reliably as keeping the old
-                    // URLs.
-                    streams = fresh_streams;
-                    media_headers = fresh_headers;
-                    media_extras = fresh_extras;
-                }
-                Ok(_) => {
-                    debug!(
-                        streamer_id = %streamer_id,
-                        "Streamer no longer live after queue wait; aborting"
-                    );
-                    download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-                    return;
-                }
-                Err(e) => {
-                    warn!(
-                        streamer_id = %streamer_id,
-                        error = %e,
-                        "Refetch failed; falling back to cached URLs"
-                    );
-                }
-            }
-        } else {
-            debug!(
-                streamer_id = %streamer_id,
-                "Streamer metadata vanished during queue wait; aborting"
-            );
-            download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-            return;
-        }
-    } else if !from_hysteresis_resume {
-        // Cheap re-check for the short-wait case: is the streamer
-        // still in a state that permits a fresh recording? `Live`
-        // specifically, NOT just `is_active()` — `OutOfSchedule`
-        // counts as active in the metadata sense (the streamer is
-        // still being monitored) but recording is not allowed.
-        // Without this tighter check, a schedule window could close
-        // mid-wait and we'd start an out-of-schedule recording.
-        //
-        // Skipped on hysteresis resume: the lifecycle writes
-        // `state=LIVE` before broadcasting, but `StreamMonitor::handle_live`
-        // reloads the streamer-manager cache only after the broadcast
-        // returns, so this check can read a stale `NotLive`. Out-of-schedule
-        // streamers never reach this code path because
-        // `monitor::service::handle_live` runs only for `LiveStatus::Live`
-        // (filtered events take a different branch), and any window that
-        // closes mid-recording is caught later by the
-        // `MonitorEvent::StateChanged { OutOfSchedule }` handler.
-        let meta = streamer_manager.get_streamer(&streamer_id);
-        let permits_start = meta
-            .as_ref()
-            .map(|m| m.state == StreamerState::Live && !m.is_disabled())
-            .unwrap_or(false);
-        if !permits_start {
-            debug!(
-                streamer_id = %streamer_id,
-                state = ?meta.as_ref().map(|m| m.state),
-                "Streamer no longer in LIVE state after short queue wait; aborting"
-            );
-            download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-            return;
-        }
-    }
-
-    if cancel.is_cancelled() {
-        debug!(
-            "Streamer {} cancelled between freshness check and engine start",
-            streamer_id
-        );
-        download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
-        return;
-    }
-
-    // ── Build full DownloadConfig with possibly-refreshed URLs ──
-    let best_stream = &streams[0];
-    let stream_url_selected = best_stream.url.clone();
-    let stream_format = best_stream.stream_format.as_str();
-    let media_format = best_stream.media_format.as_str();
-    let initial_segment_index = match session_repository
-        .next_session_segment_index(&session_id)
-        .await
-    {
-        Ok(index) => index,
-        Err(e) => {
-            warn!(
-                session_id = %session_id,
-                streamer_id = %streamer_id,
-                error = %e,
-                "Failed to load next persisted session segment index; starting from zero"
-            );
-            0
-        }
-    };
-
-    let mut headers = media_headers.as_ref().cloned().unwrap_or_default();
-    if let Some(extras) = best_stream.extras.as_ref() {
-        if let Some(extra_headers) = extras.get("headers").and_then(|v| v.as_object()) {
-            for (k, v) in extra_headers {
-                if let Some(v) = v.as_str() {
-                    headers.insert(k.clone(), v.to_string());
-                }
-            }
-        }
-        if let Some(host_header) = extras.get("host_header").and_then(|v| v.as_str()) {
-            headers.insert("Host".to_string(), host_header.to_string());
-        }
-    }
-    if !headers.is_empty() {
-        debug!(
-            "Using {} merged headers for download: {:?}",
-            headers.len(),
-            headers.keys().collect::<Vec<_>>()
-        );
-    }
-
-    let mut config = DownloadConfig::new(
-        stream_url_selected.clone(),
-        output_dir.clone(),
-        streamer_id.clone(),
-        streamer_name.clone(),
-        session_id.clone(),
-    )
-    .with_initial_segment_index(initial_segment_index)
-    .with_filename_template(
-        merged_config
-            .output_filename_template
-            .replace("{streamer}", &sanitized_streamer)
-            .replace("{title}", &sanitized_title)
-            .replace("{platform}", platform),
-    )
-    .with_output_format(&merged_config.output_file_format)
-    .with_protocol(DownloadProtocol::from_format_label(stream_format))
-    .with_max_segment_duration(merged_config.max_download_duration_secs as u64)
-    .with_max_segment_size(merged_config.max_part_size_bytes as u64)
-    .with_engines_override(merged_config.engines_override.clone());
-
-    if let Some(ref cookies) = merged_config.cookies {
-        debug!(
-            "Applying cookies from merged config to download (length: {} chars)",
-            cookies.len()
-        );
-        config = config.with_cookies(cookies);
-    }
-
-    let proxy_config = &merged_config.proxy_config;
-    if proxy_config.enabled {
-        if let Some(effective_proxy_url) = proxy_config.effective_url() {
-            debug!(
-                "Applying explicit proxy from merged config to download: {}",
-                effective_proxy_url
-            );
-            config = config.with_proxy(effective_proxy_url);
-        } else if proxy_config.use_system_proxy {
-            debug!("Enabling system proxy for download");
-            config = config.with_system_proxy(true);
-        }
-    }
-
-    for (key, value) in headers {
-        config = config.with_header(key, value);
-    }
-
-    info!(
-        "Starting download for {} with stream URL: {} (stream_format: {}, media_format: {}, headers_needed: {}, output: {}, queue_wait_ms: {}, initial_segment_index: {})",
-        streamer_name,
-        stream_url_selected,
-        stream_format,
-        media_format,
-        best_stream.is_headers_needed,
-        merged_config.output_folder,
-        waited_ms,
-        initial_segment_index,
-    );
-
-    let cookies = merged_config.cookies.clone();
-
-    // Start engine on the slot.
-    let started = match download_manager.start_with_slot(slot, config, engine).await {
-        Ok(download_id) => {
-            info!(
-                "Started download {} for streamer {} (priority: {})",
-                download_id,
-                streamer_id,
-                if is_high_priority { "high" } else { "normal" }
-            );
-            true
-        }
-        Err(e) => {
-            warn!(
-                "Failed to start download for streamer {}: {}",
-                streamer_id, e
-            );
-            false
-        }
-    };
-
-    // Danmu.
-    // Gated on the download having a real id. If `start_with_slot`
-    // failed, the slot is already released by SlotGuard's drop and
-    // there's no engine to interleave danmu with — opening a danmu
-    // socket for a stream we're not recording would leak a platform
-    // connection.
-    if started && merged_config.record_danmu {
-        let sampling_config = Some(merged_config.danmu_sampling_config.clone());
-        match danmu_service
-            .start_collection(
-                &session_id,
-                &streamer_id,
-                &streamer_url,
-                sampling_config,
-                cookies,
-                media_extras,
-            )
-            .await
-        {
-            Ok(handle) => {
-                info!(
-                    "Started danmu collection for session {} (streamer: {})",
-                    handle.session_id(),
-                    streamer_id
-                );
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to start danmu collection for streamer {}: {}",
-                    streamer_id, e
-                );
-            }
-        }
-    }
-}
-
-/// Service statistics.
+/// Point-in-time service counters returned by [`ServiceContainer::stats`],
+/// exported through [`crate::backend`] for embedders.
 #[derive(Debug, Clone)]
 pub struct ServiceStats {
     /// Total number of streamers.
@@ -4438,17 +728,85 @@ pub struct ServiceStats {
     pub active_danmu_collections: usize,
     /// Notification service statistics.
     pub notification_stats: crate::notification::NotificationStats,
-    /// Scheduler statistics (if available).
+    /// Scheduler supervisor statistics. [`ServiceContainer::stats`] always
+    /// populates this from the scheduler's watch channel.
     pub scheduler_stats: Option<crate::scheduler::actor::SupervisorStats>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        RECOVERY_PROGRESS_MIN_BYTES, should_end_stream_on_danmu_stream_closed,
-        should_record_recovery_from_progress,
+        RECOVERY_PROGRESS_MIN_BYTES, broadcast_error_is_recoverable,
+        should_end_stream_on_danmu_stream_closed, should_record_recovery_from_progress,
     };
     use crate::downloader::engine::DownloadProgress;
+
+    async fn migrated_test_pool() -> sqlx::SqlitePool {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .expect("test database should initialize");
+        crate::database::run_migrations(&pool)
+            .await
+            .expect("test migrations should succeed");
+        pool
+    }
+
+    #[tokio::test]
+    async fn broadcast_lag_is_recoverable_and_receiver_remains_usable() {
+        let (sender, mut receiver) = tokio::sync::broadcast::channel(1);
+        assert!(sender.send(1).is_ok());
+        assert!(sender.send(2).is_ok());
+
+        let error = receiver.recv().await.expect_err("receiver should lag");
+        assert!(broadcast_error_is_recoverable("test", error));
+        assert_eq!(receiver.recv().await, Ok(2));
+    }
+
+    #[tokio::test]
+    async fn closed_broadcast_channel_is_terminal() {
+        let (sender, mut receiver) = tokio::sync::broadcast::channel::<u8>(1);
+        drop(sender);
+
+        let error = receiver.recv().await.expect_err("channel should be closed");
+        assert!(!broadcast_error_is_recoverable("test", error));
+    }
+
+    #[tokio::test]
+    async fn full_config_wires_credential_notifications() {
+        let pool = migrated_test_pool().await;
+
+        let container = super::ServiceContainer::with_full_config(
+            pool.clone(),
+            pool,
+            std::time::Duration::from_secs(60),
+            8,
+            crate::downloader::DownloadManagerConfig::default(),
+            crate::pipeline::PipelineManagerConfig::default(),
+            crate::danmu::service::DanmuServiceConfig::default(),
+            crate::api::server::ApiServerConfig::default(),
+        )
+        .await
+        .expect("full service container should initialize");
+
+        assert!(container.credential_service.has_notification_service());
+        container.cancellation_token().cancel();
+    }
+
+    #[tokio::test]
+    async fn standard_config_uses_the_unified_build_path() {
+        let pool = migrated_test_pool().await;
+        let container = super::ServiceContainer::with_config(
+            pool.clone(),
+            pool,
+            std::time::Duration::from_secs(60),
+            8,
+        )
+        .await
+        .expect("standard service container should initialize");
+
+        assert!(container.credential_service.has_notification_service());
+        container.cancellation_token().cancel();
+    }
 
     #[test]
     fn test_should_end_stream_on_danmu_stream_closed_defaults_true() {
@@ -4486,15 +844,13 @@ mod tests {
         }));
     }
 
-    // ========== Output-root gate recovery hook filter (P1 regression) ==========
+    // ========== Output-root gate recovery hook filter ==========
 
     /// The recovery hook filters streamers by a per-root prefix built from
-    /// `set_infra_blocked`'s `last_error` format. Earlier versions filtered
-    /// on just `"output-root blocked:"`, which caused a Degraded → Healthy
-    /// transition on root A to also reset streamers blocked on root B.
-    /// This test locks in the fix: the prefix must include the root path +
-    /// a trailing space, so `/rec` cannot match `/rec/huya` entries and
-    /// vice versa.
+    /// `set_infra_blocked`'s `last_error` format. The prefix must include
+    /// the root path + a trailing space so a Degraded → Healthy transition
+    /// on one root only resets streamers blocked on that root: `/rec`
+    /// cannot match `/rec/huya` entries and vice versa.
     #[test]
     fn recovery_hook_prefix_discriminates_between_sibling_roots() {
         use crate::downloader::LAST_ERROR_GATE_PREFIX;

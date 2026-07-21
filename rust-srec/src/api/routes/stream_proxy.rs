@@ -6,17 +6,31 @@
 //! support.
 
 use axum::Router;
-use axum::extract::{Query, Request, State};
+use axum::extract::{FromRef, Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header::AUTHORIZATION};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures::TryStreamExt;
 use serde::Deserialize;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use crate::api::auth_service::AuthService;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
+
+#[derive(Clone)]
+pub struct StreamProxyState {
+    auth_service: Option<Arc<AuthService>>,
+}
+
+impl FromRef<AppState> for StreamProxyState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_service: state.auth_service.clone(),
+        }
+    }
+}
 
 fn stream_proxy_client() -> ApiResult<&'static reqwest::Client> {
     // The platforms-parser default client sets a 30s request timeout.
@@ -25,6 +39,7 @@ fn stream_proxy_client() -> ApiResult<&'static reqwest::Client> {
     static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
 
     let client = CLIENT.get_or_init(|| {
+        crate::utils::http_client::install_rustls_provider();
         reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .tcp_nodelay(true)
@@ -47,7 +62,11 @@ pub struct StreamProxyQuery {
 }
 
 /// Create the stream proxy router.
-pub fn router() -> Router<AppState> {
+pub fn router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    StreamProxyState: FromRef<S>,
+{
     Router::new()
         // Mounted under `/api/stream-proxy` by the main router.
         .route("/", get(stream_proxy_get).options(stream_proxy_options))
@@ -76,36 +95,29 @@ async fn stream_proxy_options() -> impl IntoResponse {
 }
 
 pub async fn stream_proxy_get(
-    State(state): State<AppState>,
+    State(state): State<StreamProxyState>,
     Query(query): Query<StreamProxyQuery>,
     req: Request,
 ) -> ApiResult<Response> {
-    // Auth: support token query param (media elements can't send Authorization easily).
-    let jwt_service = state
-        .jwt_service
-        .as_ref()
-        .ok_or_else(|| ApiError::unauthorized("Authentication not configured"))?;
-
     let headers_in = req.headers();
 
-    let token = if let Some(t) = query.token.clone() {
-        t
-    } else if let Some(t) = headers_in
-        .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .map(String::from)
-    {
-        t
-    } else {
-        return Err(ApiError::unauthorized(
-            "Missing or invalid Authorization header or token query",
-        ));
-    };
+    if let Some(auth_service) = &state.auth_service {
+        // Media elements cannot always send an Authorization header, so query tokens are allowed.
+        let token = query.token.as_deref().or_else(|| {
+            headers_in
+                .get(AUTHORIZATION)
+                .and_then(|header| header.to_str().ok())
+                .and_then(|value| value.strip_prefix("Bearer "))
+        });
+        let token = token.ok_or_else(|| {
+            ApiError::unauthorized("Missing or invalid Authorization header or token query")
+        })?;
 
-    jwt_service
-        .validate_token(&token)
-        .map_err(|_| ApiError::unauthorized("Invalid or expired token"))?;
+        auth_service
+            .authorize_access_token(token, false)
+            .await
+            .map_err(ApiError::from)?;
+    }
 
     // Validate target URL.
     let target = url::Url::parse(&query.url)
@@ -242,11 +254,8 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request as HttpRequest, header};
     use axum::response::IntoResponse;
-    use std::sync::Arc;
     use tokio::net::TcpListener;
     use tower::ServiceExt;
-
-    use crate::api::jwt::JwtService;
 
     async fn upstream_handler(req: HttpRequest<Body>) -> impl IntoResponse {
         let mut headers = HeaderMap::new();
@@ -286,19 +295,10 @@ mod tests {
             axum::serve(upstream_listener, upstream_app).await.unwrap();
         });
 
-        let jwt = Arc::new(JwtService::new(
-            "test-secret-key-32-chars-long!!",
-            "test-issuer",
-            "test-audience",
-            Some(3600),
-        ));
-        let token = jwt.generate_token("user", vec![]).unwrap();
-
-        let mut state = AppState::new();
-        state.jwt_service = Some(jwt);
+        let state = StreamProxyState { auth_service: None };
 
         let app = Router::new()
-            .nest("/api/stream-proxy", super::router())
+            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
             .with_state(state);
 
         let target = format!("http://{upstream_addr}/stream");
@@ -306,7 +306,7 @@ mod tests {
         let query = build_query(&[
             ("url", &target),
             ("headers", headers_json),
-            ("token", &token),
+            ("token", "unused-in-no-auth-mode"),
         ]);
 
         let request = HttpRequest::builder()
@@ -330,22 +330,13 @@ mod tests {
 
     #[tokio::test]
     async fn proxy_rejects_non_http_schemes() {
-        let jwt = Arc::new(JwtService::new(
-            "test-secret-key-32-chars-long!!",
-            "test-issuer",
-            "test-audience",
-            Some(3600),
-        ));
-        let token = jwt.generate_token("user", vec![]).unwrap();
-
-        let mut state = AppState::new();
-        state.jwt_service = Some(jwt);
+        let state = StreamProxyState { auth_service: None };
 
         let app = Router::new()
-            .nest("/api/stream-proxy", super::router())
+            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
             .with_state(state);
 
-        let query = build_query(&[("url", "file:///etc/passwd"), ("token", &token)]);
+        let query = build_query(&[("url", "file:///etc/passwd")]);
         let request = HttpRequest::builder()
             .uri(format!("/api/stream-proxy?{query}"))
             .body(Body::empty())

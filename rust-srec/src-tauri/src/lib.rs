@@ -8,6 +8,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use fs2::FileExt;
+use rust_srec::backend;
 use serde::Serialize;
 use tauri::Emitter;
 use tauri::Listener;
@@ -105,7 +106,7 @@ fn load_or_create_jwt_secret(data_dir: &Path) -> io::Result<String> {
 }
 
 struct DesktopBackendState {
-    container: std::sync::Mutex<Option<Arc<rust_srec::services::ServiceContainer>>>,
+    container: std::sync::Mutex<Option<Arc<backend::ServiceContainer>>>,
     log_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
     _instance_lock: std::fs::File,
     shutdown_started: AtomicBool,
@@ -185,7 +186,7 @@ impl DesktopBackendState {
             })
     }
 
-    fn set_container(&self, container: Arc<rust_srec::services::ServiceContainer>) {
+    fn set_container(&self, container: Arc<backend::ServiceContainer>) {
         if let Ok(mut lock) = self.container.lock() {
             *lock = Some(container);
         }
@@ -197,7 +198,7 @@ impl DesktopBackendState {
         }
     }
 
-    fn backend(&self) -> Option<Arc<rust_srec::services::ServiceContainer>> {
+    fn backend(&self) -> Option<Arc<backend::ServiceContainer>> {
         self.container.lock().ok().and_then(|c| c.clone())
     }
 }
@@ -323,10 +324,10 @@ async fn run_desktop_backend_init(
     let log_and_pool_start = Instant::now();
     let log_dir_str_clone = log_dir_str.clone();
     let logging_future =
-        tokio::task::spawn_blocking(move || rust_srec::logging::init_logging(&log_dir_str_clone));
+        tokio::task::spawn_blocking(move || backend::init_logging(&log_dir_str_clone));
 
-    let pool_future = rust_srec::database::init_pool(&database_url);
-    let write_pool_future = rust_srec::database::init_write_pool(&database_url);
+    let pool_future = backend::init_pool(&database_url);
+    let write_pool_future = backend::init_write_pool(&database_url);
 
     let (logging_result, pool_result, write_pool_result) =
         tokio::join!(logging_future, pool_future, write_pool_future);
@@ -344,7 +345,7 @@ async fn run_desktop_backend_init(
             return;
         }
     };
-    rust_srec::panic_hook::install(&log_dir_str);
+    backend::install_panic_hook(&log_dir_str);
     state.set_log_guard(log_guard);
 
     let log_and_pool_ms = log_and_pool_start.elapsed().as_millis();
@@ -379,7 +380,7 @@ async fn run_desktop_backend_init(
 
     let migrations_start = Instant::now();
 
-    if let Err(e) = rust_srec::database::run_migrations(&pool).await {
+    if let Err(e) = backend::run_migrations(&pool).await {
         show_boot_error_window(&app_handle, &format!("Database migration failed: {e}")).await;
         return;
     }
@@ -395,21 +396,21 @@ async fn run_desktop_backend_init(
 
     let container_start = Instant::now();
 
-    let api_config = rust_srec::api::server::ApiServerConfig {
+    let api_config = backend::ApiServerConfig {
         bind_address: "127.0.0.1".to_string(),
         port: 0,
         enable_cors: true,
         body_limit: 10 * 1024 * 1024,
     };
 
-    let container = match rust_srec::services::ServiceContainer::with_full_config(
+    let container = match backend::ServiceContainer::with_full_config(
         pool,
         write_pool,
         Duration::from_secs(3600),
         256,
-        rust_srec::downloader::DownloadManagerConfig::default(),
-        rust_srec::pipeline::PipelineManagerConfig::default(),
-        rust_srec::danmu::service::DanmuServiceConfig::default(),
+        backend::DownloadManagerConfig::default(),
+        backend::PipelineManagerConfig::default(),
+        backend::DanmuServiceConfig::default(),
         api_config,
     )
     .await
@@ -430,7 +431,7 @@ async fn run_desktop_backend_init(
 
     // Desktop-safe output folder default.
     // Only override if the database still has the docker-first default.
-    match container.config_service.get_global_config().await {
+    match container.config_service().get_global_config().await {
         Ok(mut global_config) => {
             if global_config.output_folder.trim().is_empty()
                 || global_config.output_folder == "/app/output"
@@ -441,7 +442,7 @@ async fn run_desktop_backend_init(
                 }
                 global_config.output_folder = output_dir.to_string_lossy().to_string();
                 if let Err(e) = container
-                    .config_service
+                    .config_service()
                     .update_global_config(&global_config)
                     .await
                 {
@@ -455,7 +456,7 @@ async fn run_desktop_backend_init(
     }
 
     logging_config
-        .apply_persisted_filter(&container.config_service)
+        .apply_persisted_filter(container.config_service())
         .await;
     logging_config.start_retention_cleanup(container.cancellation_token());
     container.set_logging_config(logging_config);
@@ -506,6 +507,33 @@ async fn run_desktop_backend_init(
     );
 
     state.set_container(container.clone());
+
+    {
+        let app_handle = app_handle.clone();
+        let container = container.clone();
+        tauri::async_runtime::spawn(async move {
+            let cancellation_token = container.cancellation_token();
+            let failure = tokio::select! {
+                biased;
+                failure = container.wait_for_runtime_failure() => failure,
+                _ = cancellation_token.cancelled() => return,
+            };
+            log::error!("Critical backend failure: {}", failure);
+
+            let should_shutdown = {
+                let state = app_handle.state::<DesktopBackendState>();
+                !state.shutdown_started.swap(true, Ordering::SeqCst)
+            };
+            if !should_shutdown {
+                return;
+            }
+
+            if let Err(error) = container.shutdown().await {
+                log::error!("Error during backend failure shutdown: {}", error);
+            }
+            app_handle.exit(1);
+        });
+    }
 
     let total_ms = overall.elapsed().as_millis();
     log::info!("Desktop init: total {}ms", total_ms);
@@ -593,7 +621,7 @@ async fn run_desktop_backend_init(
     // for important events (stream online, errors).
     {
         let app_handle = app_handle.clone();
-        let notification_rx = container.notification_service.subscribe();
+        let notification_rx = container.notification_service().subscribe();
         let cancellation_token = container.cancellation_token();
         tauri::async_runtime::spawn(async move {
             run_desktop_notification_listener(app_handle, notification_rx, cancellation_token)
@@ -617,7 +645,7 @@ async fn run_desktop_backend_init(
 /// for whitelisted event types.
 async fn run_desktop_notification_listener(
     app_handle: tauri::AppHandle,
-    mut rx: tokio::sync::broadcast::Receiver<rust_srec::notification::NotificationEvent>,
+    mut rx: tokio::sync::broadcast::Receiver<backend::NotificationEvent>,
     cancellation_token: tokio_util::sync::CancellationToken,
 ) {
     loop {

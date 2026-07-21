@@ -2,17 +2,33 @@
 //!
 //! Provides endpoints for user authentication and token management.
 
+use std::sync::Arc;
+
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{FromRef, State},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 
-use crate::api::auth_service::{AuthError, AuthResponse, SessionInfo};
+use crate::api::auth_service::{AuthResponse, AuthService, SessionInfo};
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::jwt::Claims;
+use crate::api::middleware::JwtAuthLayer;
 use crate::api::server::AppState;
+
+#[derive(Clone)]
+pub struct AuthRouteState {
+    auth_service: Option<Arc<AuthService>>,
+}
+
+impl FromRef<AppState> for AuthRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_service: state.auth_service.clone(),
+        }
+    }
+}
 
 /// Login request body.
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
@@ -82,7 +98,11 @@ pub struct ChangePasswordRequest {
 }
 
 /// Create the public auth router (no JWT required).
-pub fn public_router() -> Router<AppState> {
+pub fn public_router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    AuthRouteState: FromRef<S>,
+{
     Router::new()
         .route("/login", post(login))
         .route("/refresh", post(refresh))
@@ -90,31 +110,41 @@ pub fn public_router() -> Router<AppState> {
 }
 
 /// Create the protected auth router (JWT required).
-pub fn protected_router() -> Router<AppState> {
-    Router::new()
-        .route("/logout-all", post(logout_all))
-        .route("/change-password", post(change_password))
-        .route("/sessions", get(list_sessions))
+///
+/// The caller wraps these routes in `JwtAuthLayer::new`, which also rejects
+/// users whose `must_change_password` flag is set; routes such a user must
+/// still reach belong in `password_remediation_router` instead.
+pub fn protected_router<S>() -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    AuthRouteState: FromRef<S>,
+{
+    Router::new().route("/sessions", get(list_sessions))
 }
 
-/// Convert AuthError to ApiError.
-fn auth_error_to_api_error(err: AuthError) -> ApiError {
-    match err {
-        AuthError::InvalidCredentials => ApiError::unauthorized("Invalid username or password"),
-        AuthError::AccountDisabled => ApiError::unauthorized("Account is disabled"),
-        AuthError::TokenExpired => ApiError::unauthorized("Token has expired"),
-        AuthError::TokenRevoked => ApiError::unauthorized("Token has been revoked"),
-        AuthError::InvalidToken => ApiError::unauthorized("Invalid token"),
-        AuthError::PasswordChangeRequired => {
-            ApiError::forbidden("Password change required before accessing resources")
+/// Create the router for the password-remediation endpoints, the only routes
+/// a user with `must_change_password` set may reach.
+///
+/// The `JwtAuthLayer::password_remediation` exemption is attached here, at
+/// route registration, so it cannot drift from the registered paths; renaming
+/// or moving a route in this router moves its exemption with it. `None`
+/// (authentication disabled) leaves the routes unwrapped, mirroring how
+/// `routes::create_router` skips `JwtAuthLayer::new` for the other protected
+/// routes.
+pub fn password_remediation_router<S>(auth_service: Option<&Arc<AuthService>>) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+    AuthRouteState: FromRef<S>,
+{
+    let router = Router::new()
+        .route("/logout-all", post(logout_all))
+        .route("/change-password", post(change_password));
+
+    match auth_service {
+        Some(auth_service) => {
+            router.layer(JwtAuthLayer::password_remediation(auth_service.clone()))
         }
-        AuthError::WeakPassword(msg) => ApiError::bad_request(format!("Weak password: {}", msg)),
-        AuthError::IncorrectCurrentPassword => {
-            ApiError::bad_request("Current password is incorrect")
-        }
-        AuthError::UserNotFound => ApiError::unauthorized("Invalid credentials"),
-        AuthError::Database(msg) => ApiError::internal(format!("Database error: {}", msg)),
-        AuthError::Internal(msg) => ApiError::internal(msg),
+        None => router,
     }
 }
 
@@ -130,7 +160,7 @@ fn auth_error_to_api_error(err: AuthError) -> ApiError {
     )
 )]
 pub async fn login(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
     let auth_service = state
@@ -141,7 +171,7 @@ pub async fn login(
     let response = auth_service
         .authenticate(&request.username, &request.password, request.device_info)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(response.into()))
 }
@@ -158,7 +188,7 @@ pub async fn login(
     )
 )]
 pub async fn refresh(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     Json(request): Json<RefreshRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
     let auth_service = state
@@ -169,7 +199,7 @@ pub async fn refresh(
     let response = auth_service
         .refresh_tokens(&request.refresh_token)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(response.into()))
 }
@@ -186,7 +216,7 @@ pub async fn refresh(
     )
 )]
 pub async fn logout(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     Json(request): Json<LogoutRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let auth_service = state
@@ -197,7 +227,7 @@ pub async fn logout(
     auth_service
         .logout(&request.refresh_token)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(
         serde_json::json!({ "message": "Logged out successfully" }),
@@ -216,7 +246,7 @@ pub async fn logout(
     )
 )]
 pub async fn logout_all(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let auth_service = state
@@ -227,7 +257,7 @@ pub async fn logout_all(
     auth_service
         .logout_all(&claims.sub)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(
         serde_json::json!({ "message": "All sessions logged out successfully" }),
@@ -248,7 +278,7 @@ pub async fn logout_all(
     )
 )]
 pub async fn change_password(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
     Json(request): Json<ChangePasswordRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -264,7 +294,7 @@ pub async fn change_password(
             &request.new_password,
         )
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(
         serde_json::json!({ "message": "Password changed successfully" }),
@@ -283,7 +313,7 @@ pub async fn change_password(
     )
 )]
 pub async fn list_sessions(
-    State(state): State<AppState>,
+    State(state): State<AuthRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
 ) -> ApiResult<Json<Vec<SessionInfo>>> {
     let auth_service = state
@@ -294,7 +324,7 @@ pub async fn list_sessions(
     let sessions = auth_service
         .list_active_sessions(&claims.sub)
         .await
-        .map_err(auth_error_to_api_error)?;
+        .map_err(ApiError::from)?;
 
     Ok(Json(sessions))
 }
@@ -351,5 +381,261 @@ mod tests {
         let request: ChangePasswordRequest = serde_json::from_str(json).unwrap();
         assert_eq!(request.current_password, "old");
         assert_eq!(request.new_password, "new123");
+    }
+
+    mod password_remediation_drift_guard {
+        //! Pins the contract between `password_remediation_router`,
+        //! `protected_router`, and the `JwtAuthLayer` wiring mirrored from
+        //! `routes::create_router`: exactly the routes registered in
+        //! `password_remediation_router` stay reachable for a user whose
+        //! `must_change_password` flag is set, and only past JWT validation.
+
+        use axum::body::{Body, to_bytes};
+        use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        use super::super::*;
+        use crate::api::auth_service::AuthConfig;
+        use crate::api::jwt::JwtService;
+        use crate::database::models::{RefreshTokenDbModel, UserDbModel};
+        use crate::database::repositories::{RefreshTokenRepository, UserRepository};
+
+        const CURRENT_PASSWORD: &str = "current-pass-1";
+
+        /// Serves a single user by id so `AuthService::authorize_access_token`
+        /// and `AuthService::change_password` see the same forced-change row.
+        struct ForcedChangeUserRepository {
+            user: UserDbModel,
+        }
+
+        #[async_trait::async_trait]
+        impl UserRepository for ForcedChangeUserRepository {
+            async fn create(&self, _user: &UserDbModel) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn find_by_id(&self, id: &str) -> crate::Result<Option<UserDbModel>> {
+                Ok((self.user.id == id).then(|| self.user.clone()))
+            }
+
+            async fn find_by_username(
+                &self,
+                _username: &str,
+            ) -> crate::Result<Option<UserDbModel>> {
+                Ok(None)
+            }
+
+            async fn find_by_email(&self, _email: &str) -> crate::Result<Option<UserDbModel>> {
+                Ok(None)
+            }
+
+            async fn update(&self, _user: &UserDbModel) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn delete(&self, _id: &str) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn list(&self, _limit: i64, _offset: i64) -> crate::Result<Vec<UserDbModel>> {
+                Ok(Vec::new())
+            }
+
+            async fn update_last_login(&self, _id: &str, _time_ms: i64) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn update_password(
+                &self,
+                _id: &str,
+                _password_hash: &str,
+                _clear_must_change: bool,
+            ) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn count(&self) -> crate::Result<i64> {
+                Ok(0)
+            }
+        }
+
+        struct NoopRefreshTokenRepository;
+
+        #[async_trait::async_trait]
+        impl RefreshTokenRepository for NoopRefreshTokenRepository {
+            async fn create(&self, _token: &RefreshTokenDbModel) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn find_by_token_hash(
+                &self,
+                _token_hash: &str,
+            ) -> crate::Result<Option<RefreshTokenDbModel>> {
+                Ok(None)
+            }
+
+            async fn find_active_by_user(
+                &self,
+                _user_id: &str,
+            ) -> crate::Result<Vec<RefreshTokenDbModel>> {
+                Ok(Vec::new())
+            }
+
+            async fn revoke(&self, _id: &str) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn revoke_all_for_user(&self, _user_id: &str) -> crate::Result<()> {
+                Ok(())
+            }
+
+            async fn count_active_by_user(&self, _user_id: &str) -> crate::Result<i64> {
+                Ok(0)
+            }
+        }
+
+        #[derive(Clone)]
+        struct TestState {
+            auth_service: Option<Arc<AuthService>>,
+        }
+
+        impl FromRef<TestState> for AuthRouteState {
+            fn from_ref(state: &TestState) -> Self {
+                Self {
+                    auth_service: state.auth_service.clone(),
+                }
+            }
+        }
+
+        /// Build the auth routers with the same nest shape as
+        /// `routes::create_router`: `public_router` and
+        /// `password_remediation_router` (which attaches its own layer) nested
+        /// on the main chain, `protected_router` merged in behind
+        /// `JwtAuthLayer::new`. Constructing this also proves the three
+        /// routers register disjoint paths (axum panics on overlap). Returns
+        /// the app plus an access token for a user whose
+        /// `must_change_password` flag is set (`UserDbModel::new` leaves it
+        /// set).
+        fn forced_change_app() -> (Router, String) {
+            let password_hash =
+                AuthService::hash_password(CURRENT_PASSWORD).expect("hashing should succeed");
+            let user = UserDbModel::new("forced-user", password_hash, vec!["user".to_string()]);
+            let user_id = user.id.clone();
+
+            let jwt_service = Arc::new(JwtService::new(
+                "test-secret-key-32-chars-long!!",
+                "test-issuer",
+                "test-audience",
+                Some(3600),
+            ));
+            let auth_service = Arc::new(AuthService::new(
+                Arc::new(ForcedChangeUserRepository { user }),
+                Arc::new(NoopRefreshTokenRepository),
+                jwt_service.clone(),
+                AuthConfig::default(),
+            ));
+            let token = jwt_service
+                .generate_token(&user_id, vec!["user".to_string()])
+                .expect("token generation should succeed");
+
+            let protected: Router<TestState> = Router::new()
+                .nest("/api/auth", protected_router())
+                .layer(JwtAuthLayer::new(auth_service.clone()));
+            let app = Router::new()
+                .nest("/api/auth", public_router())
+                .nest(
+                    "/api/auth",
+                    password_remediation_router(Some(&auth_service)),
+                )
+                .merge(protected)
+                .with_state(TestState {
+                    auth_service: Some(auth_service),
+                });
+            (app, token)
+        }
+
+        async fn send(app: &Router, request: Request<Body>) -> axum::response::Response {
+            app.clone()
+                .oneshot(request)
+                .await
+                .expect("router call should be infallible")
+        }
+
+        #[tokio::test]
+        async fn forced_change_user_reaches_both_remediation_routes() {
+            let (app, token) = forced_change_app();
+
+            let logout_all = send(
+                &app,
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/auth/logout-all")
+                    .header(AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("test request should build"),
+            )
+            .await;
+            assert_eq!(logout_all.status(), StatusCode::OK);
+
+            let body = serde_json::json!({
+                "current_password": CURRENT_PASSWORD,
+                "new_password": "brand-new-pass-2",
+            });
+            let change_password = send(
+                &app,
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/auth/change-password")
+                    .header(AUTHORIZATION, format!("Bearer {token}"))
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(Body::from(body.to_string()))
+                    .expect("test request should build"),
+            )
+            .await;
+            assert_eq!(change_password.status(), StatusCode::OK);
+        }
+
+        #[tokio::test]
+        async fn remediation_routes_still_require_a_valid_token() {
+            let (app, _token) = forced_change_app();
+
+            for uri in ["/api/auth/logout-all", "/api/auth/change-password"] {
+                let response = send(
+                    &app,
+                    Request::builder()
+                        .method("POST")
+                        .uri(uri)
+                        .body(Body::empty())
+                        .expect("test request should build"),
+                )
+                .await;
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "uri: {uri}");
+            }
+        }
+
+        #[tokio::test]
+        async fn forced_change_user_is_denied_on_protected_auth_routes() {
+            let (app, token) = forced_change_app();
+
+            let response = send(
+                &app,
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/auth/sessions")
+                    .header(AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("test request should build"),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+            let body = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("error body should be readable");
+            let body: serde_json::Value =
+                serde_json::from_slice(&body).expect("error body should be JSON");
+            assert_eq!(body["code"], "PASSWORD_CHANGE_REQUIRED");
+        }
     }
 }

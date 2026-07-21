@@ -1,14 +1,7 @@
 //! Filter types.
 
 use chrono::{Datelike, NaiveTime, Weekday};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-
-fn parse_db_filter_config<T: DeserializeOwned>(raw: &str, label: &'static str) -> crate::Result<T> {
-    serde_json::from_str(raw).map_err(|e| {
-        crate::Error::validation(format!("Failed to parse {label} filter config: {e}"))
-    })
-}
 
 /// Filter type enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,59 +87,6 @@ impl Filter {
             _ => None,
         }
     }
-
-    /// Create a Filter from a database model.
-    pub fn from_db_model(model: &crate::database::models::FilterDbModel) -> crate::Result<Self> {
-        use crate::database::models::filter::FilterType as DbFilterType;
-
-        let filter_type = DbFilterType::parse(&model.filter_type).ok_or_else(|| {
-            crate::Error::validation(format!("Unknown filter type: {}", model.filter_type))
-        })?;
-
-        match filter_type {
-            DbFilterType::TimeBased => {
-                let config: crate::database::models::filter::TimeBasedFilterConfig =
-                    parse_db_filter_config(&model.config, "time-based")?;
-                Ok(Filter::TimeBased(TimeBasedFilter {
-                    days_of_week: config.days_of_week,
-                    start_time: config.start_time,
-                    end_time: config.end_time,
-                }))
-            }
-            DbFilterType::Keyword => {
-                let config: crate::database::models::filter::KeywordFilterConfig =
-                    parse_db_filter_config(&model.config, "keyword")?;
-                Ok(Filter::Keyword(KeywordFilter {
-                    include: config.include,
-                    exclude: config.exclude,
-                }))
-            }
-            DbFilterType::Category => {
-                let config: crate::database::models::filter::CategoryFilterConfig =
-                    parse_db_filter_config(&model.config, "category")?;
-                Ok(Filter::Category(CategoryFilter {
-                    categories: config.categories,
-                }))
-            }
-            DbFilterType::Cron => {
-                let config: crate::database::models::filter::CronFilterConfig =
-                    parse_db_filter_config(&model.config, "cron")?;
-                Ok(Filter::Cron(CronFilter {
-                    expression: config.expression,
-                    timezone: config.timezone,
-                }))
-            }
-            DbFilterType::Regex => {
-                let config: crate::database::models::filter::RegexFilterConfig =
-                    parse_db_filter_config(&model.config, "regex")?;
-                Ok(Filter::Regex(RegexFilter {
-                    pattern: config.pattern,
-                    case_insensitive: config.case_insensitive,
-                    exclude: config.exclude,
-                }))
-            }
-        }
-    }
 }
 
 /// Time-based filter with days of week and time ranges.
@@ -178,19 +118,19 @@ impl TimeBasedFilter {
         let current_time = local.time();
 
         // Check if current day is in allowed days
-        let day_name = weekday_to_string(weekday);
+        let day_name = weekday_to_str(weekday);
         if !self
             .days_of_week
             .iter()
-            .any(|d| d.eq_ignore_ascii_case(&day_name))
+            .any(|d| d.eq_ignore_ascii_case(day_name))
         {
             // Also check if we're in an overnight range from the previous day
             let prev_day = prev_weekday(weekday);
-            let prev_day_name = weekday_to_string(prev_day);
+            let prev_day_name = weekday_to_str(prev_day);
             if !self
                 .days_of_week
                 .iter()
-                .any(|d| d.eq_ignore_ascii_case(&prev_day_name))
+                .any(|d| d.eq_ignore_ascii_case(prev_day_name))
             {
                 return false;
             }
@@ -199,13 +139,11 @@ impl TimeBasedFilter {
         }
 
         // Parse times
-        let start = match parse_time(&self.start_time) {
-            Some(t) => t,
-            None => return false,
+        let Some(start) = parse_time(&self.start_time) else {
+            return false;
         };
-        let end = match parse_time(&self.end_time) {
-            Some(t) => t,
-            None => return false,
+        let Some(end) = parse_time(&self.end_time) else {
+            return false;
         };
 
         // Check if in range.
@@ -222,13 +160,11 @@ impl TimeBasedFilter {
     }
 
     fn is_in_overnight_range_next_day(&self, current_time: NaiveTime) -> bool {
-        let start = match parse_time(&self.start_time) {
-            Some(t) => t,
-            None => return false,
+        let Some(start) = parse_time(&self.start_time) else {
+            return false;
         };
-        let end = match parse_time(&self.end_time) {
-            Some(t) => t,
-            None => return false,
+        let Some(end) = parse_time(&self.end_time) else {
+            return false;
         };
 
         // Only applies to overnight ranges
@@ -252,25 +188,24 @@ impl TimeBasedFilter {
 
         // Scan upcoming days (today + 7 days to cover a full week)
         for i in 0..8 {
-            let target_date = match local_now.date_naive().checked_add_days(Days::new(i)) {
-                Some(d) => d,
-                None => continue,
+            let Some(target_date) = local_now.date_naive().checked_add_days(Days::new(i)) else {
+                continue;
             };
             let weekday = target_date.weekday();
-            let day_name = weekday_to_string(weekday);
+            let day_name = weekday_to_str(weekday);
 
             if self
                 .days_of_week
                 .iter()
-                .any(|d| d.eq_ignore_ascii_case(&day_name))
+                .any(|d| d.eq_ignore_ascii_case(day_name))
             {
                 // Found a valid day. Construct the candidate start time.
                 // We use the start_time of the filter on this valid day.
-                let candidate_time =
-                    match chrono::Local.from_local_datetime(&target_date.and_time(start_time)) {
-                        chrono::LocalResult::Single(t) => t,
-                        _ => continue,
-                    };
+                let chrono::LocalResult::Single(candidate_time) =
+                    chrono::Local.from_local_datetime(&target_date.and_time(start_time))
+                else {
+                    continue;
+                };
 
                 let candidate_utc = candidate_time.with_timezone(&chrono::Utc);
 
@@ -303,11 +238,11 @@ impl TimeBasedFilter {
         let start = parse_time(&self.start_time)?;
         let end = parse_time(&self.end_time)?;
 
-        let day_name = weekday_to_string(weekday);
+        let day_name = weekday_to_str(weekday);
         let today_allowed = self
             .days_of_week
             .iter()
-            .any(|d| d.eq_ignore_ascii_case(&day_name));
+            .any(|d| d.eq_ignore_ascii_case(day_name));
 
         let end_date = if start <= end {
             // Normal window ends the same day.
@@ -349,7 +284,7 @@ impl TimeBasedFilter {
                         dt_local = Some(latest);
                         break;
                     }
-                    chrono::LocalResult::None => continue,
+                    chrono::LocalResult::None => {}
                 }
             }
         }
@@ -457,14 +392,9 @@ impl CronFilter {
 
     /// Check if the current time matches this cron schedule.
     pub fn matches(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
-        use crate::database::models::filter::CronFilterConfig;
         use crate::domain::filter::FilterEvaluator;
 
-        let config = CronFilterConfig {
-            expression: self.expression.clone(),
-            timezone: self.timezone.clone(),
-        };
-        FilterEvaluator::evaluate_cron(&config, now).unwrap_or(false)
+        FilterEvaluator::evaluate_cron(self, now).unwrap_or(false)
     }
 
     /// Calculate the next time this filter will match.
@@ -518,27 +448,11 @@ impl CronFilter {
             .with_second(0)
             .and_then(|t| t.with_nanosecond(0))?;
 
-        // Determine if the schedule matches the current minute.
-        //
-        // Mirrors `FilterEvaluator::time_matches_schedule`.
-        let one_minute_ago = current_minute - chrono::Duration::minutes(1);
-        let mut current_minute_matches = false;
-        for scheduled_time in schedule.after(&one_minute_ago).take(2) {
-            if scheduled_time.year() == current_minute.year()
-                && scheduled_time.month() == current_minute.month()
-                && scheduled_time.day() == current_minute.day()
-                && scheduled_time.hour() == current_minute.hour()
-                && scheduled_time.minute() == current_minute.minute()
-            {
-                current_minute_matches = true;
-                break;
-            }
-
-            if scheduled_time > current_minute {
-                break;
-            }
-        }
-        if !current_minute_matches {
+        // The scan below assumes `now` sits inside a matching minute; delegate
+        // that decision to `FilterEvaluator::time_matches_schedule` so it
+        // cannot disagree with what `CronFilter::matches` reports.
+        use crate::domain::filter::FilterEvaluator;
+        if !FilterEvaluator::time_matches_schedule(&schedule, now_in_tz).ok()? {
             return None;
         }
 
@@ -616,15 +530,9 @@ impl RegexFilter {
 
     /// Check if a title matches this regex filter.
     pub fn matches(&self, title: &str) -> bool {
-        use crate::database::models::filter::RegexFilterConfig;
         use crate::domain::filter::FilterEvaluator;
 
-        let config = RegexFilterConfig {
-            pattern: self.pattern.clone(),
-            case_insensitive: self.case_insensitive,
-            exclude: self.exclude,
-        };
-        FilterEvaluator::evaluate_regex(&config, title).unwrap_or(false)
+        FilterEvaluator::evaluate_regex(self, title).unwrap_or(false)
     }
 }
 
@@ -634,7 +542,7 @@ fn parse_time(s: &str) -> Option<NaiveTime> {
         .ok()
 }
 
-fn weekday_to_string(weekday: Weekday) -> String {
+fn weekday_to_str(weekday: Weekday) -> &'static str {
     match weekday {
         Weekday::Mon => "Monday",
         Weekday::Tue => "Tuesday",
@@ -644,7 +552,6 @@ fn weekday_to_string(weekday: Weekday) -> String {
         Weekday::Sat => "Saturday",
         Weekday::Sun => "Sunday",
     }
-    .to_string()
 }
 
 fn prev_weekday(weekday: Weekday) -> Weekday {

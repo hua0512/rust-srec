@@ -1,6 +1,10 @@
 //! URL parsing routes for extracting media info.
 
-use axum::{Json, Router, extract::State, routing::post};
+use axum::{
+    Json, Router,
+    extract::{FromRef, State},
+    routing::post,
+};
 use platforms_parser::extractor::factory::ExtractorFactory;
 use std::time::Duration;
 use tracing::{debug, warn};
@@ -13,6 +17,36 @@ use crate::credentials::{
 };
 use crate::domain::ProxyConfig;
 use crate::utils::json::{self, JsonContext};
+
+#[derive(Clone)]
+pub struct ParseRouteState {
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+    credential_service: std::sync::Arc<
+        crate::credentials::CredentialRefreshService<
+            crate::database::repositories::config::SqlxConfigRepository,
+        >,
+    >,
+    streamer_manager: std::sync::Arc<
+        crate::streamer::StreamerManager<
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+}
+
+impl FromRef<AppState> for ParseRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            config_service: state.config_service.clone(),
+            credential_service: state.credential_service.clone(),
+            streamer_manager: state.streamer_manager.clone(),
+        }
+    }
+}
 
 /// Create the parse router.
 pub fn router() -> Router<AppState> {
@@ -39,7 +73,7 @@ struct ResolvedExtractorConfig {
     security(("bearer_auth" = []))
 )]
 pub async fn parse_url(
-    State(state): State<AppState>,
+    State(state): State<ParseRouteState>,
     Json(request): Json<ParseUrlRequest>,
 ) -> ApiResult<Json<ParseUrlResponse>> {
     let extractor_config =
@@ -67,7 +101,7 @@ pub async fn parse_url(
     security(("bearer_auth" = []))
 )]
 pub async fn parse_url_batch(
-    State(state): State<AppState>,
+    State(state): State<ParseRouteState>,
     Json(requests): Json<Vec<ParseUrlRequest>>,
 ) -> ApiResult<Json<Vec<ParseUrlResponse>>> {
     let mut responses = Vec::new();
@@ -95,7 +129,7 @@ pub async fn parse_url_batch(
 /// when the URL is already registered; otherwise the matching platform
 /// configuration supplies cookies, extractor extras, and re-login material.
 async fn resolve_extractor_config_for_url(
-    state: &AppState,
+    state: &ParseRouteState,
     url: &str,
     explicit_cookies: Option<String>,
 ) -> ResolvedExtractorConfig {
@@ -105,14 +139,10 @@ async fn resolve_extractor_config_for_url(
         platform_extras: None,
     };
 
-    let Some(config_service) = state.config_service.as_ref() else {
-        return resolved;
-    };
-    let credential_service = state.credential_service.as_ref();
+    let config_service = &state.config_service;
+    let credential_service = &state.credential_service;
 
-    if let Some(streamer_manager) = state.streamer_manager.as_ref()
-        && let Some(streamer) = streamer_manager.get_streamer_by_url(url)
-    {
+    if let Some(streamer) = state.streamer_manager.get_streamer_by_url(url) {
         match config_service.get_context_for_streamer(&streamer.id).await {
             Ok(context) => {
                 let config = &context.config;
@@ -121,10 +151,7 @@ async fn resolve_extractor_config_for_url(
                     resolved.cookies = config.cookies.clone();
                 }
 
-                if !has_explicit_cookies
-                    && let Some(credential_service) = credential_service
-                    && let Some(source) = context.credential_source.as_ref()
-                {
+                if !has_explicit_cookies && let Some(source) = context.credential_source.as_ref() {
                     match credential_service.check_and_refresh_source(source).await {
                         Ok(Some(new_cookies)) => {
                             resolved.cookies = Some(new_cookies);
@@ -205,7 +232,7 @@ async fn resolve_extractor_config_for_url(
             .and_then(|config| serde_json::from_str::<serde_json::Value>(config).ok());
         resolved.platform_extras = platform_specific.clone().map(extractor_platform_extras);
 
-        if !has_explicit_cookies && let Some(credential_service) = credential_service {
+        if !has_explicit_cookies {
             let refresh_token = platform_specific
                 .as_ref()
                 .and_then(|config| config.get("refresh_token"))
@@ -280,7 +307,7 @@ async fn resolve_extractor_config_for_url(
     security(("bearer_auth" = []))
 )]
 pub async fn resolve_url(
-    State(state): State<AppState>,
+    State(state): State<ParseRouteState>,
     Json(request): Json<crate::api::models::ResolveUrlRequest>,
 ) -> ApiResult<Json<crate::api::models::ResolveUrlResponse>> {
     if request.url.is_empty() {
@@ -461,14 +488,11 @@ fn extractor_factory_for_proxy(proxy_config: &ProxyConfig) -> ExtractorFactory {
     ExtractorFactory::new(client)
 }
 
-async fn resolve_proxy_config_for_url(state: &AppState, url: &str) -> ProxyConfig {
-    let Some(config_service) = state.config_service.as_ref() else {
-        return ProxyConfig::disabled();
-    };
+async fn resolve_proxy_config_for_url(state: &ParseRouteState, url: &str) -> ProxyConfig {
+    let config_service = &state.config_service;
 
     // Priority 1: streamer merged config (final merged proxy state).
-    if let Some(streamer_manager) = state.streamer_manager.as_ref()
-        && let Some(streamer) = streamer_manager.get_streamer_by_url(url)
+    if let Some(streamer) = state.streamer_manager.get_streamer_by_url(url)
         && let Ok(context) = config_service.get_context_for_streamer(&streamer.id).await
     {
         return context.config.proxy_config.clone();

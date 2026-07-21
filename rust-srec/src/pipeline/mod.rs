@@ -28,6 +28,7 @@ pub use job_queue::{
     Job, JobExecutionInfo, JobLogEntry, JobQueue, JobQueueConfig, JobResult, JobStats, LogLevel,
     QueueDepthStatus,
 };
+pub(crate) use manager::PipelineRuntimeDependencies;
 pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
 };

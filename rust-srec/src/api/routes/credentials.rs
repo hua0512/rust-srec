@@ -2,7 +2,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{FromRef, Path, Query, State},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,32 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::server::AppState;
 use crate::credentials::platforms::bilibili::{BilibiliCredentialManager, QrPollStatus};
 use crate::credentials::{CredentialScope, CredentialSource};
+
+#[derive(Clone)]
+pub struct CredentialRouteState {
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+    credential_service: std::sync::Arc<
+        crate::credentials::CredentialRefreshService<
+            crate::database::repositories::config::SqlxConfigRepository,
+        >,
+    >,
+    streamer_repository: std::sync::Arc<dyn crate::database::repositories::StreamerRepository>,
+}
+
+impl FromRef<AppState> for CredentialRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            config_service: state.config_service.clone(),
+            credential_service: state.credential_service.clone(),
+            streamer_repository: state.streamer_repository.clone(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct CredentialSourceResponse {
@@ -224,13 +250,10 @@ fn infer_template_platform_name(
     security(("bearer_auth" = []))
 )]
 pub async fn get_streamer_credential_source(
-    State(state): State<AppState>,
+    State(state): State<CredentialRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<CredentialSourceResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     let context = config_service
         .get_context_for_streamer(&id)
@@ -258,13 +281,10 @@ pub async fn get_streamer_credential_source(
     security(("bearer_auth" = []))
 )]
 pub async fn get_platform_credential_source(
-    State(state): State<AppState>,
+    State(state): State<CredentialRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<CredentialSourceResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     let platform = config_service
         .get_platform_config(&id)
@@ -310,14 +330,11 @@ pub async fn get_platform_credential_source(
     security(("bearer_auth" = []))
 )]
 pub async fn get_template_credential_source(
-    State(state): State<AppState>,
+    State(state): State<CredentialRouteState>,
     Path(id): Path<String>,
     Query(query): Query<TemplateCredentialQuery>,
 ) -> ApiResult<Json<CredentialSourceResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     let template = config_service
         .get_template_config(&id)
@@ -369,17 +386,11 @@ pub async fn get_template_credential_source(
     security(("bearer_auth" = []))
 )]
 pub async fn refresh_streamer_credentials(
-    State(state): State<AppState>,
+    State(state): State<CredentialRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<CredentialRefreshResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
-    let credential_service = state
-        .credential_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Credential service not available"))?;
+    let config_service = &state.config_service;
+    let credential_service = &state.credential_service;
 
     let context = config_service
         .get_context_for_streamer(&id)
@@ -441,17 +452,11 @@ pub async fn refresh_streamer_credentials(
     security(("bearer_auth" = []))
 )]
 pub async fn refresh_platform_credentials(
-    State(state): State<AppState>,
+    State(state): State<CredentialRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<CredentialRefreshResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
-    let credential_service = state
-        .credential_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Credential service not available"))?;
+    let config_service = &state.config_service;
+    let credential_service = &state.credential_service;
 
     let platform = config_service
         .get_platform_config(&id)
@@ -519,18 +524,12 @@ pub async fn refresh_platform_credentials(
     security(("bearer_auth" = []))
 )]
 pub async fn refresh_template_credentials(
-    State(state): State<AppState>,
+    State(state): State<CredentialRouteState>,
     Path(id): Path<String>,
     Query(query): Query<TemplateCredentialQuery>,
 ) -> ApiResult<Json<CredentialRefreshResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
-    let credential_service = state
-        .credential_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Credential service not available"))?;
+    let config_service = &state.config_service;
+    let credential_service = &state.credential_service;
 
     let template = config_service
         .get_template_config(&id)
@@ -604,9 +603,7 @@ pub async fn refresh_template_credentials(
     ),
     security(("bearer_auth" = []))
 )]
-pub async fn bilibili_qr_generate(
-    State(_state): State<AppState>,
-) -> ApiResult<Json<QrGenerateApiResponse>> {
+pub async fn bilibili_qr_generate() -> ApiResult<Json<QrGenerateApiResponse>> {
     let client = reqwest::Client::new();
     let manager = BilibiliCredentialManager::new(client)
         .map_err(|e| ApiError::internal(format!("Failed to create manager: {}", e)))?;
@@ -634,7 +631,7 @@ pub async fn bilibili_qr_generate(
     security(("bearer_auth" = []))
 )]
 pub async fn bilibili_qr_poll(
-    State(state): State<AppState>,
+    State(state): State<CredentialRouteState>,
     Json(body): Json<QrPollRequest>,
 ) -> ApiResult<Json<QrPollApiResponse>> {
     let client = reqwest::Client::new();
@@ -682,10 +679,7 @@ pub async fn bilibili_qr_poll(
 
         match &body.scope {
             CredentialSaveScope::Platform { id } => {
-                let cs = state
-                    .config_service
-                    .as_ref()
-                    .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+                let cs = &state.config_service;
                 let mut platform = cs.get_platform_config(id).await.map_err(ApiError::from)?;
 
                 if !platform.platform_name.eq_ignore_ascii_case("bilibili") {
@@ -742,10 +736,7 @@ pub async fn bilibili_qr_poll(
                 });
             }
             CredentialSaveScope::Template { id } => {
-                let cs = state
-                    .config_service
-                    .as_ref()
-                    .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+                let cs = &state.config_service;
                 let mut template = cs.get_template_config(id).await.map_err(ApiError::from)?;
 
                 template.cookies = Some(cookies.clone());
@@ -793,13 +784,8 @@ pub async fn bilibili_qr_poll(
                 });
             }
             CredentialSaveScope::Streamer { id } => {
-                let cs = state
-                    .config_service
-                    .as_ref()
-                    .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
-                let streamer_repo = state.streamer_repository.as_ref().ok_or_else(|| {
-                    ApiError::service_unavailable("Streamer repository not available")
-                })?;
+                let cs = &state.config_service;
+                let streamer_repo = &state.streamer_repository;
 
                 let mut streamer = streamer_repo
                     .get_streamer(id)
@@ -857,10 +843,8 @@ pub async fn bilibili_qr_poll(
         }
     }
 
-    if let Some(scope) = &saved_scope
-        && let Some(credential_service) = &state.credential_service
-    {
-        credential_service.invalidate(scope);
+    if let Some(scope) = &saved_scope {
+        state.credential_service.invalidate(scope);
     }
 
     Ok(Json(QrPollApiResponse {

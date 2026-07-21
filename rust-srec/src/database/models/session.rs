@@ -169,7 +169,7 @@ pub struct SessionEventDbModel {
     pub payload: Option<String>,
 }
 
-impl From<SessionEventDbModel> for crate::domain::session::SessionEvent {
+impl From<SessionEventDbModel> for crate::session::SessionEvent {
     fn from(row: SessionEventDbModel) -> Self {
         let payload = row
             .payload

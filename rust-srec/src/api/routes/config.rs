@@ -2,7 +2,7 @@
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{FromRef, Path, State},
     routing::{get, patch, put},
 };
 use tracing::debug;
@@ -11,6 +11,24 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{GlobalConfigResponse, PlatformConfigResponse, UpdateGlobalConfigRequest};
 use crate::api::server::AppState;
 use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel, RetentionDays};
+
+#[derive(Clone)]
+pub struct ConfigRouteState {
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+}
+
+impl FromRef<AppState> for ConfigRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            config_service: state.config_service.clone(),
+        }
+    }
+}
 
 /// Helper trait for apply_updates macro to handle Option wrapping/unwrapping
 trait ApplyUpdate<Source> {
@@ -206,12 +224,9 @@ fn validate_offline_check_overrides(
     security(("bearer_auth" = []))
 )]
 pub async fn get_global_config(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
 ) -> ApiResult<Json<GlobalConfigResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let config = config_service
         .get_global_config()
@@ -232,7 +247,7 @@ pub async fn get_global_config(
     security(("bearer_auth" = []))
 )]
 pub async fn update_global_config(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
     Json(request): Json<UpdateGlobalConfigRequest>,
 ) -> ApiResult<Json<GlobalConfigResponse>> {
     validate_optional_retention_days(
@@ -244,10 +259,7 @@ pub async fn update_global_config(
         request.notification_event_log_retention_days.as_ref(),
     )?;
 
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     tracing::info!(
         ?request,
@@ -346,12 +358,9 @@ pub async fn update_global_config(
     security(("bearer_auth" = []))
 )]
 pub async fn list_platform_configs(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
 ) -> ApiResult<Json<Vec<PlatformConfigResponse>>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let configs = config_service
         .list_platform_configs()
@@ -378,13 +387,10 @@ pub async fn list_platform_configs(
     security(("bearer_auth" = []))
 )]
 pub async fn get_platform_config(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<PlatformConfigResponse>> {
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     let config = config_service.get_platform_config(&id).await.map_err(|e| {
         if e.to_string().contains("not found") {
@@ -410,7 +416,7 @@ pub async fn get_platform_config(
     security(("bearer_auth" = []))
 )]
 pub async fn replace_platform_config(
-    State(state): State<AppState>,
+    State(state): State<ConfigRouteState>,
     Path(id): Path<String>,
     Json(request): Json<PlatformConfigResponse>,
 ) -> ApiResult<Json<PlatformConfigResponse>> {
@@ -429,10 +435,7 @@ pub async fn replace_platform_config(
         request.offline_check_delay_ms.map(|v| v as i64),
     )?;
 
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::internal("ConfigService not available"))?;
+    let config_service = &state.config_service;
 
     // Build the full config model from request
     let config = PlatformConfigDbModel {

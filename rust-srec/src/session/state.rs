@@ -191,7 +191,7 @@ impl SessionState {
 /// Each variant has a distinct policy on whether the session-complete pipeline
 /// should fire. The policy is centralised in
 /// [`Self::should_run_session_complete_pipeline`] so consumers do not re-derive
-/// it per call site (the kind of drift that produced PR #524's bug).
+/// it per call site.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalCause {
     /// Engine reached a clean end of stream (e.g. EOF on FLV, `#EXT-X-ENDLIST` on HLS).
@@ -237,7 +237,6 @@ impl TerminalCause {
     ///
     /// - [`Self::Completed`]: yes — normal end, outputs finalised.
     /// - [`Self::Failed`]: yes — engine gave up; whatever's on disk is final.
-    ///   Fixed by PR #524.
     /// - [`Self::Cancelled`]: **no** — cancellation is a stop *request*; a
     ///   `Completed` may still arrive once the engine flushes the final
     ///   segment. Firing the pipeline early would produce missing inputs.

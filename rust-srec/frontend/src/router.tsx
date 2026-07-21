@@ -6,6 +6,7 @@ import { NotFound } from './components/not-found';
 import * as TanstackQuery from './integrations/tanstack-query/root-provider';
 import { createI18nInstance } from './integrations/lingui/i18n';
 import { routerWithLingui } from './integrations/lingui/router-plugin';
+import { registerPasswordChangeRedirect } from './lib/password-change-redirect';
 import { getGlobalStartContext } from '@tanstack/react-start';
 import type { Mode } from '@/lib/theme-config';
 
@@ -38,6 +39,8 @@ export function getRouter() {
       ),
     },
   );
+
+  registerPasswordChangeRedirect(router, i18n);
 
   return router;
 }

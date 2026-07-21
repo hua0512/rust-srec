@@ -3,7 +3,7 @@
 //! Orchestrates credential checking, refreshing, and persistence.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use chrono::Utc;
 use tokio::sync::Mutex;
@@ -33,7 +33,7 @@ pub struct CredentialRefreshService<R: ConfigRepository> {
     /// Per-scope locks to prevent concurrent refreshes
     refresh_locks: dashmap::DashMap<String, Arc<Mutex<()>>>,
     /// Optional notification service for broadcasting credential events.
-    notification_service: Option<Arc<NotificationService>>,
+    notification_service: OnceLock<Arc<NotificationService>>,
 }
 
 impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
@@ -46,13 +46,20 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             daily_tracker: Arc::new(DailyCheckTracker::new()),
             failure_tracker: Arc::new(RefreshFailureTracker::new()),
             refresh_locks: dashmap::DashMap::new(),
-            notification_service: None,
+            notification_service: OnceLock::new(),
         }
     }
 
     /// Wire a NotificationService to emit CredentialEvents as NotificationEvents.
-    pub fn set_notification_service(&mut self, service: Arc<NotificationService>) {
-        self.notification_service = Some(service);
+    pub fn set_notification_service(&self, service: Arc<NotificationService>) {
+        if self.notification_service.set(service).is_err() {
+            warn!("Credential notification service is already configured");
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_notification_service(&self) -> bool {
+        self.notification_service.get().is_some()
     }
 
     /// Register a credential manager for a platform.
@@ -258,7 +265,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
     }
 
     fn maybe_notify_credential_event(&self, event: CredentialEvent) {
-        let Some(service) = self.notification_service.as_ref().cloned() else {
+        let Some(service) = self.notification_service.get().cloned() else {
             return;
         };
 
@@ -275,14 +282,7 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             }
         }
 
-        tokio::spawn(async move {
-            if let Err(e) = service
-                .notify(NotificationEvent::Credential { event })
-                .await
-            {
-                warn!(error = %e, "Failed to dispatch credential notification");
-            }
-        });
+        service.dispatch_notification(NotificationEvent::Credential { event });
     }
 
     /// Perform credential refresh.
@@ -483,5 +483,34 @@ impl<R: ConfigRepository + 'static> CredentialRefreshService<R> {
             expires_at: credentials.expires_at,
             timestamp: Utc::now(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    use super::*;
+    use crate::database::repositories::{SqlxCredentialStore, config::SqlxConfigRepository};
+
+    #[tokio::test]
+    async fn notification_service_is_installed_once() {
+        let pool = SqlitePoolOptions::new()
+            .connect_lazy("sqlite::memory:")
+            .expect("in-memory SQLite URL should be valid");
+        let repository = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
+        let resolver = Arc::new(CredentialResolver::new(repository));
+        let store = Arc::new(SqlxCredentialStore::new(pool.clone(), pool));
+        let service = CredentialRefreshService::new(resolver, store);
+        let first = Arc::new(NotificationService::new());
+
+        service.set_notification_service(Arc::clone(&first));
+        service.set_notification_service(Arc::new(NotificationService::new()));
+
+        let installed = service
+            .notification_service
+            .get()
+            .expect("notification service should be installed");
+        assert!(Arc::ptr_eq(installed, &first));
     }
 }

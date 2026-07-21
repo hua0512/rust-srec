@@ -25,16 +25,19 @@ use crate::database::retry::retry_on_sqlite_busy;
 use crate::domain::StreamerState;
 use crate::domain::filter::Filter;
 use crate::streamer::{StreamerManager, StreamerMetadata};
+use crate::utils::task_supervisor::TaskSupervisor;
 use crate::{Error, Result};
 
 use super::batch_detector::{BatchDetector, BatchResult};
 use super::detector::{FilterReason, LiveStatus, StreamDetector};
-use super::events::{FatalErrorType, MonitorEvent, MonitorEventBroadcaster};
+use crate::domain::streamer::FatalErrorType;
+
+use super::events::{MonitorEvent, MonitorEventBroadcaster, MonitorEventDelivery};
 use super::rate_limiter::{RateLimiterConfig, RateLimiterManager};
 
 /// Result of [`StreamMonitor::process_status`].
 ///
-/// This separates two outcomes that previously looked identical at the type level:
+/// This separates two outcomes at the type level:
 ///
 /// - the monitor accepted the observed [`LiveStatus`] and applied its normal side effects
 ///   (state changes, session updates, outbox events)
@@ -125,7 +128,6 @@ pub struct StreamMonitor<
     /// Filter repository for loading filters.
     filter_repo: Arc<FR>,
     /// Session repository for session management.
-    #[allow(dead_code)]
     session_repo: Arc<SSR>,
     /// Config service for resolving streamer configuration.
     config_service: Arc<crate::config::ConfigService<CR, SR>>,
@@ -141,10 +143,12 @@ pub struct StreamMonitor<
     cleanup_tx: mpsc::Sender<String>,
     /// Event broadcaster for notifications.
     event_broadcaster: MonitorEventBroadcaster,
+    /// Required runtime consumer for state-changing monitor events.
+    required_event_sender: Option<mpsc::Sender<MonitorEventDelivery>>,
     /// Single-owner session lifecycle service. StreamMonitor publishes
     /// Live / Offline observations here; the lifecycle owns the atomic DB
     /// bundle, the in-memory session map, and the `hard_ended` suppression
-    /// cache that used to live on this type.
+    /// cache.
     session_lifecycle: Arc<crate::session::SessionLifecycle>,
     /// Database pool for transactional updates + outbox (serialized write pool).
     write_pool: SqlitePool,
@@ -152,8 +156,9 @@ pub struct StreamMonitor<
     outbox_notify: Arc<Notify>,
     /// Cancellation token for background tasks (outbox publisher and cleanup worker).
     cancellation: CancellationToken,
+    /// Keeps standalone monitor tasks owned for the lifetime of the service.
+    _task_supervisor: Arc<TaskSupervisor>,
     /// Configuration.
-    #[allow(dead_code)]
     config: StreamMonitorConfig,
     /// Optional credential refresh service for automatic cookie refresh.
     credential_service: Option<Arc<CredentialRefreshService<CR>>>,
@@ -218,6 +223,31 @@ impl<
         write_pool: SqlitePool,
         session_lifecycle: Arc<crate::session::SessionLifecycle>,
         config: StreamMonitorConfig,
+    ) -> Self {
+        Self::with_runtime(
+            streamer_manager,
+            filter_repo,
+            session_repo,
+            config_service,
+            write_pool,
+            session_lifecycle,
+            config,
+            None,
+            Arc::new(TaskSupervisor::new()),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn with_runtime(
+        streamer_manager: Arc<StreamerManager<SR>>,
+        filter_repo: Arc<FR>,
+        session_repo: Arc<SSR>,
+        config_service: Arc<crate::config::ConfigService<CR, SR>>,
+        write_pool: SqlitePool,
+        session_lifecycle: Arc<crate::session::SessionLifecycle>,
+        config: StreamMonitorConfig,
+        required_event_sender: Option<mpsc::Sender<MonitorEventDelivery>>,
+        task_supervisor: Arc<TaskSupervisor>,
     ) -> Self {
         // Create rate limiter with platform-specific configs
         let default_rate_config = RateLimiterConfig::with_rps(config.default_rate_limit)
@@ -287,16 +317,22 @@ impl<
             in_flight: in_flight.clone(),
             cleanup_tx,
             event_broadcaster: MonitorEventBroadcaster::new(),
+            required_event_sender,
             session_lifecycle,
             write_pool,
             outbox_notify: outbox_notify.clone(),
             cancellation: cancellation.clone(),
+            _task_supervisor: task_supervisor.clone(),
             config,
             credential_service: None,
         };
 
-        monitor.spawn_outbox_publisher(outbox_notify, cancellation.clone());
-        Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation);
+        monitor.spawn_outbox_publisher(
+            outbox_notify,
+            cancellation.clone(),
+            task_supervisor.clone(),
+        );
+        Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation, task_supervisor);
 
         monitor
     }
@@ -330,8 +366,9 @@ impl<
         in_flight: Arc<DashMap<String, Arc<OnceCell<LiveStatus>>>>,
         mut cleanup_rx: mpsc::Receiver<String>,
         cancellation_token: CancellationToken,
+        task_supervisor: Arc<TaskSupervisor>,
     ) {
-        tokio::spawn(async move {
+        task_supervisor.spawn("monitor in-flight cleanup", async move {
             let mut queue = DelayQueue::new();
             loop {
                 tokio::select! {
@@ -358,11 +395,13 @@ impl<
         &self,
         outbox_notify: Arc<Notify>,
         cancellation_token: CancellationToken,
+        task_supervisor: Arc<TaskSupervisor>,
     ) {
         let pool = self.write_pool.clone();
         let broadcaster = self.event_broadcaster.clone();
+        let required_event_sender = self.required_event_sender.clone();
 
-        tokio::spawn(async move {
+        task_supervisor.spawn("monitor outbox publisher", async move {
             loop {
                 tokio::select! {
                     biased;
@@ -381,8 +420,13 @@ impl<
                     break;
                 }
 
-                if let Err(e) =
-                    flush_outbox_until_wait(&pool, &broadcaster, &cancellation_token).await
+                if let Err(e) = flush_outbox_until_wait(
+                    &pool,
+                    &broadcaster,
+                    required_event_sender.as_ref(),
+                    &cancellation_token,
+                )
+                .await
                 {
                     warn!("Monitor outbox flush failed: {}", e);
                 }
@@ -471,7 +515,7 @@ impl<
                     let filter_models = filter_repo.get_by_streamer(streamer_id).await?;
                     let filters: Vec<Filter> = filter_models
                         .into_iter()
-                        .filter_map(|model| match Filter::from_db_model(&model) {
+                        .filter_map(|model| match Filter::try_from(&model) {
                             Ok(filter) => Some(filter),
                             Err(error) => {
                                 warn!(
@@ -659,7 +703,7 @@ impl<
                 if let Some(session_cookies) = media_extras
                     .as_ref()
                     .and_then(|e| e.get("session_cookies"))
-                    .map(|s| s.as_str())
+                    .map(String::as_str)
                     .filter(|s| !s.is_empty())
                     && let Some(ref credential_service) = self.credential_service
                 {
@@ -879,7 +923,7 @@ impl<
         trace!(
             streamer_id = %streamer.id,
             streamer_name = %streamer.name,
-            signal = signal.as_ref().map(|s| s.as_str()).unwrap_or("(none)"),
+            signal = signal.as_ref().map_or("(none)", |s| s.as_str()),
             "status=OFFLINE (monitor)"
         );
 
@@ -1229,7 +1273,7 @@ impl<
 }
 
 /// Reason a streamer is being put into infrastructure-level backoff via
-/// [`MonitorService::set_infra_blocked`]. The reason determines the target
+/// [`StreamMonitor::set_infra_blocked`]. The reason determines the target
 /// [`StreamerState`], the retry window, and whether `last_error` is rewritten.
 #[derive(Debug, Clone)]
 pub enum InfraBlockReason {
@@ -1253,8 +1297,8 @@ pub enum InfraBlockReason {
 impl InfraBlockReason {
     fn retry_after_secs(&self) -> u64 {
         match self {
-            Self::CircuitBreaker { retry_after_secs } => *retry_after_secs,
-            Self::OutputRootUnavailable {
+            Self::CircuitBreaker { retry_after_secs }
+            | Self::OutputRootUnavailable {
                 retry_after_secs, ..
             } => *retry_after_secs,
         }
@@ -1304,6 +1348,7 @@ struct FlushOutboxResult {
 async fn flush_outbox_until_wait(
     pool: &SqlitePool,
     broadcaster: &MonitorEventBroadcaster,
+    required_event_sender: Option<&mpsc::Sender<MonitorEventDelivery>>,
     cancellation_token: &CancellationToken,
 ) -> Result<()> {
     loop {
@@ -1311,7 +1356,8 @@ async fn flush_outbox_until_wait(
             return Ok(());
         }
 
-        let result = flush_outbox_once(pool, broadcaster).await?;
+        let result =
+            flush_outbox_once(pool, broadcaster, required_event_sender, cancellation_token).await?;
         if result.fetched == 0 || result.needs_wait {
             return Ok(());
         }
@@ -1320,6 +1366,8 @@ async fn flush_outbox_until_wait(
 async fn flush_outbox_once(
     pool: &SqlitePool,
     broadcaster: &MonitorEventBroadcaster,
+    required_event_sender: Option<&mpsc::Sender<MonitorEventDelivery>>,
+    cancellation_token: &CancellationToken,
 ) -> Result<FlushOutboxResult> {
     let entries = MonitorOutboxOps::fetch_undelivered(pool, 100).await?;
 
@@ -1338,6 +1386,58 @@ async fn flush_outbox_once(
     for entry in entries {
         match serde_json::from_str::<MonitorEvent>(&entry.payload) {
             Ok(event) => {
+                if let Some(sender) = required_event_sender {
+                    let (delivery, acknowledgement) = MonitorEventDelivery::new(event.clone());
+                    let send_result = tokio::select! {
+                        _ = cancellation_token.cancelled() => break,
+                        result = sender.send(delivery) => result,
+                    };
+
+                    if send_result.is_err() {
+                        warn!(
+                            outbox_id = entry.id,
+                            "Required monitor event consumer is unavailable; retaining outbox event"
+                        );
+                        failed_entries.push((
+                            entry.id,
+                            "required monitor event consumer unavailable".to_string(),
+                        ));
+                        needs_wait = true;
+                        break;
+                    }
+
+                    let acknowledgement_result = tokio::select! {
+                        _ = cancellation_token.cancelled() => break,
+                        result = acknowledgement => result,
+                    };
+                    if acknowledgement_result.is_err() {
+                        warn!(
+                            outbox_id = entry.id,
+                            "Required monitor event consumer dropped acknowledgement; retaining outbox event"
+                        );
+                        failed_entries.push((
+                            entry.id,
+                            "required monitor event acknowledgement dropped".to_string(),
+                        ));
+                        needs_wait = true;
+                        break;
+                    }
+
+                    match broadcaster.publish(event) {
+                        Ok(receiver_count) => debug!(
+                            outbox_id = entry.id,
+                            receiver_count,
+                            "Delivered required monitor event and notified observers"
+                        ),
+                        Err(_) => debug!(
+                            outbox_id = entry.id,
+                            "Delivered required monitor event with no observational subscribers"
+                        ),
+                    }
+                    delivered_ids.push(entry.id);
+                    continue;
+                }
+
                 // Attempt to broadcast the event
                 match broadcaster.publish(event) {
                     Ok(receiver_count) => {
@@ -1559,6 +1659,70 @@ mod tests {
         cause
     }
 
+    #[tokio::test]
+    async fn required_monitor_delivery_is_acknowledged_before_outbox_commit() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(&pool, "required-delivery", StreamerState::NotLive, 0, None).await;
+        let event = MonitorEvent::StateChanged {
+            streamer_id: "required-delivery".to_string(),
+            streamer_name: "Required Delivery".to_string(),
+            old_state: StreamerState::NotLive,
+            new_state: StreamerState::Live,
+            reason: None,
+            timestamp: chrono::Utc::now(),
+        };
+        let payload = serde_json::to_string(&event).unwrap();
+        sqlx::query(
+            "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
+        )
+        .bind("required-delivery")
+        .bind("StateChanged")
+        .bind(payload)
+        .bind(crate::database::time::now_ms())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let broadcaster = MonitorEventBroadcaster::new();
+        let cancellation = CancellationToken::new();
+        let (sender, mut receiver) = mpsc::channel(1);
+        let flush_pool = pool.clone();
+        let flush_broadcaster = broadcaster.clone();
+        let flush_cancellation = cancellation.clone();
+        let flush = tokio::spawn(async move {
+            flush_outbox_once(
+                &flush_pool,
+                &flush_broadcaster,
+                Some(&sender),
+                &flush_cancellation,
+            )
+            .await
+        });
+
+        let delivery = receiver.recv().await.expect("required event should arrive");
+        assert_eq!(
+            MonitorOutboxOps::fetch_undelivered(&pool, 10)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        delivery
+            .acknowledgement
+            .send(())
+            .expect("outbox publisher should await acknowledgement");
+
+        let result = flush.await.unwrap().unwrap();
+        assert_eq!(result.fetched, 1);
+        assert!(!result.needs_wait);
+        assert!(
+            MonitorOutboxOps::fetch_undelivered(&pool, 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
     async fn session_event_count_for_streamer(pool: &SqlitePool, streamer_id: &str) -> usize {
         SqlxSessionEventRepository::new(pool.clone(), pool.clone())
             .list_for_streamer(streamer_id)
@@ -1583,8 +1747,6 @@ mod tests {
             MonitorEvent::FatalError { .. } => "FatalError",
             MonitorEvent::TransientError { .. } => "TransientError",
             MonitorEvent::StateChanged { .. } => "StateChanged",
-            MonitorEvent::LiveDetected { .. } => "LiveDetected",
-            MonitorEvent::OfflineDetected { .. } => "OfflineDetected",
         }
     }
 

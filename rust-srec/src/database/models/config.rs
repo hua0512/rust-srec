@@ -105,7 +105,7 @@ pub struct GlobalConfigDbModel {
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
     pub notification_event_log_retention_days: i32,
-    /// JSON serialized Vec<PipelineStep>
+    /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
     pub session_complete_pipeline: Option<String>,
@@ -134,7 +134,7 @@ pub struct GlobalConfigDbModel {
     /// download without a restart.
     pub queue_freshness_threshold_ms: i64,
 
-    /// Seconds between probes by the GPU health monitor (issue #555).
+    /// Seconds between probes by the GPU health monitor.
     /// The monitor shells out to `nvidia-smi` on this cadence and emits
     /// a single `GpuUnavailable` notification on Healthy → Unhealthy
     /// transitions. Runtime-mutable; the monitor re-reads the value
@@ -211,7 +211,7 @@ pub struct PlatformConfigDbModel {
     pub download_retry_policy: Option<String>,
     /// JSON serialized EventHooks
     pub event_hooks: Option<String>,
-    /// JSON serialized Vec<PipelineStep>
+    /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
     pub session_complete_pipeline: Option<String>,
@@ -251,7 +251,7 @@ pub struct TemplateConfigDbModel {
     pub event_hooks: Option<String>,
     /// JSON serialized StreamSelectionConfig
     pub stream_selection_config: Option<String>,
-    /// JSON serialized Vec<PipelineStep>
+    /// JSON serialized `Vec<PipelineStep>`
     pub pipeline: Option<String>,
     /// JSON serialized DagPipelineDefinition for session-complete triggering.
     pub session_complete_pipeline: Option<String>,

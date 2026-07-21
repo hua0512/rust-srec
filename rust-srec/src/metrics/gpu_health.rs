@@ -1,8 +1,9 @@
-//! GPU health monitor (issue #555).
+//! GPU health monitor.
 //!
 //! Background poller that probes `nvidia-smi` on a configurable cadence and
 //! exposes a single `gpu` [`ComponentHealth`] entry through the
-//! [`HealthChecker`]. Designed to surface the well-known **NVIDIA Container
+//! [`HealthChecker`](crate::metrics::HealthChecker). Designed to surface the
+//! well-known **NVIDIA Container
 //! Toolkit + cgroup-v2 reconciliation** failure pattern: the host's
 //! `systemd` reloads the device cgroup (often during a Docker daemon
 //! reload or `nvidia-ctk` reconfigure) and silently strips the running
@@ -74,14 +75,14 @@ const COMPONENT_NAME: &str = "gpu";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuErrorKind {
     /// `Failed to initialize NVML: Unknown Error` — the cgroup-wipe
-    /// signature from issue #555.
+    /// signature described in the module docs.
     NvmlUnknownError,
     /// `Driver/library version mismatch` — host driver was upgraded
     /// without restarting `nvidia-uvm` or the container.
     DriverMismatch,
     /// `No devices were found` / `No CUDA-capable device is detected`.
     NoDevice,
-    /// Our [`PROBE_TIMEOUT_SECS`] timeout fired before `nvidia-smi`
+    /// Our `PROBE_TIMEOUT_SECS` timeout fired before `nvidia-smi`
     /// returned. Often indicates a hung NVML call.
     TimedOut,
     /// `nvidia-smi` not found at exec time. Defensive: registration
@@ -242,7 +243,7 @@ impl GpuHealthMonitor {
 
     /// Update the probe interval. The change applies on the next tick;
     /// no restart required. Sub-second values are clamped to
-    /// [`MIN_INTERVAL_SECS`].
+    /// `MIN_INTERVAL_SECS`.
     pub fn set_interval(&self, secs: u64) {
         let clamped = secs.max(MIN_INTERVAL_SECS);
         let prev = self.interval_secs.swap(clamped, Ordering::AcqRel);

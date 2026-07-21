@@ -1,10 +1,12 @@
 //! Download Manager implementation.
 
+mod attempt;
+mod configuration;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -13,12 +15,12 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use super::engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadInfo,
-    DownloadProgress, DownloadProtocol, DownloadStatus, EngineStartError, EngineType, FfmpegEngine,
-    IoErrorKindSer, MesioEngine, SegmentEvent, StreamlinkEngine,
+    DownloadProgress, DownloadProtocol, DownloadStatus, EngineType, FfmpegEngine, IoErrorKindSer,
+    MesioEngine, StreamlinkEngine,
 };
 use super::output_root_gate::OutputRootGate;
 use super::queue::{
@@ -27,11 +29,7 @@ use super::queue::{
 };
 use super::resilience::{CircuitBreakerManager, EngineKey, RetryConfig};
 use crate::Result;
-use crate::database::models::engine::{
-    FfmpegEngineConfig, MesioEngineConfig, StreamlinkEngineConfig,
-};
 use crate::database::repositories::config::ConfigRepository;
-use crate::downloader::SegmentInfo;
 
 fn parse_engine_config<T: DeserializeOwned>(engine: &'static str, raw: &str) -> Result<T> {
     serde_json::from_str(raw)
@@ -72,13 +70,6 @@ fn io_error_in_chain<'a>(err: &'a (dyn std::error::Error + 'static)) -> Option<&
     }
     None
 }
-
-// The per-tier concurrency primitives previously implemented here have
-// been replaced by [`DownloadQueue`] (`super::queue`), which subsumes
-// both the normal and high-priority pools, supports priority-aware
-// wakeup, and exposes the pending-set used by the WebSocket snapshot.
-// The struct used to be `ConcurrencyLimit`; callers now interact with
-// `self.queue` directly.
 
 /// Pending configuration update for an active download.
 ///
@@ -172,8 +163,6 @@ struct ActiveDownload {
     handle: Arc<DownloadHandle>,
     status: DownloadStatus,
     progress: DownloadProgress,
-    #[allow(dead_code)]
-    is_high_priority: bool,
     /// Last known output path (from segments)
     pub output_path: Option<String>,
     current_segment_index: Option<u32>,
@@ -187,6 +176,42 @@ struct ActiveDownload {
     slot: Option<ActiveSlot>,
     /// Retry configuration override applied via config update.
     retry_config_override: Option<RetryConfig>,
+}
+
+#[derive(Clone)]
+struct DownloadEventPublisher {
+    observer_tx: broadcast::Sender<DownloadManagerEvent>,
+    required_terminal_tx: Option<mpsc::UnboundedSender<DownloadTerminalEvent>>,
+}
+
+impl DownloadEventPublisher {
+    fn new(
+        observer_tx: broadcast::Sender<DownloadManagerEvent>,
+        required_terminal_tx: Option<mpsc::UnboundedSender<DownloadTerminalEvent>>,
+    ) -> Self {
+        Self {
+            observer_tx,
+            required_terminal_tx,
+        }
+    }
+
+    fn publish(&self, event: DownloadManagerEvent) -> bool {
+        if let DownloadManagerEvent::Terminal(terminal) = &event
+            && let Some(required_tx) = &self.required_terminal_tx
+            && required_tx.send(terminal.clone()).is_err()
+        {
+            warn!(
+                session_id = %terminal.session_id(),
+                "Required download terminal event consumer is unavailable"
+            );
+        }
+
+        self.observer_tx.send(event).is_ok()
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<DownloadManagerEvent> {
+        self.observer_tx.subscribe()
+    }
 }
 
 /// The Download Manager service.
@@ -223,8 +248,8 @@ pub struct DownloadManager {
     /// download manager, and the gate depends on the former). After the
     /// one-shot write, reads are lock-free.
     output_root_gate: OnceLock<Arc<OutputRootGate>>,
-    /// Broadcast sender for download events
-    event_tx: broadcast::Sender<DownloadManagerEvent>,
+    /// Publishes best-effort observer events and reliable terminal events.
+    events: DownloadEventPublisher,
     /// Config repository for resolving custom engines.
     config_repo: Option<Arc<dyn ConfigRepository>>,
     /// Queue-wait freshness threshold (ms). Read on the per-pipeline
@@ -346,9 +371,8 @@ impl DownloadStopCause {
 ///
 /// The split exists to make session-termination a first-class, non-droppable
 /// signal: Rust's exhaustive pattern matching forces every consumer to make
-/// an explicit decision for every terminal variant. A silent `_ => {}` on the
-/// previous flat enum is how #520 (pipeline not running on `DownloadFailed`)
-/// went unnoticed since the feature landed in PR #187.
+/// an explicit decision for every terminal variant, where a flat enum would
+/// let a `_ => {}` catch-all silently drop one.
 #[derive(Debug, Clone)]
 pub enum DownloadManagerEvent {
     Progress(DownloadProgressEvent),
@@ -517,7 +541,8 @@ pub enum DownloadTerminalEvent {
         /// rejected the download).
         retry_after_secs: Option<u64>,
         /// Why the download was rejected. Carries the payload the scheduler
-        /// needs to route this to the correct [`DownloadEndPolicy`] variant
+        /// needs to route this to the correct
+        /// [`DownloadEndPolicy`](crate::scheduler::actor::DownloadEndPolicy) variant
         /// and, ultimately, the correct [`crate::monitor::InfraBlockReason`].
         kind: DownloadRejectedKind,
     },
@@ -650,7 +675,7 @@ impl DownloadTerminalEvent {
     }
 }
 
-/// Reason a [`DownloadManagerEvent::DownloadRejected`] event was emitted.
+/// Reason a [`DownloadTerminalEvent::Rejected`] event was emitted.
 ///
 /// Distinct from the free-form `reason` string because the scheduler needs
 /// structured data to decide which state to transition the streamer into —
@@ -745,7 +770,7 @@ impl DownloadManager {
             engines: RwLock::new(HashMap::new()),
             circuit_breakers,
             output_root_gate: OnceLock::new(),
-            event_tx,
+            events: DownloadEventPublisher::new(event_tx, None),
             config_repo: None,
             // Overwritten from persisted global config at boot.
             queue_freshness_threshold_ms: AtomicI64::new(60_000),
@@ -771,6 +796,14 @@ impl DownloadManager {
         manager
     }
 
+    pub(crate) fn with_required_terminal_sender(
+        mut self,
+        sender: mpsc::UnboundedSender<DownloadTerminalEvent>,
+    ) -> Self {
+        self.events.required_terminal_tx = Some(sender);
+        self
+    }
+
     /// Attach an output-root write gate during construction.
     ///
     /// Prefer this over [`Self::set_output_root_gate`] when the gate's
@@ -783,7 +816,7 @@ impl DownloadManager {
     }
 
     /// Late-bind the output-root write gate. Used by
-    /// [`crate::services::container`] when the download manager is already
+    /// the services container when the download manager is already
     /// wrapped in `Arc` and its dependencies are ready.
     ///
     /// Attempting to set the gate a second time is a no-op that logs a
@@ -1021,7 +1054,7 @@ impl DownloadManager {
         req: AcquireRequest,
         cancel: CancellationToken,
     ) -> Result<SlotGuard> {
-        let event_tx_for_queue = self.event_tx.clone();
+        let events_for_queue = self.events.clone();
         // Captured by the on_queued closure so the abort-emit branch
         // below can tell whether `DownloadQueued` actually fired
         // (slow path) or not (fast path — no event was emitted, so
@@ -1032,7 +1065,7 @@ impl DownloadManager {
             .queue
             .acquire(req.clone(), cancel, move |entry| {
                 queued_emitted_cb.store(true, std::sync::atomic::Ordering::SeqCst);
-                let _ = event_tx_for_queue.send(DownloadManagerEvent::Progress(
+                events_for_queue.publish(DownloadManagerEvent::Progress(
                     DownloadProgressEvent::DownloadQueued {
                         streamer_id: entry.streamer_id.clone(),
                         streamer_name: entry.streamer_name.clone(),
@@ -1058,7 +1091,7 @@ impl DownloadManager {
                 if queued_emitted.load(std::sync::atomic::Ordering::SeqCst)
                     && !matches!(qerr, QueueAcquireError::DuplicateSession(_))
                 {
-                    let _ = self.event_tx.send(DownloadManagerEvent::Progress(
+                    self.events.publish(DownloadManagerEvent::Progress(
                         DownloadProgressEvent::DownloadDequeued {
                             streamer_id: req.streamer_id.clone(),
                             streamer_name: req.streamer_name.clone(),
@@ -1111,305 +1144,13 @@ impl DownloadManager {
             return;
         }
 
-        let _ = self.event_tx.send(DownloadManagerEvent::Progress(
+        self.events.publish(DownloadManagerEvent::Progress(
             DownloadProgressEvent::DownloadDequeued {
                 streamer_id: streamer_id.to_string(),
                 streamer_name: streamer_name.to_string(),
                 session_id: slot.session_id().to_string(),
             },
         ));
-    }
-
-    /// Prepare the output directory before starting an engine.
-    ///
-    /// This replaces the `ensure_output_dir` call that used to live inside
-    /// each engine's `start()`. Centralizing it here means:
-    ///
-    /// - One call site for the filesystem side-effect, which in turn means
-    ///   one place to wire the output-root write gate (record failures,
-    ///   mark successful recoveries).
-    /// - Consistent error classification via the (now-correct)
-    ///   `EngineStartError::from(crate::Error)` impl that walks the error
-    ///   source chain for `io::ErrorKind`.
-    /// - Engines stop depending on `crate::utils::fs` and
-    ///   `crate::downloader::engine::utils::ensure_output_dir`.
-    ///
-    /// Behaviour:
-    ///
-    /// 1. Call the real `ensure_output_dir` (tokio `create_dir_all`).
-    /// 2. On `Ok`: if a gate is attached, call `mark_healthy` — idempotent,
-    ///    a no-op unless the root was previously in Degraded state, so the
-    ///    happy path pays only one `DashMap::get` for untracked roots.
-    /// 3. On `Err`: if a gate is attached, walk the `crate::Error` source
-    ///    chain to find the underlying `io::Error` and feed it to
-    ///    `record_failure` before propagating. Emits at most one
-    ///    `OutputPathInaccessible` notification per `Healthy → Degraded`
-    ///    transition; idempotent for subsequent failures on an already
-    ///    Degraded root.
-    #[cfg(test)]
-    async fn prepare_output_dir(
-        &self,
-        config: &DownloadConfig,
-    ) -> std::result::Result<(), EngineStartError> {
-        self.prepare_output_dir_for_path(&config.output_dir).await
-    }
-
-    /// Path-only variant of [`Self::prepare_output_dir`] used by
-    /// [`Self::preflight`]. Same behaviour, just doesn't require a
-    /// fully-built `DownloadConfig`.
-    async fn prepare_output_dir_for_path(
-        &self,
-        output_dir: &std::path::Path,
-    ) -> std::result::Result<(), EngineStartError> {
-        match super::engine::utils::ensure_output_dir(output_dir).await {
-            Ok(()) => {
-                if let Some(gate) = self.output_root_gate.get() {
-                    gate.mark_healthy(output_dir);
-                }
-                Ok(())
-            }
-            Err(crate_err) => {
-                if let Some(gate) = self.output_root_gate.get()
-                    && let Some(io_err) = io_error_in_chain(&crate_err)
-                {
-                    gate.record_failure(output_dir, io_err);
-                }
-                Err(EngineStartError::from(crate_err))
-            }
-        }
-    }
-
-    /// Resolve engine to use.
-    ///
-    /// If an override value is provided for the resolved engine ID (either passed ID or global default),
-    /// a new engine instance is created with the merged configuration.
-    /// Otherwise, the shared cached engine instance is returned.
-    ///
-    /// Returns (Engine instance, EngineType, EngineKey).
-    async fn resolve_engine(
-        &self,
-        engine_id: Option<&str>,
-        overrides: Option<&serde_json::Value>,
-    ) -> Result<(Arc<dyn DownloadEngine>, EngineType, EngineKey)> {
-        let default_engine = self.config.read().default_engine;
-        let target_id = engine_id.unwrap_or(default_engine.as_str());
-
-        // 1. Check for overrides first
-        let specific_override = overrides.and_then(|o| o.get(target_id));
-
-        // If we have an override, we MUST create a new engine instance
-        // We cannot reuse the shared engine because it has different config
-        if let Some(override_config) = specific_override {
-            debug!("Applying engine override for {}", target_id);
-            let override_hash = Self::hash_override(override_config);
-
-            // Resolve engine type from ID string or DB lookup
-            let engine_type = self.resolve_engine_type(target_id).await?;
-            let key = EngineKey::with_override(engine_type, engine_id, override_hash);
-
-            let engine: Arc<dyn DownloadEngine> = match engine_type {
-                EngineType::Ffmpeg => {
-                    let base_config = self
-                        .load_engine_config_or_default::<FfmpegEngineConfig>(target_id)
-                        .await;
-                    let merged_config =
-                        Self::apply_override_best_effort(base_config, override_config);
-                    Arc::new(FfmpegEngine::with_config(merged_config))
-                }
-                EngineType::Streamlink => {
-                    let base_config = self
-                        .load_engine_config_or_default::<StreamlinkEngineConfig>(target_id)
-                        .await;
-                    let merged_config =
-                        Self::apply_override_best_effort(base_config, override_config);
-                    Arc::new(StreamlinkEngine::with_config(merged_config))
-                }
-                EngineType::Mesio => {
-                    let base_config = self
-                        .load_engine_config_or_default::<MesioEngineConfig>(target_id)
-                        .await;
-                    let merged_config =
-                        Self::apply_override_best_effort(base_config, override_config);
-                    Arc::new(MesioEngine::with_config(merged_config))
-                }
-            };
-
-            return Ok((engine, engine_type, key));
-        }
-
-        // 2. Normal resolution (no overrides)
-        // If explicit ID provided
-        if let Some(id) = engine_id {
-            // Check if it's a known type string
-            if let Ok(known_type) = id.parse::<EngineType>() {
-                // Use default registered engine for this type
-                let engine = self.get_engine(known_type).ok_or_else(|| {
-                    crate::Error::Other(format!("Default engine {} not registered", known_type))
-                })?;
-                // Global default for this type
-                let key = EngineKey::global(known_type);
-                return Ok((engine, known_type, key));
-            }
-
-            // Otherwise try to look up in DB
-            if let Some(repo) = &self.config_repo {
-                match repo.get_engine_config(id).await {
-                    Ok(config) => {
-                        let engine_type =
-                            config.engine_type.parse::<EngineType>().map_err(|_| {
-                                crate::Error::Other(format!(
-                                    "Unknown engine type in config: {}",
-                                    config.engine_type
-                                ))
-                            })?;
-
-                        let key = EngineKey::custom(engine_type, id);
-                        let engine: Arc<dyn DownloadEngine> = match engine_type {
-                            EngineType::Ffmpeg => {
-                                let engine_config: FfmpegEngineConfig =
-                                    parse_engine_config("ffmpeg", &config.config)?;
-                                Arc::new(FfmpegEngine::with_config(engine_config))
-                            }
-                            EngineType::Streamlink => {
-                                let engine_config: StreamlinkEngineConfig =
-                                    parse_engine_config("streamlink", &config.config)?;
-                                Arc::new(StreamlinkEngine::with_config(engine_config))
-                            }
-                            EngineType::Mesio => {
-                                let engine_config: MesioEngineConfig =
-                                    parse_engine_config("mesio", &config.config)?;
-                                Arc::new(MesioEngine::with_config(engine_config))
-                            }
-                        };
-
-                        return Ok((engine, engine_type, key));
-                    }
-                    Err(_) => {
-                        warn!("Engine config {} not found, using default", id);
-                    }
-                }
-            }
-        }
-
-        // Return default
-        let engine = self.get_engine(default_engine).ok_or_else(|| {
-            crate::Error::Other(format!("Default engine {} not registered", default_engine))
-        })?;
-        let key = EngineKey::global(default_engine);
-        Ok((engine, default_engine, key))
-    }
-
-    async fn load_engine_config_or_default<T>(&self, id: &str) -> T
-    where
-        T: DeserializeOwned + Default,
-    {
-        let Some(repo) = &self.config_repo else {
-            return T::default();
-        };
-
-        match repo.get_engine_config(id).await {
-            Ok(config) => serde_json::from_str::<T>(&config.config).unwrap_or_default(),
-            Err(_) => T::default(),
-        }
-    }
-
-    fn apply_override_best_effort<T>(mut base: T, override_val: &serde_json::Value) -> T
-    where
-        T: Serialize + DeserializeOwned,
-    {
-        if let Ok(merged) = Self::merge_config_json(&base, override_val)
-            && let Ok(updated) = serde_json::from_value::<T>(merged)
-        {
-            base = updated;
-        }
-
-        base
-    }
-
-    /// Resolve engine type from an ID string.
-    ///
-    /// First tries to parse as a known `EngineType`, then falls back to DB lookup.
-    async fn resolve_engine_type(&self, id: &str) -> Result<EngineType> {
-        // Try parsing as known type first
-        if let Ok(t) = id.parse::<EngineType>() {
-            return Ok(t);
-        }
-
-        // Try DB lookup
-        let Some(repo) = &self.config_repo else {
-            return Err(crate::Error::Other(format!("Unknown engine: {}", id)));
-        };
-
-        let config = repo
-            .get_engine_config(id)
-            .await
-            .map_err(|_| crate::Error::Other(format!("Unknown engine: {}", id)))?;
-
-        config.engine_type.parse::<EngineType>().map_err(|_| {
-            crate::Error::Other(format!("Unknown engine type: {}", config.engine_type))
-        })
-    }
-
-    /// Helper to merge a base config with JSON overrides (RFC 7386 JSON Merge Patch).
-    fn merge_config_json<T: Serialize>(
-        base: &T,
-        override_val: &serde_json::Value,
-    ) -> Result<serde_json::Value> {
-        let mut base_val =
-            serde_json::to_value(base).map_err(|e| crate::Error::Other(e.to_string()))?;
-        Self::json_merge(&mut base_val, override_val);
-        Ok(base_val)
-    }
-
-    /// RFC 7386 JSON Merge Patch: recursively merge `patch` into `target`.
-    fn json_merge(target: &mut serde_json::Value, patch: &serde_json::Value) {
-        if let serde_json::Value::Object(patch_map) = patch {
-            if !target.is_object() {
-                *target = serde_json::Value::Object(serde_json::Map::new());
-            }
-            let target_map = target.as_object_mut().unwrap();
-            for (key, value) in patch_map {
-                if value.is_null() {
-                    target_map.remove(key);
-                } else if let Some(existing) = target_map.get_mut(key) {
-                    Self::json_merge(existing, value);
-                } else {
-                    target_map.insert(key.clone(), value.clone());
-                }
-            }
-        } else {
-            *target = patch.clone();
-        }
-    }
-
-    fn hash_override(override_val: &serde_json::Value) -> u64 {
-        use std::hash::{Hash, Hasher};
-
-        let canonical = Self::canonicalize_json(override_val);
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        canonical.to_string().hash(&mut hasher);
-        hasher.finish()
-    }
-
-    fn canonicalize_json(value: &serde_json::Value) -> serde_json::Value {
-        match value {
-            serde_json::Value::Object(map) => {
-                let mut keys: Vec<&String> = map.keys().collect();
-                keys.sort();
-                let mut canonical = serde_json::Map::with_capacity(map.len());
-                for key in keys {
-                    if let Some(child) = map.get(key) {
-                        canonical.insert(key.clone(), Self::canonicalize_json(child));
-                    }
-                }
-                serde_json::Value::Object(canonical)
-            }
-            serde_json::Value::Array(items) => {
-                let canonical_items: Vec<_> = items.iter().map(Self::canonicalize_json).collect();
-                serde_json::Value::Array(canonical_items)
-            }
-            _ => value.clone(),
-        }
     }
 
     /// Internal: spin up the engine on a slot already granted by the
@@ -1420,416 +1161,6 @@ impl DownloadManager {
     /// `prepare_output_dir`) is the caller's responsibility — see
     /// [`Self::preflight`]. The slot is moved into the active-downloads
     /// entry; capacity is released when the entry is removed.
-    async fn start_download_with_engine_and_slot(
-        &self,
-        config: DownloadConfig,
-        engine: Arc<dyn DownloadEngine>,
-        engine_type: EngineType,
-        engine_key: EngineKey,
-        slot: SlotGuard,
-    ) -> Result<String> {
-        let is_high_priority = matches!(slot.priority(), Priority::High);
-        let active_slot = slot.into_active();
-        Self::seed_session_segment_index(
-            &self.session_segment_indices,
-            &config.session_id,
-            config.initial_segment_index,
-        );
-
-        // Generate download ID
-        let download_id = uuid::Uuid::new_v4().to_string();
-
-        // Create event channel for this download
-        let (segment_tx, mut segment_rx) = mpsc::channel::<SegmentEvent>(32);
-
-        // Create download handle
-        let handle = Arc::new(DownloadHandle::new(
-            download_id.clone(),
-            engine_type,
-            config.clone(),
-            segment_tx,
-        ));
-
-        // Store active download
-        let cdn_host = crate::utils::url::extract_host(&config.url).unwrap_or_default();
-        self.active_downloads.insert(
-            download_id.clone(),
-            ActiveDownload {
-                handle: handle.clone(),
-                status: DownloadStatus::Starting,
-                progress: DownloadProgress::default(),
-                is_high_priority,
-                output_path: None,
-                current_segment_index: None,
-                current_engine_segment_index: None,
-                current_segment_path: None,
-                current_segment_started_at: None,
-                slot: Some(active_slot),
-                retry_config_override: None,
-            },
-        );
-
-        // Emit start event (broadcast send is synchronous, ignore if no receivers)
-        let _ = self.event_tx.send(DownloadManagerEvent::Progress(
-            DownloadProgressEvent::DownloadStarted {
-                download_id: download_id.clone(),
-                streamer_id: config.streamer_id.clone(),
-                streamer_name: config.streamer_name.clone(),
-                session_id: config.session_id.clone(),
-                engine_type,
-                cdn_host,
-                download_url: config.url.clone(),
-            },
-        ));
-
-        info!(
-            "Starting download {} for streamer {} with engine {}",
-            download_id, config.streamer_id, engine_type
-        );
-
-        // Start the engine
-        let engine_clone = engine.clone();
-        let handle_clone = handle.clone();
-        tokio::spawn(async move {
-            if let Err(e) = engine_clone.start(handle_clone.clone()).await {
-                error!("Engine start error: {}", e);
-                let _ = handle_clone
-                    .event_tx
-                    .send(SegmentEvent::DownloadFailed {
-                        kind: e.kind,
-                        message: format!("Engine start error: {}", e),
-                    })
-                    .await;
-            }
-        });
-
-        // Spawn task to handle segment events
-        let download_id_clone = download_id.clone();
-        let event_tx = self.event_tx.clone();
-        let streamer_id = config.streamer_id.clone();
-        let streamer_name = config.streamer_name.clone();
-        let session_id = config.session_id.clone();
-        let protocol = config.protocol;
-
-        // Clone references for the spawned task
-        let active_downloads = self.active_downloads.clone();
-        let pending_updates = self.pending_updates.clone();
-        let session_segment_indices = self.session_segment_indices.clone();
-        let circuit_breakers_ref = self.circuit_breakers.get(&engine_key);
-        // Handle into the segment event loop so runtime ENOSPC from the
-        // engine stderr readers can reach `gate.record_failure` — the
-        // mid-stream case where today's date dir already exists and
-        // `prepare_output_dir` has nothing to detect.
-        let output_root_gate_ref: Option<Arc<OutputRootGate>> =
-            self.output_root_gate.get().cloned();
-
-        tokio::spawn(async move {
-            // Limit how often we broadcast progress updates (per download).
-            // Engines may emit progress 1-10x/sec; broadcasting every tick can overwhelm
-            // tokio::broadcast (clone-per-subscriber) and the WS clients.
-            const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(250);
-            let mut last_progress_emit = Instant::now() - PROGRESS_MIN_INTERVAL;
-
-            // engine_segment_index -> session_segment_index for THIS download
-            // attempt. Local to the spawn loop — populated as we observe
-            // engine events, dropped when the loop exits. Trailing
-            // `SegmentCompleted` events flushed by the engine after
-            // `stop_download_with_reason` or after the dedicated cleanup
-            // subscriber ran `clear_session_segment_index` still resolve to
-            // the index allocated by their matching `SegmentStarted`, because
-            // the map is alive for as long as we are draining the channel.
-            //
-            // A *new* engine_segment_index arriving after
-            // `clear_session_segment_index` ran would allocate from a
-            // recreated counter starting at 0, but that requires the engine
-            // to start a fresh segment after the session has been declared
-            // Ended — which is not realistic for stop-then-flush, and the
-            // orphan is ignored by the pipeline coordinator's
-            // `session_complete_triggered` gate.
-            let mut engine_to_session: HashMap<u32, u32> = HashMap::new();
-            // Danmu derives its sibling path from SegmentStarted, so completion must reuse
-            // the same resolved representation.
-            let mut engine_segment_paths: HashMap<u32, String> = HashMap::new();
-
-            while let Some(event) = segment_rx.recv().await {
-                match event {
-                    SegmentEvent::SegmentCompleted(info) => {
-                        let SegmentInfo {
-                            path,
-                            duration_secs,
-                            size_bytes,
-                            index,
-                            started_at: info_started_at,
-                            completed_at,
-                            split_reason_code,
-                            split_reason_details_json,
-                            ..
-                        } = info;
-                        let segment_path = engine_segment_paths
-                            .remove(&index)
-                            .unwrap_or_else(|| resolve_segment_path(&path));
-                        // Prefer started_at from SegmentInfo (shared between start/complete callbacks),
-                        // fall back to the active_downloads lookup for backward compat.
-                        let started_at = info_started_at.or_else(|| {
-                            active_downloads
-                                .get(&download_id_clone)
-                                .and_then(|download| {
-                                    if download.current_engine_segment_index == Some(index) {
-                                        download.current_segment_started_at.as_ref().cloned()
-                                    } else {
-                                        None
-                                    }
-                                })
-                        });
-                        let segment_index = *engine_to_session.entry(index).or_insert_with(|| {
-                            Self::allocate_next_session_segment_index(
-                                &session_segment_indices,
-                                &session_id,
-                            )
-                        });
-
-                        // Broadcast send is synchronous, ignore if no receivers
-                        let _ = event_tx.send(DownloadManagerEvent::Progress(
-                            DownloadProgressEvent::SegmentCompleted {
-                                download_id: download_id_clone.clone(),
-                                streamer_id: streamer_id.clone(),
-                                streamer_name: streamer_name.clone(),
-                                session_id: session_id.clone(),
-                                segment_path: segment_path.clone(),
-                                segment_index,
-                                started_at,
-                                completed_at,
-                                duration_secs,
-                                size_bytes,
-                                split_reason_code,
-                                split_reason_details_json,
-                            },
-                        ));
-
-                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
-                            download.output_path = Some(segment_path);
-                            if download.current_engine_segment_index == Some(index) {
-                                download.current_engine_segment_index = None;
-                                download.current_segment_index = None;
-                                download.current_segment_path = None;
-                                download.current_segment_started_at = None;
-                            }
-                        }
-                        debug!(
-                            download_id = %download_id_clone,
-                            path = %path.display(),
-                            "Segment completed"
-                        );
-                    }
-                    SegmentEvent::Progress(progress) => {
-                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
-                            download.progress = progress.clone();
-                            download.status = DownloadStatus::Downloading;
-                        }
-
-                        // Broadcast progress event to WebSocket subscribers (throttled).
-                        if last_progress_emit.elapsed() >= PROGRESS_MIN_INTERVAL {
-                            last_progress_emit = Instant::now();
-                            let _ = event_tx.send(DownloadManagerEvent::Progress(
-                                DownloadProgressEvent::Progress {
-                                    download_id: download_id_clone.clone(),
-                                    streamer_id: streamer_id.clone(),
-                                    streamer_name: streamer_name.clone(),
-                                    session_id: session_id.clone(),
-                                    status: DownloadStatus::Downloading,
-                                    progress,
-                                },
-                            ));
-                        }
-                    }
-                    SegmentEvent::DownloadCompleted {
-                        total_bytes,
-                        total_duration_secs,
-                        total_segments,
-                        engine_signal,
-                    } => {
-                        circuit_breakers_ref.record_success();
-
-                        // If progress is throttled, the latest tick might not have been broadcast.
-                        // Emit one final progress update before sending the terminal event.
-                        if let Some(download) = active_downloads.get(&download_id_clone) {
-                            let final_progress = download.progress.clone();
-                            let _ = event_tx.send(DownloadManagerEvent::Progress(
-                                DownloadProgressEvent::Progress {
-                                    download_id: download_id_clone.clone(),
-                                    streamer_id: streamer_id.clone(),
-                                    streamer_name: streamer_name.clone(),
-                                    session_id: session_id.clone(),
-                                    status: DownloadStatus::Downloading,
-                                    progress: final_progress,
-                                },
-                            ));
-                        }
-
-                        // remove download from active_downloads
-                        // just before the event to avoid race condition
-                        let output_path = if let Some((_, download)) =
-                            active_downloads.remove(&download_id_clone)
-                        {
-                            download.output_path
-                        } else {
-                            None
-                        };
-
-                        pending_updates.remove(&download_id_clone);
-
-                        // Dropping the active download removes its
-                        // ActiveSlot, which releases the queue capacity
-                        // and wakes the next waiter automatically.
-
-                        let _ = event_tx.send(DownloadManagerEvent::Terminal(
-                            DownloadTerminalEvent::Completed {
-                                download_id: download_id_clone.clone(),
-                                streamer_id: streamer_id.clone(),
-                                streamer_name: streamer_name.clone(),
-                                session_id: session_id.clone(),
-                                total_bytes,
-                                total_duration_secs,
-                                total_segments,
-                                file_path: output_path,
-                                // Forwarded from the engine's SegmentEvent::
-                                // DownloadCompleted unchanged. Lifecycle reads
-                                // this to decide hysteresis vs direct Ended.
-                                engine_signal,
-                            },
-                        ));
-
-                        debug!(
-                            download_id = %download_id_clone,
-                            "Download completed"
-                        );
-                        break;
-                    }
-                    SegmentEvent::DiskFull { output_dir, detail } => {
-                        // Out-of-band signal only — the engine will still
-                        // emit its own DownloadFailed on exit. Feeding the
-                        // gate here short-circuits other streamers under
-                        // the same root before they reach the engine.
-                        if let Some(gate) = output_root_gate_ref.as_ref() {
-                            let synthetic_io_err =
-                                std::io::Error::new(std::io::ErrorKind::StorageFull, detail);
-                            gate.record_failure(&output_dir, &synthetic_io_err);
-                        } else {
-                            debug!(
-                                "DiskFull event received but no output-root gate attached; ignoring"
-                            );
-                        }
-                    }
-                    SegmentEvent::DownloadFailed { kind, message } => {
-                        if kind.affects_circuit_breaker() {
-                            circuit_breakers_ref.record_failure();
-                        }
-
-                        let recoverable = kind.is_recoverable();
-
-                        // Emit one final progress update (best-effort) before the failure event.
-                        if let Some(download) = active_downloads.get(&download_id_clone) {
-                            let final_progress = download.progress.clone();
-                            let _ = event_tx.send(DownloadManagerEvent::Progress(
-                                DownloadProgressEvent::Progress {
-                                    download_id: download_id_clone.clone(),
-                                    streamer_id: streamer_id.clone(),
-                                    streamer_name: streamer_name.clone(),
-                                    session_id: session_id.clone(),
-                                    status: DownloadStatus::Downloading,
-                                    progress: final_progress,
-                                },
-                            ));
-                        }
-
-                        // remove download from active_downloads
-                        // just before the event to avoid race condition
-                        active_downloads.remove(&download_id_clone);
-                        pending_updates.remove(&download_id_clone);
-
-                        // Dropping the active download removes its
-                        // ActiveSlot, which releases the queue capacity
-                        // and wakes the next waiter automatically.
-
-                        let _ = event_tx.send(DownloadManagerEvent::Terminal(
-                            DownloadTerminalEvent::Failed {
-                                download_id: download_id_clone.clone(),
-                                streamer_id: streamer_id.clone(),
-                                streamer_name: streamer_name.clone(),
-                                session_id: session_id.clone(),
-                                engine_type,
-                                protocol,
-                                kind,
-                                error: message,
-                                recoverable,
-                            },
-                        ));
-
-                        break;
-                    }
-                    SegmentEvent::SegmentStarted {
-                        path,
-                        sequence,
-                        started_at,
-                    } => {
-                        let segment_path = resolve_segment_path(&path);
-                        engine_segment_paths.insert(sequence, segment_path.clone());
-                        let segment_index =
-                            *engine_to_session.entry(sequence).or_insert_with(|| {
-                                Self::allocate_next_session_segment_index(
-                                    &session_segment_indices,
-                                    &session_id,
-                                )
-                            });
-
-                        if let Some(mut download) = active_downloads.get_mut(&download_id_clone) {
-                            download.current_engine_segment_index = Some(sequence);
-                            download.current_segment_index = Some(segment_index);
-                            download.current_segment_path = Some(segment_path.clone());
-                            download.current_segment_started_at = Some(started_at);
-                        }
-
-                        // Emit segment started event
-                        let _ = event_tx.send(DownloadManagerEvent::Progress(
-                            DownloadProgressEvent::SegmentStarted {
-                                download_id: download_id_clone.clone(),
-                                streamer_id: streamer_id.clone(),
-                                streamer_name: streamer_name.clone(),
-                                session_id: session_id.clone(),
-                                segment_path: segment_path.clone(),
-                                segment_index,
-                                started_at,
-                            },
-                        ));
-
-                        if let Some((_, pending_update)) =
-                            pending_updates.remove(&download_id_clone)
-                            && let Some(mut download) = active_downloads.get_mut(&download_id_clone)
-                        {
-                            DownloadManager::apply_pending_update_to_download(
-                                &mut download,
-                                pending_update,
-                                &download_id_clone,
-                                &streamer_id,
-                                &event_tx,
-                            );
-                        }
-
-                        debug!(
-                            download_id = %download_id_clone,
-                            path = %path.display(),
-                            engine_segment_index = sequence,
-                            segment_index = segment_index,
-                            "Segment started"
-                        );
-                    }
-                }
-            }
-        });
-
-        Ok(download_id)
-    }
-
     /// Stop a download.
     pub async fn stop_download(&self, download_id: &str) -> Result<()> {
         self.stop_download_with_reason(download_id, DownloadStopCause::User)
@@ -1852,7 +1183,7 @@ impl DownloadManager {
             let session_id = config_snap.session_id;
 
             // Emit one final progress update before cancellation.
-            let _ = self.event_tx.send(DownloadManagerEvent::Progress(
+            self.events.publish(DownloadManagerEvent::Progress(
                 DownloadProgressEvent::Progress {
                     download_id: download_id.to_string(),
                     streamer_id: streamer_id.clone(),
@@ -1869,8 +1200,7 @@ impl DownloadManager {
 
             self.pending_updates.remove(download_id);
 
-            // Broadcast send is synchronous, ignore if no receivers
-            let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
+            self.events.publish(DownloadManagerEvent::Terminal(
                 DownloadTerminalEvent::Cancelled {
                     download_id: download_id.to_string(),
                     streamer_id,
@@ -1904,7 +1234,7 @@ impl DownloadManager {
                 let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
-                    url: config_snapshot.url.clone(),
+                    url: config_snapshot.url,
                     streamer_id: config_snapshot.streamer_id,
                     session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
@@ -2019,7 +1349,7 @@ impl DownloadManager {
     /// Returns a broadcast receiver that will receive all download events.
     /// Multiple subscribers can receive the same events concurrently.
     pub fn subscribe(&self) -> broadcast::Receiver<DownloadManagerEvent> {
-        self.event_tx.subscribe()
+        self.events.subscribe()
     }
 
     /// Emit [`DownloadTerminalEvent::Rejected`] — the single construction
@@ -2044,7 +1374,7 @@ impl DownloadManager {
         retry_after_secs: Option<u64>,
         kind: DownloadRejectedKind,
     ) {
-        let _ = self.event_tx.send(DownloadManagerEvent::Terminal(
+        self.events.publish(DownloadManagerEvent::Terminal(
             DownloadTerminalEvent::Rejected {
                 streamer_id,
                 streamer_name,
@@ -2087,31 +1417,35 @@ impl DownloadManager {
                     id: download_id.to_string(),
                 })?;
 
-        let streamer_id = download.handle.config_snapshot().streamer_id;
+        let streamer_id = download.handle.config.read().streamer_id.clone();
         // Drop the reference to avoid holding the lock while updating pending_updates
         drop(download);
 
+        // Capture presence flags for logging before the payloads move into
+        // the pending update.
+        let has_cookies = cookies.is_some();
+        let has_headers = headers.is_some();
+        let has_retry = retry_config.is_some();
+
         // Create the new pending update
-        let new_update =
-            PendingConfigUpdate::new(cookies.clone(), headers.clone(), retry_config.clone());
+        let new_update = PendingConfigUpdate::new(cookies, headers, retry_config);
 
         // Only store if there are actual updates
         if new_update.has_updates() {
             // Create or merge PendingConfigUpdate in pending_updates map
-            self.pending_updates
-                .entry(download_id.to_string())
-                .and_modify(|existing| {
-                    existing.merge(new_update.clone());
-                })
-                .or_insert(new_update);
+            match self.pending_updates.entry(download_id.to_string()) {
+                dashmap::mapref::entry::Entry::Occupied(mut existing) => {
+                    existing.get_mut().merge(new_update);
+                }
+                dashmap::mapref::entry::Entry::Vacant(slot) => {
+                    slot.insert(new_update);
+                }
+            }
 
             // Log the queued update
             info!(
                 "Config update queued for download {}: cookies={}, headers={}, retry={}",
-                download_id,
-                cookies.is_some(),
-                headers.is_some(),
-                retry_config.is_some()
+                download_id, has_cookies, has_headers, has_retry
             );
 
             debug!(
@@ -2132,13 +1466,15 @@ impl DownloadManager {
     pub fn get_download_by_streamer(&self, streamer_id: &str) -> Option<DownloadInfo> {
         self.active_downloads
             .iter()
-            .find(|entry| entry.value().handle.config_snapshot().streamer_id == streamer_id)
+            // Compare under the config read lock; `config_snapshot()` would
+            // deep-clone the whole `DownloadConfig` per scanned entry.
+            .find(|entry| entry.value().handle.config.read().streamer_id == streamer_id)
             .map(|entry| {
                 let download = entry.value();
                 let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
-                    url: config_snapshot.url.clone(),
+                    url: config_snapshot.url,
                     streamer_id: config_snapshot.streamer_id,
                     session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
@@ -2157,7 +1493,9 @@ impl DownloadManager {
     pub fn has_active_download(&self, streamer_id: &str) -> bool {
         self.active_downloads.iter().any(|entry| {
             let download = entry.value();
-            download.handle.config_snapshot().streamer_id == streamer_id
+            // Read the id under the config lock instead of cloning a full
+            // `DownloadConfig` snapshot per entry.
+            download.handle.config.read().streamer_id == streamer_id
                 && matches!(
                     download.status,
                     DownloadStatus::Starting | DownloadStatus::Downloading
@@ -2237,22 +1575,19 @@ impl DownloadManager {
 
         // Broadcast send returns Ok if at least one receiver got the message
         // Returns Err if there are no receivers, which is fine
-        match self.event_tx.send(event) {
-            Ok(_) => {
-                debug!(
-                    "Emitted ConfigUpdated event for download {} (streamer {})",
-                    download_id, streamer_id
-                );
-                true
-            }
-            Err(_) => {
-                // No receivers - this is not an error, just means no one is listening
-                debug!(
-                    "ConfigUpdated event for download {} had no receivers",
-                    download_id
-                );
-                false
-            }
+        if self.events.publish(event) {
+            debug!(
+                "Emitted ConfigUpdated event for download {} (streamer {})",
+                download_id, streamer_id
+            );
+            true
+        } else {
+            // No receivers - this is not an error, just means no one is listening
+            debug!(
+                "ConfigUpdated event for download {} had no receivers",
+                download_id
+            );
+            false
         }
     }
 
@@ -2285,21 +1620,18 @@ impl DownloadManager {
             error: error.to_string(),
         });
 
-        match self.event_tx.send(event) {
-            Ok(_) => {
-                warn!(
-                    "Emitted ConfigUpdateFailed event for download {}: {}",
-                    download_id, error
-                );
-                true
-            }
-            Err(_) => {
-                debug!(
-                    "ConfigUpdateFailed event for download {} had no receivers",
-                    download_id
-                );
-                false
-            }
+        if self.events.publish(event) {
+            warn!(
+                "Emitted ConfigUpdateFailed event for download {}: {}",
+                download_id, error
+            );
+            true
+        } else {
+            debug!(
+                "ConfigUpdateFailed event for download {} had no receivers",
+                download_id
+            );
+            false
         }
     }
 
@@ -2342,10 +1674,12 @@ impl DownloadManager {
         update: PendingConfigUpdate,
         download_id: &str,
         streamer_id: &str,
-        event_tx: &broadcast::Sender<DownloadManagerEvent>,
+        events: &DownloadEventPublisher,
     ) {
+        // Classify before destructuring so the payloads can move into the
+        // handle config without a full `PendingConfigUpdate` clone.
+        let update_type = Self::determine_config_update_type(&update);
         let mut applied = false;
-        let update_clone = update.clone();
         let PendingConfigUpdate {
             cookies,
             headers,
@@ -2355,11 +1689,11 @@ impl DownloadManager {
 
         if cookies.is_some() || headers.is_some() {
             let mut cfg = download.handle.config.write();
-            if let Some(cookie_val) = cookies.clone() {
+            if let Some(cookie_val) = cookies {
                 cfg.cookies = Some(cookie_val);
                 applied = true;
             }
-            if let Some(header_val) = headers.clone() {
+            if let Some(header_val) = headers {
                 cfg.headers = header_val;
                 applied = true;
             }
@@ -2371,9 +1705,8 @@ impl DownloadManager {
         }
 
         if applied {
-            let update_type = Self::determine_config_update_type(&update_clone);
             let streamer_name = download.handle.config.read().streamer_name.clone();
-            let _ = event_tx.send(DownloadManagerEvent::Progress(
+            events.publish(DownloadManagerEvent::Progress(
                 DownloadProgressEvent::ConfigUpdated {
                     download_id: download_id.to_string(),
                     streamer_id: streamer_id.to_string(),
@@ -2394,7 +1727,7 @@ impl DownloadManager {
                 let config_snapshot = download.handle.config_snapshot();
                 DownloadInfo {
                     id: download.handle.id.clone(),
-                    url: config_snapshot.url.clone(),
+                    url: config_snapshot.url,
                     streamer_id: config_snapshot.streamer_id,
                     session_id: config_snapshot.session_id,
                     engine_type: download.handle.engine_type,
@@ -2438,6 +1771,11 @@ impl Default for DownloadManager {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use crate::downloader::SegmentInfo;
+    use crate::downloader::engine::{EngineStartError, SegmentEvent};
+
     use super::*;
     use async_trait::async_trait;
     use std::sync::atomic::Ordering;
@@ -3322,7 +2660,7 @@ mod tests {
         }
     }
 
-    // ========== Output-root write gate integration (#508) ==========
+    // ========== Output-root write gate integration ==========
 
     /// Build a `DownloadConfig` pointed at `output_dir`, with the other
     /// fields set to minimal plausible values. The URL/streamer fields are
@@ -3533,10 +2871,9 @@ mod tests {
 
     #[tokio::test]
     async fn prepare_output_dir_without_gate_is_transparent() {
-        // Safety guarantee: installing no gate must leave prepare_output_dir
-        // behaving exactly like the old inline `ensure_output_dir` call —
-        // success creates the dir, failure returns a classified
-        // EngineStartError, no panics, no hidden state.
+        // Safety guarantee: with no gate installed, prepare_output_dir is a
+        // plain create-dir call — success creates the dir, failure returns
+        // a classified EngineStartError, no panics, no hidden state.
         let temp = tempfile::tempdir().expect("tempdir");
         let nested = temp.path().join("a").join("b").join("c");
         let manager = DownloadManager::new();
@@ -3545,5 +2882,41 @@ mod tests {
         let config = test_config_with_output_dir(nested.clone());
         assert!(manager.prepare_output_dir(&config).await.is_ok());
         assert!(nested.is_dir());
+    }
+
+    #[tokio::test]
+    async fn required_terminal_event_survives_lagged_observer() {
+        let (required_tx, mut required_rx) = mpsc::unbounded_channel();
+        let manager = DownloadManager::new().with_required_terminal_sender(required_tx);
+        let mut observer = manager.subscribe();
+
+        for index in 0..300 {
+            manager.events.publish(DownloadManagerEvent::Progress(
+                DownloadProgressEvent::DownloadDequeued {
+                    streamer_id: "streamer".to_string(),
+                    streamer_name: "Streamer".to_string(),
+                    session_id: format!("session-{index}"),
+                },
+            ));
+        }
+
+        manager.emit_rejected(
+            "streamer".to_string(),
+            "Streamer".to_string(),
+            "required-session".to_string(),
+            "test rejection".to_string(),
+            Some(5),
+            DownloadRejectedKind::CircuitBreaker,
+        );
+
+        let terminal = tokio::time::timeout(Duration::from_secs(1), required_rx.recv())
+            .await
+            .expect("required terminal event timed out")
+            .expect("required terminal channel closed");
+        assert_eq!(terminal.session_id(), "required-session");
+        assert!(matches!(
+            observer.recv().await,
+            Err(broadcast::error::RecvError::Lagged(_))
+        ));
     }
 }

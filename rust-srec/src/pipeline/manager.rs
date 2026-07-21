@@ -242,6 +242,20 @@ pub struct PipelineManager<
     dag_scheduler: Option<Arc<DagScheduler>>,
 }
 
+/// Dependencies that every production pipeline runtime requires.
+pub(crate) struct PipelineRuntimeDependencies<
+    CR: ConfigRepository + Send + Sync + 'static,
+    SR: StreamerRepository + Send + Sync + 'static,
+> {
+    pub(crate) job_repository: Arc<dyn JobRepository>,
+    pub(crate) session_repository: Arc<dyn SessionRepository>,
+    pub(crate) streamer_repository: Arc<SR>,
+    pub(crate) preset_repository: Arc<dyn JobPresetRepository>,
+    pub(crate) pipeline_preset_repository: Arc<dyn PipelinePresetRepository>,
+    pub(crate) config_service: Arc<ConfigService<CR, SR>>,
+    pub(crate) dag_repository: Arc<dyn DagRepository>,
+}
+
 impl<CR, SR> PipelineManager<CR, SR>
 where
     CR: ConfigRepository + Send + Sync + 'static,
@@ -288,12 +302,16 @@ where
         );
     }
 
-    /// Create a new Pipeline Manager.
+    /// Create an in-memory Pipeline Manager without persistence repositories.
+    #[allow(
+        clippy::new_without_default,
+        reason = "production construction requires PipelineRuntimeDependencies"
+    )]
     pub fn new() -> Self {
         Self::with_config(PipelineManagerConfig::default())
     }
 
-    /// Create a new Pipeline Manager with custom configuration.
+    /// Create an in-memory Pipeline Manager with custom configuration.
     pub fn with_config(config: PipelineManagerConfig) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let job_queue = Arc::new(JobQueue::with_config(config.job_queue.clone()));
@@ -410,6 +428,30 @@ where
             job_repository: Some(job_repository),
             dag_scheduler: None,
         }
+    }
+
+    /// Create the fully wired production pipeline runtime.
+    pub(crate) fn for_runtime(
+        config: PipelineManagerConfig,
+        dependencies: PipelineRuntimeDependencies<CR, SR>,
+    ) -> Self {
+        let PipelineRuntimeDependencies {
+            job_repository,
+            session_repository,
+            streamer_repository,
+            preset_repository,
+            pipeline_preset_repository,
+            config_service,
+            dag_repository,
+        } = dependencies;
+
+        Self::with_repository(config, job_repository)
+            .with_session_repository(session_repository)
+            .with_streamer_repository(streamer_repository)
+            .with_preset_repository(preset_repository)
+            .with_pipeline_preset_repository(pipeline_preset_repository)
+            .with_config_service(config_service)
+            .with_dag_repository(dag_repository)
     }
 
     /// Set the session repository for persistence.
@@ -534,12 +576,6 @@ pub struct PipelineCreationResult {
     pub total_steps: usize,
     /// List of all steps in the pipeline.
     pub steps: Vec<String>,
-}
-
-impl Default for PipelineManager {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[cfg(test)]

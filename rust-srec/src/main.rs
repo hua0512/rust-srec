@@ -5,10 +5,10 @@
 
 use std::sync::Arc;
 
-use rust_srec::logging::init_logging;
-use rust_srec::panic_hook;
-use rust_srec::services::ServiceContainer;
-use rust_srec::{database, utils::http_client::install_rustls_provider};
+use rust_srec::backend::{
+    NotificationEvent, ServiceContainer, init_logging, init_pool, init_write_pool,
+    install_panic_hook, install_rustls_provider, run_migrations,
+};
 use tracing::{error, info, warn};
 
 #[global_allocator]
@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to initialize logging: {}", e))?;
 
     // Ensure panics are captured by the application logs (and not just stderr).
-    panic_hook::install(&log_dir);
+    install_panic_hook(&log_dir);
 
     info!("Starting rust-srec v{}", env!("CARGO_PKG_VERSION"));
 
@@ -36,12 +36,12 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:srec.db?mode=rwc".to_string());
 
     info!("Connecting to database: {}", database_url);
-    let pool = database::init_pool(&database_url).await?;
-    let write_pool = database::init_write_pool(&database_url).await?;
+    let pool = init_pool(&database_url).await?;
+    let write_pool = init_write_pool(&database_url).await?;
 
     // Run migrations
     info!("Running database migrations...");
-    database::run_migrations(&pool).await?;
+    run_migrations(&pool).await?;
     info!("Database migrations complete");
 
     // Create service container
@@ -50,13 +50,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Apply persisted log filter from database
     logging_config
-        .apply_persisted_filter(&container.config_service)
+        .apply_persisted_filter(container.config_service())
         .await;
 
-    // Start log retention cleanup task
-    logging_config.start_retention_cleanup(container.cancellation_token());
-
-    // Store logging config in container for API access
+    // Store logging config and start its supervised retention task.
     container.set_logging_config(logging_config.clone());
 
     // Initialize all services
@@ -66,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     container.start_api_server().await?;
 
     // Send startup notification
-    let startup_event = rust_srec::notification::NotificationEvent::SystemStartup {
+    let startup_event = NotificationEvent::SystemStartup {
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now(),
     };
@@ -76,20 +73,28 @@ async fn main() -> anyhow::Result<()> {
 
     info!("rust-srec started successfully");
 
-    // Wait for shutdown signal
+    // Wait for a shutdown signal or a critical runtime failure.
     let container_shutdown = container.clone();
-    tokio::select! {
+    let runtime_failure = tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             info!("Received SIGINT (Ctrl+C), initiating shutdown...");
+            None
         }
         _ = wait_for_sigterm() => {
             info!("Received SIGTERM, initiating shutdown...");
+            None
         }
-    }
+        failure = container.wait_for_runtime_failure() => {
+            error!(error = %failure, "Critical runtime failure; initiating shutdown");
+            Some(failure)
+        }
+    };
 
     // Send shutdown notification
-    let shutdown_event = rust_srec::notification::NotificationEvent::SystemShutdown {
-        reason: "Signal received".to_string(),
+    let shutdown_event = NotificationEvent::SystemShutdown {
+        reason: runtime_failure
+            .as_ref()
+            .map_or_else(|| "Signal received".to_string(), ToString::to_string),
         timestamp: chrono::Utc::now(),
     };
     if let Err(e) = container
@@ -107,7 +112,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     info!("rust-srec shutdown complete");
-    Ok(())
+    match runtime_failure {
+        Some(failure) => Err(failure.into()),
+        None => Ok(()),
+    }
 }
 
 /// Wait for SIGTERM signal (Unix only).

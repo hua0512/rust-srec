@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{FromRef, Path, Query, State},
     http::StatusCode,
     routing::{get, post},
 };
@@ -16,6 +16,24 @@ use crate::database::models::notification::{
 use crate::notification::NotificationPriority;
 use crate::notification::events::{NotificationEventTypeInfo, notification_event_types};
 use crate::notification::service::NotificationChannelInstance;
+
+#[derive(Clone)]
+pub struct NotificationRouteState {
+    notification_repository:
+        std::sync::Arc<dyn crate::database::repositories::NotificationRepository>,
+    notification_service: std::sync::Arc<crate::notification::NotificationService>,
+    web_push_service: Option<std::sync::Arc<crate::notification::web_push::WebPushService>>,
+}
+
+impl FromRef<AppState> for NotificationRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            notification_repository: state.notification_repository.clone(),
+            notification_service: state.notification_service.clone(),
+            web_push_service: state.web_push_service.clone(),
+        }
+    }
+}
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -143,7 +161,7 @@ pub async fn list_event_types() -> Json<Vec<NotificationEventTypeInfo>> {
     security(("bearer_auth" = []))
 )]
 pub async fn get_web_push_public_key(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
 ) -> Result<Json<WebPushPublicKeyResponse>, ApiError> {
     let service = state
         .web_push_service
@@ -165,7 +183,7 @@ pub async fn get_web_push_public_key(
     security(("bearer_auth" = []))
 )]
 pub async fn list_web_push_subscriptions(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
 ) -> Result<Json<Vec<WebPushSubscriptionResponse>>, ApiError> {
     let service = state
@@ -203,7 +221,7 @@ pub async fn list_web_push_subscriptions(
     security(("bearer_auth" = []))
 )]
 pub async fn subscribe_web_push(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
     Json(req): Json<SubscribeWebPushRequest>,
 ) -> Result<Json<WebPushSubscriptionResponse>, ApiError> {
@@ -297,7 +315,7 @@ pub async fn subscribe_web_push(
     security(("bearer_auth" = []))
 )]
 pub async fn unsubscribe_web_push(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
     Json(req): Json<UnsubscribeWebPushRequest>,
 ) -> Result<StatusCode, ApiError> {
@@ -336,12 +354,10 @@ pub async fn unsubscribe_web_push(
     security(("bearer_auth" = []))
 )]
 pub async fn list_events(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     Query(q): Query<ListEventsQuery>,
 ) -> Result<Json<Vec<NotificationEventLogDbModel>>, ApiError> {
-    let repo = state
-        .notification_repository
-        .ok_or_else(|| ApiError::service_unavailable("Notification repository not available"))?;
+    let repo = &state.notification_repository;
 
     let limit = q.limit.unwrap_or(200);
     let offset = q.offset.unwrap_or(0);
@@ -384,11 +400,9 @@ fn parse_priority(input: &str) -> Option<NotificationPriority> {
     security(("bearer_auth" = []))
 )]
 pub async fn list_instances(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
 ) -> Result<Json<Vec<NotificationChannelInstance>>, ApiError> {
-    let service = state
-        .notification_service
-        .ok_or_else(|| ApiError::service_unavailable("Notification service not available"))?;
+    let service = &state.notification_service;
     Ok(Json(service.list_channel_instances()))
 }
 
@@ -402,11 +416,9 @@ pub async fn list_instances(
     security(("bearer_auth" = []))
 )]
 pub async fn list_channels(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
 ) -> Result<Json<Vec<NotificationChannelDbModel>>, ApiError> {
-    let repo = state
-        .notification_repository
-        .ok_or_else(|| ApiError::service_unavailable("Notification repository not available"))?;
+    let repo = &state.notification_repository;
 
     let channels = repo
         .list_channels()
@@ -427,12 +439,10 @@ pub async fn list_channels(
     security(("bearer_auth" = []))
 )]
 pub async fn get_channel(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     Path(id): Path<String>,
 ) -> Result<Json<NotificationChannelDbModel>, ApiError> {
-    let repo = state
-        .notification_repository
-        .ok_or_else(|| ApiError::service_unavailable("Notification repository not available"))?;
+    let repo = &state.notification_repository;
 
     let channel = repo
         .get_channel(&id)
@@ -452,15 +462,11 @@ pub async fn get_channel(
     security(("bearer_auth" = []))
 )]
 pub async fn create_channel(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     Json(req): Json<CreateChannelRequest>,
 ) -> Result<Json<NotificationChannelDbModel>, ApiError> {
-    let repo = state
-        .notification_repository
-        .ok_or_else(|| ApiError::service_unavailable("Notification repository not available"))?;
-    let service = state
-        .notification_service
-        .ok_or_else(|| ApiError::service_unavailable("Notification service not available"))?;
+    let repo = &state.notification_repository;
+    let service = &state.notification_service;
 
     // Create model
     let settings_str = serde_json::to_string(&req.settings)
@@ -494,16 +500,12 @@ pub async fn create_channel(
     security(("bearer_auth" = []))
 )]
 pub async fn update_channel(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     Path(id): Path<String>,
     Json(req): Json<UpdateChannelRequest>,
 ) -> Result<Json<NotificationChannelDbModel>, ApiError> {
-    let repo = state
-        .notification_repository
-        .ok_or_else(|| ApiError::service_unavailable("Notification repository not available"))?;
-    let service = state
-        .notification_service
-        .ok_or_else(|| ApiError::service_unavailable("Notification service not available"))?;
+    let repo = &state.notification_repository;
+    let service = &state.notification_service;
 
     let mut channel = repo
         .get_channel(&id)
@@ -538,15 +540,11 @@ pub async fn update_channel(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_channel(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let repo = state
-        .notification_repository
-        .ok_or_else(|| ApiError::service_unavailable("Notification repository not available"))?;
-    let service = state
-        .notification_service
-        .ok_or_else(|| ApiError::service_unavailable("Notification service not available"))?;
+    let repo = &state.notification_repository;
+    let service = &state.notification_service;
 
     repo.delete_channel(&id)
         .await
@@ -571,12 +569,10 @@ pub async fn delete_channel(
     security(("bearer_auth" = []))
 )]
 pub async fn get_subscriptions(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<String>>, ApiError> {
-    let repo = state
-        .notification_repository
-        .ok_or_else(|| ApiError::service_unavailable("Notification repository not available"))?;
+    let repo = &state.notification_repository;
 
     let subs = repo
         .get_subscriptions_for_channel(&id)
@@ -597,16 +593,12 @@ pub async fn get_subscriptions(
     security(("bearer_auth" = []))
 )]
 pub async fn update_subscriptions(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     Path(id): Path<String>,
     Json(req): Json<UpdateSubscriptionsRequest>,
 ) -> Result<Json<Vec<String>>, ApiError> {
-    let repo = state
-        .notification_repository
-        .ok_or_else(|| ApiError::service_unavailable("Notification repository not available"))?;
-    let service = state
-        .notification_service
-        .ok_or_else(|| ApiError::service_unavailable("Notification service not available"))?;
+    let repo = &state.notification_repository;
+    let service = &state.notification_service;
 
     // Verify channel exists
     repo.get_channel(&id)
@@ -657,12 +649,10 @@ pub async fn update_subscriptions(
     security(("bearer_auth" = []))
 )]
 pub async fn test_channel(
-    State(state): State<AppState>,
+    State(state): State<NotificationRouteState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let service = state
-        .notification_service
-        .ok_or_else(|| ApiError::service_unavailable("Notification service not available"))?;
+    let service = &state.notification_service;
 
     // The service requires the "key" which for DB channels is the ID
     service

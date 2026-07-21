@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{FromRef, Path, Query, State},
     routing::{delete, get, patch, post, put},
 };
 
@@ -20,6 +20,33 @@ use crate::api::server::AppState;
 use crate::domain::streamer::StreamerState;
 use crate::streamer::{StreamerMetadata, manager::StreamerUpdateParams};
 use crate::utils::json::{self, JsonContext};
+
+#[derive(Clone)]
+pub struct StreamerRouteState {
+    config_service: std::sync::Arc<
+        crate::config::ConfigService<
+            crate::database::repositories::config::SqlxConfigRepository,
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+    streamer_manager: std::sync::Arc<
+        crate::streamer::StreamerManager<
+            crate::database::repositories::streamer::SqlxStreamerRepository,
+        >,
+    >,
+    streamer_check_history_repository:
+        std::sync::Arc<dyn crate::database::repositories::StreamerCheckHistoryRepository>,
+}
+
+impl FromRef<AppState> for StreamerRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            config_service: state.config_service.clone(),
+            streamer_manager: state.streamer_manager.clone(),
+            streamer_check_history_repository: state.streamer_check_history_repository.clone(),
+        }
+    }
+}
 
 /// Create the streamers router.
 pub fn router() -> Router<AppState> {
@@ -117,7 +144,7 @@ fn metadata_to_response(metadata: &StreamerMetadata) -> StreamerResponse {
     security(("bearer_auth" = []))
 )]
 pub async fn create_streamer(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Json(request): Json<CreateStreamerRequest>,
 ) -> ApiResult<Json<StreamerResponse>> {
     // Validate URL format
@@ -126,10 +153,7 @@ pub async fn create_streamer(
     }
 
     // Get streamer manager from state
-    let streamer_manager = state
-        .streamer_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_manager = &state.streamer_manager;
 
     // Check URL uniqueness (case-insensitive)
     if streamer_manager.url_exists(&request.url) {
@@ -192,15 +216,12 @@ pub async fn create_streamer(
     security(("bearer_auth" = []))
 )]
 pub async fn list_streamers(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<StreamerFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<StreamerResponse>>> {
     // Get streamer manager from state
-    let streamer_manager = state
-        .streamer_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_manager = &state.streamer_manager;
 
     // Get all streamers from manager
     let mut streamers = streamer_manager.get_all();
@@ -367,24 +388,18 @@ pub async fn list_streamers(
     security(("bearer_auth" = []))
 )]
 pub async fn batch_streamers(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Json(request): Json<BatchStreamerRequest>,
 ) -> ApiResult<Json<BatchStreamerResponse>> {
     validate_batch_ids(&request.ids)?;
 
-    let streamer_manager = state
-        .streamer_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_manager = &state.streamer_manager;
 
     if let BatchStreamerAction::SetTemplate {
         template_id: Some(template_id),
     } = &request.action
     {
-        let config_service = state
-            .config_service
-            .as_ref()
-            .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+        let config_service = &state.config_service;
         config_service
             .get_template_config(template_id)
             .await
@@ -499,14 +514,11 @@ pub async fn batch_streamers(
     security(("bearer_auth" = []))
 )]
 pub async fn get_streamer(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<StreamerResponse>> {
     // Get streamer manager from state
-    let streamer_manager = state
-        .streamer_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_manager = &state.streamer_manager;
 
     // Get streamer by ID
     let metadata = streamer_manager
@@ -530,15 +542,12 @@ pub async fn get_streamer(
     security(("bearer_auth" = []))
 )]
 pub async fn update_streamer(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Path(id): Path<String>,
     Json(request): Json<UpdateStreamerRequest>,
 ) -> ApiResult<Json<StreamerResponse>> {
     // Get streamer manager from state
-    let streamer_manager = state
-        .streamer_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_manager = &state.streamer_manager;
 
     // Check URL uniqueness if URL is being changed (case-insensitive)
     if let Some(ref new_url) = request.url
@@ -608,14 +617,11 @@ pub async fn update_streamer(
     security(("bearer_auth" = []))
 )]
 pub async fn delete_streamer(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     // Get streamer manager from state
-    let streamer_manager = state
-        .streamer_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_manager = &state.streamer_manager;
 
     // Check if streamer exists first
     if streamer_manager.get_streamer(&id).is_none() {
@@ -649,14 +655,11 @@ pub async fn delete_streamer(
     security(("bearer_auth" = []))
 )]
 pub async fn clear_error(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<StreamerResponse>> {
     // Get streamer manager from state
-    let streamer_manager = state
-        .streamer_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_manager = &state.streamer_manager;
 
     // Check if streamer exists first
     if streamer_manager.get_streamer(&id).is_none() {
@@ -693,15 +696,12 @@ pub async fn clear_error(
     security(("bearer_auth" = []))
 )]
 pub async fn update_priority(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Path(id): Path<String>,
     Json(request): Json<UpdatePriorityRequest>,
 ) -> ApiResult<Json<StreamerResponse>> {
     // Get streamer manager from state
-    let streamer_manager = state
-        .streamer_manager
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Streamer service not available"))?;
+    let streamer_manager = &state.streamer_manager;
 
     // Check if streamer exists first
     if streamer_manager.get_streamer(&id).is_none() {
@@ -868,7 +868,7 @@ mod tests {
     security(("bearer_auth" = []))
 )]
 pub async fn extract_metadata(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Json(request): Json<ExtractMetadataRequest>,
 ) -> ApiResult<Json<ExtractMetadataResponse>> {
     use crate::domain::value_objects::StreamerUrl;
@@ -884,10 +884,7 @@ pub async fn extract_metadata(
     let channel_id = url.channel_id();
 
     // Get config service
-    let config_service = state
-        .config_service
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Config service not available"))?;
+    let config_service = &state.config_service;
 
     // Get all platform configs
     let all_configs = config_service
@@ -985,35 +982,30 @@ pub struct CheckHistoryParams {
     responses(
         (status = 200, description = "Recent check-history rows, oldest first", body = StreamerCheckHistoryResponse),
         (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse),
-        (status = 503, description = "Check-history service not available", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
 pub async fn get_check_history(
-    State(state): State<AppState>,
+    State(state): State<StreamerRouteState>,
     Path(id): Path<String>,
     Query(params): Query<CheckHistoryParams>,
 ) -> ApiResult<Json<StreamerCheckHistoryResponse>> {
     // Confirm the streamer exists so a 404 is unambiguous (vs. "no rows yet"
     // for a brand-new streamer, which we want to render as an empty strip).
-    if let Some(streamer_manager) = state.streamer_manager.as_ref()
-        && streamer_manager.get_streamer(&id).is_none()
-    {
+    if state.streamer_manager.get_streamer(&id).is_none() {
         return Err(ApiError::not_found(format!("Streamer {} not found", id)));
     }
-
-    // No repository wired (test harness path) → return an empty strip
-    // rather than 503. Matches the SessionEvent timeline route's contract.
-    let Some(repo) = state.streamer_check_history_repository.as_ref() else {
-        return Ok(Json(StreamerCheckHistoryResponse { items: Vec::new() }));
-    };
 
     let limit = params
         .limit
         .unwrap_or(CHECK_HISTORY_DEFAULT_LIMIT)
         .clamp(1, CHECK_HISTORY_MAX_LIMIT);
 
-    let rows = repo.list_recent(&id, limit).await.map_err(ApiError::from)?;
+    let rows = state
+        .streamer_check_history_repository
+        .list_recent(&id, limit)
+        .await
+        .map_err(ApiError::from)?;
 
     // Repository returns newest-first; reverse so the client renders
     // left → right = past → now without re-sorting.

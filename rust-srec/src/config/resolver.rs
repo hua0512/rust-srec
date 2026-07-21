@@ -12,13 +12,13 @@ use crate::credentials::{
 };
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::config::ConfigRepository;
-use crate::domain::config::ResolvedStreamerContext;
-use crate::domain::config::merged::MergedConfig;
 use crate::domain::streamer::Streamer;
 use crate::domain::{DanmuSamplingConfig, EventHooks, ProxyConfig, RetryPolicy};
 use crate::downloader::StreamSelectionConfig;
 use crate::utils::json::{self, JsonContext};
 use std::sync::Arc;
+
+use super::{MergedConfig, ResolvedStreamerContext};
 
 /// Service for resolving configuration for streamers.
 pub struct ConfigResolver<R: ConfigRepository> {

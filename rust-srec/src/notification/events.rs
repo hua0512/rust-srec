@@ -528,13 +528,13 @@ pub enum NotificationEvent {
         path: String,
         /// Stable string identifying the underlying io error kind. Maps to the
         /// `notification.output_path_inaccessible.description.<kind>` i18n key
-        /// via [`crate::downloader::engine::traits::IoErrorKindSer::as_str`].
+        /// via [`crate::downloader::IoErrorKindSer::as_str`].
         error_kind: String,
         timestamp: DateTime<Utc>,
     },
     /// GPU became unavailable to the container (caught by the GPU health
     /// monitor probing nvidia-smi). Most often the NVIDIA Container Toolkit
-    /// and cgroup v2 reconciliation pattern from issue #555: the host's
+    /// and cgroup v2 reconciliation pattern: the host's
     /// systemd reloads the device cgroup and silently drops the
     /// container's GPU access while `/dev/nvidia*` nodes remain visible.
     ///

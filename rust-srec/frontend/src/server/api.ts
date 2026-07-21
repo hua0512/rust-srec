@@ -5,9 +5,39 @@ import { useAppSession } from '../utils/session.server';
 
 export { BASE_URL };
 
-import { BackendApiError } from '../lib/api-error';
+import {
+  BackendApiError,
+  hasPasswordChangeRequiredCode,
+} from '../lib/api-error';
+import { isValidSession } from '../utils/session';
 
 export { BackendApiError };
+
+/**
+ * Parses the failure body and throws it as a BackendApiError. For the
+ * backend's blanket 403 while must_change_password is set, first persists
+ * mustChangePassword on the session so ensureValidToken and the /_authed
+ * beforeLoad guard route to /change-password exactly as loginFn does.
+ */
+async function throwBackendError(response: Response): Promise<never> {
+  let errorBody;
+  const errorText = await response.text();
+  try {
+    errorBody = JSON.parse(errorText);
+  } catch {
+    errorBody = errorText;
+  }
+
+  if (response.status === 403 && hasPasswordChangeRequiredCode(errorBody)) {
+    const session = await useAppSession();
+    const data = session.data;
+    if (isValidSession(data) && !data.mustChangePassword) {
+      await session.update({ ...data, mustChangePassword: true });
+    }
+  }
+
+  throw new BackendApiError(response.status, response.statusText, errorBody);
+}
 
 /**
  * Generic fetch wrapper for server-side calls to the backend.
@@ -91,18 +121,7 @@ export const fetchBackend = async <T = any>(
             `[API] Retry failed with status: ${retryResponse.status}`,
           );
           // If retry failed, throw error from retry response
-          let errorBody;
-          const errorText = await retryResponse.text();
-          try {
-            errorBody = JSON.parse(errorText);
-          } catch {
-            errorBody = errorText;
-          }
-          throw new BackendApiError(
-            retryResponse.status,
-            retryResponse.statusText,
-            errorBody,
-          );
+          await throwBackendError(retryResponse);
         } else {
           console.log(
             `[API] Refresh failed or returned no token for retry of ${endpoint}.`,
@@ -117,14 +136,7 @@ export const fetchBackend = async <T = any>(
       }
     }
 
-    let errorBody;
-    const errorText = await response.text();
-    try {
-      errorBody = JSON.parse(errorText);
-    } catch {
-      errorBody = errorText;
-    }
-    throw new BackendApiError(response.status, response.statusText, errorBody);
+    await throwBackendError(response);
   }
 
   // Handle empty responses
