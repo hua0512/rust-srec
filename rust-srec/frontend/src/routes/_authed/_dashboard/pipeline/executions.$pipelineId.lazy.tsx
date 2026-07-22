@@ -158,9 +158,9 @@ function PipelineExecutionPage() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.05),rgba(255,255,255,0))]" />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-6 py-8 pb-32">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-32">
         {/* Navigation & Header */}
-        <div className="flex flex-col gap-8 mb-12">
+        <div className="flex flex-col gap-6 sm:gap-8 mb-8 sm:mb-12">
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -189,21 +189,21 @@ function PipelineExecutionPage() {
               <div className="flex items-center gap-4">
                 <div
                   className={cn(
-                    'flex items-center justify-center w-16 h-16 rounded-2xl shadow-xl ring-1 ring-white/10 backdrop-blur-md bg-gradient-to-br',
+                    'flex shrink-0 items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl shadow-xl ring-1 ring-white/10 backdrop-blur-md bg-gradient-to-br',
                     statusConfig.gradient,
                   )}
                 >
                   <StatusIcon
                     className={cn(
-                      'h-8 w-8',
+                      'h-7 w-7 sm:h-8 sm:w-8',
                       statusConfig.textColor,
                       statusConfig.animate && 'animate-spin',
                     )}
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-3 mb-1">
-                    <h1 className="text-3xl font-bold tracking-tight">
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
                       <Trans>Pipeline Execution</Trans>
                     </h1>
                     <Badge
@@ -269,7 +269,7 @@ function PipelineExecutionPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-16"
+          className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-10 sm:mb-16"
         >
           <StatsCard
             icon={<Timer className="h-5 w-5 text-blue-400" />}
@@ -520,24 +520,24 @@ function StatsCard({
         {/* Subtle hover glow */}
         <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-700 pointer-events-none" />
 
-        <CardContent className="p-6 flex items-start justify-between relative z-10">
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mb-2">
+        <CardContent className="p-4 sm:p-6 flex items-start justify-between gap-3 relative z-10">
+          <div className="space-y-1 min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mb-1.5 sm:mb-2 truncate">
               {label}
             </p>
-            <h4 className="text-3xl font-extrabold tracking-tight text-foreground decoration-primary/20 decoration-2 transition-colors group-hover:text-primary/90">
+            <h4 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground decoration-primary/20 decoration-2 transition-colors group-hover:text-primary/90 break-words">
               {value}
             </h4>
             {subtext && (
               <div className="flex items-center gap-1.5 mt-2">
-                <div className="w-1 h-1 rounded-full bg-primary/40" />
-                <p className="text-[10px] font-medium text-muted-foreground/80 tracking-wide uppercase">
+                <div className="w-1 h-1 rounded-full bg-primary/40 shrink-0" />
+                <p className="text-[10px] font-medium text-muted-foreground/80 tracking-wide uppercase break-words">
                   {subtext}
                 </p>
               </div>
             )}
           </div>
-          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-background/80 to-background/20 ring-1 ring-white/10 shadow-xl group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500 bg-background/50">
+          <div className="shrink-0 p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-background/80 to-background/20 ring-1 ring-white/10 shadow-xl group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500 bg-background/50">
             {icon}
           </div>
         </CardContent>

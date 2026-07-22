@@ -5605,6 +5605,7 @@ msgstr "密码"
 msgid "Password / 2FA blocked"
 msgstr "密码/两步验证被阻止"
 
+#: src/lib/password-change-redirect.ts:39
 #: src/routes/_public/login.lazy.tsx:59
 msgid "Password change required"
 msgstr "请修改密码"
