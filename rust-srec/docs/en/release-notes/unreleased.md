@@ -27,3 +27,15 @@
 - **New setting for stream sources on your own network**
 
   To keep the built-in player's proxy from being pointed at private addresses, it now only reaches public stream sources by default. If you watch or record from a source on your own network — a LAN restreamer, a camera, or a device on your tailnet — turn on **Allow private stream proxy targets** under Network & System settings to permit it.
+
+- **Interrupted rclone move uploads now finish on retry**
+
+  When a move upload sent some files and then failed partway — after a network hiccup, for example — retries kept failing because the files that were already uploaded no longer existed locally, and retrying the job by hand hit the same error. Retries now pick up where the upload left off and only send the remaining files, and a retried job whose files were all uploaded earlier completes successfully.
+
+- **Interrupted local file moves also recover on retry**
+
+  The same applied to the copy/move pipeline step: if a move was interrupted after some files had already reached the destination folder, retrying the job reported those files as failed — or failed the whole job when every file had already been moved. Retries now recognize files that already arrived at the destination and complete normally. Moves across drives also copy to a temporary name first, so an interrupted move can no longer leave a half-written file under the final name.
+
+- **Cancelled or timed-out jobs no longer leave tools running in the background**
+
+  When a pipeline job was cancelled or ran past the job timeout, the external tool it had launched — an rclone transfer, ffmpeg processing such as remuxing, transcoding, subtitle burn-in or thumbnails, danmaku conversion, or a Telegram download — could keep running in the background even though the job was already marked failed. rclone's temporary file lists could also pile up in the recording folder. Stopping the job now also stops the tool and removes those temporary files.

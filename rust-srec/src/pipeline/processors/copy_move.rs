@@ -22,7 +22,7 @@ use tracing::{debug, error, info, warn};
 use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
 };
-use super::utils::create_log_entry;
+use super::utils::{create_log_entry, tmp_output_path};
 use crate::Result;
 use crate::utils::filename::{expand_placeholders, expand_placeholders_at};
 
@@ -132,6 +132,79 @@ impl CopyMoveProcessor {
             format!("{:.2} KB", bytes as f64 / KB as f64)
         } else {
             format!("{} bytes", bytes)
+        }
+    }
+
+    /// Copy `source` to `dest` through a `tmp_output_path` sibling, verify
+    /// the byte count, and rename the copy into place. A crash or
+    /// cancellation mid-copy therefore leaves only a `.tmp-*` file — never
+    /// a partial file under the final destination name, which would block a
+    /// retried move when `overwrite` is disabled.
+    ///
+    /// Returns the bytes copied, or a user-facing error message; the
+    /// temporary copy is removed on every error path.
+    async fn copy_via_tmp(
+        source: &Path,
+        dest: &Path,
+        source_size: u64,
+        config: &CopyMoveConfig,
+    ) -> std::result::Result<u64, String> {
+        let tmp_dest = tmp_output_path(dest);
+
+        let bytes_copied = match fs::copy(source, &tmp_dest).await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                Self::remove_tmp(&tmp_dest).await;
+                return Err(if Self::is_disk_full_error(&e) {
+                    format!(
+                        "Insufficient disk space while copying. Required: {}",
+                        Self::format_bytes(source_size)
+                    )
+                } else {
+                    format!("Failed to copy file: {}", e)
+                });
+            }
+        };
+
+        if config.verify_integrity && bytes_copied != source_size {
+            Self::remove_tmp(&tmp_dest).await;
+            return Err(format!(
+                "File integrity check failed. Source size: {}, Destination size: {}",
+                source_size, bytes_copied
+            ));
+        }
+
+        if let Err(e) = fs::rename(&tmp_dest, dest).await {
+            // Windows refuses to rename over an existing file; honor
+            // `overwrite` the same way the direct-rename move path does.
+            let renamed = if e.kind() == ErrorKind::AlreadyExists && config.overwrite {
+                match fs::remove_file(dest).await {
+                    Ok(()) => fs::rename(&tmp_dest, dest).await,
+                    Err(remove_err) => Err(remove_err),
+                }
+            } else {
+                Err(e)
+            };
+            if let Err(e) = renamed {
+                Self::remove_tmp(&tmp_dest).await;
+                return Err(format!("Failed to move copy into place: {}", e));
+            }
+        }
+
+        Ok(bytes_copied)
+    }
+
+    /// Best-effort removal of a temporary copy that will not be renamed
+    /// into place.
+    async fn remove_tmp(tmp_dest: &Path) {
+        if let Err(e) = fs::remove_file(tmp_dest).await
+            && e.kind() != ErrorKind::NotFound
+        {
+            warn!(
+                path = %tmp_dest.display(),
+                error = %e,
+                "Failed to remove temporary copy"
+            );
         }
     }
 }
@@ -344,6 +417,33 @@ impl Processor for CopyMoveProcessor {
             let source_size = match fs::metadata(source).await {
                 Ok(m) => m.len(),
                 Err(e) if e.kind() == ErrorKind::NotFound => {
+                    // A retried move may reference a source consumed by an
+                    // earlier attempt; a file already present at the
+                    // destination confirms that move completed. This must
+                    // run before the `overwrite` check below, which would
+                    // otherwise reject the destination file as a collision.
+                    if config.operation == CopyMoveOperation::Move
+                        && let Ok(dest_meta) = fs::metadata(&dest).await
+                        && dest_meta.is_file()
+                    {
+                        let msg = format!(
+                            "Source already moved to {}; treating as completed",
+                            dest.display()
+                        );
+                        info!("{}", msg);
+                        logs.push(create_log_entry(
+                            crate::pipeline::job_queue::LogLevel::Info,
+                            msg,
+                        ));
+                        let dest_path = dest.to_string_lossy().into_owned();
+                        total_input_size += dest_meta.len();
+                        total_output_size += dest_meta.len();
+                        outputs.push(dest_path.clone());
+                        items_produced.push(dest_path);
+                        succeeded_inputs.push(source_path.clone());
+                        continue;
+                    }
+
                     let error_msg = format!("Source file does not exist: {}", source_path);
                     error!("{}", error_msg);
                     logs.push(create_log_entry(
@@ -398,18 +498,9 @@ impl Processor for CopyMoveProcessor {
 
             let dest_size = match config.operation {
                 CopyMoveOperation::Copy => {
-                    let bytes_copied = match fs::copy(source, &dest).await {
+                    match Self::copy_via_tmp(source, &dest, source_size, &config).await {
                         Ok(bytes) => bytes,
-                        Err(e) => {
-                            let error_msg = if Self::is_disk_full_error(&e) {
-                                format!(
-                                    "Insufficient disk space while copying. Required: {}",
-                                    Self::format_bytes(source_size)
-                                )
-                            } else {
-                                format!("Failed to copy file: {}", e)
-                            };
-
+                        Err(error_msg) => {
                             error!("{}", error_msg);
                             logs.push(create_log_entry(
                                 crate::pipeline::job_queue::LogLevel::Error,
@@ -418,31 +509,7 @@ impl Processor for CopyMoveProcessor {
                             failed_inputs.push((source_path.clone(), error_msg));
                             continue;
                         }
-                    };
-
-                    // Verify integrity using size comparison (avoid extra metadata call)
-                    if config.verify_integrity && bytes_copied != source_size {
-                        if let Err(cleanup_error) = fs::remove_file(&dest).await {
-                            warn!(
-                                path = %dest.display(),
-                                error = %cleanup_error,
-                                "Failed to remove copy after integrity check failure"
-                            );
-                        }
-                        let error_msg = format!(
-                            "File integrity check failed. Source size: {}, Destination size: {}",
-                            source_size, bytes_copied
-                        );
-                        error!("{}", error_msg);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Error,
-                            &error_msg,
-                        ));
-                        failed_inputs.push((source_path.clone(), error_msg));
-                        continue;
                     }
-
-                    bytes_copied
                 }
                 CopyMoveOperation::Move => {
                     // First try a cheap rename (fast-path on the same filesystem).
@@ -478,49 +545,22 @@ impl Processor for CopyMoveProcessor {
                             source_size
                         }
                         Err(e) if matches!(e.raw_os_error(), Some(17) | Some(18)) => {
-                            // Cross-filesystem move: fallback to copy + verify + remove.
-                            let bytes_copied = match fs::copy(source, &dest).await {
-                                Ok(bytes) => bytes,
-                                Err(e) => {
-                                    let error_msg = if Self::is_disk_full_error(&e) {
-                                        format!(
-                                            "Insufficient disk space while copying. Required: {}",
-                                            Self::format_bytes(source_size)
-                                        )
-                                    } else {
-                                        format!("Failed to copy file: {}", e)
-                                    };
-
-                                    error!("{}", error_msg);
-                                    logs.push(create_log_entry(
-                                        crate::pipeline::job_queue::LogLevel::Error,
-                                        &error_msg,
-                                    ));
-                                    failed_inputs.push((source_path.clone(), error_msg));
-                                    continue;
-                                }
-                            };
-
-                            if config.verify_integrity && bytes_copied != source_size {
-                                if let Err(cleanup_error) = fs::remove_file(&dest).await {
-                                    warn!(
-                                        path = %dest.display(),
-                                        error = %cleanup_error,
-                                        "Failed to remove cross-filesystem copy after integrity check failure"
-                                    );
-                                }
-                                let error_msg = format!(
-                                    "File integrity check failed. Source size: {}, Destination size: {}",
-                                    source_size, bytes_copied
-                                );
-                                error!("{}", error_msg);
-                                logs.push(create_log_entry(
-                                    crate::pipeline::job_queue::LogLevel::Error,
-                                    &error_msg,
-                                ));
-                                failed_inputs.push((source_path.clone(), error_msg));
-                                continue;
-                            }
+                            // Cross-filesystem move: fall back to copy + verify,
+                            // then remove the source.
+                            let bytes_copied =
+                                match Self::copy_via_tmp(source, &dest, source_size, &config).await
+                                {
+                                    Ok(bytes) => bytes,
+                                    Err(error_msg) => {
+                                        error!("{}", error_msg);
+                                        logs.push(create_log_entry(
+                                            crate::pipeline::job_queue::LogLevel::Error,
+                                            &error_msg,
+                                        ));
+                                        failed_inputs.push((source_path.clone(), error_msg));
+                                        continue;
+                                    }
+                                };
 
                             if let Err(e) = fs::remove_file(source).await {
                                 let error_msg =
@@ -1218,5 +1258,161 @@ mod tests {
         assert_eq!(output.outputs.len(), 2);
         assert_eq!(output.succeeded_inputs.len(), 2);
         assert!(output.failed_inputs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_move_retry_treats_absent_source_with_destination_as_moved() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("moved.txt");
+        let dest_dir = temp_dir.path().join("output");
+        // Simulates a retried job: the earlier attempt already moved the
+        // source, so only the destination file exists.
+        fs::create_dir_all(&dest_dir).await.unwrap();
+        fs::write(dest_dir.join("moved.txt"), "content")
+            .await
+            .unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![source_path.to_string_lossy().to_string()],
+            config: Some(
+                serde_json::json!({
+                    "operation": "move",
+                    "destination": dest_dir.to_string_lossy()
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+
+        assert_eq!(
+            output.succeeded_inputs,
+            vec![source_path.to_string_lossy().to_string()]
+        );
+        assert!(output.failed_inputs.is_empty());
+        assert_eq!(
+            output.outputs,
+            vec![dest_dir.join("moved.txt").to_string_lossy().to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_move_fails_when_source_and_destination_are_both_missing() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("missing.txt");
+        let dest_dir = temp_dir.path().join("output");
+        fs::create_dir_all(&dest_dir).await.unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![source_path.to_string_lossy().to_string()],
+            config: Some(
+                serde_json::json!({
+                    "operation": "move",
+                    "destination": dest_dir.to_string_lossy()
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(err.to_string().contains("failed to copy/move"));
+    }
+
+    /// The absent-source resume only applies to moves: a copy never
+    /// consumes its source, so a missing source is a real error even when
+    /// a same-named destination file exists.
+    #[tokio::test]
+    async fn test_copy_missing_source_with_existing_destination_still_fails() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("missing.txt");
+        let dest_dir = temp_dir.path().join("output");
+        fs::create_dir_all(&dest_dir).await.unwrap();
+        fs::write(dest_dir.join("missing.txt"), "unrelated")
+            .await
+            .unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![source_path.to_string_lossy().to_string()],
+            config: Some(
+                serde_json::json!({
+                    "operation": "copy",
+                    "destination": dest_dir.to_string_lossy()
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let err = processor.process(&input, &ctx).await.unwrap_err();
+        assert!(err.to_string().contains("failed to copy/move"));
+    }
+
+    #[tokio::test]
+    async fn test_move_retry_resumes_mixed_batch() {
+        let temp_dir = TempDir::new().unwrap();
+        let already_moved = temp_dir.path().join("already-moved.txt");
+        let pending = temp_dir.path().join("pending.txt");
+        let dest_dir = temp_dir.path().join("output");
+        fs::create_dir_all(&dest_dir).await.unwrap();
+        fs::write(dest_dir.join("already-moved.txt"), "moved earlier")
+            .await
+            .unwrap();
+        fs::write(&pending, "still local").await.unwrap();
+
+        let processor = CopyMoveProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let input = ProcessorInput {
+            inputs: vec![
+                already_moved.to_string_lossy().to_string(),
+                pending.to_string_lossy().to_string(),
+            ],
+            config: Some(
+                serde_json::json!({
+                    "operation": "move",
+                    "destination": dest_dir.to_string_lossy()
+                })
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+
+        let output = processor.process(&input, &ctx).await.unwrap();
+
+        assert_eq!(output.succeeded_inputs.len(), 2);
+        assert!(output.failed_inputs.is_empty());
+        assert!(!pending.exists());
+        assert!(dest_dir.join("pending.txt").exists());
+        assert!(dest_dir.join("already-moved.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_copy_via_tmp_creates_destination_without_leaving_tmp() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.txt");
+        let dest = temp_dir.path().join("dest.txt");
+        fs::write(&source, "content").await.unwrap();
+
+        let bytes = CopyMoveProcessor::copy_via_tmp(&source, &dest, 7, &CopyMoveConfig::default())
+            .await
+            .unwrap();
+
+        assert_eq!(bytes, 7);
+        assert_eq!(fs::read_to_string(&dest).await.unwrap(), "content");
+        let mut entries = fs::read_dir(temp_dir.path()).await.unwrap();
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            assert!(
+                !entry.file_name().to_string_lossy().contains(".tmp-"),
+                "temporary copy left behind: {:?}",
+                entry.file_name()
+            );
+        }
     }
 }

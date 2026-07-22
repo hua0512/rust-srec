@@ -150,6 +150,26 @@ pub fn create_log_entry(level: LogLevel, message: impl Into<String>) -> JobLogEn
     JobLogEntry::new(level, message)
 }
 
+/// Child-process settings shared by every spawn helper in this module:
+/// hide the console window on Windows and kill the child when the owning
+/// future is dropped, because worker cancellation and job timeouts drop
+/// the processor future mid-run and the child must not outlive its job.
+fn configure_child_process(command: &mut Command) {
+    command.no_window();
+    command.kill_on_drop(true);
+}
+
+/// Build a sibling temp path for `final_path` (`<name>.tmp-<uuid>`).
+/// Writing to this path and renaming into place keeps a crashed or
+/// cancelled job from leaving a partial file under the final name.
+pub(super) fn tmp_output_path(final_path: &Path) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!(
+        "{}.tmp-{}",
+        final_path.display(),
+        uuid::Uuid::new_v4()
+    ))
+}
+
 /// Run a command and capture its output (stdout/stderr) as logs.
 /// This helper handles spawning the process, reading output streams asynchronously,
 /// and collecting them into a structured log format.
@@ -159,7 +179,7 @@ pub async fn run_command_with_logs(
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
-    command.no_window();
+    configure_child_process(command);
 
     // Ensure pipes are set up
     command.stdout(Stdio::piped());
@@ -473,7 +493,7 @@ pub async fn run_ffmpeg_with_progress(
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
-    command.no_window();
+    configure_child_process(command);
 
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -590,7 +610,7 @@ pub async fn run_rclone_with_progress(
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
 
-    command.no_window();
+    configure_child_process(command);
 
     command.stdout(Stdio::null());
     command.stderr(Stdio::piped());
