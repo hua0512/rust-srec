@@ -4,6 +4,10 @@
 
 ### Fixes
 
+- **Deleting a pipeline now updates the job statistics**
+
+  Deleting a pipeline from the Pipeline Jobs page removed the pipeline itself but quietly left its jobs behind, so the Pending, Completed, and Failed counters at the top of the page never went down — deleted failed pipelines kept counting toward the Failed number forever. Deleting a pipeline now also removes its jobs, and the counters reflect it immediately. This also applies to pipelines created before the upgrade, and job records that earlier deletions had already left behind are cleaned up automatically in the background.
+
 - **Pipeline execution details display correctly on mobile**
 
   On narrow screens, the summary cards on a pipeline execution's detail page could overlap their icons and cut off long values like the progress percentage, and the card icons sat at uneven heights. The cards now adapt to smaller screens and their icons line up consistently, so progress, step counts, and start time stay readable.
