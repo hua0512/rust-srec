@@ -568,6 +568,10 @@ impl DagScheduler {
         );
         job_db.config = config;
         job_db.dag_step_execution_id = Some(step_execution_id.to_string());
+        // delete_jobs_by_pipeline / cancel_jobs_by_pipeline and the JobFilters
+        // pipeline_id filter all match on this column, so it must be set on the
+        // inserted row, not only on the in-memory Job built below.
+        job_db.pipeline_id = Some(dag_id.to_string());
 
         // Build the in-memory Job before persisting so job_state_json is the
         // single source of the state shape (its inverse parse_job_state is
@@ -1212,6 +1216,57 @@ mod tests {
                 .and_then(|value| value.as_i64()),
             Some(session_start.timestamp_millis())
         );
+    }
+
+    /// delete_dag removes job rows via JobRepository::delete_jobs_by_pipeline,
+    /// which matches on the job.pipeline_id column — so create_step_job must
+    /// persist pipeline_id on the inserted row, not just on the in-memory Job.
+    #[tokio::test]
+    async fn test_delete_dag_deletes_job_rows() {
+        let pool = setup_test_pool().await;
+        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
+            pool.clone(),
+            pool.clone(),
+        ));
+        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo, job_repo.clone());
+        let dag_def = DagPipelineDefinition::new(
+            "delete removes jobs",
+            vec![DagStep {
+                id: "A".to_string(),
+                step: PipelineStep::inline("noop", serde_json::json!({})),
+                depends_on: vec![],
+            }],
+        );
+
+        let created = scheduler
+            .create_dag_pipeline(
+                dag_def,
+                &["/input.flv".to_string()],
+                DagRunContext::default(),
+            )
+            .await
+            .unwrap();
+
+        let root_job = job_repo.get_job(&created.root_job_ids[0]).await.unwrap();
+        assert_eq!(
+            root_job.pipeline_id.as_deref(),
+            Some(created.dag_id.as_str())
+        );
+
+        job_repo
+            .mark_job_failed(&root_job.id, "boom")
+            .await
+            .unwrap();
+
+        scheduler.delete_dag(&created.dag_id).await.unwrap();
+
+        assert!(job_repo.get_job(&root_job.id).await.is_err());
+        let counts = job_repo.get_job_counts_by_status().await.unwrap();
+        assert_eq!(counts.failed, 0);
     }
 
     /// The retry fan-out path (reset_dag_for_retry -> enqueue_now_ready_steps)
