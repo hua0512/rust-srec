@@ -6,7 +6,7 @@
 
 - **Pipeline execution details display correctly on mobile**
 
-  On narrow screens, the summary cards on a pipeline execution's detail page could overlap their icons and cut off long values like the progress percentage. The cards now adapt to smaller screens so progress, step counts, and start time stay readable.
+  On narrow screens, the summary cards on a pipeline execution's detail page could overlap their icons and cut off long values like the progress percentage, and the card icons sat at uneven heights. The cards now adapt to smaller screens and their icons line up consistently, so progress, step counts, and start time stay readable.
 
 - **Theme changes apply immediately again**
 

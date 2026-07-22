@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { msg, t, plural } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -292,8 +292,12 @@ function PipelineExecutionPage() {
           <StatsCard
             icon={<Calendar className="h-5 w-5 text-orange-400" />}
             label={i18n._(msg`Started`)}
-            value={i18n.date(dag.created_at, { timeStyle: 'short' })}
-            subtext={i18n.date(dag.created_at, { dateStyle: 'medium' })}
+            value={new Intl.DateTimeFormat(i18n.locale, {
+              timeStyle: 'short',
+            }).format(dag.created_at)}
+            subtext={new Intl.DateTimeFormat(i18n.locale, {
+              dateStyle: 'medium',
+            }).format(dag.created_at)}
             delay={0.4}
           />
         </motion.div>
@@ -461,9 +465,9 @@ function StepCard({
                   {step.outputs.length}
                 </span>
                 <span className="text-xs opacity-60 font-medium">
-                  {t(
-                    i18n,
-                  )`${plural(step.outputs.length, { one: 'file', other: 'files' })}`}
+                  {i18n._(
+                    msg`${plural(step.outputs.length, { one: 'file', other: 'files' })}`,
+                  )}
                 </span>
               </div>
             </div>
@@ -516,7 +520,13 @@ function StatsCard({
       }}
       className="h-full group"
     >
-      <Card className="relative overflow-hidden bg-card/30 backdrop-blur-xl border-border/40 hover:bg-card/50 hover:border-primary/20 transition-all duration-500 h-full flex flex-col justify-center">
+      {/*
+        Content is top-aligned (no justify-center): the KPI grid stretches every
+        card to the tallest sibling, and only the `Started` card passes `subtext`.
+        Centering each card's content independently would drop the shorter cards'
+        icons below the `Started` icon; top-aligning keeps every icon on one edge.
+      */}
+      <Card className="relative overflow-hidden bg-card/30 backdrop-blur-xl border-border/40 hover:bg-card/50 hover:border-primary/20 transition-all duration-500 h-full flex flex-col">
         {/* Subtle hover glow */}
         <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 blur-2xl transition-opacity duration-700 pointer-events-none" />
 
