@@ -141,6 +141,13 @@ pub struct GlobalConfigDbModel {
     /// before each tick, so changes apply within at most one previous
     /// interval and never require a restart.
     pub gpu_health_probe_interval_secs: i64,
+
+    /// Whether the stream proxy may fetch targets on private networks.
+    /// When false, `validate_target_url` in the stream-proxy route rejects
+    /// localhost, non-public IP literals, and hostnames resolving to any
+    /// non-public address. Runtime-mutable; `stream_proxy_get` reads it per
+    /// request, so no restart is required.
+    pub stream_proxy_allow_private_targets: bool,
 }
 
 impl Default for GlobalConfigDbModel {
@@ -178,6 +185,7 @@ impl Default for GlobalConfigDbModel {
             pipeline_execute_timeout_secs: 3600,
             queue_freshness_threshold_ms: 60_000, // 1 minute
             gpu_health_probe_interval_secs: 30,   // matches DEFAULT_GATE_COOLDOWN_SECS
+            stream_proxy_allow_private_targets: false,
         }
     }
 }

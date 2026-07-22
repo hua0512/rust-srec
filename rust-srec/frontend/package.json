@@ -72,6 +72,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
+    "undici": "^8.8.0",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
