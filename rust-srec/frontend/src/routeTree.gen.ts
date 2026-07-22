@@ -19,19 +19,23 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as PublicLoginRouteImport } from './routes/_public/login'
 import { Route as AuthedDashboardRouteImport } from './routes/_authed/_dashboard'
 import { Route as AuthedDashboardConfigRouteRouteImport } from './routes/_authed/_dashboard/config/route'
+import { Route as AuthedDashboardStreamersIndexRouteImport } from './routes/_authed/_dashboard/streamers/index'
 import { Route as AuthedDashboardSessionsIndexRouteImport } from './routes/_authed/_dashboard/sessions/index'
 import { Route as AuthedDashboardPlayerIndexRouteImport } from './routes/_authed/_dashboard/player/index'
 import { Route as AuthedDashboardPipelineIndexRouteImport } from './routes/_authed/_dashboard/pipeline/index'
+import { Route as AuthedDashboardPipelineOutputsRouteImport } from './routes/_authed/_dashboard/pipeline/outputs'
+import { Route as AuthedDashboardNotificationsEventsRouteImport } from './routes/_authed/_dashboard/notifications/events'
+import { Route as AuthedDashboardPipelineWorkflowsIndexRouteImport } from './routes/_authed/_dashboard/pipeline/workflows/index'
+import { Route as AuthedDashboardPipelinePresetsIndexRouteImport } from './routes/_authed/_dashboard/pipeline/presets/index'
 import { Route as AuthedDashboardPipelineJobsIndexRouteImport } from './routes/_authed/_dashboard/pipeline/jobs/index'
+import { Route as AuthedDashboardConfigTemplatesIndexRouteImport } from './routes/_authed/_dashboard/config/templates/index'
+import { Route as AuthedDashboardConfigPlatformsIndexRouteImport } from './routes/_authed/_dashboard/config/platforms/index'
 
 const AuthedChangePasswordLazyRouteImport = createFileRoute(
   '/_authed/change-password',
 )()
 const AuthedDashboardDashboardLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/dashboard',
-)()
-const AuthedDashboardStreamersIndexLazyRouteImport = createFileRoute(
-  '/_authed/_dashboard/streamers/',
 )()
 const AuthedDashboardNotificationsIndexLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/notifications/',
@@ -44,12 +48,6 @@ const AuthedDashboardStreamersNewLazyRouteImport = createFileRoute(
 )()
 const AuthedDashboardSessionsSessionIdLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/sessions/$sessionId',
-)()
-const AuthedDashboardPipelineOutputsLazyRouteImport = createFileRoute(
-  '/_authed/_dashboard/pipeline/outputs',
-)()
-const AuthedDashboardNotificationsEventsLazyRouteImport = createFileRoute(
-  '/_authed/_dashboard/notifications/events',
 )()
 const AuthedDashboardConfigThemeLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/config/theme',
@@ -65,18 +63,6 @@ const AuthedDashboardConfigGlobalLazyRouteImport = createFileRoute(
 )()
 const AuthedDashboardConfigBackupLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/config/backup',
-)()
-const AuthedDashboardPipelineWorkflowsIndexLazyRouteImport = createFileRoute(
-  '/_authed/_dashboard/pipeline/workflows/',
-)()
-const AuthedDashboardPipelinePresetsIndexLazyRouteImport = createFileRoute(
-  '/_authed/_dashboard/pipeline/presets/',
-)()
-const AuthedDashboardConfigTemplatesIndexLazyRouteImport = createFileRoute(
-  '/_authed/_dashboard/config/templates/',
-)()
-const AuthedDashboardConfigPlatformsIndexLazyRouteImport = createFileRoute(
-  '/_authed/_dashboard/config/platforms/',
 )()
 const AuthedDashboardConfigEnginesIndexLazyRouteImport = createFileRoute(
   '/_authed/_dashboard/config/engines/',
@@ -177,16 +163,6 @@ const AuthedDashboardConfigRouteRoute =
       (d) => d.Route,
     ),
   )
-const AuthedDashboardStreamersIndexLazyRoute =
-  AuthedDashboardStreamersIndexLazyRouteImport.update({
-    id: '/streamers/',
-    path: '/streamers/',
-    getParentRoute: () => AuthedDashboardRoute,
-  } as any).lazy(() =>
-    import('./routes/_authed/_dashboard/streamers/index.lazy').then(
-      (d) => d.Route,
-    ),
-  )
 const AuthedDashboardNotificationsIndexLazyRoute =
   AuthedDashboardNotificationsIndexLazyRouteImport.update({
     id: '/notifications/',
@@ -194,6 +170,16 @@ const AuthedDashboardNotificationsIndexLazyRoute =
     getParentRoute: () => AuthedDashboardRoute,
   } as any).lazy(() =>
     import('./routes/_authed/_dashboard/notifications/index.lazy').then(
+      (d) => d.Route,
+    ),
+  )
+const AuthedDashboardStreamersIndexRoute =
+  AuthedDashboardStreamersIndexRouteImport.update({
+    id: '/streamers/',
+    path: '/streamers/',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any).lazy(() =>
+    import('./routes/_authed/_dashboard/streamers/index.lazy').then(
       (d) => d.Route,
     ),
   )
@@ -253,26 +239,6 @@ const AuthedDashboardSessionsSessionIdLazyRoute =
       (d) => d.Route,
     ),
   )
-const AuthedDashboardPipelineOutputsLazyRoute =
-  AuthedDashboardPipelineOutputsLazyRouteImport.update({
-    id: '/pipeline/outputs',
-    path: '/pipeline/outputs',
-    getParentRoute: () => AuthedDashboardRoute,
-  } as any).lazy(() =>
-    import('./routes/_authed/_dashboard/pipeline/outputs.lazy').then(
-      (d) => d.Route,
-    ),
-  )
-const AuthedDashboardNotificationsEventsLazyRoute =
-  AuthedDashboardNotificationsEventsLazyRouteImport.update({
-    id: '/notifications/events',
-    path: '/notifications/events',
-    getParentRoute: () => AuthedDashboardRoute,
-  } as any).lazy(() =>
-    import('./routes/_authed/_dashboard/notifications/events.lazy').then(
-      (d) => d.Route,
-    ),
-  )
 const AuthedDashboardConfigThemeLazyRoute =
   AuthedDashboardConfigThemeLazyRouteImport.update({
     id: '/theme',
@@ -323,43 +289,23 @@ const AuthedDashboardConfigBackupLazyRoute =
       (d) => d.Route,
     ),
   )
-const AuthedDashboardPipelineWorkflowsIndexLazyRoute =
-  AuthedDashboardPipelineWorkflowsIndexLazyRouteImport.update({
-    id: '/pipeline/workflows/',
-    path: '/pipeline/workflows/',
+const AuthedDashboardPipelineOutputsRoute =
+  AuthedDashboardPipelineOutputsRouteImport.update({
+    id: '/pipeline/outputs',
+    path: '/pipeline/outputs',
     getParentRoute: () => AuthedDashboardRoute,
   } as any).lazy(() =>
-    import('./routes/_authed/_dashboard/pipeline/workflows/index.lazy').then(
+    import('./routes/_authed/_dashboard/pipeline/outputs.lazy').then(
       (d) => d.Route,
     ),
   )
-const AuthedDashboardPipelinePresetsIndexLazyRoute =
-  AuthedDashboardPipelinePresetsIndexLazyRouteImport.update({
-    id: '/pipeline/presets/',
-    path: '/pipeline/presets/',
+const AuthedDashboardNotificationsEventsRoute =
+  AuthedDashboardNotificationsEventsRouteImport.update({
+    id: '/notifications/events',
+    path: '/notifications/events',
     getParentRoute: () => AuthedDashboardRoute,
   } as any).lazy(() =>
-    import('./routes/_authed/_dashboard/pipeline/presets/index.lazy').then(
-      (d) => d.Route,
-    ),
-  )
-const AuthedDashboardConfigTemplatesIndexLazyRoute =
-  AuthedDashboardConfigTemplatesIndexLazyRouteImport.update({
-    id: '/templates/',
-    path: '/templates/',
-    getParentRoute: () => AuthedDashboardConfigRouteRoute,
-  } as any).lazy(() =>
-    import('./routes/_authed/_dashboard/config/templates/index.lazy').then(
-      (d) => d.Route,
-    ),
-  )
-const AuthedDashboardConfigPlatformsIndexLazyRoute =
-  AuthedDashboardConfigPlatformsIndexLazyRouteImport.update({
-    id: '/platforms/',
-    path: '/platforms/',
-    getParentRoute: () => AuthedDashboardConfigRouteRoute,
-  } as any).lazy(() =>
-    import('./routes/_authed/_dashboard/config/platforms/index.lazy').then(
+    import('./routes/_authed/_dashboard/notifications/events.lazy').then(
       (d) => d.Route,
     ),
   )
@@ -373,6 +319,26 @@ const AuthedDashboardConfigEnginesIndexLazyRoute =
       (d) => d.Route,
     ),
   )
+const AuthedDashboardPipelineWorkflowsIndexRoute =
+  AuthedDashboardPipelineWorkflowsIndexRouteImport.update({
+    id: '/pipeline/workflows/',
+    path: '/pipeline/workflows/',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any).lazy(() =>
+    import('./routes/_authed/_dashboard/pipeline/workflows/index.lazy').then(
+      (d) => d.Route,
+    ),
+  )
+const AuthedDashboardPipelinePresetsIndexRoute =
+  AuthedDashboardPipelinePresetsIndexRouteImport.update({
+    id: '/pipeline/presets/',
+    path: '/pipeline/presets/',
+    getParentRoute: () => AuthedDashboardRoute,
+  } as any).lazy(() =>
+    import('./routes/_authed/_dashboard/pipeline/presets/index.lazy').then(
+      (d) => d.Route,
+    ),
+  )
 const AuthedDashboardPipelineJobsIndexRoute =
   AuthedDashboardPipelineJobsIndexRouteImport.update({
     id: '/pipeline/jobs/',
@@ -380,6 +346,26 @@ const AuthedDashboardPipelineJobsIndexRoute =
     getParentRoute: () => AuthedDashboardRoute,
   } as any).lazy(() =>
     import('./routes/_authed/_dashboard/pipeline/jobs/index.lazy').then(
+      (d) => d.Route,
+    ),
+  )
+const AuthedDashboardConfigTemplatesIndexRoute =
+  AuthedDashboardConfigTemplatesIndexRouteImport.update({
+    id: '/templates/',
+    path: '/templates/',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authed/_dashboard/config/templates/index.lazy').then(
+      (d) => d.Route,
+    ),
+  )
+const AuthedDashboardConfigPlatformsIndexRoute =
+  AuthedDashboardConfigPlatformsIndexRouteImport.update({
+    id: '/platforms/',
+    path: '/platforms/',
+    getParentRoute: () => AuthedDashboardConfigRouteRoute,
+  } as any).lazy(() =>
+    import('./routes/_authed/_dashboard/config/platforms/index.lazy').then(
       (d) => d.Route,
     ),
   )
@@ -522,21 +508,21 @@ export interface FileRoutesByFullPath {
   '/change-password': typeof AuthedChangePasswordLazyRoute
   '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
   '/dashboard': typeof AuthedDashboardDashboardLazyRoute
+  '/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
+  '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/config/backup': typeof AuthedDashboardConfigBackupLazyRoute
   '/config/global': typeof AuthedDashboardConfigGlobalLazyRoute
   '/config/language': typeof AuthedDashboardConfigLanguageLazyRoute
   '/config/logging': typeof AuthedDashboardConfigLoggingLazyRoute
   '/config/theme': typeof AuthedDashboardConfigThemeLazyRoute
-  '/notifications/events': typeof AuthedDashboardNotificationsEventsLazyRoute
-  '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsLazyRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdLazyRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewLazyRoute
   '/system/health': typeof AuthedDashboardSystemHealthLazyRoute
   '/pipeline/': typeof AuthedDashboardPipelineIndexRoute
   '/player/': typeof AuthedDashboardPlayerIndexRoute
   '/sessions/': typeof AuthedDashboardSessionsIndexRoute
+  '/streamers/': typeof AuthedDashboardStreamersIndexRoute
   '/notifications/': typeof AuthedDashboardNotificationsIndexLazyRoute
-  '/streamers/': typeof AuthedDashboardStreamersIndexLazyRoute
   '/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdLazyRoute
   '/config/engines/create': typeof AuthedDashboardConfigEnginesCreateLazyRoute
   '/config/platforms/$platformId': typeof AuthedDashboardConfigPlatformsPlatformIdLazyRoute
@@ -550,12 +536,12 @@ export interface FileRoutesByFullPath {
   '/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdLazyRoute
   '/pipeline/workflows/create': typeof AuthedDashboardPipelineWorkflowsCreateLazyRoute
   '/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditLazyRoute
+  '/config/platforms/': typeof AuthedDashboardConfigPlatformsIndexRoute
+  '/config/templates/': typeof AuthedDashboardConfigTemplatesIndexRoute
   '/pipeline/jobs/': typeof AuthedDashboardPipelineJobsIndexRoute
+  '/pipeline/presets/': typeof AuthedDashboardPipelinePresetsIndexRoute
+  '/pipeline/workflows/': typeof AuthedDashboardPipelineWorkflowsIndexRoute
   '/config/engines/': typeof AuthedDashboardConfigEnginesIndexLazyRoute
-  '/config/platforms/': typeof AuthedDashboardConfigPlatformsIndexLazyRoute
-  '/config/templates/': typeof AuthedDashboardConfigTemplatesIndexLazyRoute
-  '/pipeline/presets/': typeof AuthedDashboardPipelinePresetsIndexLazyRoute
-  '/pipeline/workflows/': typeof AuthedDashboardPipelineWorkflowsIndexLazyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -565,21 +551,21 @@ export interface FileRoutesByTo {
   '/change-password': typeof AuthedChangePasswordLazyRoute
   '/config': typeof AuthedDashboardConfigRouteRouteWithChildren
   '/dashboard': typeof AuthedDashboardDashboardLazyRoute
+  '/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
+  '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/config/backup': typeof AuthedDashboardConfigBackupLazyRoute
   '/config/global': typeof AuthedDashboardConfigGlobalLazyRoute
   '/config/language': typeof AuthedDashboardConfigLanguageLazyRoute
   '/config/logging': typeof AuthedDashboardConfigLoggingLazyRoute
   '/config/theme': typeof AuthedDashboardConfigThemeLazyRoute
-  '/notifications/events': typeof AuthedDashboardNotificationsEventsLazyRoute
-  '/pipeline/outputs': typeof AuthedDashboardPipelineOutputsLazyRoute
   '/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdLazyRoute
   '/streamers/new': typeof AuthedDashboardStreamersNewLazyRoute
   '/system/health': typeof AuthedDashboardSystemHealthLazyRoute
   '/pipeline': typeof AuthedDashboardPipelineIndexRoute
   '/player': typeof AuthedDashboardPlayerIndexRoute
   '/sessions': typeof AuthedDashboardSessionsIndexRoute
+  '/streamers': typeof AuthedDashboardStreamersIndexRoute
   '/notifications': typeof AuthedDashboardNotificationsIndexLazyRoute
-  '/streamers': typeof AuthedDashboardStreamersIndexLazyRoute
   '/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdLazyRoute
   '/config/engines/create': typeof AuthedDashboardConfigEnginesCreateLazyRoute
   '/config/platforms/$platformId': typeof AuthedDashboardConfigPlatformsPlatformIdLazyRoute
@@ -593,12 +579,12 @@ export interface FileRoutesByTo {
   '/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdLazyRoute
   '/pipeline/workflows/create': typeof AuthedDashboardPipelineWorkflowsCreateLazyRoute
   '/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditLazyRoute
+  '/config/platforms': typeof AuthedDashboardConfigPlatformsIndexRoute
+  '/config/templates': typeof AuthedDashboardConfigTemplatesIndexRoute
   '/pipeline/jobs': typeof AuthedDashboardPipelineJobsIndexRoute
+  '/pipeline/presets': typeof AuthedDashboardPipelinePresetsIndexRoute
+  '/pipeline/workflows': typeof AuthedDashboardPipelineWorkflowsIndexRoute
   '/config/engines': typeof AuthedDashboardConfigEnginesIndexLazyRoute
-  '/config/platforms': typeof AuthedDashboardConfigPlatformsIndexLazyRoute
-  '/config/templates': typeof AuthedDashboardConfigTemplatesIndexLazyRoute
-  '/pipeline/presets': typeof AuthedDashboardPipelinePresetsIndexLazyRoute
-  '/pipeline/workflows': typeof AuthedDashboardPipelineWorkflowsIndexLazyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -612,21 +598,21 @@ export interface FileRoutesById {
   '/_authed/change-password': typeof AuthedChangePasswordLazyRoute
   '/_authed/_dashboard/config': typeof AuthedDashboardConfigRouteRouteWithChildren
   '/_authed/_dashboard/dashboard': typeof AuthedDashboardDashboardLazyRoute
+  '/_authed/_dashboard/notifications/events': typeof AuthedDashboardNotificationsEventsRoute
+  '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsRoute
   '/_authed/_dashboard/config/backup': typeof AuthedDashboardConfigBackupLazyRoute
   '/_authed/_dashboard/config/global': typeof AuthedDashboardConfigGlobalLazyRoute
   '/_authed/_dashboard/config/language': typeof AuthedDashboardConfigLanguageLazyRoute
   '/_authed/_dashboard/config/logging': typeof AuthedDashboardConfigLoggingLazyRoute
   '/_authed/_dashboard/config/theme': typeof AuthedDashboardConfigThemeLazyRoute
-  '/_authed/_dashboard/notifications/events': typeof AuthedDashboardNotificationsEventsLazyRoute
-  '/_authed/_dashboard/pipeline/outputs': typeof AuthedDashboardPipelineOutputsLazyRoute
   '/_authed/_dashboard/sessions/$sessionId': typeof AuthedDashboardSessionsSessionIdLazyRoute
   '/_authed/_dashboard/streamers/new': typeof AuthedDashboardStreamersNewLazyRoute
   '/_authed/_dashboard/system/health': typeof AuthedDashboardSystemHealthLazyRoute
   '/_authed/_dashboard/pipeline/': typeof AuthedDashboardPipelineIndexRoute
   '/_authed/_dashboard/player/': typeof AuthedDashboardPlayerIndexRoute
   '/_authed/_dashboard/sessions/': typeof AuthedDashboardSessionsIndexRoute
+  '/_authed/_dashboard/streamers/': typeof AuthedDashboardStreamersIndexRoute
   '/_authed/_dashboard/notifications/': typeof AuthedDashboardNotificationsIndexLazyRoute
-  '/_authed/_dashboard/streamers/': typeof AuthedDashboardStreamersIndexLazyRoute
   '/_authed/_dashboard/config/engines/$engineId': typeof AuthedDashboardConfigEnginesEngineIdLazyRoute
   '/_authed/_dashboard/config/engines/create': typeof AuthedDashboardConfigEnginesCreateLazyRoute
   '/_authed/_dashboard/config/platforms/$platformId': typeof AuthedDashboardConfigPlatformsPlatformIdLazyRoute
@@ -640,12 +626,12 @@ export interface FileRoutesById {
   '/_authed/_dashboard/pipeline/workflows/$workflowId': typeof AuthedDashboardPipelineWorkflowsWorkflowIdLazyRoute
   '/_authed/_dashboard/pipeline/workflows/create': typeof AuthedDashboardPipelineWorkflowsCreateLazyRoute
   '/_authed/_dashboard/streamers/$id/edit': typeof AuthedDashboardStreamersIdEditLazyRoute
+  '/_authed/_dashboard/config/platforms/': typeof AuthedDashboardConfigPlatformsIndexRoute
+  '/_authed/_dashboard/config/templates/': typeof AuthedDashboardConfigTemplatesIndexRoute
   '/_authed/_dashboard/pipeline/jobs/': typeof AuthedDashboardPipelineJobsIndexRoute
+  '/_authed/_dashboard/pipeline/presets/': typeof AuthedDashboardPipelinePresetsIndexRoute
+  '/_authed/_dashboard/pipeline/workflows/': typeof AuthedDashboardPipelineWorkflowsIndexRoute
   '/_authed/_dashboard/config/engines/': typeof AuthedDashboardConfigEnginesIndexLazyRoute
-  '/_authed/_dashboard/config/platforms/': typeof AuthedDashboardConfigPlatformsIndexLazyRoute
-  '/_authed/_dashboard/config/templates/': typeof AuthedDashboardConfigTemplatesIndexLazyRoute
-  '/_authed/_dashboard/pipeline/presets/': typeof AuthedDashboardPipelinePresetsIndexLazyRoute
-  '/_authed/_dashboard/pipeline/workflows/': typeof AuthedDashboardPipelineWorkflowsIndexLazyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -657,21 +643,21 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/config'
     | '/dashboard'
+    | '/notifications/events'
+    | '/pipeline/outputs'
     | '/config/backup'
     | '/config/global'
     | '/config/language'
     | '/config/logging'
     | '/config/theme'
-    | '/notifications/events'
-    | '/pipeline/outputs'
     | '/sessions/$sessionId'
     | '/streamers/new'
     | '/system/health'
     | '/pipeline/'
     | '/player/'
     | '/sessions/'
-    | '/notifications/'
     | '/streamers/'
+    | '/notifications/'
     | '/config/engines/$engineId'
     | '/config/engines/create'
     | '/config/platforms/$platformId'
@@ -685,12 +671,12 @@ export interface FileRouteTypes {
     | '/pipeline/workflows/$workflowId'
     | '/pipeline/workflows/create'
     | '/streamers/$id/edit'
-    | '/pipeline/jobs/'
-    | '/config/engines/'
     | '/config/platforms/'
     | '/config/templates/'
+    | '/pipeline/jobs/'
     | '/pipeline/presets/'
     | '/pipeline/workflows/'
+    | '/config/engines/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -700,21 +686,21 @@ export interface FileRouteTypes {
     | '/change-password'
     | '/config'
     | '/dashboard'
+    | '/notifications/events'
+    | '/pipeline/outputs'
     | '/config/backup'
     | '/config/global'
     | '/config/language'
     | '/config/logging'
     | '/config/theme'
-    | '/notifications/events'
-    | '/pipeline/outputs'
     | '/sessions/$sessionId'
     | '/streamers/new'
     | '/system/health'
     | '/pipeline'
     | '/player'
     | '/sessions'
-    | '/notifications'
     | '/streamers'
+    | '/notifications'
     | '/config/engines/$engineId'
     | '/config/engines/create'
     | '/config/platforms/$platformId'
@@ -728,12 +714,12 @@ export interface FileRouteTypes {
     | '/pipeline/workflows/$workflowId'
     | '/pipeline/workflows/create'
     | '/streamers/$id/edit'
-    | '/pipeline/jobs'
-    | '/config/engines'
     | '/config/platforms'
     | '/config/templates'
+    | '/pipeline/jobs'
     | '/pipeline/presets'
     | '/pipeline/workflows'
+    | '/config/engines'
   id:
     | '__root__'
     | '/'
@@ -746,21 +732,21 @@ export interface FileRouteTypes {
     | '/_authed/change-password'
     | '/_authed/_dashboard/config'
     | '/_authed/_dashboard/dashboard'
+    | '/_authed/_dashboard/notifications/events'
+    | '/_authed/_dashboard/pipeline/outputs'
     | '/_authed/_dashboard/config/backup'
     | '/_authed/_dashboard/config/global'
     | '/_authed/_dashboard/config/language'
     | '/_authed/_dashboard/config/logging'
     | '/_authed/_dashboard/config/theme'
-    | '/_authed/_dashboard/notifications/events'
-    | '/_authed/_dashboard/pipeline/outputs'
     | '/_authed/_dashboard/sessions/$sessionId'
     | '/_authed/_dashboard/streamers/new'
     | '/_authed/_dashboard/system/health'
     | '/_authed/_dashboard/pipeline/'
     | '/_authed/_dashboard/player/'
     | '/_authed/_dashboard/sessions/'
-    | '/_authed/_dashboard/notifications/'
     | '/_authed/_dashboard/streamers/'
+    | '/_authed/_dashboard/notifications/'
     | '/_authed/_dashboard/config/engines/$engineId'
     | '/_authed/_dashboard/config/engines/create'
     | '/_authed/_dashboard/config/platforms/$platformId'
@@ -774,12 +760,12 @@ export interface FileRouteTypes {
     | '/_authed/_dashboard/pipeline/workflows/$workflowId'
     | '/_authed/_dashboard/pipeline/workflows/create'
     | '/_authed/_dashboard/streamers/$id/edit'
-    | '/_authed/_dashboard/pipeline/jobs/'
-    | '/_authed/_dashboard/config/engines/'
     | '/_authed/_dashboard/config/platforms/'
     | '/_authed/_dashboard/config/templates/'
+    | '/_authed/_dashboard/pipeline/jobs/'
     | '/_authed/_dashboard/pipeline/presets/'
     | '/_authed/_dashboard/pipeline/workflows/'
+    | '/_authed/_dashboard/config/engines/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -862,18 +848,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardConfigRouteRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
-    '/_authed/_dashboard/streamers/': {
-      id: '/_authed/_dashboard/streamers/'
-      path: '/streamers'
-      fullPath: '/streamers/'
-      preLoaderRoute: typeof AuthedDashboardStreamersIndexLazyRouteImport
-      parentRoute: typeof AuthedDashboardRoute
-    }
     '/_authed/_dashboard/notifications/': {
       id: '/_authed/_dashboard/notifications/'
       path: '/notifications'
       fullPath: '/notifications/'
       preLoaderRoute: typeof AuthedDashboardNotificationsIndexLazyRouteImport
+      parentRoute: typeof AuthedDashboardRoute
+    }
+    '/_authed/_dashboard/streamers/': {
+      id: '/_authed/_dashboard/streamers/'
+      path: '/streamers'
+      fullPath: '/streamers/'
+      preLoaderRoute: typeof AuthedDashboardStreamersIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
     '/_authed/_dashboard/sessions/': {
@@ -918,20 +904,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardSessionsSessionIdLazyRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
-    '/_authed/_dashboard/pipeline/outputs': {
-      id: '/_authed/_dashboard/pipeline/outputs'
-      path: '/pipeline/outputs'
-      fullPath: '/pipeline/outputs'
-      preLoaderRoute: typeof AuthedDashboardPipelineOutputsLazyRouteImport
-      parentRoute: typeof AuthedDashboardRoute
-    }
-    '/_authed/_dashboard/notifications/events': {
-      id: '/_authed/_dashboard/notifications/events'
-      path: '/notifications/events'
-      fullPath: '/notifications/events'
-      preLoaderRoute: typeof AuthedDashboardNotificationsEventsLazyRouteImport
-      parentRoute: typeof AuthedDashboardRoute
-    }
     '/_authed/_dashboard/config/theme': {
       id: '/_authed/_dashboard/config/theme'
       path: '/theme'
@@ -967,33 +939,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardConfigBackupLazyRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
-    '/_authed/_dashboard/pipeline/workflows/': {
-      id: '/_authed/_dashboard/pipeline/workflows/'
-      path: '/pipeline/workflows'
-      fullPath: '/pipeline/workflows/'
-      preLoaderRoute: typeof AuthedDashboardPipelineWorkflowsIndexLazyRouteImport
+    '/_authed/_dashboard/pipeline/outputs': {
+      id: '/_authed/_dashboard/pipeline/outputs'
+      path: '/pipeline/outputs'
+      fullPath: '/pipeline/outputs'
+      preLoaderRoute: typeof AuthedDashboardPipelineOutputsRouteImport
       parentRoute: typeof AuthedDashboardRoute
     }
-    '/_authed/_dashboard/pipeline/presets/': {
-      id: '/_authed/_dashboard/pipeline/presets/'
-      path: '/pipeline/presets'
-      fullPath: '/pipeline/presets/'
-      preLoaderRoute: typeof AuthedDashboardPipelinePresetsIndexLazyRouteImport
+    '/_authed/_dashboard/notifications/events': {
+      id: '/_authed/_dashboard/notifications/events'
+      path: '/notifications/events'
+      fullPath: '/notifications/events'
+      preLoaderRoute: typeof AuthedDashboardNotificationsEventsRouteImport
       parentRoute: typeof AuthedDashboardRoute
-    }
-    '/_authed/_dashboard/config/templates/': {
-      id: '/_authed/_dashboard/config/templates/'
-      path: '/templates'
-      fullPath: '/config/templates/'
-      preLoaderRoute: typeof AuthedDashboardConfigTemplatesIndexLazyRouteImport
-      parentRoute: typeof AuthedDashboardConfigRouteRoute
-    }
-    '/_authed/_dashboard/config/platforms/': {
-      id: '/_authed/_dashboard/config/platforms/'
-      path: '/platforms'
-      fullPath: '/config/platforms/'
-      preLoaderRoute: typeof AuthedDashboardConfigPlatformsIndexLazyRouteImport
-      parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
     '/_authed/_dashboard/config/engines/': {
       id: '/_authed/_dashboard/config/engines/'
@@ -1002,12 +960,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedDashboardConfigEnginesIndexLazyRouteImport
       parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
+    '/_authed/_dashboard/pipeline/workflows/': {
+      id: '/_authed/_dashboard/pipeline/workflows/'
+      path: '/pipeline/workflows'
+      fullPath: '/pipeline/workflows/'
+      preLoaderRoute: typeof AuthedDashboardPipelineWorkflowsIndexRouteImport
+      parentRoute: typeof AuthedDashboardRoute
+    }
+    '/_authed/_dashboard/pipeline/presets/': {
+      id: '/_authed/_dashboard/pipeline/presets/'
+      path: '/pipeline/presets'
+      fullPath: '/pipeline/presets/'
+      preLoaderRoute: typeof AuthedDashboardPipelinePresetsIndexRouteImport
+      parentRoute: typeof AuthedDashboardRoute
+    }
     '/_authed/_dashboard/pipeline/jobs/': {
       id: '/_authed/_dashboard/pipeline/jobs/'
       path: '/pipeline/jobs'
       fullPath: '/pipeline/jobs/'
       preLoaderRoute: typeof AuthedDashboardPipelineJobsIndexRouteImport
       parentRoute: typeof AuthedDashboardRoute
+    }
+    '/_authed/_dashboard/config/templates/': {
+      id: '/_authed/_dashboard/config/templates/'
+      path: '/templates'
+      fullPath: '/config/templates/'
+      preLoaderRoute: typeof AuthedDashboardConfigTemplatesIndexRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
+    }
+    '/_authed/_dashboard/config/platforms/': {
+      id: '/_authed/_dashboard/config/platforms/'
+      path: '/platforms'
+      fullPath: '/config/platforms/'
+      preLoaderRoute: typeof AuthedDashboardConfigPlatformsIndexRouteImport
+      parentRoute: typeof AuthedDashboardConfigRouteRoute
     }
     '/_authed/_dashboard/streamers/$id/edit': {
       id: '/_authed/_dashboard/streamers/$id/edit'
@@ -1114,9 +1100,9 @@ interface AuthedDashboardConfigRouteRouteChildren {
   AuthedDashboardConfigPlatformsPlatformIdLazyRoute: typeof AuthedDashboardConfigPlatformsPlatformIdLazyRoute
   AuthedDashboardConfigTemplatesTemplateIdLazyRoute: typeof AuthedDashboardConfigTemplatesTemplateIdLazyRoute
   AuthedDashboardConfigTemplatesCreateLazyRoute: typeof AuthedDashboardConfigTemplatesCreateLazyRoute
+  AuthedDashboardConfigPlatformsIndexRoute: typeof AuthedDashboardConfigPlatformsIndexRoute
+  AuthedDashboardConfigTemplatesIndexRoute: typeof AuthedDashboardConfigTemplatesIndexRoute
   AuthedDashboardConfigEnginesIndexLazyRoute: typeof AuthedDashboardConfigEnginesIndexLazyRoute
-  AuthedDashboardConfigPlatformsIndexLazyRoute: typeof AuthedDashboardConfigPlatformsIndexLazyRoute
-  AuthedDashboardConfigTemplatesIndexLazyRoute: typeof AuthedDashboardConfigTemplatesIndexLazyRoute
 }
 
 const AuthedDashboardConfigRouteRouteChildren: AuthedDashboardConfigRouteRouteChildren =
@@ -1138,12 +1124,12 @@ const AuthedDashboardConfigRouteRouteChildren: AuthedDashboardConfigRouteRouteCh
       AuthedDashboardConfigTemplatesTemplateIdLazyRoute,
     AuthedDashboardConfigTemplatesCreateLazyRoute:
       AuthedDashboardConfigTemplatesCreateLazyRoute,
+    AuthedDashboardConfigPlatformsIndexRoute:
+      AuthedDashboardConfigPlatformsIndexRoute,
+    AuthedDashboardConfigTemplatesIndexRoute:
+      AuthedDashboardConfigTemplatesIndexRoute,
     AuthedDashboardConfigEnginesIndexLazyRoute:
       AuthedDashboardConfigEnginesIndexLazyRoute,
-    AuthedDashboardConfigPlatformsIndexLazyRoute:
-      AuthedDashboardConfigPlatformsIndexLazyRoute,
-    AuthedDashboardConfigTemplatesIndexLazyRoute:
-      AuthedDashboardConfigTemplatesIndexLazyRoute,
   }
 
 const AuthedDashboardConfigRouteRouteWithChildren =
@@ -1154,16 +1140,16 @@ const AuthedDashboardConfigRouteRouteWithChildren =
 interface AuthedDashboardRouteChildren {
   AuthedDashboardConfigRouteRoute: typeof AuthedDashboardConfigRouteRouteWithChildren
   AuthedDashboardDashboardLazyRoute: typeof AuthedDashboardDashboardLazyRoute
-  AuthedDashboardNotificationsEventsLazyRoute: typeof AuthedDashboardNotificationsEventsLazyRoute
-  AuthedDashboardPipelineOutputsLazyRoute: typeof AuthedDashboardPipelineOutputsLazyRoute
+  AuthedDashboardNotificationsEventsRoute: typeof AuthedDashboardNotificationsEventsRoute
+  AuthedDashboardPipelineOutputsRoute: typeof AuthedDashboardPipelineOutputsRoute
   AuthedDashboardSessionsSessionIdLazyRoute: typeof AuthedDashboardSessionsSessionIdLazyRoute
   AuthedDashboardStreamersNewLazyRoute: typeof AuthedDashboardStreamersNewLazyRoute
   AuthedDashboardSystemHealthLazyRoute: typeof AuthedDashboardSystemHealthLazyRoute
   AuthedDashboardPipelineIndexRoute: typeof AuthedDashboardPipelineIndexRoute
   AuthedDashboardPlayerIndexRoute: typeof AuthedDashboardPlayerIndexRoute
   AuthedDashboardSessionsIndexRoute: typeof AuthedDashboardSessionsIndexRoute
+  AuthedDashboardStreamersIndexRoute: typeof AuthedDashboardStreamersIndexRoute
   AuthedDashboardNotificationsIndexLazyRoute: typeof AuthedDashboardNotificationsIndexLazyRoute
-  AuthedDashboardStreamersIndexLazyRoute: typeof AuthedDashboardStreamersIndexLazyRoute
   AuthedDashboardPipelineExecutionsPipelineIdLazyRoute: typeof AuthedDashboardPipelineExecutionsPipelineIdLazyRoute
   AuthedDashboardPipelineJobsJobIdLazyRoute: typeof AuthedDashboardPipelineJobsJobIdLazyRoute
   AuthedDashboardPipelineJobsNewLazyRoute: typeof AuthedDashboardPipelineJobsNewLazyRoute
@@ -1173,17 +1159,16 @@ interface AuthedDashboardRouteChildren {
   AuthedDashboardPipelineWorkflowsCreateLazyRoute: typeof AuthedDashboardPipelineWorkflowsCreateLazyRoute
   AuthedDashboardStreamersIdEditLazyRoute: typeof AuthedDashboardStreamersIdEditLazyRoute
   AuthedDashboardPipelineJobsIndexRoute: typeof AuthedDashboardPipelineJobsIndexRoute
-  AuthedDashboardPipelinePresetsIndexLazyRoute: typeof AuthedDashboardPipelinePresetsIndexLazyRoute
-  AuthedDashboardPipelineWorkflowsIndexLazyRoute: typeof AuthedDashboardPipelineWorkflowsIndexLazyRoute
+  AuthedDashboardPipelinePresetsIndexRoute: typeof AuthedDashboardPipelinePresetsIndexRoute
+  AuthedDashboardPipelineWorkflowsIndexRoute: typeof AuthedDashboardPipelineWorkflowsIndexRoute
 }
 
 const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardConfigRouteRoute: AuthedDashboardConfigRouteRouteWithChildren,
   AuthedDashboardDashboardLazyRoute: AuthedDashboardDashboardLazyRoute,
-  AuthedDashboardNotificationsEventsLazyRoute:
-    AuthedDashboardNotificationsEventsLazyRoute,
-  AuthedDashboardPipelineOutputsLazyRoute:
-    AuthedDashboardPipelineOutputsLazyRoute,
+  AuthedDashboardNotificationsEventsRoute:
+    AuthedDashboardNotificationsEventsRoute,
+  AuthedDashboardPipelineOutputsRoute: AuthedDashboardPipelineOutputsRoute,
   AuthedDashboardSessionsSessionIdLazyRoute:
     AuthedDashboardSessionsSessionIdLazyRoute,
   AuthedDashboardStreamersNewLazyRoute: AuthedDashboardStreamersNewLazyRoute,
@@ -1191,10 +1176,9 @@ const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardPipelineIndexRoute: AuthedDashboardPipelineIndexRoute,
   AuthedDashboardPlayerIndexRoute: AuthedDashboardPlayerIndexRoute,
   AuthedDashboardSessionsIndexRoute: AuthedDashboardSessionsIndexRoute,
+  AuthedDashboardStreamersIndexRoute: AuthedDashboardStreamersIndexRoute,
   AuthedDashboardNotificationsIndexLazyRoute:
     AuthedDashboardNotificationsIndexLazyRoute,
-  AuthedDashboardStreamersIndexLazyRoute:
-    AuthedDashboardStreamersIndexLazyRoute,
   AuthedDashboardPipelineExecutionsPipelineIdLazyRoute:
     AuthedDashboardPipelineExecutionsPipelineIdLazyRoute,
   AuthedDashboardPipelineJobsJobIdLazyRoute:
@@ -1212,10 +1196,10 @@ const AuthedDashboardRouteChildren: AuthedDashboardRouteChildren = {
   AuthedDashboardStreamersIdEditLazyRoute:
     AuthedDashboardStreamersIdEditLazyRoute,
   AuthedDashboardPipelineJobsIndexRoute: AuthedDashboardPipelineJobsIndexRoute,
-  AuthedDashboardPipelinePresetsIndexLazyRoute:
-    AuthedDashboardPipelinePresetsIndexLazyRoute,
-  AuthedDashboardPipelineWorkflowsIndexLazyRoute:
-    AuthedDashboardPipelineWorkflowsIndexLazyRoute,
+  AuthedDashboardPipelinePresetsIndexRoute:
+    AuthedDashboardPipelinePresetsIndexRoute,
+  AuthedDashboardPipelineWorkflowsIndexRoute:
+    AuthedDashboardPipelineWorkflowsIndexRoute,
 }
 
 const AuthedDashboardRouteWithChildren = AuthedDashboardRoute._addFileChildren(

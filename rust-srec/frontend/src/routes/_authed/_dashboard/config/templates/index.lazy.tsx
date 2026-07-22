@@ -10,9 +10,11 @@ import { TemplateCard } from '@/components/config/templates/template-card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Plus, LayoutTemplate, Search } from 'lucide-react';
+import { AlertCircle, Plus, LayoutTemplate } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useState, useEffect, useMemo } from 'react';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
+import { useState, useMemo } from 'react';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { containerVariants, itemVariants } from '@/lib/animation';
@@ -38,20 +40,14 @@ function TemplatesConfigPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const search = Route.useSearch();
+  const updateSearch = useUpdateSearch<typeof search>();
+  const debouncedSearch = search.q ?? '';
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [templateToClone, setTemplateToClone] = useState<z.infer<
     typeof TemplateSchema
   > | null>(null);
   const [cloneName, setCloneName] = useState('');
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
 
   const {
     data: templates,
@@ -82,8 +78,8 @@ function TemplatesConfigPage() {
   const filteredTemplates = useMemo(() => {
     if (!templates) return [];
     if (!debouncedSearch) return templates;
-    const search = debouncedSearch.toLowerCase();
-    return templates.filter((t) => t.name.toLowerCase().includes(search));
+    const term = debouncedSearch.toLowerCase();
+    return templates.filter((t) => t.name.toLowerCase().includes(term));
   }, [templates, debouncedSearch]);
 
   const handleEdit = (templateId: string) => {
@@ -125,15 +121,12 @@ function TemplatesConfigPage() {
     <div className="space-y-6">
       {/* Search Bar and Create Button */}
       <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder={i18n._(msg`Search templates...`)}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 h-9"
-          />
-        </div>
+        <SearchInput
+          defaultValue={debouncedSearch}
+          onSearch={(value) => updateSearch({ q: value || undefined })}
+          placeholder={i18n._(msg`Search templates...`)}
+          className="flex-1 max-w-sm"
+        />
         <Badge
           variant="secondary"
           className="h-9 px-3 text-sm whitespace-nowrap"

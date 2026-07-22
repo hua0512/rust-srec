@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback, memo, useRef } from 'react';
+import { useMemo, useCallback, memo } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
@@ -20,7 +20,6 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -49,11 +48,12 @@ import {
   AlertCircle,
   Timer,
   ListTodo,
-  Search,
   Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PipelineSummaryCard } from '@/components/pipeline/jobs/pipeline-summary-card';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
 import { formatDuration } from '@/lib/format';
 import { z } from 'zod';
 
@@ -86,15 +86,6 @@ function PipelineJobsPage() {
   const currentPage = page ?? 0;
   const pageSize = size ?? 24;
 
-  // Local state for search input (for immediate UI feedback)
-  const [localSearchQuery, setLocalSearchQuery] = useState(q ?? '');
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Sync local search query when URL q changes (e.g., on navigation back)
-  useEffect(() => {
-    setLocalSearchQuery(q ?? '');
-  }, [q]);
-
   // Memoize STATUS_FILTERS to prevent recreation on every render
   const STATUS_FILTERS = useMemo(
     () =>
@@ -121,61 +112,14 @@ function PipelineJobsPage() {
     [i18n],
   );
 
-  // Helper to update search params
-  const updateSearchParams = useCallback(
-    (updates: Partial<SearchParams>) => {
-      void navigate({
-        search: (prev) => {
-          const next = { ...prev, ...updates };
-          // Remove undefined/null values to keep URL clean
-          Object.keys(next).forEach((key) => {
-            const k = key as keyof SearchParams;
-            if (next[k] === undefined || next[k] === null || next[k] === '') {
-              delete next[k];
-            }
-          });
-          // Remove default values
-          if (next.page === 0) delete next.page;
-          if (next.size === 24) delete next.size;
-          return next;
-        },
-        replace: true,
-      });
-    },
-    [navigate],
-  );
-
-  // Handler for search input with debounce
-  const handleSearchChange = useCallback(
-    (value: string) => {
-      setLocalSearchQuery(value);
-      // Clear any existing timer
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      // Debounce the URL update
-      debounceTimerRef.current = setTimeout(() => {
-        updateSearchParams({ q: value || undefined, page: 0 });
-      }, 300);
-    },
-    [updateSearchParams],
-  );
-
-  // Cleanup debounce timer on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
+  const updateSearch = useUpdateSearch<SearchParams>();
 
   // Reset page when status changes
   const handleStatusChange = useCallback(
     (newStatus: string | null) => {
-      updateSearchParams({ status: newStatus ?? undefined, page: 0 });
+      updateSearch({ status: newStatus ?? undefined, page: undefined });
     },
-    [updateSearchParams],
+    [updateSearch],
   );
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
@@ -353,16 +297,14 @@ function PipelineJobsPage() {
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
-              {/* Search Input */}
-              <div className="relative flex-1 sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={i18n._(msg`Search jobs...`)}
-                  value={localSearchQuery}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  className="pl-9 h-9"
-                />
-              </div>
+              <SearchInput
+                defaultValue={q ?? ''}
+                onSearch={(value) =>
+                  updateSearch({ q: value || undefined, page: undefined })
+                }
+                placeholder={i18n._(msg`Search jobs...`)}
+                className="flex-1 sm:w-64"
+              />
               <div className="flex items-center gap-2 shrink-0">
                 <Badge
                   variant="secondary"
@@ -520,7 +462,7 @@ function PipelineJobsPage() {
               <Select
                 value={pageSize.toString()}
                 onValueChange={(value) => {
-                  updateSearchParams({ size: Number(value), page: 0 });
+                  updateSearch({ size: Number(value), page: undefined });
                 }}
               >
                 <SelectTrigger className="w-16 sm:w-20 h-8 text-xs sm:text-sm">
@@ -546,7 +488,7 @@ function PipelineJobsPage() {
                   <PaginationItem>
                     <PaginationPrevious
                       onClick={() =>
-                        updateSearchParams({
+                        updateSearch({
                           page: Math.max(0, currentPage - 1),
                         })
                       }
@@ -570,7 +512,7 @@ function PipelineJobsPage() {
                           <PaginationItem key={page}>
                             <PaginationLink
                               isActive={currentPage === page}
-                              onClick={() => updateSearchParams({ page })}
+                              onClick={() => updateSearch({ page })}
                               className="cursor-pointer h-8 w-8 text-xs font-medium"
                             >
                               {page + 1}
@@ -587,7 +529,7 @@ function PipelineJobsPage() {
                   <PaginationItem>
                     <PaginationNext
                       onClick={() =>
-                        updateSearchParams({
+                        updateSearch({
                           page: Math.min(totalPages - 1, currentPage + 1),
                         })
                       }
