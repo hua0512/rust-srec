@@ -194,7 +194,7 @@ pub(super) async fn get_wbi_keys(client: &Client) -> Result<WbiKeys, ExtractorEr
 
     // If still stale, fetch and send the new keys.
     let new_keys = fetch_new_keys(client).await?;
-    WBI_KEYS_WATCH.0.send(Some(new_keys.clone())).ok();
+    WBI_KEYS_WATCH.0.send_replace(Some(new_keys.clone()));
     Ok(new_keys)
 }
 

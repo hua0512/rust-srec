@@ -241,7 +241,7 @@ impl CollectionRunner {
     async fn shutdown(&mut self) -> Result<()> {
         self.flush_buffer().await?;
         self.finalize_current_segment().await?;
-        let _ = self.provider.disconnect(&mut self.connection).await;
+        self.provider.disconnect(&mut self.connection).await?;
         Ok(())
     }
 

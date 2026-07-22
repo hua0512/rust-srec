@@ -7,7 +7,10 @@ use std::sync::Mutex;
 pub struct TarsCodecPool {
     serializers: Mutex<Vec<TarsSerializer>>,
     deserializers: Mutex<Vec<TarsDeserializer>>,
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )]
     message_buffers: Mutex<Vec<TarsMessage>>,
     byte_buffers: Mutex<Vec<BytesMut>>,
 }

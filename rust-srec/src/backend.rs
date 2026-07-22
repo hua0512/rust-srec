@@ -12,5 +12,5 @@ pub use crate::logging::init_logging;
 pub use crate::notification::{NotificationEvent, NotificationPriority};
 pub use crate::panic_hook::install as install_panic_hook;
 pub use crate::pipeline::PipelineManagerConfig;
-pub use crate::services::{ServiceContainer, ServiceStats};
+pub use crate::services::{ServiceContainer, ServiceContainerConfig, ServiceStats};
 pub use crate::utils::http_client::install_rustls_provider;

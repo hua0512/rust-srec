@@ -870,12 +870,14 @@ where
             .create_dag_pipeline_with_hook(
                 resolved_dag,
                 &input_paths,
-                Some(streamer_id.to_string()),
-                Some(session_id.to_string()),
-                streamer_name.clone(),
-                session_title.clone(),
-                platform.clone(),
-                session_start,
+                DagRunContext {
+                    streamer_id: Some(streamer_id.to_string()),
+                    session_id: Some(session_id.to_string()),
+                    streamer_name: streamer_name.clone(),
+                    session_title: session_title.clone(),
+                    platform: platform.clone(),
+                    session_start,
+                },
                 metadata,
                 before_root_jobs,
             )

@@ -121,8 +121,7 @@ impl Encoder<FlvData> for FlvEncoder {
                 self.last_tag_size_written = (TAG_HEADER_SIZE + data_len) as u32;
                 Ok(())
             }
-            // Handle other FlvData variants if they exist
-            #[allow(unreachable_patterns)] // Silence warning if FlvData only has Header/Tag
+            // Handle control variants without an on-disk FLV representation.
             _ => {
                 // `FlvData::EndOfSequence` is a control signal in our pipeline and does not have a
                 // corresponding on-disk FLV representation. Treat it as a no-op.

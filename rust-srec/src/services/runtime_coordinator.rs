@@ -54,21 +54,35 @@ pub(crate) struct RuntimeCoordinator {
     task_supervisor: Arc<TaskSupervisor>,
 }
 
+pub(super) struct RuntimeCoordinatorDependencies {
+    pub download_manager: Arc<DownloadManager>,
+    pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
+    pub config_service: Arc<RuntimeConfigService>,
+    pub danmu_service: Arc<DanmuService>,
+    pub stream_monitor: Arc<RuntimeStreamMonitor>,
+    pub session_repository: Arc<SqlxSessionRepository>,
+    pub session_cancels: Arc<SessionCancelTokens>,
+    pub pending_pipelines: Arc<DashMap<String, ()>>,
+    pub pipeline_manager: Arc<PipelineManager>,
+    pub session_lifecycle: Arc<SessionLifecycle>,
+    pub task_supervisor: Arc<TaskSupervisor>,
+}
+
 impl RuntimeCoordinator {
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
-        download_manager: Arc<DownloadManager>,
-        streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
-        config_service: Arc<RuntimeConfigService>,
-        danmu_service: Arc<DanmuService>,
-        stream_monitor: Arc<RuntimeStreamMonitor>,
-        session_repository: Arc<SqlxSessionRepository>,
-        session_cancels: Arc<SessionCancelTokens>,
-        pending_pipelines: Arc<DashMap<String, ()>>,
-        pipeline_manager: Arc<PipelineManager>,
-        session_lifecycle: Arc<SessionLifecycle>,
-        task_supervisor: Arc<TaskSupervisor>,
-    ) -> Self {
+    pub(super) fn new(dependencies: RuntimeCoordinatorDependencies) -> Self {
+        let RuntimeCoordinatorDependencies {
+            download_manager,
+            streamer_manager,
+            config_service,
+            danmu_service,
+            stream_monitor,
+            session_repository,
+            session_cancels,
+            pending_pipelines,
+            pipeline_manager,
+            session_lifecycle,
+            task_supervisor,
+        } = dependencies;
         Self {
             download_manager,
             streamer_manager,

@@ -15,7 +15,8 @@ use super::traits::{
     EngineType, SegmentEvent, SegmentInfo,
 };
 use super::utils::{
-    OutputRecordReader, is_disk_full_line, is_segment_start, parse_opened_path, parse_progress,
+    OutputRecordReader, is_disk_full_line, is_segment_start, observe_segment_event_send,
+    parse_opened_path, parse_progress,
 };
 use crate::Result;
 use crate::database::models::engine::StreamlinkEngineConfig;
@@ -316,8 +317,14 @@ impl DownloadEngine for StreamlinkEngine {
                 }
                 _ = cancellation_token_wait.cancelled() => {
                     debug!("Stop requested, killing streamlink process");
-                    let _ = streamlink.kill().await;
-                    let _ = tokio::time::timeout(STREAMLINK_KILL_TIMEOUT, streamlink.wait()).await;
+                    if let Err(e) = streamlink.kill().await {
+                        warn!(error = %e, "Failed to kill streamlink process");
+                    }
+                    match tokio::time::timeout(STREAMLINK_KILL_TIMEOUT, streamlink.wait()).await {
+                        Ok(Ok(_)) => {}
+                        Ok(Err(e)) => warn!(error = %e, "Failed to reap streamlink process"),
+                        Err(_) => warn!("Timed out waiting for killed streamlink process"),
+                    }
                 }
             }
 
@@ -329,7 +336,9 @@ impl DownloadEngine for StreamlinkEngine {
                 }
                 Err(_) => {
                     warn!("FFmpeg did not exit in time; killing process");
-                    let _ = ffmpeg.kill().await;
+                    if let Err(e) = ffmpeg.kill().await {
+                        warn!(error = %e, "Failed to kill ffmpeg process");
+                    }
                     match ffmpeg.wait().await {
                         Ok(exit_status) => exit_status.code(),
                         Err(e) => {
@@ -340,7 +349,9 @@ impl DownloadEngine for StreamlinkEngine {
                 }
             };
 
-            let _ = exit_tx.send(exit_code);
+            if exit_tx.send(exit_code).is_err() {
+                debug!("Download exit receiver dropped before streamlink pipeline completed");
+            }
         });
 
         let event_tx = handle.event_tx.clone();
@@ -441,13 +452,16 @@ impl DownloadEngine for StreamlinkEngine {
                 next_segment_index = 1;
                 let started_at = Utc::now();
                 active_segment = Some((index, path.clone(), 0.0, started_at));
-                let _ = event_tx_clone
-                    .send(SegmentEvent::SegmentStarted {
-                        path,
-                        sequence: index,
-                        started_at,
-                    })
-                    .await;
+                observe_segment_event_send(
+                    event_tx_clone
+                        .send(SegmentEvent::SegmentStarted {
+                            path,
+                            sequence: index,
+                            started_at,
+                        })
+                        .await,
+                    &streamer_id_clone,
+                );
             }
 
             loop {
@@ -475,18 +489,21 @@ impl DownloadEngine for StreamlinkEngine {
                                             total_bytes = bytes_completed;
                                             total_duration = media_duration_offset_secs;
                                             cached_active_segment_bytes = 0;
-                                            let _ = event_tx_clone
-                                                .send(SegmentEvent::SegmentCompleted(SegmentInfo {
-                                                    path,
-                                                    duration_secs,
-                                                    size_bytes,
-                                                    index,
-                                                    started_at: Some(started_at),
-                                                    completed_at: Utc::now(),
-                                                    split_reason_code: None,
-                                                    split_reason_details_json: None,
-                                                }))
-                                                .await;
+                                            observe_segment_event_send(
+                                                event_tx_clone
+                                                    .send(SegmentEvent::SegmentCompleted(SegmentInfo {
+                                                        path,
+                                                        duration_secs,
+                                                        size_bytes,
+                                                        index,
+                                                        started_at: Some(started_at),
+                                                        completed_at: Utc::now(),
+                                                        split_reason_code: None,
+                                                        split_reason_details_json: None,
+                                                    }))
+                                                    .await,
+                                                &streamer_id_clone,
+                                            );
                                         }
 
                                         let index = next_segment_index;
@@ -499,13 +516,16 @@ impl DownloadEngine for StreamlinkEngine {
                                             started_at,
                                         ));
 
-                                        let _ = event_tx_clone
-                                            .send(SegmentEvent::SegmentStarted {
-                                                path,
-                                                sequence: index,
-                                                started_at,
-                                            })
-                                            .await;
+                                        observe_segment_event_send(
+                                            event_tx_clone
+                                                .send(SegmentEvent::SegmentStarted {
+                                                    path,
+                                                    sequence: index,
+                                                    started_at,
+                                                })
+                                                .await,
+                                            &streamer_id_clone,
+                                        );
                                         debug!(
                                             "Segment {} started for {}",
                                             index, streamer_id_clone
@@ -588,7 +608,10 @@ impl DownloadEngine for StreamlinkEngine {
                                     last_progress_snapshot =
                                         Some((bytes_total, elapsed_secs, media_duration_total_secs));
 
-                                    let _ = event_tx_clone.send(SegmentEvent::Progress(progress)).await;
+                                    observe_segment_event_send(
+                                        event_tx_clone.send(SegmentEvent::Progress(progress)).await,
+                                        &streamer_id_clone,
+                                    );
                                 }
 
                                 // Detect mid-stream disk-full. Same pattern as
@@ -603,12 +626,15 @@ impl DownloadEngine for StreamlinkEngine {
                                         output_dir = %output_dir_clone.display(),
                                         "Streamlink+FFmpeg signalled disk full; emitting DiskFull event for gate"
                                     );
-                                    let _ = event_tx_clone
-                                        .send(SegmentEvent::DiskFull {
-                                            output_dir: output_dir_clone.clone(),
-                                            detail: format!("streamlink+ffmpeg: {}", line),
-                                        })
-                                        .await;
+                                    observe_segment_event_send(
+                                        event_tx_clone
+                                            .send(SegmentEvent::DiskFull {
+                                                output_dir: output_dir_clone.clone(),
+                                                detail: format!("streamlink+ffmpeg: {}", line),
+                                            })
+                                            .await,
+                                        &streamer_id_clone,
+                                    );
                                 }
                             }
                             Ok(None) => {
@@ -640,18 +666,21 @@ impl DownloadEngine for StreamlinkEngine {
                 } else {
                     total_duration = media_duration_total_secs;
                 }
-                let _ = event_tx_clone
-                    .send(SegmentEvent::SegmentCompleted(SegmentInfo {
-                        path,
-                        duration_secs,
-                        size_bytes,
-                        index,
-                        started_at: Some(started_at),
-                        completed_at: Utc::now(),
-                        split_reason_code: None,
-                        split_reason_details_json: None,
-                    }))
-                    .await;
+                observe_segment_event_send(
+                    event_tx_clone
+                        .send(SegmentEvent::SegmentCompleted(SegmentInfo {
+                            path,
+                            duration_secs,
+                            size_bytes,
+                            index,
+                            started_at: Some(started_at),
+                            completed_at: Utc::now(),
+                            split_reason_code: None,
+                            split_reason_details_json: None,
+                        }))
+                        .await,
+                    &streamer_id_clone,
+                );
             }
 
             // Wait for exit status from process wait task
@@ -663,14 +692,18 @@ impl DownloadEngine for StreamlinkEngine {
                     // exited cleanly but that doesn't prove the upstream
                     // stream is over. SessionLifecycle treats
                     // SubprocessExitZero as ambiguous → hysteresis.
-                    let _ = event_tx_clone
-                        .send(SegmentEvent::DownloadCompleted {
-                            total_bytes,
-                            total_duration_secs: total_duration,
-                            total_segments: segments_completed,
-                            engine_signal: crate::downloader::EngineEndSignal::SubprocessExitZero,
-                        })
-                        .await;
+                    observe_segment_event_send(
+                        event_tx_clone
+                            .send(SegmentEvent::DownloadCompleted {
+                                total_bytes,
+                                total_duration_secs: total_duration,
+                                total_segments: segments_completed,
+                                engine_signal:
+                                    crate::downloader::EngineEndSignal::SubprocessExitZero,
+                            })
+                            .await,
+                        &streamer_id_clone,
+                    );
                 }
                 Some(code) => {
                     // Fallback DiskFull emission for exit code 228 if we
@@ -684,30 +717,40 @@ impl DownloadEngine for StreamlinkEngine {
                             output_dir = %output_dir_clone.display(),
                             "Streamlink+FFmpeg exited with code 228; assuming disk-full"
                         );
-                        let _ = event_tx_clone
-                            .send(SegmentEvent::DiskFull {
-                                output_dir: output_dir_clone.clone(),
-                                detail: "streamlink+ffmpeg exit 228 (I/O error, likely ENOSPC)"
-                                    .to_string(),
-                            })
-                            .await;
+                        observe_segment_event_send(
+                            event_tx_clone
+                                .send(SegmentEvent::DiskFull {
+                                    output_dir: output_dir_clone.clone(),
+                                    detail: "streamlink+ffmpeg exit 228 (I/O error, likely ENOSPC)"
+                                        .to_string(),
+                                })
+                                .await,
+                            &streamer_id_clone,
+                        );
                     }
 
                     // Non-zero exit code - failure
-                    let _ = event_tx_clone
-                        .send(SegmentEvent::DownloadFailed {
-                            kind: DownloadFailureKind::ProcessExit { code: Some(code) },
-                            message: format!("Streamlink/FFmpeg exited with code {}", code),
-                        })
-                        .await;
+                    observe_segment_event_send(
+                        event_tx_clone
+                            .send(SegmentEvent::DownloadFailed {
+                                kind: DownloadFailureKind::ProcessExit { code: Some(code) },
+                                message: format!("Streamlink/FFmpeg exited with code {}", code),
+                            })
+                            .await,
+                        &streamer_id_clone,
+                    );
                 }
                 None => {
-                    let _ = event_tx_clone
-                        .send(SegmentEvent::DownloadFailed {
-                            kind: DownloadFailureKind::ProcessExit { code: None },
-                            message: "Streamlink/FFmpeg exited without an exit code".to_string(),
-                        })
-                        .await;
+                    observe_segment_event_send(
+                        event_tx_clone
+                            .send(SegmentEvent::DownloadFailed {
+                                kind: DownloadFailureKind::ProcessExit { code: None },
+                                message: "Streamlink/FFmpeg exited without an exit code"
+                                    .to_string(),
+                            })
+                            .await,
+                        &streamer_id_clone,
+                    );
                 }
             }
         });

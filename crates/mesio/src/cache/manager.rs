@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use tokio::io;
+use tracing::warn;
 
 use crate::cache::providers::file::FileCache;
 use crate::cache::providers::memory::MemoryCache;
@@ -83,10 +84,13 @@ impl CacheManager {
         // Try file cache if memory cache misses
         if let Some((data, metadata, status)) = self.file_cache.get(key).await? {
             // Store in memory cache for faster access next time
-            let _ = self
+            if let Err(error) = self
                 .memory_cache
                 .put(key.clone(), data.clone(), metadata.clone())
-                .await;
+                .await
+            {
+                warn!(%error, "failed to promote file-cache entry to memory cache");
+            }
 
             return Ok(Some((data, metadata, status)));
         }
@@ -105,14 +109,15 @@ impl CacheManager {
             return Ok(());
         }
 
-        // Store in memory cache
-        let _ = self
+        let memory_result = self
             .memory_cache
             .put(key.clone(), data.clone(), metadata.clone())
             .await;
 
-        // Store in file cache
-        self.file_cache.put(key, data, metadata).await
+        let file_result = self.file_cache.put(key, data, metadata).await;
+
+        // Prefer the durable cache error, otherwise report a memory-cache failure.
+        file_result.or(memory_result)
     }
 
     /// Remove a key from cache

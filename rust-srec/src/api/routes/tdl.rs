@@ -66,7 +66,10 @@ pub enum TdlLoginState {
     Unknown,
 }
 
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for optional runtime paths and diagnostics"
+)]
 #[derive(Debug)]
 struct TdlLoginSession {
     created_at: std::time::Instant,
@@ -267,7 +270,10 @@ async fn spawn_tdl_login(
                     let Some(line) = msg else { break };
                     if stdin.write_all(line.as_bytes()).await.is_err() { break; }
                     if stdin.write_all(b"\n").await.is_err() { break; }
-                    let _ = stdin.flush().await;
+                    if let Err(error) = stdin.flush().await {
+                        tracing::warn!(%error, "Failed to flush tdl login input");
+                        break;
+                    }
                 }
             }
         }
@@ -340,7 +346,9 @@ async fn spawn_tdl_login(
     // Wait for process exit or cancellation.
     tokio::select! {
         _ = session.cancel.cancelled() => {
-            let _ = child.kill().await;
+            if let Err(error) = child.kill().await {
+                tracing::warn!(%error, "Failed to kill cancelled tdl login process");
+            }
             // Only mark as cancelled if nothing else already set a more specific terminal status.
             if matches!(&*session.status.read(), TdlLoginStatus::Running) {
                 *session.status.write() = TdlLoginStatus::Cancelled;
@@ -363,9 +371,15 @@ async fn spawn_tdl_login(
     }
 
     // Best-effort: let background tasks drain.
-    let _ = stdin_task.await;
-    let _ = stdout_task.await;
-    let _ = stderr_task.await;
+    for (name, result) in [
+        ("stdin", stdin_task.await),
+        ("stdout", stdout_task.await),
+        ("stderr", stderr_task.await),
+    ] {
+        if let Err(error) = result {
+            tracing::warn!(task = name, %error, "tdl I/O task failed");
+        }
+    }
 }
 
 pub fn router() -> Router<AppState> {

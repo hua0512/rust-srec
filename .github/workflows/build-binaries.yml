@@ -66,14 +66,14 @@ jobs:
         if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
         with:
-          targets: ${{ matrix.target }}
+          target: ${{ matrix.target }}
       - uses: ./.github/actions/setup-protoc
         if: ${{ inputs.need_protoc }}
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
+          shared-key: binaries
           key: ${{ matrix.target }}
       - name: Install build dependencies on Linux
         if: contains(matrix.os, 'ubuntu') && !contains(matrix.target, 'musl')

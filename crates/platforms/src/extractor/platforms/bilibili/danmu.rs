@@ -51,7 +51,10 @@ const HEARTBEAT: &[u8] = &[
 ];
 
 /// Operation codes
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for protocol variants and forward-compatible response handling"
+)]
 mod op {
     pub const HEARTBEAT_REPLY: u32 = 3;
     pub const NOTIFICATION: u32 = 5;

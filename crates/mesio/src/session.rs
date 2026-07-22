@@ -14,6 +14,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
+use tracing::{debug, warn};
 use url::Url;
 
 use crate::cache::CacheManager;
@@ -620,12 +621,16 @@ async fn run_hls_source_failover(
                     .map(|err| err.to_string())
                     .unwrap_or_else(|| "all HLS sources failed".to_string());
                 let error = DownloadError::source_exhausted(reason.clone());
-                let _ = item_tx.send(Err(error)).await;
+                if item_tx.send(Err(error)).await.is_err() {
+                    debug!("HLS error receiver closed after source exhaustion");
+                }
                 return DownloadTerminal::PipelineError(Arc::from(reason));
             }
             Err(err) => {
                 let reason = err.to_string();
-                let _ = item_tx.send(Err(err)).await;
+                if item_tx.send(Err(err)).await.is_err() {
+                    debug!("HLS error receiver closed after source selection failure");
+                }
                 return DownloadTerminal::PipelineError(Arc::from(reason));
             }
         };
@@ -665,7 +670,9 @@ async fn run_hls_source_failover(
             Ok(downloader) => downloader,
             Err(err) => {
                 let reason = err.to_string();
-                let _ = item_tx.send(Err(err)).await;
+                if item_tx.send(Err(err)).await.is_err() {
+                    debug!("HLS error receiver closed after downloader initialization failure");
+                }
                 return DownloadTerminal::PipelineError(Arc::from(reason));
             }
         };
@@ -697,7 +704,9 @@ async fn run_hls_source_failover(
                     }
                     if item_tx.send(Ok(item)).await.is_err() {
                         handle.cancel();
-                        let _ = event_task.await;
+                        if let Err(error) = event_task.await {
+                            warn!(%error, "HLS event forwarding task failed during cancellation");
+                        }
                         return DownloadTerminal::DownstreamClosed;
                     }
                 }
@@ -718,7 +727,9 @@ async fn run_hls_source_failover(
                 }
             }
         }
-        let _ = event_task.await;
+        if let Err(error) = event_task.await {
+            warn!(%error, "HLS event forwarding task failed");
+        }
 
         if let Some(err) = failed {
             manager.record_failure(&selected.original_url, &err, started_at.elapsed());

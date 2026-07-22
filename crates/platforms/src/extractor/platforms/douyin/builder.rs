@@ -1064,7 +1064,10 @@ impl<'a> DouyinRequest<'a> {
     }
 
     /// Helper to add a new `StreamInfo` to the list if the URL is not empty.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "arguments map directly to one extracted stream representation"
+    )]
     fn _add_stream_if_url_present(
         &self,
         url: &str,

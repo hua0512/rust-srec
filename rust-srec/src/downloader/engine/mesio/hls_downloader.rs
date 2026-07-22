@@ -19,6 +19,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
+use super::super::utils::observe_segment_event_send;
 use super::classify_download_error;
 use super::config::build_hls_config;
 use super::helpers::{self, DownloadStats};
@@ -103,7 +104,9 @@ impl HlsDownloader {
 
         let downloader = self.create_downloader(token.clone());
 
-        let url = self.config_snapshot().url;
+        let config = self.config_snapshot();
+        let streamer_id = config.streamer_id;
+        let url = config.url;
 
         let request = DownloadRequest::from_url(&url)
             .map_err(|e| {
@@ -129,26 +132,30 @@ impl HlsDownloader {
                 Some(Ok(segment)) => break segment,
                 Some(Err(e)) => {
                     let kind = classify_download_error(&e);
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind,
-                            message: format!("Failed to get first HLS segment: {}", e),
-                        })
-                        .await;
+                    observe_segment_event_send(
+                        self.event_tx
+                            .send(SegmentEvent::DownloadFailed {
+                                kind,
+                                message: format!("Failed to get first HLS segment: {}", e),
+                            })
+                            .await,
+                        &streamer_id,
+                    );
                     return Err(EngineStartError::new(
                         kind,
                         format!("Failed to get first HLS segment: {}", e),
                     ));
                 }
                 None => {
-                    let _ = self
-                        .event_tx
-                        .send(SegmentEvent::DownloadFailed {
-                            kind: DownloadFailureKind::SourceUnavailable,
-                            message: "HLS stream is empty".to_string(),
-                        })
-                        .await;
+                    observe_segment_event_send(
+                        self.event_tx
+                            .send(SegmentEvent::DownloadFailed {
+                                kind: DownloadFailureKind::SourceUnavailable,
+                                message: "HLS stream is empty".to_string(),
+                            })
+                            .await,
+                        &streamer_id,
+                    );
                     return Err(EngineStartError::new(
                         DownloadFailureKind::SourceUnavailable,
                         "HLS stream is empty",
@@ -264,10 +271,12 @@ impl HlsDownloader {
         let stream_error = helpers::consume_stream(
             hls_stream,
             &pipeline_input_tx,
-            &self.cancellation_token,
-            &token,
-            &streamer_id,
-            "HLS",
+            helpers::StreamConsumeContext {
+                parent_token: &self.cancellation_token,
+                child_token: &token,
+                streamer_id: &streamer_id,
+                protocol: "HLS",
+            },
             classify_download_error,
             move |item: &HlsData| {
                 if matches!(item, HlsData::EndMarker(Some(SplitReason::EndOfStream))) {
@@ -368,10 +377,12 @@ impl HlsDownloader {
         let stream_error = helpers::consume_stream(
             hls_stream,
             &tx,
-            &self.cancellation_token,
-            &token,
-            &streamer_id,
-            "HLS",
+            helpers::StreamConsumeContext {
+                parent_token: &self.cancellation_token,
+                child_token: &token,
+                streamer_id: &streamer_id,
+                protocol: "HLS",
+            },
             classify_download_error,
             move |item: &HlsData| {
                 if matches!(item, HlsData::EndMarker(Some(SplitReason::EndOfStream))) {

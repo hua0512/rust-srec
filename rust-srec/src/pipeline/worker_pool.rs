@@ -365,8 +365,7 @@ impl WorkerPool {
                                     );
                                     error!(job_id = %job_id, dag_step_execution_id = %dag_step_id, "{}", reason);
 
-                                    // Mark job failed (best-effort logging).
-                                    let _ = job_queue
+                                    if let Err(e) = job_queue
                                         .fail_with_cleanup_and_step_info(
                                             &job_id,
                                             &reason,
@@ -374,7 +373,14 @@ impl WorkerPool {
                                             job.execution_info.as_ref().and_then(|i| i.current_step),
                                             job.execution_info.as_ref().and_then(|i| i.total_steps),
                                         )
-                                        .await;
+                                        .await
+                                    {
+                                        error!(
+                                            job_id = %job_id,
+                                            error = %e,
+                                            "Failed to persist invalid multi-input DAG job failure"
+                                        );
+                                    }
 
                                     // Fail the DAG execution (fail-fast) and notify completion listeners.
                                     if let Some(scheduler) = &dag_scheduler {
@@ -421,9 +427,16 @@ impl WorkerPool {
                                     }
                                     Err(e) => {
                                         error!("Failed to split job {}: {}", job_id, e);
-                                        let _ = job_queue
+                                        if let Err(fail_error) = job_queue
                                             .fail(&job_id, &format!("Failed to split job: {}", e))
-                                            .await;
+                                            .await
+                                        {
+                                            error!(
+                                                job_id = %job_id,
+                                                error = %fail_error,
+                                                "Failed to persist job split failure"
+                                            );
+                                        }
                                     }
                                 }
                                 drop(permit);
@@ -634,7 +647,13 @@ impl WorkerPool {
                             drop(ctx);
 
                             // Wait for log collector to finish draining
-                            let _ = log_collector.await;
+                            if let Err(join_error) = log_collector.await {
+                                error!(
+                                    job_id = %job_id,
+                                    error = %join_error,
+                                    "Job log collector task failed"
+                                );
+                            }
 
                             match result {
                                 None => {
@@ -723,8 +742,7 @@ impl WorkerPool {
                                         }
                                     }
 
-                                    // Complete the job normally.
-                                    let _ = job_queue
+                                    if let Err(e) = job_queue
                                         .complete(
                                             &job_id,
                                             JobResult {
@@ -734,7 +752,14 @@ impl WorkerPool {
                                                 logs: output.logs,
                                             },
                                         )
-                                        .await;
+                                        .await
+                                    {
+                                        error!(
+                                            job_id = %job_id,
+                                            error = %e,
+                                            "Failed to persist completed pipeline job"
+                                        );
+                                    }
                                     }
                                 }
                                 Some(Ok(Err(e))) => {
@@ -907,7 +932,11 @@ impl WorkerPool {
                                 job.job_type,
                                 processors.iter().map(|p| p.name()).collect::<Vec<_>>()
                             );
-                            let _ = job_queue.fail(&job.id, "No processor found").await;
+                            if let Err(error) =
+                                job_queue.fail(&job.id, "No processor found").await
+                            {
+                                error!(job_id = %job.id, %error, "Failed to mark job as failed");
+                            }
                         }
 
                         drop(permit);

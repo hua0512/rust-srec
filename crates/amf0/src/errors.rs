@@ -78,7 +78,10 @@ mod tests {
             ),
             (
                 Amf0ReadError::StringParseError(
-                    #[allow(unknown_lints, invalid_from_utf8)]
+                    #[expect(
+                        invalid_from_utf8,
+                        reason = "test fixture requires a deterministic UTF-8 decoding error"
+                    )]
                     std::str::from_utf8(b"\xFF\xFF").unwrap_err(),
                 ),
                 "string parse error: invalid utf-8 sequence of 1 bytes from index 0",

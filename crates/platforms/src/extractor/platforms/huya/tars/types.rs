@@ -737,7 +737,6 @@ impl TryFrom<TarsValue> for HuyaUserId {
 // tag 7: iFreeFlowFlag (i32)
 // tag 8: iIpStack (i32)
 #[derive(Default, Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub struct GetLivingInfoReq {
     pub t_id: HuyaUserId,       // tag 0
     pub l_top_sid: i64,         // tag 1

@@ -2,9 +2,12 @@
 name = "pipeline-common"
 version = "0.1.2"
 edition.workspace = true
+rust-version.workspace = true
 description = "Common traits and implementations for media processing pipelines"
 license.workspace = true
 
+[lints]
+workspace = true
 
 [dependencies]
 thiserror = { workspace = true }

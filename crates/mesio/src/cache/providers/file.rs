@@ -2,7 +2,7 @@
 //!
 //! This module implements a file-based persistent cache provider.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
 use tokio::fs;
@@ -23,6 +23,14 @@ pub struct FileCache {
 }
 
 impl FileCache {
+    async fn remove_file_best_effort(path: &Path, context: &'static str) {
+        match fs::remove_file(path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => warn!(path = ?path, %error, context, "Cache cleanup failed"),
+        }
+    }
+
     /// Create a new file cache with the specified directory and size limit
     pub fn new(cache_dir: PathBuf, enabled: bool, max_size: u64) -> Self {
         Self {
@@ -152,8 +160,8 @@ impl CacheProvider for FileCache {
                 let data_path_clone = data_path.clone();
                 let meta_path_clone = meta_path.clone();
                 tokio::spawn(async move {
-                    let _ = fs::remove_file(&data_path_clone).await;
-                    let _ = fs::remove_file(&meta_path_clone).await;
+                    Self::remove_file_best_effort(&data_path_clone, "invalid cache data").await;
+                    Self::remove_file_best_effort(&meta_path_clone, "invalid cache metadata").await;
                 });
 
                 return Ok(None);
@@ -181,8 +189,8 @@ impl CacheProvider for FileCache {
             let data_path_clone = data_path.clone();
             let meta_path_clone = meta_path.clone();
             tokio::spawn(async move {
-                let _ = fs::remove_file(&data_path_clone).await;
-                let _ = fs::remove_file(&meta_path_clone).await;
+                Self::remove_file_best_effort(&data_path_clone, "expired cache data").await;
+                Self::remove_file_best_effort(&meta_path_clone, "expired cache metadata").await;
             });
         }
         let bytes = Bytes::from(data);
@@ -237,7 +245,7 @@ impl CacheProvider for FileCache {
             Err(e) => {
                 warn!(path = ?temp_meta_path, error = %e, "Failed to write cache metadata file");
                 // Clean up data file
-                let _ = fs::remove_file(&temp_data_path).await;
+                Self::remove_file_best_effort(&temp_data_path, "temporary cache data").await;
                 return Err(e);
             }
         }
@@ -252,8 +260,8 @@ impl CacheProvider for FileCache {
                 "Failed to rename temporary data file"
             );
             // Clean up
-            let _ = fs::remove_file(&temp_data_path).await;
-            let _ = fs::remove_file(&temp_meta_path).await;
+            Self::remove_file_best_effort(&temp_data_path, "temporary cache data").await;
+            Self::remove_file_best_effort(&temp_meta_path, "temporary cache metadata").await;
             return Err(e);
         }
 
@@ -266,8 +274,8 @@ impl CacheProvider for FileCache {
             );
             // We successfully renamed the data file but not the metadata
             // This is an inconsistent state, so try to clean up
-            let _ = fs::remove_file(&data_path).await;
-            let _ = fs::remove_file(&temp_meta_path).await;
+            Self::remove_file_best_effort(&data_path, "orphaned cache data").await;
+            Self::remove_file_best_effort(&temp_meta_path, "temporary cache metadata").await;
             return Err(e);
         }
 

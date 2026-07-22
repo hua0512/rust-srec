@@ -1001,7 +1001,10 @@ mod tests {
         // nal_unit_type (100000) = 32 ≠ 33
         // nuh_layer_id (000000) = 0
         // nuh_temporal_id_plus1 (001) = 1
-        #[allow(clippy::unusual_byte_groupings)]
+        #[expect(
+            clippy::unusual_byte_groupings,
+            reason = "bit groups mirror the H.265 NAL header fields"
+        )]
         let data = [0b0_100000_0, 0b00000_001];
         let err = SpsNALUnit::parse(io::Cursor::new(data)).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);

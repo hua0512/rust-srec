@@ -2,10 +2,14 @@
 name = "strev"
 version = "0.3.0"
 edition.workspace = true
+rust-version.workspace = true
 description = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms"
 authors = ["rust-srec team"]
 license.workspace = true
 repository = "https://github.com/hua0512/rust-srec"
+
+[lints]
+workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
@@ -28,7 +32,7 @@ clap_complete = "4.6"
 
 # UI and output (some made optional)
 colored = { version = "3.1.1", optional = true }
-indicatif = "0.18"
+indicatif = { workspace = true }
 inquire = { version = "0.9", optional = true }
 tabled = { version = "0.21", optional = true }
 

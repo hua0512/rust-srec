@@ -103,6 +103,20 @@ pub struct CommandOutput {
     pub logs: Vec<JobLogEntry>,
 }
 
+async fn wait_for_reader_task(
+    stream_name: &'static str,
+    handle: Option<tokio::task::JoinHandle<std::io::Result<()>>>,
+) -> crate::Result<()> {
+    let Some(handle) = handle else {
+        return Ok(());
+    };
+
+    handle
+        .await
+        .map_err(|error| crate::Error::Other(format!("{stream_name} reader task failed: {error}")))?
+        .map_err(|error| crate::Error::Other(format!("Failed to read {stream_name}: {error}")))
+}
+
 fn push_log_with_cap(
     logs: &mut VecDeque<JobLogEntry>,
     entry: JobLogEntry,
@@ -165,12 +179,13 @@ pub async fn run_command_with_logs(
         Some(tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            while let Some(line) = lines.next_line().await? {
                 debug!("stdout: {}", line);
                 if tx.try_send(create_log_entry(LogLevel::Info, line)).is_err() {
                     dropped_count.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            Ok(())
         }))
     } else {
         None
@@ -183,7 +198,7 @@ pub async fn run_command_with_logs(
         Some(tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            while let Some(line) = lines.next_line().await? {
                 // FFmpeg outputs progress to stderr, so we check for error indicators
                 // Use more specific patterns to avoid false positives
                 let level = if line.starts_with("[error]")
@@ -203,6 +218,7 @@ pub async fn run_command_with_logs(
                     dropped_count.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            Ok(())
         }))
     } else {
         None
@@ -250,12 +266,10 @@ pub async fn run_command_with_logs(
     }
 
     // Wait for reader tasks to complete to ensure streams are fully consumed.
-    if let Some(handle) = stdout_handle {
-        let _ = handle.await;
-    }
-    if let Some(handle) = stderr_handle {
-        let _ = handle.await;
-    }
+    let stdout_result = wait_for_reader_task("command stdout", stdout_handle).await;
+    let stderr_result = wait_for_reader_task("command stderr", stderr_handle).await;
+    stdout_result?;
+    stderr_result?;
 
     let duration = start.elapsed().as_secs_f64();
     let status =
@@ -477,11 +491,12 @@ pub async fn run_ffmpeg_with_progress(
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             let mut state = FfmpegProgressState::default();
-            while let Ok(Some(line)) = lines.next_line().await {
+            while let Some(line) = lines.next_line().await? {
                 if let Some(snapshot) = parse_ffmpeg_kv_line(&line, &mut state) {
                     progress.report(snapshot);
                 }
             }
+            Ok(())
         }))
     } else {
         None
@@ -493,13 +508,14 @@ pub async fn run_ffmpeg_with_progress(
         Some(tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            while let Some(line) = lines.next_line().await? {
                 // Determine log level based on content
                 let level = determine_ffmpeg_log_level(&line);
                 if tx.try_send(create_log_entry(level, line)).is_err() {
                     dropped_count.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            Ok(())
         }))
     } else {
         None
@@ -536,12 +552,10 @@ pub async fn run_ffmpeg_with_progress(
         }
     }
 
-    if let Some(handle) = stdout_handle {
-        let _ = handle.await;
-    }
-    if let Some(handle) = stderr_handle {
-        let _ = handle.await;
-    }
+    let stdout_result = wait_for_reader_task("ffmpeg progress", stdout_handle).await;
+    let stderr_result = wait_for_reader_task("ffmpeg stderr", stderr_handle).await;
+    stdout_result?;
+    stderr_result?;
 
     let duration = start.elapsed().as_secs_f64();
     let status =
@@ -595,7 +609,7 @@ pub async fn run_rclone_with_progress(
         Some(tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            while let Some(line) = lines.next_line().await? {
                 if let Some(snapshot) = parse_rclone_stats_line(&line) {
                     progress.report(snapshot);
                     continue;
@@ -606,6 +620,7 @@ pub async fn run_rclone_with_progress(
                     dropped_count.fetch_add(1, Ordering::Relaxed);
                 }
             }
+            Ok(())
         }))
     } else {
         None
@@ -642,9 +657,7 @@ pub async fn run_rclone_with_progress(
         }
     }
 
-    if let Some(handle) = stderr_handle {
-        let _ = handle.await;
-    }
+    wait_for_reader_task("rclone stderr", stderr_handle).await?;
 
     let duration = start.elapsed().as_secs_f64();
     let status =

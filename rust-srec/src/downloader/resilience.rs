@@ -486,13 +486,22 @@ impl CircuitBreakerManager {
     }
 
     /// Record success for an engine.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for optional runtime paths and diagnostics"
+    )]
     pub fn record_success(&self, key: &EngineKey) {
         self.get(key).record_success();
     }
 
     /// Record failure for an engine.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "retained for optional runtime paths and diagnostics"
+        )
+    )]
     pub fn record_failure(&self, key: &EngineKey) {
         self.get(key).record_failure();
     }

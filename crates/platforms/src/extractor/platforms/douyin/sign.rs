@@ -79,7 +79,13 @@ pub fn gen_verify_fp() -> String {
 
 /// Generates an `s_v_web_id` token (alias for `gen_verify_fp`).
 #[inline]
-#[allow(dead_code)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )
+)]
 pub fn gen_s_v_web_id() -> String {
     gen_verify_fp()
 }

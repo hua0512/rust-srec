@@ -328,16 +328,28 @@ pub trait DanmuProtocol: Send + 'static {
 /// Internal state for a WebSocket connection
 struct WsConnectionState {
     /// Connection ID
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )]
     id: String,
     /// Room ID
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )]
     room_id: String,
     /// Connected status
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )]
     is_connected: Arc<AtomicBool>,
     /// Reconnect count
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )]
     reconnect_count: Arc<AtomicU32>,
     /// Message receiver
     message_rx: Arc<Mutex<mpsc::Receiver<DanmuItem>>>,
@@ -346,7 +358,10 @@ struct WsConnectionState {
     /// Shutdown sender
     shutdown_tx: Option<mpsc::Sender<()>>,
     /// Limits total active connections to prevent unbounded growth if callers forget to disconnect.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )]
     connection_permit: OwnedSemaphorePermit,
 }
 
@@ -674,7 +689,9 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
 
                             // Shutdown
                             _ = shutdown_rx.recv() => {
-                                let _ = stream.close(None).await;
+                                if let Err(error) = stream.close(None).await {
+                                    debug!(%error, "Failed to close WebSocket during shutdown");
+                                }
                                 return;
                             }
                         }
@@ -747,8 +764,10 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
     async fn disconnect(&self, connection: &mut DanmuConnection) -> Result<()> {
         if let Some(state_arc) = self.connections.write().await.remove(&connection.id) {
             let mut state = state_arc.lock().await;
-            if let Some(tx) = state.shutdown_tx.take() {
-                let _ = tx.try_send(());
+            if let Some(tx) = state.shutdown_tx.take()
+                && let Err(error) = tx.try_send(())
+            {
+                trace!(%error, "WebSocket task already stopping");
             }
             state.abort_tasks();
         }
@@ -780,7 +799,7 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
         match next {
             Ok(Some(msg)) => Ok(Some(msg)),
             Ok(None) => {
-                let _ = self.connections.write().await.remove(&connection.id);
+                drop(self.connections.write().await.remove(&connection.id));
                 Err(DanmakuError::connection("Channel closed"))
             }
             Err(_) => Ok(None), // Timeout

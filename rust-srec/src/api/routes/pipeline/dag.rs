@@ -507,8 +507,14 @@ pub async fn retry_all_failed_dags(
 
         if retryable_steps.is_empty() {
             if dag.status == "FAILED" || dag.status == "CANCELLED" {
-                let _ = dag_scheduler.reset_dag_for_retry(&dag.id).await;
-                retried_count += 1;
+                match dag_scheduler.reset_dag_for_retry(&dag.id).await {
+                    Ok(()) => retried_count += 1,
+                    Err(e) => tracing::warn!(
+                        dag_id = %dag.id,
+                        error = %e,
+                        "Failed to reset empty DAG for retry"
+                    ),
+                }
             }
             continue;
         }
@@ -532,10 +538,12 @@ pub async fn retry_all_failed_dags(
             };
             match job.status {
                 JobStatus::Failed | JobStatus::Cancelled => {
-                    let _ = pipeline_manager.retry_job(job_id).await;
+                    if let Err(e) = pipeline_manager.retry_job(job_id).await {
+                        tracing::warn!(job_id, error = %e, "Failed to retry DAG job");
+                    }
                 }
                 JobStatus::Completed => {
-                    let _ = dag_scheduler
+                    if let Err(e) = dag_scheduler
                         .on_job_completed(
                             &step.id,
                             &job.outputs,
@@ -544,7 +552,10 @@ pub async fn retry_all_failed_dags(
                             job.platform.as_deref(),
                             job.session_start,
                         )
-                        .await;
+                        .await
+                    {
+                        tracing::warn!(job_id, error = %e, "Failed to replay completed DAG job");
+                    }
                 }
                 _ => {}
             }

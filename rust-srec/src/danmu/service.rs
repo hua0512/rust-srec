@@ -589,7 +589,14 @@ impl DanmuService {
         }
 
         // Send stop command
-        let _ = state.command_tx.send(CollectionCommand::Stop).await;
+        if state
+            .command_tx
+            .send(CollectionCommand::Stop)
+            .await
+            .is_err()
+        {
+            tracing::debug!(session_id, "Danmu collection task already stopped");
+        }
 
         // Cancel the collection task
         state.cancel_token.cancel();
@@ -662,7 +669,9 @@ impl DanmuService {
         // Stop all active collections
         let session_ids: Vec<_> = self.collections.iter().map(|r| r.key().clone()).collect();
         for session_id in session_ids {
-            let _ = self.stop_collection(&session_id).await;
+            if let Err(error) = self.stop_collection(&session_id).await {
+                warn!(session_id, %error, "Failed to stop danmu collection during shutdown");
+            }
         }
     }
 }

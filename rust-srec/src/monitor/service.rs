@@ -105,6 +105,12 @@ pub struct StreamMonitorConfig {
     pub max_concurrent_requests: usize,
 }
 
+pub(crate) struct StreamMonitorRuntimeConfig {
+    pub monitor: StreamMonitorConfig,
+    pub required_event_sender: Option<mpsc::Sender<MonitorEventDelivery>>,
+    pub task_supervisor: Arc<TaskSupervisor>,
+}
+
 impl Default for StreamMonitorConfig {
     fn default() -> Self {
         Self {
@@ -231,13 +237,14 @@ impl<
             config_service,
             write_pool,
             session_lifecycle,
-            config,
-            None,
-            Arc::new(TaskSupervisor::new()),
+            StreamMonitorRuntimeConfig {
+                monitor: config,
+                required_event_sender: None,
+                task_supervisor: Arc::new(TaskSupervisor::new()),
+            },
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn with_runtime(
         streamer_manager: Arc<StreamerManager<SR>>,
         filter_repo: Arc<FR>,
@@ -245,10 +252,13 @@ impl<
         config_service: Arc<crate::config::ConfigService<CR, SR>>,
         write_pool: SqlitePool,
         session_lifecycle: Arc<crate::session::SessionLifecycle>,
-        config: StreamMonitorConfig,
-        required_event_sender: Option<mpsc::Sender<MonitorEventDelivery>>,
-        task_supervisor: Arc<TaskSupervisor>,
+        runtime: StreamMonitorRuntimeConfig,
     ) -> Self {
+        let StreamMonitorRuntimeConfig {
+            monitor: config,
+            required_event_sender,
+            task_supervisor,
+        } = runtime;
         // Create rate limiter with platform-specific configs
         let default_rate_config = RateLimiterConfig::with_rps(config.default_rate_limit)
             .unwrap_or_else(|e| {
@@ -734,19 +744,33 @@ impl<
                                             template_id,
                                             ..
                                         } => {
-                                            let _ = self
+                                            if let Err(e) = self
                                                 .config_service
                                                 .invalidate_template(template_id)
-                                                .await;
+                                                .await
+                                            {
+                                                warn!(
+                                                    error = %e,
+                                                    %template_id,
+                                                    "Failed to invalidate template config after credential refresh"
+                                                );
+                                            }
                                         }
                                         crate::credentials::CredentialScope::Platform {
                                             platform_id,
                                             ..
                                         } => {
-                                            let _ = self
+                                            if let Err(e) = self
                                                 .config_service
                                                 .invalidate_platform(platform_id)
-                                                .await;
+                                                .await
+                                            {
+                                                warn!(
+                                                    error = %e,
+                                                    %platform_id,
+                                                    "Failed to invalidate platform config after credential refresh"
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -1109,7 +1133,7 @@ impl<
 
         let mut tx = self.begin_immediate().await?;
 
-        let _ = SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?;
+        SessionTxOps::end_active_session(&mut tx, &streamer.id, now).await?;
 
         // Update state to the fatal error state and persist the reason
         StreamerTxOps::set_fatal_error(&mut tx, &streamer.id, &new_state.to_string(), reason)

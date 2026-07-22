@@ -717,7 +717,10 @@ impl Douyu {
         format!("{}/{}", play_info.rtmp_url, play_info.rtmp_live)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "arguments map the Douyu response into one MediaInfo value"
+    )]
     fn create_media_info(
         &self,
         title: &str,

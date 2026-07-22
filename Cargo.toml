@@ -27,12 +27,28 @@ members = [
     "crates/ts",
 ]
 
+default-members = [
+    "mesio-cli",
+    "strev-cli",
+    "rust-srec",
+]
+
 [workspace.package]
 version = "0.4.0"
 authors = ["hua0512"]
 repository = "https://github.com/hua0512/rust-srec"
 license = "MIT OR Apache-2.0"
 edition = "2024"
+rust-version = "1.95"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+undocumented_unsafe_blocks = "deny"
 
 [workspace.dependencies]
 arc-swap = "1"
@@ -92,6 +108,12 @@ rustc-hash = "2.1"
 memchr = "2.7.6"
 criterion = "0.8.1"
 zlib-rs = "0.6.3"
+aes = "0.9.1"
+cbc = "0.2.1"
+cipher = "0.5.2"
+indicatif = "0.18"
+insta = "1.47"
+tracing-indicatif = "0.3"
 
 [profile.dev]
 incremental = true

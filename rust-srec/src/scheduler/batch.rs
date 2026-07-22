@@ -78,7 +78,13 @@ pub fn group_by_platform(streamers: Vec<StreamerMetadata>) -> HashMap<String, Ba
 /// Separate streamers into batch and individual groups.
 ///
 /// Returns (batch_groups, individual_streamers).
-#[allow(dead_code)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "retained for optional runtime paths and diagnostics"
+    )
+)]
 pub fn separate_batch_and_individual(
     streamers: Vec<StreamerMetadata>,
 ) -> (Vec<BatchGroup>, Vec<StreamerMetadata>) {

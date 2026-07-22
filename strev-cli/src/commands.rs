@@ -31,6 +31,19 @@ pub struct CommandExecutor {
     extractor_factory: ExtractorFactory,
 }
 
+pub struct ExtractRequest<'a> {
+    pub url: &'a str,
+    pub cookies: Option<&'a str>,
+    pub extras: Option<&'a str>,
+    pub output_file: Option<&'a Path>,
+    pub quality: Option<&'a str>,
+    pub format: Option<&'a str>,
+    pub auto_select: bool,
+    pub output_format: OutputFormat,
+    pub timeout: Duration,
+    pub retries: u32,
+}
+
 impl CommandExecutor {
     pub fn new(config: AppConfig) -> Self {
         let proxy_config = if let Some(proxy_url) = &config.default_proxy {
@@ -69,7 +82,6 @@ impl CommandExecutor {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn resolve_stream(
         &self,
         url: &str,
@@ -97,20 +109,19 @@ impl CommandExecutor {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn extract_single(
-        &self,
-        url: &str,
-        cookies: Option<&str>,
-        extras: Option<&str>,
-        output_file: Option<&Path>,
-        quality: Option<&str>,
-        format: Option<&str>,
-        auto_select: bool,
-        output_format: OutputFormat,
-        timeout_duration: Duration,
-        retries: u32,
-    ) -> Result<()> {
+    pub async fn extract_single(&self, request: ExtractRequest<'_>) -> Result<()> {
+        let ExtractRequest {
+            url,
+            cookies,
+            extras,
+            output_file,
+            quality,
+            format,
+            auto_select,
+            output_format,
+            timeout: timeout_duration,
+            retries,
+        } = request;
         let pb = self.create_progress_bar("Extracting...", &output_format);
         let result = self
             .extract_with_retry(url, cookies, extras, timeout_duration, retries)
@@ -174,18 +185,14 @@ impl CommandExecutor {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn batch_process(
         &self,
         input_file: &Path,
         output_dir: Option<&Path>,
         concurrency: usize,
-        _quality: Option<&str>,
-        _format: Option<&str>,
         auto_select: bool,
         output_format: OutputFormat,
         timeout_duration: Duration,
-        _retries: u32,
     ) -> Result<()> {
         let content = std::fs::read_to_string(input_file)?;
         let urls: Vec<String> = content

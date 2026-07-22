@@ -2,9 +2,13 @@
 name = "rust-srec"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "An automatic online streaming recorder"
 license.workspace = true
 repository = "https://github.com/hua0512/rust-srec"
+
+[lints]
+workspace = true
 
 [dependencies]
 arc-swap = { workspace = true }

@@ -334,7 +334,7 @@ pub enum VideoTagBody {
     /// When [`VideoPacketType::Enhanced`] is used
     Enhanced(EnhancedPacket),
     /// Command Frame (VideoInfo or Command)
-    /// When [`VideoFrameType::VideoInfoOrCommandFrame`] is used
+    /// When [`VideoFrameType::VideoInfoFrame`] is used
     Command(VideoCommand),
     /// Data we don't know how to parse
     Unknown {

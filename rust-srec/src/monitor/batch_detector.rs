@@ -81,7 +81,10 @@ impl Default for BatchResult {
 /// Batch detector for checking multiple streamers at once.
 pub struct BatchDetector {
     /// HTTP client for API requests.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for optional runtime paths and diagnostics"
+    )]
     client: reqwest::Client,
     /// Rate limiter manager.
     rate_limiter: RateLimiterManager,

@@ -519,8 +519,10 @@ impl ServiceContainer {
             }));
         }
 
-        for h in handles {
-            let _ = h.await;
+        for handle in handles {
+            if let Err(error) = handle.await {
+                warn!(%error, "Output-root startup probe task failed");
+            }
         }
 
         info!("Output-root startup probe complete");

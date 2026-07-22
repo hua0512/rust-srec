@@ -184,10 +184,12 @@ impl FlvDownloader {
         let stream_error = helpers::consume_stream(
             flv_stream,
             &pipeline_input_tx,
-            &self.cancellation_token,
-            &token,
-            &streamer_id,
-            "FLV",
+            helpers::StreamConsumeContext {
+                parent_token: &self.cancellation_token,
+                child_token: &token,
+                streamer_id: &streamer_id,
+                protocol: "FLV",
+            },
             super::classify_download_error,
             |_| {},
         )
@@ -262,10 +264,12 @@ impl FlvDownloader {
         let stream_error = helpers::consume_stream(
             flv_stream,
             &tx,
-            &self.cancellation_token,
-            &token,
-            &streamer_id,
-            "FLV",
+            helpers::StreamConsumeContext {
+                parent_token: &self.cancellation_token,
+                child_token: &token,
+                streamer_id: &streamer_id,
+                protocol: "FLV",
+            },
             super::classify_download_error,
             |_| {},
         )

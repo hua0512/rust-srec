@@ -1763,15 +1763,15 @@ async fn n2_cas_blocks_enter_ended_when_resume_already_claimed_hysteresis() {
     // hysteresis timer would take on fire, or `on_offline_detected`
     // would take on authoritative end).
     lifecycle
-        .enter_ended_state(
-            started.session_id(),
-            STREAMER_ID,
-            "Test",
-            TerminalCause::StreamerOffline,
-            Utc::now(),
-            /* via_hysteresis */ true,
-            DbWritePath::EndSessionOnly,
-        )
+        .enter_ended_state(EndedStateTransition {
+            session_id: started.session_id(),
+            streamer_id: STREAMER_ID,
+            streamer_name: "Test",
+            cause: TerminalCause::StreamerOffline,
+            ended_at: Utc::now(),
+            via_hysteresis: true,
+            db_write: DbWritePath::EndSessionOnly,
+        })
         .await
         .unwrap();
 

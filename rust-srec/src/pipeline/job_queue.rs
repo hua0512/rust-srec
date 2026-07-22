@@ -672,7 +672,7 @@ impl JobQueue {
     }
 
     pub async fn append_log_entry(&self, job_id: &str, logs: &[JobLogEntry]) -> Result<()> {
-        let _ = self.persist_logs_to_db(job_id, logs).await?;
+        self.persist_logs_to_db(job_id, logs).await?;
         Ok(())
     }
 
@@ -2002,8 +2002,7 @@ impl JobQueue {
             extend_logs_capped(&mut exec_info, std::slice::from_ref(&log_entry));
             update_log_summary(&mut exec_info, std::slice::from_ref(&log_entry));
 
-            let _ = self
-                .persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
+            self.persist_logs_to_db(job_id, std::slice::from_ref(&log_entry))
                 .await?;
 
             let exec_info_json = serde_json::to_string(&exec_info)?;
@@ -2122,7 +2121,10 @@ fn spawn_progress_aggregator(
                     for (job_id, snapshot) in pending.drain() {
                         let progress = match serde_json::to_string(&snapshot) {
                             Ok(s) => s,
-                            Err(_) => continue,
+                            Err(error) => {
+                                warn!(job_id, %error, "Failed to serialize job progress");
+                                continue;
+                            }
                         };
                         let row = JobExecutionProgressDbModel {
                             job_id: job_id.clone(),
@@ -2130,7 +2132,9 @@ fn spawn_progress_aggregator(
                             progress,
                             updated_at: snapshot.updated_at.timestamp_millis(),
                         };
-                        let _ = repo.upsert_job_execution_progress(&row).await;
+                        if let Err(error) = repo.upsert_job_execution_progress(&row).await {
+                            warn!(job_id, %error, "Failed to persist job progress");
+                        }
                     }
                 }
                 update = rx.recv() => {

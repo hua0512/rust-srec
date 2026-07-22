@@ -564,15 +564,15 @@ impl SessionLifecycle {
         let outcome = self.repo.end(inputs).await?;
 
         if let Some(id) = outcome.resolved_session_id.as_deref() {
-            self.enter_ended_state(
-                id,
-                args.streamer_id,
-                args.streamer_name,
+            self.enter_ended_state(EndedStateTransition {
+                session_id: id,
+                streamer_id: args.streamer_id,
+                streamer_name: args.streamer_name,
                 cause,
-                args.now,
-                was_in_hysteresis,
-                DbWritePath::Skip,
-            )
+                ended_at: args.now,
+                via_hysteresis: was_in_hysteresis,
+                db_write: DbWritePath::Skip,
+            })
             .await?;
         } else {
             debug!(
@@ -686,15 +686,15 @@ impl SessionLifecycle {
                 cause = cause.as_str(),
                 "on_download_terminal: authoritative end → direct Ended"
             );
-            self.enter_ended_state(
+            self.enter_ended_state(EndedStateTransition {
                 session_id,
                 streamer_id,
                 streamer_name,
                 cause,
-                now,
-                /* via_hysteresis */ false,
-                DbWritePath::EndSessionOnly,
-            )
+                ended_at: now,
+                via_hysteresis: false,
+                db_write: DbWritePath::EndSessionOnly,
+            })
             .await?;
         } else {
             debug!(
@@ -851,11 +851,15 @@ impl SessionLifecycle {
                         return;
                     }
                     let now = Utc::now();
-                    if let Err(e) = me.enter_ended_state(
-                        &sid, &strm_id, &strm_name, cause, now,
-                        /* via_hysteresis */ true,
-                        /* db_write */ DbWritePath::EndSessionOnly,
-                    ).await {
+                    if let Err(e) = me.enter_ended_state(EndedStateTransition {
+                        session_id: &sid,
+                        streamer_id: &strm_id,
+                        streamer_name: &strm_name,
+                        cause,
+                        ended_at: now,
+                        via_hysteresis: true,
+                        db_write: DbWritePath::EndSessionOnly,
+                    }).await {
                         warn!(session_id = %sid, error = %e,
                               "Hysteresis timer: failed to confirm Ended");
                     }
@@ -1057,17 +1061,16 @@ impl SessionLifecycle {
     /// plus `Started{from_hysteresis: true}` and is now actively recording.
     ///
     /// Pairs with the equivalent CAS in `resume_from_hysteresis`.
-    #[allow(clippy::too_many_arguments)]
-    async fn enter_ended_state(
-        &self,
-        session_id: &str,
-        streamer_id: &str,
-        streamer_name: &str,
-        cause: TerminalCause,
-        ended_at: DateTime<Utc>,
-        via_hysteresis: bool,
-        db_write: DbWritePath,
-    ) -> Result<()> {
+    async fn enter_ended_state(&self, transition: EndedStateTransition<'_>) -> Result<()> {
+        let EndedStateTransition {
+            session_id,
+            streamer_id,
+            streamer_name,
+            cause,
+            ended_at,
+            via_hysteresis,
+            db_write,
+        } = transition;
         // CAS-style entry guard. If the session is already Ended, skip
         // (idempotent on duplicate authoritative-end events arriving in
         // tight succession).
@@ -1512,6 +1515,16 @@ enum DbWritePath {
     /// `end_time` without flipping streamer state. Used by the
     /// download-terminal path and the hysteresis-timer path.
     EndSessionOnly,
+}
+
+struct EndedStateTransition<'a> {
+    session_id: &'a str,
+    streamer_id: &'a str,
+    streamer_name: &'a str,
+    cause: TerminalCause,
+    ended_at: DateTime<Utc>,
+    via_hysteresis: bool,
+    db_write: DbWritePath,
 }
 
 /// Arguments for [`SessionLifecycle::on_live_detected`].

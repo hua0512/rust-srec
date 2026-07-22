@@ -311,51 +311,33 @@ pub struct CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::MergedConfig;
+    use crate::config::{GlobalConfigLayer, MergedConfig, PlatformConfigLayer};
     use crate::domain::ProxyConfig;
 
     fn create_test_context() -> ResolvedStreamerContext {
         let config = MergedConfig::builder()
-            .with_global(
-                "/app/output".to_string(),
-                "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
-                "flv".to_string(),
-                1024,
-                0,
-                8589934592,
-                false,
-                ProxyConfig::disabled(),
-                "ffmpeg".to_string(),
-                None, // pipeline
-                None, // session_complete_pipeline
-                None, // paired_segment_pipeline
-                true,
-                3,      // offline_check_count
-                20_000, // offline_check_delay_ms
-            )
-            .with_platform(
-                Some(60000),
-                Some(1000),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None, // pipeline
-                None, // session_complete_pipeline
-                None, // paired_segment_pipeline
-                None, // offline_check_count
-                None, // offline_check_delay_ms
-            )
+            .with_global(GlobalConfigLayer {
+                output_folder: "/app/output".to_string(),
+                output_filename_template: "{streamer}-%Y%m%d-%H%M%S-{title}".to_string(),
+                output_file_format: "flv".to_string(),
+                min_segment_size_bytes: 1024,
+                max_download_duration_secs: 0,
+                max_part_size_bytes: 8_589_934_592,
+                record_danmu: false,
+                proxy_config: ProxyConfig::disabled(),
+                download_engine: "ffmpeg".to_string(),
+                pipeline: None,
+                session_complete_pipeline: None,
+                paired_segment_pipeline: None,
+                auto_thumbnail: true,
+                offline_check_count: 3,
+                offline_check_delay_ms: 20_000,
+            })
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                ..Default::default()
+            })
             .build();
 
         ResolvedStreamerContext {

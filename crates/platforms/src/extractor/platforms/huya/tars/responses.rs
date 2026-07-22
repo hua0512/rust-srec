@@ -6,7 +6,6 @@ use tars_codec::{error::TarsError, types::TarsValue};
 
 // GetCdnTokenExRsp from JavaScript x.GetCdnTokenExRsp
 #[derive(Default, Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub struct GetCdnTokenExRsp {
     pub flv_token: String, // tag 0
     pub expire_time: i32,  // tag 1
@@ -50,7 +49,6 @@ impl TryFrom<TarsValue> for GetCdnTokenExRsp {
 // tag 7: sVideoLayout (string)
 // tag 8: iLowDelayMode (i32)
 #[derive(Default, Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub struct StreamSettingNotice {
     pub l_presenter_uid: i64,   // tag 0
     pub i_bit_rate: i32,        // tag 1
@@ -120,7 +118,6 @@ impl TryFrom<TarsValue> for StreamSettingNotice {
 
 // GetLivingInfoRsp from JavaScript x.GetLivingInfoRsp
 #[derive(Default, Debug, Clone, PartialEq)]
-#[allow(dead_code)]
 pub struct GetLivingInfoRsp {
     pub b_is_living: i32,                             // tag 0
     pub t_notice: BeginLiveNotice,                    // tag 1

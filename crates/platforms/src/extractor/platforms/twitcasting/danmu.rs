@@ -3,9 +3,12 @@
 //! Implements danmu collection for the TwitCasting streaming platform using WebSocket.
 //!
 //! Protocol:
-//! 1. Get movie ID from stream server API: GET https://twitcasting.tv/streamserver.php?target={userId}&mode=client
-//! 2. Get WebSocket URL: POST https://twitcasting.tv/eventpubsuburl.php with movie_id and password
-//! 3. Connect to the returned wss:// URL for real-time comments (JSON arrays)
+//! 1. Get the movie ID from the [stream server API].
+//! 2. Get the WebSocket URL from the [event pub/sub API] using the movie ID and password.
+//! 3. Connect to the returned `wss://` URL for real-time comments (JSON arrays).
+//!
+//! [stream server API]: https://twitcasting.tv/streamserver.php
+//! [event pub/sub API]: https://twitcasting.tv/eventpubsuburl.php
 
 use md5::{Digest, Md5};
 use reqwest::Client;
@@ -70,14 +73,20 @@ struct TwitcastingComment {
     #[serde(default, alias = "createdAt", alias = "created_at")]
     created_at: Option<i64>,
     #[serde(default, alias = "num_comments")]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for protocol variants and forward-compatible response handling"
+    )]
     num_comments: Option<u64>,
 }
 
 /// User info in comment
 #[derive(Debug, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for protocol variants and forward-compatible response handling"
+)]
 struct CommentUser {
     #[serde(default)]
     name: Option<String>,

@@ -27,9 +27,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.10
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-protoc
       - name: Install Linux TLS dependencies
         run: |
@@ -37,7 +35,7 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
+          shared-key: dev-clippy
       - name: Clippy check
         run: cargo clippy --locked --workspace --exclude rust-srec-desktop --all-targets --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback -- -D warnings
       - name: sccache stats
@@ -67,7 +65,7 @@ jobs:
         if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
           version: "v0.13.0"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
       - name: Install Linux TLS dependencies
@@ -77,7 +75,7 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
+          shared-key: dev-test
       - name: Run tests (backend only)
         if: matrix.os == 'ubuntu-latest'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback

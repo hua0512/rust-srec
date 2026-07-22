@@ -132,7 +132,10 @@ impl SessionOutputs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "retained for optional runtime paths and diagnostics"
+)]
 pub enum PipelineScope {
     Segment {
         source: SourceType,
@@ -378,9 +381,14 @@ impl PipelineCoordinator {
     pub async fn cleanup_stale(&self, session_ttl_secs: u64) {
         let tx = { self.tx.lock().await.clone() };
         if let Some(tx) = tx {
-            let _ = tx
+            if tx
                 .send(CoordinatorRequest::Cleanup { session_ttl_secs })
-                .await;
+                .await
+                .is_err()
+            {
+                warn!("Pipeline coordinator stopped; cleaning stale sessions inline");
+                Self::lock_state(&self.inner).cleanup_stale(session_ttl_secs);
+            }
         } else {
             Self::lock_state(&self.inner).cleanup_stale(session_ttl_secs);
         }

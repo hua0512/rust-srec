@@ -15,7 +15,7 @@ use pipeline_common::CancellationToken;
 use pipeline_common::PipelineError;
 use std::path::Path;
 use std::time::Instant;
-use tracing::{Level, debug, info, span};
+use tracing::{Level, debug, info, span, warn};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 /// Process an HLS stream
@@ -74,8 +74,10 @@ pub async fn process_hls_stream(
         let handle = handle.clone();
         async move {
             handle.cancel();
-            if let Some(task) = progress_task {
-                let _ = task.await;
+            if let Some(task) = progress_task
+                && let Err(error) = task.await
+            {
+                warn!(%error, "download progress task failed");
             }
         }
     };
@@ -182,8 +184,10 @@ pub async fn process_hls_stream(
         download_span.pb_set_finish_message(&format!("Downloaded {}", url_str));
     }
     handle.cancel();
-    if let Some(task) = progress_task {
-        let _ = task.await;
+    if let Some(task) = progress_task
+        && let Err(error) = task.await
+    {
+        warn!(%error, "download progress task failed");
     }
     spans::summarize_dropped_events(&handle, &download_span);
     drop(download_span);

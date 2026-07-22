@@ -27,7 +27,10 @@ pub enum PipeFlvStrategyError {
 
 impl PipeFlvStrategyError {
     /// Check if this error is a broken pipe error
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for alternate output strategies and diagnostics"
+    )]
     pub fn is_broken_pipe(&self) -> bool {
         match self {
             PipeFlvStrategyError::BrokenPipe => true,
@@ -81,7 +84,10 @@ impl PipeFlvStrategy {
     }
 
     /// Get the current segment count
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for alternate output strategies and diagnostics"
+    )]
     pub fn segment_count(&self) -> u32 {
         self.segment_count
     }
@@ -157,13 +163,19 @@ impl PipeFlvStrategy {
     }
 
     /// Get total bytes written
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for alternate output strategies and diagnostics"
+    )]
     pub fn bytes_written(&self) -> u64 {
         self.bytes_written
     }
 
     /// Check if any data has been written
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "retained for alternate output strategies and diagnostics"
+    )]
     pub fn has_written_data(&self) -> bool {
         self.has_written_data
     }
@@ -329,7 +341,10 @@ mod tests {
             self.inner.lock().unwrap().clone()
         }
 
-        #[allow(dead_code)]
+        #[expect(
+            dead_code,
+            reason = "retained for alternate output strategies and diagnostics"
+        )]
         fn clear(&self) {
             self.inner.lock().unwrap().clear();
         }
@@ -346,9 +361,6 @@ mod tests {
             Ok(())
         }
     }
-
-    unsafe impl Send for SharedBuffer {}
-    unsafe impl Sync for SharedBuffer {}
 
     /// Create a test FLV header
     fn create_test_header(has_audio: bool, has_video: bool) -> FlvHeader {

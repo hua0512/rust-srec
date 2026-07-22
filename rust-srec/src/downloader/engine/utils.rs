@@ -1,5 +1,10 @@
 //! Utility modules for download engines.
 
+use tokio::sync::mpsc;
+use tracing::debug;
+
+use super::traits::SegmentEvent;
+
 mod disk_full;
 mod ffmpeg_parser;
 mod files;
@@ -14,3 +19,12 @@ pub use ffmpeg_parser::{
 pub use files::ensure_output_dir;
 pub use output_record_reader::OutputRecordReader;
 pub use process_runner::{spawn_piped_process_waiter, spawn_process_waiter};
+
+pub(super) fn observe_segment_event_send(
+    result: Result<(), mpsc::error::SendError<SegmentEvent>>,
+    streamer_id: &str,
+) {
+    if let Err(error) = result {
+        debug!(%error, %streamer_id, "segment event receiver closed");
+    }
+}

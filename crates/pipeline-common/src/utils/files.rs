@@ -201,6 +201,9 @@ mod tests {
         unsafe extern "C" {
             fn tzset();
         }
+        // SAFETY: cargo-nextest isolates this test in its own process. The TZ
+        // value is a valid NUL-free POSIX timezone string, and `tzset` takes no
+        // arguments and only refreshes libc's process-local timezone state.
         unsafe {
             std::env::set_var("TZ", "EST5EDT,M3.2.0,M11.1.0");
             tzset();
