@@ -1010,6 +1010,7 @@ fn global_model(existing: &GlobalConfigDbModel, config: &ConfigExport) -> Global
     model.pipeline_execute_timeout_secs = source.pipeline_execute_timeout_secs;
     model.queue_freshness_threshold_ms = source.queue_freshness_threshold_ms;
     model.gpu_health_probe_interval_secs = source.gpu_health_probe_interval_secs;
+    model.stream_proxy_allow_private_targets = source.stream_proxy_allow_private_targets;
     model
 }
 
@@ -1376,7 +1377,7 @@ async fn persist_global(
             paired_segment_pipeline = ?, log_filter_directive = ?, auto_thumbnail = ?,
             pipeline_cpu_job_timeout_secs = ?, pipeline_io_job_timeout_secs = ?,
             pipeline_execute_timeout_secs = ?, queue_freshness_threshold_ms = ?,
-            gpu_health_probe_interval_secs = ?
+            gpu_health_probe_interval_secs = ?, stream_proxy_allow_private_targets = ?
         WHERE id = ?
         "#,
     )
@@ -1408,6 +1409,7 @@ async fn persist_global(
     .bind(config.pipeline_execute_timeout_secs)
     .bind(config.queue_freshness_threshold_ms)
     .bind(config.gpu_health_probe_interval_secs)
+    .bind(config.stream_proxy_allow_private_targets)
     .bind(&config.id)
     .execute(&mut **tx)
     .await?;
@@ -1779,6 +1781,7 @@ mod tests {
                 pipeline_execute_timeout_secs: global.pipeline_execute_timeout_secs,
                 queue_freshness_threshold_ms: global.queue_freshness_threshold_ms,
                 gpu_health_probe_interval_secs: global.gpu_health_probe_interval_secs,
+                stream_proxy_allow_private_targets: global.stream_proxy_allow_private_targets,
             },
             templates: Vec::new(),
             streamers: Vec::new(),

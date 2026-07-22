@@ -1,5 +1,6 @@
 import { lookup } from 'node:dns/promises';
-import { BlockList, isIP } from 'node:net';
+import { BlockList, isIP, type LookupFunction } from 'node:net';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { ensureValidToken } from './tokenRefresh';
 
 const MAX_REDIRECTS = 5;
@@ -69,13 +70,25 @@ const resolveAddresses: AddressResolver = async (hostname) => {
   return lookup(hostname, { all: true, verbatim: true });
 };
 
+export type ProxyTargetOptions = {
+  resolver?: AddressResolver;
+  /**
+   * Mirrors the `stream_proxy_allow_private_targets` global-config flag: the
+   * operator opts into LAN/localhost stream sources, so only the scheme and
+   * URL-credential checks apply.
+   */
+  allowPrivateTargets?: boolean;
+};
+
 export async function validateProxyTarget(
   input: string | URL,
-  resolver: AddressResolver = resolveAddresses,
+  options: ProxyTargetOptions = {},
 ): Promise<URL> {
+  const { resolver = resolveAddresses, allowPrivateTargets = false } = options;
+
   let target: URL;
   try {
-    target = input instanceof URL ? new URL(input) : new URL(input);
+    target = new URL(input);
   } catch {
     throw new ProxyRequestError(400, 'Invalid url parameter');
   }
@@ -88,7 +101,13 @@ export async function validateProxyTarget(
   }
 
   const hostname = target.hostname.replace(/^\[|\]$/g, '');
-  if (!hostname || hostname.toLowerCase() === 'localhost') {
+  if (!hostname) {
+    throw new ProxyRequestError(400, 'Target host is not allowed');
+  }
+  if (allowPrivateTargets) {
+    return target;
+  }
+  if (hostname.toLowerCase() === 'localhost') {
     throw new ProxyRequestError(400, 'Target host is not allowed');
   }
 
@@ -116,7 +135,18 @@ export async function validateProxyTarget(
   return target;
 }
 
-function parseCustomHeaders(raw: string | null): Record<string, string> {
+const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+function isValidHeaderValue(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code === 0x09) continue;
+    if (code < 0x20 || code === 0x7f) return false;
+  }
+  return true;
+}
+
+export function parseCustomHeaders(raw: string | null): Record<string, string> {
   if (!raw) return {};
 
   let parsed: unknown;
@@ -142,6 +172,15 @@ function parseCustomHeaders(raw: string | null): Record<string, string> {
     if (name.length > 256 || value.length > 16_384) {
       throw new ProxyRequestError(400, 'Custom header is too large');
     }
+    // Reject malformed names/values here: Headers.set in
+    // buildUpstreamHeaders throws a TypeError for them, which errorResponse
+    // would map to a generic 502 instead of this 400.
+    if (!HEADER_NAME_PATTERN.test(name)) {
+      throw new ProxyRequestError(400, 'Invalid header name');
+    }
+    if (!isValidHeaderValue(value)) {
+      throw new ProxyRequestError(400, 'Invalid header value');
+    }
     headers[name] = value;
   }
   return headers;
@@ -162,27 +201,80 @@ function buildUpstreamHeaders(
   return headers;
 }
 
-async function fetchWithValidatedRedirects(
-  initialTarget: URL,
+// `validateProxyTarget` filters DNS results before each request, but the
+// connection performs its own lookup afterwards; a DNS record that changes
+// between the two lookups (rebinding) would let the connect reach a private
+// address. This lookup re-applies `isPublicAddress` inside the socket
+// connect, so the addresses the connector dials are exactly the ones that
+// passed the check.
+const publicOnlyLookup: LookupFunction = (hostname, options, callback) => {
+  lookup(hostname, { all: true, verbatim: true }).then(
+    (addresses) => {
+      const first = addresses[0];
+      if (
+        !first ||
+        addresses.some(({ address }) => !isPublicAddress(address))
+      ) {
+        callback(new Error('Target host resolved to a non-public address'), '');
+        return;
+      }
+      if (options.all) {
+        callback(null, addresses);
+      } else {
+        callback(null, first.address, first.family);
+      }
+    },
+    (error) => callback(error as NodeJS.ErrnoException, ''),
+  );
+};
+
+const publicOnlyAgent = new Agent({ connect: { lookup: publicOnlyLookup } });
+
+export type UpstreamFetch = (
+  target: URL,
+  init: { headers: Headers; redirect: 'manual'; signal: AbortSignal },
+) => Promise<Response>;
+
+// undici's fetch is used instead of the global one because only it accepts
+// the dispatcher carrying publicOnlyLookup. Header entries and the response
+// are bridged through the global types the rest of this module uses.
+const pinnedUpstreamFetch: UpstreamFetch = async (target, init) => {
+  const response = await undiciFetch(target.toString(), {
+    headers: Array.from(init.headers.entries()),
+    redirect: init.redirect,
+    signal: init.signal,
+    dispatcher: publicOnlyAgent,
+  });
+  return response as unknown as Response;
+};
+
+const plainUpstreamFetch: UpstreamFetch = (target, init) => fetch(target, init);
+
+export async function fetchWithValidatedRedirects(
+  initialTarget: string | URL,
   headers: Headers,
   signal: AbortSignal,
+  options: ProxyTargetOptions & { fetchImpl?: UpstreamFetch } = {},
 ): Promise<{ response: Response; finalUrl: URL }> {
-  let target = initialTarget;
+  const fetchImpl =
+    options.fetchImpl ??
+    (options.allowPrivateTargets ? plainUpstreamFetch : pinnedUpstreamFetch);
+  let target: string | URL = initialTarget;
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    target = await validateProxyTarget(target);
-    const response = await fetch(target, {
+    const validated = await validateProxyTarget(target, options);
+    const response = await fetchImpl(validated, {
       headers,
       redirect: 'manual',
       signal,
     });
 
     if (!REDIRECT_STATUSES.has(response.status)) {
-      return { response, finalUrl: target };
+      return { response, finalUrl: validated };
     }
 
     const location = response.headers.get('location');
-    if (!location) return { response, finalUrl: target };
+    if (!location) return { response, finalUrl: validated };
     if (redirectCount === MAX_REDIRECTS) {
       await response.body?.cancel();
       throw new ProxyRequestError(502, 'Too many upstream redirects');
@@ -190,7 +282,7 @@ async function fetchWithValidatedRedirects(
 
     let redirectedTarget: URL;
     try {
-      redirectedTarget = new URL(location, target);
+      redirectedTarget = new URL(location, validated);
     } catch {
       await response.body?.cancel();
       throw new ProxyRequestError(502, 'Invalid upstream redirect');
@@ -460,6 +552,39 @@ function errorResponse(error: unknown): Response {
   return new Response('Proxy request failed', { status: 502 });
 }
 
+const ALLOW_PRIVATE_TARGETS_CACHE_TTL_MS = 30_000;
+let allowPrivateTargetsCache: { value: boolean; expiresAt: number } | null =
+  null;
+
+/**
+ * Read `stream_proxy_allow_private_targets` from the backend global config so
+ * this proxy applies the same target policy as `/api/stream-proxy`. Cached
+ * briefly because playback issues one proxy request per playlist reload and
+ * segment. Fails closed on any backend error.
+ */
+async function allowPrivateProxyTargets(): Promise<boolean> {
+  const now = Date.now();
+  if (allowPrivateTargetsCache && now < allowPrivateTargetsCache.expiresAt) {
+    return allowPrivateTargetsCache.value;
+  }
+
+  let value = false;
+  try {
+    const { fetchBackend } = await import('./api');
+    const config = await fetchBackend<{
+      stream_proxy_allow_private_targets?: boolean;
+    }>('/config/global');
+    value = config?.stream_proxy_allow_private_targets === true;
+  } catch {
+    value = false;
+  }
+  allowPrivateTargetsCache = {
+    value,
+    expiresAt: now + ALLOW_PRIVATE_TARGETS_CACHE_TTL_MS,
+  };
+  return value;
+}
+
 export async function handleStreamProxyRequest(
   request: Request,
 ): Promise<Response> {
@@ -476,7 +601,7 @@ export async function handleStreamProxyRequest(
     const customHeaders = parseCustomHeaders(
       requestUrl.searchParams.get('headers'),
     );
-    const target = await validateProxyTarget(rawTarget);
+    const allowPrivateTargets = await allowPrivateProxyTargets();
     const upstreamHeaders = buildUpstreamHeaders(customHeaders, request);
     const abortController = new AbortController();
     if (request.signal.aborted) {
@@ -489,10 +614,13 @@ export async function handleStreamProxyRequest(
       );
     }
 
+    // fetchWithValidatedRedirects validates the initial target and every
+    // redirect hop before fetching it.
     const { response, finalUrl } = await fetchWithValidatedRedirects(
-      target,
+      rawTarget,
       upstreamHeaders,
       abortController.signal,
+      { allowPrivateTargets },
     );
     return await createProxyResponse(
       response,

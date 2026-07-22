@@ -27,9 +27,20 @@ const MAX_MANIFEST_BYTES: usize = 8 * 1024 * 1024;
 const HLS_MAGIC_SCAN_BYTES: usize = 10;
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
 
+type SharedConfigService = Arc<
+    crate::config::ConfigService<
+        crate::database::repositories::config::SqlxConfigRepository,
+        crate::database::repositories::streamer::SqlxStreamerRepository,
+    >,
+>;
+
 #[derive(Clone)]
 pub struct StreamProxyState {
     auth_service: Option<Arc<AuthService>>,
+    /// Source of the `stream_proxy_allow_private_targets` global-config flag,
+    /// read per request so UI changes apply without a restart. `None` (tests
+    /// only) falls back to `allow_private_targets`.
+    config_service: Option<SharedConfigService>,
     allow_private_targets: bool,
 }
 
@@ -37,26 +48,39 @@ impl FromRef<AppState> for StreamProxyState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_service: state.auth_service.clone(),
+            config_service: Some(state.config_service.clone()),
             allow_private_targets: false,
         }
     }
 }
 
-fn stream_proxy_client() -> ApiResult<&'static reqwest::Client> {
+fn stream_proxy_client(allow_private_targets: bool) -> ApiResult<&'static reqwest::Client> {
     // The platforms-parser default client sets a 30s request timeout.
     // That breaks long-lived streaming responses (e.g. mpegts/flv) and manifests
     // as `UnrecoverableEarlyEof` after ~30s.
-    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    //
+    // Two clients because the resolver is fixed at build time: the strict one
+    // enforces `is_public_ip` inside DNS resolution via `PublicAddressResolver`,
+    // while the allow-private one resolves normally.
+    static STRICT_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    static PRIVATE_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
 
-    let client = CLIENT.get_or_init(|| {
+    let cell = if allow_private_targets {
+        &PRIVATE_CLIENT
+    } else {
+        &STRICT_CLIENT
+    };
+    let client = cell.get_or_init(|| {
         crate::utils::http_client::install_rustls_provider();
-        reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .tcp_nodelay(true)
             .pool_max_idle_per_host(20)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|e| e.to_string())
+            .redirect(reqwest::redirect::Policy::none());
+        if !allow_private_targets {
+            builder = builder.dns_resolver(Arc::new(PublicAddressResolver));
+        }
+        builder.build().map_err(|e| e.to_string())
     });
 
     match client {
@@ -97,6 +121,34 @@ fn is_public_ip(address: IpAddr) -> bool {
     }
 }
 
+/// Resolve `host` and reject the result unless every address is public.
+///
+/// Backs `PublicAddressResolver`, so the addresses the strict client's
+/// connector dials are exactly the addresses that passed `is_public_ip`.
+/// `validate_target_url` runs the same check earlier for a friendly 400, but
+/// the connection performs its own lookup afterwards; a DNS record that
+/// changes between the two lookups (rebinding) is caught here.
+async fn resolve_public_addresses(host: &str) -> std::io::Result<Vec<std::net::SocketAddr>> {
+    let addresses: Vec<std::net::SocketAddr> = lookup_host((host, 0)).await?.collect();
+    if addresses.is_empty() || addresses.iter().any(|address| !is_public_ip(address.ip())) {
+        return Err(std::io::Error::other(
+            "target host resolved to a non-public address",
+        ));
+    }
+    Ok(addresses)
+}
+
+struct PublicAddressResolver;
+
+impl reqwest::dns::Resolve for PublicAddressResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let addresses = resolve_public_addresses(name.as_str()).await?;
+            Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
 async fn validate_target_url(target: &url::Url, allow_private_targets: bool) -> ApiResult<()> {
     match target.scheme() {
         "http" | "https" => {}
@@ -109,14 +161,17 @@ async fn validate_target_url(target: &url::Url, allow_private_targets: bool) -> 
     let host = target
         .host_str()
         .ok_or_else(|| ApiError::bad_request("Target host is required"))?;
+    if allow_private_targets {
+        // `stream_proxy_allow_private_targets` opts the operator into LAN and
+        // localhost sources, so only the scheme/credential checks above apply.
+        return Ok(());
+    }
+
     let normalized_host = host.trim_end_matches('.');
     if normalized_host.eq_ignore_ascii_case("localhost")
         || normalized_host.to_ascii_lowercase().ends_with(".localhost")
     {
         return Err(ApiError::bad_request("Target host is not allowed"));
-    }
-    if allow_private_targets {
-        return Ok(());
     }
 
     if let Ok(address) = normalized_host.parse::<IpAddr>() {
@@ -155,7 +210,15 @@ async fn fetch_upstream(
             .headers(headers.clone())
             .send()
             .await
-            .map_err(|_| {
+            .map_err(|error| {
+                // `without_url` because reqwest errors embed the full target
+                // URL, which may carry signed query parameters.
+                tracing::debug!(
+                    scheme = target.scheme(),
+                    host = target.host_str().unwrap_or_default(),
+                    error = %error.without_url(),
+                    "stream proxy upstream request failed"
+                );
                 ApiError::new(
                     StatusCode::BAD_GATEWAY,
                     "BAD_GATEWAY",
@@ -420,9 +483,20 @@ pub async fn stream_proxy_get(
             .map_err(ApiError::from)?;
     }
 
+    // Fail closed: a config read error must not widen the target policy.
+    let allow_private_targets = match &state.config_service {
+        Some(config_service) => config_service
+            .get_global_config()
+            .await
+            .map(|config| config.stream_proxy_allow_private_targets)
+            .unwrap_or(false),
+        None => state.allow_private_targets,
+    };
+
+    // Validated by fetch_upstream, which checks the initial target and every
+    // redirect hop with validate_target_url before fetching it.
     let target =
         url::Url::parse(&query.url).map_err(|_| ApiError::bad_request("Invalid url parameter"))?;
-    validate_target_url(&target, state.allow_private_targets).await?;
 
     let mut custom_headers: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
@@ -474,14 +548,8 @@ pub async fn stream_proxy_get(
         upstream_headers.insert(reqwest::header::RANGE, value);
     }
 
-    let client = stream_proxy_client()?;
-    let upstream = fetch_upstream(
-        client,
-        target,
-        &upstream_headers,
-        state.allow_private_targets,
-    )
-    .await?;
+    let client = stream_proxy_client(allow_private_targets)?;
+    let upstream = fetch_upstream(client, target, &upstream_headers, allow_private_targets).await?;
 
     let status = upstream.status();
     let final_url = upstream.url().clone();
@@ -653,6 +721,14 @@ mod tests {
         ser.finish()
     }
 
+    fn test_state(allow_private_targets: bool) -> StreamProxyState {
+        StreamProxyState {
+            auth_service: None,
+            config_service: None,
+            allow_private_targets,
+        }
+    }
+
     #[tokio::test]
     async fn proxy_forwards_range_and_sets_cors_headers() {
         let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -662,10 +738,7 @@ mod tests {
             axum::serve(upstream_listener, upstream_app).await.unwrap();
         });
 
-        let state = StreamProxyState {
-            auth_service: None,
-            allow_private_targets: true,
-        };
+        let state = test_state(true);
 
         let app = Router::new()
             .nest("/api/stream-proxy", super::router::<StreamProxyState>())
@@ -700,10 +773,7 @@ mod tests {
 
     #[tokio::test]
     async fn proxy_rejects_non_http_schemes() {
-        let state = StreamProxyState {
-            auth_service: None,
-            allow_private_targets: false,
-        };
+        let state = test_state(false);
 
         let app = Router::new()
             .nest("/api/stream-proxy", super::router::<StreamProxyState>())
@@ -728,10 +798,7 @@ mod tests {
             axum::serve(upstream_listener, upstream_app).await.unwrap();
         });
 
-        let state = StreamProxyState {
-            auth_service: None,
-            allow_private_targets: true,
-        };
+        let state = test_state(true);
         let app = Router::new()
             .nest("/api/stream-proxy", super::router::<StreamProxyState>())
             .with_state(state);
@@ -811,5 +878,115 @@ mod tests {
             let error = validate_target_url(&target, false).await.unwrap_err();
             assert_eq!(error.status, StatusCode::BAD_REQUEST);
         }
+    }
+
+    #[tokio::test]
+    async fn validate_allows_private_targets_when_enabled() {
+        let target = url::Url::parse("http://localhost:8080/stream").unwrap();
+        assert!(validate_target_url(&target, true).await.is_ok());
+        assert!(validate_target_url(&target, false).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn public_address_resolver_rejects_private_hosts() {
+        // "localhost" resolves to loopback everywhere, so the resolver must
+        // refuse to hand any address to the connector.
+        assert!(resolve_public_addresses("localhost").await.is_err());
+    }
+
+    async fn redirect_to_manifest_handler() -> impl IntoResponse {
+        (StatusCode::FOUND, [(header::LOCATION, "/live/master.m3u8")])
+    }
+
+    async fn redirect_loop_handler() -> impl IntoResponse {
+        (StatusCode::FOUND, [(header::LOCATION, "/redirect-loop")])
+    }
+
+    async fn redirect_with_credentials_handler() -> impl IntoResponse {
+        (
+            StatusCode::FOUND,
+            [(header::LOCATION, "http://user:pass@media.example/stream")],
+        )
+    }
+
+    #[tokio::test]
+    async fn proxy_follows_redirects_and_rewrites_against_final_url() {
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let upstream_app = Router::new()
+            .route("/redirect", get(redirect_to_manifest_handler))
+            .route("/live/master.m3u8", get(hls_manifest_handler));
+        tokio::spawn(async move {
+            axum::serve(upstream_listener, upstream_app).await.unwrap();
+        });
+
+        let app = Router::new()
+            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
+            .with_state(test_state(true));
+        let target = format!("http://{upstream_addr}/redirect");
+        let query = build_query(&[("url", &target)]);
+        let request = HttpRequest::builder()
+            .uri(format!("/api/stream-proxy?{query}"))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), MAX_MANIFEST_BYTES)
+            .await
+            .unwrap();
+        let body = std::str::from_utf8(&body).unwrap();
+        // Relative manifest URIs must resolve against the post-redirect URL,
+        // not the target the client originally requested.
+        assert_eq!(body.matches("/api/stream-proxy?").count(), 2);
+        assert!(body.contains("%2Flive%2Fvideo%2Findex.m3u8"));
+    }
+
+    #[tokio::test]
+    async fn proxy_validates_every_redirect_hop() {
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let upstream_app = Router::new().route("/redirect", get(redirect_with_credentials_handler));
+        tokio::spawn(async move {
+            axum::serve(upstream_listener, upstream_app).await.unwrap();
+        });
+
+        // The credential check applies even with allow_private_targets, so a
+        // rejected hop proves validate_target_url ran on the redirect target.
+        let app = Router::new()
+            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
+            .with_state(test_state(true));
+        let target = format!("http://{upstream_addr}/redirect");
+        let query = build_query(&[("url", &target)]);
+        let request = HttpRequest::builder()
+            .uri(format!("/api/stream-proxy?{query}"))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn proxy_caps_upstream_redirects() {
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let upstream_app = Router::new().route("/redirect-loop", get(redirect_loop_handler));
+        tokio::spawn(async move {
+            axum::serve(upstream_listener, upstream_app).await.unwrap();
+        });
+
+        let app = Router::new()
+            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
+            .with_state(test_state(true));
+        let target = format!("http://{upstream_addr}/redirect-loop");
+        let query = build_query(&[("url", &target)]);
+        let request = HttpRequest::builder()
+            .uri(format!("/api/stream-proxy?{query}"))
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     }
 }

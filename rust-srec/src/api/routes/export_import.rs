@@ -260,6 +260,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             pipeline_execute_timeout_secs: global_config.pipeline_execute_timeout_secs,
             queue_freshness_threshold_ms: global_config.queue_freshness_threshold_ms,
             gpu_health_probe_interval_secs: global_config.gpu_health_probe_interval_secs,
+            stream_proxy_allow_private_targets: global_config.stream_proxy_allow_private_targets,
         },
         templates: templates
             .iter()
@@ -573,6 +574,7 @@ mod tests {
             pipeline_execute_timeout_secs: 3600,
             queue_freshness_threshold_ms: 60_000,
             gpu_health_probe_interval_secs: 30,
+            stream_proxy_allow_private_targets: false,
         };
         let json = serde_json::to_string(&export).unwrap();
         assert!(json.contains("rust_srec=debug"));

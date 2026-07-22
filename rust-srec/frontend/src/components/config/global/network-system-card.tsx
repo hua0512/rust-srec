@@ -27,10 +27,17 @@ import {
   Timer,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import { ProxyConfigSettings } from '../shared/proxy-settings-card';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
+import { FlagFormField } from '@/components/ui/flag-form-field';
 
 export const NetworkSystemCard = memo(() => {
+  const { i18n } = useLingui();
+  const allowPrivateTargetsLabel = i18n._(
+    msg`Allow private stream proxy targets`,
+  );
   return (
     <SettingsCard
       title={<Trans>Network & System</Trans>}
@@ -272,6 +279,20 @@ export const NetworkSystemCard = memo(() => {
               <FormMessage />
             </FormItem>
           )}
+        />
+
+        <FlagFormField
+          fieldName="stream_proxy_allow_private_targets"
+          title={<Trans>Allow Private Stream Proxy Targets</Trans>}
+          ariaLabel={allowPrivateTargetsLabel}
+          description={
+            <Trans>
+              Let the in-app stream player proxy sources on private or local
+              networks (LAN restreamers, cameras, tailnet addresses). Leave off
+              unless you stream from local sources: it re-opens requests to
+              internal addresses for any signed-in user.
+            </Trans>
+          }
         />
       </div>
     </SettingsCard>

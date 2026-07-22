@@ -208,6 +208,10 @@ pub struct GlobalConfigExport {
     /// Seconds between `nvidia-smi` probes by the GPU health monitor.
     #[serde(default = "default_gpu_health_probe_interval_secs")]
     pub gpu_health_probe_interval_secs: i64,
+    /// Whether the stream proxy may fetch targets on private networks.
+    /// Defaults to false so backups from older versions import fail-closed.
+    #[serde(default)]
+    pub stream_proxy_allow_private_targets: bool,
 }
 
 fn default_pipeline_job_timeout_secs() -> i64 {

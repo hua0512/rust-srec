@@ -496,6 +496,14 @@ msgstr "All Time"
 msgid "All Types"
 msgstr "All Types"
 
+#: src/components/config/global/network-system-card.tsx:39
+msgid "Allow private stream proxy targets"
+msgstr "Allow private stream proxy targets"
+
+#: src/components/config/global/network-system-card.tsx:286
+msgid "Allow Private Stream Proxy Targets"
+msgstr "Allow Private Stream Proxy Targets"
+
 #: src/components/pipeline/presets/processors/tdl-config-form.tsx:561
 msgid "Allowed Extensions"
 msgstr "Allowed Extensions"
@@ -1997,7 +2005,7 @@ msgstr "Definitive Offline"
 msgid "Degraded"
 msgstr "Degraded"
 
-#: src/components/config/global/network-system-card.tsx:37
+#: src/components/config/global/network-system-card.tsx:44
 msgid "Delays, proxy, and retention policies."
 msgstr "Delays, proxy, and retention policies."
 
@@ -3995,11 +4003,11 @@ msgstr "Internal"
 msgid "Interval (seconds)"
 msgstr "Interval (seconds)"
 
-#: src/components/config/global/network-system-card.tsx:63
+#: src/components/config/global/network-system-card.tsx:70
 msgid "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 msgstr "Interval between checks to see if a streamer is currently live. Slower intervals reduce API usage but might delay recording starts."
 
-#: src/components/config/global/network-system-card.tsx:105
+#: src/components/config/global/network-system-card.tsx:112
 msgid "Interval between checks when a streamer is live to detect when the stream ends."
 msgstr "Interval between checks when a streamer is live to detect when the stream ends."
 
@@ -4177,6 +4185,10 @@ msgstr "Leave empty for stream copy"
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:374
 msgid "Left"
 msgstr "Left"
+
+#: src/components/config/global/network-system-card.tsx:289
+msgid "Let the in-app stream player proxy sources on private or local networks (LAN restreamers, cameras, tailnet addresses). Leave off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
+msgstr "Let the in-app stream player proxy sources on private or local networks (LAN restreamers, cameras, tailnet addresses). Leave off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:70
 msgid "libx264"
@@ -4810,7 +4822,7 @@ msgstr "Network"
 msgid "Network & Content"
 msgstr "Network & Content"
 
-#: src/components/config/global/network-system-card.tsx:36
+#: src/components/config/global/network-system-card.tsx:43
 msgid "Network & System"
 msgstr "Network & System"
 
@@ -5148,7 +5160,7 @@ msgstr "Not supported in this browser"
 msgid "Notification Events"
 msgstr "Notification Events"
 
-#: src/components/config/global/network-system-card.tsx:221
+#: src/components/config/global/network-system-card.tsx:228
 msgid "Notification Log Retention"
 msgstr "Notification Log Retention"
 
@@ -5156,7 +5168,7 @@ msgstr "Notification Log Retention"
 msgid "Notification permission not granted"
 msgstr "Notification permission not granted"
 
-#: src/components/config/global/network-system-card.tsx:229
+#: src/components/config/global/network-system-card.tsx:236
 msgid "Notification Retention"
 msgstr "Notification Retention"
 
@@ -5192,15 +5204,15 @@ msgstr "Nth output: {output0}, {output1}..."
 msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
-#: src/components/config/global/network-system-card.tsx:146
+#: src/components/config/global/network-system-card.tsx:153
 msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 msgstr "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
 
-#: src/components/config/global/network-system-card.tsx:191
+#: src/components/config/global/network-system-card.tsx:198
 msgid "Number of days to keep completed, failed, or cancelled jobs and workflow executions. Set to 0 to retain them indefinitely."
 msgstr "Number of days to keep completed, failed, or cancelled jobs and workflow executions. Set to 0 to retain them indefinitely."
 
-#: src/components/config/global/network-system-card.tsx:233
+#: src/components/config/global/network-system-card.tsx:240
 msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 msgstr "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 
@@ -5260,8 +5272,8 @@ msgstr "Offline"
 msgid "OFFLINE"
 msgstr "OFFLINE"
 
-#: src/components/config/global/network-system-card.tsx:93
-#: src/components/config/global/network-system-card.tsx:101
+#: src/components/config/global/network-system-card.tsx:100
+#: src/components/config/global/network-system-card.tsx:108
 #: src/components/config/shared/offline-check-card.tsx:39
 msgid "Offline Check"
 msgstr "Offline Check"
@@ -5270,11 +5282,11 @@ msgstr "Offline Check"
 msgid "Offline Check Interval"
 msgstr "Offline Check Interval"
 
-#: src/components/config/global/network-system-card.tsx:142
+#: src/components/config/global/network-system-card.tsx:149
 msgid "Offline Detection"
 msgstr "Offline Detection"
 
-#: src/components/config/global/network-system-card.tsx:134
+#: src/components/config/global/network-system-card.tsx:141
 #: src/components/config/shared/offline-check-card.tsx:95
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
@@ -5737,8 +5749,8 @@ msgstr "Pipeline Execution"
 msgid "Pipeline has failed jobs. Click to view details."
 msgstr "Pipeline has failed jobs. Click to view details."
 
-#: src/components/config/global/network-system-card.tsx:179
-#: src/components/config/global/network-system-card.tsx:187
+#: src/components/config/global/network-system-card.tsx:186
+#: src/components/config/global/network-system-card.tsx:194
 msgid "Pipeline History Retention"
 msgstr "Pipeline History Retention"
 
@@ -6155,7 +6167,7 @@ msgstr "Protocol Settings"
 msgid "Proxy"
 msgstr "Proxy"
 
-#: src/components/config/global/network-system-card.tsx:263
+#: src/components/config/global/network-system-card.tsx:270
 #: src/components/config/shared/proxy-settings-card.tsx:242
 msgid "Proxy Configuration"
 msgstr "Proxy Configuration"
@@ -7480,8 +7492,8 @@ msgstr "Streamer"
 msgid "STREAMER"
 msgstr "STREAMER"
 
-#: src/components/config/global/network-system-card.tsx:51
-#: src/components/config/global/network-system-card.tsx:59
+#: src/components/config/global/network-system-card.tsx:58
+#: src/components/config/global/network-system-card.tsx:66
 msgid "Streamer Check"
 msgstr "Streamer Check"
 

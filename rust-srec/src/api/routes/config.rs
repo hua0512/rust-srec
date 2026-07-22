@@ -160,6 +160,7 @@ fn map_global_config_to_response(config: GlobalConfigDbModel) -> ApiResult<Globa
         pipeline_execute_timeout_secs: config.pipeline_execute_timeout_secs.max(0) as u64,
         queue_freshness_threshold_ms: config.queue_freshness_threshold_ms.max(0) as u64,
         gpu_health_probe_interval_secs: config.gpu_health_probe_interval_secs.max(0) as u64,
+        stream_proxy_allow_private_targets: config.stream_proxy_allow_private_targets,
     })
 }
 
@@ -313,6 +314,7 @@ pub async fn update_global_config(
         // probe is a `nvidia-smi` fork+exec (~50–200 ms); sub-second polling
         // would waste CPU. The UI hint discourages going below 30 s.
         gpu_health_probe_interval_secs: |v: serde_json::Value| v.as_i64().map(|n| n.max(1)),
+        stream_proxy_allow_private_targets: |v: serde_json::Value| v.as_bool(),
     ]);
 
     debug!(
@@ -543,6 +545,7 @@ mod tests {
             pipeline_execute_timeout_secs: 3600,
             queue_freshness_threshold_ms: 60_000,
             gpu_health_probe_interval_secs: 30,
+            stream_proxy_allow_private_targets: false,
         };
 
         let json = serde_json::to_string(&response).unwrap();

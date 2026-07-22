@@ -121,7 +121,8 @@ impl ConfigRepository for SqlxConfigRepository {
                 pipeline_io_job_timeout_secs = ?,
                 pipeline_execute_timeout_secs = ?,
                 queue_freshness_threshold_ms = ?,
-                gpu_health_probe_interval_secs = ?
+                gpu_health_probe_interval_secs = ?,
+                stream_proxy_allow_private_targets = ?
             WHERE id = ?
             "#,
         )
@@ -153,6 +154,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.pipeline_execute_timeout_secs)
         .bind(config.queue_freshness_threshold_ms)
         .bind(config.gpu_health_probe_interval_secs)
+        .bind(config.stream_proxy_allow_private_targets)
         .bind(&config.id)
         .execute(&self.write_pool)
         .await?;
@@ -176,8 +178,9 @@ impl ConfigRepository for SqlxConfigRepository {
                 pipeline_io_job_timeout_secs,
                 pipeline_execute_timeout_secs,
                 queue_freshness_threshold_ms,
-                gpu_health_probe_interval_secs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                gpu_health_probe_interval_secs,
+                stream_proxy_allow_private_targets
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.id)
@@ -209,6 +212,7 @@ impl ConfigRepository for SqlxConfigRepository {
         .bind(config.pipeline_execute_timeout_secs)
         .bind(config.queue_freshness_threshold_ms)
         .bind(config.gpu_health_probe_interval_secs)
+        .bind(config.stream_proxy_allow_private_targets)
         .execute(&self.write_pool)
         .await?;
         Ok(())
