@@ -49,8 +49,6 @@ pub struct MaintenanceConfig {
     pub monitor_outbox_delivered_retention: RetentionDays,
     /// Grace period before ended zero-byte sessions are deleted.
     pub empty_session_retention: Duration,
-    /// Grace period before terminal jobs with no pipeline link are deleted.
-    pub orphaned_job_retention: Duration,
     /// Minimum interval between vacuum attempts.
     pub vacuum_interval: Duration,
     /// Minimum interval between query-planner optimization runs.
@@ -73,7 +71,6 @@ impl Default for MaintenanceConfig {
             monitor_outbox_delivered_retention: RetentionDays::try_from(1)
                 .unwrap_or(RetentionDays::Forever),
             empty_session_retention: Duration::from_secs(5 * 60),
-            orphaned_job_retention: Duration::from_secs(24 * 60 * 60),
             vacuum_interval: Duration::from_secs(24 * 60 * 60),
             optimize_interval: Duration::from_secs(7 * 24 * 60 * 60),
             wal_checkpoint_interval: Duration::from_secs(60 * 60),
@@ -98,7 +95,6 @@ pub struct MaintenanceFailure {
 #[derive(Debug, Default)]
 pub struct MaintenanceReport {
     pub jobs_deleted: u64,
-    pub orphaned_jobs_deleted: u64,
     pub dags_deleted: u64,
     pub refresh_tokens_deleted: u64,
     pub dead_letters_deleted: u64,
@@ -133,7 +129,6 @@ impl MaintenanceReport {
         info!(
             elapsed_ms = elapsed.as_millis(),
             jobs_deleted = self.jobs_deleted,
-            orphaned_jobs_deleted = self.orphaned_jobs_deleted,
             dags_deleted = self.dags_deleted,
             refresh_tokens_deleted = self.refresh_tokens_deleted,
             dead_letters_deleted = self.dead_letters_deleted,
@@ -290,34 +285,6 @@ impl MaintenanceRepository {
             tokio::task::yield_now().await;
         }
         Ok(total)
-    }
-
-    /// Deletes terminal jobs that no DAG execution can reach any more.
-    ///
-    /// Every job insert path (DagScheduler::create_step_job,
-    /// JobQueue::split_job_for_single_input) stamps pipeline_id, so a terminal
-    /// row where both pipeline_id and dag_step_execution_id are NULL belongs to
-    /// no DAG execution and is invisible to the DAG-scoped endpoints, while
-    /// still counting toward get_job_counts_by_status.
-    async fn prune_orphaned_jobs_before(
-        &self,
-        cutoff_ms: i64,
-        cancellation: &CancellationToken,
-    ) -> Result<u64> {
-        self.prune_simple(
-            "maintenance_prune_orphaned_jobs",
-            "DELETE FROM job WHERE id IN (\
-                SELECT j.id FROM job j \
-                WHERE j.status IN ('COMPLETED', 'FAILED', 'CANCELLED') \
-                  AND j.pipeline_id IS NULL \
-                  AND j.dag_step_execution_id IS NULL \
-                  AND j.updated_at < ? \
-                ORDER BY j.updated_at ASC LIMIT ?\
-            )",
-            cutoff_ms,
-            cancellation,
-        )
-        .await
     }
 
     async fn prune_expired_refresh_tokens(
@@ -559,22 +526,6 @@ impl MaintenanceScheduler {
                 Ok(deleted) => report.dags_deleted = deleted,
                 Err(error) => report.record_failure("prune_dags", error),
             }
-        }
-
-        // Not gated on job_retention: orphaned rows are unreachable through the
-        // DAG endpoints regardless of how long job history is kept.
-        let orphaned_job_retention_ms =
-            i64::try_from(self.config.orphaned_job_retention.as_millis()).unwrap_or(i64::MAX);
-        match self
-            .repository
-            .prune_orphaned_jobs_before(
-                now_ms.saturating_sub(orphaned_job_retention_ms),
-                cancellation,
-            )
-            .await
-        {
-            Ok(deleted) => report.orphaned_jobs_deleted = deleted,
-            Err(error) => report.record_failure("prune_orphaned_jobs", error),
         }
 
         match self
@@ -1357,7 +1308,6 @@ mod tests {
         let report = database.scheduler.run_maintenance_at(now).await;
         assert!(report.failures.is_empty(), "{:#?}", report.failures);
         assert_eq!(report.jobs_deleted, 3);
-        assert_eq!(report.orphaned_jobs_deleted, 0);
         assert_eq!(report.dags_deleted, 1);
         assert_eq!(report.refresh_tokens_deleted, 1);
         assert_eq!(report.dead_letters_deleted, 1);
@@ -1540,10 +1490,6 @@ mod tests {
         let database = setup_with_config(MaintenanceConfig {
             batch_size: 1,
             max_batches_per_task: 1,
-            // The bounded-* fixtures have no pipeline link; park the orphan
-            // pruner's cutoff before every row so only prune_jobs_before's
-            // batch budget is measured here.
-            orphaned_job_retention: Duration::MAX,
             ..MaintenanceConfig::default()
         })
         .await;
@@ -1595,22 +1541,8 @@ mod tests {
         let now = 2_000_000_000_000_i64;
         let old = now - 365 * MILLIS_PER_DAY;
         set_retention(&database, 0, 0).await;
-        // Keep the job attached to its DAG step: prune_orphaned_jobs_before
-        // only targets terminal rows with no pipeline link, which must not
-        // include retained pipeline history.
-        insert_dag_job(
-            &database,
-            DagJobFixture {
-                dag_id: "forever-dag",
-                dag_status: DagExecutionStatus::Failed,
-                dag_updated_at: old,
-                step_id: "forever-step",
-                job_id: "forever-job",
-                job_status: JobStatus::Cancelled,
-                job_updated_at: old,
-            },
-        )
-        .await;
+        insert_job(&database, "forever-job", JobStatus::Cancelled, old).await;
+        insert_dag(&database, "forever-dag", DagExecutionStatus::Failed, old).await;
         database
             .notification_repository
             .add_event_log(&NotificationEventLogDbModel {
@@ -1626,7 +1558,6 @@ mod tests {
 
         let report = database.scheduler.run_maintenance_at(now).await;
         assert_eq!(report.jobs_deleted, 0);
-        assert_eq!(report.orphaned_jobs_deleted, 0);
         assert_eq!(report.dags_deleted, 0);
         assert_eq!(report.notification_events_deleted, 0);
         let count: i64 = sqlx::query_scalar(
@@ -1642,60 +1573,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn orphaned_terminal_jobs_are_pruned_after_grace_period() {
-        let database = setup(10).await;
-        let now = 2_000_000_000_000_i64;
-        // Past the default 24h orphaned_job_retention grace period.
-        let stale = now - 2 * MILLIS_PER_DAY;
-        // Job history retention is Forever; the orphan pruner must still run.
-        set_retention(&database, 0, 0).await;
-
-        // Orphans: terminal, neither pipeline_id nor dag_step_execution_id.
-        insert_job(&database, "orphan-failed", JobStatus::Failed, stale).await;
-        insert_job(&database, "orphan-completed", JobStatus::Completed, stale).await;
-        // Kept: non-terminal, or inside the grace period, or still linked.
-        insert_job(&database, "orphan-pending", JobStatus::Pending, stale).await;
-        insert_job(&database, "orphan-recent", JobStatus::Failed, now).await;
-        insert_job(&database, "pipeline-linked", JobStatus::Failed, stale).await;
-        sqlx::query("UPDATE job SET pipeline_id = 'some-dag' WHERE id = 'pipeline-linked'")
-            .execute(&database.pool)
-            .await
-            .expect("pipeline link");
-        insert_dag_job(
-            &database,
-            DagJobFixture {
-                dag_id: "linked-dag",
-                dag_status: DagExecutionStatus::Failed,
-                dag_updated_at: stale,
-                step_id: "linked-step",
-                job_id: "step-linked",
-                job_status: JobStatus::Failed,
-                job_updated_at: stale,
-            },
-        )
-        .await;
-
-        let report = database.scheduler.run_maintenance_at(now).await;
-        assert!(report.failures.is_empty(), "{:#?}", report.failures);
-        assert_eq!(report.orphaned_jobs_deleted, 2);
-        assert_eq!(report.jobs_deleted, 0);
-
-        let remaining: Vec<String> = sqlx::query_scalar("SELECT id FROM job ORDER BY id")
-            .fetch_all(&database.pool)
-            .await
-            .expect("remaining jobs");
-        assert_eq!(
-            remaining,
-            vec![
-                "orphan-pending",
-                "orphan-recent",
-                "pipeline-linked",
-                "step-linked"
-            ]
-        );
-    }
-
-    #[tokio::test]
     async fn invalid_retention_field_does_not_disable_other_policy() {
         let database = setup(10).await;
         let now = 2_000_000_000_000_i64;
@@ -1707,19 +1584,11 @@ mod tests {
         .execute(&database.pool)
         .await
         .expect("corrupt one retention field");
-        // DAG-linked so only the (invalidated) job history policy could touch
-        // it, not prune_orphaned_jobs_before.
-        insert_dag_job(
+        insert_job(
             &database,
-            DagJobFixture {
-                dag_id: "preserved-invalid-dag",
-                dag_status: DagExecutionStatus::Failed,
-                dag_updated_at: old,
-                step_id: "preserved-invalid-step",
-                job_id: "preserved-invalid-policy",
-                job_status: JobStatus::Failed,
-                job_updated_at: old,
-            },
+            "preserved-invalid-policy",
+            JobStatus::Failed,
+            old,
         )
         .await;
         database
