@@ -18,7 +18,7 @@ use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, parse_config_or_default};
+use super::utils::{create_log_entry, parse_config_or_default, tmp_output_path};
 use crate::Result;
 use crate::pipeline::progress::{JobProgressSnapshot, ProgressKind, ProgressReporter};
 
@@ -189,11 +189,6 @@ impl Drop for CancelOnDrop {
             self.token.cancel();
         }
     }
-}
-
-fn tmp_output_path(final_path: &Path) -> PathBuf {
-    let suffix = uuid::Uuid::new_v4().to_string();
-    PathBuf::from(format!("{}.tmp-{}", final_path.display(), suffix))
 }
 
 fn archive_entry_name(input_path: &str, preserve_paths: bool) -> Result<String> {

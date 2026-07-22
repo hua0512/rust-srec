@@ -279,9 +279,6 @@ impl Processor for ExecuteCommandProcessor {
             c
         };
 
-        // Ensure the child process is terminated if the job times out or the task is cancelled.
-        cmd.kill_on_drop(true);
-
         // Execute command and capture logs (with timeout)
         let command_output_result = tokio::time::timeout(
             std::time::Duration::from_secs(self.timeout_secs),
@@ -297,9 +294,8 @@ impl Processor for ExecuteCommandProcessor {
             Ok(Err(e)) => return Err(e),
             Err(_) => {
                 ctx.error(format!("Command timed out after {}s", self.timeout_secs));
-                // Child process cleanup depends on implementation details of utils::run_command_with_logs
-                // ideally that helper should handle cancellation/timeout cleanups if possible.
-                // For now, we return timeout error.
+                // run_command_with_logs enables kill_on_drop, so dropping its
+                // future here also terminates the child.
                 return Err(crate::Error::Other("Command timed out".to_string()));
             }
         };
