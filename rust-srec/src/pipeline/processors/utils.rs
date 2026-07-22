@@ -591,6 +591,8 @@ pub async fn run_rclone_with_progress(
     let start = std::time::Instant::now();
 
     command.no_window();
+    // Worker cancellation drops this future, so the child must not outlive its job.
+    command.kill_on_drop(true);
 
     command.stdout(Stdio::null());
     command.stderr(Stdio::piped());
