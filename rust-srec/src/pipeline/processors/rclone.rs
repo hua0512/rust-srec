@@ -144,6 +144,8 @@ pub struct RcloneProcessor {
     rclone_path: String,
     /// Maximum retry attempts.
     max_retries: u32,
+    /// Runs assembled rclone commands; a seam so tests can observe and
+    /// stub invocations without spawning a real process.
     command_runner: Arc<dyn RcloneCommandRunner>,
 }
 
@@ -250,7 +252,11 @@ impl RcloneProcessor {
         Some(common)
     }
 
-    // TempPath removes the manifest when a timeout or cancellation drops this future.
+    /// Create the `--files-from` manifest listing `inputs` relative to `base_dir`.
+    ///
+    /// Returned as a [`TempPath`] so the manifest is removed when the guard
+    /// drops, including when a job timeout or cancellation drops the owning
+    /// future before the explicit `close()` in `process_batch`.
     async fn create_files_from_list(
         inputs: &[String],
         base_dir: &Path,
@@ -276,21 +282,34 @@ impl RcloneProcessor {
         Ok(temp_path)
     }
 
-    fn partition_move_inputs(inputs: &[String]) -> (Vec<String>, Vec<String>) {
-        inputs
-            .iter()
-            .cloned()
-            .partition(|input| Path::new(input).exists())
+    /// True only when the filesystem positively reports the path as absent.
+    ///
+    /// Source absence is what marks a move input as consumed, so an I/O
+    /// error from `try_exists` (e.g. an unreadable or unmounted parent
+    /// directory) must keep the input pending instead of reporting an
+    /// upload that never happened.
+    fn is_confirmed_absent(path: &Path) -> bool {
+        matches!(path.try_exists(), Ok(false))
     }
 
+    /// Split move inputs into (pending, already moved by an earlier attempt).
+    fn partition_move_inputs(inputs: &[String]) -> (Vec<String>, Vec<String>) {
+        let (moved, pending) = inputs
+            .iter()
+            .cloned()
+            .partition(|input| Self::is_confirmed_absent(Path::new(input)));
+        (pending, moved)
+    }
+
+    /// Drain inputs whose sources rclone consumed during the last attempt.
     fn take_moved_inputs(pending_inputs: &mut Vec<String>) -> Vec<String> {
         let mut moved_inputs = Vec::new();
         pending_inputs.retain(|input| {
-            if Path::new(input).exists() {
-                true
-            } else {
+            if Self::is_confirmed_absent(Path::new(input)) {
                 moved_inputs.push(input.clone());
                 false
+            } else {
+                true
             }
         });
         moved_inputs
@@ -357,7 +376,9 @@ impl RcloneProcessor {
         };
 
         for attempt in 0..self.max_retries {
-            if matches!(*operation, RcloneOperation::Move) && !Path::new(input_path).exists() {
+            if matches!(*operation, RcloneOperation::Move)
+                && Self::is_confirmed_absent(Path::new(input_path))
+            {
                 info!(
                     input = input_path,
                     "Rclone move source is already absent; treating it as successfully moved"
@@ -398,7 +419,7 @@ impl RcloneProcessor {
                 Ok(output) => output,
                 Err(e) => {
                     if matches!(*operation, RcloneOperation::Move)
-                        && !Path::new(input_path).exists()
+                        && Self::is_confirmed_absent(Path::new(input_path))
                     {
                         warn!(
                             input = input_path,
@@ -427,7 +448,9 @@ impl RcloneProcessor {
                     .unwrap_or_else(|| "Unknown error".to_string());
                 logs.extend(command_output.logs);
 
-                if matches!(*operation, RcloneOperation::Move) && !Path::new(input_path).exists() {
+                if matches!(*operation, RcloneOperation::Move)
+                    && Self::is_confirmed_absent(Path::new(input_path))
+                {
                     warn!(
                         input = input_path,
                         attempt = attempt + 1,
@@ -900,24 +923,23 @@ mod tests {
                 .get_args()
                 .map(|arg| arg.to_string_lossy().into_owned())
                 .collect();
-            let manifest_index = args
-                .iter()
-                .position(|arg| arg == "--files-from")
-                .ok_or_else(|| crate::Error::Other("missing --files-from argument".to_string()))?;
-            let manifest_path = PathBuf::from(
-                args.get(manifest_index + 1)
-                    .ok_or_else(|| crate::Error::Other("missing files-from path".to_string()))?,
-            );
-            let manifest = tokio::fs::read_to_string(&manifest_path)
-                .await
-                .map_err(|e| {
-                    crate::Error::io_path("reading test rclone manifest", &manifest_path, e)
-                })?
-                .lines()
-                .map(str::to_string)
-                .collect();
-
-            self.manifests.lock().unwrap().push(manifest);
+            // Single-file commands (copyto/moveto) carry no --files-from;
+            // only batch commands record a manifest.
+            if let Some(manifest_index) = args.iter().position(|arg| arg == "--files-from") {
+                let manifest_path =
+                    PathBuf::from(args.get(manifest_index + 1).ok_or_else(|| {
+                        crate::Error::Other("missing files-from path".to_string())
+                    })?);
+                let manifest = tokio::fs::read_to_string(&manifest_path)
+                    .await
+                    .map_err(|e| {
+                        crate::Error::io_path("reading test rclone manifest", &manifest_path, e)
+                    })?
+                    .lines()
+                    .map(str::to_string)
+                    .collect();
+                self.manifests.lock().unwrap().push(manifest);
+            }
             self.commands.lock().unwrap().push(args);
 
             let attempt = self
@@ -1080,6 +1102,55 @@ mod tests {
         assert_eq!(output.succeeded_inputs, vec![input_path]);
         assert!(output.outputs.is_empty());
         assert!(runner.commands().is_empty());
+    }
+
+    #[tokio::test]
+    async fn single_move_succeeds_when_rclone_fails_after_consuming_the_source() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let source = temp_dir.path().join("input.mp4");
+        tokio::fs::write(&source, b"video").await.unwrap();
+
+        let runner = Arc::new(MockRcloneCommandRunner::new(vec![MockAttempt {
+            moved_inputs: vec![source.clone()],
+            succeeds: false,
+        }]));
+        let processor = RcloneProcessor::with_command_runner("rclone", runner.clone());
+        let input_path = source.to_string_lossy().into_owned();
+        let input = ProcessorInput {
+            inputs: vec![input_path.clone()],
+            outputs: vec!["remote:/records".to_string()],
+            config: Some(r#"{"operation":"move"}"#.to_string()),
+            ..Default::default()
+        };
+
+        let output = processor
+            .process(&input, &ProcessorContext::noop("single-move-consumed"))
+            .await
+            .unwrap();
+
+        assert_eq!(output.succeeded_inputs, vec![input_path]);
+        assert!(output.outputs.is_empty());
+        assert!(!source.exists());
+        assert_eq!(runner.commands().len(), 1);
+        assert!(runner.commands()[0].iter().any(|arg| arg == "moveto"));
+    }
+
+    /// `plain.txt/child.mp4` makes `try_exists` fail with `NotADirectory`
+    /// instead of reporting absence; `partition_move_inputs` must keep such
+    /// inputs pending rather than count them as already moved.
+    #[cfg(unix)]
+    #[test]
+    fn partition_move_inputs_keeps_unverifiable_paths_pending() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let not_a_dir = temp_dir.path().join("plain.txt");
+        std::fs::write(&not_a_dir, b"file").unwrap();
+        let unverifiable = not_a_dir.join("child.mp4").to_string_lossy().into_owned();
+
+        let (pending, moved) =
+            RcloneProcessor::partition_move_inputs(std::slice::from_ref(&unverifiable));
+
+        assert_eq!(pending, vec![unverifiable]);
+        assert!(moved.is_empty());
     }
 
     #[tokio::test]
