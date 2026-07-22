@@ -6,12 +6,13 @@ import { CardSkeleton } from '@/components/shared/card-skeleton';
 import { PlatformCard } from '@/components/config/platforms/platform-card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { AlertCircle, Globe, Search } from 'lucide-react';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
+import { AlertCircle, Globe } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { containerVariants, itemVariants } from '@/lib/animation';
 
 export const Route = createLazyFileRoute(
@@ -23,16 +24,9 @@ export const Route = createLazyFileRoute(
 function PlatformsConfigPage() {
   const navigate = useNavigate();
   const { i18n } = useLingui();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const search = Route.useSearch();
+  const updateSearch = useUpdateSearch<typeof search>();
+  const debouncedSearch = search.q ?? '';
 
   const {
     data: platforms,
@@ -47,8 +41,8 @@ function PlatformsConfigPage() {
   const filteredPlatforms = useMemo(() => {
     if (!platforms) return [];
     if (!debouncedSearch) return platforms;
-    const search = debouncedSearch.toLowerCase();
-    return platforms.filter((p) => p.name.toLowerCase().includes(search));
+    const term = debouncedSearch.toLowerCase();
+    return platforms.filter((p) => p.name.toLowerCase().includes(term));
   }, [platforms, debouncedSearch]);
 
   const handleEdit = (platformId: string) => {
@@ -76,15 +70,12 @@ function PlatformsConfigPage() {
     <div className="space-y-6">
       {/* Search Bar */}
       <div className="flex items-center gap-4 px-1">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder={i18n._(msg`Search platforms...`)}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 h-9 bg-muted/50 border-muted-foreground/20 focus:bg-background transition-colors"
-          />
-        </div>
+        <SearchInput
+          defaultValue={debouncedSearch}
+          onSearch={(value) => updateSearch({ q: value || undefined })}
+          placeholder={i18n._(msg`Search platforms...`)}
+          className="flex-1 max-w-sm"
+        />
         <Badge
           variant="secondary"
           className="h-7 px-3 text-sm whitespace-nowrap bg-muted/50 text-muted-foreground border-border/50"
