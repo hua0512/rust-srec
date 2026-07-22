@@ -27,3 +27,11 @@
 - **New setting for stream sources on your own network**
 
   To keep the built-in player's proxy from being pointed at private addresses, it now only reaches public stream sources by default. If you watch or record from a source on your own network — a LAN restreamer, a camera, or a device on your tailnet — turn on **Allow private stream proxy targets** under Network & System settings to permit it.
+
+- **Interrupted rclone move uploads now finish on retry**
+
+  When a move upload sent some files and then failed partway — after a network hiccup, for example — retries kept failing because the files that were already uploaded no longer existed locally, and retrying the job by hand hit the same error. Retries now pick up where the upload left off and only send the remaining files, and a retried job whose files were all uploaded earlier completes successfully.
+
+- **Cancelled or timed-out rclone uploads stop cleanly**
+
+  When an rclone upload was cancelled or ran past the job timeout, the transfer could keep running in the background even though the job was already marked failed, and temporary file lists could pile up in the recording folder. Stopping the job now also stops the transfer and removes those temporary files.
