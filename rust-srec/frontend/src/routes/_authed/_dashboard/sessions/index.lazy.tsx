@@ -42,7 +42,8 @@ import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'motion/react';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
-import { SearchInput } from '@/components/sessions/search-input';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -132,12 +133,7 @@ function SessionsPage() {
     staleTime: 30000,
   });
 
-  const updateSearch = (newParams: Partial<typeof search>) => {
-    void navigate({
-      search: (prev) => ({ ...prev, ...newParams }),
-      replace: true,
-    });
-  };
+  const updateSearch = useUpdateSearch<typeof search>();
 
   const total = query.data?.total || 0;
   const limit = search.limit || 50;

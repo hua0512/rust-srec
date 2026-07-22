@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
@@ -9,7 +9,8 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { containerVariants, itemVariants } from '@/lib/animation';
@@ -29,7 +30,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { FileVideo, Search, AlertCircle, Film } from 'lucide-react';
+import { FileVideo, AlertCircle, Film } from 'lucide-react';
 import { OutputCard } from '@/components/pipeline/outputs/output-card';
 
 export const Route = createLazyFileRoute(
@@ -44,25 +45,19 @@ import { formatBytes } from '@/lib/format';
 
 function PipelineOutputsPage() {
   const { i18n } = useLingui();
-  const [selectedFormat, setSelectedFormat] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [pageSize, setPageSize] = useState(24);
-  const [currentPage, setCurrentPage] = useState(0);
+  const search = Route.useSearch();
+  const updateSearch = useUpdateSearch<typeof search>();
 
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-      setCurrentPage(0);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  // Search, format filter, and pagination live in the URL so they persist across
+  // navigation away from this page and reloads.
+  const selectedFormat = search.format ?? null;
+  const debouncedSearch = search.q ?? '';
+  const pageSize = search.size ?? 24;
+  const currentPage = search.page ?? 0;
 
   // Reset page when format changes
   const handleFormatChange = (format: string | null) => {
-    setSelectedFormat(format);
-    setCurrentPage(0);
+    updateSearch({ format: format ?? undefined, page: undefined });
   };
 
   const {
@@ -165,16 +160,14 @@ function PipelineOutputsPage() {
         }
         actions={
           <>
-            {/* Search Input */}
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={i18n._(msg`Search outputs...`)}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9"
-              />
-            </div>
+            <SearchInput
+              defaultValue={debouncedSearch}
+              onSearch={(value) =>
+                updateSearch({ q: value || undefined, page: undefined })
+              }
+              placeholder={i18n._(msg`Search outputs...`)}
+              className="flex-1 md:w-64"
+            />
             <Badge
               variant="secondary"
               className="h-9 px-3 text-sm whitespace-nowrap"
@@ -305,8 +298,7 @@ function PipelineOutputsPage() {
               <Select
                 value={pageSize.toString()}
                 onValueChange={(value) => {
-                  setPageSize(Number(value));
-                  setCurrentPage(0);
+                  updateSearch({ size: Number(value), page: undefined });
                 }}
               >
                 <SelectTrigger className="w-20 h-8">
@@ -326,7 +318,9 @@ function PipelineOutputsPage() {
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                    onClick={() =>
+                      updateSearch({ page: Math.max(0, currentPage - 1) })
+                    }
                     className={
                       currentPage === 0
                         ? 'pointer-events-none opacity-50'
@@ -344,7 +338,7 @@ function PipelineOutputsPage() {
                     <PaginationItem key={page}>
                       <PaginationLink
                         isActive={currentPage === page}
-                        onClick={() => setCurrentPage(page)}
+                        onClick={() => updateSearch({ page })}
                         className="cursor-pointer"
                       >
                         {page + 1}
@@ -356,7 +350,9 @@ function PipelineOutputsPage() {
                 <PaginationItem>
                   <PaginationNext
                     onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages - 1, p + 1))
+                      updateSearch({
+                        page: Math.min(totalPages - 1, currentPage + 1),
+                      })
                     }
                     className={
                       currentPage >= totalPages - 1

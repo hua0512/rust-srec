@@ -21,7 +21,6 @@ import type { BatchStreamerAction } from '@/api/schemas';
 import { Button } from '@/components/ui/button';
 import {
   Plus,
-  Search,
   Users,
   Video,
   Wifi,
@@ -39,8 +38,9 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { StreamerCard } from '@/components/streamers/streamer-card';
+import { SearchInput } from '@/components/shared/search-input';
+import { useUpdateSearch } from '@/hooks/use-update-search';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { containerVariants, itemVariants } from '@/lib/animation';
@@ -99,17 +99,20 @@ function StreamersPage() {
     { value: 'DISABLED', label: i18n._(msg`Disabled`), icon: Ban },
   ];
 
-  // State
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(24);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [platformFilter, setPlatformFilter] = useState('all');
-  const [templateFilter, setTemplateFilter] = useState('all');
-  const [stateFilter, setStateFilter] = useState('all');
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
-  const [exceptionalStates, setExceptionalStates] = useState<string[]>([]);
-  const [sortOption, setSortOption] = useState<SortOption>('default');
+  const search = Route.useSearch();
+  const updateSearch = useUpdateSearch<typeof search>();
+
+  // Filters/search/pagination live in the URL so they survive navigation into a
+  // streamer detail/edit page and reloads. Selection state stays local.
+  const page = search.page ?? 1;
+  const pageSize = search.size ?? 24;
+  const debouncedSearch = search.q ?? '';
+  const platformFilter = search.platform ?? 'all';
+  const templateFilter = search.template ?? 'all';
+  const stateFilter = search.state ?? 'all';
+  const priorityFilter: PriorityFilter = search.priority ?? 'all';
+  const exceptionalStates = search.exceptional ?? [];
+  const sortOption: SortOption = search.sort ?? 'default';
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -128,53 +131,64 @@ function StreamersPage() {
     Number(exceptionalStates.length > 0) +
     Number(sortOption !== 'default');
 
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
+  // Handlers — selecting a primary state clears exceptional-state checkboxes and
+  // vice versa (the two feed the same `state` query arg); every filter change
+  // resets to the first page via `page: undefined`.
+  const handleStateChange = useCallback(
+    (value: string) => {
+      updateSearch({
+        state: value === 'all' ? undefined : value,
+        exceptional: undefined,
+        page: undefined,
+      });
+    },
+    [updateSearch],
+  );
 
-  // Handlers
-  const handleStateChange = useCallback((value: string) => {
-    setStateFilter(value);
-    setExceptionalStates([]);
-    setPage(1);
-  }, []);
+  const handlePlatformChange = useCallback(
+    (value: string) => {
+      updateSearch({
+        platform: value === 'all' ? undefined : value,
+        page: undefined,
+      });
+    },
+    [updateSearch],
+  );
 
-  const handlePlatformChange = useCallback((value: string) => {
-    setPlatformFilter(value);
-    setPage(1);
-  }, []);
-
-  const handleTemplateChange = useCallback((value: string) => {
-    setTemplateFilter(value);
-    setPage(1);
-  }, []);
+  const handleTemplateChange = useCallback(
+    (value: string) => {
+      updateSearch({
+        template: value === 'all' ? undefined : value,
+        page: undefined,
+      });
+    },
+    [updateSearch],
+  );
 
   const handleExceptionalStateChange = useCallback(
     (value: string, checked: boolean) => {
-      setExceptionalStates((current) =>
-        checked
-          ? current.includes(value)
-            ? current
-            : [...current, value]
-          : current.filter((state) => state !== value),
-      );
-      setStateFilter('all');
-      setPage(1);
+      const next = checked
+        ? exceptionalStates.includes(value)
+          ? exceptionalStates
+          : [...exceptionalStates, value]
+        : exceptionalStates.filter((state) => state !== value);
+      updateSearch({
+        exceptional: next.length > 0 ? next : undefined,
+        state: undefined,
+        page: undefined,
+      });
     },
-    [],
+    [exceptionalStates, updateSearch],
   );
 
   const clearSecondaryFilters = useCallback(() => {
-    setPriorityFilter('all');
-    setExceptionalStates([]);
-    setSortOption('default');
-    setPage(1);
-  }, []);
+    updateSearch({
+      priority: undefined,
+      exceptional: undefined,
+      sort: undefined,
+      page: undefined,
+    });
+  }, [updateSearch]);
 
   // Fetch Platforms
   const { data: platforms = [] } = useQuery({
@@ -273,9 +287,9 @@ function StreamersPage() {
   // Page overflow protection: reset to last valid page when filters reduce results
   useEffect(() => {
     if (page > totalPages && totalPages > 0) {
-      setPage(totalPages);
+      updateSearch({ page: totalPages });
     }
-  }, [totalPages, page]);
+  }, [totalPages, page, updateSearch]);
 
   // Pagination logic
   const paginationPages = useMemo(() => {
@@ -427,16 +441,14 @@ function StreamersPage() {
         subtitle={<Trans>Manage your monitored channels and downloads</Trans>}
         actions={
           <>
-            {/* Search */}
-            <div className="relative flex-1 md:w-56 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={i18n._(msg`Search streamers...`)}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 h-9"
-              />
-            </div>
+            <SearchInput
+              defaultValue={debouncedSearch}
+              onSearch={(value) =>
+                updateSearch({ q: value || undefined, page: undefined })
+              }
+              placeholder={i18n._(msg`Search streamers...`)}
+              className="flex-1 md:w-56 min-w-[200px]"
+            />
 
             <Badge
               variant="secondary"
@@ -598,8 +610,13 @@ function StreamersPage() {
                       <Select
                         value={priorityFilter}
                         onValueChange={(value) => {
-                          setPriorityFilter(value as PriorityFilter);
-                          setPage(1);
+                          updateSearch({
+                            priority:
+                              value === 'all'
+                                ? undefined
+                                : (value as Exclude<PriorityFilter, 'all'>),
+                            page: undefined,
+                          });
                         }}
                       >
                         <SelectTrigger className="w-full rounded-xl">
@@ -629,8 +646,13 @@ function StreamersPage() {
                       <Select
                         value={sortOption}
                         onValueChange={(value) => {
-                          setSortOption(value as SortOption);
-                          setPage(1);
+                          updateSearch({
+                            sort:
+                              value === 'default'
+                                ? undefined
+                                : (value as Exclude<SortOption, 'default'>),
+                            page: undefined,
+                          });
                         }}
                       >
                         <SelectTrigger className="w-full rounded-xl">
@@ -819,8 +841,7 @@ function StreamersPage() {
               <Select
                 value={pageSize.toString()}
                 onValueChange={(v) => {
-                  setPageSize(Number(v));
-                  setPage(1);
+                  updateSearch({ size: Number(v), page: undefined });
                 }}
               >
                 <SelectTrigger className="w-16 h-8">
@@ -843,7 +864,7 @@ function StreamersPage() {
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => page > 1 && setPage((p) => p - 1)}
+                    onClick={() => page > 1 && updateSearch({ page: page - 1 })}
                     aria-label={i18n._(msg`Go to previous page`)}
                     aria-disabled={page === 1}
                     tabIndex={page === 1 ? -1 : 0}
@@ -863,7 +884,7 @@ function StreamersPage() {
                     <PaginationItem key={p}>
                       <PaginationLink
                         isActive={page === p}
-                        onClick={() => setPage(p)}
+                        onClick={() => updateSearch({ page: p })}
                         aria-label={i18n._(msg`Go to page ${p}`)}
                         aria-current={page === p ? 'page' : undefined}
                         className="cursor-pointer"
@@ -875,7 +896,9 @@ function StreamersPage() {
                 )}
                 <PaginationItem>
                   <PaginationNext
-                    onClick={() => page < totalPages && setPage((p) => p + 1)}
+                    onClick={() =>
+                      page < totalPages && updateSearch({ page: page + 1 })
+                    }
                     aria-label={i18n._(msg`Go to next page`)}
                     aria-disabled={page === totalPages}
                     tabIndex={page === totalPages ? -1 : 0}
