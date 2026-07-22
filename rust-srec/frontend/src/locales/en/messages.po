@@ -89,7 +89,7 @@ msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, one {# Warning} other {# Warnings}}"
 
 #. placeholder {0}: step.outputs.length
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:464
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:469
 msgid "{0, plural, one {file} other {files}}"
 msgstr "{0, plural, one {file} other {files}}"
 
@@ -1832,7 +1832,7 @@ msgstr "Cutoff"
 msgid "DAG Configuration"
 msgstr "DAG Configuration"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:307
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:311
 msgid "DAG Graph"
 msgstr "DAG Graph"
 
@@ -5475,7 +5475,7 @@ msgstr "Output Settings"
 #: src/components/sessions/overview-tab.tsx:120
 #: src/components/sidebar/navbar.tsx:43
 #: src/lib/menu-list.ts:90
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:457
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:461
 msgid "Outputs"
 msgstr "Outputs"
 
@@ -7417,7 +7417,7 @@ msgstr "State"
 
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:479
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:497
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:437
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:441
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:148
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:218
 msgid "Status"
@@ -7439,7 +7439,7 @@ msgstr "Step Identifier (Unique)"
 msgid "Step Library"
 msgstr "Step Library"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:313
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:317
 msgid "Steps List"
 msgstr "Steps List"
 
@@ -8608,7 +8608,7 @@ msgstr "View application logs in real-time. Logs are limited to the last {MAX_LO
 msgid "View Danmu"
 msgstr "View Danmu"
 
-#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:478
+#: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:482
 msgid "View Detailed Logs & Outputs"
 msgstr "View Detailed Logs & Outputs"
 

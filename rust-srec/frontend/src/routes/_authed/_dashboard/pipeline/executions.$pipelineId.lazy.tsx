@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { msg, t, plural } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -292,8 +292,12 @@ function PipelineExecutionPage() {
           <StatsCard
             icon={<Calendar className="h-5 w-5 text-orange-400" />}
             label={i18n._(msg`Started`)}
-            value={i18n.date(dag.created_at, { timeStyle: 'short' })}
-            subtext={i18n.date(dag.created_at, { dateStyle: 'medium' })}
+            value={new Intl.DateTimeFormat(i18n.locale, {
+              timeStyle: 'short',
+            }).format(dag.created_at)}
+            subtext={new Intl.DateTimeFormat(i18n.locale, {
+              dateStyle: 'medium',
+            }).format(dag.created_at)}
             delay={0.4}
           />
         </motion.div>
@@ -461,9 +465,9 @@ function StepCard({
                   {step.outputs.length}
                 </span>
                 <span className="text-xs opacity-60 font-medium">
-                  {t(
-                    i18n,
-                  )`${plural(step.outputs.length, { one: 'file', other: 'files' })}`}
+                  {i18n._(
+                    msg`${plural(step.outputs.length, { one: 'file', other: 'files' })}`,
+                  )}
                 </span>
               </div>
             </div>
