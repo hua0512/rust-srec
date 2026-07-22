@@ -5605,6 +5605,7 @@ msgstr "Password"
 msgid "Password / 2FA blocked"
 msgstr "Password / 2FA blocked"
 
+#: src/lib/password-change-redirect.ts:39
 #: src/routes/_public/login.lazy.tsx:59
 msgid "Password change required"
 msgstr "Password change required"
