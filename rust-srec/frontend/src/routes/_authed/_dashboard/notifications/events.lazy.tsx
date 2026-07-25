@@ -56,6 +56,7 @@ import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { priorityLabel } from '@/lib/priority';
+import { eventTypeLabel } from '@/lib/notification-event-types';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/notifications/events',
@@ -243,7 +244,7 @@ function NotificationEventsPage() {
   const handleViewDetails = useCallback(
     (event: any) => {
       setSelectedPayload({
-        title: `${event.event_type} (${i18n._(priorityLabel(event.priority))})`,
+        title: `${i18n._(eventTypeLabel(event.event_type))} (${i18n._(priorityLabel(event.priority))})`,
         payload: event.payload,
       });
     },
@@ -350,7 +351,7 @@ function NotificationEventsPage() {
                   </SelectItem>
                   {(eventTypes ?? []).map((et) => (
                     <SelectItem key={et.event_type} value={et.event_type}>
-                      {et.label}
+                      {i18n._(eventTypeLabel(et.event_type))}
                     </SelectItem>
                   ))}
                 </SelectContent>

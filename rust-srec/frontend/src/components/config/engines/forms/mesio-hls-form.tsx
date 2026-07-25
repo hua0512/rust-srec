@@ -768,7 +768,7 @@ const HlsBaseSettings = React.memo(({ hlsPath }: SubFormProps) => {
               </ConfigFieldLabel>
               <Select
                 onValueChange={field.onChange}
-                defaultValue={field.value || 'auto'}
+                value={field.value || 'auto'}
               >
                 <FormControl>
                   <SelectTrigger className={CONFIG_SELECT_TRIGGER}>

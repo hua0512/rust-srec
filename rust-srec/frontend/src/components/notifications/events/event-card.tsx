@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { EventIcon } from './event-icon';
 import { PayloadPreview } from './payload-preview';
 import { priorityLabel } from '@/lib/priority';
+import { eventTypeLabel } from '@/lib/notification-event-types';
 
 export const getPriorityStyles = (priority: number) => {
   if (priority >= 10) {
@@ -82,7 +83,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
     () => getPriorityStyles(event.priority),
     [event.priority],
   );
-  const displayTitle = event.event_type.replace(/_/g, ' ');
+  const displayTitle = i18n._(eventTypeLabel(event.event_type));
 
   return (
     <div

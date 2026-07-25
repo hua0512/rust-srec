@@ -66,7 +66,7 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
                   </ConfigFieldLabel>
                   <Select
                     onValueChange={field.onChange}
-                    defaultValue={field.value || 'crc32'}
+                    value={field.value || 'crc32'}
                   >
                     <FormControl>
                       <SelectTrigger className={CONFIG_SELECT_TRIGGER}>

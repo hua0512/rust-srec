@@ -177,7 +177,7 @@ export function InputWithUnit({
       />
       <div className="h-4 w-[1px] bg-border shrink-0" />
       <Select value={currentUnitValue} onValueChange={handleUnitChange}>
-        <SelectTrigger className="h-full w-auto shrink-0 gap-1 rounded-l-none border-0 px-2.5 shadow-none hover:bg-muted/50 focus:ring-0 focus:ring-offset-0 data-[size=default]:h-full">
+        <SelectTrigger className="h-full w-auto shrink-0 gap-1 rounded-l-none border-0 px-2.5 shadow-none hover:bg-muted/50 focus:ring-0 focus:ring-offset-0">
           <SelectValue placeholder={i18n._(msg`Unit`)} />
         </SelectTrigger>
         <SelectContent align="end">

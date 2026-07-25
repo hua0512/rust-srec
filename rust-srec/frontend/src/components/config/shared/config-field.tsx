@@ -44,15 +44,11 @@ const ACCENT_DOT: Record<ConfigAccent, string> = {
 /**
  * Class for a `SelectTrigger` so selects line up with the platform pages.
  *
- * Two overrides here are load-bearing:
- * - `w-full`, because the shadcn base is `w-fit` and a trigger with an empty value would
- *   otherwise collapse to just its chevron.
- * - `data-[size=default]:h-11`, because the base sets its height through that same variant.
- *   A bare `h-11` neither merges with it nor out-specifies it, which left selects at 36px
- *   beside 44px inputs.
+ * `w-full` is load-bearing: the shadcn base is `w-fit`, so a trigger with an empty value would
+ * otherwise collapse to just its chevron. `h-11` matches `CONFIG_INPUT`.
  */
 export const CONFIG_SELECT_TRIGGER =
-  'w-full h-11 data-[size=default]:h-11 bg-background/50 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm';
+  'w-full h-11 bg-background/50 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm';
 
 /** Class for a `SelectContent` dropdown panel. */
 export const CONFIG_SELECT_CONTENT = 'rounded-xl border-border/50 shadow-xl';

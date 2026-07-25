@@ -845,9 +845,8 @@ function StreamersPage() {
                 }}
               >
                 {/* No fixed width: `w-16` was narrower than the trigger's own padding plus
-                    chevron, so the value was clipped. `data-[size=default]:h-8` is what actually
-                    sets the height; a bare `h-8` loses to the base's own size variant. */}
-                <SelectTrigger className="h-8 w-auto data-[size=default]:h-8">
+                    chevron, so the value was clipped. */}
+                <SelectTrigger className="h-8 w-auto">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

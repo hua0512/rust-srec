@@ -26,6 +26,16 @@
 
   In the recording filter editor, the day-of-week tooltips and the day and time preset menus were always shown in English. The priority labels on notification events and channels were too. They now follow the language you picked.
 
+  Notification events also went by their internal names, so the events list, the type filter and the per-channel event pickers showed entries like "STREAM ONLINE". They now read as ordinary text in your language, and searching the event list still matches either wording.
+
+- **Dropdowns are the height they were meant to be**
+
+  Dropdowns across the pipeline step, engine and preset forms were rendering shorter than the boxes next to them, so rows of settings did not line up. They are now the intended height everywhere.
+
+- **Dropdowns show the saved value when a page opens**
+
+  On several pipeline step, engine and job forms, a dropdown could come up empty or on the wrong entry until you touched it, even though a value was saved. They now show what is stored as soon as the page loads.
+
 - **Changing a streamer's link now switches it to the right site**
 
   If you edited a streamer and replaced its link with one from a different site, the streamer kept using the old site's settings — its cookies, proxy, output folder and danmaku options — and recordings were still filed under the old site's name. The site is now worked out from the link itself, so changing the link moves the streamer across properly. It is no longer something you pick by hand: when adding or editing a streamer, the detected site is simply shown next to the link, and links that no site recognizes are flagged before you save. Streamers that already drifted onto the wrong site are corrected the next time you save them.
