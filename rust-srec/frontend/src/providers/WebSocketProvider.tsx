@@ -1,6 +1,10 @@
 import { useEffect, useRef, useCallback, ReactNode } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
 import { sessionQueryOptions } from '@/api/session';
 import { useDownloadStore } from '@/store/downloads';
@@ -23,11 +27,21 @@ import {
   StreamerCheckHistoryEntrySchema,
   type StreamerCheckHistoryEntry,
 } from '@/server/functions/streamers';
-import type { QueryClient } from '@tanstack/react-query';
 
 // Reconnection constants
 const WS_RECONNECT_BASE_DELAY = 1000;
 const WS_RECONNECT_MAX_DELAY = 30000;
+
+export async function handleUploadTerminal(
+  queryClient: QueryClient,
+  jobId: string,
+  removeUpload: (jobId: string) => void,
+) {
+  removeUpload(jobId);
+  await queryClient.invalidateQueries({
+    queryKey: ['pipeline', 'job', jobId, 'uploads'],
+  });
+}
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -164,10 +178,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             break;
 
           case EventType.UPLOAD_TERMINAL:
-            // Terminal event - drop the live indicator. Durable per-file
-            // results are served by the job uploads REST endpoint.
+            // The backend publishes this only after durable per-file results
+            // have been written, so it is the authoritative refetch point.
             if (message.payload.case === 'uploadTerminal') {
-              removeUpload(message.payload.value.jobId);
+              void handleUploadTerminal(
+                queryClient,
+                message.payload.value.jobId,
+                removeUpload,
+              );
             }
             break;
 

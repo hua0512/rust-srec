@@ -14,10 +14,11 @@ use crate::database::WritePool;
 use crate::database::models::UploadRecordDbModel;
 use crate::database::retry::retry_on_sqlite_busy;
 
-/// Upper bound per IN-clause chunk in [`UploadRecordRepository::list_by_local_paths`].
+/// Upper bound per IN-clause chunk in
+/// [`UploadRecordRepository::list_by_session_local_paths`].
 /// The outputs page fetches at most 100 rows per page, so one chunk covers a
 /// full page; the chunking only matters if a caller ever passes more.
-const LOCAL_PATH_CHUNK: usize = 100;
+const OUTPUT_KEY_CHUNK: usize = 100;
 
 const UPSERT_SQL: &str = r#"
     INSERT INTO upload_records (
@@ -57,12 +58,15 @@ pub trait UploadRecordRepository: Send + Sync {
     /// All records for one job, ordered by local path.
     async fn list_by_job(&self, job_id: &str) -> Result<Vec<UploadRecordDbModel>>;
 
-    /// Records whose `local_path` is in `paths`, newest-updated first within
-    /// each chunk of up to `LOCAL_PATH_CHUNK` paths (a single path never
-    /// spans chunks, so per-path ordering always holds). Callers dedupe per
-    /// `(local_path, uploader)` if they need one row per file (DAG retries
-    /// create fresh job ids, so a file can have rows from several jobs).
-    async fn list_by_local_paths(&self, paths: &[String]) -> Result<Vec<UploadRecordDbModel>>;
+    /// Records matching `(session_id, local_path)` output keys, newest-updated
+    /// first within each chunk. The session is part of the identity because
+    /// `media_outputs.file_path` is not unique and can be reused by later
+    /// sessions. Callers dedupe per `(session_id, local_path, uploader)` when
+    /// DAG retries create rows under fresh job ids.
+    async fn list_by_session_local_paths(
+        &self,
+        output_keys: &[(String, String)],
+    ) -> Result<Vec<UploadRecordDbModel>>;
 }
 
 /// Sqlx implementation backed by separate read / write pools (matches the
@@ -120,23 +124,26 @@ impl UploadRecordRepository for SqlxUploadRecordRepository {
         Ok(rows)
     }
 
-    async fn list_by_local_paths(&self, paths: &[String]) -> Result<Vec<UploadRecordDbModel>> {
+    async fn list_by_session_local_paths(
+        &self,
+        output_keys: &[(String, String)],
+    ) -> Result<Vec<UploadRecordDbModel>> {
         let mut rows = Vec::new();
-        for chunk in paths.chunks(LOCAL_PATH_CHUNK) {
+        for chunk in output_keys.chunks(OUTPUT_KEY_CHUNK) {
             if chunk.is_empty() {
                 continue;
             }
-            let placeholders = vec!["?"; chunk.len()].join(", ");
+            let placeholders = vec!["(?, ?)"; chunk.len()].join(", ");
             let sql = format!(
                 "SELECT id, job_id, streamer_id, session_id, uploader, local_path, \
                         remote_path, status, size_bytes, error, created_at, updated_at, completed_at \
                  FROM upload_records \
-                 WHERE local_path IN ({placeholders}) \
+                 WHERE (session_id, local_path) IN ({placeholders}) \
                  ORDER BY updated_at DESC"
             );
             let mut query = sqlx::query_as::<_, UploadRecordDbModel>(sqlx::AssertSqlSafe(sql));
-            for path in chunk {
-                query = query.bind(path);
+            for (session_id, local_path) in chunk {
+                query = query.bind(session_id).bind(local_path);
             }
             rows.extend(query.fetch_all(&self.pool).await?);
         }
@@ -159,7 +166,7 @@ mod tests {
         // upload_records.job_id has a FOREIGN KEY on job(id); create the jobs
         // the test records reference.
         let job_repo = SqlxJobRepository::new(pool.clone(), pool.clone());
-        for job_id in ["job-1", "job-2"] {
+        for job_id in ["job-1", "job-2", "job-3"] {
             let mut job = JobDbModel::new("rclone", "{}");
             job.id = job_id.to_string();
             job_repo.create_job(&job).await.unwrap();
@@ -244,7 +251,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_by_local_paths_returns_newest_first() {
+    async fn list_by_session_local_paths_scopes_session_and_returns_newest_first() {
         let pool = setup_pool().await;
         let repo = SqlxUploadRecordRepository::new(pool.clone(), pool.clone());
 
@@ -252,13 +259,25 @@ mod tests {
         old.updated_at = 1_000;
         let mut new = record("job-2", "/tmp/a.mp4", upload_status::COMPLETED);
         new.updated_at = 2_000;
-        repo.upsert_records(&[old, new]).await.unwrap();
+        let mut other_session = record("job-3", "/tmp/a.mp4", upload_status::FAILED);
+        other_session.session_id = Some("session-2".to_string());
+        other_session.updated_at = 3_000;
+        repo.upsert_records(&[old, new, other_session])
+            .await
+            .unwrap();
 
         let rows = repo
-            .list_by_local_paths(&["/tmp/a.mp4".to_string(), "/tmp/missing.mp4".to_string()])
+            .list_by_session_local_paths(&[
+                ("session-1".to_string(), "/tmp/a.mp4".to_string()),
+                ("session-1".to_string(), "/tmp/missing.mp4".to_string()),
+            ])
             .await
             .unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].status, upload_status::COMPLETED, "newest first");
+        assert!(
+            rows.iter()
+                .all(|row| row.session_id.as_deref() == Some("session-1"))
+        );
     }
 }

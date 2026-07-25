@@ -548,6 +548,13 @@ pub struct ActiveUploadInfo {
     pub progress: Option<JobProgressSnapshot>,
 }
 
+struct FailedUploadContext {
+    job_type: String,
+    streamer_id: Option<String>,
+    session_id: Option<String>,
+    inputs: Vec<String>,
+}
+
 /// The job queue service.
 pub struct JobQueue {
     /// Configuration.
@@ -2214,12 +2221,15 @@ impl JobQueue {
         let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
         let mut transitioned = false;
 
-        // Upload context must be read before the cache cleanup below evicts
-        // the job. (streamer_id, files_total) for the Terminal event; None
-        // for non-upload job types.
-        let upload_ctx = self.jobs_cache.get(job_id).and_then(|job| {
-            upload_kind_for_job_type(&job.job_type)
-                .map(|_| (non_empty(&job.streamer_id), job.inputs.len() as u32))
+        // Capture everything needed to persist failed per-file results and
+        // emit the terminal event before cache cleanup evicts the job.
+        let failed_upload_ctx = self.jobs_cache.get(job_id).and_then(|job| {
+            upload_kind_for_job_type(&job.job_type).map(|_| FailedUploadContext {
+                job_type: job.job_type.clone(),
+                streamer_id: non_empty(&job.streamer_id),
+                session_id: non_empty(&job.session_id),
+                inputs: job.inputs.clone(),
+            })
         });
 
         // Update database if repository is available
@@ -2291,6 +2301,31 @@ impl JobQueue {
             return Err(Error::not_found("Job", job_id));
         }
 
+        // Synthesize failed rows only after this failure transition wins.
+        // A concurrent cancellation that wins first returns above without
+        // leaving FAILED upload records on a CANCELLED job.
+        if transitioned && let Some(context) = &failed_upload_ctx {
+            let items: Vec<UploadResultItem> = context
+                .inputs
+                .iter()
+                .map(|path| UploadResultItem {
+                    local_path: path.clone(),
+                    remote_path: None,
+                    size_bytes: None,
+                    status: UploadItemStatus::Failed,
+                    error: Some(error.to_string()),
+                })
+                .collect();
+            self.persist_upload_records(
+                job_id,
+                &context.job_type,
+                context.streamer_id.as_deref(),
+                context.session_id.as_deref(),
+                &items,
+            )
+            .await;
+        }
+
         // Remove cancellation token
         let _ = self.cancellation_tokens.remove(job_id);
         let _ = self.persisted_log_cursor.remove(job_id);
@@ -2303,13 +2338,13 @@ impl JobQueue {
         if transitioned {
             self.decrement_depth(1);
 
-            if let Some((streamer_id, files_total)) = upload_ctx {
+            if let Some(context) = failed_upload_ctx {
                 self.emit_upload_event(UploadStatusEvent::Terminal {
                     job_id: job_id.to_string(),
-                    streamer_id,
+                    streamer_id: context.streamer_id,
                     status: UploadTerminalStatus::Failed,
                     files_succeeded: 0,
-                    files_failed: files_total,
+                    files_failed: context.inputs.len() as u32,
                     files_skipped: 0,
                     error: Some(error.to_string()),
                 });
@@ -2908,6 +2943,66 @@ mod tests {
             .await
             .unwrap();
         assert!(upload_repo.list_by_job(&remux_id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_failed_upload_records_follow_winning_terminal_transition() {
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let upload_repo = Arc::new(
+            crate::database::repositories::upload_record::SqlxUploadRecordRepository::new(
+                pool.clone(),
+                pool.clone(),
+            ),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo);
+        queue.set_upload_repo(upload_repo.clone());
+
+        let failed_job = Job::new(
+            "rclone",
+            vec!["/videos/failed.mp4".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let failed_id = queue.enqueue(failed_job).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue.fail(&failed_id, "connection reset").await.unwrap();
+
+        let rows = upload_repo.list_by_job(&failed_id).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, "FAILED");
+        assert_eq!(rows[0].error.as_deref(), Some("connection reset"));
+
+        let cancelled_job = Job::new(
+            "rclone",
+            vec!["/videos/cancelled.mp4".to_string()],
+            vec![],
+            "streamer-1",
+            "session-1",
+        );
+        let cancelled_id = queue.enqueue(cancelled_job).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        queue.cancel_job(&cancelled_id).await.unwrap();
+        queue
+            .fail(&cancelled_id, "late processor error")
+            .await
+            .unwrap();
+
+        assert!(
+            upload_repo
+                .list_by_job(&cancelled_id)
+                .await
+                .unwrap()
+                .is_empty(),
+            "a cancellation that wins the transition must not leave failed upload rows"
+        );
     }
 
     /// Every terminal status transition must clear the job's persisted

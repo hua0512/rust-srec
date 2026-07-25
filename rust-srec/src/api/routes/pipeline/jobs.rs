@@ -595,25 +595,36 @@ pub async fn list_outputs(
         HashMap::new()
     };
 
-    // Annotate outputs with their upload results: one batched lookup for the
-    // whole page (≤100 paths), grouped per local_path. DAG retries create
-    // fresh job ids, so the same (path, uploader) pair can have several rows
-    // — keep only the newest (list_by_local_paths orders updated_at DESC).
-    let output_paths: Vec<String> = outputs.iter().map(|o| o.file_path.clone()).collect();
-    let mut uploads_by_path: HashMap<String, Vec<MediaOutputUploadInfo>> = HashMap::new();
+    // Include the session in the lookup key: media output paths are not
+    // unique and may be reused by a later recording session.
+    let output_keys: Vec<(String, String)> = outputs
+        .iter()
+        .map(|output| (output.session_id.clone(), output.file_path.clone()))
+        .collect();
+    let mut uploads_by_output: HashMap<(String, String), Vec<MediaOutputUploadInfo>> =
+        HashMap::new();
     match state
         .upload_record_repository
-        .list_by_local_paths(&output_paths)
+        .list_by_session_local_paths(&output_keys)
         .await
     {
         Ok(records) => {
-            let mut seen: HashSet<(String, String)> = HashSet::new();
+            // DAG retries create fresh job ids. Rows are newest-first, so
+            // retain only the latest result for each output and uploader.
+            let mut seen: HashSet<(String, String, String)> = HashSet::new();
             for record in records {
-                if !seen.insert((record.local_path.clone(), record.uploader.clone())) {
+                let Some(session_id) = record.session_id else {
+                    continue;
+                };
+                if !seen.insert((
+                    session_id.clone(),
+                    record.local_path.clone(),
+                    record.uploader.clone(),
+                )) {
                     continue;
                 }
-                uploads_by_path
-                    .entry(record.local_path)
+                uploads_by_output
+                    .entry((session_id, record.local_path))
                     .or_default()
                     .push(MediaOutputUploadInfo {
                         uploader: record.uploader,
@@ -653,8 +664,9 @@ pub async fn list_outputs(
                 duration_secs: None, // Not stored in current model
                 format: output.file_type.clone(),
                 created_at,
-                uploads: uploads_by_path
-                    .remove(&output.file_path)
+                uploads: uploads_by_output
+                    .get(&(output.session_id.clone(), output.file_path.clone()))
+                    .cloned()
                     .unwrap_or_default(),
             }
         })

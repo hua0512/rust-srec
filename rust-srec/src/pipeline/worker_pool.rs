@@ -12,50 +12,8 @@ use tracing::{debug, error, info, warn};
 use super::dag_scheduler::{
     DagCompletionInfo, DagJobCompletedUpdate, DagJobFailedUpdate, DagScheduler,
 };
-use super::job_queue::{JobExecutionInfo, JobQueue, JobResult, upload_kind_for_job_type};
-use super::processors::{
-    JobLogSink, Processor, ProcessorContext, ProcessorInput, UploadItemStatus, UploadResultItem,
-};
-
-/// Record every input of a failed upload job as FAILED.
-///
-/// A processor `Err` carries no `ProcessorOutput`, so the per-file results the
-/// uploader computed are lost; synthesizing from `ProcessorInput.inputs` is
-/// the only durable trace of the attempt. Pessimistic on purpose: a retry
-/// upserts over these rows via the `(job_id, local_path)` conflict key, and
-/// RcloneProcessor's move-resume reports already-moved sources as Completed,
-/// flipping them back.
-async fn record_failed_upload_inputs(
-    job_queue: &JobQueue,
-    job_id: &str,
-    job_type: &str,
-    input: &ProcessorInput,
-    error: &str,
-) {
-    if upload_kind_for_job_type(job_type).is_none() {
-        return;
-    }
-    let items: Vec<UploadResultItem> = input
-        .inputs
-        .iter()
-        .map(|path| UploadResultItem {
-            local_path: path.clone(),
-            remote_path: None,
-            size_bytes: None,
-            status: UploadItemStatus::Failed,
-            error: Some(error.to_string()),
-        })
-        .collect();
-    job_queue
-        .persist_upload_records(
-            job_id,
-            job_type,
-            Some(&input.streamer_id),
-            Some(&input.session_id),
-            &items,
-        )
-        .await;
-}
+use super::job_queue::{JobExecutionInfo, JobQueue, JobResult};
+use super::processors::{JobLogSink, Processor, ProcessorContext, ProcessorInput};
 
 /// Type of worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -819,14 +777,6 @@ impl WorkerPool {
                                     if !job_cancellation_token.is_cancelled() {
                                     // Check if this is a DAG job for fail-fast handling
                                     let error = e.to_string();
-                                    record_failed_upload_inputs(
-                                        &job_queue,
-                                        &job_id,
-                                        &job.job_type,
-                                        &input,
-                                        &error,
-                                    )
-                                    .await;
                                     if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
                                         // First mark job as failed
                                         let partial_outputs = job_queue
@@ -903,14 +853,6 @@ impl WorkerPool {
                                     if !job_cancellation_token.is_cancelled() {
                                     job_cancellation_token.cancel();
 
-                                    record_failed_upload_inputs(
-                                        &job_queue,
-                                        &job_id,
-                                        &job.job_type,
-                                        &input,
-                                        "Job timed out",
-                                    )
-                                    .await;
                                     // Check if this is a DAG job for fail-fast handling
                                     if let Some(dag_step_id) = dag_step_execution_id.as_deref() {
                                         // First mark job as failed
