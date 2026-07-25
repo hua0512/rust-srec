@@ -42,6 +42,10 @@ pub struct EmailConfig {
     /// Minimum priority level to send (default: High).
     #[serde(default = "default_email_priority")]
     pub min_priority: NotificationPriority,
+    /// Language for the rendered title and body; `None` follows the process-wide locale.
+    /// See `notification::service::parse_channel_locale`.
+    #[serde(default)]
+    pub locale: Option<String>,
     /// Batch emails within this window (seconds).
     #[serde(default = "default_batch_window")]
     pub batch_window_secs: u64,
@@ -69,6 +73,7 @@ impl Default for EmailConfig {
             from_address: String::new(),
             to_addresses: Vec::new(),
             min_priority: NotificationPriority::High,
+            locale: None,
             batch_window_secs: 60,
         }
     }
@@ -87,15 +92,18 @@ impl EmailChannel {
 
     /// Build the email subject.
     fn build_subject(&self, event: &NotificationEvent) -> String {
-        format!("[rust-srec] {}", event.title())
+        format!(
+            "[rust-srec] {}",
+            event.title_for(self.config.locale.as_deref())
+        )
     }
 
     /// Build the email body (plain text).
     fn build_body_text(&self, event: &NotificationEvent) -> String {
         format!(
             "{}\n\n{}\n\nPriority: {}\nType: {}\nTime: {}",
-            event.title(),
-            event.description(),
+            event.title_for(self.config.locale.as_deref()),
+            event.description_for(self.config.locale.as_deref()),
             event.priority(),
             event.event_type(),
             event.timestamp().to_rfc3339()
@@ -111,8 +119,8 @@ impl EmailChannel {
             NotificationPriority::Critical => "#e74c3c",
         };
 
-        let title = escape_html(&event.title());
-        let description = escape_html(&event.description());
+        let title = escape_html(&event.title_for(self.config.locale.as_deref()));
+        let description = escape_html(&event.description_for(self.config.locale.as_deref()));
         let priority = escape_html(&event.priority().to_string());
         let event_type = escape_html(event.event_type());
         let timestamp = escape_html(&event.timestamp().to_rfc3339());

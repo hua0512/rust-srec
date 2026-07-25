@@ -20,6 +20,12 @@
 
   The global settings, notification, recording engine and recording filter pages have been reworked. Related settings sit under headings that say what the group is for, more fields explain themselves when you hover the question mark beside them, and boxes and dropdowns line up with each other. A few settings that were only described in a tooltip now say what they do on the page. The save button no longer sits there greyed out: it appears once you actually change something. None of the settings themselves have changed.
 
+- **Set the language for each notification channel**
+
+  Notification channels have a new **Notification language** setting, so the alerts sent to a Telegram chat, a webhook or a shared mailbox can each be written in their own language. Channels left on **Same as server** keep using the language the server runs in, so nothing changes unless you pick one. The setting is about the people reading the messages, not about the language you use in this interface.
+
+  Browser and desktop notifications are not covered by this and still follow the server's language.
+
 ### Fixes
 
 - **Text that stayed in English when using another language**

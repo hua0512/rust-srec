@@ -20,6 +20,7 @@ import { IconInput } from '@/components/ui/icon-input';
 import {
   ChannelEnabledField,
   MinPriorityField,
+  ChannelLocaleField,
 } from './channel-delivery-fields';
 import {
   CONFIG_INPUT,
@@ -105,6 +106,7 @@ export function TelegramForm() {
         />
         <MinPriorityField />
       </div>
+      <ChannelLocaleField />
       <ChannelEnabledField />
     </div>
   );
