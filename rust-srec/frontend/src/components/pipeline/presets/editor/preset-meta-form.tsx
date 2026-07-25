@@ -95,6 +95,9 @@ export function PresetMetaForm({
   const CurrentIcon = selectedOption?.icon || Settings2;
 
   const handleProcessorChange = (value: string) => {
+    // Radix's hidden native select can emit an empty value while reset() registers its options.
+    if (!value) return;
+
     form.setValue('processor', value);
     // Reset config when processor type changes to avoid stale config from previous type
     form.setValue('config', {});
