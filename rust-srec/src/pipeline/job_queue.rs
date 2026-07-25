@@ -2379,6 +2379,21 @@ fn spawn_progress_aggregator(
                         continue;
                     }
                     for (job_id, snapshot) in pending.drain() {
+                        // A job can reach a terminal state between receive and
+                        // this flush tick. The terminal status transition fires
+                        // trg_job_terminal_clears_progress, so persisting now
+                        // would resurrect a row that stays orphaned until job
+                        // retention; likewise the terminal WS event has already
+                        // been broadcast. cancel_job cancels the token before
+                        // the worker finalizes, hence the is_cancelled check on
+                        // top of plain presence.
+                        let job_is_live = cancellation_tokens
+                            .get(&job_id)
+                            .is_some_and(|token| !token.is_cancelled());
+                        if !job_is_live {
+                            continue;
+                        }
+
                         // Rclone is the only upload progress emitter (see
                         // RcloneProcessor / run_rclone_with_progress), so its
                         // snapshots double as live upload-status WS events.
@@ -2422,8 +2437,13 @@ fn spawn_progress_aggregator(
                     let Some(update) = update else { break; };
                     // Only retain/persist progress for actively-processing jobs. This prevents
                     // late progress messages (after completion/cancellation) from reintroducing
-                    // entries into the in-memory cache.
-                    if !cancellation_tokens.contains_key(&update.job_id) {
+                    // entries into the in-memory cache. The token is also checked for
+                    // cancellation: cancel_job cancels it but leaves it in the map until the
+                    // worker calls finalize_cancelled_job.
+                    let job_is_live = cancellation_tokens
+                        .get(&update.job_id)
+                        .is_some_and(|token| !token.is_cancelled());
+                    if !job_is_live {
                         continue;
                     }
                     progress_cache.insert(update.job_id.clone(), update.snapshot.clone());
@@ -2880,6 +2900,79 @@ mod tests {
             .await
             .unwrap();
         assert!(upload_repo.list_by_job(&remux_id).await.unwrap().is_empty());
+    }
+
+    /// Every terminal status transition must clear the job's persisted
+    /// progress row via `trg_job_terminal_clears_progress` — a snapshot only
+    /// means anything while the job is PROCESSING, and a leftover row would
+    /// otherwise linger until job retention prunes the job itself.
+    #[tokio::test]
+    async fn test_terminal_transition_clears_persisted_progress() {
+        async fn progress_count(pool: &sqlx::SqlitePool, job_id: &str) -> i64 {
+            sqlx::query_scalar("SELECT COUNT(*) FROM job_execution_progress WHERE job_id = ?")
+                .bind(job_id)
+                .fetch_one(pool)
+                .await
+                .unwrap()
+        }
+
+        async fn seed_progress(repo: &Arc<dyn JobRepository>, job_id: &str) {
+            repo.upsert_job_execution_progress(&JobExecutionProgressDbModel {
+                job_id: job_id.to_string(),
+                kind: "ffmpeg".to_string(),
+                progress: "{}".to_string(),
+                updated_at: 1,
+            })
+            .await
+            .unwrap();
+        }
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+
+        let job_repo: Arc<dyn JobRepository> = Arc::new(
+            crate::database::repositories::job::SqlxJobRepository::new(pool.clone(), pool.clone()),
+        );
+        let queue = JobQueue::with_repository(JobQueueConfig::default(), job_repo.clone());
+
+        // COMPLETED clears the row.
+        let completed = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
+        let completed_id = queue.enqueue(completed).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        seed_progress(&job_repo, &completed_id).await;
+        assert_eq!(progress_count(&pool, &completed_id).await, 1);
+        queue
+            .complete(
+                &completed_id,
+                JobResult {
+                    outputs: vec![],
+                    duration_secs: 1.0,
+                    metadata: None,
+                    uploads: vec![],
+                    logs: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(progress_count(&pool, &completed_id).await, 0);
+
+        // FAILED clears the row.
+        let failed = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
+        let failed_id = queue.enqueue(failed).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        seed_progress(&job_repo, &failed_id).await;
+        queue.fail(&failed_id, "boom").await.unwrap();
+        assert_eq!(progress_count(&pool, &failed_id).await, 0);
+
+        // CANCELLED clears the row.
+        let cancelled = Job::new("remux", vec!["/in.mp4".to_string()], vec![], "", "");
+        let cancelled_id = queue.enqueue(cancelled).await.unwrap();
+        queue.dequeue(None).await.unwrap().unwrap();
+        seed_progress(&job_repo, &cancelled_id).await;
+        queue.cancel_job(&cancelled_id).await.unwrap();
+        assert_eq!(progress_count(&pool, &cancelled_id).await, 0);
     }
 
     #[test]
