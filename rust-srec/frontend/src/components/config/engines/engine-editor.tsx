@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   Form,
   FormControl,
@@ -16,15 +16,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import {
-  Tag,
-  Terminal,
-  Radio,
-  Database,
-  Save,
-  Loader2,
-  ArrowLeft,
-} from 'lucide-react';
+import { Tag, Terminal, Radio, Database, ArrowLeft } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -48,11 +40,11 @@ import {
   MesioConfigSchema,
 } from '@/api/schemas';
 import { createEngine, updateEngine } from '@/server/functions';
+import { SaveFab } from '@/components/shared/save-fab';
 import { FfmpegForm } from './forms/ffmpeg-form';
 import { StreamlinkForm } from './forms/streamlink-form';
 import { MesioForm } from './forms/mesio-form';
 import { Link } from '@tanstack/react-router';
-import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import {
   CONFIG_DESCRIPTION,
@@ -161,7 +153,11 @@ function EngineForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form
+        id="engine-form"
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="space-y-8"
+      >
         {/* Basic Info Card */}
         <Card className="border-border/40 bg-gradient-to-br from-card to-card/50 backdrop-blur-sm shadow-sm hover:shadow-md transition-shadow duration-500">
           <CardHeader className="pb-4">
@@ -273,39 +269,14 @@ function EngineForm({
 
         <EngineConfigCard />
 
-        <AnimatePresence>
-          {form.formState.isDirty && (
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.9 }}
-              transition={{ duration: 0.2 }}
-              className="fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50"
-            >
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                size="lg"
-                className={cn(
-                  'h-14 px-8 rounded-full font-semibold shadow-2xl shadow-primary/30 transition-all duration-300',
-                  isSubmitting
-                    ? 'opacity-50 grayscale scale-95'
-                    : 'bg-gradient-to-r from-primary to-primary/90 hover:scale-105 active:scale-95 hover:shadow-primary/50',
-                )}
-              >
-                {isSubmitting ? (
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                ) : (
-                  <Save className="w-5 h-5 mr-2" />
-                )}
-                {isEdit
-                  ? i18n._(msg`Save Changes`)
-                  : i18n._(msg`Create Engine`)}
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        {/* Add padding at bottom to prevent floating button from covering content */}
+        <SaveFab
+          isSaving={isSubmitting}
+          formId="engine-form"
+          label={
+            isEdit ? <Trans>Save changes</Trans> : <Trans>Create engine</Trans>
+          }
+        />
+        {/* Keeps the last field clear of the floating save button. */}
         <div className="h-24" />
       </form>
     </Form>

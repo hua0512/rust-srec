@@ -794,7 +794,7 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                             handleHwaccelChange(v);
                             field.onChange(v);
                           }}
-                          defaultValue={field.value}
+                          value={field.value ?? ''}
                         >
                           <FormControl>
                             <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">

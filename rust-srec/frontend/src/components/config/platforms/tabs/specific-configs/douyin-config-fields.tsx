@@ -100,7 +100,6 @@ export function DouyinConfigFields({
                     <Switch
                       checked={!!field.value}
                       onCheckedChange={field.onChange}
-                      defaultValue={field.value || true}
                       className="scale-90"
                     />
                   </FormControl>
@@ -162,7 +161,6 @@ export function DouyinConfigFields({
                   <Switch
                     checked={!!field.value}
                     onCheckedChange={field.onChange}
-                    defaultValue={field.value || true}
                     className="scale-90"
                   />
                 </FormControl>

@@ -92,7 +92,7 @@ export function AudioExtractConfigForm({
                       </FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value || undefined}
+                        value={field.value ?? ''}
                       >
                         <FormControl>
                           <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">

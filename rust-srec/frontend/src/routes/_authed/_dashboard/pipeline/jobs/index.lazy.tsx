@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { FAB_ANCHOR } from '@/components/shared/save-fab';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import {
   Select,
@@ -554,7 +555,7 @@ function PipelineJobsPage() {
             initial={{ opacity: 0, y: 50, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            className="fixed bottom-6 right-6 z-50 md:bottom-10 md:right-10"
+            className={cn(FAB_ANCHOR, 'md:bottom-10 md:right-10')}
           >
             <Button
               size="lg"

@@ -7,6 +7,13 @@ import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
 
+/**
+ * Where a floating action sits. Exported so the non-save floating actions — the sessions
+ * selection bar and the jobs retry-all button — anchor to the same corner rather than each
+ * repeating the offsets and drifting apart.
+ */
+export const FAB_ANCHOR = 'fixed bottom-6 right-6 z-50';
+
 interface SaveFabProps {
   isSaving: boolean;
   /** Submits this form by id. Falls back to `onSubmit` when absent. */
@@ -18,6 +25,8 @@ interface SaveFabProps {
   alwaysVisible?: boolean;
   /** Defaults to "Save changes". */
   label?: ReactNode;
+  /** Applied to the positioning wrapper, for pages that hide the FAB at some widths. */
+  className?: string;
 }
 
 /**
@@ -33,6 +42,7 @@ function Fab({
   control,
   alwaysVisible,
   label,
+  className,
 }: SaveFabProps & { control: Control<any> }) {
   const { isDirty } = useFormState({ control });
   const reducedMotion = usePrefersReducedMotion();
@@ -56,7 +66,7 @@ function Fab({
               ? { duration: 0.15 }
               : { type: 'spring', stiffness: 300, damping: 25 }
           }
-          className="fixed bottom-6 right-6 z-50"
+          className={cn(FAB_ANCHOR, className)}
         >
           <Button
             size="lg"

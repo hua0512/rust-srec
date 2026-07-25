@@ -230,7 +230,7 @@ function CreatePipelineJobPage() {
                         </FormLabel>
                         <Select
                           onValueChange={field.onChange}
-                          defaultValue={field.value}
+                          value={field.value ?? ''}
                         >
                           <FormControl>
                             <SelectTrigger className="bg-background/50 border-white/10">
@@ -263,7 +263,7 @@ function CreatePipelineJobPage() {
                         </FormLabel>
                         <Select
                           onValueChange={field.onChange}
-                          defaultValue={field.value}
+                          value={field.value ?? ''}
                         >
                           <FormControl>
                             <SelectTrigger className="bg-background/50 border-white/10">

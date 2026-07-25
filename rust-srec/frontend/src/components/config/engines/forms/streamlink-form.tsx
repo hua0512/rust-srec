@@ -33,8 +33,7 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
           name={`${basePath}.binary_path`}
           render={({ field }) => (
             <FormItem>
-              <ConfigFieldLabel>
-                <Terminal className="w-3.5 h-3.5 text-primary" />
+              <ConfigFieldLabel icon={Terminal}>
                 <Trans>Binary Path</Trans>
               </ConfigFieldLabel>
               <FormControl>
@@ -55,8 +54,7 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
           name={`${basePath}.quality`}
           render={({ field }) => (
             <FormItem>
-              <ConfigFieldLabel>
-                <Settings className="w-3.5 h-3.5 text-primary" />
+              <ConfigFieldLabel icon={Settings}>
                 <Trans>Quality</Trans>
               </ConfigFieldLabel>
               <FormControl>
@@ -77,8 +75,7 @@ export function StreamlinkForm({ basePath = 'config' }: StreamlinkFormProps) {
           name={`${basePath}.graceful_stop_timeout_secs`}
           render={({ field }) => (
             <FormItem>
-              <ConfigFieldLabel>
-                <TimerOff className="w-3.5 h-3.5 text-primary" />
+              <ConfigFieldLabel icon={TimerOff}>
                 <Trans>Graceful Stop Timeout</Trans>
               </ConfigFieldLabel>
               <FormControl>

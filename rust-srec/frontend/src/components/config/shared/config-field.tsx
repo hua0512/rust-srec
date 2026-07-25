@@ -44,15 +44,11 @@ const ACCENT_DOT: Record<ConfigAccent, string> = {
 /**
  * Class for a `SelectTrigger` so selects line up with the platform pages.
  *
- * Two overrides here are load-bearing:
- * - `w-full`, because the shadcn base is `w-fit` and a trigger with an empty value would
- *   otherwise collapse to just its chevron.
- * - `data-[size=default]:h-11`, because the base sets its height through that same variant.
- *   A bare `h-11` neither merges with it nor out-specifies it, which left selects at 36px
- *   beside 44px inputs.
+ * `w-full` is load-bearing: the shadcn base is `w-fit`, so a trigger with an empty value would
+ * otherwise collapse to just its chevron. `h-11` matches `CONFIG_INPUT`.
  */
 export const CONFIG_SELECT_TRIGGER =
-  'w-full h-11 data-[size=default]:h-11 bg-background/50 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm';
+  'w-full h-11 bg-background/50 rounded-xl border-border/50 focus:bg-background transition-all shadow-sm';
 
 /** Class for a `SelectContent` dropdown panel. */
 export const CONFIG_SELECT_CONTENT = 'rounded-xl border-border/50 shadow-xl';
@@ -127,18 +123,23 @@ const LABEL_CLASS = 'font-bold uppercase tracking-wider text-muted-foreground';
 const LABEL_SIZE = { default: 'text-xs', sm: 'text-[11px]' } as const;
 
 /**
- * Dotted, uppercase field label.
+ * Uppercase field label, marked with a dot or an icon.
+ *
+ * `icon` replaces the dot rather than joining it: both are the same marker, and showing them
+ * together reads as a bullet in front of the icon instead of one label mark.
  *
  * Pass `plain` for read-only rows that sit outside a `FormField`, where `FormLabel` has no field
  * context to bind to.
  */
 export function ConfigFieldLabel({
+  icon: Icon,
   accent = 'theme',
   plain = false,
   size = 'default',
   className,
   children,
 }: {
+  icon?: LucideIcon;
   accent?: ConfigAccent;
   plain?: boolean;
   size?: keyof typeof LABEL_SIZE;
@@ -150,7 +151,14 @@ export function ConfigFieldLabel({
 
   return (
     <div className={cn('flex items-center gap-2 px-1', className)}>
-      <div className={cn('rounded-full', dotSize, ACCENT_DOT[accent])} />
+      {Icon ? (
+        <Icon
+          className={cn('h-3.5 w-3.5 shrink-0', ACCENT_TEXT[accent])}
+          aria-hidden="true"
+        />
+      ) : (
+        <div className={cn('rounded-full', dotSize, ACCENT_DOT[accent])} />
+      )}
       {plain ? (
         <span className={labelClass}>{children}</span>
       ) : (

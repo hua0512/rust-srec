@@ -195,9 +195,8 @@ export const TdlConfigForm = memo(function TdlConfigForm({
                     <Trans>Login Type</Trans>
                   </FormLabel>
                   <Select
-                    key={field.value ?? 'initial'}
                     onValueChange={field.onChange}
-                    defaultValue={field.value ?? 'auto'}
+                    value={field.value ?? 'auto'}
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50">

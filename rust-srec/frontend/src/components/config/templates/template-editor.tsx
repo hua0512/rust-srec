@@ -6,6 +6,7 @@ import { Trans } from '@lingui/react/macro';
 import { motion } from 'motion/react';
 import { Form } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
+import { SaveFab } from '@/components/shared/save-fab';
 import { useQuery } from '@tanstack/react-query';
 import {
   Settings,
@@ -138,10 +139,8 @@ export function TemplateEditor({
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit((data) => {
-          console.log('Submitting template form data:', data);
-          onSubmit(data);
-        })}
+        id="template-form"
+        onSubmit={form.handleSubmit((data) => onSubmit(data))}
         className="min-h-screen pb-20"
       >
         <motion.div
@@ -285,21 +284,12 @@ export function TemplateEditor({
           />
         </motion.div>
 
-        {/* Floating Save Button - Only show if dirty and not already shown in header (mobile optimization) */}
-        <div className="fixed bottom-6 right-6 z-50 md:hidden">
-          <Button
-            type="submit"
-            disabled={isSubmitting}
-            size="lg"
-            className="shadow-xl rounded-full h-12 w-12 p-0"
-          >
-            {isSubmitting ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Save className="w-5 h-5" />
-            )}
-          </Button>
-        </div>
+        {/* Mobile only: on wider screens the header carries its own save button. */}
+        <SaveFab
+          isSaving={isSubmitting}
+          formId="template-form"
+          className="md:hidden"
+        />
       </form>
     </Form>
   );

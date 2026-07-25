@@ -129,7 +129,7 @@ export function AssBurninConfigForm({
                   </FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    defaultValue={field.value}
+                    value={field.value ?? ''}
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:ring-primary/20 rounded-lg">
@@ -175,7 +175,7 @@ export function AssBurninConfigForm({
                   </FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    defaultValue={field.value}
+                    value={field.value ?? ''}
                   >
                     <FormControl>
                       <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:ring-primary/20 rounded-lg">

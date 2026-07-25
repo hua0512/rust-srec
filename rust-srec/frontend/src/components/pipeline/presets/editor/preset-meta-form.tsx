@@ -144,7 +144,7 @@ export function PresetMetaForm({
                 </FormLabel>
                 <Select
                   onValueChange={handleProcessorChange}
-                  defaultValue={field.value}
+                  value={field.value ?? ''}
                   disabled={!!initialData}
                 >
                   <FormControl>
