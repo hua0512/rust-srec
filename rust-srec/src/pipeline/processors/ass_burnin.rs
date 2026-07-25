@@ -637,6 +637,7 @@ impl Processor for AssBurnInProcessor {
             failed_inputs: vec![],
             succeeded_inputs,
             skipped_inputs,
+            uploads: vec![],
             logs,
         })
     }

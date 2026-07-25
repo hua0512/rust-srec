@@ -137,6 +137,7 @@ pub struct MessageResponse {
         crate::api::routes::pipeline::jobs::get_job,
         crate::api::routes::pipeline::jobs::list_job_logs,
         crate::api::routes::pipeline::jobs::get_job_progress,
+        crate::api::routes::pipeline::jobs::list_job_uploads,
         crate::api::routes::pipeline::jobs::retry_job,
         crate::api::routes::pipeline::jobs::cancel_job,
         crate::api::routes::pipeline::jobs::delete_job,
@@ -267,6 +268,9 @@ pub struct MessageResponse {
             JobResponse,
             PaginatedResponse<JobResponse>,
             PipelineStatsResponse,
+            crate::api::models::UploadRecordResponse,
+            crate::api::models::UploadRecordListResponse,
+            crate::api::models::MediaOutputUploadInfo,
             // Filter schemas
             CreateFilterRequest,
             UpdateFilterRequest,

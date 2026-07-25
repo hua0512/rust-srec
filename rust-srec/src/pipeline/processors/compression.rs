@@ -774,6 +774,7 @@ impl Processor for CompressionProcessor {
             failed_inputs: vec![],
             succeeded_inputs: input.inputs.clone(),
             skipped_inputs: vec![],
+            uploads: vec![],
             logs,
         })
     }

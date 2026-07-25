@@ -130,7 +130,13 @@ export const SessionSegmentSchema = z.object({
 });
 export type SessionSegment = z.infer<typeof SessionSegmentSchema>;
 
-export const JobProgressKindSchema = z.enum(['ffmpeg', 'rclone']);
+// Must cover every backend `ProgressKind` variant (pipeline/progress.rs) —
+// an unknown kind fails the zod parse and silently hides the progress tiles.
+export const JobProgressKindSchema = z.enum([
+  'ffmpeg',
+  'rclone',
+  'compression',
+]);
 export type JobProgressKind = z.infer<typeof JobProgressKindSchema>;
 
 export type SessionDanmuStatistics = z.infer<

@@ -184,6 +184,16 @@ export const PipelineStatsSchema = z.object({
   avg_processing_time_secs: z.number().nullable().optional(),
 });
 
+// Upload annotation attached to a media output (backend omits the array
+// entirely when empty, hence .default([])).
+export const MediaOutputUploadInfoSchema = z.object({
+  uploader: z.string(),
+  remote_path: z.string().nullable().optional(),
+  status: z.enum(['COMPLETED', 'FAILED', 'SKIPPED']),
+  completed_at: z.string().nullable().optional(),
+});
+export type MediaOutputUploadInfo = z.infer<typeof MediaOutputUploadInfoSchema>;
+
 export const MediaOutputSchema = z.object({
   id: z.string(),
   session_id: z.string(),
@@ -193,6 +203,7 @@ export const MediaOutputSchema = z.object({
   duration_secs: z.number().nullable().optional(),
   format: z.string(),
   created_at: z.string(),
+  uploads: z.array(MediaOutputUploadInfoSchema).default([]),
 });
 export type MediaOutput = z.infer<typeof MediaOutputSchema>;
 

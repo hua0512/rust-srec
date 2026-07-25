@@ -11,7 +11,9 @@ import { StreamActionsMenu } from './card/stream-actions-menu';
 import { StreamAvatarInfo } from './card/stream-avatar-info';
 import { DashboardCard } from '../dashboard/dashboard-card';
 import { useDownloadStore } from '@/store/downloads';
+import { useUploadStore } from '@/store/uploads';
 import { Check } from 'lucide-react';
+import { UploadIndicator } from './card/upload-indicator';
 
 interface StreamerCardProps {
   streamer: z.infer<typeof StreamerSchema>;
@@ -44,6 +46,12 @@ export const StreamerCard = memo(
     // store on DownloadStarted/terminal events.
     const queuedEntry = useDownloadStore(
       useShallow((state) => state.getQueuedForStreamer(streamer.id)),
+    );
+
+    // Live upload jobs for this streamer, pushed over the WS into the
+    // uploads store (separate from the downloads store; see store/uploads.ts).
+    const activeUploads = useUploadStore(
+      useShallow((state) => state.getActiveUploadsByStreamer(streamer.id)),
     );
 
     const status = useStreamerStatus(streamer, activeDownload, queuedEntry);
@@ -94,6 +102,9 @@ export const StreamerCard = memo(
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-2">
                   <StatusBadge status={status} />
+                  {activeUploads.length > 0 && (
+                    <UploadIndicator uploads={activeUploads} />
+                  )}
                 </div>
 
                 {!selectionMode && (

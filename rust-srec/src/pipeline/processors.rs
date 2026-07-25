@@ -10,7 +10,6 @@ mod execute;
 mod metadata;
 mod rclone;
 mod remux;
-mod tdl;
 #[cfg(test)]
 mod test_utils;
 mod thumbnail;
@@ -27,8 +26,8 @@ pub use execute::ExecuteCommandProcessor;
 pub use metadata::MetadataProcessor;
 pub use rclone::RcloneProcessor;
 pub use remux::RemuxProcessor;
-pub use tdl::TdlUploadProcessor;
 pub use thumbnail::ThumbnailProcessor;
 pub use traits::{
     JobLogSink, Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType,
+    UploadItemStatus, UploadResultItem,
 };

@@ -5,6 +5,7 @@
 
 use crate::downloader::engine::DownloadInfo;
 use crate::downloader::queue::PendingEntry as QueuePendingEntry;
+use crate::pipeline::{ActiveUploadInfo, JobProgressSnapshot};
 
 // Include the generated protobuf code
 pub mod download_progress {
@@ -20,7 +21,8 @@ pub mod log_event {
 pub use download_progress::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadDequeued, DownloadFailed,
     DownloadMeta, DownloadMetrics, DownloadQueued, DownloadRejected, DownloadSnapshot,
-    DownloadState, EventType, SegmentCompleted, StreamerCheckRecorded, WsMessage,
+    DownloadState, EventType, SegmentCompleted, StreamerCheckRecorded, UploadProgress,
+    UploadStarted, UploadState, UploadTerminal, UploadTerminalStatus, WsMessage,
 };
 
 impl From<&DownloadInfo> for DownloadMeta {
@@ -78,12 +80,56 @@ fn safe_playback_ratio(media_duration_secs: f64, elapsed_secs: f64) -> f64 {
     }
 }
 
+/// Wire shape of one upload progress update. Shared between the live
+/// `UPLOAD_PROGRESS` event and the `DownloadSnapshot.uploads` slice so both
+/// paths serialize a `JobProgressSnapshot` identically.
+pub fn upload_progress_to_proto(
+    job_id: &str,
+    streamer_id: Option<&str>,
+    snapshot: &JobProgressSnapshot,
+) -> UploadProgress {
+    UploadProgress {
+        job_id: job_id.to_string(),
+        streamer_id: streamer_id.unwrap_or_default().to_string(),
+        percent: snapshot.percent,
+        bytes_done: snapshot.bytes_done,
+        bytes_total: snapshot.bytes_total,
+        speed_bytes_per_sec: snapshot.speed_bytes_per_sec,
+        eta_secs: snapshot.eta_secs,
+        updated_at_ms: snapshot.updated_at.timestamp_millis(),
+    }
+}
+
+/// Snapshot slice for one in-flight upload job: what a client would have
+/// assembled from `UPLOAD_STARTED` plus the latest `UPLOAD_PROGRESS`.
+fn upload_state_to_proto(info: &ActiveUploadInfo) -> UploadState {
+    UploadState {
+        started: Some(UploadStarted {
+            job_id: info.job_id.clone(),
+            streamer_id: info.streamer_id.clone().unwrap_or_default(),
+            session_id: info.session_id.clone().unwrap_or_default(),
+            uploader: info.uploader.to_string(),
+            files_total: info.files_total,
+            started_at_ms: info
+                .started_at
+                .map(|dt| dt.timestamp_millis())
+                .unwrap_or_default(),
+        }),
+        progress: info
+            .progress
+            .as_ref()
+            .map(|s| upload_progress_to_proto(&info.job_id, info.streamer_id.as_deref(), s)),
+    }
+}
+
 /// Create a snapshot message from a list of download infos plus the
 /// list of currently-queued pending acquires (downloads that have
-/// emitted `DownloadQueued` but not yet received their slot).
+/// emitted `DownloadQueued` but not yet received their slot) and the
+/// currently-processing upload jobs.
 pub fn create_snapshot_message(
     downloads: Vec<DownloadInfo>,
     queued: Vec<QueuePendingEntry>,
+    uploads: Vec<ActiveUploadInfo>,
 ) -> WsMessage {
     let states: Vec<DownloadState> = downloads
         .iter()
@@ -105,12 +151,15 @@ pub fn create_snapshot_message(
         })
         .collect();
 
+    let upload_msgs: Vec<UploadState> = uploads.iter().map(upload_state_to_proto).collect();
+
     WsMessage {
         event_type: EventType::Snapshot as i32,
         payload: Some(download_progress::ws_message::Payload::Snapshot(
             DownloadSnapshot {
                 downloads: states,
                 queued: queued_msgs,
+                uploads: upload_msgs,
             },
         )),
     }
@@ -178,7 +227,7 @@ mod tests {
     #[test]
     fn test_create_snapshot_message() {
         let downloads = vec![create_test_download_info()];
-        let msg = create_snapshot_message(downloads, Vec::new());
+        let msg = create_snapshot_message(downloads, Vec::new(), Vec::new());
 
         assert_eq!(msg.event_type, EventType::Snapshot as i32);
         assert!(msg.payload.is_some());
@@ -197,7 +246,7 @@ mod tests {
             priority: Priority::High,
             queued_at_ms: 1234567890,
         }];
-        let msg = create_snapshot_message(downloads, queued);
+        let msg = create_snapshot_message(downloads, queued, Vec::new());
 
         assert_eq!(msg.event_type, EventType::Snapshot as i32);
         if let Some(download_progress::ws_message::Payload::Snapshot(s)) = msg.payload {

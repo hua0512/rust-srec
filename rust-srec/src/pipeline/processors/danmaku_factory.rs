@@ -392,6 +392,7 @@ impl Processor for DanmakuFactoryProcessor {
             failed_inputs: vec![],
             succeeded_inputs: xml_inputs,
             skipped_inputs: vec![],
+            uploads: vec![],
             logs,
         })
     }

@@ -74,7 +74,7 @@ use dag::{
 };
 use jobs::{
     cancel_job, cancel_pipeline, create_pipeline, delete_job, get_job, get_job_progress, get_stats,
-    list_job_logs, list_jobs, list_jobs_page, list_outputs, retry_job,
+    list_job_logs, list_job_uploads, list_jobs, list_jobs_page, list_outputs, retry_job,
 };
 use presets::{
     create_pipeline_preset, delete_pipeline_preset, get_pipeline_preset_by_id,
@@ -96,7 +96,7 @@ use crate::api::models::JobResponse;
 use crate::api::server::AppState;
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::{
-    PipelinePresetRepository, SessionRepository, StreamerRepository,
+    PipelinePresetRepository, SessionRepository, StreamerRepository, UploadRecordRepository,
 };
 
 /// Dependencies shared by the job and DAG execution endpoints in `jobs` and
@@ -132,16 +132,33 @@ impl FromRef<AppState> for PresetRouteState {
 }
 
 /// Dependencies of `jobs::list_outputs`, which reads media outputs from the
-/// session store rather than from `pipeline_manager`.
+/// session store rather than from `pipeline_manager`, plus the upload-record
+/// store used to annotate each output with its upload results.
 #[derive(Clone)]
 pub struct OutputRouteState {
     session_repository: Arc<dyn SessionRepository>,
+    upload_record_repository: Arc<dyn UploadRecordRepository>,
 }
 
 impl FromRef<AppState> for OutputRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             session_repository: state.session_repository.clone(),
+            upload_record_repository: state.upload_record_repository.clone(),
+        }
+    }
+}
+
+/// Dependencies of `jobs::list_job_uploads` (durable per-file upload results).
+#[derive(Clone)]
+pub struct UploadRouteState {
+    upload_record_repository: Arc<dyn UploadRecordRepository>,
+}
+
+impl FromRef<AppState> for UploadRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            upload_record_repository: state.upload_record_repository.clone(),
         }
     }
 }
@@ -180,6 +197,7 @@ pub fn router() -> Router<AppState> {
         .route("/jobs/{id}", get(get_job))
         .route("/jobs/{id}/logs", get(list_job_logs))
         .route("/jobs/{id}/progress", get(get_job_progress))
+        .route("/jobs/{id}/uploads", get(list_job_uploads))
         .route("/jobs/{id}/retry", post(retry_job))
         .route("/jobs/{id}/cancel", post(cancel_job))
         .route("/jobs/{id}", delete(delete_job))
