@@ -60,8 +60,7 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
               name={`${basePath}.flv_fix.sequence_header_change_mode`}
               render={({ field }) => (
                 <FormItem className="space-y-2">
-                  <ConfigFieldLabel className="mb-2">
-                    <RefreshCw className="w-3.5 h-3.5" />
+                  <ConfigFieldLabel icon={RefreshCw} className="mb-2">
                     <Trans>Stream Splitting Strategy</Trans>
                   </ConfigFieldLabel>
                   <Select
@@ -148,8 +147,7 @@ const MesioFlvForm = React.memo(({ basePath }: SubFormProps) => {
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-muted/5 p-4 py-3 shadow-none transition-all hover:bg-muted/10">
                   <div className="space-y-0.5">
-                    <ConfigFieldLabel>
-                      <Layers className="w-3.5 h-3.5 text-blue-500" />
+                    <ConfigFieldLabel icon={Layers}>
                       <Trans>Loop Protection</Trans>
                       <Badge
                         variant="secondary"
@@ -341,8 +339,7 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-orange-500/5 p-4 shadow-sm transition-all hover:border-orange-500/20">
                 <div className="space-y-0.5">
-                  <ConfigFieldLabel>
-                    <Film className="w-4 h-4 text-orange-500" />
+                  <ConfigFieldLabel icon={Film}>
                     <Trans>Fix FLV Streams</Trans>
                   </ConfigFieldLabel>
                   <FormDescription className={CONFIG_DESCRIPTION}>
@@ -363,8 +360,7 @@ export function MesioForm({ basePath = 'config' }: MesioFormProps) {
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-gradient-to-br from-background/50 to-blue-500/5 p-4 shadow-sm transition-all hover:border-blue-500/20">
                 <div className="space-y-0.5">
-                  <ConfigFieldLabel>
-                    <Wrench className="w-4 h-4 text-blue-500" />
+                  <ConfigFieldLabel icon={Wrench}>
                     <Trans>Fix HLS Discontinuities</Trans>
                   </ConfigFieldLabel>
                   <FormDescription className={CONFIG_DESCRIPTION}>

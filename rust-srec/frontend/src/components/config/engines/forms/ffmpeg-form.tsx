@@ -41,8 +41,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
           name={`${basePath}.binary_path`}
           render={({ field }) => (
             <FormItem>
-              <ConfigFieldLabel>
-                <Terminal className="w-3.5 h-3.5 text-primary" />
+              <ConfigFieldLabel icon={Terminal}>
                 <Trans>Binary Path</Trans>
               </ConfigFieldLabel>
               <FormControl>
@@ -63,8 +62,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
           name={`${basePath}.timeout_secs`}
           render={({ field }) => (
             <FormItem>
-              <ConfigFieldLabel>
-                <Clock className="w-3.5 h-3.5 text-primary" />
+              <ConfigFieldLabel icon={Clock}>
                 <Trans>Timeout</Trans>
               </ConfigFieldLabel>
               <FormControl>
@@ -86,8 +84,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
           name={`${basePath}.graceful_stop_timeout_secs`}
           render={({ field }) => (
             <FormItem>
-              <ConfigFieldLabel>
-                <TimerOff className="w-3.5 h-3.5 text-primary" />
+              <ConfigFieldLabel icon={TimerOff}>
                 <Trans>Graceful Stop Timeout</Trans>
               </ConfigFieldLabel>
               <FormControl>
@@ -114,8 +111,7 @@ export function FfmpegForm({ basePath = 'config' }: FfmpegFormProps) {
         name={`${basePath}.user_agent`}
         render={({ field }) => (
           <FormItem>
-            <ConfigFieldLabel>
-              <Shield className="w-3.5 h-3.5 text-primary" />
+            <ConfigFieldLabel icon={Shield}>
               <Trans>User Agent</Trans>
             </ConfigFieldLabel>
             <FormControl>

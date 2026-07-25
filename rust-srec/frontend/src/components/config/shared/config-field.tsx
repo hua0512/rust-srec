@@ -123,18 +123,23 @@ const LABEL_CLASS = 'font-bold uppercase tracking-wider text-muted-foreground';
 const LABEL_SIZE = { default: 'text-xs', sm: 'text-[11px]' } as const;
 
 /**
- * Dotted, uppercase field label.
+ * Uppercase field label, marked with a dot or an icon.
+ *
+ * `icon` replaces the dot rather than joining it: both are the same marker, and showing them
+ * together reads as a bullet in front of the icon instead of one label mark.
  *
  * Pass `plain` for read-only rows that sit outside a `FormField`, where `FormLabel` has no field
  * context to bind to.
  */
 export function ConfigFieldLabel({
+  icon: Icon,
   accent = 'theme',
   plain = false,
   size = 'default',
   className,
   children,
 }: {
+  icon?: LucideIcon;
   accent?: ConfigAccent;
   plain?: boolean;
   size?: keyof typeof LABEL_SIZE;
@@ -146,7 +151,14 @@ export function ConfigFieldLabel({
 
   return (
     <div className={cn('flex items-center gap-2 px-1', className)}>
-      <div className={cn('rounded-full', dotSize, ACCENT_DOT[accent])} />
+      {Icon ? (
+        <Icon
+          className={cn('h-3.5 w-3.5 shrink-0', ACCENT_TEXT[accent])}
+          aria-hidden="true"
+        />
+      ) : (
+        <div className={cn('rounded-full', dotSize, ACCENT_DOT[accent])} />
+      )}
       {plain ? (
         <span className={labelClass}>{children}</span>
       ) : (
